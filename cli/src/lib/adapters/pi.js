@@ -29,26 +29,42 @@
  *     registers each tool. The token rides through the child env, never argv
  *     (same rule as codex.js).
  *
+ * A public seat (F113b) runs the same pi as
+ *   sandbox-exec -p <profile> <abs pi> … --no-builtin-tools
+ *      --exclude-tools <pi built-ins + PUBLIC_SEAT_WITHHELD_TOOLS> --no-approve …
+ * with a scrubbed environment and the provider behind a loopback proxy. pi's
+ * MCP servers start inside the jailed pi (the bridge is in-process), so they
+ * inherit the profile. Confinement is an explicit `sandbox.trust: 'public'`,
+ * never a derived default: a derived one would strip the shell from every
+ * private fleet pi seat (default-environment.js).
+ *
  * Contract (see stub.js): detect() and spawn(prompt, ctx) → { text, newSessionId }.
  */
 
 import { requireSeatModel } from './seat-model.js';
+import { probeVersion } from './tested-version.js';
+import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import { mkdir, readdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
+import { effectiveSandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
-import { prepareMcpSpawn } from '../mcp-home.js';
+import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
+import { resolvePublicSandboxMode } from '../sandbox/mode.js';
+import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { startProviderProxy } from '../provider-proxy.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -71,8 +87,37 @@ export const DEFAULT_PROVIDER = Object.freeze({
 const THINKING = { none: 'off', off: 'off', minimal: 'minimal', low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max' };
 export const thinkingFor = (effort) => (effort ? THINKING[String(effort).toLowerCase()] || null : null);
 
-const BRIDGE_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-commonly-mcp.mjs');
-const SHELL_ENV_PATH = join(dirname(fileURLToPath(import.meta.url)), 'pi-shell-env.mjs');
+const ADAPTERS_DIR = dirname(fileURLToPath(import.meta.url));
+const BRIDGE_PATH = join(ADAPTERS_DIR, 'pi-commonly-mcp.mjs');
+const SHELL_ENV_PATH = join(ADAPTERS_DIR, 'pi-shell-env.mjs');
+// The bridge imports siblings from the CLI's lib dir (credential-file.js,
+// mcp-server-version.js), so a jailed pi must be able to read that tree. It
+// holds code only.
+const EXTENSION_CODE_ROOT = dirname(ADAPTERS_DIR);
+
+// A public seat runs only a pi version whose tool flags were checked against a
+// real headless turn under Seatbelt: `--no-builtin-tools`, `--exclude-tools`
+// (which removes a tool from pi's registry, extension tools included, not only
+// from the active set) and `--no-approve`. Add a version only with that smoke.
+export const TESTED_PI_VERSIONS = Object.freeze(['0.84.1']);
+const PI_PACKAGE = '@earendil-works/pi-coding-agent';
+
+// pi's built-in tools (`allToolNames`, core/tools/index.js in 0.84). A public
+// seat gets none of them: no shell, and no file reads either, because the jail
+// has to admit the seat home that holds this turn's credential file (the bridge
+// reads it), so a read tool could hand that file to the room. Every public
+// adapter denies its shell; Qwen denies its read tools for this same reason,
+// and Goose loads no built-in at all.
+export const PI_BUILTIN_TOOLS = Object.freeze(['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']);
+export const PUBLIC_EXCLUDED_TOOLS = Object.freeze([...PI_BUILTIN_TOOLS, ...PUBLIC_SEAT_WITHHELD_TOOLS]);
+
+// What a public pi inherits from the launcher's environment. Everything else
+// (operator variables, the real provider key, the seat token) stays out.
+const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+const safeEnv = (env) => Object.fromEntries(Object.entries(env).filter(([name]) => PUBLIC_SAFE_ENV.test(name)));
+
+// The one provider API the loopback proxy carries for pi.
+const PUBLIC_PROVIDER_API = 'openai-completions';
 
 // Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
 // placeholders in the declared MCP env are the wrapper's per-(agent, pod)
@@ -151,8 +196,8 @@ const originOf = (value) => {
  * the guard both admit) is refused rather than reinterpreted as one it can.
  *
  * The grant broker is refused outright, by PATH rather than by entry name: it is
- * the one http entry that carries authority rather than data, and pi confines on
- * no host. The ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
+ * the one http entry that carries authority rather than data, and pi is not
+ * approved to confine it. The ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
  * the daemon-side half of the same refusal the server makes at the projection —
  * this is the half that holds on deploy skew, when the row names no adapter for
  * the server to key on, and in any backend older than the refusal.
@@ -179,21 +224,24 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
         continue;
       }
       // The grant broker is the one http entry that carries AUTHORITY rather
-      // than data: a granted seat acts on external systems as the granter. A pi
-      // seat cannot be confined on any host (see assertNoSandboxDeclared), so
-      // the reach is refused here as well as at the server's projection — this
+      // than data: a granted seat acts on external systems as the granter. pi is
+      // not admitted to grant-broker confinement (ADAPTERS_WITH_GRANT_BROKER is
+      // claude and codex; a public pi's Seatbelt jail, F113b, has not been
+      // reviewed for that), so the reach is refused here as well as at the
+      // server's projection — this
       // layer is what holds when the backend predates that refusal, when the
       // row names no adapter for the server to key on, or when a deploy leaves
       // the two on different clocks.
       if (isGrantBrokerUrl(url)) {
         // eslint-disable-next-line no-console
-        console.warn(`[pi] ${GRANT_BROKER_REFUSAL} — refusing the grant broker '${server.name}': pi has no enforced sandbox, so this seat must not act with a granter's authority — move the seat to the claude or codex adapter, or remove the grant`);
+        console.warn(`[pi] ${GRANT_BROKER_REFUSAL} — refusing the grant broker '${server.name}': pi is not approved to confine a granter's authority, so this seat must not act with it — move the seat to the claude or codex adapter, or remove the grant`);
         continue;
       }
       carried.push({
         name: server.name,
         url,
         headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+        ...(ctx.publicSeat ? { withheldTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
       });
       continue;
     }
@@ -211,7 +259,18 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
       // TASK-174: what will EXECUTE — the warmed build from the seat's MCP home
       // when there is one — and the credential channel is decided on that same
       // command, so the two can never disagree about which release runs.
-      const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl });
+      const spawnCommand = prepareMcpSpawn(server.command, { apiUrl: ctx.instanceUrl, publicSeat: Boolean(ctx.publicSeat) });
+      // A public seat never runs a package runner (npx) from inside the jail; the
+      // host-prepared build is the only stdio Commonly server it may start, and
+      // that build's tree has to be readable inside the profile.
+      if (!spawnCommand) {
+        ctx.unavailableMcp?.push(server.name);
+        continue;
+      }
+      if (ctx.publicSeat) {
+        const versionDir = selectedMcpVersionDir(spawnCommand);
+        if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
+      }
       carried.push({
         name: server.name,
         command: spawnCommand.map((a) => substitutePlaceholders(a, ctx)),
@@ -223,6 +282,7 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
             label: 'pi',
           }).env,
         ).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
+        ...(ctx.publicSeat ? { withheldTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
       });
       continue;
     }
@@ -264,11 +324,21 @@ export const buildModelsJson = (provider, model) => ({
   },
 });
 
-/** Per-seat pi home: `~/.commonly/pi-homes/<hash(agent)>`. Never the operator's ~/.pi. */
-export const seatHome = (ctx) => {
+/**
+ * Per-seat pi home: `~/.commonly/pi-homes/<hash(agent)>`. Never the operator's ~/.pi.
+ *
+ * A public turn gets its own sibling, `<hash>-public`. The home holds the
+ * seat's sessions, so a shared one let a seat switched from private to public
+ * resume a session full of private history: the wrapper hands back the id it
+ * persisted, and `sessionExists` found it. In a separate home that id is not
+ * found and the public turn starts fresh; and the Seatbelt profile admits only
+ * the public home, so the private one is not readable from inside either.
+ */
+export const seatHome = (ctx, { publicSeat = false } = {}) => {
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const hash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
-  return ctx._piHome || join(homedir(), '.commonly', 'pi-homes', hash);
+  const base = ctx._piHome || join(homedir(), '.commonly', 'pi-homes', hash);
+  return publicSeat ? `${base}-public` : base;
 };
 
 /**
@@ -290,32 +360,71 @@ export const sessionExists = async (sessionDir, sessionId) => {
 };
 
 /**
- * Fail closed: pi cannot enforce `environment.sandbox`, so a seat that declares
- * one does not start.
+ * What pi can enforce: a public seat, confined by Seatbelt on macOS (F113b),
+ * and nothing else.
  *
  * The trust is read THROUGH the legacy table (`effectiveSandboxTrust`), not
- * raw. A stored `internal` means `public` and every
- * other gate in this package resolves it that way: the attach path
- * (`agent.js`), the mode resolver (`sandbox/mode.js`) and the grant-broker
- * guard. Reading it raw here made this gate the one site that failed OPEN — a
- * legacy record passed both checks and the seat started unconfined, which is
- * the exact outcome that was refused for the record it was migrated from.
- * The mode clause needs no mapping: `internal` and the derived mode are
- * independent, and a public-meaning record is refused before the mode is read.
+ * raw. A stored `internal` means `public` and every other gate in this package
+ * resolves it that way: the attach path (`agent.js`), the mode resolver
+ * (`sandbox/mode.js`) and the grant-broker guard. Reading it raw here once made
+ * this gate the one site that failed OPEN (TASK-114).
+ *
+ * Seatbelt only. pi has no bwrap path yet, so a public seat off macOS, or one
+ * that names `bwrap`, is refused rather than run unconfined. A non-public seat
+ * that declares a mode is refused too: nothing would enforce it.
  */
-export const assertNoSandboxDeclared = (environment = {}) => {
+export const assertSandboxSupported = (environment = {}, platform = process.platform) => {
   const sandbox = environment?.sandbox || {};
   refuseWorkspaceTrust(sandbox, 'pi');
   if (effectiveSandboxTrust(sandbox.trust) === 'public') {
-    throw new Error('pi adapter: public-trust seats are not supported — pi has no enforced sandbox; do not attach a pi seat to a stranger-readable pod');
+    const mode = resolvePublicSandboxMode(sandbox, platform);
+    if (!['workspace', 'read-only', 'bwrap'].includes(mode)) {
+      throw new Error('pi adapter: public seats require an enforced sandbox');
+    }
+    if (platform !== 'darwin' || mode === 'bwrap') {
+      throw new Error('pi adapter: public seats run only in the macOS Seatbelt sandbox; pi has no bwrap path yet, so this seat cannot run confined here');
+    }
+    if (sandbox.filesystem?.['read-outside']?.length) {
+      throw new Error('pi adapter: public seats do not allow sandbox.filesystem.read-outside');
+    }
+    if (sandbox.network?.policy === 'restricted') {
+      throw new Error('pi adapter: public seats do not support restricted networking');
+    }
+    return;
   }
   if (sandbox.mode && sandbox.mode !== 'none') {
-    throw new Error(`pi adapter: sandbox.mode=${sandbox.mode} cannot be enforced by pi; remove it or use the claude/codex adapter`);
+    throw new Error(`pi adapter: sandbox.mode=${sandbox.mode} cannot be enforced by pi without public trust; declare sandbox.trust 'public' or remove the mode`);
   }
 };
 
+// Shared with the version probe (tested-version.js).
+export { resolveOnPath };
+
+/**
+ * pi's install tree: the nearest directory above the real entry file whose
+ * package.json names pi. Its `node_modules` and dist are what a jailed pi loads,
+ * and nothing else under that prefix needs to be readable.
+ */
+export const piPackageRoot = (binary) => {
+  let dir;
+  try { dir = dirname(realpathSync(binary)); } catch { return null; }
+  for (;;) {
+    const manifest = join(dir, 'package.json');
+    if (existsSync(manifest)) {
+      try {
+        if (JSON.parse(readFileSync(manifest, 'utf8')).name === PI_PACKAGE) return dir;
+      } catch { /* keep walking */ }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+};
+
+const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+
 export const buildArgs = ({
-  prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge,
+  prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false,
 }) => [
   '-p',
   '--mode', 'json',
@@ -323,6 +432,10 @@ export const buildArgs = ({
   '--no-skills',
   '--no-prompt-templates',
   '--no-themes',
+  // A public seat: no built-in tool (no shell, no file access), the withheld
+  // Commonly tools removed from the registry, and no project-local pi files
+  // from the workspace trusted for this run.
+  ...(publicSeat ? ['--no-builtin-tools', '--exclude-tools', PUBLIC_EXCLUDED_TOOLS.join(','), '--no-approve'] : []),
   '--provider', provider,
   '--model', model,
   ...(thinking ? ['--thinking', thinking] : []),
@@ -350,14 +463,14 @@ export const extractReply = (stdout) => {
   return { text, sawAssistant, errors };
 };
 
-const runPi = ({ args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runPi = ({ command = 'pi', args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
   let stdout = '';
   let stderr = '';
   let timedOut = false;
   // fd 3 carries the MCP server list, so the 4th pipe exists exactly when there
   // is a list to hand over. The bridge reads it at extension load (takeServers).
   const withList = typeof payload === 'string';
-  const proc = spawnImpl('pi', args, { cwd, env, stdio: withList ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'] });
+  const proc = spawnImpl(command, args, { cwd, env, stdio: withList ? ['ignore', 'pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'] });
   if (withList) {
     const channel = proc.stdio && proc.stdio[3];
     // A missing pipe is an invariant break, not a degraded mode: the bridge would
@@ -401,6 +514,12 @@ export default {
   // daemon level.
   providerKeyEnv: DEFAULT_PROVIDER.apiKeyEnv,
 
+  // Attach runs this before anything is published, so a public pi seat this
+  // host cannot confine is refused there rather than at its first turn.
+  async validateEnvironment(environment) {
+    assertSandboxSupported(environment);
+  },
+
   async detect() {
     const res = spawnSync('pi', ['--version'], { encoding: 'utf8' });
     if (res.error || res.status !== 0) return null;
@@ -411,10 +530,12 @@ export default {
 
   async spawn(prompt, ctx = {}) {
     const seatModel = requireSeatModel(ctx.environment, 'pi', true);
-    // pi has no enforced sandbox. claude.js and codex.js refuse a public-trust
-    // seat they cannot confine; so does this adapter, and it refuses any declared
-    // sandbox mode rather than run unconfined under a spec that promised one.
-    assertNoSandboxDeclared(ctx.environment);
+    const platform = ctx._platform || process.platform;
+    // A public seat is confined by Seatbelt below; every sandbox declaration pi
+    // cannot honour on this host is refused here, before anything starts.
+    assertSandboxSupported(ctx.environment, platform);
+    const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
+    const isPublic = effectiveSandboxTrust(sandbox?.trust) === 'public';
     const provider = resolveProvider(ctx.environment);
     const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
@@ -422,6 +543,38 @@ export default {
     if (!baseEnv[provider.apiKeyEnv]) {
       throw new Error(`pi adapter: ${provider.apiKeyEnv} is not set — the seat's environment must carry the provider key (LiteLLM virtual key)`);
     }
+
+    // What a public turn runs inside the jail: the absolute pi entry, the
+    // package tree it loads, and the node its shebang resolves to.
+    let binary = 'pi';
+    let packageRoot = null;
+    let nodePath = null;
+    if (isPublic) {
+      if (provider.api !== PUBLIC_PROVIDER_API) {
+        throw new Error(`pi adapter: a public seat reaches its provider through a loopback proxy that carries the ${PUBLIC_PROVIDER_API} API only, not ${provider.api}`);
+      }
+      if (!ctx.cwd || !isAbsolute(ctx.cwd)) {
+        throw new Error('pi adapter: a public seat needs an absolute workspace path');
+      }
+      binary = ctx._binaryPath || resolveOnPath('pi', baseEnv.PATH);
+      if (!binary || !isAbsolute(binary)) {
+        throw new Error('pi adapter: a public seat needs an absolute pi executable on PATH');
+      }
+      packageRoot = piPackageRoot(binary);
+      if (!packageRoot) {
+        throw new Error(`pi adapter: no ${PI_PACKAGE} package found behind ${binary}, so the sandbox cannot admit pi's code`);
+      }
+      // Async and cached per binary (tested-version.js): a synchronous probe
+      // stalled every other seat's proxy on the daemon's loop.
+      const version = ctx._version || await probeVersion(binary, {
+        env: safeEnv(baseEnv), timeoutMs: 30000, parse: versionOf,
+      });
+      if (!TESTED_PI_VERSIONS.includes(version)) {
+        throw new Error(`pi adapter: public seats refuse untested pi version ${version || 'unknown'}; smoke-tested: ${TESTED_PI_VERSIONS.join(', ')}`);
+      }
+      nodePath = resolveOnPath('node', baseEnv.PATH);
+    }
+
     // The values this spawn is handed, for the refusal log's exact-match check:
     // the provider key the route authenticates with, and the seat credential the
     // bridge carries. Snapshot them HERE — `withholdRuntimeCredential` removes
@@ -430,33 +583,70 @@ export default {
     const credentials = spawnCredentials(ctx, [provider.apiKeyEnv]);
 
     // Per-seat pi home: models.json holds the provider by env reference.
-    const home = seatHome(ctx);
+    const home = seatHome(ctx, { publicSeat: isPublic });
     const agentDir = join(home, 'agent');
     const sessionDir = join(home, 'sessions');
     await mkdir(agentDir, { recursive: true, mode: 0o700 });
     await mkdir(sessionDir, { recursive: true, mode: 0o700 });
+    if (isPublic) await mkdir(join(home, 'tmp'), { recursive: true, mode: 0o700 });
 
     // Resume only what pi wrote; anything else (a codex thread id from before
     // the switch, a wiped home) starts fresh under a new id.
     const isResume = await sessionExists(sessionDir, ctx.sessionId);
     const sessionId = isResume ? ctx.sessionId : randomUUID();
-    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: !isResume });
-    await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(provider, model), null, 2)}\n`, { mode: 0o600 });
+    // F118: a public seat reads its memory but is not offered the save tool,
+    // so its preamble names none.
+    const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
+      freshSession: !isResume, memoryReadOnly: isPublic,
+    });
 
-    // One credential file per spawn, inside this seat's own 0700 home — pi has no
-    // enforced sandbox, so the seat's home is the narrowest place that is still
-    // readable by the bridge. The value the server receives still travels on fd 3
-    // (pi-mcp-client's fd channel); the file is where the launcher puts it.
+    // One credential file per spawn, inside this seat's own 0700 home: the
+    // narrowest place the bridge can still read. On a public seat that home is
+    // the jail's state directory, which is why pi gets no read tool there. The
+    // value the server receives still travels on fd 3 (pi-mcp-client's fd
+    // channel); the file is where the launcher puts it.
     const credential = writeCredentialFile(ctx.runtimeToken, {
       agentName: ctx.agentName || 'agent',
       root: join(home, 'credentials'),
     });
+    let proxy = null;
     try {
+      // A public pi never holds the provider key: it talks to a loopback proxy
+      // with a per-turn token, and the proxy, in this process, adds the key and
+      // pins the model (the same shape as Goose and Qwen).
+      if (isPublic) {
+        proxy = await (ctx._startProviderProxy || startProviderProxy)({
+          provider: { baseURL: provider.baseUrl },
+          keyMaterial: baseEnv[provider.apiKeyEnv],
+          adapterLabel: 'pi',
+          pinnedModel: model,
+        });
+      }
+      await writeFile(join(agentDir, 'models.json'), `${JSON.stringify(buildModelsJson(
+        proxy ? { ...provider, baseUrl: proxy.baseURL } : provider, model,
+      ), null, 2)}\n`, { mode: 0o600 });
+
+      const unavailableMcp = [];
+      const mcpReadDirectories = [];
       const servers = resolveMcpServers(ctx.environment?.mcp, {
         ...ctx,
         credentialFile: credential?.path || null,
+        publicSeat: isPublic,
+        unavailableMcp,
+        mcpReadDirectories,
       });
-      const childEnv = {
+      if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
+      const childEnv = isPublic ? {
+        // A scrubbed environment: nothing of the operator's crosses into the
+        // jail, and the provider variable holds the proxy's token, not the key.
+        ...safeEnv(baseEnv),
+        HOME: home,
+        TMPDIR: join(home, 'tmp'),
+        PI_CODING_AGENT_DIR: agentDir,
+        PI_SKIP_VERSION_CHECK: '1',
+        PI_OFFLINE: '1',
+        [provider.apiKeyEnv]: proxy.token,
+      } : {
         ...baseEnv,
         PI_CODING_AGENT_DIR: agentDir,
         PI_SKIP_VERSION_CHECK: '1',
@@ -477,17 +667,42 @@ export default {
       const args = buildArgs({
         prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
         bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
+        publicSeat: isPublic,
       });
-      // Shell isolation must not depend on whether this turn declares MCP.
-      args.splice(args.length - 1, 0, '-e', SHELL_ENV_PATH);
+      // Shell isolation must not depend on whether this turn declares MCP. A
+      // public turn has no shell at all, so it loads no shell extension (that
+      // extension registers a `bash` tool of its own).
+      if (!isPublic) args.splice(args.length - 1, 0, '-e', SHELL_ENV_PATH);
+
+      // The public jail wraps pi itself. The bridge is an in-process pi
+      // extension, so every MCP server it starts is a child of the jailed
+      // process, and a Seatbelt profile is inherited across fork and exec: there
+      // is no second spawn here, and nothing pi launches runs outside it.
+      let command = 'pi';
+      let spawnArgs = args;
+      if (isPublic) {
+        [command, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
+          workspacePath: ctx.cwd,
+          workspaceAccess: resolvePublicSandboxMode(sandbox, platform) === 'read-only' ? 'read' : 'write',
+          executablePath: binary,
+          executablePaths: nodePath ? [nodePath] : [],
+          statePath: home,
+          loopbackNetworkPorts: [proxy.port],
+          readOnlyDirectories: [packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories],
+          // The jailed pi holds the seat token in memory (the bridge reads it),
+          // so nothing it starts may inspect it.
+          processInfo: 'self',
+        });
+      }
 
       const reply = await runPi({
-        args,
+        command,
+        args: spawnArgs,
         cwd: ctx.cwd,
         env: childEnv,
         payload: servers.length ? JSON.stringify(servers) : undefined,
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
-        credentials,
+        credentials: proxy ? [...credentials, proxy.token] : credentials,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
       });
       // Empty text with a clean exit is a silent turn; the run loop treats it
@@ -499,6 +714,7 @@ export default {
       // turn ends, and a token file that outlives its turn is a token file that
       // sits in a home for the next one.
       removeCredentialFile(credential);
+      try { await proxy?.close(); } catch { /* best effort */ }
     }
   },
 };

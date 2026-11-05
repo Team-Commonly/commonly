@@ -184,13 +184,21 @@ export const confinementReason = (environment, adapter, platform = process.platf
   const declared = sandbox;
   if (declared.mode === 'none') return 'sandbox_mode_none';
   if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
+  // D245: native Windows has no OS jail for any adapter. Claude there runs
+  // only by the user's --unsandboxed (policy without a jail), and Codex runs on
+  // its own profiles with no Commonly sandbox, so neither carries a grant.
+  if (platform === 'win32') return 'sandbox_mode_unenforceable';
   const mode = resolvePublicSandboxMode(declared, platform);
   if (typeof mode !== 'string' || !ENFORCING_MODES.has(mode)) return 'sandbox_mode_unenforceable';
   return null;
 };
 
-const detailFor = (reason, adapter, environment) => {
+const detailFor = (reason, adapter, environment, platform = process.platform) => {
   const drop = 'or drop the grant broker from this seat';
+  if (reason === 'sandbox_mode_unenforceable' && platform === 'win32') {
+    return 'native Windows has no sandbox Commonly can enforce, so no agent on this computer gets connector grants;'
+      + ` run the agent on macOS or Linux to use grants, ${drop}`;
+  }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
       + ' move this seat to the claude or codex'
@@ -236,19 +244,56 @@ export const withholdGrantBroker = (environment, adapter, {
   const reason = confinementReason(environment, adapter, platform);
   if (!reason) return environment;
 
-  const kept = environment.mcp.filter((server) => !isOurGrantBroker(server, { instanceUrl }));
+  // F94: the server flags a broker whose grant names this seat (the granter's
+  // own agent, with consent) so it rides a seat no sandbox confines. Delivery
+  // only; the broker checks the naming on every call. Never on native Windows,
+  // and never for an adapter not approved for the broker.
+  const rides = (server) => server?.byoNamed === true
+    && reason !== 'adapter_cannot_confine' && platform !== 'win32';
+  const isWithheld = (server) => isOurGrantBroker(server, { instanceUrl }) && !rides(server);
+  if (!environment.mcp.some(isWithheld)) return environment;
+
+  const kept = environment.mcp.filter((server) => !isWithheld(server));
   const withheld = environment.mcp
-    .filter((server) => isOurGrantBroker(server, { instanceUrl }))
+    .filter(isWithheld)
     .map((server) => (typeof server?.name === 'string' && server.name ? server.name : '(unnamed)'));
   if (typeof onRefuse === 'function') {
     onRefuse({
       code: GRANT_BROKER_REFUSAL_CODE,
       decidedBy: 'daemon',
       reason,
-      detail: detailFor(reason, adapter, environment),
+      detail: detailFor(reason, adapter, environment, platform),
     }, withheld);
   }
   return { ...environment, mcp: kept };
+};
+
+/**
+ * Merge the server's grant-broker entries into a seat environment, the way the
+ * daemon's work list does it (`GET /api/agent-binding/assigned` in
+ * `backend/routes/agentBinding.ts`): an existing entry with a broker's name is
+ * replaced, the brokers are appended, and a seat with no environment gets one
+ * holding only them. Used by `agent run` without a daemon (F150), whose
+ * `GET /api/agents/runtime/grant-brokers` returns the same per-seat projection.
+ *
+ * Merge only. The caller runs `withholdGrantBroker` on the result, so the
+ * client-side refusal still applies to whatever the server sent.
+ * Identity is preserved when there is nothing to merge.
+ */
+export const mergeGrantBrokers = (environment, servers) => {
+  const brokers = Array.isArray(servers)
+    ? servers.filter((server) => server && typeof server === 'object' && !Array.isArray(server))
+    : [];
+  if (!brokers.length) return environment;
+  if (!environment) return { mcp: brokers };
+  const existing = Array.isArray(environment.mcp) ? environment.mcp : [];
+  return {
+    ...environment,
+    mcp: [
+      ...existing.filter((server) => !brokers.some((broker) => broker.name === server?.name)),
+      ...brokers,
+    ],
+  };
 };
 
 export default {
@@ -258,4 +303,5 @@ export default {
   declaresGrantBroker,
   confinementReason,
   withholdGrantBroker,
+  mergeGrantBrokers,
 };

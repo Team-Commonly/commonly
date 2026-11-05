@@ -35,6 +35,7 @@ import {
   readBinInPrefix, versionDirFor,
 } from './mcp-home.js';
 import { MCP_PACKAGE, exactVersion, parseVersion } from './mcp-server-version.js';
+import { resolveLaunch } from './windows-command.js';
 
 export const PROBE_API_URL_PLACEHOLDER = 'http://127.0.0.1:1';
 export const PROBE_TOKEN_PLACEHOLDER = 'cm_agent_warm_probe';
@@ -106,8 +107,15 @@ export const acquireWarmLock = (home, {
   }
 };
 
-/** Default `npm` runner. Resolves `{ ok, stdout }`; never rejects. */
-export const runCommand = (bin, args, { timeout = REGISTRY_TIMEOUT_MS, cwd } = {}) => new Promise((resolve) => {
+/**
+ * Default `npm` runner. Resolves `{ ok, stdout }`; never rejects. On Windows
+ * `npm` is npm.cmd, which Node cannot spawn without a shell, so the name goes
+ * through the resolver the adapters use (npm.cmd becomes node.exe npm-cli.js).
+ * Off Windows it is spawned as given. `resolution` is the resolver's test seam.
+ */
+export const runCommand = (bin, args, {
+  timeout = REGISTRY_TIMEOUT_MS, cwd, resolution,
+} = {}) => new Promise((resolve) => {
   let settled = false;
   let child;
   const done = (result) => {
@@ -116,7 +124,9 @@ export const runCommand = (bin, args, { timeout = REGISTRY_TIMEOUT_MS, cwd } = {
     resolve(result);
   };
   try {
-    child = spawnChild(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env, cwd });
+    // The child runs in `cwd`, so a relative PATH entry is read there.
+    const launch = resolveLaunch(bin, args, { cwd, ...resolution });
+    child = spawnChild(launch.command, launch.args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env, cwd });
   } catch (error) {
     done({ ok: false, stdout: '', stderr: String(error && error.message) });
     return;

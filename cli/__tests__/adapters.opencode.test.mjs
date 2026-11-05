@@ -236,6 +236,14 @@ describe('opencode MCP config', () => {
     expect(permission.commonly_commonly_attach_file).toBe('deny');
     expect(permission.commonly_commonly_catch_up).toBe('deny');
     expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
+    // F118: nor self-install or any memory write; the memory read stays.
+    for (const tool of ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
+      'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message']) {
+      expect(permission[`commonly_${tool}`]).toBe('deny');
+      expect(keys.indexOf(`commonly_${tool}`)).toBeGreaterThan(keys.indexOf('commonly_*'));
+      expect(permission[`room_grants_${tool}`]).toBe('deny');
+    }
+    expect(permission.commonly_commonly_read_agent_memory).toBeUndefined();
     expect(permission.edit['*']).toBe('allow');
     expect(permission.edit['**/.npmrc']).toBe('deny');
     expect(permission.edit['**/.yarnrc*']).toBe('deny');
@@ -645,6 +653,59 @@ describe('opencode external provider config', () => {
     });
   });
 
+  // provider.api "anthropic-messages": OpenCode's own @ai-sdk/anthropic, which
+  // posts to `${baseURL}/messages` with the key as x-api-key. The proxy runs the
+  // anthropic-messages wire, so that request reaches the host's /v1/messages.
+  test('anthropic-messages: @ai-sdk/anthropic at <host>/v1, proxied on the anthropic wire', async () => {
+    expect(buildProviderConfig({
+      id: 'anthropic-native', baseURL: 'https://api.anthropic.com/', api: 'anthropic-messages',
+    }, 'claude-haiku-5-5', '/private/keys/anthropic')).toEqual({
+      'anthropic-native': {
+        npm: '@ai-sdk/anthropic',
+        options: { baseURL: 'https://api.anthropic.com/v1', apiKey: '{file:/private/keys/anthropic}' },
+        models: { 'claude-haiku-5-5': { name: 'claude-haiku-5-5' } },
+      },
+    });
+    expect(opencode.providerApis).toEqual(['openai-chat', 'anthropic-messages']);
+    expect(validateEnvironmentSpec({ provider: {
+      id: 'a', baseURL: 'https://api.anthropic.com', keyFile: '/k', api: 'anthropic-messages',
+    }, model: 'claude-haiku-5-5' }).ok).toBe(true);
+    expect(validateEnvironmentSpec({ provider: {
+      id: 'a', baseURL: 'https://api.anthropic.com', keyFile: '/k', api: 'responses',
+    } }).errors).toContain('provider.api must be one of openai-chat, anthropic-messages');
+
+    await withTemp(async (root) => {
+      const keyFile = join(root, 'provider-key');
+      const proxyTokenFile = join(root, 'proxy-token');
+      await writeFile(keyFile, 'upstream-secret');
+      await chmod(keyFile, 0o600);
+      let observed = null;
+      const upstream = createServer((req, res) => {
+        observed = { apiKey: req.headers['x-api-key'], authorization: req.headers.authorization, url: req.url };
+        req.resume();
+        req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{}'); });
+      });
+      await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+      const provider = {
+        id: 'anthropic-native', baseURL: `http://127.0.0.1:${upstream.address().port}`, api: 'anthropic-messages',
+      };
+      const proxy = await startProviderProxy({ provider, keyFile, tokenFile: proxyTokenFile, wire: provider.api });
+      try {
+        const config = buildProviderConfig({ ...provider, baseURL: proxy.baseURL }, 'claude-haiku-5-5', proxyTokenFile);
+        const response = await fetch(`${config['anthropic-native'].options.baseURL}/messages`, {
+          method: 'POST',
+          headers: { 'x-api-key': readFileSync(proxyTokenFile, 'utf8'), 'content-type': 'application/json' },
+          body: '{}',
+        });
+        expect(response.status).toBe(200);
+        expect(observed).toEqual({ apiKey: 'upstream-secret', authorization: undefined, url: '/v1/messages' });
+      } finally {
+        await proxy.close();
+        await new Promise((resolve) => upstream.close(resolve));
+      }
+    });
+  });
+
   test('uses file-backed provider auth and materializes only the selected model when models are omitted', () => {
     const config = buildProviderConfig({
       id: 'litellm',
@@ -852,7 +913,10 @@ describe('opencode external provider config', () => {
       const realAuthPath = realpathSync(authPath);
       const seatRoot = join(root, 'seat-state');
       const spawn = makeSpawnImpl({
-        onCall: (_cmd, _args, options) => {
+        onCall: (_cmd, callArgs, options) => {
+          // F118: the public prompt names no save tool the seat is not offered.
+          expect(callArgs[callArgs.length - 1]).toContain('(empty');
+          expect(callArgs[callArgs.length - 1]).not.toContain('commonly_save_my_memory');
           expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           expect(existsSync(options.env.OPENCODE_CONFIG_DIR)).toBe(true);
@@ -1120,6 +1184,47 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  test.each(['1.19.5', '1.19.12'])('a public seat warns and runs a later patch %s of the newest tested line', async (version) => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: `OpenCode ${version}\n` }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const spawn = makeSpawnImpl();
+        try {
+          await opencode.spawn('public turn', {
+            cwd: workspace,
+            env: { PATH: process.env.PATH },
+            environment: {
+              model: 'test-model',
+              provider: { id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile },
+              sandbox: { trust: 'public', mode: 'workspace' },
+              mcp: [],
+            },
+            agentName: 'public-version-gate-seat',
+            _binaryPath: '/usr/local/bin/opencode',
+            _platform: 'darwin',
+            _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv],
+            _spawnImpl: spawn.impl,
+          });
+          expect(spawn.calls).toHaveLength(1);
+          expect(warning).toHaveBeenCalledWith(
+            `[opencode] installed OpenCode ${version} is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; `
+            + 'a patch release on the newest smoke-tested line, so the public seat continues',
+          );
+        } finally {
+          warning.mockRestore();
+        }
+      });
+    });
+  });
+
   test('a trusted seat warns on a newer version and still spawns', async () => {
     await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, '1', async () => {
       await withTemp(async (root) => {
@@ -1163,9 +1268,14 @@ describe('opencode adapter — spawn()', () => {
       message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
-      description: 'untested next-patch',
-      result: { status: 0, stdout: 'OpenCode 1.19.5\n' },
-      message: /installed OpenCode 1\.19\.5 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      description: 'prerelease of the next patch',
+      result: { status: 0, stdout: 'OpenCode 1.19.5-rc.1\n' },
+      message: /installed OpenCode 1\.19\.5-rc\.1 .*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'next minor',
+      result: { status: 0, stdout: 'OpenCode 1.20.1\n' },
+      message: /installed OpenCode 1\.20\.1 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'newer',

@@ -393,6 +393,17 @@ If PostgreSQL is unavailable, the application can fall back to using MongoDB for
 - Use of sparse indexes for fields that aren't present in all documents
 - Embedding comments directly in posts to reduce query complexity
 - Pagination implemented using the `_id` field for efficient cursor-based pagination
+- **"Newest X per install" is one seek per install, never `$match` → `$sort` → `$group` + `$first`.**
+  That shape reads every matching document to keep one per group, so its cost grows with
+  history rather than with installs. A field it filters on but no index holds (here `type`)
+  turns each match into a FETCH. On 11-04 the pod roster's last-heartbeat read fetched a
+  week of every delivered event its seats had in every pod (333k documents for a 25-seat
+  pod in the test) and the route drew 504s at nginx's 5 s limit (TASK-774). Use
+  `services/newestPerInstall.ts`: one `$match` → `$sort` → `$limit: 1` branch per install,
+  joined with `$unionWith`, on an index with the match's equality fields followed by the
+  sorted field. `__tests__/service/podAgents.rosterLatency.realDb.test.js` pins the roster
+  through Mongo's own profiler (keys and documents examined), which a slow runner cannot
+  move.
 
 ### PostgreSQL
 

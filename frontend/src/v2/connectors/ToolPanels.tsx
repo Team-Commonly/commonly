@@ -11,17 +11,22 @@ import {
   shortAge,
   isExpired,
   isDead,
+  boundAgentOf,
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
+  ByoCandidate,
+  ByoSandbox,
   GrantWriteMode,
   ToolGrant,
   ToolOutcome,
   ToolCatalogEntry,
   HiddenToolConnection,
   ToolConnection,
+  PodSeat,
 } from './toolModel';
 import type { ToolConnectorsModel } from './useToolConnectors';
+import OperatorKeyForm from './OperatorKeyForm';
 
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
@@ -98,10 +103,20 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftBoundAgent,
+    startingAudience,
     selectedAgentIds,
+    draftByoCandidates,
+    draftByoNamed,
+    draftByoKey,
+    draftByoConsented,
+    removeByoAgent,
     submitDraft,
     fixJoinPolicy,
     connectHostedMcp,
+    keyAgents,
+    keyAgentsUnavailable,
+    submitOperatorKey,
     submitGithubAppSetup,
     retryStaleRevoke,
     revoke,
@@ -150,7 +165,8 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   const renderDisconnect = (entry: ToolCatalogEntry | null, variant: 'row' | 'aside') => {
     const hosted = entry && entry.connectionType === 'hosted-mcp' ? entry.connections : [];
     if (!entry || hosted.length === 0) return null;
-    if (hosted.length === 1) {
+    // A lone key row still names its agent, so the person can see whose key it is.
+    if (hosted.length === 1 && !(hosted[0].agentId && connectionLabel(hosted[0]))) {
       const button = renderDisconnectOne(entry, hosted[0], variant, null);
       return variant === 'aside' ? <div className="v2-connector-aside__actions">{button}</div> : button;
     }
@@ -340,10 +356,43 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   // Where the person who connected a hosted entry picks what it reaches (for
   // GitHub, the App's install page). Shown on the offer and on the details of
   // their live grant, since a grant takes the entry off the offer list.
+  // For an operator-key entry the same page is where the key is made, and the
+  // key's scopes are what bound its reach.
   const renderAccessLink = (entry: ToolCatalogEntry) => (
     <a href={entry.accessPage} target="_blank" rel="noopener noreferrer">
-      {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
+      {entry.credentialMode === 'operator_key'
+        ? t('tools.operatorKey.createKey', { label: entry.label })
+        : t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
     </a>
+  );
+
+  // An operator-key entry holds one connection per agent (TASK-330), so it
+  // stays open to a key for each of the person's agents that has none yet. An
+  // OAuth entry is connected once, by `connections.length`.
+  const keylessAgents = (entry: ToolCatalogEntry) => {
+    const keyed = new Set(entry.connections.map((connection) => connection.agentId).filter(Boolean));
+    return keyAgents.filter((agent) => !keyed.has(agent.userId));
+  };
+
+  // The paste-a-key form while any of the person's agents has no key on this
+  // operator-key entry. It is offered on a granted entry too: one agent's key
+  // being granted says nothing about the next agent's.
+  const renderKeyForm = (entry: ToolCatalogEntry) => {
+    const takesKey = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId) && entry.credentialMode === 'operator_key';
+    const keyable = takesKey && entry.available ? keylessAgents(entry) : [];
+    return keyable.length > 0
+      ? <OperatorKeyForm key={entry.installableId} entry={entry} agents={keyable} submit={submitOperatorKey} />
+      : null;
+  };
+
+  // Where to make the key, for a granted entry's drawer, which skips the
+  // ungranted offer and its renderEntryNote. Ungranted, renderEntryNote
+  // carries the same two lines.
+  const renderKeyGuidance = (entry: ToolCatalogEntry) => (
+    <>
+      {entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
+      {entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
+    </>
   );
 
   // What a person can do with an entry that has no live grant: the verbs of the
@@ -354,9 +403,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     // A hosted entry is connected by the person who will grant it (§1: member
     // mode), so the action belongs on the tile and needs no admin.
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
-    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
+    const takesKey = isHosted && entry.credentialMode === 'operator_key';
+    const canConnectHosted = isHosted && !takesKey && entry.available && entry.connections.length === 0;
     return (
       <>
+        {renderKeyForm(entry)}
         {!entry.available && (
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
             {t('tools.ask', { defaultValue: 'Ask' })}
@@ -391,24 +442,42 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       : null
   );
 
+  // TASK-782: a connection whose account saw nothing to search at connect.
+  // A warning, never a block: the person may add a project afterwards.
+  const renderReachNote = (entry: ToolCatalogEntry, connections: ToolConnection[]) => (
+    connections.some((connection) => connection.reach === 'none')
+      ? <p className="v2-cx-note" role="note">{t('tools.reachNone', { label: entry.label })}</p>
+      : null
+  );
+
   // The one line under an entry's name that says what is left to do before it
   // works: connect your own account, ask an admin, or the modes it grants.
   const renderEntryNote = (entry: ToolCatalogEntry) => {
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
-    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
+    const takesKey = isHosted && entry.credentialMode === 'operator_key';
+    const canConnectHosted = isHosted && !takesKey && entry.available && entry.connections.length === 0;
+    const keyable = takesKey && entry.available ? keylessAgents(entry) : [];
+    const unconnectedNote = () => {
+      if (takesKey) {
+        if (keyAgents.length === 0 && keyAgentsUnavailable) return t('tools.operatorKey.agentsUnavailable');
+        return keyAgents.length === 0
+          ? t('tools.operatorKey.noAgents')
+          : t('tools.operatorKey.note');
+      }
+      return isHosted
+        ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+        : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' });
+    };
     return (
       <>
         {entry.available && (
           <p className="v2-cx-note">
-            {entry.connections.length === 0
-              ? (isHosted
-                ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
-                : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
-              : entryModeCopy(entry)}
+            {entry.connections.length === 0 ? unconnectedNote() : entryModeCopy(entry)}
           </p>
         )}
         {renderLinearWriteNote(entry)}
-        {canConnectHosted && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
+        {renderReachNote(entry, entry.connections)}
+        {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
         {renderManualRevokeNotice(entry)}
       </>
@@ -471,9 +540,35 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
+  // F94: the disclosure for one agent that runs outside Commonly. The server
+  // records 'confined' only on evidence, so anything else reads as no sandbox.
+  const byoAgentLabel = (agent: ByoCandidate) => agentNameById(agent.userId) || agent.agentName;
+  const byoConsentLine = (agent: ByoCandidate) => (agent.sandbox !== 'confined'
+    ? t('tools.byo.consentNoSandbox', { agent: byoAgentLabel(agent) })
+    : t('tools.byo.consent', { agent: byoAgentLabel(agent) }));
+  const byoReason = (agent: ByoCandidate) => (agent.reason === 'unconfined_host'
+    ? t('tools.byo.reasonUnconfinedHost')
+    : t('tools.byo.reasonAdapterUnsupported'));
+  const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
+    ? t('tools.byo.namedNoSandbox', { agent: name })
+    : t('tools.byo.named', { agent: name }));
+
   const renderDraft = () => {
     if (!draft || !draftEntry) return null;
     const podSeats = seats[draft.podId] || [];
+    // A key connection offers only its own agent: the route refuses any other.
+    // The viewer's agents that run outside Commonly join the roster when it hid them.
+    const byoOnly: PodSeat[] = draftByoCandidates
+      .filter((agent) => !podSeats.some((seat) => seat.userId === agent.userId))
+      .map((agent) => ({ userId: agent.userId, name: agent.agentName, instanceId: agent.instanceId }));
+    const allSeats = [...podSeats, ...byoOnly];
+    const offeredSeats = draftBoundAgent ? allSeats.filter((seat) => seat.userId === draftBoundAgent) : allSeats;
+    const naming = draftByoNamed.length > 0;
+    const boundAbsent = Boolean(draftBoundAgent) && offeredSeats.length === 0;
+    const boundName = draftBoundAgent ? (agentNameById(draftBoundAgent) || memberName(draftBoundAgent)) : null;
+    // A key grant whose key was removed opens with no key chosen (openDraft):
+    // the picker shows even for one remaining key, and the seats wait for a key.
+    const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
     const tools = draftTools(draftEntry, draft.writeMode);
     const irreversible = irreversibleTools(draftEntry, tools);
     const asks = draft.writeMode === 'read'
@@ -491,42 +586,87 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
                 <span>{t('tools.toRoom', { defaultValue: 'pod' })}</span>
-                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
+                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: startingAudience(draftEntry, draft.connectionId, podId) }); }}>
                   {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
                 </select>
               </label>
             )}
-            {draftEntry.connections.length > 1 && (
+            {(draftEntry.connections.length > 1 || (keyPending && draftEntry.connections.length > 0)) && (
               <label className="v2-tools__field">
                 <span>{t('tools.connection', { defaultValue: 'connection' })}</span>
-                <select className="v2-connectors__select" value={draft.connectionId} onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })}>
-                  {draftEntry.connections.map((connection) => <option key={connection.connectionId} value={connection.connectionId}>{connection.owner}/{connection.repo}</option>)}
+                <select
+                  className="v2-connectors__select"
+                  value={draft.connectionId}
+                  onChange={(event) => {
+                    const connectionId = event.target.value;
+                    // A key connection's audience follows its agent; any other keeps the picked seats.
+                    setDraft(boundAgentOf(draftEntry, connectionId)
+                      ? { ...draft, connectionId, audience: startingAudience(draftEntry, connectionId, draft.podId) }
+                      : { ...draft, connectionId });
+                  }}
+                >
+                  {keyPending && (
+                    <option value="" disabled>{t('tools.chooseKey', { defaultValue: 'Choose a key' })}</option>
+                  )}
+                  {draftEntry.connections.map((connection) => {
+                    // A key connection has no owner or repo, so it is named by its agent.
+                    const keyAgent = boundAgentOf(draftEntry, connection.connectionId);
+                    return (
+                      <option key={connection.connectionId} value={connection.connectionId}>
+                        {keyAgent
+                          ? (agentNameById(keyAgent) || memberName(keyAgent) || t('tools.connectionKey', { defaultValue: 'Key' }))
+                          : <>{connection.owner}/{connection.repo}</>}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
             )}
+            {renderReachNote(draftEntry, draftEntry.connections.filter((connection) => connection.connectionId === draft.connectionId))}
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
                 {entryGrantModes(draftEntry).map((mode) => (
-                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={naming && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
                 ))}
               </div>
+              {naming && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
+            {!keyPending && (
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
-              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
-              {podSeats.map((seat) => seat.userId && (
-                <label key={seat.userId} className="v2-connector-aside__relay">
-                  <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
-                  {seat.displayName || seat.name}
-                </label>
-              ))}
+              {!draftBoundAgent && allSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
+              {boundAbsent && (
+                <span className="v2-tools__hint" role="status">
+                  {boundName
+                    ? t('tools.keyAgentNotInPod', { defaultValue: "{{agent}} isn't in this pod.", agent: boundName })
+                    : t('tools.keyAgentNotInPodUnnamed', { defaultValue: "This key's agent isn't in this pod." })}
+                </span>
+              )}
+              {offeredSeats.map((seat) => {
+                if (!seat.userId) return null;
+                const byo = draftByoCandidates.find((agent) => agent.userId === seat.userId);
+                const unnameable = Boolean(byo && !byo.nameable);
+                return (
+                  <React.Fragment key={seat.userId}>
+                    <label className="v2-connector-aside__relay">
+                      <input type="checkbox" disabled={unnameable} checked={!unnameable && draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
+                      {seat.displayName || seat.name}
+                    </label>
+                    {byo && unnameable && <span className="v2-tools__hint">{byoReason(byo)}</span>}
+                  </React.Fragment>
+                );
+              })}
+              {draftBoundAgent && !boundAbsent && (
+                <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || t('tools.aSeat', { defaultValue: 'an agent' }) })}</span>
+              )}
             </fieldset>
-            {selectedAgentIds.length === 0 && (
+            )}
+            {selectedAgentIds.length === 0 && !boundAbsent && !keyPending && (
               <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
                 defaultValue: 'Select at least one agent to grant access.',
               })}</p>
@@ -539,9 +679,16 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 <option value={90}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 90 })}</option>
               </select>
             </label>
+            {/* F94: one consent for the agents this grant names, each with its sandbox state. */}
+            {naming && (
+              <label className="v2-connector-aside__relay">
+                <input type="checkbox" checked={draftByoConsented} onChange={(event) => setDraft({ ...draft, byoConsentFor: event.target.checked ? draftByoKey : null })} />
+                <span>{draftByoNamed.map((agent) => byoConsentLine(agent)).join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
+              </label>
+            )}
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0 || (naming && !draftByoConsented)} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
@@ -594,6 +741,28 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
             <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
             <dd>{asksFirst(grant)}</dd>
+            {(grant.byoAgents || []).length > 0 && (
+              <>
+                <dt>{t('tools.byo.namedHeading')}</dt>
+                <dd>
+                  {(grant.byoAgents || []).map((agentId) => {
+                    const name = seatLabel(podId, agentId);
+                    const sandbox = grant.byoConsent?.agents.find((agent) => agent.userId === agentId)?.sandbox;
+                    return (
+                      <span key={agentId} className="v2-connector-aside__actions">
+                        <span className="v2-connector-aside__conn">{byoNamedLine(name, sandbox)}</span>
+                        {!dead && isGranter(grant) && !grant.parentGrantId && (
+                          <button type="button" className="v2-connector-aside__secondary" disabled={busy} aria-label={t('tools.byo.removeLabel', { agent: name })} onClick={() => { void removeByoAgent(grant, agentId, name); }}>
+                            {t('tools.byo.remove')}
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  {!dead && isGranter(grant) && !grant.parentGrantId && <span className="v2-tools__hint">{t('tools.byo.removeHint')}</span>}
+                </dd>
+              </>
+            )}
             {grant.budget?.calls !== undefined && (
               <>
                 <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>
@@ -671,5 +840,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

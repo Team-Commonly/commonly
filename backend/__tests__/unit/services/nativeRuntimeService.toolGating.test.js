@@ -47,11 +47,16 @@ describe('toolsForConfig', () => {
     const enabled = {
       AGENT_COMPUTER_ENABLED: 'true',
       AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'http://steel-{userId}:3000',
-      AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'http://steel-{userId}:9223',
+      AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'ws://steel-{userId}:3000',
       AGENT_COMPUTER_WAKER_URL: 'http://waker:8080',
       AGENT_COMPUTER_WAKER_TOKEN: 'test',
+      AGENT_COMPUTER_STEEL_TOKEN: 'test',
     };
     withEnv({ ...enabled, AGENT_COMPUTER_ENABLED: 'false' }, () => {
+      expect(names(toolsForConfig(config))).toEqual([]);
+    });
+    // Without the Steel gate's token the broker could not reach the browser.
+    withEnv({ ...enabled, AGENT_COMPUTER_STEEL_TOKEN: undefined }, () => {
       expect(names(toolsForConfig(config))).toEqual([]);
     });
     withEnv(enabled, () => {
@@ -66,9 +71,10 @@ describe('toolsForConfig', () => {
       SEARCH_API_KEY: 'test',
       AGENT_COMPUTER_ENABLED: 'true',
       AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'http://steel-{userId}:3000',
-      AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'http://steel-{userId}:9223',
+      AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'ws://steel-{userId}:3000',
       AGENT_COMPUTER_WAKER_URL: 'http://waker:8080',
       AGENT_COMPUTER_WAKER_TOKEN: 'test',
+      AGENT_COMPUTER_STEEL_TOKEN: 'test',
     };
     const config = { tools: ['computer_click', 'computer_snapshot', 'commonly_web_search', 'commonly_fetch_url'] };
     withEnv(enabled, () => {

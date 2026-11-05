@@ -467,7 +467,12 @@ class VectorSearchService {
 
     try {
       switch (EMBEDDING_CONFIG.provider) {
+        // No embedding provider: chunks stay unvectored, and no content leaves (F78).
+        case 'none':
+          return null;
         case 'gemini':
+          // Without a key the call can only fail, after sending the content.
+          if (!process.env.GEMINI_API_KEY) return null;
           return await this.embedWithGemini(text);
         case 'openai':
           return await this.embedWithOpenAI(text);

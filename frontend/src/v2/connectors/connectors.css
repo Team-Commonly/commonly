@@ -57,7 +57,7 @@
 .v2-cx-logo--glyph svg { width: 22px; height: 22px; }
 .v2-cx-tile__name { max-width: 100%; padding: 0 8px; box-sizing: border-box; font-size: 13px; font-weight: 600; color: var(--v2-text-secondary); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-cx-tile__state { position: absolute; top: 10px; right: 10px; display: flex; gap: 4px; align-items: center; color: var(--v2-text-placeholder); }
-.v2-cx-tile__beta { font: 500 9.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); }
+.v2-cx-tile__beta { font: 500 11px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); }
 .v2-cx-tile__lock { display: inline-flex; }
 .v2-cx-tile__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v2-status-idle); }
 .v2-cx-tile__dot--live { background: var(--v2-success); }
@@ -75,13 +75,19 @@
 .v2-cx-pop { position: absolute; z-index: 10; width: 300px; box-sizing: border-box; padding: 14px; border-radius: 12px; background: var(--cx-pop-bg); box-shadow: var(--cx-pop-shadow); display: grid; gap: 10px; }
 .v2-cx-pop__head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
 .v2-cx-pop__head .v2-cx-logo { width: 28px; height: 28px; flex: none; }
-.v2-cx-pop__beta { font: 500 10.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); }
+.v2-cx-pop__beta { font: 500 11px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); }
 .v2-cx-pop p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--v2-text-secondary); }
 .v2-cx-pop__chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .v2-cx-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 7px; font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-secondary); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; }
+/* A chip never runs past the popover's edge: a long tool name ends in an ellipsis
+   (its full name is the chip's title). */
+.v2-cx-pop__chips .v2-cx-chip { display: block; max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
 .v2-cx-pop__acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .v2-cx-note { font-size: 12.5px; color: var(--v2-text-muted); }
 .v2-cx-error { margin: 0 0 12px; font-size: 13px; color: var(--v2-danger-text); }
+/* an operator-key entry's paste form takes the act row's full width; the error sits inside it */
+.v2-cx-pop__acts > .v2-cx-keyform { flex: 1 1 100%; min-width: 0; margin-top: 0; gap: 10px; }
+.v2-cx-keyform .v2-cx-error { margin: 0; color: var(--v2-danger-text); }
 
 /* the grant rows inside a drawer: one stacked card each, not the old tile template */
 .v2-cx-list { display: grid; gap: 10px; }

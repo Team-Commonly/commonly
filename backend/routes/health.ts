@@ -68,9 +68,11 @@ router.get('/', async (_req: unknown, res: Res) => {
     try {
       // eslint-disable-next-line global-require
       const { createClient } = require('redis');
+      // eslint-disable-next-line global-require
+      const { redisPassword } = require('../config/redisPassword');
       const redisHost = process.env.REDIS_HOST || 'redis';
       const redisPort = process.env.REDIS_PORT || 6379;
-      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
+      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}`, password: redisPassword() });
       const redisStart = Date.now();
       await redisClient.connect();
       const pong = await redisClient.ping();
@@ -94,7 +96,8 @@ router.get('/', async (_req: unknown, res: Res) => {
     discord: { configured: !!(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CLIENT_ID) },
     gemini: { configured: !!process.env.GEMINI_API_KEY },
     litellm: { configured: !!(process.env.LITELLM_BASE_URL && process.env.LITELLM_MASTER_KEY) },
-    sendgrid: { configured: !!process.env.SENDGRID_API_KEY },
+    // The SMTP2GO provider pair, as admin/users checks it; signup verification also needs FRONTEND_URL.
+    smtp2go: { configured: !!(process.env.SMTP2GO_API_KEY && process.env.SMTP2GO_FROM_EMAIL) },
     telegram: { configured: !!process.env.TELEGRAM_BOT_TOKEN },
   };
 

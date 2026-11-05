@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { appDateLocale } from '../utils/appLocale';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 interface Metadata { set: boolean; setAt: string | null; setBy: string | null; lastUsedAt: string | null }
 const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable: boolean;
@@ -39,7 +40,7 @@ const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable:
   const alert = error && <span role="alert" className="v2-agent-settings-page__note"><V2AgentSettingsIcon name="alert" />{error}</span>;
   const canEdit = editable && capability?.available;
   const keySet = editable && metadata?.set;
-  const setLine = keySet && <>{k('set')} · {metadata?.setAt ? new Date(metadata.setAt).toLocaleString() : ''}</>;
+  const setLine = keySet && <>{k('set')} · {metadata?.setAt ? new Date(metadata.setAt).toLocaleString(appDateLocale()) : ''}</>;
   const removeButton = (size = ' b-sm') => keySet && <button className={`b b-g${size}`} type="button" disabled={busy} onClick={() => { void remove(); }}>{k('remove')}</button>;
   return <>
     <h3 className="gtitle"><V2AgentSettingsIcon name="key" />{k('title')}</h3>

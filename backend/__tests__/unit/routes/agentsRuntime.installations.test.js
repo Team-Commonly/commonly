@@ -10,12 +10,13 @@ const mockInstallation = {
 };
 
 let mockAuthorizedPodIds = ['pod-1'];
+let mockInstallations = null;
 let mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }];
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
   req.agentUser = { _id: 'agent-1', username: 'writer' };
   req.agentInstallation = mockInstallation;
-  req.agentInstallations = [mockInstallation];
+  req.agentInstallations = mockInstallations || [mockInstallation];
   req.agentAuthorizedPodIds = mockAuthorizedPodIds;
   next();
 });
@@ -85,6 +86,57 @@ describe('GET /installations runtime adapter projection', () => {
     })]);
     expect(response.body.installations[0]).not.toHaveProperty('model');
     expect(response.body.installations[0]).not.toHaveProperty('config');
+  });
+
+  // D247: the listener reads the row Settings reads, the oldest active one that
+  // declares a seat, so it never runs a sibling row's model Settings doesn't show.
+  test('names the Settings source installation, or null when none declares a seat', async () => {
+    const config = mockInstallation.config;
+    try {
+      mockInstallation.config = { runtime: { runtimeType: 'webhook', adapter: 'codex' } };
+      const declared = await request(app).get('/api/agents/runtime/installations');
+      expect(declared.body.runtimeSourcePodId).toBe('pod-1');
+      mockInstallation.config = { environment: {} };
+      const silent = await request(app).get('/api/agents/runtime/installations');
+      expect(silent.body.runtimeSourcePodId).toBeNull();
+    } finally {
+      mockInstallation.config = config;
+    }
+  });
+
+  // An auto-joined row (installedBy the agent itself) copies the source's
+  // config but is never what Settings reads, even when it is the oldest.
+  test('the source skips a row the agent installed itself', async () => {
+    mockInstallations = [
+      { _id: 'a1', podId: 'pod-auto', instanceId: 'writer', status: 'active', installedBy: 'agent-1',
+        config: { runtime: { runtimeType: 'webhook', adapter: 'codex' }, environment: { model: 'auto-model' } } },
+      { _id: 'b2', podId: 'pod-1', instanceId: 'writer', status: 'active', installedBy: 'owner-1',
+        config: { runtime: { runtimeType: 'webhook', adapter: 'codex' } } },
+    ];
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.runtimeSourcePodId).toBe('pod-1');
+    } finally {
+      mockInstallations = null;
+    }
+  });
+
+  // D247: a listener seat (`agent run`, no daemon) reads its saved model and
+  // effort here before each turn, so a Settings change reaches its next spawn.
+  test('projects the saved model and effort controls, and nothing else from the environment', async () => {
+    const config = mockInstallation.config;
+    mockInstallation.config = { runtime: { runtimeType: 'webhook', adapter: 'codex', model: 'legacy-model' },
+      environment: { model: 'gpt-6-sol', effort: 'xhigh', provider: { id: 'p', keyFile: '/secret' } } };
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.installations[0].runtimeControls).toEqual({ model: 'gpt-6-sol', effort: 'xhigh' });
+      mockInstallation.config = { runtime: { runtimeType: 'webhook', model: 'legacy-model' },
+        environment: { effort: 'bad\nvalue' } };
+      const legacy = await request(app).get('/api/agents/runtime/installations');
+      expect(legacy.body.installations[0].runtimeControls).toEqual({ model: 'legacy-model' });
+    } finally {
+      mockInstallation.config = config;
+    }
   });
 
   test.each(['pi', 'codex'])('adapter-shaped legacy runtimeType %s projects the resolved binding', async (runtimeType) => {

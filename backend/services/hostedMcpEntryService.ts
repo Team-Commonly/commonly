@@ -24,7 +24,8 @@
  *   a schedule rather than on every `tools/list` or `tools/call`.
  *
  * Drift is a named refusal, never a silent change: a pinned tool absent from
- * this row's list is `tool_unavailable`, and one whose schema or annotations
+ * this row's list is `tool_unavailable` (or `not_granted`, for a write pin the
+ * row never consented to: F102), and one whose schema or annotations
  * moved incompatibly is `tool_drift` until a PR re-pins it. A compatible
  * read-schema change keeps the pin and emits a fresh-assessment signal. Only
  * `tool_drift` reaches an operator (hostedMcpDriftAlertService): absence can
@@ -61,6 +62,13 @@ export interface HostedMcpPinnedTool {
   /** The schema the owner approves args under, pinned. */
   inputSchema: Record<string, unknown>;
   annotations?: HostedMcpAnnotations;
+  /**
+   * Optional properties the vendor offers that our agents never send (F101).
+   * The pin keeps them, because it must match the vendor's schema exactly; the
+   * model's schema leaves them out, and a call drops any value sent for them.
+   * Top-level properties only; a nested field needs its own mechanism.
+   */
+  withheldArgs?: readonly string[];
 }
 
 /** Fields every hosted entry carries, whatever its credential. */
@@ -94,6 +102,18 @@ export interface HostedMcpEntryCommon {
    * and on the connected row, so the reach is the person's own choice; https only.
    */
   accessPage?: string;
+  /**
+   * D248: whether a fresh connection can reach nothing yet, so the callback
+   * sends the person on to `accessPage` instead of back to Commonly (GitHub
+   * with no installation of its App). Best effort: false on any doubt.
+   */
+  needsAccessSetup?: (accessToken: string) => Promise<boolean>;
+  /**
+   * TASK-782: how much a fresh connection can see, read at the callback.
+   * `{ projects: 0 }` only when the probe read everything and found nothing;
+   * null on any doubt, so the page never warns on a guess.
+   */
+  reachProbe?: (accessToken: string) => Promise<{ projects: number } | null>;
   tools: HostedMcpPinnedTool[];
 }
 
@@ -147,7 +167,30 @@ export interface HostedMcpUpstreamTool {
  */
 export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
 
-export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift';
+/**
+ * `not_granted` (F102): a write pin this row's list omits because the row's
+ * recorded consent lacks the entry's writeScope. It is the row's consent, not
+ * the vendor, so it files no drift card and logs no assessment line; a call
+ * refuses `write_scope_required`, which tells the owner to reconnect.
+ */
+export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift' | 'not_granted';
+
+/** What the row consented to, as recorded at connect and narrowed on refresh. */
+export interface HostedMcpRowConsent {
+  grantedScope?: string | null;
+}
+
+/**
+ * True when a row's recorded consent includes the entry's writeScope, or the
+ * entry names none. Parsed exactly as the grant mint reads it (routes/grants.ts
+ * calls this), so the mint's refusal and the assessment cannot disagree: a row
+ * with no recorded scope holds none.
+ */
+export const consentHoldsWriteScope = (entry: HostedMcpEntry, grantedScope: unknown): boolean => {
+  const writeScope = 'writeScope' in entry ? entry.writeScope : undefined;
+  if (!writeScope) return true;
+  return (typeof grantedScope === 'string' ? grantedScope : '').split(/\s+/).includes(writeScope);
+};
 
 export interface HostedMcpToolAssessment {
   /** The entry-local name, so a refusal can be read against the pin. */
@@ -205,31 +248,31 @@ const SCHEMA_KEYWORDS = new Set([
 ]);
 
 /**
- * `description` is ignorable only at a JSON Schema position. Values of
- * `default`, `const`, `enum`, and unknown keywords are data or unrecognised
- * shapes, so their nested keys are left intact for the exact comparison.
+ * A copy of one schema node with `visit` applied to each child at a JSON
+ * Schema position. Values of `default`, `const`, `enum`, and unknown keywords
+ * are data or unrecognised shapes, so they are copied untouched for the exact
+ * comparison.
  */
-const stripSchemaDescriptions = (schema: unknown): unknown => {
-  if (!isRecord(schema)) return schema;
+const mapSubschemas = (
+  schema: Record<string, unknown>,
+  visit: (child: unknown) => unknown,
+): Record<string, unknown> => {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (key === 'description') continue;
     if (SCHEMA_MAP_KEYWORDS.has(key) && isRecord(value)) {
-      result[key] = Object.fromEntries(Object.entries(value)
-        .map(([name, child]) => [name, stripSchemaDescriptions(child)]));
+      result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [name, visit(child)]));
     } else if (key === 'dependencies' && isRecord(value)) {
       // Draft-07 dependencies may hold either a subschema or an array of
       // property names. The latter is data and must stay byte-for-byte equal.
       result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
-        name, isRecord(child) || typeof child === 'boolean' ? stripSchemaDescriptions(child) : child,
+        name, isRecord(child) || typeof child === 'boolean' ? visit(child) : child,
       ]));
     } else if (SCHEMA_ARRAY_KEYWORDS.has(key) && Array.isArray(value)) {
-      result[key] = value.map(stripSchemaDescriptions);
+      result[key] = value.map(visit);
     } else if (key === 'items') {
-      result[key] = Array.isArray(value)
-        ? value.map(stripSchemaDescriptions) : stripSchemaDescriptions(value);
+      result[key] = Array.isArray(value) ? value.map(visit) : visit(value);
     } else if (SCHEMA_KEYWORDS.has(key)) {
-      result[key] = stripSchemaDescriptions(value);
+      result[key] = visit(value);
     } else {
       result[key] = value;
     }
@@ -237,14 +280,157 @@ const stripSchemaDescriptions = (schema: unknown): unknown => {
   return result;
 };
 
-/** A read pin accepts only new, optional top-level properties after descriptions are stripped. */
+/** `description` is ignorable only at a JSON Schema position. */
+const stripSchemaDescriptions = (schema: unknown): unknown => {
+  if (!isRecord(schema)) return schema;
+  const result = mapSubschemas(schema, stripSchemaDescriptions);
+  delete result.description;
+  return result;
+};
+
+const isTypeName = (value: unknown): boolean => typeof value === 'string';
+const typeSet = (names: unknown[]): unknown => {
+  const sorted = [...new Set(names as string[])].sort();
+  return sorted.length === 1 ? sorted[0] : sorted;
+};
+
+/**
+ * One nullable type has two spellings that accept exactly the same values: an
+ * `anyOf` whose every branch is a bare `{ type }`, and a `type` array (Sentry
+ * moved from the first to the second on 11-01). Both become a sorted `type`
+ * array, or the one type name, at schema positions only. An `anyOf` beside its
+ * own `type`, or with any branch carrying another keyword, is left as written.
+ */
+const normalizeTypeSpelling = (schema: unknown): unknown => {
+  if (!isRecord(schema)) return schema;
+  const result = mapSubschemas(schema, normalizeTypeSpelling);
+  if (Array.isArray(result.type) && result.type.every(isTypeName)) result.type = typeSet(result.type);
+  const branches = result.anyOf;
+  if (result.type === undefined && Array.isArray(branches) && branches.length > 0
+    && branches.every((branch) => isRecord(branch) && Object.keys(branch).length === 1
+      && (isTypeName(branch.type) || (Array.isArray(branch.type) && branch.type.every(isTypeName))))) {
+    result.type = typeSet(branches.flatMap((branch) => ([] as unknown[])
+      .concat((branch as Record<string, unknown>).type)));
+    delete result.anyOf;
+  }
+  return result;
+};
+
+const isNameList = (value: unknown): value is string[] => Array.isArray(value) && value.every(isTypeName);
+
+// Positions where a schema only has to hold for an instance to pass, so
+// requiring less there accepts a superset. Under `not`, `if`, `oneOf` and
+// `contains` (with its counts), requiring less can admit or refuse other
+// calls, so their `required` lists compare exactly, as do those in `$defs`.
+// A `$ref` can carry a schema from any position into any other, so the walk
+// runs only when every reference stays inside the root `$defs` or
+// `definitions` (refsStayInDefs).
+const LOOSENING_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependencies']);
+const LOOSENING_ARRAY_KEYWORDS = new Set(['allOf', 'anyOf', 'prefixItems']);
+const LOOSENING_KEYWORDS = new Set([
+  'additionalProperties', 'additionalItems', 'unevaluatedProperties', 'unevaluatedItems', 'then', 'else',
+]);
+
+const REFERENCE_KEYWORDS = new Set([
+  '$id', '$anchor', '$dynamicAnchor', '$recursiveAnchor', '$dynamicRef', '$recursiveRef',
+]);
+const DEFS_POINTER = /^#\/(\$defs|definitions)\//;
+
+/**
+ * True when no schema can be reached from another position than where it is
+ * written, except inside the root `$defs`/`definitions`, which are never
+ * relaxed: every `$ref` points there, and nothing declares an id, an anchor or
+ * a dynamic reference. Every key is scanned, data included, so a stray `$ref`
+ * can only make the comparison exact.
+ */
+const refsStayInDefs = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.every(refsStayInDefs);
+  if (!isRecord(value)) return true;
+  return Object.entries(value).every(([key, child]) => {
+    if (REFERENCE_KEYWORDS.has(key)) return false;
+    if (key === '$ref') return typeof child === 'string' && DEFS_POINTER.test(child);
+    return refsStayInDefs(child);
+  });
+};
+
+/**
+ * The pin with each `required` list replaced by the live one wherever the live
+ * one only drops names, walking the two schemas together and only through
+ * positions where requiring less can only accept more. With references kept
+ * inside `$defs` (the caller checks), a call the pin allowed still validates
+ * when the vendor requires less there, and no call the pin refused starts to
+ * pass except by leaving a property out.
+ */
+const relaxRequired = (pinned: unknown, current: unknown): unknown => {
+  if (!isRecord(pinned) || !isRecord(current)) return pinned;
+  const result: Record<string, unknown> = { ...pinned };
+  const pinnedRequired = isNameList(pinned.required) ? pinned.required : null;
+  if (pinnedRequired && (current.required === undefined
+    || (isNameList(current.required) && current.required.every((name) => pinnedRequired.includes(name))))) {
+    if (current.required === undefined) delete result.required;
+    else result.required = current.required;
+  }
+  for (const [key, value] of Object.entries(pinned)) {
+    const live = current[key];
+    if (LOOSENING_MAP_KEYWORDS.has(key) && isRecord(value) && isRecord(live)) {
+      // A dependencies entry that is a list of names is data; relaxRequired
+      // returns a non-schema unchanged.
+      result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
+        name, Object.prototype.hasOwnProperty.call(live, name) ? relaxRequired(child, live[name]) : child,
+      ]));
+    } else if ((LOOSENING_ARRAY_KEYWORDS.has(key) || key === 'items') && Array.isArray(value)
+      && Array.isArray(live) && live.length === value.length) {
+      result[key] = value.map((child, index) => relaxRequired(child, live[index]));
+    } else if (key === 'items' || LOOSENING_KEYWORDS.has(key)) {
+      result[key] = relaxRequired(value, live);
+    }
+  }
+  return result;
+};
+
+const POINTER_KEYWORDS = new Set(['$ref', '$dynamicRef', '$recursiveRef']);
+
+/**
+ * True when no reference can name an `anyOf` branch, so sorting and folding
+ * the branches (normalizeTypeSpelling) cannot change what a reference resolves
+ * to. A folded branch holds only `type`, so no anchor or id can sit on it; a
+ * pointer is the only way in. A reference that is not a string, or that names
+ * `anyOf` anywhere once percent-decoded, keeps both spellings as written.
+ */
+const refsAvoidAnyOf = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.every(refsAvoidAnyOf);
+  if (!isRecord(value)) return true;
+  return Object.entries(value).every(([key, child]) => {
+    if (!POINTER_KEYWORDS.has(key)) return refsAvoidAnyOf(child);
+    if (typeof child !== 'string') return false;
+    try {
+      return !decodeURIComponent(child).toLowerCase().includes('anyof');
+    } catch {
+      return false;
+    }
+  });
+};
+
+/**
+ * After descriptions are stripped, a read pin accepts three loosenings: new
+ * optional top-level properties, a property leaving `required` at a position
+ * where that can only accept more (relaxRequired, when every `$ref` stays in
+ * `$defs`), and a nullable type respelled (when no reference names an `anyOf`
+ * branch). Values (enum, pattern, default, const) still compare
+ * exactly: an added enum value widens what can be read, so it waits until the
+ * broker checks argument values against the pin (CTO ruling 11-04, F100).
+ */
 const readSchemaChange = (
   pin: Record<string, unknown>,
   live: Record<string, unknown> | undefined,
 ): 'unchanged' | 'compatible' | 'drift' => {
   if (canonicalJson(live ?? null) === canonicalJson(pin)) return 'unchanged';
-  const pinned = stripSchemaDescriptions(pin);
-  const current = stripSchemaDescriptions(live ?? null);
+  const respell = refsAvoidAnyOf(pin) && refsAvoidAnyOf(live ?? null);
+  const spell = (schema: unknown): unknown => (respell ? normalizeTypeSpelling(schema) : schema);
+  const current = spell(stripSchemaDescriptions(live ?? null));
+  const normalizedPin = spell(stripSchemaDescriptions(pin));
+  const pinned = refsStayInDefs(pin) && refsStayInDefs(live ?? null)
+    ? relaxRequired(normalizedPin, current) : normalizedPin;
   if (canonicalJson(current) === canonicalJson(pinned)) return 'compatible';
   if (!isRecord(pinned) || !isRecord(current)) return 'drift';
   const pinnedProperties = pinned.properties;
@@ -296,6 +482,29 @@ const movedTowardWrite = (
   return null;
 };
 
+/** The pinned schema as the model sees it: withheld properties left out. */
+export const modelInputSchema = (tool: HostedMcpPinnedTool): Record<string, unknown> => {
+  const withheld = new Set(tool.withheldArgs || []);
+  const properties = tool.inputSchema.properties;
+  if (!withheld.size || !properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return tool.inputSchema;
+  }
+  return {
+    ...tool.inputSchema,
+    properties: Object.fromEntries(Object.entries(properties).filter(([name]) => !withheld.has(name))),
+  };
+};
+
+/** The call's arguments with any withheld value dropped. */
+export const withoutWithheldArgs = (
+  tool: HostedMcpPinnedTool,
+  args: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (!tool.withheldArgs?.length) return args;
+  const withheld = new Set(tool.withheldArgs);
+  return Object.fromEntries(Object.entries(args).filter(([name]) => !withheld.has(name)));
+};
+
 export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjection[] =>
   entry.tools.map((tool) => ({
     name: hostedMcpToolName(entry, tool),
@@ -306,7 +515,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
     definitionDigest: digestPinnedDefinition(entry.id, tool),
     entryTitle: entry.title,
     irreversible: tool.irreversible,
-    inputSchema: tool.inputSchema,
+    inputSchema: modelInputSchema(tool),
   }));
 
 /**
@@ -321,6 +530,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
 export const assessEntryTools = (
   entry: HostedMcpEntry,
   upstream: HostedMcpUpstreamTool[],
+  consent?: HostedMcpRowConsent,
 ): HostedMcpToolAssessment[] => {
   const byUpstreamName = new Map<string, HostedMcpUpstreamTool>();
   for (const tool of upstream) {
@@ -331,6 +541,17 @@ export const assessEntryTools = (
   return entry.tools.map((tool) => {
     const namespacedName = hostedMcpToolName(entry, tool);
     const live = byUpstreamName.get(tool.upstreamName);
+    // Only a caller that knows the row passes its consent. A listed write is
+    // assessed like any pin; only an absent one can be the consent's doing.
+    if (!live && tool.class === 'write' && consent && !consentHoldsWriteScope(entry, consent.grantedScope)) {
+      const writeScope = 'writeScope' in entry ? entry.writeScope : undefined;
+      return {
+        name: tool.name,
+        namespacedName,
+        verdict: 'not_granted' as const,
+        detail: `this connection's consent does not include ${writeScope}; reconnect ${entry.title} to enable writes`,
+      };
+    }
     if (!live) {
       return {
         name: tool.name,
@@ -394,12 +615,19 @@ export type HostedMcpDriftOutcome =
   | { state: 'assessed'; entryId: string; at: number; cached: boolean; tools: HostedMcpToolAssessment[] }
   | { state: 'provider_unavailable'; entryId: string; detail: string; reason?: string; cause?: unknown };
 
+/** A row's list, with the consent read from the same row the list was taken with. */
+export interface HostedMcpUpstreamListing extends HostedMcpRowConsent {
+  tools: HostedMcpUpstreamTool[];
+}
+
 export interface HostedMcpDriftCacheOptions {
   /**
    * Takes the list with THIS row's credential. Throwing means the vendor could
-   * not be reached; the caller must not read that as a clean comparison.
+   * not be reached; the caller must not read that as a clean comparison. A
+   * listing that carries the row's consent lets a write pin the row never
+   * consented to read as `not_granted`; a bare array assesses without it.
    */
-  listUpstreamTools: (row: HostedMcpDriftRow) => Promise<HostedMcpUpstreamTool[]>;
+  listUpstreamTools: (row: HostedMcpDriftRow) => Promise<HostedMcpUpstreamTool[] | HostedMcpUpstreamListing>;
   /**
    * Sees each fresh assessment, clean or not; never a cached one or an outage.
    * It runs detached: what it throws is logged and cannot change the outcome.
@@ -456,9 +684,9 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         if (requests.size === 0) pending.delete(key);
         return true;
       };
-      let upstream: HostedMcpUpstreamTool[];
+      let listing: HostedMcpUpstreamTool[] | HostedMcpUpstreamListing;
       try {
-        upstream = await options.listUpstreamTools(row);
+        listing = await options.listUpstreamTools(row);
       } catch (error) {
         finish();
         // A row whose credential requires reconnect is an authority refusal,
@@ -479,8 +707,12 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
           reason: 'provider_error',
         };
       }
-      const tools = assessEntryTools(entry, upstream);
-      const changed = tools.filter((tool) => tool.verdict !== 'ok' || tool.detail);
+      const tools = Array.isArray(listing)
+        ? assessEntryTools(entry, listing)
+        : assessEntryTools(entry, listing.tools, { grantedScope: listing.grantedScope });
+      // A not-granted pin is the row's consent, the same on every assessment,
+      // so it is not logged as a change (F102).
+      const changed = tools.filter((tool) => tool.verdict !== 'not_granted' && (tool.verdict !== 'ok' || tool.detail));
       if (changed.length > 0) {
         // These names and details come from the pin and our comparison, never
         // from the vendor's live descriptions or schema values.

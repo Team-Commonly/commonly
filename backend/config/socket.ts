@@ -31,6 +31,8 @@ module.exports = {
         const { createAdapter } = require('@socket.io/redis-adapter');
         // eslint-disable-next-line global-require
         const { createClient } = require('redis');
+        // eslint-disable-next-line global-require
+        const { redisPassword } = require('./redisPassword');
 
         const redisHost = process.env.REDIS_HOST || 'redis';
         const redisPort = process.env.REDIS_PORT || 6379;
@@ -40,6 +42,10 @@ module.exports = {
 
         pubClient = createClient({
           url: redisUrl,
+          // Trimmed via redisPassword() so a secret with a trailing newline
+          // still authenticates; undefined when unset (local/dev) -> node-redis
+          // sends no AUTH. Single source shared with the /api/health probe.
+          password: redisPassword(),
           socket: {
             reconnectStrategy: (retries: number) => Math.min(2 ** retries * 100, 10_000),
             connectTimeout: 5_000,

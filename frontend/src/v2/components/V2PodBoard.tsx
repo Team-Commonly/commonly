@@ -32,7 +32,9 @@ import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
 import { taskRecordPath } from './V2TaskRecord';
+import { appDateLocale } from '../utils/appLocale';
 import { EXIT_SAFETY_MS, prefersReducedMotion, runViewTransition, useExitPresence, viewTransitionName } from '../utils/motion';
+import { ShellGlyph } from '../icons/glyphs';
 import './V2PodBoard.css';
 
 type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -300,7 +302,7 @@ const V2PodBoard: React.FC = () => {
     return { claimed, expiry, knownExpiry, expired: claimed && knownExpiry && expiry <= claimClock,
       minutes: knownExpiry ? Math.max(0, Math.ceil((expiry - claimClock) / 60_000)) : null };
   };
-  const timeLabel = (expiry: number) => new Intl.DateTimeFormat(undefined, {
+  const timeLabel = (expiry: number) => new Intl.DateTimeFormat(appDateLocale(), {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(expiry));
   // The frame's card line is the lease timer and the claimant's avatar, nothing else:
@@ -1176,7 +1178,7 @@ const V2PodBoard: React.FC = () => {
               </dl>
               <section className="v2-board__watchers" aria-label={t('board.detail.watchers')}>
                 <div className="v2-board__watchers-head"><h3>{t('board.detail.watchers')}</h3><span className="v2-board__watchers-count">{watchers.length}</span>
-                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(drawerTask, { following: !following }); }}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
+                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(drawerTask, { following: !following }); }}>{following && <ShellGlyph name="check" size={14} />}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
                 </div>
                 <div className="v2-board__watcher-list">{watchers.map((id) => {
                   const member = podMembers.find((item) => memberId(item) === id) || (id === currentUser?._id ? currentUser : {});
@@ -1233,7 +1235,7 @@ const V2PodBoard: React.FC = () => {
           <div ref={focusDialogRef} className="v2-modal v2-board__focus-editor" role="dialog" aria-modal="true" aria-label={t('board.focus.editorTitle')} onClick={(event) => event.stopPropagation()}>
             <div className="v2-modal__head">
               <div className="v2-modal__title">{t('board.focus.editorTitle')}</div>
-              <button type="button" className="v2-modal__close" onClick={closeFocusEditor}>×</button>
+              <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={closeFocusEditor}><ShellGlyph name="close" /></button>
             </div>
             <div className="v2-modal__body">
               <label className="v2-board__field">
@@ -1332,7 +1334,7 @@ const V2PodBoard: React.FC = () => {
           >
             <div className="v2-modal__head">
               <div className="v2-modal__title">{t('board.newTask')}</div>
-              <button type="button" className="v2-modal__close" onClick={() => setCreateOpen(false)}>×</button>
+              <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={() => setCreateOpen(false)}><ShellGlyph name="close" /></button>
             </div>
             <div className="v2-modal__body">
               <label className="v2-board__field">

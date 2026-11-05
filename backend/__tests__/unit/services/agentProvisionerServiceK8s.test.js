@@ -76,8 +76,13 @@ const mock = {
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
       mock.execArgv.push(_command);
-      if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
-        _stdout.write(mock.execStdout);
+      // execStdout is a string, or a function of the command (so one test can
+      // answer the PVC key read and the profile write differently).
+      const stdout = typeof mock.execStdout === 'function'
+        ? mock.execStdout(Array.isArray(_command) ? _command.join(' ') : String(_command))
+        : mock.execStdout;
+      if (stdout && _stdout && typeof _stdout.write === 'function') {
+        _stdout.write(stdout);
         if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
         return Promise.resolve();
       }
@@ -437,9 +442,8 @@ describe('agentProvisionerServiceK8s', () => {
     expect(config.agents.defaults.contextPruning.ttl).toBe('90m');
     expect(config.agents.defaults.contextPruning.keepLastAssistants).toBe(2);
     // Community agents (cuz is not in DEFAULT_DEV_AGENT_IDS) inherit the
-    // gateway-level default — nemotron, no openai-codex. Codex is gated to
-    // dev agents via the per-agent override in provisionOpenClawAccount.
-    expect(config.agents.defaults.model.primary).toBe('openrouter/nvidia/nemotron-3-super-120b-a12b:free');
+    // gateway-level default: the configured model (F103), never openai-codex.
+    expect(config.agents.defaults.model.primary).toBe('openrouter/deepseek-v4-flash');
     // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404). Gemini
     // entries remain as inert placeholders until GEMINI_API_KEY is reinstated.
     expect(config.agents.defaults.model.fallbacks).toEqual(
@@ -603,6 +607,7 @@ describe('issueLiteLLMVirtualKey never sends the master key to LiteLLM', () => {
 
   it('control: an ordinary virtual key IS checked with /key/info and reused', async () => {
     k8s.__mock.execStdout = 'sk-virtual-theo';
+    axios.get.mockResolvedValue({ data: { info: { metadata: { agent_id: 'theo' }, models: ['deepseek-v4-flash'] } } });
 
     const key = await issueLiteLLMVirtualKey('theo');
 
@@ -679,4 +684,322 @@ describe('runtime account log filtering', () => {
       expect(result.logs).toBe(own);
     },
   );
+});
+
+// F103: every driver default names one configured LiteLLM model, by its own
+// name. Before, they named other vendors' models (nemotron, gpt-5.4*,
+// openai-codex/*) that LiteLLM served with DeepSeek, and dev renders none of
+// those aliases since F98.
+const LEGACY_ALIAS = /nemotron|gpt-5\.4|codex-mini-latest|^o4-mini$|codex-cli\//;
+
+describe('F103: OpenClaw defaults name the configured model', () => {
+  let saved;
+  beforeEach(() => {
+    saved = { model: process.env.AGENT_DEFAULT_MODEL, base: process.env.LITELLM_BASE_URL, bypass: process.env.CODEX_BYPASS_LITELLM };
+  });
+  afterEach(() => {
+    for (const [key, value] of [['AGENT_DEFAULT_MODEL', saved.model], ['LITELLM_BASE_URL', saved.base], ['CODEX_BYPASS_LITELLM', saved.bypass]]) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    k8s.__mock.readNamespacedConfigMap.mockImplementation(async () => ({ body: { data: {} } }));
+  });
+
+  const provision = async (instanceId) => {
+    await provisionAgentRuntime({
+      runtimeType: 'moltbot',
+      agentName: 'openclaw',
+      instanceId,
+      runtimeToken: 'cm_agent_test',
+      userToken: 'cm_user_test',
+      baseUrl: 'http://backend',
+      displayName: instanceId,
+      heartbeat: { enabled: true, everyMinutes: 10 },
+    });
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    return JSON.parse(calls[calls.length - 1][2].data['moltbot.json']);
+  };
+
+  it.each([
+    ['unset', undefined, 'deepseek-v4-flash'],
+    ['claude-haiku-5-5', 'claude-haiku-5-5', 'claude-haiku-5-5'],
+  ])('with AGENT_DEFAULT_MODEL %s, community and dev agents default to it and the registry lists it', async (_label, env, model) => {
+    if (env === undefined) delete process.env.AGENT_DEFAULT_MODEL; else process.env.AGENT_DEFAULT_MODEL = env;
+
+    const config = await provision('theo'); // theo is a default dev agent ID
+    const theo = config.agents.list.find((agent) => agent.id === 'theo');
+
+    expect(config.agents.defaults.model.primary).toBe(`openrouter/${model}`);
+    expect(theo.model.primary).toBe(`openrouter/${model}`);
+    expect(config.models.providers.openrouter.models.map((m) => m.id)).toEqual([model]);
+  });
+
+  it('names no legacy alias in a default, a fallback or the model registry', async () => {
+    process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.CODEX_BYPASS_LITELLM = 'false';
+
+    const config = await provision('theo');
+    const theo = config.agents.list.find((agent) => agent.id === 'theo');
+    const named = [
+      config.agents.defaults.model.primary,
+      ...config.agents.defaults.model.fallbacks,
+      theo.model.primary,
+      ...theo.model.fallbacks,
+      ...Object.entries(config.models.providers)
+        .flatMap(([provider, def]) => ((def && def.models) || []).map((m) => `${provider}/${m.id}`)),
+    ];
+
+    expect(named.filter((name) => LEGACY_ALIAS.test(name))).toEqual([]);
+    // LiteLLM serves no Codex model, so the LiteLLM-routed openai-codex
+    // provider lists none, including on a gateway config that already had one.
+    expect(config.models.providers['openai-codex'].models).toEqual([]);
+  });
+
+  it('clears the Codex models an existing gateway config carries on the LiteLLM route', async () => {
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.CODEX_BYPASS_LITELLM = 'false';
+    const existing = {
+      models: { providers: { 'openai-codex': {
+        baseUrl: 'http://litellm:4000', api: 'openai-completions',
+        models: [{ id: 'gpt-5.4', name: 'gpt-5.4' }, { id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' }],
+      } } },
+      agents: { defaults: { model: {} }, list: [] },
+      channels: { commonly: { enabled: true, accounts: {} } },
+    };
+    k8s.__mock.readNamespacedConfigMap.mockImplementation(async () => ({ body: { data: { 'moltbot.json': JSON.stringify(existing) } } }));
+
+    const config = await provision('cuz');
+
+    expect(config.models.providers['openai-codex'].models).toEqual([]);
+  });
+});
+
+describe('F103: LiteLLM key allowlists follow the configured model', () => {
+  const axios = require('axios');
+  const issuers = [['dev-agent key', issueLiteLLMVirtualKey], ['community key', issueLiteLLMOpenRouterKey]];
+  let saved;
+  beforeEach(() => {
+    saved = { base: process.env.LITELLM_BASE_URL, master: process.env.LITELLM_MASTER_KEY, model: process.env.AGENT_DEFAULT_MODEL };
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-for-test';
+    process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    for (const [key, value] of [['LITELLM_BASE_URL', saved.base], ['LITELLM_MASTER_KEY', saved.master], ['AGENT_DEFAULT_MODEL', saved.model]]) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  });
+  const keyInfo = (models) => jest.spyOn(axios, 'get')
+    .mockResolvedValue({ data: { info: { user_id: 'theo', metadata: { agent_id: 'theo' }, models } } });
+
+  it.each(issuers)('a fresh %s allows the configured model and no legacy alias', async (_label, issue) => {
+    keyInfo([]);
+
+    await issue('theo');
+
+    const [, body] = axios.post.mock.calls.find(([u]) => u.endsWith('/key/generate'));
+    expect(body.models).toContain('claude-haiku-5-5');
+    expect(body.models.filter((m) => LEGACY_ALIAS.test(m))).toEqual([]);
+  });
+
+  // A key minted before F103 allows only the old names, so the new default
+  // would 401 on it. The reuse check has to send it for re-issue.
+  // The old key is not deleted here: it is retired only once the new one is
+  // installed (see "retired only after its replacement is installed" below).
+  it.each(issuers)('a %s whose allowlist lacks the configured model is re-issued, and the old key is kept for now', async (_label, issue) => {
+    k8s.__mock.execStdout = 'sk-virtual-theo';
+    keyInfo(['gpt-5.4-mini', 'openai-codex/gpt-5.4-mini', 'nvidia/nemotron-3-super-120b-a12b:free']);
+
+    const key = await issue('theo');
+
+    expect(key).toBe('sk-freshly-issued');
+    expect(axios.delete).not.toHaveBeenCalled();
+  });
+
+  it.each(issuers)('a %s that already allows the configured model is reused', async (_label, issue) => {
+    k8s.__mock.execStdout = 'sk-virtual-theo';
+    keyInfo(['claude-haiku-5-5']);
+
+    const key = await issue('theo');
+
+    expect(key).toBe('sk-virtual-theo');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+});
+
+// F103 review: a dev agent's primary is now `openrouter/<default>` on LiteLLM,
+// so it needs an `openrouter:default` key like a community agent does. In
+// Codex-bypass mode (the chart's base default) no Codex virtual key is minted,
+// and when issuance fails the master key is the fallback, as for community.
+describe('F103: a dev agent gets an openrouter:default key on every path', () => {
+  const axios = require('axios');
+  let saved;
+  const KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'CODEX_BYPASS_LITELLM', 'AGENT_DEFAULT_MODEL'];
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-for-test';
+    k8s.__mock.execCommands.length = 0;
+    k8s.__mock.execStdout = '';
+    jest.spyOn(axios, 'get').mockRejectedValue(new Error('not found'));
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  });
+  const openRouterKeyWritten = () => k8s.__mock.execCommands
+    .filter((cmd) => cmd.includes("store.profiles['openrouter:default']"))
+    .map((cmd) => (cmd.match(/'openrouter:default'\] = Object\.assign\([^;]*?key: '([^']*)'/) || [])[1]);
+  const provisionTheo = () => provisionAgentRuntime({
+    runtimeType: 'moltbot',
+    agentName: 'openclaw',
+    instanceId: 'theo',
+    runtimeToken: 'cm_agent_test',
+    userToken: 'cm_user_test',
+    baseUrl: 'http://backend',
+    displayName: 'Theo',
+  });
+
+  it('in Codex-bypass mode, gets a minted LiteLLM key', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).toEqual(['sk-freshly-issued']);
+  });
+
+  it('when key issuance fails, falls back to the master key its Codex profiles already hold', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'false';
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).toEqual(['sk-master-for-test']);
+  });
+
+  // CodeRabbit on #3421: in bypass mode a dev agent holds raw Codex OAuth and
+  // never the master key, so a failed issuance must not hand it one.
+  it('in Codex-bypass mode, when issuance fails, is not given the master key', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).not.toContain('sk-master-for-test');
+    expect(k8s.__mock.execCommands.join('\n')).not.toContain('sk-master-for-test');
+  });
+});
+
+// CTO and CodeRabbit on #3421: F103's reuse check sends every pre-F103 key for
+// re-issue on the next reprovision-all, and the issuers deleted the old key
+// before the new one was minted and written. A failed mint or write then left
+// the agent with a revoked key, or none. The old key now goes only after its
+// replacement is written to openrouter:default.
+describe('F103 review: an old LiteLLM key is retired only after its replacement is installed', () => {
+  const axios = require('axios');
+  const KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'CODEX_BYPASS_LITELLM', 'AGENT_DEFAULT_MODEL'];
+  const OLD = 'sk-old-theo';
+  const isProfileWrite = (cmd) => cmd.includes("store.profiles['openrouter:default'] = Object.assign");
+  let saved;
+  let deletes;
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-for-test';
+    process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+    k8s.__mock.execCommands.length = 0;
+    deletes = [];
+    jest.spyOn(axios, 'get').mockResolvedValue({ data: { info: { user_id: 'theo', metadata: { agent_id: 'theo' }, models: ['gpt-5.4-mini'] } } });
+    jest.spyOn(axios, 'delete').mockImplementation(async (_url, cfg) => {
+      deletes.push({
+        keys: cfg?.data?.keys || [],
+        afterWrite: k8s.__mock.execCommands.some((cmd) => isProfileWrite(cmd) && cmd.includes('sk-freshly-issued')),
+      });
+      return {};
+    });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  });
+  // The PVC still holds the old key; the profile write answers `writeOut`.
+  const pvc = (writeOut) => {
+    k8s.__mock.execStdout = (cmd) => {
+      if (isProfileWrite(cmd)) return writeOut;
+      if (cmd.includes("vk||''")) return OLD;
+      return '';
+    };
+  };
+  const provisionTheo = () => provisionAgentRuntime({
+    runtimeType: 'moltbot',
+    agentName: 'openclaw',
+    instanceId: 'theo',
+    runtimeToken: 'cm_agent_test',
+    userToken: 'cm_user_test',
+    baseUrl: 'http://backend',
+    displayName: 'Theo',
+  });
+  const oldKeyDeletes = () => deletes.filter((d) => d.keys.includes(OLD));
+  const MODES = [['Codex-bypass mode', 'true'], ['LiteLLM Codex mode', 'false']];
+
+  it.each(MODES)('in %s, when the mint fails, the old key survives', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([]);
+  });
+
+  it.each(MODES)('in %s, when the profile write fails, the old key survives', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('skip:EACCES');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([]);
+  });
+
+  it.each(MODES)('in %s, once the new key is written, the old key is retired', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([{ keys: [OLD], afterWrite: true }]);
+  });
+
+  // CodeRabbit on #3421 (review 5774510935): a failed /key/delete was
+  // swallowed and then logged as retired, so the log could claim a live key
+  // was gone.
+  it('when the delete of the old key fails, it warns with the error and never logs it as retired', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+    axios.delete.mockRejectedValue(new Error('LiteLLM 503'));
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await provisionTheo();
+
+    const logged = log.mock.calls.map((args) => args.join(' '));
+    const warned = warn.mock.calls.map((args) => args.join(' '));
+    expect(logged.filter((line) => /Retired the key replaced/.test(line))).toEqual([]);
+    expect(warned.filter((line) => /could not retire the key replaced for theo: LiteLLM 503/.test(line))).toHaveLength(1);
+    for (const key of [OLD, 'sk-freshly-issued', 'sk-master-for-test']) expect(warned.join('\n')).not.toContain(key);
+  });
 });

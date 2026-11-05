@@ -96,7 +96,7 @@
   place-items: center;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent-fill, var(--v2-accent));
-  color: var(--v2-on-accent, #ffffff);
+  color: var(--v2-on-accent);
   font-family: var(--v2-font-display);
   font-weight: 800;
   font-size: 18px;
@@ -322,7 +322,26 @@
 }
 
 .v2-demo__card { margin: 4px 0; }
-.v2-demo__card .v2-decision-card__agent { font-size: 11px; }
+.v2-demo__card .v2-decision-card__agent { font-size: 11px; font-family: var(--v2-font-mono); }
+/* The demo's decision choices are front-door keys, like every other button on
+   the landing (11-04 consistency audit, finding 13): the auth keys' 40 at r10,
+   44 on phones; the first option is the cobalt key and the rest are grey keys.
+   Scoped to the demo: the in-app card (V2DecisionCard, Activity and the
+   thread) keeps its own rule in v2.css, which its redesign owners hold.
+   Hover still comes from that rule (fill swap; accent-strong on the first). */
+.v2-root .v2-demo__card button.v2-decision-card__choice {
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--v2-key-edge);
+  border-radius: var(--v2-r-10, 10px);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  font: 600 14px/20px var(--v2-font);
+}
+.v2-root .v2-demo__card button.v2-decision-card__choice--primary {
+  border-color: var(--v2-accent-fill-b);
+  background: linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b));
+  color: var(--v2-on-accent);
+}
 
 .v2-demo__pulse--dot {
   width: 8px;
@@ -573,6 +592,8 @@
    The disclosure line goes last in the strip, wrapping onto its own row so it
    is never the thing that scrolls out of view. */
 @media (max-width: 760px) {
+  /* The demo's decision choices at the keys' phone size (finding 13). */
+  .v2-root .v2-demo__card button.v2-decision-card__choice { min-height: 44px; font-size: 16px; }
   .v2-demo__stage {
     grid-template-columns: minmax(0, 1fr);
     height: auto;

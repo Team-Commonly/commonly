@@ -49,6 +49,14 @@ describe('platform glyph catalogue contract', () => {
     expect(svg?.querySelector('circle')).toBeNull();
   });
 
+  it('renders Latchkey with a key mark instead of the unknown-platform dot', () => {
+    const { container } = render(React.createElement(PlatformGlyph, { type: 'latchkey' }));
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '20');
+    expect(svg?.querySelector('circle')).toHaveAttribute('r', '4.5');
+    expect(svg?.querySelector('path')?.getAttribute('d')).toContain('M12 12h9.5');
+  });
+
   it('renders Google Calendar with a calendar mark instead of the unknown-platform dot', () => {
     const { container } = render(React.createElement(PlatformGlyph, { type: 'google-calendar' }));
     const svg = container.querySelector('svg');

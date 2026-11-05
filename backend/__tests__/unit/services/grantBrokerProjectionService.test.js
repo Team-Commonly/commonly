@@ -139,6 +139,30 @@ describe('hostedBrokerToolsForRun', () => {
     expect(sanitizeGrantBrokerToolName('github.list_issues')).toBe('github_list_issues');
   });
 
+  // F92: a Limited-Use connector's data may reach only the platform's no-training
+  // model. The projection offers its tools only when the run says it is on that
+  // model; by default (no flag) they stay out, so a new caller fails closed.
+  test('a Limited-Use connector (Calendar) is offered only to a run on the no-training model', async () => {
+    const calendar = () => grantQuery([seatGrant({ tools: ['google-calendar.list_events', 'github.list_issues'] })]);
+    calendar();
+    const closed = await hostedBrokerToolsForRun({ identityId: SEAT, podId: POD_A });
+    expect(closed.tools.map((tool) => tool.function.name)).toEqual(['github_list_issues']);
+    expect(closed.dispatch.has('google-calendar_list_events')).toBe(false);
+
+    calendar();
+    const open = await hostedBrokerToolsForRun({ identityId: SEAT, podId: POD_A, limitedUse: true });
+    expect(open.tools.map((tool) => tool.function.name)).toEqual(['github_list_issues', 'google-calendar_list_events']);
+    expect(closed.limitedUse).toBe(false);
+    expect(open.limitedUse).toBe(true);
+
+    // The run's dispatch tells the broker it may run the Limited-Use tool.
+    mockCallTool.mockResolvedValueOnce({ callId: 'c', outcome: 'ok', result: {} });
+    await dispatchHostedBrokerTool({ projection: open, name: 'google-calendar_list_events', args: {}, agentUserId: SEAT });
+    expect(mockCallTool).toHaveBeenLastCalledWith(expect.objectContaining({
+      tool: 'google-calendar.list_events', hostedTurn: true, limitedUse: true,
+    }));
+  });
+
   test('a write tool is not offered even when the grant would allow it (reads only, v1)', async () => {
     grantQuery([seatGrant({
       writeMode: 'write',
@@ -215,6 +239,8 @@ describe('dispatchHostedBrokerTool', () => {
       // Set only here: a hosted turn has no shell, web or file tools to confine,
       // so the seat-confinement refusal does not apply to it (Wren, TASK-175).
       hostedTurn: true,
+      // F92: this projection was not built for the no-training model.
+      limitedUse: false,
       noOutboundRelay: true,
       runId: 'aaaaaaaaaaaaaaaaaaaaa111',
       runPodId: POD_A,
@@ -284,7 +310,12 @@ describe('dispatchHostedBrokerTool', () => {
       agentUserId: SEAT,
     });
     expect(call).toEqual({
-      content: { status: 'pending_approval', approvalId: 'approval-9' },
+      content: {
+        status: 'pending_approval',
+        approvalId: 'approval-9',
+        // TASK-783: the agent is told it waits, and how the decision reaches it.
+        message: expect.stringContaining('approval.resolved'),
+      },
       callId: 'tool_call_parked',
       outcome: 'pending_approval',
     });

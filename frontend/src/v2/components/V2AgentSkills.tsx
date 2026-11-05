@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { appDateLocale } from '../utils/appLocale';
 import './v2-agent-skills.css';
 
 interface SkillItem { name: string; description?: string | null; sourceUrl?: string | null }
@@ -151,7 +152,7 @@ const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId,
           ))}
         </div> : <p className="v2-agent-skills__empty">{t('agentSkills.empty')}</p>
       )}
-      {skillLoad?.at && <p className="v2-agent-skills__reported">{t('agentSkills.reported', { date: new Date(skillLoad.at).toLocaleString() })}</p>}
+      {skillLoad?.at && <p className="v2-agent-skills__reported">{t('agentSkills.reported', { date: new Date(skillLoad.at).toLocaleString(appDateLocale()) })}</p>}
       {catalogOpen && canEdit && <div className="v2-agent-skills__catalog">
         <label htmlFor="v2-agent-skills-search">{t('agentSkills.find')}</label>
         <input id="v2-agent-skills-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('agentSkills.search')} />

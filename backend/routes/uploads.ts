@@ -151,6 +151,11 @@ const MAX_UPLOAD_BYTES = getObjectStore().capabilities.maxObjectBytes;
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
+  // Browsers send the multipart filename as raw UTF-8 with no charset
+  // parameter, and multer decodes that as latin1 by default, so "报告.doc"
+  // was stored as "æ¥å.doc". Rows saved before this line are repaired by
+  // scripts/repair-latin1-file-names.ts.
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter(
     _req: unknown,
@@ -359,6 +364,78 @@ router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle(
     return;
   }
   await handleUpload(req, res, req.userId);
+});
+
+// Batch signed-URL mint. A pod chat draws one thumbnail per image message, and
+// one mint per thumbnail 429'd a viewer with more than 30 images on screen (the
+// limiter's budget is per minute per token). The frontend now coalesces the mints
+// it needs in one tick into a single request here.
+//
+// - The request counts ONCE against the same `mintRateLimit` instance (same store,
+//   same per-token key) as the single route, so the two routes share one budget,
+//   and a page cap bounds what one request can mint.
+// - Every name passes the same `canReadAttachment` check as a single mint. A name
+//   the caller cannot read (or that does not exist) is listed in `refused` and the
+//   rest are still minted; `refused` does not say which reason applied, the same
+//   single 403 the single route answers for both.
+// - Each minted name gets its own token (bound to that file) and its own audit row.
+export const BATCH_MINT_MAX = 50;
+const BATCH_MINT_CONCURRENCY = 8;
+// A plain upload file name: no path separator, no `..`, no control characters,
+// at most 200 characters. Uploads are named `<user>-<time>-<rand>.<ext>`.
+const isBatchMintName = (name: string): boolean => name.length > 0
+  && name.length <= 200
+  && !/[/\\]/.test(name) && !name.includes('..')
+  && ![...name].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
+
+router.post('/urls', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ msg: 'auth required' });
+    const fileNames = (req.body as { fileNames?: unknown } | undefined)?.fileNames;
+    if (!Array.isArray(fileNames) || fileNames.length === 0 || fileNames.length > BATCH_MINT_MAX
+      || fileNames.some((name) => typeof name !== 'string')) {
+      return res.status(400).json({ msg: `fileNames must be an array of 1 to ${BATCH_MINT_MAX} names` });
+    }
+    const unique = [...new Set(fileNames as string[])];
+    const userId = req.userId;
+    // A name that is not a plain upload name is refused on its own, like a
+    // name the caller cannot read. The checks run a few at a time: a name that
+    // is neither the caller's file nor in their pods falls through to the slow
+    // profile/post/message scans, and 50 at once would multiply that per request.
+    const allowed: boolean[] = new Array(unique.length).fill(false);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < unique.length) {
+        const index = next;
+        next += 1;
+        const fileName = unique[index];
+        // eslint-disable-next-line no-await-in-loop
+        allowed[index] = isBatchMintName(fileName) && await canReadAttachment(fileName, userId).catch(() => false);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_MINT_CONCURRENCY, unique.length) }, worker));
+    const urls: Record<string, { url: string; expiresIn: number }> = {};
+    const refused: string[] = [];
+    unique.forEach((fileName, index) => {
+      if (!allowed[index]) {
+        refused.push(fileName);
+        return;
+      }
+      const token = signAttachmentToken(fileName, userId);
+      urls[fileName] = { url: `/api/uploads/${fileName}?t=${encodeURIComponent(token)}`, expiresIn: DEFAULT_TOKEN_TTL_SECONDS };
+      void logAttachmentTokenMint({
+        fileName,
+        userId,
+        ip: req.ip,
+        userAgent: req.get?.('user-agent'),
+      });
+    });
+    return res.json({ urls, refused });
+  } catch (err) {
+    const e = err as { message?: string };
+    console.error('Batch mint signed URLs error:', e.message);
+    return res.status(500).json({ msg: 'Server Error' });
+  }
 });
 
 // ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare

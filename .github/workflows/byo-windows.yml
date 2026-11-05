@@ -1,0 +1,96 @@
+name: Bring your own on Windows
+
+# D164: the Bring your own page's Windows lines for Claude Code, walked on a
+# real Windows host. The four PowerShell lines (install the CLI, set the URL
+# and token, `commonly agent run … --adapter claude --unsandboxed`) run in one
+# PowerShell process against a stub Commonly API with one @mention queued.
+# The walk passes when the reply comes back and the @mention is acknowledged.
+# Claude Code is real; only its model is a stub. The lines come from
+# V2AgentBYO.tsx. It walks the published CLI and this checkout's.
+#
+# Dispatched with target=prod, it walks the published CLI against the live
+# API instead, with a real model through the model gateway, as the agent the
+# inputs name. The run does not post the @mention: it logs
+# "READY: listening in <podId>", a person in that pod posts it, and the run
+# passes when the agent's reply is in the pod and the @mention is acked, or
+# fails 10 minutes after READY. The two secrets reach only the walk step.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/**'
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+      - 'packages/seats/**'
+      - 'cli/scripts/windows-byo-smoke.mjs'
+      - 'cli/scripts/windows-byo-verdict.mjs'
+      - 'cli/scripts/windows-byo-prod.mjs'
+      - 'cli/scripts/windows-byo-ack-recorder.mjs'
+      - 'frontend/src/v2/components/V2AgentBYO.tsx'
+      - '.github/workflows/byo-windows.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'stub: stub API and stub model. prod: the live API, a real model, and a person posts the @mention'
+        type: choice
+        options: [stub, prod]
+        default: stub
+      agent_name:
+        description: 'prod: the agent the token belongs to'
+        type: string
+        default: ''
+      instance_id:
+        description: 'prod: its instance id'
+        type: string
+        default: ''
+      pod_id:
+        description: 'prod: the pod the @mention is posted in'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  byo:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The same Claude Code the other real-Claude smokes pin.
+      - name: Install Claude Code
+        run: npm i -g @anthropic-ai/claude-code@2.1.318
+      - name: Pack this checkout's CLI
+        if: inputs.target != 'prod'
+        id: pack
+        shell: bash
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          tgz=$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -n 1)
+          echo "tarball=$RUNNER_TEMP\\$tgz" >> "$GITHUB_OUTPUT"
+      - name: Walk the page's Windows lines
+        env:
+          COMMONLY_BYO_TREE_TARBALL: ${{ steps.pack.outputs.tarball }}
+          # A CLI fix reaches npm only after merge, so on a PR the published
+          # leg is reported and this tree's leg decides. Dispatched, both do.
+          COMMONLY_BYO_PUBLISHED_REPORT_ONLY: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          COMMONLY_BYO_TARGET: ${{ inputs.target || 'stub' }}
+          # Inputs reach the script as env, never inline in the shell.
+          COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
+          COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
+          COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_AGENT_TOKEN || '' }}
+          COMMONLY_BYO_PROD_LLM_KEY: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_LLM_KEY || '' }}
+        run: |
+          foreach ($name in 'COMMONLY_BYO_PROD_AGENT_TOKEN', 'COMMONLY_BYO_PROD_LLM_KEY') {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value) { Write-Output "::add-mask::$value" }
+          }
+          node cli/scripts/windows-byo-smoke.mjs

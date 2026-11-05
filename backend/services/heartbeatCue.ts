@@ -97,10 +97,21 @@ export const HEARTBEAT_CYCLE_CUE = '[Heartbeat tick. Before responding to the pr
  * cloud-codex) have no such file, so the line is a no-op for them by design —
  * it is not an error to report when it is absent.
  */
+// The two lines written for seats that read a HEARTBEAT.md file. A hosted
+// (native) agent has no such file and returns NO_REPLY, not HEARTBEAT_OK, so
+// its runtime strips exactly these (TASK-779). Named here, beside the cue, so
+// a reworded line can't leave a stale copy in the native runtime.
+export const HEARTBEAT_SEAT_LINES: readonly string[] = [
+  'Read your HEARTBEAT.md workspace file and follow it exactly.',
+  'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
+];
+
+/** The scheduler's "which pod" line, as buildHeartbeatContent writes it. */
+export const isSchedulerHeartbeatPodLine = (line: string): boolean => /^Scheduler heartbeat for pod \S+\.$/.test(line.trim());
+
 export const buildHeartbeatContent = (heartbeatPodId: unknown): string => [
   HEARTBEAT_CYCLE_CUE,
   '',
   `Scheduler heartbeat for pod ${String(heartbeatPodId)}.`,
-  'Read your HEARTBEAT.md workspace file and follow it exactly.',
-  'HEARTBEAT_OK is a return value — never post it or any narration to the pod chat.',
+  ...HEARTBEAT_SEAT_LINES,
 ].join('\n');

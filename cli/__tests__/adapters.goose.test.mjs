@@ -1,11 +1,17 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, readFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
   PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
+import {
+  PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS,
+} from '../src/lib/public-withheld-tools.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
 
 const childWith = (stdout, code = 0, stderr = '') => {
@@ -216,4 +222,68 @@ test('the public Goose allowlist names only shipped MCP tools and none that publ
   expect(shipped.size).toBeGreaterThan(0);
   expect(PUBLIC_GOOSE_TOOLS.filter((name) => !shipped.has(name))).toEqual([]);
   expect(PUBLIC_GOOSE_TOOLS.filter((name) => PUBLIC_WITHHELD_TOOLS.includes(name))).toEqual([]);
+});
+
+// F118: a public seat starts from nothing. It cannot install itself into other
+// pods or write its own memory (log_cycle appends to it too); it can read it.
+test('the public Goose allowlist withholds self-install and every memory write, and keeps the read', () => {
+  expect(PUBLIC_GOOSE_TOOLS.filter((name) => PUBLIC_ONLY_WITHHELD_TOOLS.includes(name))).toEqual([]);
+  expect(PUBLIC_ONLY_WITHHELD_TOOLS).toEqual(expect.arrayContaining([
+    'commonly_self_install_into_pod', 'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+  ]));
+  expect(PUBLIC_GOOSE_TOOLS).toContain('commonly_read_agent_memory');
+});
+
+// F141: public seats start from nothing. A stranger-steered seat could delete
+// its own replies to an injection, the evidence of what the attack achieved.
+test('public seats are not offered commonly_delete_message on any adapter', () => {
+  expect(PUBLIC_GOOSE_TOOLS).not.toContain('commonly_delete_message');
+  expect(PUBLIC_ONLY_WITHHELD_TOOLS).toContain('commonly_delete_message');
+  expect(PUBLIC_SEAT_WITHHELD_TOOLS).toContain('commonly_delete_message');
+});
+
+test('a public Goose recipe shows the memory it read and names no save tool', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'goose-public-f118-'));
+  const home = join(root, 'mcp-home');
+  const versionDir = join(home, '0.3.13');
+  const pkgDir = join(versionDir, 'node_modules', '@commonlyai', 'mcp');
+  mkdirSync(join(pkgDir, 'src'), { recursive: true });
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+  }));
+  writeFileSync(join(pkgDir, 'src', 'index.js'), '');
+  writeFileSync(join(home, 'current'), '0.3.13\n');
+  const keyFile = join(root, 'provider-key');
+  writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
+  const prior = process.env.COMMONLY_MCP_HOME;
+  process.env.COMMONLY_MCP_HOME = home;
+  let recipe;
+  try {
+    const ctx = baseCtx();
+    await goose.spawn('hello', {
+      ...ctx,
+      memoryLongTerm: 'kept notes',
+      environment: { ...ctx.environment,
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _platform: 'darwin',
+      _wrapArgvWithSeatbelt: (argv) => argv,
+      _spawnImpl: (_cmd, args) => {
+        recipe = JSON.parse(readFileSync(args[args.indexOf('--recipe') + 1], 'utf8'));
+        return childWith(reply('ok'));
+      },
+    });
+  } finally {
+    if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = prior;
+    rmSync(root, { recursive: true, force: true });
+  }
+  expect(recipe.prompt).toContain('kept notes');
+  expect(recipe.prompt).not.toContain('commonly_save_my_memory');
+  for (const extension of recipe.extensions) {
+    for (const tool of PUBLIC_ONLY_WITHHELD_TOOLS) expect(extension.available_tools).not.toContain(tool);
+    expect(extension.available_tools).toContain('commonly_read_agent_memory');
+  }
 });

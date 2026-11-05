@@ -46,7 +46,10 @@ const {
   resolveAttachSandbox,
   assertSandboxDeclaredForPublicPod,
 } = await import('../src/commands/agent.js');
-const { ADAPTERS_WITH_GRANT_BROKER, seatBaseline } = await import('../src/lib/default-environment.js');
+const {
+  ADAPTERS_WITH_DEFAULT_SANDBOX, ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_SANDBOX_ENFORCEMENT, seatBaseline,
+} = await import('../src/lib/default-environment.js');
+const { windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
   test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
@@ -83,9 +86,51 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
 
   test('that same record is still refused on an adapter that cannot honour it', () => {
     // The support check moved into the derivation must not become a no-op.
+    // (pi was the witness here until it gained Seatbelt in F113b.)
     expect(() => resolveAttachSandbox({
-      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
+      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'stub',
     })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
+  });
+
+  test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
+    // Goose confines public turns with Seatbelt or bwrap (adapters/goose.js),
+    // but this gate read ADAPTERS_WITH_DEFAULT_SANDBOX, the set that receives
+    // the daemon's default block. Goose is left out of that set only because a
+    // default cannot supply its provider and model, so the 11-04 walk's public
+    // Goose seat was refused here before its adapter ever ran.
+    const environment = { provider: { name: 'litellm' }, model: 'm', sandbox: { trust: 'public' } };
+    expect(resolveAttachSandbox({ environment, adapterName: 'goose', platform: 'darwin' }))
+      .toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({ environment, adapterName: 'goose', platform: 'linux' }))
+      .toEqual({ mode: 'bwrap', trust: 'public' });
+    // Enforcement is still required: a Goose mode with no confined trust stays
+    // refused.
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'workspace' } }, adapterName: 'goose',
+    })).toThrow(/sandbox enforcement/);
+  });
+
+  test('a public pi seat attaches under the Seatbelt sandbox its adapter now enforces (F113b)', () => {
+    // pi runs a public turn as sandbox-exec around pi itself (adapters/pi.js),
+    // so the gate admits it the way it admits Goose: on an explicit public
+    // declaration, not as a derived default.
+    expect(resolveAttachSandbox({
+      environment: { model: 'm', sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({
+      environment: { model: 'm', sandbox: { trust: 'public', mode: 'read-only' } }, adapterName: 'pi', platform: 'darwin',
+    })).toEqual({ mode: 'read-only', trust: 'public' });
+    // A mode with no confined trust is still refused for pi.
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'workspace' } }, adapterName: 'pi', platform: 'darwin',
+    })).toThrow(/sandbox enforcement/);
+  });
+
+  test('the enforcement set is the default-sandbox set plus Goose and pi; pi is never a derived default', () => {
+    expect([...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort())
+      .toEqual([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi'].sort());
+    expect(ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has('pi')).toBe(true);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {
@@ -499,6 +544,80 @@ describe('performAttach', () => {
     expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });
 
+  // D245: on native Windows a confined --env names Windows and the user's own
+  // opt-in, never macOS or bwrap advice. Attach still refuses there: only the
+  // message changes.
+  const attachConfined = async ({ adapterName, mode, platform, seatbelt, bwrap }) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-win-attach-'));
+    try {
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        sandbox: { trust: 'public', mode },
+      }));
+      const client = makeClient();
+      const error = await performAttach({
+        client, adapterName, agentName: `${adapterName}-seat`, podId: 'pod-private', envPath,
+        platform,
+        seatbelt: () => seatbelt,
+        bwrap: () => bwrap,
+        adapterRegistry: {
+          getAdapter: () => ({ name: adapterName, detect: async () => ({ path: `/bin/${adapterName}`, version: '1.0.0' }) }),
+          listAdapterNames: () => [adapterName],
+        },
+      }).then(() => null, (e) => e);
+      return { error, client };
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const noSeatbelt = { available: false, error: 'sandbox-exec not found' };
+  const noBwrap = { available: false, error: 'bwrap not found' };
+
+  test('on win32, a confined Claude --env refuses with Windows and --unsandboxed, not Seatbelt or bwrap', async () => {
+    for (const mode of ['workspace', 'read-only', 'bwrap']) {
+      const { error, client } = await attachConfined({
+        adapterName: 'claude', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+      });
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain(`sandbox.mode=${mode}`);
+      // This attach made no agent, so the run option is the Connect page's commands, which
+      // set the two env vars and run with the flag (keeping the public trust and policy),
+      // never "attach without --env", which drops the sandbox block (#3407 review B1).
+      expect(error.message).toContain('use the commands on the Connect page');
+      expect(error.message).toContain('COMMONLY_API_URL and COMMONLY_AGENT_TOKEN');
+      expect(error.message).toContain('commonly agent run <name> --adapter claude --unsandboxed');
+      // agent run prefers a saved record over the env vars, so the promise holds only for a
+      // fresh agent: the message says to remove an older one first (#3407, CodeRabbit).
+      expect(error.message).toContain('commonly agent detach <name> --force');
+      expect(error.message).toContain('Run it here');
+      expect(error.message).not.toMatch(/without --env|commonly agent run <name> --unsandboxed/);
+      expect(error.message).not.toMatch(/macOS|Seatbelt|On Linux|requested but unavailable/);
+      expect(client.post).not.toHaveBeenCalled();
+    }
+  });
+
+  test('on win32, other adapters get the existing Windows text, with no --unsandboxed offer', async () => {
+    for (const mode of ['workspace', 'bwrap']) {
+      const { error } = await attachConfined({
+        adapterName: 'opencode', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+      });
+      expect(error.message).toContain(windowsSandboxMessage('opencode'));
+      expect(error.message).not.toContain('--unsandboxed');
+      expect(error.message).not.toMatch(/macOS|Seatbelt|requested but unavailable/);
+    }
+  });
+
+  test('on darwin and linux, the Seatbelt and bwrap refusals keep their text', async () => {
+    for (const platform of ['darwin', 'linux']) {
+      const seat = await attachConfined({ adapterName: 'claude', mode: 'workspace', platform, seatbelt: noSeatbelt, bwrap: noBwrap });
+      expect(seat.error.message).toBe('public Claude sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found. On Linux use sandbox.mode=bwrap.');
+      const jail = await attachConfined({ adapterName: 'claude', mode: 'bwrap', platform, seatbelt: noSeatbelt, bwrap: noBwrap });
+      expect(jail.error.message).toBe('sandbox.mode=bwrap requested but unavailable: bwrap not found');
+    }
+  });
+
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-qwen-attach-'));
     try {
@@ -717,6 +836,19 @@ describe('performAttach', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test('providerRefusal: only an adapter that lists the api may use it', async () => {
+    const { providerRefusal } = await import('../src/commands/agent.js');
+    const env = (api) => ({ model: 'm', provider: { id: 'a', baseURL: 'https://x.test', keyFile: '/k', ...(api ? { api } : {}) } });
+    const qwen = { name: 'qwen', supportsProvider: true };
+    const opencode = { name: 'opencode', supportsProvider: true, providerApis: ['openai-chat', 'anthropic-messages'] };
+    expect(providerRefusal({ model: 'm' }, null)).toBeNull();
+    expect(providerRefusal(env(), { name: 'stub' })).toMatch(/requires a provider-capable adapter/);
+    expect(providerRefusal(env(), qwen)).toBeNull();
+    expect(providerRefusal(env('anthropic-messages'), qwen))
+      .toBe('the qwen adapter cannot use provider.api "anthropic-messages"; it supports openai-chat');
+    expect(providerRefusal(env('anthropic-messages'), opencode)).toBeNull();
   });
 
   test('falls back to /runtime-tokens when install does not return runtimeToken', async () => {

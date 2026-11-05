@@ -11,6 +11,8 @@ interface Integration {
 interface CommandResult {
   success: boolean;
   content: string;
+  /** A bind-rule refusal (F143), not an error; see `combinedReplyIsPublic`. */
+  refused?: boolean;
   [key: string]: unknown;
 }
 
@@ -24,6 +26,8 @@ interface RunCommandOptions {
   integration: Integration;
   guildId?: string;
   channelId?: string;
+  /** The caller's Discord id; the sync toggles admit only the installer (F161). */
+  actorId?: string;
 }
 
 interface RunMultiCommandOptions {
@@ -31,6 +35,7 @@ interface RunMultiCommandOptions {
   integrations: Integration[];
   guildId?: string;
   channelId?: string;
+  actorId?: string;
 }
 
 async function runCommandForIntegration({
@@ -38,6 +43,7 @@ async function runCommandForIntegration({
   integration,
   guildId,
   channelId,
+  actorId,
 }: RunCommandOptions): Promise<IntegrationCommandResult> {
   if (commandName === 'discord-push') {
     const discordService = new DiscordService(integration._id);
@@ -92,12 +98,12 @@ async function runCommandForIntegration({
     case 'discord-enable':
       return {
         integration,
-        result: await commandService.handleEnableCommand(),
+        result: await commandService.handleEnableCommand(actorId),
       };
     case 'discord-disable':
       return {
         integration,
-        result: await commandService.handleDisableCommand(),
+        result: await commandService.handleDisableCommand(actorId),
       };
     default:
       return {
@@ -115,6 +121,7 @@ async function runDiscordCommandForIntegrations({
   integrations,
   guildId,
   channelId,
+  actorId,
 }: RunMultiCommandOptions): Promise<IntegrationCommandResult[]> {
   const results = await Promise.all(
     integrations.map((integration) => runCommandForIntegration({
@@ -122,10 +129,22 @@ async function runDiscordCommandForIntegrations({
       integration,
       guildId,
       channelId,
+      actorId,
     })),
   );
 
   return results;
 }
 
-export { runCommandForIntegration, runDiscordCommandForIntegrations };
+/**
+ * Whether the one reply that folds several pods' results is public. A bind-rule
+ * refusal (F143) carries only a short, non-sensitive sentence, so it does not
+ * make the allowed pods' summaries private; a real error still does. A reply
+ * with no success at all stays ephemeral.
+ */
+const combinedReplyIsPublic = (results: Array<{ result: { success: boolean; refused?: boolean } }>): boolean => (
+  results.some(({ result }) => result.success)
+  && results.every(({ result }) => result.success || result.refused === true)
+);
+
+export { runCommandForIntegration, runDiscordCommandForIntegrations, combinedReplyIsPublic };

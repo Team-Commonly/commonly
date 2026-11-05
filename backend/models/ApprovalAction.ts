@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import type { CallerConfinement } from './ToolCall';
 
 /**
  * ApprovalAction — ADR-020 D2/D3, implementing ADR-017's escalation-card
@@ -51,6 +52,12 @@ export interface ApprovalToolCall {
    * owner after the Connection row is deleted.
    */
   credentialOwnerId?: string;
+  /**
+   * TASK-783: how the broker judged the caller when it parked (hosted, a
+   * confined seat, a seat the grant names). Server-written; the approved call
+   * is judged again against it before anything reaches the provider.
+   */
+  callerConfinement?: CallerConfinement;
 }
 
 export interface IApprovalAction extends Document {

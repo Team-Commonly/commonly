@@ -368,7 +368,7 @@ export const productionDeps = (
     copiedInMongo: async () => {
       const digests = podDigests();
       const cursor = Message.find({ reconciledAt: { $exists: true } })
-        .select('podId userId content messageType createdAt authorKind payload').lean().cursor();
+        .select('podId userId content messageType createdAt authorKind payload summary kind receipt').lean().cursor();
       for await (const doc of cursor) {
         const podId = String(doc.podId);
         if (!await pastRetention(podId, doc.createdAt)) {

@@ -19,6 +19,11 @@ const messagePod: PodResolver = async (req) => {
   const message = await Message.findById(String(req.params.messageId || ''));
   return message?.pod_id ? String(message.pod_id) : null;
 };
+// DELETE /api/messages/:id names the message as `:id`, not `:messageId`.
+const messageIdPod: PodResolver = async (req) => {
+  const message = await Message.findById(String(req.params.id || ''));
+  return message?.pod_id ? String(message.pod_id) : null;
+};
 const askPod: PodResolver = async (req) => {
   const ask = await AgentAsk.findOne({ requestId: req.params.requestId }).select('podId').lean();
   return ask?.podId ? String(ask.podId) : null;
@@ -47,7 +52,7 @@ const add = (base: string, routeClass: RouteClass, methodsAndPaths: string[], re
 };
 const runtime = '/api/agents/runtime';
 add(runtime, 'read', [
-  'GET /installations', 'GET /events', 'GET /pods/:podId/context', 'GET /pods/:podId/messages',
+  'GET /installations', 'GET /grant-brokers', 'GET /events', 'GET /pods/:podId/context', 'GET /pods/:podId/messages',
   'GET /pods/:podId/files', 'GET /pods/:podId/files/:fileName/content', 'GET /pods/:podId/posts',
   'GET /memory', 'GET /pods', 'GET /pods/:podId/integrations',
   'GET /pods/:podId/skills', 'GET /pods/:podId/send-freshness',
@@ -85,6 +90,8 @@ add('/api/messages', 'pod_write', [
   'POST /:messageId/reactions', 'DELETE /:messageId/reactions/:emoji',
   'POST /:messageId/follow', 'DELETE /:messageId/follow', 'PUT /:messageId/collapsed',
 ], messagePod);
+// F141: an agent deleting its own message writes into the message's stored pod.
+add('/api/messages', 'pod_write', ['DELETE /:id'], messageIdPod);
 add('/api/artifacts', 'read', ['GET /']);
 add('/api/uploads', 'read', ['GET /:fileName', 'GET /:fileName/preview-pptx-html']);
 add('/api/github', 'read', ['GET /issues']);

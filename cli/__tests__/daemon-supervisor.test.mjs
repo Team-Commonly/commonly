@@ -14,7 +14,7 @@ import {
   reconnectDelayMs,
   MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
-import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
+import { assertSandboxSupported } from '../src/lib/adapters/pi.js';
 import claude from '../src/lib/adapters/claude.js';
 
 const record = {
@@ -40,7 +40,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn(), log = () => {} } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn(), log = () => {}, machineReport } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -68,6 +68,7 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = a
     resolveAdapter: jest.fn(resolveAdapter),
     persistState,
     log,
+    ...(machineReport ? { machineReport } : {}),
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
@@ -277,18 +278,16 @@ describe('tick', () => {
     await supervisor.tick();
     const record = saveToken.mock.calls[0][1];
     expect(record.adapter).toBe('pi');
-    // The kernel MCP server (TASK-048), and NO sandbox: pi fails closed on a
-    // declared sandbox (#1727), so the both-halves assertion that used to sit
-    // here pinned a record whose own adapter refuses to start — the seat would
-    // have died on every spawn with 'public-trust seats are not supported'.
-    // The sandbox half is asserted for claude in 'the baseline a seat nobody
-    // authored gets' below, which is where the enforcing adapters are covered.
+    // The kernel MCP server (TASK-048), and NO derived sandbox: pi confines
+    // only an explicitly public seat (F113b), so a seat the daemon derives keeps
+    // the private shape it had. The sandbox half is asserted for claude in 'the
+    // baseline a seat nobody authored gets' below.
     expect(record.environment).toEqual({
       model: 'deepseek-v4-flash',
       effort: 'high',
       mcp: [expect.objectContaining({ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] })],
     });
-    expect(() => assertNoSandboxDeclared(record.environment)).not.toThrow();
+    expect(() => assertSandboxSupported(record.environment)).not.toThrow();
   });
 
   test('an adapter with no mcp consumption path still invents no environment', async () => {
@@ -625,6 +624,66 @@ describe('tick', () => {
     }));
     expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('attacker.example');
     expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('/.ssh/');
+  });
+
+  // An anthropic-messages provider is OpenCode's alone; a swap to an adapter
+  // that only speaks openai-chat keeps the current seat, as a missing
+  // provider capability does, instead of a child that refuses on every start.
+  test('an adapter swap that cannot speak the host-local provider.api keeps the current seat', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const logs = [];
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'qwen' },
+        environment: { model: 'claude-haiku-5-5' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current record/);
+    // Not started: the retained OpenCode record would refuse the server's
+    // qwen binding at `agent run` and restart forever.
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/set the adapter back to opencode/);
+  });
+
+  test('a record whose own adapter cannot speak its provider.api does not start', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'qwen',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'qwen' }, environment: { model: 'claude-haiku-5-5' } })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(0);
   });
 
   test('the host-local provider survives a server environment that omits it', async () => {
@@ -1105,5 +1164,19 @@ describe('heartbeat', () => {
     expect(client.post).toHaveBeenCalledWith(`/api/machines/${record.machineDbId}/heartbeat`, {
       agents: [expect.objectContaining({ agentName: 'wren-test', state: 'running' })],
     });
+  });
+
+  test('D245: carries the local machine report (the Windows unsandboxed opt-in), re-read on every beat', async () => {
+    let optedIn = true;
+    const { supervisor, client } = makeHarness({
+      rows: () => [],
+      machineReport: () => ({ sandbox: optedIn ? 'unsandboxed-opted-in' : 'default' }),
+    });
+    await supervisor.heartbeat();
+    expect(client.post).toHaveBeenLastCalledWith(`/api/machines/${record.machineDbId}/heartbeat`, expect.objectContaining({ sandbox: 'unsandboxed-opted-in', agents: [] }));
+    optedIn = false;
+    await supervisor.heartbeat();
+    // 'default' is what clears the server's record after a plain reinstall.
+    expect(client.post.mock.calls.at(-1)[1]).toMatchObject({ sandbox: 'default' });
   });
 });

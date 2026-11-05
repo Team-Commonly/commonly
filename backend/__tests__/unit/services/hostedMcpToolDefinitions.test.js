@@ -991,3 +991,46 @@ describe('SDK list validation preserves broker failure reasons', () => {
     } finally { warning.mockRestore(); }
   });
 });
+
+// F101: a pin can declare optional vendor properties our agents never send.
+// The pin keeps them (it must match the vendor's schema exactly), the model's
+// view leaves them out, and the call drops any value sent for them anyway.
+describe('a withheld argument never reaches the vendor', () => {
+  const WITHHELD_ENTRY = {
+    ...ENTRY,
+    tools: [ENTRY.tools[0], {
+      name: 'create_issue',
+      upstreamName: 'createIssue',
+      description: 'Create an issue',
+      class: 'write',
+      inputSchema: {
+        type: 'object',
+        properties: { title: { type: 'string' }, telemetry: { type: 'object' }, skill: { type: 'string' } },
+        required: ['title'],
+      },
+      withheldArgs: ['telemetry', 'skill'],
+    }],
+  };
+
+  it('drops a withheld value from tools/call and forwards the rest unchanged', async () => {
+    const deps = makeDeps();
+    await expect(definitionFor('linear.create_issue', deps, [WITHHELD_ENTRY]).call(
+      { title: 'Fix it', telemetry: { intent: 'the task the agent is doing' }, skill: 'triage' },
+      CONNECTION,
+    )).resolves.toEqual(okReply.result);
+    const call = toolCalls(deps).find(([, init]) => JSON.parse(init.body).method === 'tools/call');
+    expect(JSON.parse(call[1].body).params).toEqual({ name: 'createIssue', arguments: { title: 'Fix it' } });
+  });
+
+  it('shows the model a schema without the withheld properties, while the pin keeps them', () => {
+    const definition = definitionFor('linear.create_issue', makeDeps(), [WITHHELD_ENTRY]);
+    expect(Object.keys(definition.inputSchema.properties)).toEqual(['title']);
+    expect(definition.inputSchema.required).toEqual(['title']);
+    expect(Object.keys(WITHHELD_ENTRY.tools[1].inputSchema.properties)).toEqual(['title', 'telemetry', 'skill']);
+  });
+
+  it('leaves a tool with nothing withheld exactly as pinned', () => {
+    const definition = definitionFor('linear.list_issues', makeDeps(), [WITHHELD_ENTRY]);
+    expect(definition.inputSchema).toBe(ENTRY.tools[0].inputSchema);
+  });
+});

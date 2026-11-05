@@ -151,12 +151,23 @@ describe('machine lifecycle routes', () => {
     // service owns validation.
     expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
-    }), agents, undefined);
+    }), agents, undefined, undefined);
     expect(mockFindMachine).toHaveBeenCalledWith({
       _id: '0123456789abcdef01234567',
       machineId: 'daemon-machine',
       ownerUserId: '0123456789abcdef01234567',
     });
+  });
+
+  it('D245: hands the host sandbox report to the service verbatim', async () => {
+    mockRecordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
+    const res = await request(app)
+      .post('/api/machines/0123456789abcdef01234567/heartbeat')
+      .send({ agents: [], sandbox: 'unsandboxed-opted-in' });
+    expect(res.status).toBe(200);
+    expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+      machineId: 'daemon-machine',
+    }), [], undefined, 'unsandboxed-opted-in');
   });
 
   it('returns only the credential-bound machine through daemon status', async () => {

@@ -107,3 +107,16 @@ describe('discordMultiCommandService', () => {
     expect(results[1].result.content).toBe('Status B');
   });
 });
+
+// F161 item 1: the multi-pod path hands the caller's Discord id to the toggles.
+describe('discordMultiCommandService toggles carry the caller', () => {
+  it.each([['discord-enable', 'handleEnableCommand'], ['discord-disable', 'handleDisableCommand']])(
+    '%s passes actorId',
+    async (commandName, method) => {
+      const handler = jest.fn().mockResolvedValue({ success: true, content: 'ok' });
+      DiscordCommandService.mockImplementation(() => ({ initialize: jest.fn().mockResolvedValue(true), [method]: handler }));
+      await runCommandForIntegration({ commandName, integration: { _id: 'i1' }, actorId: '345678901234567890' });
+      expect(handler).toHaveBeenCalledWith('345678901234567890');
+    },
+  );
+});

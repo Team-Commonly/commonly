@@ -18,6 +18,11 @@ const { markPodOpened, markStartPicked } = require('../services/onboardingMarks'
 const { gateWelcomeHostedActions } = require('../services/welcomeHostedStart');
 // eslint-disable-next-line global-require
 const { syncPodFromMongo } = require('../services/pgPodSyncService');
+// The shared dualAuth write gate (reactions, thread follows). Not copied here.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  getCallerId, callerHasPodWriteAccess, agentHoldsActiveInstallationInPod,
+} = require('../services/podWriteAccessService');
 
 interface AuthRequest extends Request {
   userId?: string;
@@ -479,17 +484,47 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       return;
     }
 
-    const userId = req.userId || req.user?.id;
-    if (!userId) {
-      res.status(401).json({ msg: 'User authentication failed' });
-      return;
-    }
-
-    if (message.user_id.toString() !== userId.toString()) {
-      const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
-      if (!pod || pod.createdBy?.toString() !== userId.toString()) {
-        res.status(401).json({ msg: 'Not authorized to delete this message' });
+    // An agent runtime token (dualAuth → agentRuntimeAuth) sets req.agentUser,
+    // not req.user/req.userId. An agent may delete only a message it authored,
+    // only while it holds an active AgentInstallation in that message's pod,
+    // and never gets the pod-creator override below (F141).
+    if (req.agentUser?._id) {
+      const agentId = getCallerId(req);
+      const podId = String(message.pod_id);
+      if (String(message.user_id) !== agentId) {
+        res.status(403).json({ msg: 'Agents may delete only their own messages', code: 'not_message_author' });
         return;
+      }
+      if (!agentHoldsActiveInstallationInPod(podId, req)
+          || !(await callerHasPodWriteAccess(podId, agentId, req))) {
+        res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
+        return;
+      }
+    } else {
+      const userId = req.userId || req.user?.id;
+      if (!userId) {
+        res.status(401).json({ msg: 'User authentication failed' });
+        return;
+      }
+      // A bot User can hold a cm_ user API token (auth.ts admits it on this
+      // branch as req.botCaller, without req.agentUser). It gets what F141
+      // gives its runtime token: only its own message, only while installed
+      // in the pod, and never the pod-creator override below (F149).
+      if (req.botCaller) {
+        if (message.user_id.toString() !== userId.toString()) {
+          res.status(401).json({ msg: 'Not authorized to delete this message' });
+          return;
+        }
+        if (!(await callerHasPodWriteAccess(String(message.pod_id), String(userId), req))) {
+          res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
+          return;
+        }
+      } else if (message.user_id.toString() !== userId.toString()) {
+        const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
+        if (!pod || pod.createdBy?.toString() !== userId.toString()) {
+          res.status(401).json({ msg: 'Not authorized to delete this message' });
+          return;
+        }
       }
     }
 
@@ -512,6 +547,16 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
     } else {
       await MongoMessage.findByIdAndDelete(messageId);
     }
+
+    // A delete leaves nothing in the store, so this line is its only record —
+    // for an agent steered by a stranger, the record of what it removed (F141).
+    // Ids only, never content.
+    const callerKind = req.agentUser?._id ? 'agent' : 'human';
+    const callerId = callerKind === 'agent' ? getCallerId(req) : String(req.userId || req.user?.id || '');
+    console.info(
+      `[messageController] message deleted pod=${message.pod_id} message=${message.id} `
+      + `caller=${callerId} callerKind=${callerKind}`,
+    );
 
     res.json({ msg: 'Message deleted' });
   } catch (err) {

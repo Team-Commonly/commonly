@@ -1,4 +1,5 @@
 import SystemSetting from '../models/SystemSetting';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
@@ -52,14 +53,13 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     ],
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
-    // Model used by non-dev agents (community agents like liz/tarik/tom/fakesam/x-curator).
-    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404 No endpoints found).
-    // Nemotron is the only working free fallback right now; if it 429s, community
-    // agents fail loud rather than escalate to paid Codex (see assertion in
-    // applyOpenClawModelDefaults).
-    communityAgentModel: {
-      primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-      fallbacks: [],
+    // Model used by non-dev agents. It names the configured default
+    // (config/agentDefaultModel, F103), read when asked, so it follows the
+    // chart's `litellm.agentDefaultModel`; before F103 it was the nemotron slug
+    // LiteLLM served with DeepSeek. Never an openai-codex model (see the
+    // assertion in applyOpenClawModelDefaults).
+    get communityAgentModel(): CommunityAgentModel {
+      return { primary: `openrouter/${agentDefaultModel()}`, fallbacks: [] };
     },
   },
 };
@@ -142,11 +142,18 @@ const normalizeFallbackModels = (value: unknown, fallback: string[] = DEFAULT_CO
   return [...fallback];
 };
 
+// This slug was the community default until F103, so a stored one is the old
+// default saved back, not an admin's choice: it reads as today's. Any other
+// model an admin picked, nemotron or not, is kept.
+const RETIRED_COMMUNITY_PRIMARY = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
+
 const normalizeCommunityAgentModel = (value: unknown): CommunityAgentModel => {
   const defaultVal = DEFAULT_CONFIG.openclaw.communityAgentModel;
   if (!value || typeof value !== 'object') return { ...defaultVal };
   const v = value as Partial<CommunityAgentModel>;
-  const primary = normalizeModel(v.primary, defaultVal.primary);
+  const primary = String(v.primary || '').trim() === RETIRED_COMMUNITY_PRIMARY
+    ? defaultVal.primary
+    : normalizeModel(v.primary, defaultVal.primary);
   const fallbacks = normalizeFallbackModels(v.fallbacks, defaultVal.fallbacks);
   return { primary, fallbacks };
 };
@@ -229,8 +236,20 @@ class GlobalModelConfigService {
     if (!forceRefresh && cachedConfig && (Date.now() - cachedAt) < CACHE_TTL_MS) {
       return JSON.parse(JSON.stringify(cachedConfig));
     }
+    const merged = GlobalModelConfigService.resolve(await GlobalModelConfigService.readStored());
+    cachedConfig = merged;
+    cachedAt = Date.now();
+
+    return JSON.parse(JSON.stringify(merged));
+  }
+
+  // The saved row as written, before defaults are merged in.
+  private static async readStored(): Promise<Partial<GlobalModelConfig>> {
     const setting = await SystemSetting.findOne({ key: MODEL_CONFIG_KEY }).lean() as Record<string, unknown> | null;
-    const stored = setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
+    return setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
+  }
+
+  private static resolve(stored: Partial<GlobalModelConfig>): GlobalModelConfig {
     const defaults = GlobalModelConfigService.defaults();
     const storedLlm = (stored.llmService || {}) as Partial<LlmServiceConfig> & { defaultModel?: string };
     const merged = sanitize(
@@ -253,10 +272,7 @@ class GlobalModelConfigService {
         },
       },
     );
-    cachedConfig = merged;
-    cachedAt = Date.now();
-
-    return JSON.parse(JSON.stringify(merged));
+    return merged;
   }
 
   static async setConfig(patch: Partial<GlobalModelConfig> = {}, userId: string | null = null): Promise<GlobalModelConfig> {
@@ -265,7 +281,8 @@ class GlobalModelConfigService {
     )) {
       throw new Error('Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.');
     }
-    const current = await GlobalModelConfigService.getConfig({ includeSecrets: true, forceRefresh: true });
+    const storedBefore = await GlobalModelConfigService.readStored();
+    const current = GlobalModelConfigService.resolve(storedBefore);
     const mergedCandidate: GlobalModelConfig = {
       ...current,
       ...(patch || {}),
@@ -284,12 +301,25 @@ class GlobalModelConfigService {
     };
 
     const sanitized = sanitize(mergedCandidate);
+    // The community model follows AGENT_DEFAULT_MODEL until an admin picks
+    // one (F103). The merge above carries the resolved default into every
+    // save, so a value equal to it is stored only when the row already held
+    // an admin's pick (the retired default slug is not one); otherwise it is
+    // the inherited default and stays unstored.
+    const stored = JSON.parse(JSON.stringify(sanitized));
+    const communityDefault = DEFAULT_CONFIG.openclaw.communityAgentModel;
+    const community = sanitized.openclaw.communityAgentModel;
+    const savedPrimary = String(storedBefore.openclaw?.communityAgentModel?.primary || '').trim();
+    const rowHeldAPick = Boolean(savedPrimary) && savedPrimary !== RETIRED_COMMUNITY_PRIMARY;
+    if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
+      delete stored.openclaw.communityAgentModel;
+    }
 
     await SystemSetting.findOneAndUpdate(
       { key: MODEL_CONFIG_KEY },
       {
         $set: {
-          value: sanitized,
+          value: stored,
           updatedBy: userId || null,
         },
       },

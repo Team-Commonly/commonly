@@ -24,7 +24,7 @@ import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
 import {
-  dcrClientForRow, ensureDcrClient, refuseDcrClient, retireDcrClientIfUnknown,
+  dcrClientForRow, ensureDcrClient, refuseDcrClient, refusalNamesUnknownClient, retireDcrClientIfUnknown,
 } from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 import { publicAppUrl } from '../utils/publicAppUrl';
@@ -96,11 +96,17 @@ const callbackRedirect = (
     manualRevoke?: { entryId: string; revokeAt: string };
     /** A catalogue entry the page may name in its notice; never vendor text. */
     entryId?: string;
+    /**
+     * D248 `access`: the page sends the person on to the entry's access page.
+     * TASK-782 `reach`: the page says the connection can see nothing yet.
+     */
+    next?: 'access' | 'reach';
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
   if (options?.entryId) query.set('entryId', options.entryId);
+  if (options?.next) query.set('next', options.next);
   if (options?.manualRevoke) {
     query.set('entryId', options.manualRevoke.entryId);
     query.set('revokeAt', options.manualRevoke.revokeAt);
@@ -498,6 +504,13 @@ const settleUnstoredGrant = async (
 // whatever the member clicked. Matched, never echoed.
 const VENDOR_APP_UNAVAILABLE = /cannot be used outside of development/i;
 
+/** A vendor's return from installing its App (GitHub: setup_action + installation_id). */
+const isAppInstallReturn = (entry: { accessPage?: string }, query: Request['query']): boolean => (
+  Boolean(entry.accessPage)
+  && (query.setup_action === 'install' || query.setup_action === 'update')
+  && typeof query.installation_id === 'string' && /^\d{1,20}$/.test(query.installation_id)
+);
+
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry || !isOAuthEntry(entry)) {
@@ -519,6 +532,15 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       return callbackRedirect(res, 'error', 'vendor_app_unavailable', { entryId: entry.id });
     }
     return callbackRedirect(res, 'error', vendorError === 'access_denied' ? 'consent_denied' : 'vendor_error');
+  }
+  // D248 (a): a GitHub App's "Install & Authorize" comes back here with
+  // `installation_id` and `setup_action` and no state of ours. The install
+  // worked, so it is not a failed connect, but with no state nothing ties the
+  // code to the person, so the code is never redeemed. Only an entry that has
+  // an install page can claim this outcome, and the page decides from its own
+  // catalogue whether to say "connected" or "press Connect to finish".
+  if (!state && isAppInstallReturn(entry, req.query)) {
+    return callbackRedirect(res, 'installed', undefined, { entryId: entry.id });
   }
   if (!state || !code) {
     return callbackRedirect(res, 'error', 'invalid_state');
@@ -615,7 +637,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     });
     if (!response.ok) {
       const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
-      if (refusal?.error === 'invalid_client') {
+      if (refusalNamesUnknownClient(refusal)) {
         await refuseDcrClient(entry, client.clientId);
         return callbackRedirect(res, 'error', 'client_auth_refused');
       }
@@ -839,6 +861,8 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         // account that held the row in between. Cleared, the comparison is two
         // unknowns and revokes, which is the safe reading.
         'config.providerSubject': providerSubject || null,
+        // Cleared with every new pair; the probe below writes its own answer.
+        'config.reach': null,
         // Released with the write it guarded, so the first refresh of the new
         // pair is not turned away by this callback's own lease. Released to
         // the lease the retire write displaced, if any: a refresh of the old
@@ -868,12 +892,56 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // update made the new grant visible.
   forgetHostedMcpDrift(String(consumed._id));
 
-  return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
-    manualRevoke: {
-      entryId: entry.id,
-      revokeAt: manualRevokeAt,
-    },
-  } : undefined);
+  // D248: connected but reaching nothing yet (GitHub with no App installation).
+  // The page names the step and opens the entry's own access page; the link
+  // comes from the catalogue there, never from this query.
+  let accessNext = false;
+  if (entry.accessPage && typeof entry.needsAccessSetup === 'function') {
+    try {
+      accessNext = await entry.needsAccessSetup(tokens.access_token);
+    } catch {
+      accessNext = false;
+    }
+  }
+  // TASK-782: connected, but the account can see nothing to search (Sentry
+  // with no projects). Stored on the row so the grant step can say it too,
+  // and named on the return so the connect step says it now.
+  let reachNone = false;
+  if (!accessNext && typeof entry.reachProbe === 'function') {
+    let reach: { projects: number } | null = null;
+    try {
+      reach = await entry.reachProbe(tokens.access_token);
+    } catch {
+      reach = null;
+    }
+    if (reach && Number.isInteger(reach.projects) && reach.projects >= 0) {
+      try {
+        // A refresh or a newer connect in the probe's window moves the ref, so
+        // this write misses and the page says nothing the row doesn't hold.
+        const written = await Integration.updateOne(
+          { _id: published._id, 'config.credentialRef': credentialRef },
+          { $set: { 'config.reach': { projects: reach.projects, checkedAt: new Date() } } },
+        );
+        reachNone = written?.matchedCount === 1 && reach.projects === 0;
+      } catch {
+        reachNone = false;
+      }
+    }
+  }
+  const next = accessNext ? 'access' as const : reachNone ? 'reach' as const : undefined;
+  // A reconnect that left the old grant for the person to withdraw still gets
+  // the access step: the page shows both on one return.
+  if (manualRevokeAt) {
+    return callbackRedirect(res, 'connected', undefined, {
+      manualRevoke: {
+        entryId: entry.id,
+        revokeAt: manualRevokeAt,
+      },
+      ...(next ? { next } : {}),
+    });
+  }
+  return callbackRedirect(res, 'connected', undefined,
+    next ? { entryId: entry.id, next } : undefined);
 };
 
 router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {

@@ -20,7 +20,8 @@
 .v2-feature--board .v2-board { background: var(--v2-surface); }
 
 /* keys (.b, .b-g, .b-p, .b-s, .b-sm, .ib) */
-.v2-feature--board .v2-board__key { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); cursor: pointer; white-space: nowrap; transition: transform var(--v2-dur-fast) var(--v2-ease); }
+/* A text key is the v2p small key (28 at r8, rulings 11-04); the icon keys below are 32 at r8. */
+.v2-feature--board .v2-board__key { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: var(--v2-r-8); font: 600 12.5px/1 var(--v2-font); cursor: pointer; white-space: nowrap; transition: transform var(--v2-dur-fast) var(--v2-ease); }
 .v2-feature--board .v2-board__key svg { width: 16px; height: 16px; flex: none; }
 .v2-feature--board .v2-board__key:active { transform: translateY(1px); }
 .v2-feature--board .v2-board__key:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
@@ -39,7 +40,7 @@
 .v2-feature--board .v2-board__head { flex: none; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
 .v2-feature--board .v2-board__title-wrap { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
 .v2-feature--board .v2-board__title { margin: 0; min-width: 0; font: 700 18px/20px var(--v2-font-display); letter-spacing: -0.025em; color: var(--v2-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v2-feature--board .v2-board__subtitle { font: 500 12px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-feature--board .v2-board__subtitle { font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-feature--board .v2-board__tools,
 .v2-feature--board .v2-board__filters { display: flex; gap: 6px; align-items: center; }
 .v2-feature--board .v2-board__chip { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 0; border-radius: 7px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-secondary); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; cursor: pointer; }
@@ -165,6 +166,9 @@
   /* Exception: 44px phone hit areas on the frame's 32px top-bar keys and 24px chips
      (chat precedent). The key's 1px border sits inside, so the inset is -7px. */
   .v2-feature--board .v2-board__head > .v2-board__key { position: relative; z-index: 1; }
+  /* An icon key never shrinks: in the 52px bar the title and search take the
+     slack, and back, search and New task stay 32 square (they measured 23x32). */
+  .v2-feature--board .v2-board__key--icon { flex: none; }
   .v2-feature--board .v2-board__head > .v2-board__key::after { content: ''; position: absolute; inset: -7px; }
   /* The 28px tabs reach 44px up into the gap (14px) and down to the track's edge (2px),
      where the chips' areas begin. Search and New task sit 12px apart so their areas meet, never overlap. */
@@ -634,7 +638,7 @@
 .v2-board__watchers-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .v2-board__watchers-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .v2-board__watchers-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
-.v2-root button.v2-board__follow { margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__follow { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
 .v2-root button.v2-board__follow[aria-pressed="true"] { color: var(--v2-text-primary); }
 .v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }

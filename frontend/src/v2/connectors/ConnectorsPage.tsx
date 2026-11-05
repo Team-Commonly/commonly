@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
-import { ADD_PLATFORMS, TYPE_LABELS } from './channelModel';
+import { ADD_PLATFORMS, TYPE_LABELS, entryOffered } from './channelModel';
 import type { ListItem } from './channelModel';
 import { PER_ENTRY_REVOKE_COPY, entryCovers, entryIsGranted, isDead } from './toolModel';
 import type { ToolCatalogEntry, ToolGrant } from './toolModel';
@@ -32,6 +32,10 @@ interface Pop {
 
 const ASK_HREF = 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request';
 const MAX_CHIPS = 3;
+// A tool's name is namespaced by its connector ("atlassian.search_jira"); the
+// popover already names the connector, so a chip shows the part after the
+// namespace, as the d215 frame draws it. The full name stays in the title.
+const chipName = (name: string): string => (name.includes('.') ? name.slice(name.indexOf('.') + 1) : name);
 const FILTERS: Filter[] = ['all', 'channels', 'tools'];
 // A brand name, not translatable copy.
 const GITHUB_BRAND = 'GitHub';
@@ -85,15 +89,26 @@ const ConnectorsPage: React.FC = () => {
     (connector) => connector.type === type && Boolean(connector.installationId),
   );
   const availableProviders = c.catalog
-    ? c.catalog.filter((entry) => entry.available && entry.offered !== false && !entry.installation).map((entry) => ({ type: entry.installableId }))
+    ? c.catalog.filter((entry) => entry.available && entryOffered(entry) && !entry.installation).map((entry) => ({ type: entry.installableId }))
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
 
   // ---- tools ----
   const grants = m.grants || [];
-  const toolEntries = m.catalog.filter((entry) => (
+  const toolGranted = (entry: ToolCatalogEntry): boolean => entryIsGranted(entry, grants, m.now);
+  // D248 (c): the builtin GitHub card with no connection only says an admin
+  // installs the App. A non-admin who can connect the hosted GitHub entry
+  // themselves is shown that card alone, not a second GitHub they cannot use.
+  const hostedGithubOffered = m.catalog.some((entry) => (
+    entry.connectionType === 'hosted-mcp' && entry.entryId === 'github-mcp' && entry.available
+  ));
+  const adminOnlyCard = (entry: ToolCatalogEntry): boolean => (
+    !m.isAdmin && hostedGithubOffered && entry.installableId === 'github' && entry.connectionType !== 'hosted-mcp'
+    && entry.connections.length === 0 && !toolGranted(entry)
+  );
+  const shownCatalog = m.catalog.filter((entry) => !adminOnlyCard(entry));
+  const toolEntries = shownCatalog.filter((entry) => (
     !q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q))
   ));
-  const toolGranted = (entry: ToolCatalogEntry): boolean => entryIsGranted(entry, grants, m.now);
   const grantsOf = (entry: ToolCatalogEntry) => grants.filter((grant) => entryCovers(entry, grant));
   const hiddenOf = (entry: ToolCatalogEntry) => m.hiddenConnections.filter((connection) => connection.entryId === entry.entryId);
   const toolOff = (entry: ToolCatalogEntry): boolean => !entry.available && !toolGranted(entry);
@@ -355,7 +370,7 @@ const ConnectorsPage: React.FC = () => {
         <p>{catalogDescription(i18n, entry.installableId, entry.description)}</p>
         {names.length > 0 && (
           <div className="v2-cx-pop__chips">
-            {names.slice(0, MAX_CHIPS).map((name) => <span key={name} className="v2-cx-chip">{name}</span>)}
+            {names.slice(0, MAX_CHIPS).map((name) => <span key={name} className="v2-cx-chip" title={name}>{chipName(name)}</span>)}
             {names.length > MAX_CHIPS && <span className="v2-cx-chip">+{names.length - MAX_CHIPS}</span>}
           </div>
         )}
@@ -461,10 +476,18 @@ const ConnectorsPage: React.FC = () => {
     const entryGrants = grantsOf(toolEntry);
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
+    const grantedKeyForm = toolGranted(toolEntry) ? tp.renderKeyForm(toolEntry) : null;
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
         {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
+        {/* A granted operator-key entry still takes a key for an agent that has none. */}
+        {grantedKeyForm && (
+          <>
+            {tp.renderKeyGuidance(toolEntry)}
+            <div className="v2-cx-pop__acts">{grantedKeyForm}</div>
+          </>
+        )}
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>
@@ -493,7 +516,7 @@ const ConnectorsPage: React.FC = () => {
   const onCount = connectedChannels + grantedTools;
   // Counted over everything, not the search result, so the header holds still while typing.
   const offeredCount = c.items.filter((item) => !channelInactive(item)).length
-    + m.catalog.filter((entry) => !toolOff(entry)).length;
+    + shownCatalog.filter((entry) => !toolOff(entry)).length;
   const availableCount = offeredCount - onCount;
   // An orphan grant's tile is live too (TASK-754), so it counts as on. It was
   // never offered, so it leaves `available` alone.
@@ -513,8 +536,38 @@ const ConnectorsPage: React.FC = () => {
   // Per-entry copy names what that vendor's page lists, and what removing it there ends.
   const callbackRevokeContext = callbackRevoke && PER_ENTRY_REVOKE_COPY.has(callbackRevoke.entryId)
     ? callbackRevoke.entryId : undefined;
+  const callbackNotice = c.hostedMcpCallbackNotice;
   const noticeBlock = (
     <>
+      {callbackNotice && (
+        <p className="v2-cx-note" role="status">
+          {callbackNotice.kind === 'reach'
+            ? t('connectors.hostedMcpReachNone', { provider: callbackNotice.provider })
+            : callbackNotice.kind === 'installed'
+            ? (callbackNotice.connected
+              ? t('connectors.hostedMcpAppInstalledConnected', {
+                defaultValue: '{{provider}} App installed. {{provider}} is connected.',
+                provider: callbackNotice.provider,
+              })
+              : t('connectors.hostedMcpAppInstalledFinish', {
+                defaultValue: '{{provider}} App installed. Press Connect on {{provider}} to finish.',
+                provider: callbackNotice.provider,
+              }))
+            : (
+              <>
+                {/* GitHub's install page preselects "All repositories" and always
+                    reads public repos, so the notice names the choice to make there. */}
+                {t('connectors.hostedMcpAccessNext', {
+                  defaultValue: "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
+                  provider: callbackNotice.provider,
+                })}{' '}
+                <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
+                  {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
+                </a>
+              </>
+            )}
+        </p>
+      )}
       {errorText && (
         <p className="v2-cx-error" role="alert">
           {errorText}

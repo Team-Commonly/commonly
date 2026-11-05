@@ -124,7 +124,7 @@ const issueSeatAndReadSetup = async () => {
 
 test.each([
   ['mac', MAC_UA, true],
-  ['windows', WINDOWS_UA, false],
+  ['windows', WINDOWS_UA, true],
 ])('the %s result page records the setup it shows (listener %s)', async (os, ua, listenerAvailable) => {
   const original = window.navigator.userAgent;
   withUserAgent(ua);

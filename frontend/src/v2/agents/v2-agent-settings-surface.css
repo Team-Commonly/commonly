@@ -89,12 +89,12 @@
 .v2-agent-settings-page .ph .sp { flex: 1; }
 .v2-agent-settings-page .ahead { display: block; }
 .v2-agent-settings-page .ahead h1 { font: 800 24px/1 var(--f-display); letter-spacing: -0.03em; margin: 0; }
-.v2-agent-settings-page .ahead .st { display: flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--f-mono); color: var(--mu); margin-top: 5px; }
-.v2-agent-settings-page .mo { font-family: var(--f-mono); }
+.v2-agent-settings-page .ahead .st { display: flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--mu); margin-top: 5px; }
+.v2-agent-settings-page .mo { font-family: var(--v2-font-mono); }
 
 /* body and grouped lists */
 .v2-agent-settings-page .pbody { flex: 1; min-height: 0; padding: 24px 28px; box-sizing: border-box; }
-.v2-agent-settings-page .gtitle { font: 500 11.5px/1 var(--f-mono); color: var(--mu); margin: 18px 4px 8px; display: flex; align-items: center; gap: 8px; }
+.v2-agent-settings-page .gtitle { font: 500 11.5px/1 var(--v2-font-mono); color: var(--mu); margin: 18px 4px 8px; display: flex; align-items: center; gap: 8px; }
 .v2-agent-settings-page .gtitle:first-child { margin-top: 0; }
 .v2-agent-settings-page .list { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--d); background: var(--sf); }
 .v2-agent-settings-page__col { max-width: 1000px; margin: 0 auto; }
@@ -111,7 +111,7 @@
 
 /* wake table */
 .v2-agent-settings-page .wt { width: 100%; border-collapse: collapse; font-size: 13px; }
-.v2-agent-settings-page .wt th { font: 500 11px/1 var(--f-mono); color: var(--mu); text-align: left; padding: 10px 14px 8px; font-weight: 500; }
+.v2-agent-settings-page .wt th { font: 500 11px/1 var(--v2-font-mono); color: var(--mu); text-align: left; padding: 10px 14px 8px; font-weight: 500; }
 .v2-agent-settings-page .wt td { padding: 8px 14px; border-top: 1px solid var(--d); vertical-align: middle; color: var(--ink2); }
 .v2-agent-settings-page .wt td:first-child { font-weight: 600; color: var(--ink); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-agent-settings-page .wt td:last-child { text-align: right; width: 44px; }
@@ -127,7 +127,7 @@
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input:focus-visible + .tg { box-shadow: var(--v2-focus-ring); }
 .v2-agent-settings-page .v2-agent-wake-pods__interval select { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; }
-.v2-agent-settings-page .v2-agent-wake-pods__hint { margin: 4px 0 0; font: 400 11.5px/1.4 var(--f-mono); color: var(--mu); }
+.v2-agent-settings-page .v2-agent-wake-pods__hint { margin: 4px 0 0; font: 400 11.5px/1.4 var(--v2-font-mono); color: var(--mu); }
 .v2-agent-settings-page .v2-agent-wake-pods__sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .v2-agent-settings-page .v2-agent-wake-pods__error { margin: 0 0 8px; color: var(--ink); }
 .v2-agent-settings-page .v2-agent-wake-pods__empty { margin: 0; padding: 16px 14px; color: var(--se); font-size: 13px; }
@@ -148,7 +148,7 @@
   .v2-agent-settings-page .wt thead { display: none; }
   .v2-agent-settings-page .wt, .v2-agent-settings-page .wt tbody, .v2-agent-settings-page .wt tr, .v2-agent-settings-page .wt td { display: block; width: 100%; }
 }
-.v2-agent-settings-page .v2-agent-wake-pods__cap { margin-left: auto; font: 400 11.5px/1 var(--f-mono); color: var(--mu); }
+.v2-agent-settings-page .v2-agent-wake-pods__cap { margin-left: auto; font: 400 11.5px/1 var(--v2-font-mono); color: var(--mu); }
 .v2-agent-settings-page .v2-agent-wake-pods__mode, .v2-agent-settings-page .v2-agent-wake-pods__fold { display: none; }
 /* The Wake table stacks at the same 760px the page's other phone rules use (with the thead
    block above); between 600 and 760 the five columns overflowed the page. */
@@ -158,11 +158,11 @@
   .v2-agent-settings-page .wt td:first-child { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; }
   .v2-agent-settings-page .wt td:first-child a { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .v2-agent-settings-page .wt td:first-child { max-width: none; }
-  .v2-agent-settings-page .v2-agent-wake-pods__mode { display: inline; font: 400 11.5px/1 var(--f-mono); color: var(--mu); }
+  .v2-agent-settings-page .v2-agent-wake-pods__mode { display: inline; font: 400 11.5px/1 var(--v2-font-mono); color: var(--mu); }
   .v2-agent-settings-page .v2-agent-wake-pods__fold { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--mu); margin-left: auto; }
   .v2-agent-settings-page .v2-agent-wake-pods__fold svg.i { width: 16px; height: 16px; transition: transform 120ms; }
   .v2-agent-settings-page .v2-agent-wake-pods__fold[aria-expanded="true"] svg.i { transform: rotate(90deg); }
-  .v2-agent-settings-page .wt td[data-label]::before { content: attr(data-label); display: block; font: 500 11px/1 var(--f-mono); color: var(--mu); margin-bottom: 6px; }
+  .v2-agent-settings-page .wt td[data-label]::before { content: attr(data-label); display: block; font: 500 11px/1 var(--v2-font-mono); color: var(--mu); margin-bottom: 6px; }
   .v2-agent-settings-page .wt tr[data-open="true"] td[data-label] { padding: 8px 14px; }
 }
 .v2-agent-settings-page .v2-agent-settings-page__keypanel { padding: 12px 16px; border-top: 1px solid var(--d); display: grid; gap: 10px; }
@@ -203,13 +203,17 @@
 .v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within { box-shadow: inset 0 0 0 1px var(--b), var(--v2-focus-ring); }
 .v2-agent-settings-page .field svg.i { width: 14px; height: 14px; color: var(--mu); pointer-events: none; }
 /* A read-only runtime keeps disabled controls, drawn as values: no ring, no chevron (as before the lift). */
-.v2-agent-settings-page .sel:has(:disabled) { background: var(--t); box-shadow: none; }
-.v2-agent-settings-page .sel:has(:disabled) svg.i { display: none; }
-.v2-agent-settings-page .sel:has(:disabled) select { cursor: default; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) { background: var(--t); box-shadow: none; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) svg.i { display: none; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) select { cursor: default; }
 .v2-agent-settings-page .sel:has(.is-unsupported) { box-shadow: inset 0 0 0 2px var(--ink); }
 .v2-agent-settings-page .v2-runtime-controls__control { min-width: 220px; justify-content: space-between; }
 .v2-agent-settings-page__name { flex: 1; max-width: 360px; }
 .v2-agent-settings-page__fielderror { flex-basis: 100%; font-size: 12.5px; color: var(--ink); }
+/* TASK-780: a hosted agent's description. Sized like the name box, read left to right even where the
+   phone value cell aligns right, with its hint on its own line under the box. */
+.v2-agent-settings-page .v2-agent-settings-page__about textarea { text-align: left; }
+.v2-agent-settings-page__abouthint { flex-basis: 100%; font-size: 12px; color: var(--mu); text-align: left; }
 .v2-agent-settings-page__form { display: contents; }
 .v2-agent-settings-page__pair { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; align-items: center; }
 .v2-agent-settings-page__pair > .mu { font-size: 12.5px; }
@@ -229,7 +233,7 @@
 .v2-agent-settings-page .v2-agent-settings-page__plain .lb { font-weight: 500; }
 .v2-agent-settings-page__figure.vl { font-size: 13px; color: var(--ink); }
 .v2-agent-settings-page__live { margin: 0; font-size: 13px; color: var(--se); overflow-wrap: anywhere; }
-.v2-agent-settings-page__live code { font-family: var(--f-mono); font-size: 12px; }
+.v2-agent-settings-page__live code { font-family: var(--v2-font-mono); font-size: 12px; }
 .v2-agent-settings-page__move { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .v2-agent-settings-page__move .mu { font-size: 12.5px; }
 .v2-agent-settings-page__move .sel { --box-h: 34px; height: var(--box-h); min-width: 200px; justify-content: space-between; }
@@ -250,7 +254,7 @@
 .v2-agent-settings-page .lg > * { width: 100%; height: 100%; }
 .v2-agent-settings-page__grantname { min-width: 0; }
 .v2-agent-settings-page__grantname strong { display: block; font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.v2-agent-settings-page__grantname .mo { font-size: 11.5px; color: var(--mu); overflow-wrap: anywhere; }
+.v2-agent-settings-page__grantname .mo { font-family: var(--v2-font-mono); font-size: 11.5px; color: var(--mu); overflow-wrap: anywhere; }
 .v2-agent-settings-page__grantname .v2-agent-settings-page__tools { display: block; margin-top: 2px; }
 .v2-agent-settings-page__grant .ac .mo { font-size: 12px; color: var(--mu); white-space: nowrap; }
 .v2-agent-settings-page__grant.is-ended .lg { filter: grayscale(1); }
@@ -337,7 +341,7 @@
 .v2-agent-settings-page .mtop .b.ib { width: 44px; height: 44px; }
 .v2-agent-settings-page .seg.seg--full { display: flex; width: 100%; box-sizing: border-box; }
 .v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button { flex: 1; justify-content: center; height: 44px; }
-.v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 10px; font: 500 11.5px/1 var(--f-mono); color: var(--mu); }
+.v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 10px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--mu); }
 @media (max-width: 760px) {
   .v2-agent-settings.v2-agent-settings-page { padding: 0; }
   .v2-agent-settings-page .pbody { padding: 12px; }

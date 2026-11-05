@@ -167,4 +167,30 @@ describe('AgentAvatarService', () => {
       expect(svg).toContain('circle');
     });
   });
+
+  // F78: `design` mode calls no image engine. Prod has no working image key, so
+  // the Gemini and OpenAI calls only sent the prompt out and failed.
+  describe('AVATAR_PROVIDER=design', () => {
+    const saved = { AVATAR_PROVIDER: process.env.AVATAR_PROVIDER, GEMINI_API_KEY: process.env.GEMINI_API_KEY };
+    afterEach(() => {
+      Object.entries(saved).forEach(([k, v]) => {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      });
+      jest.restoreAllMocks();
+    });
+
+    it('goes straight to the SVG design without calling Gemini or OpenAI', async () => {
+      process.env.AVATAR_PROVIDER = 'design';
+      process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'set-but-unused';
+      const gemini = jest.spyOn(AgentAvatarService, 'generateImageAvatar');
+      const openai = jest.spyOn(AgentAvatarService, 'generateOpenAIAvatar');
+
+      const result = await AgentAvatarService.generateAvatarDetailed({ agentName: 'test-bot', style: 'abstract' });
+
+      expect(gemini).not.toHaveBeenCalled();
+      expect(openai).not.toHaveBeenCalled();
+      expect(result.avatar).toMatch(/^data:image\/svg\+xml;base64,/);
+      expect(result.metadata.source).toBe('svg');
+    });
+  });
 });

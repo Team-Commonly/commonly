@@ -36,6 +36,12 @@ class LiteLLMClient {
     const model = options.model || this.defaultModel;
     const temperature = options.temperature ?? this.defaultTemperature;
     const maxTokens = options.maxTokens || this.defaultMaxTokens;
+    // F92: a Claude model is the no-training route for pod and connected-chat
+    // text. It takes no sampling value (Haiku 5.5 rejects one), runs with
+    // thinking off so the output budget is the answer's, and a failure is not
+    // retried on OpenRouter or Gemini.
+    const claude = /^claude-/i.test(String(model));
+    if (claude && !this.baseUrl) throw new Error(`No LiteLLM gateway for ${model}`);
 
     if (!this.baseUrl && this.openRouterApiKey) {
       return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
@@ -45,12 +51,9 @@ class LiteLLMClient {
       return this.chatCompletionGemini(messages, { model, temperature, maxTokens });
     }
 
-    const body = {
-      model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-    };
+    const body = claude
+      ? { model, messages, thinking: { type: 'disabled' }, disable_fallbacks: true, max_tokens: maxTokens }
+      : { model, messages, temperature, max_tokens: maxTokens };
 
     // Add optional parameters
     if (options.tools) body.tools = options.tools;
@@ -66,6 +69,7 @@ class LiteLLMClient {
 
       if (!res.ok) {
         const text = await res.text();
+        if (claude) throw new Error(`LiteLLM request failed: ${res.status} ${text.slice(0, 200)}`);
         if (this.openRouterApiKey) {
           return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
         }
@@ -77,6 +81,7 @@ class LiteLLMClient {
 
       return res.json();
     } catch (error) {
+      if (claude) throw error;
       if (this.openRouterApiKey) {
         return this.chatCompletionOpenRouter(messages, { model: this.openRouterModel, temperature, maxTokens });
       }

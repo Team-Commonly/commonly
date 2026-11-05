@@ -1,15 +1,15 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation, useMatch, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
-import DiscordCallback from '../components/DiscordCallback';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -41,6 +41,7 @@ const V2Login = React.lazy(() => import('./components/V2Login'));
 const V2PrimitivesPage = React.lazy(() => import('./primitives/V2PrimitivesPage'));
 const V2Register = React.lazy(() => import('./components/V2Register'));
 const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
+const V2DiscordCallback = React.lazy(() => import('./components/V2DiscordCallback'));
 const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
 const V2ResetPassword = React.lazy(() => import('./components/V2ResetPassword'));
 const V2YourTeamPage = React.lazy(() => import('./components/V2YourTeamPage'));
@@ -55,11 +56,12 @@ const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
+// Only an agent-ensemble pod still opens the V1 room, for its ensemble controls (below).
+const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
-const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
 const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
 const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
 const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
@@ -191,6 +193,7 @@ const feature = (
 // renders inside the app shell like a person's profile (rail at 1440, tab bar
 // at 390); the page itself keeps the public layout for a missing agent.
 const V2AgentProfileRoute: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
     return <V2Boot />;
@@ -198,18 +201,51 @@ const V2AgentProfileRoute: React.FC = () => {
   return (
     <V2AgentProfile
       shell={isAuthenticated
-        ? (page) => <V2AuthenticatedShell>{feature('Agent profile', page, false, false)}</V2AuthenticatedShell>
+        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false)}</V2AuthenticatedShell>
         : undefined}
     />
   );
 };
 
+// Every Pod.type value, plus the old 'gaming' alias. A first segment in this
+// set marks a `/v2/pods/:podType/:roomId` link from before the v2 pod view.
+const legacyRoomTypes = new Set([...podTypeRoutes, 'agent-dm', 'agent-ensemble', 'team']);
+
+// The v2 pod view reads `?message=` and `#message-` to land on a message, so a
+// redirect into it carries the query and hash along.
+const V2PodViewRedirect: React.FC<{ podId?: string }> = ({ podId }) => {
+  const location = useLocation();
+  if (!podId) return <Navigate to="/v2" replace />;
+  return (
+    <Navigate
+      to={{ pathname: `/v2/pods/${encodeURIComponent(podId)}`, search: location.search, hash: location.hash }}
+      replace
+    />
+  );
+};
+
+// `/v2/chat/:podId` is the v2 spelling of the V1 `/chat/:podId` link.
 const V2LegacyChatRedirect: React.FC = () => {
   const { podId } = useParams<{ podId: string }>();
-  return <Navigate to={podId ? `/v2/pods/chat/${podId}` : '/v2'} replace />;
+  return <V2PodViewRedirect podId={podId} />;
+};
+
+// `/v2/pods/:podType/:roomId` used to mount the V1 MUI ChatRoom ("Pod Tools")
+// inside v2, for the run board before V2PodBoard existed (#922). It rendered
+// V1 styling on chat pods and "Failed to load chat room" on team pods, so
+// every link of that shape now opens the v2 pod view. An unknown first
+// segment is read as the pod id (`/v2/pods/:podId/<unknown>`).
+// The exception is agent-ensemble: its configure and discussion controls
+// (AgentEnsemblePanel) live only in the V1 room, so that one type keeps it
+// until the v2 pod view has a replacement.
+const V2LegacyPodRoomRedirect: React.FC<{ ensembleRoom: (room: React.ReactNode) => React.ReactNode }> = ({ ensembleRoom }) => {
+  const { podType, roomId } = useParams<{ podType: string; roomId: string }>();
+  if (podType === 'agent-ensemble' && roomId) return <>{ensembleRoom(<ChatRoom />)}</>;
+  return <V2PodViewRedirect podId={podType && legacyRoomTypes.has(podType) ? roomId : podType} />;
 };
 
 const V2App: React.FC = () => {
+  const { t } = useTranslation();
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
   React.useEffect(() => {
@@ -257,9 +293,9 @@ const V2App: React.FC = () => {
           <Route path="forgot-password" element={<V2ForgotPassword />} />
           <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="verify-email" element={<VerifyEmail />} />
-          <Route path="discord/callback" element={<DiscordCallback />} />
-          <Route path="discord/success" element={<DiscordCallback type="success" />} />
-          <Route path="discord/error" element={<DiscordCallback type="error" />} />
+          <Route path="discord/callback" element={<V2DiscordCallback />} />
+          <Route path="discord/success" element={<V2DiscordCallback type="success" />} />
+          <Route path="discord/error" element={<V2DiscordCallback type="error" />} />
           {/* Community access is resolved by the membership-gated pod probe.
               Keep this outside V2RequireAuth so an anonymous 401 can fall
               through to the public invite preview instead of the login wall. */}
@@ -290,14 +326,11 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podType/:roomId"
-                  element={feature(
-                    'Pod Tools',
-                    <ChatRoom />,
-                    false,
-                    /* ChatRoom owns its own sticky AppBar with title/tabs;
-                       suppress the v2 feature header so the user does not
-                       get stacked chrome along the top of the route. */
-                    false,
+                  element={(
+                    <V2LegacyPodRoomRedirect
+                      /* ChatRoom owns its own sticky AppBar, so the feature header is off. */
+                      ensembleRoom={(room) => feature('Pod Tools', room, false, false)}
+                    />
                   )}
                 />
                 <Route
@@ -313,6 +346,7 @@ const V2App: React.FC = () => {
                     /* V2YourTeamPage owns its own header — suppress the
                        generic V2FeaturePage chrome to avoid stacked titles. */
                     false,
+                    'v2-feature--bar',
                   )}
                 />
                 <Route
@@ -325,15 +359,15 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/:agentName/:instanceId"
-                  element={feature('Agent settings', <V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')}
+                  element={feature(t('common.pageTitle.agentSettings'), <V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')}
                 />
                 <Route
                   path="agents/:agentName/:instanceId/memory"
-                  element={feature('Agent memory', <V2AgentMemory />, false, false, 'v2-feature--memory')}
+                  element={feature(t('common.pageTitle.agentMemory'), <V2AgentMemory />, false, false, 'v2-feature--memory')}
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title="Connect"><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
@@ -348,19 +382,19 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="artifacts"
-                  element={feature('Artifacts', <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                  element={feature(t('artifacts.title'), <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
                 />
                 <Route
                   path="pods/:podId/runs/:runId"
-                  element={feature('Run trace', <V2RunTrace />, false, false, 'v2-feature--run-trace')}
+                  element={feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--run-trace')}
                 />
                 <Route
                   path="pods/:podId/tasks/:taskId/record"
-                  element={feature('Task record', <V2TaskRecord />, false, false)}
+                  element={feature(t('taskRecord.title'), <V2TaskRecord />, false, false, 'v2-feature--task-record')}
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', <V2ActivityPage />, false, false, 'v2-feature--activity')}
+                  element={feature(t('activity.title'), <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"
@@ -376,7 +410,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature('Profile', <V2PersonProfile />, false, false, 'v2-feature--profile')}
+                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--profile')}
                 />
                 <Route
                   path="admin/integrations/global"

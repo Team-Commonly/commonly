@@ -31,23 +31,26 @@ import { normalizeSandboxTrust } from './environment.js';
 export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'opencode', 'qwen', 'dsh', 'goose']);
 
 /**
- * The adapters that can ENFORCE the default sandbox — a strict subset of the
- * ones that consume `mcp[]`.
+ * The adapters that take the default sandbox — a strict subset of the ones that
+ * consume `mcp[]`, and of the ones that enforce a sandbox (below).
  *
- * `pi` is absent deliberately: it cannot enforce the declared sandbox.
- * Goose uses Seatbelt/bwrap and exposes only its prepared Commonly MCP extension.
- * `pi` has no sandbox path until #1740's transport
- * work gives it one, and since #1727 it REFUSES TO START on a spec that
- * declares one: `assertNoSandboxDeclared` in adapters/pi.js throws on an
- * effective `trust: 'public'` (a legacy `internal` resolves to it) and on any
- * `mode` other than 'none'. So handing pi this
- * block is not a harmless no-op — it is an unspawnable seat. A pi seat gets the
- * `mcp[]` half only, and the residual is that such a seat runs unconfined: that
- * belongs to the row that owns pi confinement, not to a declaration written
- * here and hoped for. A derived pi seat used to be exactly this shape and would
- * have failed every spawn with `public-trust seats are not supported`.
+ * Goose and pi enforce an explicitly declared public sandbox but are not handed
+ * this default. Goose: a default cannot supply its required provider and model.
+ * pi (F113b): a public pi turn has no shell and no file tools, the same as every
+ * public adapter, and the daemon derives pi's environment for the private fleet
+ * seats that write code with exactly those tools. A derived public default would
+ * strip them from every one of those seats. A pi seat that takes instructions
+ * from strangers declares `sandbox.trust: 'public'` and is confined then.
  */
 export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen']);
+
+// Adapters that confine a public turn themselves. This is wider than the set
+// above: Goose enforces Seatbelt/bwrap and pi enforces Seatbelt (macOS only;
+// adapters/pi.js), and neither is handed the default block (see above). The
+// attach gate (agent.js resolveAttachSandbox) reads this set, not the default
+// one, or an explicitly configured public Goose or pi seat is refused before its
+// adapter runs (D247 walk, 11-04; F113b).
+export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi']);
 
 // The server has not yet admitted OpenCode to its grant-broker confinement
 // allowlist. Keep runtime sandbox support separate from the narrower set of
@@ -76,12 +79,10 @@ export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
  * An explicit mode in a record still wins over the derived one.
  *
  * Claude, codex, opencode and qwen receive this default block
- * (ADAPTERS_WITH_DEFAULT_SANDBOX). Goose supports explicitly configured public
- * confinement, but defaults cannot supply its required provider and model.
+ * (ADAPTERS_WITH_DEFAULT_SANDBOX). Goose and pi support explicitly configured
+ * public confinement, but are not defaulted into it (see the set's comment).
  * Grant-broker eligibility is
  * narrower until the server admits OpenCode after its confinement proof.
- * A pi seat must never be handed this block: it fails closed on a declared
- * sandbox rather than run under a spec it cannot honour.
  */
 export const COMMONLY_DEFAULT_SANDBOX = Object.freeze({ trust: 'public' });
 

@@ -2,7 +2,6 @@
 // Stop at Scout's post boundary and enforce the same pod FK on its first
 // message. No model, email or external runtime is involved.
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 'token'), verify: jest.fn(), decode: jest.fn() }));
-jest.mock('@sendgrid/mail', () => ({ setApiKey: jest.fn(), send: jest.fn() }));
 jest.mock('../../../models/Task', () => ({ create: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { findOneAndUpdate: jest.fn().mockResolvedValue({}) } }));
 jest.mock('../../../services/communityPodService', () => ({ ensureUserInCommunityPod: jest.fn() }));

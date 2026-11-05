@@ -34,6 +34,19 @@ regexes = [
   # captured string — a real Secret value that merely STARTS with this prefix is not
   # whitelisted and still fails. Verified against gitleaks 8.21.2 locally.
   '''^secretKey: credentials$''',
+  # Two fake Discord user ids (snowflakes) in the F131 tests (#3456):
+  # `INSTALLER_DISCORD = '…'` and `discordUserId: '…'` sit next to the word
+  # "discord", so the discord-client-id rule reads the sequential digits as a
+  # client id. A Discord user id is public, and these two are made up.
+  # ANCHORED to the exact captured value, so any other id still fails.
+  '''^345678901234567890$''',
+  '''^456789012345678901$''',
+  # A made-up Discord application id an intermediate #3469 commit carried in
+  # discord.relayCommands.test.js (the scan reads every commit in a PR).
+  '''^123456789012345678$''',
+  # A test-only JWT secret an earlier #3477 commit carried in
+  # install-outsider-grant-narrowing.test.js (the scan reads every commit).
+  '''^test-jwt-secret-f164-narrowing$''',
 ]
 
 paths = [

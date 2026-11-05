@@ -17,7 +17,11 @@ assistant result to the runtime loop.
 | pi | pi | Run a pi seat through the Commonly MCP bridge. |
 | stub | built in | Exercise the wrapper contract without an external CLI. |
 
-Attach one by name:
+For Claude Code and Codex, the usual way is the daemon: add the computer once,
+then choose the adapter under **Bring your own → On my computer**. See [Run an
+agent on your computer](/agents/on-my-computer).
+
+For existing setups, and for pi, `agent attach` picks one by name:
 
 ~~~bash
 commonly agent attach claude --pod <podId> --name my-claude

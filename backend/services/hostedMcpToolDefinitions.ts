@@ -28,7 +28,9 @@ import {
   type HostedMcpDriftCache,
   type HostedMcpDriftOutcome,
   type HostedMcpPinnedTool,
+  type HostedMcpUpstreamListing,
   type HostedMcpUpstreamTool,
+  withoutWithheldArgs,
 } from './hostedMcpEntryService';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
@@ -420,13 +422,22 @@ const listUpstreamTools = async (
   connectionId: string,
   deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher'>,
   entries: HostedMcpEntry[],
-): Promise<HostedMcpUpstreamTool[]> => {
+): Promise<HostedMcpUpstreamListing> => {
   const row = await deps.loadRow(connectionId);
   if (!row) throw new RoomGrantError('connection_mismatch', 'hosted-MCP connection row no longer exists', 403);
   const entry = findHostedMcpEntry(entries, String(row.config?.entryId || ''));
   if (!entry) throw new RoomGrantError('connection_mismatch', 'hosted-MCP entry is unavailable', 403);
   const { token } = await deps.credentialFor(row);
-  return listHostedMcpTools(entry, token, deps.fetcher);
+  // The consent is read again after credentialFor, so a refresh it ran is the
+  // consent this list is taken under: the refresh commit records the scope its
+  // token came with (scopeAfterRefresh), which can add one to a legacy row with
+  // none recorded, or drop write. This runs once per drift-cache miss, not per call.
+  const consented = (await deps.loadRow(connectionId)) ?? row;
+  const grantedScope = consented.config?.grantedScope;
+  return {
+    tools: await listHostedMcpTools(entry, token, deps.fetcher),
+    grantedScope: typeof grantedScope === 'string' ? grantedScope : null,
+  };
 };
 
 /**
@@ -467,6 +478,33 @@ export const listHostedMcpTools = async (
       seenCursors.add(cursor);
     }
     throw new RoomGrantError('provider_error', 'hosted-MCP tools/list exceeded the page limit', 502);
+  } finally {
+    await session?.close();
+    clearTimeout(timer);
+  }
+};
+
+/**
+ * One short session for a post-connect check (TASK-782): `fn` gets a raw
+ * tools/call under the fresh bearer and the whole check shares one deadline,
+ * because the person's browser is waiting on the callback redirect. This is
+ * not the broker path: no grant, no drift assessment, no result cap, so it is
+ * only for the entry's own reach probe, never for a model's call.
+ */
+export const withHostedMcpSession = async <T>(
+  entry: HostedMcpEntry,
+  token: string,
+  deadlineMs: number,
+  fn: (call: (name: string, args: Record<string, unknown>) => Promise<any>) => Promise<T>,
+  fetcher: typeof fetch = guardedFetch,
+): Promise<T> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+  let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
+  try {
+    session = await openHostedMcpSession(entry.resource, token, fetcher, controller.signal);
+    const open = session;
+    return await fn((name, args) => open.request('tools/call', { name, arguments: args }));
   } finally {
     await session?.close();
     clearTimeout(timer);
@@ -545,6 +583,11 @@ export const assertHostedToolUnchanged = async (
     );
   }
   const assessed = outcome.tools.find((candidate) => candidate.name === tool.name);
+  // The grant mint's own refusal, at the call: a grant minted before the row
+  // needed writeScope meets the same reconnect instruction (F102).
+  if (assessed?.verdict === 'not_granted') {
+    throw new RoomGrantError('write_scope_required', `${entry.id}.${tool.name}: ${assessed.detail}`, 403);
+  }
   if (!assessed || assessed.verdict !== 'ok') {
     const code = assessed?.verdict || 'tool_unavailable';
     throw new RoomGrantError(code, `${entry.id}.${tool.name}: ${assessed?.detail || 'tool is unavailable'}`, 403);
@@ -596,7 +639,10 @@ const callHostedTool = async (
   let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   try {
     session = await openHostedMcpSession(entry.resource, token, deps.fetcher, controller.signal);
-    const result = await session.request('tools/call', { name: tool.upstreamName, arguments: args });
+    const result = await session.request('tools/call', {
+      name: tool.upstreamName,
+      arguments: withoutWithheldArgs(tool, args),
+    });
     // MCP reports a tool that ran and failed as a result with `isError`, which is
     // the model's to read: throwing here would hide the vendor's own explanation
     // from the turn that asked for it. The credential comes out before the cap,

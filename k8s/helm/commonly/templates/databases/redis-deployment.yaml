@@ -20,6 +20,33 @@ spec:
       - name: redis
         image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
         imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+        {{- if .Values.redis.auth.enabled }}
+        # requirepass via a generated conf, not --requirepass, so the password
+        # never appears in the process args (ps). REDISCLI_AUTH lets the
+        # redis-cli liveness/readiness probes authenticate without args too.
+        command:
+        - sh
+        - -c
+        - |
+          umask 077
+          printf 'requirepass %s\n' "$REDIS_PASSWORD" > /tmp/redis.conf
+          # Hand off to the image entrypoint so it drops root -> the redis user
+          # (gosu); chown the conf so that user can read it. Overriding command
+          # alone would otherwise leave redis running as root.
+          chown redis:redis /tmp/redis.conf
+          exec docker-entrypoint.sh redis-server /tmp/redis.conf
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: redis-password
+        - name: REDISCLI_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: redis-password
+        {{- end }}
         ports:
         - containerPort: {{ .Values.redis.service.port }}
           name: redis

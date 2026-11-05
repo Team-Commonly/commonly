@@ -45,8 +45,6 @@ jobs:
         shard: [1, 2, 3]
     env:
       JWT_SECRET: test-jwt-secret
-      SENDGRID_API_KEY: fake-api-key
-      SENDGRID_FROM_EMAIL: test@example.com
       FRONTEND_URL: http://localhost:3000
     steps:
       - uses: latchkey/setup-node@1.0.1

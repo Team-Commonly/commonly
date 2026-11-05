@@ -193,6 +193,19 @@ export const environmentForServer = (environment) => {
 
 // ── validateEnvironmentSpec ─────────────────────────────────────────────────
 
+export const PROVIDER_APIS = Object.freeze(['openai-chat', 'anthropic-messages']);
+
+// One provider check for config, attach, run and the daemon's adapter swap: the adapter must take a
+// provider block at all, and speak its `provider.api` (default openai-chat).
+export const providerRefusal = (environment, adapter) => {
+  if (environment?.provider === undefined) return null;
+  if (!adapter?.supportsProvider) return 'environment.provider requires a provider-capable adapter';
+  const api = environment.provider?.api || 'openai-chat';
+  const apis = adapter.providerApis || ['openai-chat'];
+  return apis.includes(api) ? null
+    : `the ${adapter.name} adapter cannot use provider.api "${api}"; it supports ${apis.join(', ')}`;
+};
+
 export const validateEnvironmentSpec = (spec) => {
   const errors = [];
 
@@ -226,13 +239,18 @@ export const validateEnvironmentSpec = (spec) => {
     if (!spec.provider || typeof spec.provider !== 'object' || Array.isArray(spec.provider)) {
       errors.push('provider must be an object');
     } else {
-      const allowedProviderKeys = new Set(['id', 'baseURL', 'keyFile', 'models']);
+      const allowedProviderKeys = new Set(['id', 'baseURL', 'keyFile', 'models', 'api']);
       for (const key of Object.keys(spec.provider)) {
         if (!allowedProviderKeys.has(key)) {
-          errors.push(`unknown provider key: ${JSON.stringify(key)} (allowed: id, baseURL, keyFile, models)`);
+          errors.push(`unknown provider key: ${JSON.stringify(key)} (allowed: id, baseURL, keyFile, models, api)`);
         }
       }
-      const { id, baseURL, keyFile, models } = spec.provider;
+      const { id, baseURL, keyFile, models, api } = spec.provider;
+      // The wire the provider speaks. Absent means openai-chat; whether the
+      // chosen adapter can speak it is the adapter's `providerApis`.
+      if (api !== undefined && !PROVIDER_APIS.includes(api)) {
+        errors.push(`provider.api must be one of ${PROVIDER_APIS.join(', ')}`);
+      }
       if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) {
         errors.push('provider.id must be a safe OpenCode provider id');
       }

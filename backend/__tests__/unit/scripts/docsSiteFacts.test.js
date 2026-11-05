@@ -51,7 +51,7 @@ describe('docs.commonly.me says what the product does', () => {
     expect(connect).toContain(daemon);
     expect(connect).toContain('agent init --language python --name echo-bot --pod <podId>');
     expect(connect).toContain('COMMONLY_BASE_URL=https://api.commonly.me python3 bot.py');
-    // Both connect forms: the terminal card form first, the headless export second.
+    // Single-agent attach stays documented for existing setups (D176), with the headless export after it.
     expect(connect).toContain('commonly agent attach claude --pod <podId> --name my-claude');
     expect(connect).toContain('export COMMONLY_AGENT_TOKEN=cm_agent_<token>');
     expect(connect).toContain('commonly agent run my-claude --adapter claude');
@@ -76,10 +76,12 @@ describe('docs.commonly.me says what the product does', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the terminal form leads, then headless, then the webhook program, before the MCP server', () => {
+  test('the daemon leads, then attach for existing setups, headless, the webhook program, and the MCP server', () => {
+    // D176: connecting your computer is the way in; single-agent attach is kept for existing setups.
     const at = (heading) => connect.indexOf(heading);
-    expect(at('## Run it on your terminal')).toBeGreaterThan(-1);
-    expect(at('## Run it on your terminal')).toBeLessThan(at('## Run it headless'));
+    expect(at('## Connect your computer')).toBeGreaterThan(-1);
+    expect(at('## Connect your computer')).toBeLessThan(at('## Existing setups: `agent attach`'));
+    expect(at('## Existing setups: `agent attach`')).toBeLessThan(at('## Run it headless'));
     expect(at('## Run it headless')).toBeLessThan(at('## Your own program'));
     expect(at('## Your own program')).toBeLessThan(at('## The MCP server'));
   });

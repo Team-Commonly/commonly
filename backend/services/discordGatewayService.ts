@@ -16,6 +16,12 @@ interface ChannelTarget {
   integrationId: unknown;
   webhookListenerEnabled: boolean;
   maxBufferSize: number;
+  // Only a hint for which rows to hand the bridge; the bridge re-reads the row.
+  liveRelay?: boolean;
+  // The installer's proven Discord id (F131). Server-owned and fixed at the
+  // row's creation, so a minute-stale copy is still right: any other author's
+  // line skips the per-message row read, since the bridge would refuse it.
+  discordUserId?: string;
 }
 
 interface IntegrationDoc {
@@ -25,13 +31,18 @@ interface IntegrationDoc {
     serverId?: string;
     webhookListenerEnabled?: boolean;
     maxBufferSize?: number;
+    liveRelay?: boolean;
+    discordUserId?: string;
   };
 }
 
 interface DiscordMessage {
   guild?: { id: string };
   channel?: { id: string };
-  author?: { id?: string; username?: string; bot?: boolean };
+  author?: { id?: string; username?: string; globalName?: string | null; bot?: boolean };
+  type?: number;
+  system?: boolean;
+  webhookId?: string | null;
   member?: { displayName?: string };
   content?: string;
   id?: string;
@@ -117,7 +128,8 @@ class DiscordGatewayService {
       type: 'discord',
       isActive: true,
     })
-      .select('_id config.channelId config.serverId config.webhookListenerEnabled config.maxBufferSize')
+      .select('_id config.channelId config.serverId config.webhookListenerEnabled config.maxBufferSize '
+        + 'config.liveRelay config.discordUserId')
       .lean() as IntegrationDoc[];
 
     this.channelCache.clear();
@@ -133,6 +145,8 @@ class DiscordGatewayService {
         integrationId: integration._id,
         webhookListenerEnabled: !!integration?.config?.webhookListenerEnabled,
         maxBufferSize: integration?.config?.maxBufferSize || 1000,
+        liveRelay: integration?.config?.liveRelay === true,
+        ...(integration?.config?.discordUserId ? { discordUserId: String(integration.config.discordUserId) } : {}),
       });
       this.channelCache.set(key, existing);
     });
@@ -190,6 +204,27 @@ class DiscordGatewayService {
           },
         })),
     );
+
+    // F131: a live-relay row also gets the line in its pod, when the bridge
+    // proves the author. The buffer above is unchanged for every line, relayed
+    // or not, so channel summaries still see the whole channel.
+    const authorId = String(message.author?.id || '');
+    const liveTargets = targets.filter((target) => (
+      target.liveRelay && Boolean(target.discordUserId) && target.discordUserId === authorId
+    ));
+    if (!liveTargets.length) return;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { relayDiscordMessageForIntegration } = require('./discordBridgeService');
+    await Promise.all(liveTargets.map(async (target) => {
+      try {
+        await relayDiscordMessageForIntegration(target.integrationId, message);
+      } catch (error) {
+        console.error(
+          `[discord-bridge] live relay failed integration=${String(target.integrationId)}:`,
+          (error as Error).message,
+        );
+      }
+    }));
   }
 }
 

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, validateTargets, checkSurface, EXPECTED, SIDEBAR_390 } = require('./measure_after');
+const { BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -29,7 +29,7 @@ test('--only with an unknown surface throws', () => {
 
 test('the committed targets.json passes its own validation', () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  assert.strictEqual(Object.keys(t).length, 30);
+  assert.strictEqual(Object.keys(t).length, 48);
   validateTargets(t);
 });
 
@@ -39,7 +39,67 @@ test('an empty or partial measurement is refused', () => {
   const partial = { ...t }; delete partial['board-390'];
   assert.throws(() => validateTargets(partial), /missing board-390/);
   assert.throws(() => validateTargets({ ...t, 'chat-1440': { helperWords: NaN, innerRatio: 2 } }), /invalid chat-1440/);
-  assert.strictEqual(EXPECTED.length, 30);
+  assert.strictEqual(EXPECTED.length, 48);
+});
+
+test('a frame the scorer does not know is named, with the way to fix it', () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  const extra = { ...t, 'new-thing-1440': { helperWords: 3, innerRatio: 1 }, 'new-thing-390': { helperWords: 2, innerRatio: 1 } };
+  let msg = '';
+  try { validateTargets(extra); } catch (e) { msg = e.message; }
+  assert.match(msg, /frames the scorer doesn't know: new-thing-1440, new-thing-390/);
+  assert.match(msg, /add "new-thing" to SURFACES/);
+  assert.match(msg, /SKIPPED/);
+  assert.match(msg, /data-state/);
+  assert.match(msg, /targets\.json left unchanged$/);
+  assert.match(unknownFrameError(['a-b-390']), /add "a-b" to SURFACES/);
+});
+
+// keyFrames is the Node half of artboard(): the page reports every frame raw, and only this
+// decides which count. These run without a browser.
+const frame = (surface, vp, extra = {}) => ({ surface, vp, hasState: false, helperWords: 4, innerRatio: 1, ...extra });
+
+test('keyFrames keys a normal frame by surface and viewport', () => {
+  assert.deepStrictEqual(keyFrames([frame('board', '390', { helperWords: 14, innerRatio: 1.2 })], {}),
+    { res: { 'board-390': { helperWords: 14, innerRatio: 1.2 } }, dupes: [] });
+});
+
+test('keyFrames ignores a skipped surface', () => {
+  const { res, dupes } = keyFrames([frame('activity-busy', '1440'), frame('board', '1440')], { 'activity-busy': 'redesign' });
+  assert.deepStrictEqual(Object.keys(res), ['board-1440']);
+  assert.deepStrictEqual(dupes, []);
+});
+
+test('keyFrames ignores a state frame, even one sharing a scored key', () => {
+  const { res, dupes } = keyFrames([frame('settings', '1440', { helperWords: 10 }), frame('settings', '1440', { hasState: true, helperWords: 99 })], {});
+  assert.deepStrictEqual(res, { 'settings-1440': { helperWords: 10, innerRatio: 1 } });
+  assert.deepStrictEqual(dupes, []);
+});
+
+test('keyFrames reports two scored frames with one key as dupes', () => {
+  const { res, dupes } = keyFrames([frame('chat', '390', { helperWords: 9 }), frame('chat', '390', { helperWords: 50 })], {});
+  assert.deepStrictEqual(dupes, ['chat-390']);
+  assert.strictEqual(res['chat-390'].helperWords, 9);
+});
+
+// Every base frame in index.html (no data-state) is either scored or skipped on purpose, so a new
+// frame fails here, without a browser, before it can break a regeneration.
+test('every base frame in index.html is in SURFACES or SKIPPED', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const tags = html.match(/<[a-z]+\b[^>]*\bclass="frame"[^>]*>/g) || [];
+  const attr = (tag, name) => (tag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1];
+  const base = tags.filter(tag => attr(tag, 'data-state') === undefined);
+  assert.ok(base.length > 0, 'no base frames found; the frame pattern no longer matches index.html');
+  const seen = new Set(base.map(tag => attr(tag, 'data-surface')));
+  const unknown = [...seen].filter(s => !SURFACES.includes(s) && !(s in SKIPPED));
+  assert.deepStrictEqual(unknown, [], unknown.length ? unknownFrameError(unknown.map(s => `${s}-?`)) : '');
+  // Every scored surface is drawn at both viewports, and no surface is both scored and skipped.
+  for (const s of SURFACES) for (const vp of ['1440', '390']) {
+    assert.ok(base.some(tag => attr(tag, 'data-surface') === s && attr(tag, 'data-vp') === vp), `${s}-${vp} is in SURFACES but not drawn`);
+  }
+  assert.deepStrictEqual(SURFACES.filter(s => s in SKIPPED), []);
+  for (const [s, why] of Object.entries(SKIPPED)) assert.ok(why && seen.has(s), `SKIPPED entry ${s} needs a reason and a drawn frame`);
+  assert.ok(PROD_SURFACES.every(s => SURFACES.includes(s)));
 });
 
 // A page whose SPA shell answers 200 and then redirects to `landsOn`. Its metrics would score
@@ -132,4 +192,68 @@ test('only the /v2 pod auto-select counts as landing', () => {
   assertLanded('/v2', BASE + '/v2/pods/abc123');
   assert.throws(() => assertLanded('/v2/agents/a/default', BASE + '/v2'), /redirected to \/v2$/);
   assert.throws(() => assertLanded('/v2/settings', BASE + '/v2/pods/abc123'), /redirected/);
+});
+
+// A busy page on its route. `rows` maps each trim selector to its row count, and `refused` puts
+// the error line or the spinner on screen. `trimmed` records the trim the scorer asked for.
+const fakeBusy = (name, route, { rows, refused = false }) => {
+  let url = 'about:blank';
+  const B = BUSY[name];
+  const page = {
+    trimmed: null,
+    measured: 0,
+    goto: async () => { url = BASE + route; return { ok: () => true, status: () => 200 }; },
+    waitForTimeout: async () => {},
+    url: () => url,
+    locator: sel => {
+      if (sel === B.refuse) return { first: () => ({ isVisible: async () => refused }) };
+      if (sel in rows) return { count: async () => rows[sel] };
+      throw new Error(`unexpected locator ${sel}`);
+    },
+    evaluate: async (fn, arg) => {
+      if (arg) { page.trimmed = arg; return undefined; }
+      page.measured++;
+      return { helperWords: 0, innerRatio: 1 };
+    },
+  };
+  return page;
+};
+
+test('a busy surface scores only a loaded list as long as its frame, trimmed to the frame', async () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  // Keyed by name: the plain prod tuple gets the guard, with nothing for SURF to forget.
+  const artifacts = ['artifacts-busy', () => '/v2/artifacts'];
+  const failed = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 0 }, refused: true });
+  await assert.rejects(checkSurface(failed, artifacts, '1440', t), /did not load/);
+  assert.strictEqual(failed.measured, 0);
+  const short = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 2 } });
+  await assert.rejects(checkSurface(short, artifacts, '390', t), /2 \.v2a-file rows .* not the busy state/);
+  assert.strictEqual(short.measured, 0);
+  const busy = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 50 } });
+  assert.strictEqual((await checkSurface(busy, artifacts, '1440', t)).ok, true);
+  assert.deepStrictEqual(busy.trimmed, [{ rows: '.v2a-file', group: '.v2a-group', keep: 6 }]);
+  assert.strictEqual(busy.measured, 1);
+
+  // Activity: Needs you pages itself through every open item, so both lists are trimmed to the frame.
+  const activity = ['activity-busy', () => '/v2/activity'];
+  const queue = '.v2-activity__queue > .v2-activity__queue-row', moved = '.v2-activity__moved-line';
+  const thin = fakeBusy('activity-busy', '/v2/activity', { rows: { [queue]: 429, [moved]: 3 } });
+  await assert.rejects(checkSurface(thin, activity, '390', t), /3 \.v2-activity__moved-line rows/);
+  const full = fakeBusy('activity-busy', '/v2/activity', { rows: { [queue]: 429, [moved]: 5 } });
+  assert.strictEqual((await checkSurface(full, activity, '1440', t)).ok, true);
+  assert.deepStrictEqual(full.trimmed.map(x => [x.rows, x.keep]), [[queue, 4], [moved, 5]]);
+  // Every other prod surface is measured as it stands.
+  assert.deepStrictEqual(Object.keys(BUSY).sort(), ['activity-busy', 'artifacts-busy']);
+  // The selectors are the pages' real classes: a renamed or mistyped class would leave the
+  // refusal looking for nothing, so each one is pinned here and found in the page source.
+  assert.strictEqual(BUSY['activity-busy'].refuse, '.v2-activity__error, .v2-activity__loading');
+  assert.strictEqual(BUSY['artifacts-busy'].refuse, '.v2a-state, .v2a-loading');
+  const src = {
+    'activity-busy': fs.readFileSync(path.join(__dirname, '../../../../../frontend/src/v2/components/V2ActivityPage.tsx'), 'utf8'),
+    'artifacts-busy': fs.readFileSync(path.join(__dirname, '../../../../../frontend/src/v2/components/V2ArtifactsPage.tsx'), 'utf8'),
+  };
+  for (const [name, B] of Object.entries(BUSY)) {
+    const sels = [B.refuse, ...B.trim.flatMap(x => [x.rows, x.group].filter(Boolean))].join(' ');
+    for (const cls of sels.match(/\.[\w-]+/g)) assert.ok(new RegExp(`className="[^"]*\\b${cls.slice(1)}\\b`).test(src[name]), `${name}: ${cls} is not a class in the page`);
+  }
 });

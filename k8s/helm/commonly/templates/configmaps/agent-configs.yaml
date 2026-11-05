@@ -25,23 +25,34 @@ data:
             ]
           }
           {{- else if .Values.litellm.enabled }}
+          {{- /* LiteLLM serves no Codex model (F103), so this provider lists none;
+                 it stays for the openai-codex:codex-cli auth profile. */}}
           "openai-codex": {
             "baseUrl": "http://litellm.{{ include "commonly.namespace" . }}.svc.cluster.local:4000",
             "api": "openai-completions",
-            "models": [
-              {"id": "gpt-5.4", "name": "gpt-5.4"},
-              {"id": "gpt-5.3-codex", "name": "gpt-5.3-codex"}
-            ]
+            "models": []
           }
           {{- else }}
           "openai-codex": null
+          {{- end }}
+          {{- if .Values.litellm.enabled }},
+          {{- /* The provider every agent default routes through, as the K8s
+                 provisioner writes it (F103): LiteLLM, serving the configured
+                 default under its own name. */}}
+          "openrouter": {
+            "baseUrl": "http://litellm.{{ include "commonly.namespace" . }}.svc.cluster.local:4000",
+            "api": "openai-completions",
+            "models": [
+              {"id": {{ .Values.litellm.agentDefaultModel | quote }}, "name": {{ .Values.litellm.agentDefaultModel | quote }}, "reasoning": false, "input": ["text"], "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "maxTokens": 8000, "contextWindow": 128000}
+            ]
+          }
           {{- end }}
         }
       },
       "agents": {
         "defaults": {
           "model": {
-            "primary": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+            "primary": "openrouter/{{ .Values.litellm.agentDefaultModel }}",
             "fallbacks": ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite", "google/gemini-2.0-flash"]
           },
           "maxConcurrent": 4,

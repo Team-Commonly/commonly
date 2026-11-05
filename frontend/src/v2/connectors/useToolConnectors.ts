@@ -15,6 +15,7 @@ import {
   WRITE_MODES,
   isDead,
   entryCovers,
+  boundAgentOf,
 } from './toolModel';
 import type {
   GrantWriteMode,
@@ -24,11 +25,13 @@ import type {
   ToolCatalogEntry,
   HiddenToolConnection,
   PodSeat,
+  ByoCandidate,
   DraftGrant,
   GithubAppSetup,
   GithubAppIntegrationResponse,
   HostedMcpManualRevokeNotice,
 } from './toolModel';
+import type { KeyAgent, OperatorKeyResult } from './OperatorKeyForm';
 
 // Seats matching `narrowed` across every pod roster, named by display name,
 // once each, never by the pods their grants reach.
@@ -57,6 +60,8 @@ export const useToolConnectors = (
   const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
   const [seatLookupFailed, setSeatLookupFailed] = useState(false);
+  // F94: per pod, the viewer's own agents there that run outside Commonly.
+  const [byoCandidates, setByoCandidates] = useState<Record<string, ByoCandidate[]>>({});
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
   const [trail, setTrail] = useState<ToolTrail | null>(null);
   const [trailError, setTrailError] = useState(false);
@@ -101,6 +106,27 @@ export const useToolConnectors = (
   // anywhere, or limited to one pod.
   const blockedSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedByMultipleGrantPods), [seats]);
   const onePodSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedToOnePod), [seats]);
+  // The agents this person can bind a pasted key to: the ones they installed,
+  // read from the pod rosters this page already loads. The route refuses an
+  // agent someone else installed too (the sole-installer rule), so an agent
+  // another person installed in any roster the viewer can read is left out.
+  // Rosters the viewer can't read stay invisible, and the route's 403 has the
+  // last word for those. An agent-dm install is not ownership on the server
+  // (runtimeIdentityOwnership drops them), so agent-dm seats count on neither
+  // side.
+  const keyAgents = useMemo<KeyAgent[]>(() => {
+    const agentDmPodIds = new Set(pods.filter((pod) => pod.type === 'agent-dm').map((pod) => String(pod._id)));
+    const all = Object.entries(seats).filter(([podId]) => !agentDmPodIds.has(podId)).flatMap(([, rows]) => rows);
+    const sharedInstall = new Set(all
+      .filter((seat) => seat.userId && seat.installedBy && seat.installedBy !== viewerId)
+      .map((seat) => seat.userId as string));
+    return [...new Map(all
+      .filter((seat) => seat.userId && viewerId && seat.installedBy === viewerId && !sharedInstall.has(seat.userId))
+      .map((seat) => [seat.userId as string, { userId: seat.userId as string, label: seat.displayName || seat.name }])).values()]
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [seats, viewerId, pods]);
+  // The agent list is unknown when a pod list or roster couldn't be read.
+  const keyAgentsUnavailable = podListFailed || seatLookupFailed;
   // An unreadable pod list or roster, or a roster whose census failed, leaves
   // posting status unknown. The page says so rather than implying posting works.
   const narrowingStatusUnavailable = podListFailed || seatLookupFailed || Object.values(seats).flat()
@@ -155,6 +181,19 @@ export const useToolConnectors = (
       .catch(() => { if (!cancelled) setTrailError(true); });
     return () => { cancelled = true; };
   }, [api, selectedId]);
+
+  // F94: the draft's pod is read for agents that run outside Commonly when the
+  // form opens on it. A failed read leaves none known, and the mint still
+  // refuses a pod holding one that is not named.
+  const draftPodId = draft?.podId || '';
+  useEffect(() => {
+    if (!draftPodId) return undefined;
+    let cancelled = false;
+    api.get<{ agents?: ByoCandidate[] }>('/api/grants/byo-candidates', { params: { podId: draftPodId } })
+      .then((res) => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: Array.isArray(res?.agents) ? res.agents : [] })); })
+      .catch(() => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: [] })); });
+    return () => { cancelled = true; };
+  }, [api, draftPodId]);
 
   // The entry a grant belongs to is the one whose namespaced tools it carries.
   // If the catalogue no longer has that entry, the name comes from the server's
@@ -260,6 +299,8 @@ export const useToolConnectors = (
       broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
       tool_drift: t('tools.reasonToolDrift', { defaultValue: 'the provider changed this tool since Commonly checked it' }),
       tool_unavailable: t('tools.reasonToolUnavailable', { defaultValue: "this connection's tool list does not include this tool" }),
+      // A write the connection never consented to (F102): the same instruction as reconnect_required.
+      write_scope_required: t('tools.reasonReconnect', { defaultValue: 'the connection needs reconnecting' }),
       tool_not_found: t('tools.reasonToolNotFound', { defaultValue: 'this tool is not registered with Commonly' }),
       definition_digest_mismatch: t('tools.reasonToolChangedSinceApproval', { defaultValue: 'the tool changed after approval was asked for, so it needs asking again' }),
       args_digest_mismatch: t('tools.reasonArgsChangedSinceApproval', { defaultValue: 'the arguments no longer match the ones sent for approval' }),
@@ -275,6 +316,21 @@ export const useToolConnectors = (
     };
     // Own keys only: a code such as `constructor` or `__proto__` must show as itself, not as an inherited member.
     return Object.prototype.hasOwnProperty.call(labels, reason) ? labels[reason] : reason;
+  };
+  // F94: the mint's refusals of a named agent, in the page's words. A code
+  // without a key here falls back to the server's own message.
+  const byoErrorLabel = (code?: string): string | null => {
+    const labels: Record<string, string> = {
+      byo_read_only: t('tools.byo.errors.readOnly'),
+      byo_consent_required: t('tools.byo.errors.consentRequired'),
+      byo_limited_use: t('tools.byo.errors.limitedUse'),
+      byo_not_audience: t('tools.byo.errors.notAudience'),
+      byo_not_agent: t('tools.byo.errors.notAgent'),
+      byo_agent_not_owned: t('tools.byo.errors.notOwned'),
+      byo_unconfined_host: t('tools.byo.errors.unconfinedHost'),
+      byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported'),
+    };
+    return code && Object.prototype.hasOwnProperty.call(labels, code) ? labels[code] : null;
   };
   const modeLabel = (mode: GrantWriteMode): string => ({
     read: t('tools.modeRead', { defaultValue: 'read' }),
@@ -304,16 +360,55 @@ export const useToolConnectors = (
   const q = query.trim().toLowerCase();
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
 
+  const seatIdsIn = (podId: string): string[] => (seats[podId] || [])
+    .map((seat) => seat.userId).filter((id): id is string => Boolean(id));
+  // Who a draft starts with in a pod: every seat, or only the agent a key
+  // connection belongs to, when that agent sits in the pod.
+  const startingAudience = (entry: ToolCatalogEntry, connectionId: string, podId: string): string[] => {
+    const bound = boundAgentOf(entry, connectionId);
+    const ids = seatIdsIn(podId);
+    return bound ? ids.filter((id) => id === bound) : ids;
+  };
+
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
-    const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    let podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    let connectionId = entry.connections[0]?.connectionId || '';
+    // A key connection starts in a pod where its agent sits: the first pod, in
+    // list order, holding any keyed agent. Grant again keeps its grant's pod and
+    // the key it was minted on (a hosted grant's installationId is the
+    // connection's id). Other connections take neither branch.
+    // A key grant whose key is gone starts with no connection and nobody, never
+    // with another agent's key: that would mint for that agent and, for a live
+    // grant, revoke this one.
+    let keyGone = false;
+    if (from) {
+      const minted = entry.connections.find((connection) => connection.connectionId === from.installationId);
+      if (minted && boundAgentOf(entry, minted.connectionId)) connectionId = minted.connectionId;
+      else if (!minted && entry.credentialMode === 'operator_key') {
+        connectionId = '';
+        keyGone = true;
+      }
+    } else {
+      const seated = podIds.flatMap((pod) => entry.connections.map((connection) => ({ pod, connectionId: connection.connectionId })))
+        .find((pair) => {
+          const bound = boundAgentOf(entry, pair.connectionId);
+          return Boolean(bound) && seatIdsIn(pair.pod).includes(bound as string);
+        });
+      if (seated) {
+        podId = seated.pod;
+        connectionId = seated.connectionId;
+      }
+    }
     const modes = entryGrantModes(entry);
-    const agentIds = (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id));
+    const agentIds = seatIdsIn(podId);
     setDraft({
       entry,
       podId,
-      connectionId: entry.connections[0]?.connectionId || '',
+      connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      audience: from ? agentIds.filter((id) => from.effectiveAudience.includes(id)) : agentIds,
+      audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
+        ? agentIds.filter((id) => from.effectiveAudience.includes(id))
+        : startingAudience(entry, connectionId, podId)),
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
     });
@@ -339,12 +434,41 @@ export const useToolConnectors = (
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
-  const selectedAgentIds = (draft ? seats[draft.podId] || [] : [])
-    .map((seat) => seat.userId)
-    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true);
+  const draftBoundAgent = draft && draftEntry ? boundAgentOf(draftEntry, draft.connectionId) : null;
+  // On a key connection only its own agent can be submitted, whatever the
+  // audience holds; the server refuses anyone else (operatorKeyAudienceRefusal).
+  const draftByoCandidates = draft ? byoCandidates[draft.podId] || [] : [];
+  const unnameableIds = new Set(draftByoCandidates.filter((agent) => !agent.nameable).map((agent) => agent.userId));
+  // An agent of the viewer's that runs outside Commonly is offered even when
+  // the roster hides it as internal: a pod holding one can only be granted by
+  // naming it. One no grant can name is never submitted.
+  const draftSeatIds = draft ? [...new Set([
+    ...(seats[draft.podId] || []).map((seat) => seat.userId),
+    ...draftByoCandidates.map((agent) => agent.userId),
+  ])] : [];
+  const selectedAgentIds = draftSeatIds
+    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true)
+    .filter((id) => !draftBoundAgent || id === draftBoundAgent)
+    .filter((id) => !unnameableIds.has(id));
+  // The checked agents the grant would name, and whether the person has
+  // consented for exactly these.
+  const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && selectedAgentIds.includes(agent.userId));
+  const draftByoKey = draftByoNamed.map((agent) => agent.userId).sort().join(',');
+  const draftByoConsented = draftByoNamed.length > 0 && draft?.byoConsentFor === draftByoKey;
+  // Naming one is read-only (byo_read_only), so a write mode drops back to
+  // read while one is checked, and an agent no grant can name is unchecked.
+  useEffect(() => {
+    if (!draft) return;
+    const audience = draft.audience.filter((id) => !unnameableIds.has(id));
+    const writeMode = draftByoNamed.length > 0 ? 'read' : draft.writeMode;
+    if (audience.length !== draft.audience.length || writeMode !== draft.writeMode) {
+      setDraft({ ...draft, audience, writeMode });
+    }
+  });
 
   const submitDraft = async () => {
-    if (!draft || !draftEntry || selectedAgentIds.length === 0) return;
+    if (!draft || !draftEntry || !draft.connectionId || selectedAgentIds.length === 0) return;
+    if (draftByoNamed.length > 0 && !draftByoConsented) return;
     setBusy(true);
     setError(null);
     setJoinPolicyFixPodId(null);
@@ -360,6 +484,9 @@ export const useToolConnectors = (
         writeMode: draft.writeMode,
         audience: selectedAgentIds,
         expiresAt,
+        ...(draftByoNamed.length > 0
+          ? { byoAgents: draftByoNamed.map((agent) => agent.userId), byoConsent: true }
+          : {}),
       });
       // A resolved request alone is not a mint receipt (for example, an HTML
       // fallback or empty response). Keep the form and the old grant intact.
@@ -388,7 +515,7 @@ export const useToolConnectors = (
       await load();
     } catch (err) {
       const code = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data;
-      setError(code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
+      setError(byoErrorLabel(code?.error) || code?.message || code?.error || t('tools.grantError', { defaultValue: 'Could not grant it.' }));
       const creator = pods.find((pod) => pod._id === draft.podId)?.createdBy as { _id?: string } | string | undefined;
       const owner = typeof creator === 'string' ? creator : creator?._id;
       if (code?.error === 'outsider_grant_pod_joinable' && owner === viewerId) {
@@ -451,6 +578,33 @@ export const useToolConnectors = (
     } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * One agent's pasted key for an operator-key entry (TASK-330). The key goes
+   * only into the request body: it is never logged, kept or returned, and only
+   * the route's code comes back, for the form to put in words. A success
+   * re-reads the catalogue so the new connection shows, as the OAuth return does.
+   */
+  const submitOperatorKey = async (entry: ToolCatalogEntry, agentId: string, key: string): Promise<OperatorKeyResult> => {
+    if (!entry.entryId) return { ok: false, code: 'unknown_entry' };
+    let receipt: { integrationId?: unknown; status?: unknown } | null | undefined;
+    try {
+      receipt = await api.post<{ integrationId?: unknown; status?: unknown }>(
+        `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.entryId)}/operator-key`,
+        { agentId, key },
+      );
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      return { ok: false, code: typeof code === 'string' ? code : '' };
+    }
+    // Success is the route's own receipt. An empty body or an HTML fallback
+    // from a proxy is not a connection, so it reads as a generic failure.
+    if (!receipt || typeof receipt.integrationId !== 'string' || receipt.status !== 'connected') {
+      return { ok: false, code: '' };
+    }
+    await load();
+    return { ok: true };
   };
 
   const submitGithubAppSetup = async () => {
@@ -516,6 +670,20 @@ export const useToolConnectors = (
       await load();
     } catch {
       setError(t('tools.revokeError', { defaultValue: 'Could not revoke the grant.' }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // F94: the granter takes a named agent off a grant; it leaves the audience too.
+  const removeByoAgent = async (grant: ToolGrant, agentId: string, agentLabel: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.del(`/api/grants/${encodeURIComponent(grant.grantId)}/byo-agents/${encodeURIComponent(agentId)}`);
+      await load();
+    } catch {
+      setError(t('tools.byo.removeError', { agent: agentLabel }));
     } finally {
       setBusy(false);
     }
@@ -671,10 +839,20 @@ export const useToolConnectors = (
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftBoundAgent,
+    startingAudience,
     selectedAgentIds,
+    draftByoCandidates,
+    draftByoNamed,
+    draftByoKey,
+    draftByoConsented,
+    removeByoAgent,
     submitDraft,
     fixJoinPolicy,
     connectHostedMcp,
+    keyAgents,
+    keyAgentsUnavailable,
+    submitOperatorKey,
     submitGithubAppSetup,
     markRevoked,
     retryStaleRevoke,

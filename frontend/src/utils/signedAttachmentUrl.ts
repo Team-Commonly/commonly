@@ -68,12 +68,113 @@ async function mintSignedUrl(fileName: string): Promise<string | null> {
   if (!res.ok) return null;
 
   const data = (await res.json()) as { url?: string; expiresIn?: number };
-  if (!data.url) return null;
+  return storeMinted(fileName, data.url, data.expiresIn, apiBase);
+}
 
-  const expiresInSec = typeof data.expiresIn === 'number' ? data.expiresIn : TOKEN_TTL_SECONDS;
-  const fullUrl = data.url.startsWith('http') ? data.url : `${apiBase}${data.url}`;
+// ---- Batching ----
+// A pod chat draws one thumbnail per image message, and each asks for its URL in
+// the same render. One mint per thumbnail 429'd a viewer with more than 30 images
+// on screen (the mint limiter allows 30 a minute per token). So every mint asked
+// for in one tick is collected and sent as ONE `POST /api/uploads/urls` (at most
+// BATCH_MAX names, which the server counts once against the same budget). A tick
+// with a single name keeps the single route. A server without the batch route
+// (404/405, an older backend during a rollout) gets one request per name.
+const BATCH_MAX = 50; // Matches backend BATCH_MINT_MAX.
+
+interface Waiter {
+  resolve: (url: string | null) => void;
+  reject: (err: unknown) => void;
+}
+
+const queued: Map<string, Waiter> = new Map();
+let flushScheduled = false;
+
+function storeMinted(fileName: string, url: string | undefined, expiresIn: number | undefined, apiBase: string): string | null {
+  if (!url) return null;
+  const expiresInSec = typeof expiresIn === 'number' ? expiresIn : TOKEN_TTL_SECONDS;
+  const fullUrl = url.startsWith('http') ? url : `${apiBase}${url}`;
   setCache(fileName, { url: fullUrl, expiresAtMs: Date.now() + expiresInSec * 1000 });
   return fullUrl;
+}
+
+function decodeName(fileName: string): string {
+  try { return decodeURIComponent(fileName); } catch { return fileName; }
+}
+
+async function mintBatchUnguarded(batch: Map<string, Waiter>): Promise<void> {
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+  if (!token) {
+    batch.forEach((w) => w.resolve(null));
+    return;
+  }
+  const apiBase = getApiBaseUrl();
+  const names = [...batch.keys()];
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}/api/uploads/urls`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileNames: names.map(decodeName) }),
+    });
+  } catch (err) {
+    batch.forEach((w) => w.reject(err));
+    return;
+  }
+  if (res.status === 404 || res.status === 405) {
+    batch.forEach((w, fileName) => { mintSignedUrl(fileName).then(w.resolve, w.reject); });
+    return;
+  }
+  if (!res.ok) {
+    batch.forEach((w) => w.resolve(null));
+    return;
+  }
+  let data: { urls?: Record<string, { url?: string; expiresIn?: number }> } | null;
+  try {
+    data = await res.json();
+  } catch (err) {
+    batch.forEach((w) => w.reject(err));
+    return;
+  }
+  batch.forEach((w, fileName) => {
+    const minted = data?.urls?.[decodeName(fileName)];
+    w.resolve(storeMinted(fileName, minted?.url, minted?.expiresIn, apiBase));
+  });
+}
+
+// Every waiter settles, whatever the batch hits: a waiter left pending keeps its
+// `inflight` entry, and that file would never mint again this session. A second
+// settle on a promise is a no-op, so rejecting all after a partial pass is safe.
+async function mintBatch(batch: Map<string, Waiter>): Promise<void> {
+  try {
+    await mintBatchUnguarded(batch);
+  } catch (err) {
+    batch.forEach((w) => w.reject(err));
+  }
+}
+
+function flushQueued(): void {
+  flushScheduled = false;
+  const all = [...queued.entries()];
+  queued.clear();
+  if (all.length === 1) {
+    const [[fileName, w]] = all;
+    mintSignedUrl(fileName).then(w.resolve, w.reject);
+    return;
+  }
+  for (let i = 0; i < all.length; i += BATCH_MAX) {
+    void mintBatch(new Map(all.slice(i, i + BATCH_MAX)));
+  }
+}
+
+function enqueueMint(fileName: string): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    queued.set(fileName, { resolve, reject });
+    if (!flushScheduled) {
+      flushScheduled = true;
+      // A microtask, so every mint asked for in the same render goes together.
+      Promise.resolve().then(flushQueued);
+    }
+  });
 }
 
 /**
@@ -84,7 +185,7 @@ async function mintSignedUrl(fileName: string): Promise<string | null> {
  *
  * Accepts either a relative `/api/uploads/<name>` path or an absolute URL
  * that contains `/api/uploads/<name>`. Values without that segment are
- * returned unchanged.
+ * returned unchanged. Concurrent calls are batched (see above).
  */
 export async function getSignedAttachmentUrl(uploadPath: string | null | undefined): Promise<string | null> {
   if (!uploadPath || typeof uploadPath !== 'string') return null;
@@ -97,7 +198,7 @@ export async function getSignedAttachmentUrl(uploadPath: string | null | undefin
   const existing = inflight.get(fileName);
   if (existing) return existing;
 
-  const p = mintSignedUrl(fileName).finally(() => {
+  const p = enqueueMint(fileName).finally(() => {
     inflight.delete(fileName);
   });
   inflight.set(fileName, p);
@@ -108,4 +209,6 @@ export async function getSignedAttachmentUrl(uploadPath: string | null | undefin
 export function __resetSignedAttachmentUrlCacheForTests(): void {
   cache.clear();
   inflight.clear();
+  queued.clear();
+  flushScheduled = false;
 }

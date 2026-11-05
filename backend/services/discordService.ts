@@ -20,6 +20,8 @@ const { resolveDiscordWebhookUrl, hasDiscordWebhookUrl } = require('../utils/dis
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line global-require
 const { DISCORD_WEBHOOK_URL } = require('./connectorSecretKinds');
+// eslint-disable-next-line global-require
+const DISCORD_APPLICATION_COMMANDS = require('../config/discordApplicationCommands.json') as Array<{ name: string }>;
 
 interface FetchMessagesOptions {
   channelId?: string;
@@ -127,6 +129,8 @@ interface VerifyCommandResult {
   success: boolean;
   registeredCommands?: string[];
   missingCommands?: string[];
+  /** Commands the guild holds that nothing expects there (F161). */
+  unexpectedCommands?: string[];
   totalExpected?: number;
   totalFound?: number;
   error?: string;
@@ -156,6 +160,8 @@ class DiscordService {
   clientReady: boolean;
   commandService: unknown;
   integration: IntegrationDoc | null;
+  /** Why the last registerSlashCommands returned false, for the route to show. */
+  lastRegistrationError: string | null = null;
 
   static async fetchMessages(options: FetchMessagesOptions = {}): Promise<FetchedMessage[]> {
     const {
@@ -821,7 +827,7 @@ class DiscordService {
     }
   }
 
-  async handleSlashCommand(commandName: string, _interaction: unknown): Promise<CommandResult> {
+  async handleSlashCommand(commandName: string, interaction: unknown): Promise<CommandResult> {
     try {
       if (!this.commandService) {
         return {
@@ -833,10 +839,15 @@ class DiscordService {
       const cs = this.commandService as {
         handleSummaryCommand: () => Promise<CommandResult>;
         handleStatusCommand: () => Promise<CommandResult>;
-        handleEnableCommand: () => Promise<CommandResult>;
-        handleDisableCommand: () => Promise<CommandResult>;
+        handleEnableCommand: (actorId: string) => Promise<CommandResult>;
+        handleDisableCommand: (actorId: string) => Promise<CommandResult>;
         handlePushCommand: (service: DiscordService) => Promise<CommandResult>;
       };
+
+      // The caller's Discord id: `member.user` in a guild, `user` in a DM. The
+      // sync toggles check it against the installer's (F161).
+      const who = interaction as { member?: { user?: { id?: string } } | null; user?: { id?: string } | null } | null;
+      const actorId = String(who?.member?.user?.id || who?.user?.id || '');
 
       switch (commandName) {
         case 'commonly-summary':
@@ -846,10 +857,10 @@ class DiscordService {
           return await cs.handleStatusCommand();
 
         case 'discord-enable':
-          return await cs.handleEnableCommand();
+          return await cs.handleEnableCommand(actorId);
 
         case 'discord-disable':
-          return await cs.handleDisableCommand();
+          return await cs.handleDisableCommand(actorId);
 
         case 'discord-push':
           return await cs.handlePushCommand(this);
@@ -882,28 +893,29 @@ class DiscordService {
 
       console.log(`🔧 Registering commands for guild: ${targetGuildId}`);
 
-      const commands = [
-        {
-          name: 'commonly-summary',
-          description: 'Get the most recent summary from the linked chat pod',
-          type: 1,
-        },
-        {
-          name: 'discord-status',
-          description: 'Show the status of Discord integration',
-          type: 1,
-        },
-        {
-          name: 'discord-enable',
-          description: 'Enable webhook listener for Discord channel',
-          type: 1,
-        },
-        {
-          name: 'discord-disable',
-          description: 'Disable webhook listener for Discord channel',
-          type: 1,
-        },
-      ];
+      // F161: every command, legacy and bridge, is registered globally at boot
+      // (scripts/deploy-discord-commands.js, config/discordApplicationCommands.json).
+      // A guild copy showed each legacy command twice in that guild's menu, so
+      // the guild set is empty, and this bulk overwrite clears the copies older
+      // registrations left behind.
+      const commands: Array<{ name: string }> = [];
+
+      // Clearing the guild's copies is safe only while the global set is in
+      // place; after a boot deploy that failed, the copies are all the guild
+      // has. A read that fails counts as not in place.
+      const globalResponse = await axios.get(
+        `https://discord.com/api/v10/applications/${config.clientId}/commands`,
+        { headers: { Authorization: `Bot ${config.botToken}` }, timeout: 10_000 },
+      ) as { status?: number; data?: Array<{ name?: string }> } | undefined;
+      const globalNames = new Set((globalResponse?.status === 200 && Array.isArray(globalResponse.data)
+        ? globalResponse.data : []).map((cmd) => cmd?.name));
+      const missingGlobal = DISCORD_APPLICATION_COMMANDS
+        .map((cmd) => cmd.name)
+        .filter((name) => !globalNames.has(name));
+      if (missingGlobal.length) {
+        throw new Error(`The global commands are not all registered (missing: ${missingGlobal.join(', ')}), `
+          + "so this guild's commands were kept. Run npm run discord:deploy first.");
+      }
 
       const url = `https://discord.com/api/v10/applications/${config.clientId}/guilds/${targetGuildId}/commands`;
 
@@ -933,6 +945,7 @@ class DiscordService {
     } catch (error) {
       const err = error as { message?: string };
       console.error('❌ Failed to register commands:', err.message);
+      this.lastRegistrationError = err.message || 'Failed to register slash commands';
 
       if (this.integration) {
         await Integration.findByIdAndUpdate(this.integrationId, {
@@ -1071,20 +1084,19 @@ class DiscordService {
 
       if (response.status === 200) {
         const registeredCommands = response.data as Array<{ name: string }>;
-        const expectedCommands = [
-          'commonly-summary',
-          'discord-status',
-          'discord-enable',
-          'discord-disable',
-        ];
+        // Nothing is registered per guild any more (F161); see registerSlashCommands.
+        const expectedCommands: string[] = [];
         const foundCommands = registeredCommands.map((cmd) => cmd.name);
 
         const missingCommands = expectedCommands.filter(
           (cmd) => !foundCommands.includes(cmd),
         );
+        // With nothing expected, a guild that still holds copies is the failure.
+        const unexpectedCommands = foundCommands.filter((cmd) => !expectedCommands.includes(cmd));
 
         return {
-          success: missingCommands.length === 0,
+          success: missingCommands.length === 0 && unexpectedCommands.length === 0,
+          unexpectedCommands,
           registeredCommands: foundCommands,
           missingCommands,
           totalExpected: expectedCommands.length,

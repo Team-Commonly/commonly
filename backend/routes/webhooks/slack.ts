@@ -17,6 +17,8 @@ const { verifySlackSignature: verifySlackRequestSignature } = require('../../ser
 const { relaySlackMessageToPod } = require('../../services/slackBridgeService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+import { applyRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
 const PROVIDER = 'slack';
@@ -150,6 +152,43 @@ router.post('/events', slackWebhookIpRateLimit, slackWebhookRateLimit, signed, a
 
 const commandHelp = 'Use /commonly status, mode mirror|attention, mute [minutes], or unmute.';
 
+// Slack's spelling of the shared bridge commands: one `/commonly` slash command
+// with a subcommand. The subcommand is case-insensitive, the argument is taken
+// as typed, and anything unrecognised — an empty text included — is help.
+const parseSlackRelayCommand = (text: unknown): RelayCommand => {
+  const [command, argument, ...rest] = String(text || '').trim().split(/\s+/);
+  const normalized = command?.toLowerCase() || 'help';
+  if (normalized === 'mode') return { name: 'mode', arg: argument };
+  // /mute reads its whole argument (`mute 2 hours`); the others read one word (F161).
+  if (normalized === 'mute') return { name: 'mute', arg: [argument, ...rest].filter(Boolean).join(' ') || undefined };
+  if (normalized === 'unmute') return { name: 'unmute' };
+  if (normalized === 'status') return { name: 'status' };
+  return { name: 'help' };
+};
+
+// The state change is the shared core's (applyRelayCommand); the words are
+// Slack's. Slack has no bare `/commonly mode`, so a missing argument reads as
+// usage rather than the current mode.
+const slackCommandReply = (outcome: RelayCommandOutcome): string => {
+  switch (outcome.kind) {
+    case 'mode-show':
+    case 'mode-usage':
+      return 'Usage: /commonly mode mirror|attention';
+    case 'mode-set':
+      return `Relay mode: ${outcome.mode}.`;
+    case 'mute':
+      return `Muted for ${outcome.minutes} minutes.`;
+    case 'mute-usage':
+      return 'Usage: /commonly mute 30m|2h';
+    case 'unmute':
+      return 'Relay unmuted.';
+    case 'status':
+      return `Relay is ${outcome.mode}.`;
+    default:
+      return commandHelp;
+  }
+};
+
 router.post('/commands', slackWebhookIpRateLimit, slackWebhookRateLimit, signed, async (req: any, res: any) => {
   const body = req.body || {};
   const teamId = String(body.team_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -181,35 +220,9 @@ router.post('/commands', slackWebhookIpRateLimit, slackWebhookRateLimit, signed,
       text: 'This Slack DM is not connected to Commonly.',
     });
   }
-  const [command, argument] = String(body.text || '').trim().split(/\s+/, 2);
-  const normalized = command?.toLowerCase() || 'help';
-  if (normalized === 'mode') {
-    if (argument !== 'mirror' && argument !== 'attention') {
-      return res.json({ response_type: 'ephemeral', text: 'Usage: /commonly mode mirror|attention' });
-    }
-    await Integration.updateOne(
-      { _id: integration._id },
-      { $set: { 'config.relayAllAgentMessages': argument === 'mirror' } },
-    );
-    return res.json({ response_type: 'ephemeral', text: `Relay mode: ${argument}.` });
-  }
-  if (normalized === 'mute') {
-    const minutes = Math.min(Math.max(parseInt(argument || '60', 10) || 60, 1), 24 * 60);
-    await Integration.updateOne(
-      { _id: integration._id },
-      { $set: { 'config.relayMutedUntil': new Date(Date.now() + minutes * 60_000) } },
-    );
-    return res.json({ response_type: 'ephemeral', text: `Muted for ${minutes} minutes.` });
-  }
-  if (normalized === 'unmute') {
-    await Integration.updateOne({ _id: integration._id }, { $unset: { 'config.relayMutedUntil': 1 } });
-    return res.json({ response_type: 'ephemeral', text: 'Relay unmuted.' });
-  }
-  if (normalized === 'status') {
-    const mode = integration.config?.relayAllAgentMessages ? 'mirror' : 'attention';
-    return res.json({ response_type: 'ephemeral', text: `Relay is ${mode}.` });
-  }
-  return res.json({ response_type: 'ephemeral', text: commandHelp });
+  const outcome = applyRelayCommand(parseSlackRelayCommand(body.text), integration);
+  if ('update' in outcome) await Integration.updateOne({ _id: integration._id }, outcome.update);
+  return res.json({ response_type: 'ephemeral', text: slackCommandReply(outcome) });
 });
 
 // Legacy per-row Slack integrations preserve their old provider path. It is

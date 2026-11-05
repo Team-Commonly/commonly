@@ -9,6 +9,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { appDateLocale } from '../utils/appLocale';
 import { useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
@@ -34,7 +35,7 @@ interface RuntimeKey {
 const dateLabel = (value: string | null | undefined, t: (key: string) => string): string => {
   if (!value) return t('agentSettings.never');
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString(appDateLocale());
 };
 
 // The owner memory index the Memory tab reads; only its counts are used here.
@@ -49,7 +50,7 @@ const errorLabel = (error: unknown, fallback: string): string => (
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
-  const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+  const { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, harnessCatalog, loading,
     error: loadError, refresh, update, updatePod, updateRuntime } = useAgentSettings(agentName, instanceId);
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
@@ -273,6 +274,7 @@ const V2AgentSettingsPage: React.FC = () => {
     ...(typeof controls.effort === 'string' ? { effort: controls.effort } : {}),
     ...runtimeControls,
     observation: runtimeObservation, inventory: runtimeInventory, processConnected, ownKeyCapability,
+    catalog: harnessCatalog,
     ...(runtimeManaged !== undefined ? { managed: runtimeManaged } : {}),
   };
   const activeKeys = keys.filter((key) => key.status === 'active');

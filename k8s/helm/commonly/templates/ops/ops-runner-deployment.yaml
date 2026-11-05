@@ -138,6 +138,13 @@ spec:
           value: redis.{{ include "commonly.namespace" . }}.svc.cluster.local
         - name: REDIS_PORT
           value: {{ .Values.redis.service.port | quote }}
+        {{- if .Values.redis.auth.enabled }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: redis-password
+        {{- end }}
 
         # JWT and Session
         - name: JWT_SECRET
@@ -256,11 +263,23 @@ spec:
               optional: true
 
         # AI Services
+        # Off where the key cannot answer (F78): every call would send content to
+        # Google and get nothing back. LiteLLM keeps its own copy for its routes.
+        {{- if .Values.aiProviders.gemini.enabled }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
+        {{- end }}
+        {{- if .Values.backend.env.avatarProvider }}
+        - name: AVATAR_PROVIDER
+          value: {{ .Values.backend.env.avatarProvider | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.embeddingProvider }}
+        - name: EMBEDDING_PROVIDER
+          value: {{ .Values.backend.env.embeddingProvider | quote }}
+        {{- end }}
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
@@ -354,6 +373,21 @@ spec:
               name: api-keys
               key: GITHUB_APP_PRIVATE_KEY
               optional: true
+        {{- if .Values.githubConnectApp.enabled }}
+        # Commonly Connect (F172), mirrored from backend-deployment.yaml.
+        - name: GITHUB_CONNECT_APP_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_CONNECT_APP_ID
+              optional: true
+        - name: GITHUB_CONNECT_APP_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_CONNECT_APP_PRIVATE_KEY
+              optional: true
+        {{- end }}
         - name: GITHUB_APP_INSTALLATION_ID_COMMONLY
           valueFrom:
             secretKeyRef:
@@ -568,11 +602,30 @@ spec:
         # key (see the Sharpen board task).
         - name: LLMSERVICE_GUARDRAILS
           value: "injection-guard"
+        {{- if .Values.aiProviders.anthropic.enabled }}
+        # Native turns (F91) and llmService (summaries, digests, pod skills,
+        # avatar descriptions; F92) run on Claude, so pod content reaches only
+        # the no-training route. LLM_SERVICE_MODEL overrides LITELLM_CHAT_MODEL
+        # and the global model config, with no fallback.
+        - name: NATIVE_RUNTIME_MODEL
+          value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}
+        - name: LLM_SERVICE_MODEL
+          value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}
+        {{- end }}
         - name: LITELLM_CHAT_MODEL
           # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
           # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
-          # entry already exists in LiteLLM with a live key.
+          # entry already exists in LiteLLM with a live key. With DeepSeek
+          # off (F159, dev), the configured agent default instead.
+          {{- if .Values.aiProviders.deepseek.enabled }}
           value: "deepseek-v4-flash"
+          {{- else }}
+          value: {{ .Values.litellm.agentDefaultModel | quote }}
+          {{- end }}
+        # F103: the model every agent driver default names (the K8s provisioner's
+        # primaries and key allowlists, the global policy's community default).
+        - name: AGENT_DEFAULT_MODEL
+          value: {{ .Values.litellm.agentDefaultModel | quote }}
         # Temporary: bypass LiteLLM's broken chatgpt/ bridge (BerriAI/litellm#25429)
         # and route Codex directly via OpenClaw's native openai-codex-responses handler.
         # Flip to "false" / remove once LiteLLM ships a fix for empty-output responses.
@@ -597,6 +650,12 @@ spec:
           valueFrom:
             secretKeyRef:
               name: agent-computer-waker
+              key: token
+              optional: true
+        - name: AGENT_COMPUTER_STEEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: agent-computer-steel
               key: token
               optional: true
         - name: MARKETPLACE_MANIFEST_PATH
@@ -653,6 +712,13 @@ spec:
         {{- if .Values.backend.env.nativeRuntimeGuardrails }}
         - name: NATIVE_RUNTIME_GUARDRAILS
           value: {{ .Values.backend.env.nativeRuntimeGuardrails | quote }}
+        {{- end }}
+
+        # Pods whose tasks and grants write record-v1 lines (recordService
+        # isRecordEnabled): comma-separated pod ids, or "*". Unset, no pod does.
+        {{- if .Values.backend.env.recordV1Pods }}
+        - name: RECORD_V1_PODS
+          value: {{ .Values.backend.env.recordV1Pods | quote }}
         {{- end }}
 
         # GCP Secret Manager credentials

@@ -60,7 +60,7 @@
     "back": "Back to board",
     "intro": "What happened on this task, in order. Each entry carries the hash of the one before it, so a changed entry breaks the chain.",
     "loading": "Loading record…",
-    "access": "This record isn't available. The pod may not keep records, or you no longer have access to it.",
+    "access": "The pod may not keep records, or you no longer have access.",
     "members": "Only members of this pod can read its record.",
     "store": "The record store is unavailable right now. Try again shortly.",
     "error": "Could not load the record. Try again.",
@@ -70,7 +70,6 @@
     "counts_other": "{{count}} entries",
     "run": "Run {{id}}",
     "empty": "Nothing has been recorded for this task yet.",
-    "entry": "Entry {{number}}",
     "downloadJsonl": "Download JSONL",
     "downloadOtlp": "Download OTLP",
     "downloadError": "Could not download the record. Try again.",
@@ -78,8 +77,7 @@
       "unknown": "Unknown actor",
       "board": "Board",
       "system": "System: {{id}}",
-      "policy": "Policy: {{id}}",
-      "agent": "{{name}} (agent)"
+      "policy": "Policy: {{id}}"
     },
     "kinds": {
       "task_claimed": "Claimed",
@@ -91,6 +89,31 @@
       "permission_decided": "Approval decided",
       "tool_call": "Tool call",
       "tool_update": "Tool update"
+    },
+    "unavailableTitle": "This record isn't available",
+    "about": "About the record",
+    "download": "Download",
+    "details": "Details",
+    "entryKey": "entry",
+    "line": {
+      "leaseUntil": "lease until {{time}}",
+      "reason": "reason {{reason}}",
+      "doneBy": "done by {{name}}",
+      "askedOf": "asked {{name}}"
+    },
+    "reasons": {
+      "blocked": "blocked",
+      "lease_expired": "lease expired",
+      "reassigned": "reassigned",
+      "abandoned": "abandoned"
+    },
+    "decisions": {
+      "allow_once": "allow once",
+      "reject_once": "reject once",
+      "allow_always": "allow always",
+      "reject_always": "reject always",
+      "selected": "selected",
+      "cancelled": "cancelled"
     }
   },
   "common": {
@@ -116,10 +139,20 @@
       "team": "Team",
       "artifacts": "Artifacts"
     },
+    "pageTitle": {
+      "agentSettings": "Agent settings",
+      "agentMemory": "Agent memory",
+      "profile": "Profile",
+      "agentProfile": "Agent profile"
+    },
     "closePodsList": "Close pods list",
     "communityRedirect": {
       "title": "Opening Community",
       "text": "Checking your access…"
+    },
+    "adminGate": {
+      "checking": "Checking your access…",
+      "denied": "This page is for admins. Your account doesn't have access to it."
     },
     "theme": {
       "label": "Theme",
@@ -203,8 +236,6 @@
   },
   "activity": {
     "title": "Activity",
-    "subtitle": "what needs you, then what moved",
-    "about": "About activity",
     "head": {
       "needsYou_one": "{{count}} needs you",
       "needsYou_other": "{{count}} need you",
@@ -219,11 +250,11 @@
     },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
-    "morePods": "more ▾",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
     "open": "Open",
     "openPod": "Open pod",
+    "moreActions": "More actions",
     "openBoard": "Open board",
     "compose": {
       "eyebrow": "Start a conversation",
@@ -235,7 +266,7 @@
       "working": "Sending…",
       "actionFailed": "Your message could not be sent. Try again.",
       "label": "Tell your agents",
-      "hint": "⌘↵ to send"
+      "hint": "⌘↵"
     },
     "reply": {
       "open": "Reply",
@@ -249,12 +280,10 @@
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
     "needsYou": {
-      "about": "About needs you",
       "eyebrow": "Decision queue",
       "title": "Needs you",
+      "order": "oldest first",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
-      "countDescription": "oldest waiting first",
-      "scopedCountDescription": "oldest waiting first · this pod",
       "countUnavailable": "Count unavailable",
       "emptyTitle": "Nothing needs you.",
       "emptyDescription": "New mentions and approval requests appear here when they need a response.",
@@ -270,6 +299,7 @@
         "blocked": "blocked",
         "press": "ready for your press"
       },
+      "emptyLastNow": "The last ask was just answered.",
       "countLabel": "{{count}} waiting on you",
       "emptyLast": "The last ask was answered {{age}} ago."
     },
@@ -287,7 +317,7 @@
       "other": "Other…",
       "otherPlaceholder": "Write your ruling…",
       "sendOther": "Send ruling",
-      "ruled": "✓ {{by}} ruled: {{value}}",
+      "ruled": "{{by}} ruled: {{value}}",
       "ruledShort": "ruled",
       "actionFailed": "That ruling could not be saved. Try again."
     },
@@ -323,9 +353,8 @@
       }
     },
     "movedForward": {
-      "about": "About moved forward",
       "title": "Moved forward",
-      "description": "grouped by pod · newest first",
+      "order": "newest first",
       "empty": "Nothing yet today.",
       "emptyWeek": "Nothing moved in the last 7 days.",
       "more": "{{count}} more in {{pod}}",
@@ -336,8 +365,8 @@
     "footer": "Open the source thread to act; this recap leaves when the underlying fact changes.",
     "getStarted": {
       "title": "Get started",
-      "kicker_one": "1 step · until your first ask arrives",
-      "kicker_other": "{{count}} steps · until your first ask arrives",
+      "kicker_one": "1 step",
+      "kicker_other": "{{count}} steps",
       "checking": "checking…",
       "hire": {
         "title": "Hire your first agent",
@@ -422,8 +451,26 @@
       "continueWith": "Continue with {{provider}}"
     },
     "oauthComplete": {
-      "title": "Signing you in…",
-      "subtitle": "Completing sign-in with your provider."
+      "title": "Signing you in…"
+    },
+    "discordHandoff": {
+      "workingTitle": "Connecting Discord…",
+      "doneTitle": "Pick a channel",
+      "connectedTitle": "Discord connected",
+      "errorTitle": "Discord didn't connect",
+      "errorFallback": "Something went wrong during Discord authorization.",
+      "server": "Server",
+      "channel": "Channel",
+      "choose": "Choose a channel",
+      "loadingChannels": "Loading channels…",
+      "cancel": "Cancel",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "back": "Back",
+      "pickChannel": "Please select a channel",
+      "channelsFailed": "Failed to fetch server channels",
+      "createFailed": "Failed to create integration",
+      "created": "Discord integration created successfully!"
     },
     "forgot": {
       "title": "Reset your password",
@@ -589,7 +636,7 @@
       "expiresOn": "Expires {{date}}"
     },
     "agentHint": "Claude Code, Codex, or run one here.",
-    "connectOwnAgent": "Connect your own agent →",
+    "connectOwnAgent": "Connect your own agent",
     "errors": {
       "loadFailed": "Could not load invite links.",
       "generateFailed": "Could not generate invite.",
@@ -788,7 +835,12 @@
       "moreReplies": "{{count}} more replies",
       "follow": "Follow",
       "following": "Following",
-      "muted": "Muted"
+      "muted": "Muted",
+      "replyCount_one": "{{count}} reply",
+      "replyCount_other": "{{count}} replies",
+      "lastActivity": "· last {{age}}",
+      "expandAria": "Expand thread, {{replies}}",
+      "collapseAria": "Collapse thread, {{replies}}"
     },
     "leadBadge": "Lead",
     "catchup": {
@@ -806,7 +858,8 @@
     "lightbox": {
       "close": "Close",
       "previous": "Previous image",
-      "next": "Next image"
+      "next": "Next image",
+      "failed": "Couldn't load this image."
     },
     "attachment": {
       "open": "Open {{name}}",
@@ -870,6 +923,7 @@
       "copyInstallAria": "Copy install command",
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
+      "discord": "Questions? We're on Discord",
       "terms": {
         "yourClaudeCode": "your Claude Code",
         "teammateCodex": "your teammate's Codex",
@@ -1014,7 +1068,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac, and Linux in invite-only pods"
+          "label": "Mac; Linux run once with an API key"
         },
         "codex": {
           "name": "Codex",
@@ -1284,7 +1338,7 @@
     "registered": {
       "title": "Registered users",
       "subtitle": "Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.",
-      "analyticsLink": "Usage analytics →",
+      "analyticsLink": "Usage analytics",
       "searchPlaceholder": "Search username or email…",
       "loading": "Loading users…",
       "noMatch": "No users match.",
@@ -1688,7 +1742,7 @@
     "deciding": "Deciding…",
     "waitingForOwner": "Waiting for the workspace owner to decide.",
     "aged": "This proposal has been waiting a while — double-check it still makes sense.",
-    "approved": "✓ Approved — done.",
+    "approved": "Approved — done.",
     "approvedButFailed": "Approved, but the action failed: {{error}}",
     "approvedAgentJoinFailed": "Approved — the pod was created, but {{agent}} could not join it. Open the pod and re-add the agent.",
     "approvedSeatReady": "Approved. Next, copy one command into Terminal: the next page shows it.",
@@ -1748,19 +1802,15 @@
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
       "adapterLabel": "Adapter",
-      "wontAnswerBeforeInstall": "On {{os}}, {{tool}} can’t answer @mentions yet. An agent you connect from here works only inside your own sessions, and it won’t reply when someone @mentions it. For replies, choose “{{hosted}}”, or connect from a Mac.",
-      "wontAnswerBeforeInstallNoHosted": "On {{os}}, {{tool}} can’t answer @mentions yet. An agent you connect from here works only inside your own sessions, and it won’t reply when someone @mentions it. For replies, connect from a Mac.",
       "adapterDefault": "Auto-detect on that computer",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
-      "modelOpus": "Opus — strongest reasoning",
-      "modelSonnet": "Sonnet — balanced",
-      "modelHaiku": "Haiku — fastest, cheapest",
       "modelHintAuto": "Leave both adapter and model on default to use whatever that computer already prefers.",
-      "modelHintClaude": "Claude aliases stay stable across Claude Code releases. Uses that computer's own Claude login.",
-      "modelHintCodex": "Suggestions only; the Codex CLI model catalog on that machine determines which slugs work. Uses that computer's own Codex login."
+      "effortLabel": "Effort",
+      "modelHintList": "The model id is passed to {{tool}} as written. Pick “Other…” for one that isn’t listed.",
+      "modelHintFree": "Type the full model id {{tool}} takes, or leave it empty for its default."
     },
     "actions": {
       "install": "Get my connect command",
@@ -1778,8 +1828,6 @@
     },
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
-      "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
-      "cliRouteClaudeLinuxUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only; otherwise choose “{{hosted}}”.",
       "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
@@ -1802,9 +1850,7 @@
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
-      "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
-      "claudeCodeMain": "Let Claude Code use the pod in your own sessions",
       "mcpSummary": "Claude Code in your own sessions. This does not answer @mentions."
     },
     "memory": {
@@ -1834,8 +1880,10 @@
     },
     "listen": {
       "title": "Run this in Terminal",
+      "titleWindows": "Run this in PowerShell",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
-      "reachClaudeLinux": "On Linux, {{name}} answers only while every pod it's in is private, invite-only and not listed in Community, and it reads only the folder you run this from. Run it from your project's folder, not your home folder, with bubblewrap (bwrap) installed. If any of its pods stops being invite-only, {{name}} stops answering until that pod is invite-only again. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "noteWindows": "MCP alone won't wake {{name}} for @mentions. Keep this PowerShell window open.",
+      "reachClaudeLinux": "On Linux, {{name}} runs inside bubblewrap (bwrap). Usually it works in its own scratch folder, on your ANTHROPIC_API_KEY if you set one, or else your own Claude Code login. When every pod it's in is private, invite-only and not listed in Community, and you run this from a project folder rather than your home folder, it reads only that folder instead, and there it needs your Claude Code login: an API key alone won’t do. If your login is about to expire, it stops and asks you to run /login in Claude Code. On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet. In the project-folder case only, you can add --allow write to the last line to let it edit files and run commands, or --allow web to let it fetch web pages. Those commands can read beyond the folder. Either flag lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
@@ -1843,20 +1891,24 @@
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
       "missedCommand": "You copied the MCP snippet, but not the Terminal command that starts {{name}}, the one that ends in commonly agent run {{name}}. The snippet lets a tool call Commonly; only that command lets {{name}} answer mentions. Copy it above and run it in Terminal on your computer, and this page will confirm it.",
       "stopsOnClose": "This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",
+      "stopsOnCloseWindows": "This stops when this PowerShell window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",
       "stopsOnCloseWithComputer": "This stops when this Terminal window closes. For an agent that keeps running, start another agent and choose On my computer.",
+      "stopsOnCloseWithComputerWindows": "This stops when this PowerShell window closes. For an agent that keeps running, start another agent and choose On my computer.",
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
+      "scriptsDisabled": "If PowerShell says running scripts is disabled, run Set-ExecutionPolicy -Scope CurrentUser RemoteSigned once, then run the four lines again.",
+      "windowsNote": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for {{name}}, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the last line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
+      "windowsCodex": "Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
-      "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
-      "needsLinuxFolder": "On Linux, open the window in your project folder first, with bubblewrap (bwrap) installed: run from your home folder, it won’t start.",
+      "needs": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needsWindows": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one PowerShell window: the $env lines last only there.",
+      "needsLinuxBwrap": "On Linux, install bubblewrap (bwrap) first.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
-      "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
+      "unavailableCodex": "The Codex CLI has been tested only on a Mac and may not answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac.",
       "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",
       "repo": {
@@ -1866,7 +1918,8 @@
         "web": "Let it fetch web pages (--allow web)",
         "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
         "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
-      }
+      },
+      "unavailableOther": "{{tool}} runs from this page on a Mac only for now. To answer @mentions from {{os}}, choose “Run it here” for a hosted agent, or run the command on a Mac."
     },
     "mode": {
       "label": "Where should it run?",
@@ -1912,9 +1965,11 @@
       "openPod": "Open the pod"
     },
     "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
+    "quickTryWindows": "Quick try: this command runs in PowerShell and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
     "addComputer": {
       "title": "Add a computer",
       "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
+      "windowsNote": "On Windows there’s no sandbox. With <cmd>--unsandboxed</cmd>, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.",
       "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "copy": "Copy",
       "copied": "Copied"
@@ -1922,7 +1977,9 @@
     "compactByo": {
       "titleClaude": "Connect your Claude Code",
       "titleCodex": "Connect your Codex",
-      "lead": "About 2 minutes in Terminal."
+      "lead": "About 2 minutes in Terminal.",
+      "leadWindows": "About 2 minutes in PowerShell.",
+      "titleOther": "Connect your {{tool}}"
     },
     "compact": {
       "title": "Run an agent here",
@@ -1934,6 +1991,19 @@
     },
     "otherWays": {
       "title": "Other ways to connect"
+    },
+    "refused": {
+      "public": "{{tool}} can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “{{hosted}}”.",
+      "dsh": "DeepSeek Harness runs only as a private agent you set up from Terminal, and agents added here are public. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
+      "qwen": "Qwen Code works as a public agent, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
+      "goose": "Goose 1.56 isn’t supported in open pods yet. Goose 1.54 works, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”."
+    },
+    "opencode": {
+      "keyStep": "First, save your Anthropic API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
+      "runStep": "Then connect {{name}} and start it. Keep the window open: it answers only while it runs.",
+      "provider": "A public agent doesn’t use your own OpenCode login, so these lines name a provider: Anthropic, as an example. For another OpenAI-compatible provider, change the address and model, as in the",
+      "guide": "OpenCode guide",
+      "machine": "OpenCode needs your provider key on that computer, so connect it with “{{byo}}” on a Mac instead."
     }
   },
   "compare": {
@@ -2105,7 +2175,7 @@
     "subtitle": "First-party numbers from this instance's own database — nothing is sent to third parties.",
     "timeRangeAria": "Time range",
     "rangeDays": "{{days}}d",
-    "userAdminLink": "User admin →",
+    "userAdminLink": "User admin",
     "loading": "Loading analytics…",
     "errors": {
       "loadFailed": "Failed to load analytics."
@@ -2166,8 +2236,8 @@
     "typing": "typing…",
     "pinTitle": "Pin",
     "unpinTitle": "Unpin",
-    "pinAriaLabel": "Pin pod",
-    "unpinAriaLabel": "Unpin pod",
+    "pinAriaLabel": "Pin {{name}}",
+    "unpinAriaLabel": "Unpin {{name}}",
     "filters": {
       "all": "All",
       "team": "Team",
@@ -2388,6 +2458,7 @@
     }
   },
   "connect": {
+    "intro": "MCP uses an agent token created during setup.",
     "cliHeading": "Connect the CLI or MCP",
     "copy": "Copy",
     "copied": "Copied",
@@ -2459,6 +2530,9 @@
     "availableLine": "Connect {{label}} to a pod.",
     "availableSlack": "one click in your workspace",
     "availableTelegram": "one message",
+    "availableDiscord": "add the bot to your server",
+    "linkInstallCreatorOnly": "Only the person who created this pod can add the {{connector}} bot to it.",
+    "sharedSurfaceCreatorOnly": "Only the pod creator can connect a shared channel to this pod.",
     "cancel": "Cancel",
     "channelDetails": "Channel details",
     "closeDetails": "Close",
@@ -2477,6 +2551,11 @@
     "gateOff": "off",
     "gateSwitch": "Relay {{pod}}",
     "gatesTitle": "Pods that reach this channel",
+    "hostedMcpAppInstalledConnected": "{{provider}} App installed. {{provider}} is connected.",
+    "hostedMcpAppInstalledFinish": "{{provider}} App installed. Press Connect on {{provider}} to finish.",
+    "hostedMcpAccessNext": "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
+    "hostedMcpAccessOpen": "Open {{provider}}",
+    "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
     "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
@@ -2582,16 +2661,28 @@
     "untitledPod": "Untitled pod",
     "anotherPod": "another pod",
     "thisSlackWorkspace": "This Slack workspace",
-    "yourSlackUser": "your Slack user"
+    "yourSlackUser": "your Slack user",
+    "discordRowMirror": "every agent line reaches everyone in the channel",
+    "discordRowAttention": "escalations and the lead agent’s lines reach everyone in the channel",
+    "discordMirrorHint": "Every agent message is posted in the Discord channel, where everyone in the server can read it.",
+    "discordAttentionHint": "Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.",
+    "discordInboundNote": "Your own messages in the channel reach the pod as you.",
+    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel.",
+    "discordReinstall": "Add the bot again"
   },
   "artifacts": {
     "title": "Artifacts",
-    "about": "About artifacts",
-    "meta": "every file and page shared in your pods",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "podCount_one": "{{count}} pod",
+    "podCount_other": "{{count}} pods",
+    "open": "Open",
+    "openFile": "Open {{name}}",
+    "download": "Download",
+    "downloadFile": "Download {{name}}",
     "kindLabel": "Kind",
     "podLabel": "Pod",
     "allPods": "All pods",
-    "morePods": "more ▾",
     "searchPlaceholder": "Search files",
     "kinds": {
       "all": "All",
@@ -2599,25 +2690,11 @@
       "docs": "Docs",
       "pages": "Pages"
     },
-    "kindNames": {
-      "image": "image",
-      "page": "page",
-      "doc": "doc"
-    },
-    "columns": {
-      "file": "File",
-      "kind": "Kind",
-      "pod": "Pod",
-      "sharedBy": "Shared by",
-      "when": "When",
-      "size": "Size"
-    },
     "foot": "{{shown}} of {{total}} · newest first",
     "more": "{{count}} more",
     "loadingMore": "Loading…",
     "dayZero": {
-      "title": "Nothing shared yet",
-      "body": "Files you and your agents share in a pod land here: docs, images and pages.",
+      "body": "Files you and your agents share in a pod land here.",
       "open": "Open {{pod}}"
     },
     "emptyFiltered": "Nothing matches. Clear a filter or the search.",
@@ -2625,6 +2702,7 @@
   },
   "tools": {
     "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",
@@ -2782,7 +2860,57 @@
     "connectionSeparator": " · ",
     "connectionSignedIn": "Signed in",
     "connectionKey": "Key",
-    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}"
+    "keyOnlyAgent": "Only {{agent}} can use this key.",
+    "keyAgentNotInPod": "{{agent}} isn't in this pod.",
+    "keyAgentNotInPodUnnamed": "This key's agent isn't in this pod.",
+    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}",
+    "operatorKey": {
+      "note": "add a key for one of your agents",
+      "noAgents": "no agent of yours to add a key for yet",
+      "agent": "agent",
+      "key": "key",
+      "submit": "Add key",
+      "checking": "Checking…",
+      "createKey": "Create a key at {{label}}",
+      "errors": {
+        "invalidAgent": "Pick one of your agents.",
+        "agentNotOwned": "You can add a key only for an agent you alone installed.",
+        "unknownEntry": "This connector does not take a key here.",
+        "keyMissing": "Paste a key first.",
+        "scopeRefused": "This key has scopes Commonly does not allow. Create one without them.",
+        "vendorRejected": "{{label}} did not accept this key.",
+        "vendorUnreachable": "Could not reach {{label}} to check the key. Try again.",
+        "connectionChanged": "The connection changed while saving. Paste the key again.",
+        "keyStoreFailed": "Could not save the key. Try again.",
+        "generic": "Could not add the key. Try again."
+      },
+      "agentsUnavailable": "couldn't read your agents just now · reload to try again"
+    },
+    "chooseKey": "Choose a key",
+    "byo": {
+      "consent": "{{agent}} runs on your computer, outside Commonly. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
+      "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
+      "readOnlyHint": "An agent on your computer can only read.",
+      "reasonUnconfinedHost": "Runs on native Windows, where no grant can be used.",
+      "reasonAdapterUnsupported": "Only Claude Code or Codex agents can be named.",
+      "namedHeading": "on your computer",
+      "named": "{{agent}} runs outside Commonly",
+      "namedNoSandbox": "{{agent}} runs outside Commonly, with no sandbox",
+      "remove": "Remove",
+      "removeLabel": "Remove {{agent}} from this grant",
+      "removeError": "Could not remove {{agent}}.",
+      "removeHint": "While an agent is still in this Pod, removing it pauses the whole grant. Take the agent out of the Pod to resume it.",
+      "errors": {
+        "readOnly": "An agent that runs on your computer can be named only on a read-only grant.",
+        "consentRequired": "Tick the box to confirm that what this agent reads can leave through it.",
+        "limitedUse": "This connector is used only by Commonly-hosted agents.",
+        "notAudience": "Name an agent that this grant reaches.",
+        "notAgent": "Only an agent can be named on a grant.",
+        "notOwned": "You can name only an agent you installed, and that no one else installed.",
+        "unconfinedHost": "This agent runs on native Windows, where no grant can be used.",
+        "adapterUnsupported": "Only a Claude Code or Codex agent can be named on a grant."
+      }
+    }
   },
   "agentManage": {
     "runtime": {
@@ -2861,6 +2989,7 @@
       "stored": "stored",
       "modelsUnavailable": "model list unavailable · checked at next spawn",
       "effortUnavailable": "{{harness}} reports no effort levels · {{effort}} stays stored, not sent",
+      "modelNotListed": "{{model}} isn’t a {{harness}} model · pick one from the list",
       "unsupported": "stored choice unsupported · last spawn: {{harness}} · {{model}} · {{effort}}",
       "save": "Save",
       "saveError": "Could not save runtime settings.",
@@ -2914,6 +3043,9 @@
     "heartbeatOff": "Off",
     "connection": "Connection",
     "displayName": "Display name",
+    "about": "Description",
+    "aboutHint": "Your agent reads this as who it is, from its next reply.",
+    "aboutError": "Keep the description to 160 characters.",
     "persona": "Persona",
     "tone": "Tone",
     "toneOptions": {
@@ -2964,6 +3096,9 @@
     "turnsPerDay": "{{count}} turns/day · {{cap}} available",
     "capUnavailable": "{{count}} turns/day · plan cap unavailable",
     "overCap": "This exceeds the daily cap.",
+    "heartbeatHosted_one": "Your agents that run on Commonly take a heartbeat at most once an hour, and {{count}} a day between them.",
+    "heartbeatHosted_other": "Your agents that run on Commonly take a heartbeat at most once an hour, and {{count}} a day between them.",
+    "heartbeatHostedOff": "Heartbeats aren't available yet for your agents that run on Commonly.",
     "saveInterval": "Save interval",
     "everyMinutes_one": "Every minute",
     "everyMinutes_other": "Every {{count}} minutes",
@@ -3060,6 +3195,16 @@
       "minutes": "{{n}}m",
       "hours": "{{n}}h",
       "days": "{{n}}d"
+    },
+    "compact": {
+      "now": "now",
+      "minutes": "{{n}}m",
+      "hours": "{{n}}h",
+      "yesterday": "Yesterday",
+      "days": "{{n}}d",
+      "weeks": "{{n}}w",
+      "months": "{{n}}mo",
+      "years": "{{n}}y"
     }
   },
   "teammate": {
@@ -3102,5 +3247,34 @@
     "openAgent": "Open its agent page",
     "followError": "That didn't save. Try again.",
     "viewProfile": "View {{name}}'s profile"
+  },
+  "harness": {
+    "installed": "Installed · {{version}}",
+    "installedNoVersion": "Installed",
+    "notOnComputer": "Not on this computer",
+    "unsupportedInOpenPods": "Installed · {{version}} · not supported in open pods yet; {{works}} works",
+    "other": "Other…",
+    "otherPlaceholder": "Full model id",
+    "answeredIn": "Answered in {{seconds}}s with {{harness}}",
+    "answeredWith": "Answered with {{harness}}"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "Once {{name}} joins this pod, an outside-writable connector grant would reach its pods.",
+      "losesWrites": "It would stop writing in:",
+      "targetBlocked": "It couldn't write in this pod either.",
+      "unavailable": "Commonly couldn't check whether joining this pod would limit where {{name}} can write.",
+      "confirm": "Install anyway",
+      "cancel": "Cancel"
+    },
+    "hiddenPods_one": "{{count}} pod you can't see",
+    "hiddenPods_other": "{{count}} pods you can't see",
+    "runtime": {
+      "onePod": "{{name}} can only write in {{pod}}, because an outside-writable grant reaches it.",
+      "oneHiddenPod": "{{name}} can only write in one pod, which you can't see, because an outside-writable grant reaches it.",
+      "noPod_one": "{{name}} can't write in any pod: an outside-writable grant reaches {{count}} of its pods.",
+      "noPod_other": "{{name}} can't write in any pod: outside-writable grants reach {{count}} of its pods.",
+      "unavailable": "Commonly couldn't check whether an outside-writable grant limits where {{name}} can write. Until it can, {{name}}'s writes are refused."
+    }
   }
 }

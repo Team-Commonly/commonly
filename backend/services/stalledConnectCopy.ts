@@ -56,20 +56,30 @@ export type StalledConnectCopyEvidence = {
 };
 
 /**
- * The listener answers @mentions only on a Mac for now (V2AgentBYO's
- * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
- * cannot run Claude Code on Linux or Windows, and Codex there is not yet
- * tested (agentByo.listen.unavailableClaude / unavailableCodex). The server
- * never learns which adapter the copied command named, so the copy names the
- * listener, not the CLI, and states only what is true for both: Mac only.
+ * Where the listener is walked answering @mentions differs by OS and adapter
+ * (the BYO support matrix, #3399). On Linux, Claude Code answered an @mention
+ * on prod on an API key (byo-linux.yml run 41945040493) but its own-login path
+ * is CI-only, and Codex is unverified, so the copy says only what holds for
+ * all of them: it may not answer there yet. On Windows,
+ * Claude Code answered an @mention on prod from the page's PowerShell lines
+ * (D164, byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
+ * release with the Windows npm fix), and Codex isn't walked there. The server
+ * never learns which adapter the copied command named, so the Windows copy
+ * says both, and points at the page's lines rather than at --unsandboxed,
+ * which Codex doesn't take.
  *
- * It hedges, unlike the rest of this file. The page shows the listener command
- * only on its Mac tab, so a copy from a Linux or Windows browser means the
- * person picked Mac there: they may have run it on a Mac, or on the machine
- * they were browsing from. byoOpenedOs is the browser's OS, not where the
+ * It hedges, unlike the rest of this file. Since #3388 the page also shows the
+ * listener command for Windows (opt-in) and for Claude Code in a private
+ * Linux pod, so a copy from a Linux or Windows browser may have run there or
+ * on a Mac. byoOpenedOs is the browser's OS, not where the
  * command ran, so the sentence is conditional on it.
  */
 const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
+const LISTENER_PLATFORM_NOTE = "is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.";
+const WINDOWS_LISTENER_FACTS = 'Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. '
+  + 'Codex hasn’t been tested on Windows yet.';
+const WINDOWS_LISTENER_NOTE = `On Windows, ${WINDOWS_LISTENER_FACTS}`;
+const HOSTED_FALLBACK = 'choose “Run it here” on the Bring your own page for a hosted agent.';
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -143,12 +153,19 @@ export const composeStalledConnectNudge = ({
   if (mcpOnly && offsetSeconds !== null) {
     const unavailableOs = evidence.openedOs ? LISTENER_UNAVAILABLE_OS[evidence.openedOs] : undefined;
     const when = copiedAtDescription(offsetSeconds);
+    if (evidence.openedOs === 'windows') {
+      return `@${installerName} — you copied the MCP command ${when}. `
+        + `MCP-only clients can call Commonly, but they do not answer @mentions; the listener does. `
+        + `You first opened this page on Windows. ${WINDOWS_LISTENER_NOTE} `
+        + `Or ${HOSTED_FALLBACK} `
+        + `I'll post here the moment I connect.`;
+    }
     if (unavailableOs) {
-      // The page offers the listener command on its Mac tab only, so do not
-      // tell this person they missed a command their browser never showed.
+      // Their browser may not have shown the listener command, so do not
+      // tell this person they missed it.
       return `@${installerName} — you copied the MCP command ${when}. `
         + `MCP-only clients can call Commonly, but they do not answer @mentions. `
-        + `The listener that does runs only from a Mac for now, and you first opened this page on ${unavailableOs}. `
+        + `The listener that does ${LISTENER_PLATFORM_NOTE} You first opened this page on ${unavailableOs}. `
         + `Run \`${fixCommand}\` in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
@@ -165,11 +182,18 @@ export const composeStalledConnectNudge = ({
     const unavailableOs = effective.commandType === 'cli' && effective.openedOs
       ? LISTENER_UNAVAILABLE_OS[effective.openedOs]
       : undefined;
+    if (effective.commandType === 'cli' && effective.openedOs === 'windows') {
+      return `@${installerName} — you copied the listener command `
+        + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
+        + `If you ran it on Windows: ${WINDOWS_LISTENER_FACTS.replace('answers @mentions with', 'answers @mentions there with')} `
+        + 'Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window. '
+        + `Or ${HOSTED_FALLBACK} `
+        + `I'll post here the moment I connect.`;
+    }
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
-        + `If you ran it on ${unavailableOs}, that's likely why: the listener answers @mentions `
-        + `only from a Mac for now. `
+        + `If you ran it on ${unavailableOs}, that may be why: the listener ${LISTENER_PLATFORM_NOTE} `
         + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
@@ -196,28 +220,35 @@ export const composeStalledConnectNudge = ({
  * exactly what it should do.
  *
  * The template is compound because a single tense cannot stay honest at
- * arbitrary age: **flat for the past** (a first-connection timestamp is a
- * fact) and **derived for the present** (per the same certainty rule that
+ * arbitrary age: **flat for the past** (the latest check-in timestamp is a
+ * fact, dated because the post can land days late) and **derived for the present** (per the same certainty rule that
  * governs the install intro). That compound is also what dissolves the
  * connect-then-disconnect-within-one-pass case I thought was invisible:
  * `lastUsedAt` leaving null is a PERMANENT transition, so the next pass still
- * sees it and simply reports a different present — "connected at 04:12, not
- * running now" — instead of missing the event.
+ * sees it and simply reports a different present — "connected (last checked
+ * in 2026-11-05 00:58 UTC), not running now" — instead of missing the event.
  */
 export const composeStalledConnectResolution = ({
-  displayName, handle, firstSeenAt, presentState, fixCommand,
+  displayName, handle, lastCheckInAt, presentState, fixCommand,
 }: {
   displayName: string;
   handle: string;
-  /** When the token was first used. A fact — stated flat. */
-  firstSeenAt: Date;
+  /**
+   * The latest listen on the token (`lastListenedAt`), as the pass read it. A
+   * fact, stated flat; it is the latest check-in, not the first. Null when the
+   * runtime keeps no listen time (a native or webhook seat), and then no time
+   * is claimed.
+   */
+  lastCheckInAt: Date | null;
   /** `deriveAgentState` verdict at POST time, not at connect time. */
   presentState: string;
   fixCommand: string;
   locale?: NudgeLocale;
 }): string => {
-  const hhmm = firstSeenAt.toISOString().slice(11, 16);
-  const past = `${displayName} connected (first seen ${hhmm} UTC).`;
+  // Dated, as the MCP resolution is: a bare time would read as today.
+  const past = lastCheckInAt
+    ? `${displayName} connected (last checked in ${lastCheckInAt.toISOString().slice(0, 16).replace('T', ' ')} UTC).`
+    : `${displayName} connected.`;
 
   // Inferred and currently down: hedge nothing about the past, keep the
   // instruction for the present.
@@ -225,13 +256,53 @@ export const composeStalledConnectResolution = ({
     return `${past} It isn't running right now — restart it with \`${fixCommand}\` `
       + `and @${handle} will get through again.`;
   }
-  // Certain and down again with no use at all is impossible here (this only
-  // fires once the token HAS been used), so anything else is live enough to
-  // invite.
-  return `${past} Listening now — mention @${handle} and I'll answer.`;
+  // Anything else checked in within the listening window, but an agent that
+  // stopped a minute ago is still inside it (byo-linux walk, 2026-11-05), so
+  // the invitation is conditional, never "Listening now".
+  return `${past} Mention @${handle} while the listener is running and I'll answer.`;
 };
 
-export default { composeStalledConnectNudge, composeStalledConnectResolution };
+/**
+ * The resolution for a token used but never listened on: an MCP client
+ * (TASK-345). It did connect, so the nudge's promise is kept. "Listening now"
+ * would be the false promise #943 removed, though: an MCP client reaches
+ * Commonly only when its person asks it to, and never answers @mentions. So the
+ * post says what it can do, with a first thing to ask, and what answering here
+ * would take, by the same OS rule the nudge uses.
+ */
+export const composeStalledConnectMcpResolution = ({
+  displayName, handle, seenAt, fixCommand, openedOs,
+}: {
+  displayName: string;
+  handle: string;
+  /** Latest token use. A fact, stated flat. */
+  seenAt: Date;
+  fixCommand: string;
+  openedOs?: StalledConnectCopyEvidence['openedOs'];
+  locale?: NudgeLocale;
+}): string => {
+  // Dated: this can close days late, and a bare time would read as today.
+  const seen = `${seenAt.toISOString().slice(0, 10)} ${seenAt.toISOString().slice(11, 16)} UTC`;
+  const head = `${displayName} connected from your MCP client (seen ${seen}). `
+    + 'I can read and post here whenever you ask me from that client. '
+    + 'Try: “read my Commonly pod and post a hello there”. ';
+  if (openedOs === 'windows') {
+    return `${head}I won't answer @${handle} on my own: that takes the listener. ${WINDOWS_LISTENER_NOTE} `
+      + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
+  }
+  const unavailableOs = openedOs ? LISTENER_UNAVAILABLE_OS[openedOs] : undefined;
+  if (unavailableOs) {
+    return `${head}I won't answer @${handle} on my own: that takes the listener, `
+      + `\`${fixCommand}\`, which ${LISTENER_PLATFORM_NOTE} `
+      + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
+  }
+  return `${head}I won't answer @${handle} on my own: that takes the listener. `
+    + `Run \`${fixCommand}\` in a Terminal on the machine where I should live.`;
+};
+
+export default {
+  composeStalledConnectNudge, composeStalledConnectResolution, composeStalledConnectMcpResolution,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);

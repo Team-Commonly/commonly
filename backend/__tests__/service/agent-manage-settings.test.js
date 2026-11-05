@@ -134,9 +134,36 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.runtimeManaged).toBe(false);
-    expect(response.body.runtimeEditable).toBe(false);
     expect(response.body.runtimeControls.effort).toBe('');
     expect(response.body.runtimeSavedControls.effort).toBe('max');
+  });
+
+  // D247: a listener agent (`agent run` from the connect page) has no machine
+  // binding. It is still the person's own agent, and its run reads these
+  // controls from the server, so they stay editable on add and after.
+  it('lets the owner edit a listener agent\'s runtime controls without a machine binding', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'webhook' }, 'config.environment': { model: 'gpt-6-sol', effort: 'high' } },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeEditable).toBe(true);
+    expect(response.body.runtimeSourcePodId).toBe(String(podA._id));
+    expect(response.body.runtimeSavedControls).toEqual(expect.objectContaining({ model: 'gpt-6-sol', effort: 'high' }));
+    expect(response.body.harnessCatalog.map((entry) => entry.id)).toEqual(
+      ['claude', 'codex', 'opencode', 'qwen', 'goose', 'hermes', 'pi', 'dsh']);
+  });
+
+  it('serves the harness catalogue to a signed-in person before any agent exists', async () => {
+    const anonymous = await request(app).get('/api/registry/harness-catalog');
+    expect(anonymous.status).toBe(401);
+    const response = await request(app).get('/api/registry/harness-catalog')
+      .set('Authorization', `Bearer ${token(other)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.harnesses[1]).toEqual({ id: 'codex', label: 'Codex',
+      models: expect.arrayContaining(['gpt-6.1-sol']), efforts: ['low', 'medium', 'high', 'xhigh', 'max'] });
   });
 
   it('does not present a hosted runtime preference as its running model or effort', async () => {
@@ -154,6 +181,61 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeControls.model).toBe('');
     expect(response.body.runtimeControls.effort).toBe('');
     expect(response.body.runtimeSavedControls.effort).toBe('max');
+  });
+
+  // The hosted engine floors a heartbeat to hourly per install and caps an
+  // owner's hosted heartbeats a day (hostedEngine.ts, D244). The wake panel
+  // reads both from here, so it neither offers nor previews more than runs.
+  it('tells the wake panel a hosted agent\'s heartbeat floor and daily cap', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' },
+        'config.hosted': { engine: 'native', provisionedAt: new Date() } },
+    });
+    const get = () => request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    let response = await get();
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    // Each row carries its own bounds: runtimeType is per installation, so a
+    // row of the same identity that isn't hosted keeps every interval.
+    const rows = Object.fromEntries(response.body.installations.map((row) => [row.podId, row.hostedHeartbeat]));
+    expect(rows[String(podA._id)]).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    Object.entries(rows).filter(([podId]) => podId !== String(podA._id))
+      .forEach(([, bounds]) => expect(bounds).toBeNull());
+
+    process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '0';
+    try {
+      response = await get();
+      expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 0 });
+    } finally {
+      delete process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY;
+    }
+  });
+
+  // The Durable Object answers mentions and first contact only, and a
+  // deprovisioned native row runs nothing, so neither runs a heartbeat.
+  it.each([
+    ['on the Durable Object', {}],
+    ['deprovisioned on the native engine', { engine: 'native', provisionedAt: null }],
+  ])('a hosted agent %s is told it runs no heartbeat', async (_label, hosted) => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' }, 'config.hosted': hosted },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 0 });
+  });
+
+  it('gives no hosted heartbeat bounds to an agent that is not hosted', async () => {
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toBeNull();
+    expect(response.body.installations.length).toBeGreaterThan(0);
+    response.body.installations.forEach((row) => expect(row.hostedHeartbeat).toBeNull());
   });
 
   it('shows the installation owner’s quota when an admin opens settings', async () => {
@@ -206,6 +288,60 @@ describe('per-installation agent settings', () => {
     expect(malformed.status).toBe(400);
     const unchanged = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
     expect(config(unchanged).wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
+  });
+
+  it('turns the heartbeat off without an interval and keeps the stored one', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.heartbeat': { enabled: true, everyMinutes: 45 } },
+    });
+    const response = await request(app)
+      .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`)
+      .set('Authorization', `Bearer ${token(owner)}`)
+      .send({ wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false });
+    expect(response.status).toBe(200);
+    expect(response.body.settings).toEqual(expect.objectContaining({
+      heartbeatEnabled: false, heartbeatMinutes: 45,
+    }));
+    const saved = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(saved).heartbeat).toEqual({ enabled: false, everyMinutes: 45 });
+
+    // With no stored interval, nothing is invented and the default still reads back.
+    const fresh = await request(app)
+      .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podB._id}?instanceId=same`)
+      .set('Authorization', `Bearer ${token(other)}`)
+      .send({ wakeOnMessage: false, humanOnly: false, boardWake: false, heartbeatEnabled: false });
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.settings.heartbeatMinutes).toBe(60);
+    const unset = await AgentInstallation.findOne({ podId: podB._id, agentName: 'settings-agent' });
+    expect(config(unset).heartbeat).toEqual({ enabled: false });
+  });
+
+  it('names the field a rejected wake write got wrong, and writes nothing', async () => {
+    const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`;
+    const body = { wakeOnMessage: false, humanOnly: false, boardWake: true, heartbeatEnabled: true, heartbeatMinutes: 30 };
+    const send = (patch) => request(app).patch(url).set('Authorization', `Bearer ${token(owner)}`)
+      .send({ ...body, ...patch });
+    const cases = [
+      [{ wakeOnMessage: 'yes' }, 'wakeOnMessage'],
+      [{ humanOnly: undefined }, 'humanOnly'],
+      [{ boardWake: 1 }, 'boardWake'],
+      [{ heartbeatEnabled: null }, 'heartbeatEnabled'],
+      [{ heartbeatMinutes: undefined }, 'heartbeatMinutes'],
+      [{ heartbeatMinutes: 0 }, 'heartbeatMinutes'],
+      [{ heartbeatEnabled: false, heartbeatMinutes: 1441 }, 'heartbeatMinutes'],
+      [{ heartbeatEnabled: false, heartbeatMinutes: '30' }, 'heartbeatMinutes'],
+      // Omitted means absent: null is a value sent, and is refused.
+      [{ heartbeatEnabled: false, heartbeatMinutes: null }, 'heartbeatMinutes'],
+    ];
+    for (const [patch, field] of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await send(patch);
+      expect({ patch, status: response.status, field: response.body.field }).toEqual({ patch, status: 400, field });
+      expect(response.body.error).toContain(field);
+    }
+    const unchanged = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(unchanged).wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
+    expect(config(unchanged).heartbeat).toBeUndefined();
   });
 
   it('lets an instance admin manage an installation they did not create', async () => {

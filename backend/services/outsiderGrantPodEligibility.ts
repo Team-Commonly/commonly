@@ -37,11 +37,18 @@ export const podIsBridged = async (podId: string): Promise<boolean> => {
     && (String(bridge.podId) === podId || bridge.config?.gates?.[podId]?.enabled === true));
 };
 
-/** Re-read at mint and on every broker list/call; no cached eligibility. */
+/**
+ * Re-read at mint and on every broker list/call; no cached eligibility.
+ *
+ * `exemptAgentIds` (F94) names agents a grant was minted for by the person who
+ * owns both the connection and the agent, with that person's consent that the
+ * agent runs outside Commonly. They may run outside the narrowed native
+ * runtime; every other agent member, and every pod check, still applies.
+ */
 export const outsiderGrantPodRefusal = async (
   target: { kind?: string; id?: unknown },
   writeMode?: unknown,
-  options: { assumeInviteOnly?: boolean } = {},
+  options: { assumeInviteOnly?: boolean; exemptAgentIds?: unknown[] } = {},
 ): Promise<OutsiderGrantRefusal | null> => {
   if (target.kind !== 'pod' || !target.id) return 'pod_required';
   if (writeMode === 'write') return 'write_mode_unconfined';
@@ -59,13 +66,21 @@ export const outsiderGrantPodRefusal = async (
   // Missing member rows are unsafe: their agent/human type cannot be proven.
   if (users.length !== memberIds.length) return 'non_native_agent';
   const agents = users.filter((user: any) => user.isBot || user.botType);
+  const exempt = new Set((options.exemptAgentIds || []).map(String));
+  // An exempt id lifts the runtime check only for an agent row; any other kind
+  // of member keeps refusing below.
+  const agentKey = (agent: any): string => (
+    `${String(agent.botMetadata?.agentName || '').toLowerCase()}:${String(agent.botMetadata?.instanceId || 'default')}`
+  );
+  const exemptKeys = new Set(agents
+    .filter((agent: any) => exempt.has(String(agent._id)) && agent.botType === 'agent')
+    .map(agentKey));
   const installations = await AgentInstallation.find({ podId, status: 'active' })
     .select('agentName instanceId config').lean();
-  const agentKeys = new Set(agents.map((agent: any) => (
-    `${String(agent.botMetadata?.agentName || '').toLowerCase()}:${String(agent.botMetadata?.instanceId || 'default')}`
-  )));
+  const agentKeys = new Set(agents.map(agentKey));
   for (const installation of installations) {
     const key = `${installation.agentName}:${String(installation.instanceId || 'default')}`;
+    if (exemptKeys.has(key)) continue;
     // A hosted agent on the native engine runs through the same narrowed
     // in-process runtime and can hold no runtime token (services/hostedEngine.ts,
     // routes/registry/tokens.ts). A hosted agent on the Durable Object polls

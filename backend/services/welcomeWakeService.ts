@@ -262,6 +262,8 @@ export async function maybeFireWelcomeWake({
           // deprioritize structured fields and act on the narrative frame.
           // Same rule as the DM cue (ADR-012 §9) and the pod-context cue.
           content: `${WELCOME_CUE(username, welcomeHandle(mentionMap, installation))}\n${String(content || '').trim()}`,
+          // F109: the person's first message with no cue, for programs.
+          rawContent: String(content || ''),
           userId: String(safeUserId),
           username,
           mentions: [],

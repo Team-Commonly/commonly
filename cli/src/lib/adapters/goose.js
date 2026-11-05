@@ -1,5 +1,6 @@
 /** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
+import { probeVersion } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -42,6 +43,9 @@ const templateLiteral = (value) => {
 // attach_file reads this process's filesystem, including its credential file.
 // catch_up is left out too: it moves the read cursor past history unread, so a
 // public seat past 50 unseen falls back to continueAnyway, which it keeps.
+// Self-install, the memory writes (log_cycle included) and delete_message are
+// left out on every public seat (F118, F141, PUBLIC_ONLY_WITHHELD_TOOLS);
+// reading memory stays.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
@@ -49,8 +53,7 @@ export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_posts', 'commonly_post_thread_comment', 'commonly_get_tasks',
   'commonly_create_task', 'commonly_claim_task', 'commonly_watch_task',
   'commonly_complete_task', 'commonly_update_task', 'commonly_create_pod',
-  'commonly_list_pods', 'commonly_self_install_into_pod', 'commonly_read_agent_memory',
-  'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+  'commonly_list_pods', 'commonly_read_agent_memory',
   'commonly_dm_agent', 'commonly_ask_agent', 'commonly_request_decision',
   'commonly_respond_to_ask', 'commonly_react_to_message',
 ]);
@@ -277,9 +280,12 @@ export default {
       : 'goose');
     if (isPublic && !isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
     // A cold first launch can take several seconds while macOS scans the binary.
-    const version = ctx._version || versionOf(spawnSync(binary, ['--version'], {
-      encoding: 'utf8', timeout: 30000, env: safeEnv(sourceEnv),
-    }).stdout);
+    // Async and cached per binary (tested-version.js probeVersion): a
+    // synchronous probe stalled every other seat's provider proxy on the
+    // daemon's loop for as long as this cold start took.
+    const version = ctx._version || await probeVersion(binary, {
+      env: safeEnv(sourceEnv), timeoutMs: 30000, parse: versionOf,
+    });
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {
       if (isPublic) throw new Error(`goose adapter: public seats refuse untested version ${version || 'unknown'}`);
       // eslint-disable-next-line no-console
@@ -324,7 +330,8 @@ export default {
         extensions: publicExtensions.map((extension) => ({ ...extension,
           envs: { ...extension.envs, OPENSSL_CONF: opensslConfig },
         })),
-        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
+        // F118: a public seat reads its memory but is not offered a write.
+        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true, memoryReadOnly: true }),
       })), { mode: 0o600 });
       const env = {
         ...safeEnv(sourceEnv),

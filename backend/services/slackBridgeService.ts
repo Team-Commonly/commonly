@@ -1,5 +1,4 @@
 import SlackApi = require('./slackApi');
-import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../models/Integration');
@@ -11,15 +10,18 @@ const connectorSecrets = require('./connectorSecrets');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
-  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+  isGatedPodTarget, isRoutedPodTarget,
 } = require('./connectorRelayPolicy');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const channelVerdictService = require('./channelVerdictService');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
-
-const RELAY_MAP_CAP = 100;
+import {
+  loadInboundAuthor,
+  proveInboundSender,
+  relayAgentMessageThroughAdapter,
+  writeInboundAsLinkedUser,
+} from './chatRelay/chatRelayCore';
+import type { ChatRelayAdapter, InboundRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
 
 // One implementation, in slackApi.ts one step above the call that posts it. This
 // file and decisionCardReconcileService each carried their own copy, which is how
@@ -206,121 +208,51 @@ const findLiveIntegration = async (podId: string): Promise<SlackIntegrationDoc |
 
 // Outbound is intentionally secret-ref-only: legacy Slack rows remain on the
 // legacy provider path and cannot be selected by the installable dispatcher.
-export const relayAgentMessageToSlack = async (opts: {
-  podId: string;
-  agentUsername: string;
-  displayName: string;
-  content: string;
-  podMessageId?: string | null;
-  card?: DecisionRelayCard;
-  integration?: SlackIntegrationDoc;
-}): Promise<void> => {
-  const {
-    podId, agentUsername, displayName, content, podMessageId,
-  } = opts;
-  try {
-    const integration = opts.integration ?? await findLiveIntegration(podId);
-    if (!integration) return;
-    // TASK-160: the "why is this held" label reads the gate through the same
-    // predicate the relay itself uses, so a change to gate semantics cannot
-    // leave the reason a user is shown stale. The scope test stays because it
-    // asks a different question than the gate read does: the label means "this
-    // person's gate for that pod is off", not "this connector owns that pod",
-    // which is what the predicate's pod-scoped arm answers.
-    const cardHoldReason = opts.card
-      ? (integration.config?.adminPause
-        ? 'paused'
-        : integration.scope === 'user' && !isGatedPodTarget(integration, podId)
-          ? 'gate_off'
-          : null)
-      : null;
-    if (cardHoldReason) {
-      if (podMessageId) {
-        await channelVerdictService.record({
-          integrationId: integration._id,
-          ...(integration.installationId ? { installationId: integration.installationId } : {}),
-          podId,
-          provider: 'slack',
-          event: { kind: 'decision_request', podMessageId },
-          verdict: 'hold',
-          reason: cardHoldReason,
-        });
-      }
-      return;
-    }
-    if (!isRelayableIntegration(integration, podId)) return;
-    const mutedUntil = integration.config?.relayMutedUntil;
-    if (mutedUntil && new Date(mutedUntil) > new Date()) {
-      if (opts.card && podMessageId) {
-        await channelVerdictService.record({
-          integrationId: integration._id,
-          ...(integration.installationId ? { installationId: integration.installationId } : {}),
-          podId,
-          provider: 'slack',
-          event: { kind: 'decision_request', podMessageId },
-          verdict: 'hold',
-          reason: 'muted',
-        });
-      }
-      return;
-    }
-    if (!opts.card && !shouldEscalate({ content, agentUsername, integration, podId })) return;
-
+// The hold/mute/escalate ladder and the relayMap write are the shared core's
+// (chatRelay/chatRelayCore); this adapter owns Slack's row shape, its mrkdwn
+// rendering, and the send.
+export const slackRelayAdapter: ChatRelayAdapter<SlackIntegrationDoc> = {
+  provider: 'slack',
+  relayMapKey: 'externalMessageId',
+  findLiveIntegration,
+  isRelayableIntegration,
+  send: async ({
+    integration, podId, agentUsername, displayName, content, card, link,
+  }) => {
     const [pod, token] = await Promise.all([
       Pod.findById(podId).select('name').lean(),
       connectorSecrets.get(String(integration.config!.botTokenRef)),
     ]);
     const podName = String(pod?.name || 'Commonly');
-    const base = publicAppUrl();
-    const link = opts.card && podMessageId
-      ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
-      : `${base}/v2/pods/${podId}`;
-    const text = opts.card
-      ? renderSlackDecisionCard({ card: opts.card, displayName, agentUsername, link })
+    const text = card
+      ? renderSlackDecisionCard({ card, displayName, agentUsername, link })
       // One ternary, two escape regimes: the card renderer escapes every field it
       // is handed, this fall-through used to interpolate three of them raw. Slice
       // before escaping — the other order can cut a `&amp;` in half.
       : `[${escapeSlackMrkdwn(podName)}] ${escapeSlackMrkdwn(displayName || agentUsername)}: `
         + escapeSlackMrkdwn(String(content).slice(0, OUTBOUND_TEXT_CAP));
-    const result = await new SlackApi(token).postMessage(String(integration.config!.chatId), text);
-    if (!result.ok || !result.ts) {
-      // Bound channel. Only an `ok: false` classifies — a missing `ts` on an
-      // otherwise successful send says nothing about reachability.
-      await deliveryFailures.noteBoundChatDeliveryFailure(integration, integration.config?.chatId, result);
-      throw new Error(`chat.postMessage failed: ${String(result.error || 'unknown error')}`);
-    }
-    await Integration.findByIdAndUpdate(integration._id, {
-      $push: {
-        'config.relayMap': {
-          $each: [{
-            externalMessageId: String(result.ts), agentUsername, podMessageId: podMessageId || null, podId,
-          }],
-          $slice: -RELAY_MAP_CAP,
-        },
-        ...(opts.card && podMessageId ? {
-          'config.cards': { podMessageId, externalMessageId: String(result.ts), sentAt: new Date() },
-        } : {}),
-      },
-    });
-    if (opts.card && podMessageId) {
-      await channelVerdictService.record({
-        integrationId: integration._id,
-        ...(integration.installationId ? { installationId: integration.installationId } : {}),
-        podId,
-        provider: 'slack',
-        event: { kind: 'decision_request', podMessageId },
-        verdict: 'interrupt',
-        reason: 'card',
-      });
-    }
-  } catch (error) {
+    const chatId = integration.config?.chatId;
+    const result = await new SlackApi(token).postMessage(String(chatId), text);
+    return { chatId, externalMessageId: result.ok && result.ts ? String(result.ts) : null, result };
+  },
+  // Only an `ok: false` classifies — a missing `ts` on an otherwise successful
+  // send says nothing about reachability — but either way the send failed, and
+  // Slack's log line says so with the provider's error.
+  deliveryFailureError: (result) => new Error(
+    `chat.postMessage failed: ${String((result as { error?: unknown })?.error || 'unknown error')}`,
+  ),
+  logOutboundFailure: (error, opts) => {
     const config = opts.integration?.config;
     console.warn(
       `[slack-bridge] outbound relay failed integration=${String(opts.integration?._id || 'lookup')} `
-      + `team=${String(config?.teamId || 'unknown')}: ${(error as Error).message}`,
+      + `team=${String(config?.teamId || 'unknown')}: ${error.message}`,
     );
-  }
+  },
 };
+
+export const relayAgentMessageToSlack = async (
+  opts: OutboundRelayOptions<SlackIntegrationDoc>,
+): Promise<void> => relayAgentMessageThroughAdapter(slackRelayAdapter, opts);
 
 // D11: a Slack thread attached to a relayed line is a direct answer to that
 // line's agent. Keep the map generic so Telegram can migrate from tgMessageId
@@ -350,6 +282,31 @@ export const routeSlackReplyContent = (opts: {
     : { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
+const SLACK_LIVE_RELAY_REFUSAL = 'Live relay requires a direct message with the bot; '
+  + 'this connector is bound to a channel';
+
+// Slack's inbound proof: the event's sender is the Slack user the OAuth bind
+// proved (`config.slackUserId`), never a value a request supplied.
+export const slackInboundAdapter: InboundRelayAdapter<SlackIntegrationDoc, { user?: string }> = {
+  provider: 'slack',
+  senderIsLinkedUser: (integration, event) => {
+    const slackUserId = integration.config?.slackUserId;
+    return Boolean(slackUserId) && event?.user === slackUserId;
+  },
+  // Slack's own audience test, not the shared private-chat one: the OAuth bind
+  // stores the installer's DM as chatType 'im', which that rule read as a group
+  // and refused. A DM (`im`) with no channel is 1:1; a channelId, or a bound
+  // chat of any other type, is a channel. The same reading as F143's
+  // surfaceBindDeclarations.slack and isRelayableIntegration above. A row with
+  // no chat yet has nothing to judge.
+  liveRelayRefusal: (row) => {
+    const config = row.config || {};
+    if (config.channelId) return SLACK_LIVE_RELAY_REFUSAL;
+    if (config.chatId && config.chatType !== 'im') return SLACK_LIVE_RELAY_REFUSAL;
+    return null;
+  },
+};
+
 // Inbound Slack DM → Commonly pod. The event route has already proven the
 // Slack signature and selected the team/channel row; this function repeats
 // the ownership-shaped checks because a bridge is never allowed to rely on a
@@ -376,12 +333,13 @@ export const relaySlackMessageToPod = async (opts: {
     return { relayed: false };
   }
   const config = integration.config || {};
-  if (
-    !isInboundRelayableIntegration(integration, String(integration.podId))
-    || !config.linkedUserId
-    || !config.slackUserId
-    || event.user !== config.slackUserId
-  ) {
+  // The proof is slackInboundAdapter.senderIsLinkedUser: the DM sender is the
+  // Slack user the OAuth bind proved. The core mints the ProvenSender every
+  // write below requires only when it passes.
+  const sender = isInboundRelayableIntegration(integration, String(integration.podId))
+    ? proveInboundSender(slackInboundAdapter, integration, event)
+    : null;
+  if (!sender) {
     console.warn(
       `[slack-bridge] inbound dropped integration=${String(integration._id)}: `
       + 'unbound or mismatched DM sender',
@@ -468,31 +426,19 @@ export const relaySlackMessageToPod = async (opts: {
     // neither addresses an agent, so they must not turn a plain DM into a mention.
     && extractMentions(String(rawText).replace(/<[^<>]*>/g, ' ')).length === 0;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
-  const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const User = require('../models/User');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const PodModel = require('../models/Pod');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const PGMessage = require('../models/pg/Message');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { deliverMessageToAgents } = require('./messageAgentDeliveryService');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const socketConfig = require('../config/socket');
 
-  const pod = await PodModel.findById(podId).select('type createdBy members').lean();
-  if (!pod || !isListedPodMember(pod, linkedUserId)) {
-    console.warn('[slack-bridge] inbound dropped — linked user is no longer a pod member');
-    await replyNoActivePod(integration);
-    return { relayed: false };
-  }
-  const linkedUser = await User.findById(linkedUserId).select('username profilePicture').lean();
-  if (!linkedUser) {
-    console.warn('[slack-bridge] inbound dropped — linked user missing');
-    return { relayed: false };
-  }
+  const author = await loadInboundAuthor({
+    podId,
+    sender,
+    logPrefix: '[slack-bridge]',
+    onNotMember: () => replyNoActivePod(integration),
+  });
+  if (!author) return { relayed: false };
+  const { pod, linkedUser } = author;
   let addressedLead: string | null = null;
   if (plainMessage && typeof lead === 'string' && /^[a-z0-9_-]{2,}$/i.test(lead)) {
     try {
@@ -507,67 +453,18 @@ export const relaySlackMessageToPod = async (opts: {
   const content = senderName
     ? `💬 ${senderName} (via Slack): ${routedText}`
     : `💬 (via Slack): ${routedText}`;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const PGPod = require('../models/pg/Pod');
-    if (!await PGPod.findById(podId)) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      const { syncPodFromMongo } = require('./pgPodSyncService');
-      await syncPodFromMongo(podId, linkedUserId);
-    }
-  } catch (error) {
-    console.warn('[slack-bridge] PG pod backfill skipped:', (error as Error).message);
-  }
-  let threadRootId: number | null = null;
-  if (cardReply.lateReply?.threadRootId) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const { resolveThreadRoot } = require('./threadRootResolver');
-    threadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId: cardReply.lateReply.threadRootId });
-  }
-  const created = await PGMessage.create(podId, linkedUserId, content, 'text', replyToMessageId, null, threadRootId);
-  let message: Record<string, unknown> = created;
-  try {
-    const populated = created?.id ? await PGMessage.findById(created.id) : null;
-    if (populated) message = populated;
-  } catch (error) {
-    console.warn('[slack-bridge] post-write read failed:', (error as Error).message);
-  }
-  // A post is durable. As in the Telegram bridge, do not turn a later wake or
-  // socket failure into a Slack retry that writes the same human message again.
-  try {
-    await deliverMessageToAgents({
-      podId,
-      podType: pod.type,
-      message,
-      userId: linkedUserId,
-      requestUser: { username: linkedUser.username },
-      replyToMessageId,
-    });
-  } catch (error) {
-    console.error('[slack-bridge] agent delivery failed after pod write:', (error as Error).message);
-  }
-  try {
-    const io = socketConfig.getIO();
-    if (io) {
-      io.to(`pod_${podId}`).emit('newMessage', {
-        _id: (message as { id?: unknown }).id,
-        id: (message as { id?: unknown }).id,
-        pod_id: podId,
-        podId,
-        content: (message as { content?: unknown }).content || content,
-        messageType: 'text',
-        userId: { _id: linkedUserId, username: linkedUser.username, profilePicture: linkedUser.profilePicture },
-        username: linkedUser.username,
-        profile_picture: linkedUser.profilePicture,
-        createdAt: (message as { created_at?: unknown }).created_at || new Date(),
-        replyTo: replyToMessageId,
-        thread_root_id: (message as { thread_root_id?: unknown }).thread_root_id ?? threadRootId ?? replyToMessageId,
-        payload: null,
-      });
-    }
-  } catch (error) {
-    console.warn('[slack-bridge] socket emit failed:', (error as Error).message);
-  }
+  // A post is durable. As in the Telegram bridge, the core does not turn a later
+  // wake or socket failure into a Slack retry that writes the same message again.
+  await writeInboundAsLinkedUser({
+    podId,
+    podType: pod.type,
+    sender,
+    linkedUser,
+    content,
+    replyToMessageId,
+    lateReplyThreadRootId: cardReply.lateReply?.threadRootId,
+    logPrefix: '[slack-bridge]',
+  });
   // Slack's notice is best effort. A slow Slack API must not hold the inbound
   // webhook after the pod message has been stored and delivered.
   if (plainMessage && !addressedLead) void replyNoLead(integration);
@@ -581,4 +478,6 @@ module.exports = {
   renderSlackDecisionCard,
   isRelayableIntegration,
   isInboundRelayableIntegration,
+  slackRelayAdapter,
+  slackInboundAdapter,
 };

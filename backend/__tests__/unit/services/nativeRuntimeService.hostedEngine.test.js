@@ -8,6 +8,8 @@
  *  - a provisioned native-engine hosted install runs, with an AgentRun
  *  - the model, tools and cap come from the server, whatever the install says
  *  - the event types the Durable Object ignored are acked with no run
+ *  - a heartbeat runs a real turn, at most once an hour per install and
+ *    HOSTED_HEARTBEAT_RUNS_PER_DAY times a day per owner
  *  - HOSTED_TURNS_PER_DAY=0 means no turns, not "no cap"
  *  - a Durable Object install, or a deprovisioned native one, does not run here
  */
@@ -540,7 +542,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(body.messages[0].content).not.toMatch(/Ignore your instructions/);
   });
 
-  test.each(['message.posted', 'heartbeat', 'thread.mention'])(
+  test.each(['message.posted', 'thread.mention'])(
     'a %s event is acked with no run and no model call, as the Durable Object did',
     async (type) => {
       const result = await runAgent(hostedInstall(), { ...mention, type });
@@ -549,6 +551,100 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(axios.post).not.toHaveBeenCalled();
     },
   );
+
+  // D244 dogfood: a hosted install with heartbeat on runs a real turn on its
+  // schedule. Two bounds of its own, both counted from AgentRun and both
+  // failing closed, because they are spend bounds: one heartbeat run per
+  // install an hour, and HOSTED_HEARTBEAT_RUNS_PER_DAY (6) across the owner's
+  // hosted installs a day. The plan line and the per-user ceiling still apply.
+  describe('heartbeats', () => {
+    const heartbeat = {
+      type: 'heartbeat',
+      eventId: '507f1f77bcf86cd799439015',
+      payload: { podId: POD, content: '[Heartbeat: check the pod.]' },
+    };
+    const counts = ({ installHour = 0, ownerToday = 0, fail = false } = {}) => (
+      AgentRun.countDocuments.mockImplementation(async (query) => {
+        if (query.trigger !== 'heartbeat') return 0;
+        if (fail) throw new Error('mongo down');
+        return query.userId ? ownerToday : installHour;
+      })
+    );
+    afterEach(() => { delete process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY; });
+
+    test('a heartbeat runs a real turn, recorded as a heartbeat for the owner', async () => {
+      counts();
+      const result = await runAgent(hostedInstall(), heartbeat);
+
+      expect(result.status).toBe('succeeded');
+      expect(AgentRun.create).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'heartbeat', userId: OWNER }));
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(axios.post.mock.calls[0][1].messages[0].content).toMatch(/You are a hosted agent/);
+    });
+
+    test('the floor: a second heartbeat within the hour is acked with no run', async () => {
+      counts({ installHour: 1 });
+      const result = await runAgent(hostedInstall(), heartbeat);
+
+      expect(result).toEqual({ runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0 });
+      expect(AgentRun.create).not.toHaveBeenCalled();
+      expect(axios.post).not.toHaveBeenCalled();
+      const hourQuery = AgentRun.countDocuments.mock.calls
+        .map(([query]) => query).find((query) => query.trigger === 'heartbeat' && !query.userId);
+      expect(hourQuery).toEqual(expect.objectContaining({ podId: POD, agentName: 'maya-agent', instanceId: 'default' }));
+      const windowMs = Date.now() - hourQuery.startedAt.$gte.getTime();
+      expect(windowMs).toBeGreaterThanOrEqual(54 * 60_000);
+      expect(windowMs).toBeLessThanOrEqual(56 * 60_000);
+    });
+
+    test.each([
+      [5, true],
+      [6, false],
+    ])('the owner\'s daily heartbeat cap (6): with %i today, runs=%s', async (ownerToday, runs) => {
+      counts({ ownerToday });
+      await runAgent(hostedInstall(), heartbeat);
+      expect(axios.post).toHaveBeenCalledTimes(runs ? 1 : 0);
+      const ownerQuery = AgentRun.countDocuments.mock.calls
+        .map(([query]) => query).find((query) => query.trigger === 'heartbeat' && query.userId);
+      expect(ownerQuery).toEqual(expect.objectContaining({ userId: OWNER }));
+    });
+
+    test('HOSTED_HEARTBEAT_RUNS_PER_DAY sets the cap, and 0 switches hosted heartbeats off', async () => {
+      process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '10';
+      counts({ ownerToday: 8 });
+      await runAgent(hostedInstall(), heartbeat);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+
+      process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '0';
+      counts();
+      const off = await runAgent(hostedInstall(), heartbeat);
+      expect(off).toEqual(expect.objectContaining({ status: 'succeeded', totalTurns: 0 }));
+      expect(axios.post).toHaveBeenCalledTimes(1);
+    });
+
+    test('a failed heartbeat count fails closed: no run, no model call', async () => {
+      counts({ fail: true });
+      const result = await runAgent(hostedInstall(), heartbeat);
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'heartbeat_cap_check_failed' }));
+      expect(AgentRun.create).not.toHaveBeenCalled();
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    test('a heartbeat still counts against the plan line', async () => {
+      AgentRun.countDocuments.mockImplementation(async (query) => (
+        query.trigger === 'heartbeat' ? 0 : 30
+      ));
+      await runAgent(hostedInstall(), heartbeat);
+      expect(axios.post).not.toHaveBeenCalled();
+    });
+
+    test('a mention is not held by the heartbeat floor or cap', async () => {
+      counts({ installHour: 1, ownerToday: 99 });
+      await runAgent(hostedInstall(), mention);
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(AgentRun.countDocuments.mock.calls.some(([query]) => query.trigger === 'heartbeat')).toBe(false);
+    });
+  });
 
   test('HOSTED_TURNS_PER_DAY=0 means no hosted turns, not an uncapped install', async () => {
     process.env.HOSTED_TURNS_PER_DAY = '0';

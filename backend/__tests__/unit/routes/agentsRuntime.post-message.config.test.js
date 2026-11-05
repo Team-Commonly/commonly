@@ -122,6 +122,30 @@ describe('agentsRuntime post message installation config forwarding', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true, mentionNotices: [] });
   });
 
+  it('forwards the optional summary and kind and returns contract warnings on a 200 (D245)', async () => {
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    const warnings = [{ code: 'kind_unknown', message: 'kind must be one of …' }];
+    AgentMessageService.postMessage.mockResolvedValue({ success: true, warnings });
+    const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik' };
+    const req = {
+      params: { podId: 'pod-1' },
+      body: {
+        content: 'hello', summary: 'Fixed it', kind: 'reasoning', receipt: { adapter: 'claude', turns: 1 },
+      },
+      agentInstallation: installation,
+      agentInstallations: [installation],
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handler(req, res);
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'hello', summary: 'Fixed it', kind: 'reasoning', receipt: { adapter: 'claude', turns: 1 },
+    }));
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true, warnings, mentionNotices: [] });
+  });
+
   it('wakes the agents a stored post names, as its poster (F62)', async () => {
     // eslint-disable-next-line global-require
     const AgentMentionService = require('../../../services/agentMentionService');

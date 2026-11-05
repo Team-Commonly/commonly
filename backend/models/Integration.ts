@@ -73,6 +73,12 @@ export interface IIntegration extends Document {
     installationId?: string;
     owner?: string;
     repo?: string;
+    /** Which GitHub App the installation belongs to (F172). Absent on rows written before it: those are `tools`. */
+    app?: 'tools' | 'connect';
+    /** `owner/repo` lower-cased: the per-repository uniqueness key (F172). */
+    repoKey?: string;
+    /** GitHub's repository id, recorded at a Connect proof and checked on every write (F172). */
+    repositoryId?: string;
     serverId?: string;
     serverName?: string;
     channelId?: string;
@@ -145,6 +151,12 @@ export interface IIntegration extends Document {
     teamName?: string;
     slackUserId?: string;
     slackUserName?: string;
+    /**
+     * The Discord user id of the person who installed the bot, proven by the
+     * OAuth callback's `users/@me` read (F131). Live relay authors only that
+     * sender's channel messages as `linkedUserId`; server-owned.
+     */
+    discordUserId?: string;
     pendingBind?: {
       teamId: string;
       teamName?: string;
@@ -180,6 +192,8 @@ export interface IIntegration extends Document {
     intake?: 'oauth';
     clientId?: string;
     providerSubject?: string;
+    /** TASK-782: what a post-connect probe saw; null when it could not tell. */
+    reach?: { projects?: number; checkedAt?: Date } | null;
     grantedScope?: string;
     expiresAt?: Date;
     credentialRef?: string;
@@ -246,6 +260,11 @@ const IntegrationSchema = new Schema<IIntegration>(
       installationId: String,
       owner: String,
       repo: String,
+      // F172. Declared because `config` is strict: an undeclared `app` would be
+      // dropped in silence and a Connect row would read back as a tools row.
+      app: { type: String, enum: ['tools', 'connect'] },
+      repoKey: String,
+      repositoryId: String,
       serverId: String,
       serverName: String,
       channelId: String,
@@ -345,6 +364,8 @@ const IntegrationSchema = new Schema<IIntegration>(
       teamName: String,
       slackUserId: String,
       slackUserName: String,
+      // Declared, or the strict subdocument drops the bind's write (F131).
+      discordUserId: String,
       pendingBind: {
         teamId: String,
         teamName: String,
@@ -389,6 +410,9 @@ const IntegrationSchema = new Schema<IIntegration>(
       intake: String, // 'oauth' is the only intake for this type
       clientId: String, // id that minted this pair; DCR rows resolve this against held registrations
       providerSubject: String, // the authorization server's stable id for the account
+      // TASK-782: projects the account could see at connect. Every new pair
+      // sets it to null first, so a reconnect never keeps an old answer.
+      reach: { projects: Number, checkedAt: Date },
       grantedScope: String, // the token response's `scope`: what the person consented to
       expiresAt: Date, // the access token's expiry, when the AS states one
       credentialRef: String, // ConnectorSecret ref: the access token
@@ -483,6 +507,19 @@ IntegrationSchema.index({ podId: 1, type: 1 });
 IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
 IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
+// One `github-app` row per (App, installation, repository) (F172). An
+// installation covers many repositories, so a row written since F172 keeps its
+// installation in `config` only and leaves the top-level `installationId`
+// (unique, one row per installation) unset. Rows written before F172 carry no
+// `config.repoKey` and are outside this index; the routes check them by query.
+IntegrationSchema.index(
+  { 'config.app': 1, 'config.installationId': 1, 'config.repoKey': 1 },
+  {
+    name: 'unique_github_app_repository',
+    unique: true,
+    partialFilterExpression: { type: 'github-app', 'config.repoKey': { $type: 'string' } },
+  },
+);
 // One `hosted-mcp` row per (person, catalogue entry, bound agent). An operator
 // key is one agent's bearer (TASK-330), so one person may hold one row per
 // agent for the same vendor. OAuth rows have no `config.agentId`, index as

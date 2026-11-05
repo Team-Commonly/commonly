@@ -5,11 +5,18 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
   spawnSync: spawnSyncMock,
   spawn: jest.fn(),
+  // The version probe is async now (tested-version.js probeVersion); answer it
+  // from the same mock, so each test still sets the version in one place.
+  execFile: (cmd, args, options, callback) => {
+    const result = spawnSyncMock(cmd, args, options) || {};
+    setImmediate(() => callback(result.status === 0 && !result.error ? null : (result.error || new Error('exit')), result.stdout || ''));
+  },
 }));
 const {
   default: qwen,
@@ -105,7 +112,18 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
         'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
         'commonly_attach_file', 'mcp__commonly__commonly_attach_file',
         'commonly_catch_up', 'mcp__commonly__commonly_catch_up',
+        // F118: nor self-install or any memory write, on public trust.
+        'commonly_self_install_into_pod', 'mcp__commonly__commonly_self_install_into_pod',
+        'commonly_write_agent_memory', 'mcp__commonly__commonly_write_agent_memory',
+        'commonly_save_my_memory', 'mcp__commonly__commonly_save_my_memory',
+        'commonly_log_cycle', 'mcp__commonly__commonly_log_cycle',
+        // F141: nor delete_message, which could erase its replies to an injection.
+        'commonly_delete_message', 'mcp__commonly__commonly_delete_message',
       ]));
+    expect(args[args.indexOf('--exclude-tools') + 1]).not.toContain('commonly_read_agent_memory');
+    // The public prompt names no save tool the seat is not offered.
+    expect(args[args.indexOf('-p') + 1]).toContain('(empty');
+    expect(args[args.indexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
     expect(options.env.HOME).toContain('commonly-qwen-home-');
     expect(profiles[0].options.statePath).toBe(options.env.HOME);
@@ -153,7 +171,26 @@ test.each(['0.25.1', '0.26.2'])('a public seat accepts smoke-tested Qwen %s with
   });
 });
 
-test.each(['0.26.0', '0.26.3'])('public version drift to %s refuses before launching a provider proxy or child', async (version) => {
+test.each(['0.26.3', '0.26.10'])('a public seat warns and runs a later patch %s of the newest tested line', async (version) => {
+  await withSeat(async (ctx) => {
+    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
+    const previous = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => fakeChild() }))
+        .resolves.toMatchObject({ text: 'Qwen reply' });
+      expect(warning).toHaveBeenCalledWith(`[qwen] installed ${version} differs from smoke-tested 0.25.1, 0.26.2; `
+        + 'a patch release on the newest smoke-tested line, so the public seat continues');
+    } finally {
+      warning.mockRestore();
+      if (previous === undefined) delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      else process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] = previous;
+    }
+  });
+});
+
+test.each(['0.26.0', '0.25.2', '0.27.0', '1.26.3'])('public version drift to %s refuses before launching a provider proxy or child', async (version) => {
   await withSeat(async (ctx) => {
     spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
     const spawn = jest.fn();
@@ -292,6 +329,11 @@ test('private Qwen approves only declared Commonly MCP tools in the non-interact
     expect(observed.args).toContain('--safe-mode');
     expect(observed.args).not.toContain('--approval-mode');
     expect(observed.args).not.toContain('--yolo');
+    // F118 withholds these on public trust only; a private seat keeps them.
+    const excluded = observed.args[observed.args.indexOf('--exclude-tools') + 1];
+    expect(excluded).not.toContain('commonly_save_my_memory');
+    expect(excluded).not.toContain('commonly_self_install_into_pod');
+    expect(observed.args[observed.args.indexOf('-p') + 1]).toContain('commonly_save_my_memory');
   });
 });
 
@@ -365,7 +407,16 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
           return fakeChild();
         },
       });
-      expect(launchArgs).not.toContain('--allowed-tools');
+      // F110 (D247 walk, 11-04): a public seat is offered the Commonly tools,
+      // so it must be able to call them in a non-interactive run, the way the
+      // public Claude seat's --allowedTools carries mcp__commonly__*. Before,
+      // commonly_post_message came back "declined, and this non-interactive
+      // run can't prompt". The tools no public seat is offered stay excluded.
+      expect(launchArgs[launchArgs.indexOf('--allowed-tools') + 1]).toBe('mcp__commonly__*');
+      const excluded = launchArgs[launchArgs.indexOf('--exclude-tools') + 1].split(',');
+      for (const tool of PUBLIC_WITHHELD_TOOLS) {
+        expect(excluded).toEqual(expect.arrayContaining([tool, `mcp__commonly__${tool}`]));
+      }
       expect(config.mcpServers.commonly).toMatchObject({
         command: 'node', args: [join(packageDir, 'src', 'index.js')],
       });

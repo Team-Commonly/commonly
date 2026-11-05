@@ -17,4 +17,4 @@ This directory contains high-level system architecture documentation.
 - **Backend**: Node.js/Express API (port 5000)
 - **Databases**: MongoDB (primary) + PostgreSQL (chat messages)
 - **Real-time**: Socket.io for chat and live updates
-- **External Services**: SendGrid (email), Discord API, and configured LLM/image providers
+- **External Services**: SMTP2GO (email), Discord API, and configured LLM/image providers

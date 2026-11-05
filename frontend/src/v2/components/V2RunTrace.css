@@ -1,12 +1,14 @@
 .v2-run-trace { max-width: 880px; min-width: 0; color: var(--v2-text-primary); }
-.v2-run-trace h1 { font-family: var(--v2-font-display); font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; margin: 16px 0; overflow-wrap: anywhere; }
-.v2-run-trace h2 { font-family: var(--v2-font-display); font-size: 20px; margin: 0; }
+/* d215 run-trace-after: the frame's headings balance their lines (its global
+   h1, h2 rule), so at 390 the title breaks "How this reply / was made". */
+.v2-run-trace h1 { font-family: var(--v2-font-display); font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; margin: 16px 0; overflow-wrap: anywhere; text-wrap: balance; }
+.v2-run-trace h2 { font-family: var(--v2-font-display); font-size: 20px; margin: 0; text-wrap: balance; }
 .v2-run-trace__back { color: var(--v2-text-primary); min-height: 32px; display: inline-flex; align-items: center; }
+/* The frame draws "Back to pod" as a plain underlined link; `.v2-root a` (0,1,1) strips it. */
+.v2-root a.v2-run-trace__back { text-decoration: underline; }
 /* Under an agent reply: as quiet as a timestamp (d215 s-chat, trace link). */
 .v2-run-trace-link a { color: var(--v2-text-secondary); font-size: 12.5px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
 .v2-run-trace-link a:hover { color: var(--v2-text-primary); text-decoration: underline; }
-/* The task record page's intro line (V2TaskRecord imports this sheet). */
-.v2-run-trace__retention { color: var(--v2-text-muted); font-size: 12px; }
 .v2-run-trace__summary, .v2-run-trace__call { display: grid; gap: 8px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-lg); padding: 16px; margin: 12px 0; min-width: 0; }
 .v2-run-trace__meta, .v2-run-trace code, .v2-run-trace dd { font-family: var(--v2-font-mono); font-size: 12px; }
 .v2-run-trace code, .v2-run-trace dd, .v2-run-trace__call strong { overflow-wrap: anywhere; }
@@ -20,8 +22,6 @@
 .v2-run-trace button { min-height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-primary); cursor: pointer; }
 .v2-run-trace button:focus-visible, .v2-run-trace a:focus-visible, .v2-run-trace-link a:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 .v2-run-trace-link { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.v2-task-record__entries { list-style: none; margin: 24px 0; padding: 0; }
-.v2-task-record__downloads { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 760px) {
   .v2-run-trace__back, .v2-run-trace-link a, .v2-run-trace button { min-height: 44px; }
   .v2-run-trace dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }

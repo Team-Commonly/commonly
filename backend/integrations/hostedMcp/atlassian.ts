@@ -1,7 +1,10 @@
 /**
  * Atlassian (Jira + Confluence) hosted MCP entry (TASK-239). Tool schemas are
  * pinned from connector-ops's consenting 2026-10-19 tools/list capture under
- * exactly the read, search, and write scopes below.
+ * exactly the read, search, and write scopes below. The five writers are
+ * re-pinned from the Lily-owned row's 2026-11-04 capture, where Atlassian had
+ * re-described their properties (a write pin must match its live schema
+ * exactly). listJiraIssueComments, new on 11-04, is not pinned.
  *
  * Six reads and five named writers are pinned. Each writer acts on one Jira
  * issue or Confluence item, or creates one Jira issue. Broad discover and
@@ -349,13 +352,13 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
     writeTool(
       "update_confluence_content",
       "updateConfluenceContent",
-      "Update a Confluence page, live doc, blog post, whiteboard or database by id or URL; ownerId can hand a page to another account.",
+      "Update a Confluence page, live doc, blog post, whiteboard or database by id or URL; ownerId can hand a page to another account. To edit a classic page (type=page), first read it with get_confluence_content(draft=true, detail=full) and pass that read's snapshotToken.",
       {
         type: "object",
         properties: {
           cloudId: {
             type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
+            description: "Atlassian site UUID, hostname, or URL. If unknown, list accessible resources.",
           },
           contentId: {
             type: "string",
@@ -367,7 +370,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
           },
           snapshotToken: {
             type: "string",
-            description: "Opaque token from a prior getConfluenceContent response. Required for doc-type\nupdates that mutate page/blog/live_doc content or contentWidth. Not used for whiteboard svg or\ndatabase csv object updates.\n",
+            description: "Opaque token from the most recent getConfluenceContent or updateConfluenceContent\nresponse for this content. Each successful update returns the current snapshot.token;\npass it to the next update, because changes to the content make earlier tokens\nstale. On snapshot_stale, re-read the content with getConfluenceContent and reapply\nthe change to the latest body before retrying; do not resend the same payload with\ncurrentSnapshot.token.\nRequired for doc-type updates that mutate page/blog/live_doc content or contentWidth.\nNot used for whiteboard svg or database csv object updates.\n",
           },
           title: {
             type: "string",
@@ -376,7 +379,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
           body: {
             type: "object",
             additionalProperties: {},
-            description: "Before composing this body, follow the space-instruction decision rule in the tool\ndescription. Reuse known instruction state and do not repeat the space lookup per write.\nBody update object with format and value. Doc types accept format html or\nmarkdown. Markdown is for simple text; when richer structure would improve the\ndocument, re-read it as HTML and preserve existing rich content in the HTML update.\nWhiteboards accept format svg and should include\ncontext.content with the current SVG when applying a patch. Databases\naccept format csv and should include context.content with the current\nCSV when applying an edit envelope. Put the raw patch/envelope directly in\nvalue; do not wrap it in an extra JSON object or {\"content\": \"...\"}\nwrapper. For whiteboards, value is a patch, not a full SVG replacement.\nFor databases, value is an edit envelope, not a create payload. Mutually\nexclusive with edits.\n",
+            description: "Before composing this body, follow the space-instruction decision rule in the tool\ndescription. Reuse known instruction state and do not repeat the space lookup per write.\nBody update object with format and value. Doc types accept format html or\nmarkdown. Prefer HTML. Use markdown only when you are confident the content needs\nonly basic text formatting and has no rich Confluence elements to preserve or create,\nsuch as panels, layouts, media, whiteboard embeds, or Remixes. If unsure, use HTML.\nRe-read existing rich content as HTML before editing and preserve its content and embeds.\nWhiteboards accept format svg and should include\ncontext.content with the current SVG when applying a patch. Databases\naccept format csv and should include context.content with the current\nCSV when applying an edit envelope. Put the raw patch/envelope directly in\nvalue; do not wrap it in an extra JSON object or {\"content\": \"...\"}\nwrapper. For whiteboards, value is a patch, not a full SVG replacement.\nFor databases, value is an edit envelope, not a create payload. Mutually\nexclusive with edits.\n",
           },
           edits: {
             type: "array",
@@ -429,7 +432,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
         properties: {
           cloudId: {
             type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
+            description: "Atlassian site UUID, hostname, or URL. If unknown, list accessible resources.",
           },
           projectKey: {
             type: "string",
@@ -501,7 +504,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
         properties: {
           cloudId: {
             type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
+            description: "Atlassian site UUID, hostname, or URL. If unknown, list accessible resources.",
           },
           issueIdOrKey: {
             type: "string",
@@ -587,7 +590,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
         properties: {
           cloudId: {
             type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
+            description: "Atlassian site UUID, hostname, or URL. If unknown, list accessible resources.",
           },
           issueIdOrKey: {
             type: "string",
@@ -599,7 +602,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
           },
           transitionName: {
             type: "string",
-            description: "Name of the transition itself, not the target status — the two often differ, so \"Done\" does not match a transition named \"Review->Done\". Provide either transitionId or transitionName.",
+            description: "Name of the transition itself, not the target status — the two often differ, so \"Done\" does not match a transition named \"Review->Done\". Provide only one of transitionId, transitionName, transition, or targetStatus.",
           },
           fields: {
             type: "object",
@@ -656,7 +659,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
         properties: {
           cloudId: {
             type: "string",
-            description: "Site UUID or Jira/Confluence URL for this operation's Atlassian site. cloudId is never silently auto-resolved or reused for you — call getAccessibleAtlassianResources ONCE per session, cache the returned cloudId, and pass it explicitly on this and every subsequent call, since most operations need it. `execute` and its read/write/destructive variants strictly require it for cloudId-scoped operations and fail without it. Not needed for cloudId-less operations (e.g. Bitbucket), which ignore this field.",
+            description: "Atlassian site UUID, hostname, or URL. If unknown, list accessible resources.",
           },
           issueIdOrKey: {
             type: "string",

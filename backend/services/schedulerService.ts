@@ -657,6 +657,24 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // F84: unset run text and tool args/results after 30 days; rows stay
+    // (services/agentRunContentWindow.ts). Off unless the deployment opts in.
+    const runContentWindowJob: CronJob = cron.schedule(
+      '23 4 * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { redactExpiredRunContent } = require('./agentRunContentWindow');
+          const report = await redactExpiredRunContent({ apply: true });
+          console.log(`[run-content] redacted=${report.redacted} matched=${report.matched} `
+            + `cutoff=${report.cutoff.toISOString()}`);
+        } catch (error) {
+          console.error('[run-content] redaction failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -683,6 +701,7 @@ class SchedulerService {
       accountDeletionUploadJob,
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
+      ...(process.env.AGENT_RUN_CONTENT_WINDOW === 'true' ? [runContentWindowJob] : []),
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

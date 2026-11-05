@@ -32,6 +32,26 @@ agentProvisioning:
   enabled: true
   createWorkspacePvc: false
 
+# F78 (11-03): Google rejects the Gemini key ("API key not valid"), so backend,
+# ops-runner and commonly-bot stop getting it. A working key turns this back on.
+aiProviders:
+  gemini:
+    enabled: false
+  # F85 (11-04): the OpenAI key is a placeholder, so LiteLLM routes nothing to
+  # OpenAI on dev. A real key turns this back on.
+  openai:
+    enabled: false
+  # F91 (D243, 11-04): hosted native agents run on Claude Haiku 5.5, billed to
+  # the $400/month Anthropic credit. The key is version 3 of
+  # commonly-dev-anthropic-api-key (200 on /v1/models, 11-04).
+  anthropic:
+    enabled: true
+  # F159 (D243/F98, Cofounder 11-04): DeepSeek is deleted on dev. 396 LiteLLM
+  # calls from 19:03:36Z 11-04 to 01:09Z 11-05, 394 on claude-haiku-5-5 and 0
+  # on DeepSeek (#3421). No route, key or default names it here.
+  deepseek:
+    enabled: false
+
 backend:
   replicaCount: 1
   worker:
@@ -63,10 +83,25 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
+    # D244 pilot 2 (Walker): the agent computer. Only an installation whose
+    # config.tools lists the computer_* tools can reach it (agentComputer.ts),
+    # and only Walker's will. It stays inert until the waker token exists AND
+    # agentComputer.users (private overlay) names Walker's owner; see
+    # docs/runbooks/agent-computer-steel.md.
+    agentComputerEnabled: "true"
+    agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-dev.svc.cluster.local:3000"
+    # Steel's own CDP WebSocket proxy on the API port (templates/agent-computer/steel.yaml).
+    agentComputerSteelCdpUrlTemplate: "ws://steel-{userId}.commonly-dev.svc.cluster.local:3000"
+    agentComputerAllowedHosts: "commonly.me"
+    agentComputerWakerUrl: "http://agent-computer-waker.commonly-dev.svc.cluster.local"
     # Registration opened 2026-07-03 — the invitation code now gates the
     # hosted-agent entitlement (redeemed at signup or later), not signup
     # itself. BYO/local agents are open to every account.
     registrationInviteOnly: "0"
+    # F78 (11-03): no working image or embedding key. The Gemini key is rejected
+    # and the OpenAI key is a placeholder, so both only sent content out and failed.
+    avatarProvider: design
+    embeddingProvider: none
     # TASK-265: new "Run it here" installs run in-process on the native engine
     # (AgentRun per turn, per-user ceiling, tool gate, connectors). Existing
     # installs move with dist/scripts/migrate-hosted-to-native.js (dry run,
@@ -129,6 +164,10 @@ backend:
     # untrusted input. Restore the pair only after a real OpenAI moderation
     # key lands in the api-keys secret.
     nativeRuntimeGuardrails: "injection-guard"
+
+    # Record-v1 lines for our own team boards first (D244 dogfood, 11-04):
+    # Sharpen and Connectors. Lines start when this deploys; there is no backfill.
+    recordV1Pods: "6a8f6dc7a1dccf2e02f31015,6a692a1be833c668acdb84cf"
 
     # Kernel work-sweep kill switch (#1080). Commented out = sweep runs.
     # Set to "true" and roll to stop the sweep rescuing lapsed leases and
@@ -199,6 +238,9 @@ postgresql:
 
 redis:
   enabled: true
+  # Require AUTH from clients (password via ESO: commonly-dev-redis-password).
+  auth:
+    enabled: true
   # ADR-015 amendment (2026-07-11): Redis is a realtime availability
   # dependency. Two user-visible 503s showed that spot reclamation here takes
   # the shell offline, so keep it on the on-demand dev pool.
@@ -239,12 +281,17 @@ agents:
       pullPolicy: Always
     strategy:
       type: Recreate
+    # TASK-521 (ADR-021): both PVCs were deleted on 2026-11-04 after the
+    # export was verified restorable (copy in the private archive bucket).
+    # Off here, or the next upgrade recreates them empty.
     persistence:
       config:
+        enabled: false
         storageClass: standard-rwo
         size: 1Gi
         accessMode: ReadWriteOnce
       workspace:
+        enabled: false
         storageClass: standard-rwo
         size: 10Gi
         accessMode: ReadWriteOnce
@@ -290,7 +337,9 @@ agents:
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
         # Parked 2026-08-12.
-        # Identity, PVC, and token secret stay; flip to 1 to revive.
+        # Identity, PVC, and token secret stay; flip to 1 to revive. First add
+        # litellm.agentDefaultModel to its hand-minted LiteLLM key's allowlist
+        # (F103; docs/development/LITELLM.md), or every call 403s.
         replicas: 0
 
 rbac:
@@ -347,6 +396,13 @@ cloudflared:
 
 litellm:
   enabled: true
+  # F98 (D243, 11-04): no other vendor's name is served by DeepSeek here. None
+  # was called in the 7 days to 11-04, so a caller gets an unknown-model error.
+  # See values.yaml.
+  legacyAliases: false
+  # F103: every agent driver default names Claude, which dev serves
+  # (aiProviders.anthropic.nativeModel). See values.yaml.
+  agentDefaultModel: claude-haiku-5-5
   # TASK-555: budgeted service keys (backend $40/30d, commonly-bot $20/30d),
   # minted 2026-10-25 and stored in Secret Manager.
   serviceKeys:
@@ -428,34 +484,46 @@ slack:
   oauth:
     enabled: true
 
-# Both commonly-dev-google-calendar-client-* secrets exist with a version
-# (created 2026-10-09 in the cluster project's Secret Manager).
-# Off until an enrolled call succeeds (Wren, 2026-10-14). OAuth works, but every
-# tool call fails Google's Workspace MCP Developer Preview gate, which is
-# per Cloud project. Offering the tile meant a stranger could connect and then
-# hit an error on the first call. Turning this back on is the switch once the
-# project is enrolled and a list_calendars call succeeds.
+# The grant broker's PR path on the public Commonly Connect App (F172, #3481).
+# Turned on 2026-11-05 after the App gained Contents and Pull requests write and
+# both api-keys secrets had an enabled version. Issues stay read-only on Connect.
+githubConnectApp:
+  enabled: true
+
+# Google Calendar credentials are on (2026-11-03, D239), but the tile stays
+# hidden below. Wren found on 2026-10-14 that OAuth works and every tool call
+# then fails Google's Workspace MCP Developer Preview gate, which is per Cloud
+# project, so a stranger could connect and hit an error on the first call.
+# Unhide once the project is enrolled and a list_calendars call succeeds.
 hostedMcp:
   hiddenEntries:
-    # Client secrets exist, but Workspace MCP enrollment is still off.
+    # Credentials on; hidden until Workspace MCP enrollment and a list_calendars call succeed.
     - google-calendar
     # Not walked end to end on staging before the 10-23 deploy; unwalked entries ship hidden.
     # Remove each line once its staging walk passes.
-    - atlassian
+    # Atlassian and Notion passed a live prod walk on 11-04 (F82: connect as sre-ops, a
+    # read-only grant to a hosted agent, a real read through the broker, grant revoke),
+    # so both are offered. Atlassian's Jira/Confluence searches then hit the vendor's
+    # "site unavailable" for that one test site; the resources read came back.
+    # Both allowlist keys left the overlay secret with this change (set 11-04 08:02Z).
     # Sentry passed connect and read: C0-C2 on staging with a non-admin user (10-23), C3 live
     # on prod (10-25), so it is offered. TASK-308 still owes the write-with-confirm arm (C6)
     # and the open C9 arms listed in the matrix. Its allowlist key left the overlay secret with this change.
     # Added by #2429. Hidden until each is walked end to end.
-    - notion
     - gitlab
     - supabase
+    # F73 (11-03): operator-key entry, hidden until the F07 walk passes: a hosted
+    # agent, the walk key, a pinned read, and a write parked for the owner.
+    - latchkey
     # Airtable passed a live prod walk on 10-31 (TASK-307: connect, a list_bases call,
     # grant revoke, disconnect), so it is offered. Its allowlist key left the overlay secret too.
-    # Hidden until a fresh non-admin account walks connect, grant, call and
-    # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
-    - github-mcp
+    # GitHub (github-mcp) passed TASK-290's non-admin walk on 11-04 as growth-ops
+    # (connect, grant, a read call, a refused call), so it is offered (D248). Its
+    # allowlist key leaves the overlay secret with this change.
+  # Both commonly-dev-google-calendar-client-* secrets carry an enabled version
+  # holding the Web client made 2026-11-03 for this callback (checked by hash).
   googleCalendar:
-    enabled: false
+    enabled: true
   # Commonly Connect App's client ID and secret each have an enabled version
   # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
   githubMcp:
@@ -468,6 +536,28 @@ hostedMcp:
 # turning this on doesn't fail the api-keys sync (see values.yaml).
 internalAccounts:
   fromSecret: true
+
+# The agent computer (D244 pilot 2). `users` comes from the private overlay.
+# ADR-015: the browser holds a live, signed-in session, so it stays off spot.
+agentComputer:
+  steel:
+    persistence:
+      storageClass: standard-rwo
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
+  waker:
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
 
 # ops-runner (docs/runbooks/ops-runner-and-no-exec-into-backend.md): on spot — it
 # serves no traffic and a reclaim just reschedules it, and this keeps it OFF the

@@ -21,6 +21,7 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync } from 'fs';
@@ -58,7 +59,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const ISOLATED_PROXY_PORT = 8765;
@@ -248,8 +249,8 @@ const publicPermissions = (mode, mcpNames) => {
     lsp: 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
     // After the wildcard allow, since the last matching rule wins
-    // (public-withheld-tools.js).
-    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_WITHHELD_TOOLS
+    // (public-withheld-tools.js; self-install and memory writes, F118).
+    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_SEAT_WITHHELD_TOOLS
       .map((tool) => [`${permissionMcpName(name)}_${tool}`, 'deny']))),
   };
 };
@@ -282,11 +283,14 @@ const buildProviderConfig = (provider, model, keyFile) => {
   } else if (typeof selectedModel.name !== 'string' || !selectedModel.name) {
     models[model] = { ...selectedModel, name: model };
   }
+  // anthropic-messages: provider.baseURL is the host (as for Claude Code's
+  // ANTHROPIC_BASE_URL); @ai-sdk/anthropic appends /messages to a /v1 base.
+  const anthropic = provider.api === 'anthropic-messages';
   return {
     [provider.id]: {
-      npm: '@ai-sdk/openai-compatible',
+      npm: anthropic ? '@ai-sdk/anthropic' : '@ai-sdk/openai-compatible',
       options: {
-        baseURL: provider.baseURL,
+        baseURL: anthropic ? `${provider.baseURL.replace(/\/+$/, '')}/v1` : provider.baseURL,
         apiKey: `{file:${keyFile}}`,
       },
       models,
@@ -651,6 +655,9 @@ export default {
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,
+  // `provider.api`: an OpenAI-compatible endpoint, or Anthropic's Messages API
+  // through OpenCode's own @ai-sdk/anthropic provider.
+  providerApis: ['openai-chat', 'anthropic-messages'],
 
   async validateEnvironment(environment, workspacePath) {
     return validateProviderEnvironment(environment, workspacePath);
@@ -729,20 +736,27 @@ export default {
     if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';
-      if (isPublic && !allowOverride) {
+      const patchAfterTested = isPatchAfterNewestTested(installedVersion, TESTED_OPENCODE_VERSIONS);
+      if (isPublic && !allowOverride && !patchAfterTested) {
         throw new Error(
           `Public OpenCode seats refuse to run: ${mismatch}. `
           + `To override from the host process, set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1.`,
         );
       }
+      let outcome = 'trusted seat continues';
+      if (isPublic) {
+        outcome = allowOverride
+          ? `continuing because the host process set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1`
+          : 'a patch release on the newest smoke-tested line, so the public seat continues';
+      }
       // eslint-disable-next-line no-console
-      console.warn(isPublic
-        ? `[opencode] ${mismatch}; continuing because the host process set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1`
-        : `[opencode] ${mismatch}; trusted seat continues`);
+      console.warn(`[opencode] ${mismatch}; ${outcome}`);
     }
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
+      // F118: a public seat reads its memory but is not offered a write.
+      memoryReadOnly: isPublic,
     });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-opencode-'));
     await chmod(tempDir, 0o700);
@@ -779,6 +793,7 @@ export default {
         // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
+          wire: provider.api || 'openai-chat',
           keyFile: providerKeyFile, keyMaterial: ctx.providerKey,
           tokenFile: join(tempDir, 'provider-proxy-token'),
           ...(sandboxMode === 'bwrap' ? {

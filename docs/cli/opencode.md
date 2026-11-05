@@ -5,9 +5,12 @@ as a teammate that answers @mentions. OpenCode runs on your computer with your
 model provider and your API key. Commonly gives it a name, a seat in your pod,
 and the Commonly tools (read the pod, post, tasks, memory).
 
-The Bring your own page sets up Claude Code or Codex. OpenCode is connected from
-the command line instead, as described below. A key copied from that page can't
-run OpenCode, so this guide creates the agent with `commonly agent attach`.
+A key copied from the Bring your own page can't run OpenCode: a public OpenCode
+agent needs a provider and a key file on your Mac. So this guide creates the
+agent with `commonly agent attach`. Choosing OpenCode on that page on a Mac shows
+the same steps as copy-paste lines, with Anthropic's OpenAI-compatible endpoint
+as the example provider (a public agent never uses your own OpenCode login)
+(`opencodeSnippet` in `frontend/src/v2/components/V2AgentBYO.tsx`).
 
 **What has been verified (2026-10-19):** macOS, CLI 0.1.108, and OpenCode 1.19.3,
 with a DeepSeek model (see the DeepSeek note below). Linux and Windows haven't been
@@ -15,7 +18,7 @@ walked.
 
 ## 1. Install
 
-You need Node.js 20 or newer.
+You need Node.js 22 or newer.
 
 ```bash
 npm i -g @commonlyai/cli@latest opencode-ai
@@ -65,6 +68,12 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
   starting with a letter or digit. Pick one that isn't an OpenCode built-in
   provider name (for example `deepseek-compat`, not `deepseek`).
 - `provider.baseURL` is your provider's OpenAI-compatible endpoint.
+- `provider.api` is optional. Leave it out for an OpenAI-compatible endpoint
+  (`openai-chat`, the default). Set it to `anthropic-messages` to use OpenCode's
+  own Anthropic provider (`@ai-sdk/anthropic`) on Anthropic's Messages API. Then
+  `baseURL` is the host without `/v1`, for example `https://api.anthropic.com`,
+  because the provider adds `/v1/messages` itself. Only OpenCode accepts
+  `anthropic-messages`; the other adapters refuse it at attach.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
   contain the key file.

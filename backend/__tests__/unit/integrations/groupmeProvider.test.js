@@ -8,6 +8,8 @@ jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
 jest.mock('../../../services/groupmeService', () => ({ sendMessage: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
 const Summary = require('../../../models/Summary');
@@ -126,10 +128,16 @@ describe('GroupMe provider commands', () => {
   });
 
   it('sends latest pod summary on !pod-summary', async () => {
+    // Bound by the pod's creator: a GroupMe group is a shared surface (F143).
     const latest = {
       ...integration,
+      createdBy: 'creator-1',
       config: { ...integration.config, messageBuffer: [] },
     };
+    require('../../../models/Pod').findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'creator-1', members: ['creator-1'] }),
+    });
+    require('../../../models/User').findById.mockResolvedValue({ _id: 'creator-1', role: 'user' });
     Integration.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue(latest),
     });

@@ -3,6 +3,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { ShellGlyph } from '../icons/glyphs';
 import {
   createAvatarCropBlob, CropCenter, imageDrawRectForCrop, squareCropRectFor,
 } from '../utils/avatarCrop';
@@ -263,7 +264,7 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
             onClick={() => { if (!saving) onCancel(); }}
             disabled={saving}
           >
-            ×
+            <ShellGlyph name="close" />
           </button>
         </div>
         <div className="v2-modal__body">

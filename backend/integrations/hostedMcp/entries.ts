@@ -18,6 +18,7 @@ import { ATLASSIAN_ENTRY } from './atlassian';
 import { GOOGLE_CALENDAR_ENTRY } from './googleCalendar';
 import { GITHUB_MCP_ENTRY } from './githubMcp';
 import { GITLAB_ENTRY } from './gitlab';
+import { LATCHKEY_ENTRY } from './latchkey';
 import { LINEAR_ENTRY } from './linear';
 import { NOTION_ENTRY } from './notion';
 import { SENTRY_ENTRY } from './sentry';
@@ -29,6 +30,7 @@ export const HOSTED_MCP_ENTRIES: HostedMcpEntry[] = [
   GITLAB_ENTRY,
   SUPABASE_ENTRY,
   GITHUB_MCP_ENTRY,
+  LATCHKEY_ENTRY,
 ];
 
 /**
@@ -227,6 +229,17 @@ export const assertHostedMcpEntries = (
       }
       if (tool.class === 'read' && tool.annotations?.readOnlyHint !== true) {
         throw new Error(`hosted-mcp read tool does not claim readOnlyHint: ${name}`);
+      }
+      // F101: a withheld argument is one the pin offers and does not require.
+      const declared = tool.inputSchema.properties;
+      const required = Array.isArray(tool.inputSchema.required) ? tool.inputSchema.required : [];
+      for (const arg of tool.withheldArgs || []) {
+        if (!declared || typeof declared !== 'object' || !Object.prototype.hasOwnProperty.call(declared, arg)) {
+          throw new Error(`hosted-mcp tool withholds an argument it does not declare: ${name} ${arg}`);
+        }
+        if (required.includes(arg)) {
+          throw new Error(`hosted-mcp tool withholds a required argument: ${name} ${arg}`);
+        }
       }
       if (seenTools.has(name)) throw new Error(`duplicate hosted-mcp tool name: ${name}`);
       seenTools.add(name);

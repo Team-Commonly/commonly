@@ -24,6 +24,33 @@ errorTracking:
 hostedSandbox:
   enabled: false
 
+# Model providers called directly, outside LiteLLM. Turn one off where its key
+# cannot answer: a rejected call still sends the content (F78).
+aiProviders:
+  gemini:
+    enabled: true
+  # Gates LiteLLM's OpenAI upstreams (chat, embeddings, images). Off, gpt-4o is
+  # served by DeepSeek and embeddings/images are not routed (F85).
+  openai:
+    enabled: true
+  # Anthropic through LiteLLM (F91, D243). On, LiteLLM gets ANTHROPIC_API_KEY
+  # from <keyPrefix>anthropic-api-key, serves `nativeModel`, and native turns run
+  # on it: an unset or old-default model follows it, and a turn holding a
+  # connector grant runs only on it. Off by default: it needs a working key in
+  # Secret Manager first (ESO rejects the whole api-keys secret on a missing one).
+  anthropic:
+    enabled: false
+    nativeModel: claude-haiku-5-5
+  # DeepSeek through LiteLLM: the deepseek-v4-flash and deepseek-flash-1017
+  # routes, LiteLLM's DEEPSEEK_API_KEY (from commonly-deepseek-api-key), the
+  # Gemini/gpt-4o stand-ins and the Gemini fallbacks, and the backend's
+  # LITELLM_CHAT_MODEL default. On by default: DeepSeek is the base chart's
+  # default model (litellm.agentDefaultModel) and stays a self-host option.
+  # Off, LITELLM_CHAT_MODEL follows litellm.agentDefaultModel, which must then
+  # name another route. Dev turns it off (F159).
+  deepseek:
+    enabled: true
+
 # Web search for native turns (TASK-267a). Off by default: on, the api-keys
 # ExternalSecret references commonly-dev-search-api-key, and ESO rejects the
 # whole secret if that key is missing. `provider` is exa or tavily, and the
@@ -86,6 +113,16 @@ hostedMcp:
     # install page where a person picks the repositories the App's user token
     # can reach. Empty: no install link is offered.
     appSlug: ""
+
+# Commonly Connect as a SIGNING App (F172): the broker mints installation
+# tokens for outside teams' Connect installations with this App's own id and
+# private key, never the commonly-tools key. Enable only after both remote keys
+# (`<prefix>github-connect-app-id`, `<prefix>github-connect-app-private-key`)
+# exist with an enabled version: a missing remoteRef stalls api-keys. Disabled,
+# the backend refs stay optional and Connect connections refuse
+# `github_app_not_configured`. The App needs Contents RW and Pull requests RW.
+githubConnectApp:
+  enabled: false
 
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
@@ -172,6 +209,11 @@ backend:
     agentComputerWakerUrl: ""
     nodeEnv: development
     registrationInviteOnly: "1"
+    # Avatar engine: openai | gemini | design | auto (unset = auto). `design`
+    # calls no image API and draws an SVG from the chat model's design.
+    avatarProvider: ""
+    # Embeddings: gemini | openai | litellm | none (unset = gemini).
+    embeddingProvider: ""
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""
@@ -224,6 +266,58 @@ opsRunner:
       memory: "256Mi"
   nodeSelector: {}
   tolerations: []
+
+# Agent computer (templates/agent-computer/): one Steel browser per person who
+# has one, plus the waker the broker calls before it opens that browser. Nothing
+# renders unless backend.env.agentComputerEnabled is "true" AND `users` lists at
+# least one Commonly user id (24 hex). A user id is a production record, so it
+# belongs in the private values overlay, never in a committed values file.
+# Runbook: docs/runbooks/agent-computer-steel.md
+agentComputer:
+  users: []
+  steel:
+    image:
+      repository: ghcr.io/steel-dev/steel-browser
+      # Pinned by digest only (upstream publishes `latest` and nothing else).
+      # Multi-arch index resolved 2026-11-04; its amd64 build is 2026-11-03.
+      digest: "sha256:c94f9ef7f18cf0a2c3c44e5b754119099488f62b4dea411e37459d6281c19799"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+    # Chromium's shared memory. Memory-backed, so it counts toward the limit.
+    shmSizeLimit: "512Mi"
+    # The token gate in front of Steel (a sidecar from the backend image).
+    gate:
+      # A backend image tag carrying the gate. Empty follows backend.image.tag,
+      # which restarts the browser on every deploy; pin it once a deploy that
+      # includes the gate has run.
+      imageTag: ""
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "48Mi"
+        limits:
+          memory: "160Mi"
+    # The browser profile (cookies, the one-time sign-in) lives here.
+    persistence:
+      size: 5Gi
+      storageClass: ""
+    nodeSelector: {}
+    tolerations: []
+  waker:
+    port: 8080
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "64Mi"
+      limits:
+        memory: "192Mi"
+    nodeSelector: {}
+    tolerations: []
 
 # Frontend service configuration
 frontend:
@@ -303,6 +397,10 @@ postgresql:
 # Redis configuration (for Socket.io adapter)
 redis:
   enabled: true
+  # Redis AUTH (requirepass). Default off so the OSS chart and local dev run
+  # without a password; dev/staging/prod enable it and supply the password via ESO.
+  auth:
+    enabled: false
   image:
     repository: redis
     tag: "7-alpine"
@@ -585,6 +683,24 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # The LiteLLM model name every agent driver default names (F103): the K8s
+  # provisioner's community and dev-agent primaries and its key allowlists (as
+  # AGENT_DEFAULT_MODEL on the backend), the global policy's community default,
+  # the static gateway config, and cloud-codex's codex CLI. It must be a
+  # model_name LiteLLM serves; scripts/verify-agent-default-model.js checks the
+  # render in CI. Base: DeepSeek, which these defaults reached before through
+  # other vendors' names. Dev: Claude (values-dev.yaml).
+  agentDefaultModel: deepseek-v4-flash
+  # F98/F103: the Gemini/gpt-4o stand-ins only. With this on, the Gemini names
+  # (where aiProviders.gemini is off) and gpt-4o (where aiProviders.openai is
+  # off) are served by DeepSeek, as they were before F98. It exists only for the
+  # callers that still default to those names: llmService's DEFAULT_MODEL, the
+  # commonly-bot and newshound clients, gatewayProvisionerServiceK8s,
+  # agentProvisionerService, AgentProfile, routes/dev.ts and the admin policy
+  # defaults. It retires with them in F105. (F103 deleted the other legacy
+  # names: nemotron, gpt-5.4*, openai-codex/*, codex-mini-latest, o4-mini and
+  # codex-cli/gpt-5.4.) Dev sets it false.
+  legacyAliases: true
   # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
   # commonly-bot call LiteLLM with their own budgeted keys
   # (<keyPrefix>litellm-backend-key, <keyPrefix>litellm-commonly-bot-key) as

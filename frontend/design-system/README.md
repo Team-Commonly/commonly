@@ -90,7 +90,7 @@ Reply/Open/Mark handled controls are bordered secondary controls.
 
 - **One accent**: blue `#2f6feb`. Never blends with another. Filled buttons are **ink** `#111827` (hover `#1f2937`); blue is for links, the mention mark, the active nav row and tab underline (2px), the LEAD badge, the unread counter and the **focus halo**. One accent still — it no longer paints buttons (2026-09-03, TASK-122).
 - **Neutrals do most of the work**: `#111827` (text), `#4b5563` (secondary), `#7b8494` (tertiary), `#8a93a3` (muted/placeholder).
-- **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. `#f8f8fb` remains the page canvas behind the shell.
+- **Backgrounds layer as one tint step**: shell `#f1f1f4` behind rail, pods and inspector; the content pane is an inset white card with a 1px `#e5e7eb` ring and 14px radius; inside the card the ground is white. The page canvas behind the shell (`body.v2-canvas`, what shows on overscroll) is `--v2-page-bg` in each theme: `#eef0f4` light, `#0b0e13` dark (2026-11-04; it was `#f8f8fb` in both, so dark pages rubber-banded onto a light body).
 - **Semantic** colors stay desaturated: success `#10b981`, warning `#f4a23a`, danger `#ef4444`. Info is `#0891b2` (cyan, deliberately off-axis from accent blue). Always paired with their `*-soft` background tint for badges/chips.
 - **Agent role tints** (pink/violet/amber/emerald/sky/rose) are reserved for **avatar backgrounds and role chips** — never for chrome.
 
@@ -173,6 +173,7 @@ entrance and scroll-reveal animation is allowed within these limits:
   1. **Inspector cards** (`.v2-inspector__card`) — borderless, separated by top hairline. No background fill.
   2. **Tab cards** (`.v2-tab-card`) — `1px solid #e5e7eb` border, white fill, `10px` radius, `12px` padding.
 - **No left-border accent** — never the colored stripe. If a card needs status color, it goes on a small dot or chip inside.
+- The stripe is one of eleven AI-slop tells; the list, its checks and the guard are in [`docs/design/ai-slop-tells.md`](../../docs/design/ai-slop-tells.md).
 
 ### Imagery vibe
 
@@ -182,6 +183,14 @@ entrance and scroll-reveal animation is allowed within these limits:
 ### Layout rules
 
 - **Page heads** use `V2PageHead`: one title, an optional live count in mono, and actions. Put explanation in `V2Hint` beside the title. The (i) opens on hover, keyboard focus, and tap; at 760px and below its text expands inline. Do not add eyebrow or sentence subtitle rows. Errors and requests for action remain visible.
+- **Content width (2026-11-04 consistency rulings).** A page's column takes one of three widths, by what it holds:
+  - **760, settings-like forms and single-column reading:** a form, a profile, a record. Today: Profile (`.v2-profile` 760), Agent profile (`.v2-aprofile__main` 760).
+  - **1100, lists and grids:** Connectors (`.v2-cx-inner` 1100), Your team (`.v2-team` 1100), User admin and Usage analytics (`.v2-admin-users`, `.v2-admin-analytics` 1100, read from the CSS: the audit account is not an admin).
+  - **Full width, the tools:** chat, the board and agent memory fill the pane. Settings (its own nav and panel, `.v2-feature--settings` lifts the legacy cap) and Activity and Artifacts are full width as well.
+  - **Off the rule as measured on prod, 11-04 (1440):** Agent settings 1000 (`.v2-agent-settings-page__col`), BYO 1040 (`.v2-byo__layout`), Connect 960 (`.v2-connect`), Run trace and the task record 880, left-aligned (`.v2-run-trace`), and the legacy `.v2-feature__legacy` wrapper's 1240 around every feature page that sets no width of its own (Global integrations, API dev, Pod context dev). Each moves to 760 or 1100 when its page is next rebuilt; a new page picks one of the three and never a fourth.
+- **Phone gutter: 12px (2026-11-04).** At 390 a page's text and controls start 12px from the screen edge, as the reference pages draw it: Board, Agent memory, Agent settings and Connectors measure 12. It replaces the 16 in older briefs. Measured 11-04 before the pass: Settings 14, Run trace and the pending pages 16, auth 20, the landing 24 and the agent profile's text 28. Auth (`.v2-login__card` at ≤480) and the landing (the page-measure `max()` pair at ≤760) moved to 12 in the same change; the other pages move with their own rebuilds.
+- **Front-door keys.** The landing's buttons and its demo's decision choices are the auth keys: 40 tall at r10, 14/600, and 44 at 16px on phones. The fill is the cobalt key (`--v2-accent-fill-a/b`), the bordered one the grey key (`--v2-key-*`), and on the cobalt band they are white and outlined. No landing section sizes its own button.
+- **One-line states.** A loading, empty, denied or failed line is `p.v2m-state` (memory) or its shell twin `.v2-state` (v2.css): Plex 13.5 in the secondary grey, no icon, no red, no exclamation mark. The admin and dev access check (`ProtectedRoute`) uses it.
 - **Fixed sidebar widths** (rail 76, pods 272, inspector 336) — not fluid. The main pane absorbs all flex. The content pane is the card: 8px gutter top/right/bottom on desktop, flush on phones; when the inspector is open the card meets the inspector gutter.
 - **Rail collapses labels** at all widths — labels show as tooltips on hover (CSS `::after` with `data-label`).
 - **Inspector closes** to free width for the main pane; default state is collapsed.

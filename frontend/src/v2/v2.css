@@ -22,11 +22,19 @@
    on load flash, overscroll rubber-banding, and every gap. V2App stamps
    `v2-canvas` while mounted; the compound selector out-ranks
    body.modern-ui (0-2-1 > 0-1-1) so bundle order cannot decide this.
-   Literal color: body sits outside .v2-root, so tokens don't reach it —
-   keep in lockstep with --v2-page-bg below. */
+   Literal colors: body sits outside .v2-root, so tokens don't reach it.
+   Each theme's value is --v2-page-bg of that theme's set below, and the
+   theme selectors are the ones those sets use; the two dark rules sit right
+   after the dark token sets (signalTokens.test reads the first
+   prefers-color-scheme block as the token set). utils/theme.ts stamps
+   data-v2-theme on <html>; index.html does it before first paint, and this
+   sheet ships in the entry bundle, so dark never opens on a light body.
+   Until 11-04 the body was #f8f8fb in both themes, so a dark page
+   rubber-banded onto a light canvas (consistency audit, finding 12).
+   v2-layout-invariants pins each literal to its token. */
 body.v2-canvas,
 body.modern-ui.v2-canvas {
-  background: #f8f8fb;
+  background: #eef0f4;
 }
 
 .v2-root {
@@ -93,6 +101,7 @@ body.modern-ui.v2-canvas {
   --v2-on-ink: #ffffff;
   --v2-on-accent: #ffffff;
   --v2-accent-fill: #1d3fd1;
+  --v2-accent-fill-hover: #1633a8;
 
   /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
@@ -204,6 +213,9 @@ body.modern-ui.v2-canvas {
   --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 24, 40, 0.06);
   --v2-shadow-pane: 0 0 0 1px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
   --v2-shadow-pop: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
+  /* The card edge (D215): a 1px ring plus a 1px lift, no border. Cards that
+     are not a .v2p-tc take it from here rather than copying the pair. */
+  --v2-ring-card: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04);
   --v2-av-ring: rgba(16, 24, 40, 0.07);
   --v2-scrim: rgba(16, 24, 40, 0.18);
   --v2-r-6: 6px;
@@ -314,6 +326,7 @@ body.modern-ui.v2-canvas {
     --v2-danger-soft: rgba(239, 68, 68, 0.16);
     --v2-on-accent: #ffffff;
     --v2-accent-fill: #3d5ef2;
+    --v2-accent-fill-hover: #2948d8;
     --v2-warning-soft: rgba(244, 162, 58, 0.16);
     --v2-info-soft: rgba(8, 145, 178, 0.16);
     --v2-platform-x: #e8ebf1;
@@ -387,6 +400,7 @@ body.modern-ui.v2-canvas {
       --v2-danger-soft: rgba(239, 68, 68, 0.16);
       --v2-on-accent: #ffffff;
       --v2-accent-fill: #3d5ef2;
+      --v2-accent-fill-hover: #2948d8;
       --v2-warning-soft: rgba(244, 162, 58, 0.16);
       --v2-info-soft: rgba(8, 145, 178, 0.16);
       --v2-platform-x: #e8ebf1;
@@ -399,6 +413,20 @@ body.modern-ui.v2-canvas {
       --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
       --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
       color-scheme: dark;
+  }
+}
+
+/* The page canvas in dark (see body.v2-canvas at the top of this sheet). */
+:root[data-v2-theme="dark"] body.v2-canvas,
+:root[data-v2-theme="dark"] body.modern-ui.v2-canvas {
+  background: #0b0e13;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) body.v2-canvas,
+  :root:not([data-v2-theme="light"]) body.modern-ui.v2-canvas {
+    background: #0b0e13;
+    color-scheme: dark;
   }
 }
 
@@ -527,7 +555,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-lang-switch__check {
-  font-size: 11px;
+  display: inline-flex;
 }
 
 /* ---------- Shared filter grammar ---------- */
@@ -1480,6 +1508,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-modal__close,
 .v2-modal__close {
+  display: inline-grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   border-radius: 6px;
@@ -2274,8 +2304,170 @@ body.modern-ui.v2-canvas {
   box-shadow: var(--v2-key-inset), var(--v2-focus-ring);
 }
 
+/* ---------- Sign-in handoff (d215 s-handoff) ----------
+   The OAuth and Discord return pages: the auth card, with the brand row
+   telling the handoff. Provider tile, a wire, the mark. Working, a cobalt dot
+   runs the dotted wire; done, the wire is solid with a check; error, an ink
+   cross on it. V2AuthBrand draws the row; V2DiscordCallback the rest. */
+.v2-handoff__provider {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+}
+.v2-handoff__provider > svg {
+  width: 17px;
+  height: 17px;
+}
+/* The Discord tile inside the provider tile: its brand fill, the white mark. */
+.v2-handoff__tile {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+}
+.v2-handoff__tile--discord {
+  background: var(--v2-platform-discord);
+  color: var(--v2-on-accent);
+}
+.v2-handoff__tile svg {
+  width: 14px;
+  height: 14px;
+}
+.v2-handoff__wire {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+}
+.v2-handoff__wire::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+  border-top: 2px dotted var(--v2-border);
+}
+.v2-handoff__wire--done::before {
+  border-top: 2px solid var(--v2-accent);
+}
+.v2-handoff__run {
+  position: absolute;
+  top: calc(50% - 3px);
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+  animation: v2-handoff-run 1.4s ease-in-out infinite;
+}
+@keyframes v2-handoff-run {
+  0% { left: 0; opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { left: calc(100% - 6px); opacity: 0; }
+}
+/* Still, the dot rests mid-wire: the title already says it is working. */
+@media (prefers-reduced-motion: reduce) {
+  .v2-handoff__run { animation: none; left: calc(50% - 3px); }
+}
+.v2-handoff__knot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1.5px var(--v2-accent);
+  color: var(--v2-accent-text);
+}
+.v2-handoff__knot svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2.4;
+}
+.v2-handoff__wire--error .v2-handoff__knot {
+  box-shadow: inset 0 0 0 1.5px var(--v2-text-primary);
+  color: var(--v2-text-primary);
+}
+/* The server as a fact row: label left, value mono right (the CLI card's list). */
+.v2-handoff__facts {
+  margin: 0;
+  border-radius: var(--v2-r-10, 10px);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+.v2-handoff__facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 13px;
+}
+.v2-handoff__facts div:first-child {
+  border-top: 0;
+}
+.v2-handoff__facts dt {
+  color: var(--v2-text-secondary);
+}
+.v2-handoff__facts dd {
+  margin: 0;
+  min-width: 0;
+  font: 500 12.5px/1.4 var(--v2-font-mono);
+  color: var(--v2-text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+/* The channel is the auth field with a caret; the native list does the rest. */
+.v2-handoff__select {
+  position: relative;
+  display: grid;
+}
+.v2-root select.v2-login__input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 36px;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.v2-root select.v2-login__input:disabled {
+  cursor: default;
+}
+.v2-root select.v2-login__input:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring);
+}
+.v2-handoff__select > svg {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--v2-text-muted);
+}
+/* Cancel and Connect share the row, Connect in ink. */
+.v2-handoff__keys {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 /* The 390 auth frames are full-bleed: the card is the screen. This block sits
-   after the base rules above, which it overrides at equal specificity. */
+   after the base rules above, which it overrides at equal specificity. The
+   side padding is the app's 12px phone gutter (design-system README, Layout
+   rules; 11-04 consistency rulings), not the 20 the d215 auth frames draw, so
+   sign-in lines up with every reference page at 390. */
 @media (max-width: 480px) {
   .v2-login {
     padding: 0;
@@ -2287,6 +2479,8 @@ body.modern-ui.v2-canvas {
     max-width: none;
     box-shadow: none;
     border-radius: 0;
+    /* The d215 auth frames draw a 20px side inset on every auth page at 390.
+       Pages drawn after Sam's pick follow their frames (G11 ruling, 11-04). */
     padding: 28px 20px;
   }
 
@@ -2297,24 +2491,61 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Empty / loading states ---------- */
 
+/* The shell's one-line state: memory's `p.v2m-state` grammar (V2AgentMemory.css)
+   for anything outside that page, such as the admin and dev access check
+   (components/ProtectedRoute.tsx). Plex 13.5 in the secondary grey; no icon,
+   no red, no exclamation mark. No side padding: the page body already owns the
+   gutter. v2-layout-invariants keeps the type in step with .v2m-state. */
+.v2-state {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--v2-text-secondary);
+}
+
 .v2-feature {
   min-width: 0;
   background: var(--v2-surface); /* inside the card the ground is white; the card is the tint step */
 }
 
+/* The shared page head bar (V2PageHead with .v2-feature__header): the reference
+   heads' 64px bar with the title 29px from the pane edge, a divider under it and
+   the count in mono 11.5. Pages that draw their own head (Your team, the person
+   and agent profiles) use this class too, with .v2-feature--bar below. */
 .v2-feature__header {
   flex-shrink: 0;
-  padding: 22px 28px 18px;
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 0 20px 0 28px;
   border-bottom: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
 }
+.v2-page-head.v2-feature__header { align-items: center; gap: 12px; }
+.v2-feature__header > .v2-page-head__identity { flex: 1 1 auto; }
 
+/* The display face is set here, not only in the phone rule: without it the
+   desktop title fell back to Plex 24/850 (ui-audit-1104 finding 2). */
 .v2-feature__title {
   margin: 0;
   color: var(--v2-text-primary);
-  font-size: 24px;
-  font-weight: 850;
+  font: 800 24px/1 var(--v2-font-display);
   letter-spacing: -0.03em;
+}
+.v2-feature__header .v2-page-head__meta { font: 500 11.5px/16px var(--v2-font-mono); }
+
+/* A page that draws its own head bar inside the feature pane passes
+   v2-feature--bar: the body stops padding and scrolling, the head sits at the
+   pane edge, and .v2-feature__scroll under it scrolls and pads the content to
+   a centred column (--v2-feature-col, 1100 for lists and grids). */
+.v2-feature--bar > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--bar .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2-feature__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 24px max(28px, calc((100% - var(--v2-feature-col, 1100px)) / 2)) 42px;
 }
 
 .v2-page-head {
@@ -2527,13 +2758,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiButton-containedPrimary {
-  background: var(--v2-accent);
-  color: #ffffff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   box-shadow: none;
 }
 
 .v2-feature__legacy .MuiButton-containedPrimary:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-accent-fill-hover);
 }
 
 .v2-feature__legacy .MuiButton-outlined {
@@ -3375,784 +3606,9 @@ body.modern-ui.v2-canvas {
    secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
    dropping to 24px at 390; layout transition 300ms. */
 
-/* Activity is a feature-wide read surface: short attention rows first, then
-   evidence of agent work and board movement. Every grid child is min-width:0
-   so a long pod or task title cannot create horizontal scroll at 390px. */
-.v2-activity {
-  width: min(100%, 1120px);
-  margin: 0 auto;
-  padding: 8px 0 28px;
-}
-
-.v2-activity__header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-
-.v2-activity__title,
-.v2-activity__section h2 {
-  margin: 0;
-  color: var(--v2-text-primary);
-}
-
-.v2-activity__title {
-  font-size: clamp(26px, 3vw, 34px);
-  font-weight: 700; /* 850 was tuned for SF Pro Display; Inter reads right at 700 */
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-}
-
-.v2-activity__controls,
-.v2-activity__window {
-  display: flex;
-  align-items: center;
-}
-
-.v2-activity__controls {
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.v2-activity__window {
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-}
-
-.v2-root button.v2-activity__window-button {
-  min-height: 30px;
-  padding: 0 10px;
-  white-space: nowrap;
-  border-radius: calc(var(--v2-radius-sm) - 2px);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.v2-root button.v2-activity__window-button--active {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-  font-weight: 600;
-  box-shadow: none;
-}
-
-.v2-activity__scope select {
-  min-height: 36px;
-  max-width: 180px;
-  padding: 0 30px 0 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-size: 12px;
-}
-
-.v2-activity__loading,
-.v2-activity__error,
-.v2-activity__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 118px;
-  gap: 4px;
-  padding: 20px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  color: var(--v2-text-secondary);
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.v2-activity__error {
-  margin-top: 20px;
-  border-color: var(--v2-danger);
-  background: var(--v2-danger-soft);
-  color: var(--v2-text-primary);
-}
-
-.v2-activity__sections {
-  display: grid;
-  gap: 38px;
-  margin-top: 30px;
-}
-
-/* Composer (ruled 2026-09-03 on the Shell Parity canvas, board 3): one
-   card, radius-lg, the textarea borderless inside it, a small ink Send in the
-   foot row. Focus is the halo on the CARD, not a harder border. */
-.v2-activity__compose {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 22px;
-  padding: 12px 14px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  background: var(--v2-surface);
-  transition: box-shadow 120ms ease;
-}
-
-.v2-activity__compose:focus-within {
-  box-shadow: 0 0 0 4px rgba(29, 63, 209, 0.10);
-}
-
-.v2-activity__compose-top,
-.v2-activity__compose-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.v2-activity__compose-pod {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--v2-text-muted);
-  font-size: var(--v2-fs-meta);
-  line-height: var(--v2-lh-meta);
-}
-
-.v2-activity__compose-picker {
-  position: relative;
-  min-width: 0;
-}
-
-.v2-root .v2-activity__compose-picker-button {
-  height: 26px;
-  min-height: 26px;
-  max-width: 220px;
-  overflow: hidden;
-  padding: 0 24px 0 8px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-size: var(--v2-fs-meta);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-activity__compose-picker-menu {
-  position: absolute;
-  z-index: 4;
-  top: calc(100% + 4px);
-  right: 0;
-  display: grid;
-  min-width: 180px;
-  max-width: min(280px, 70vw);
-  padding: 4px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  box-shadow: var(--v2-shadow-md);
-}
-
-.v2-root .v2-activity__compose-picker-option {
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--v2-text-primary);
-  text-align: left;
-  font: inherit;
-  font-size: var(--v2-fs-meta);
-  font-weight: 500;
-}
-
-.v2-root .v2-activity__compose-picker-option:hover,
-.v2-root .v2-activity__compose-picker-option.is-active {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__compose textarea {
-  width: 100%;
-  min-width: 0;
-  resize: none;
-  padding: 2px 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-size: var(--v2-fs-body);
-  line-height: var(--v2-lh-body);
-}
-
-/* Halo focus (TASK-122): the card carries the halo (focus-within above), so
-   the textarea itself shows nothing; the destination picker carries its own
-   ring. */
-.v2-root .v2-activity__compose textarea:focus-visible {
-  outline: none;
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.v2-activity__compose-picker-button:focus-visible {
-  outline: none;
-  box-shadow: var(--v2-focus-ring);
-  border-color: var(--v2-accent);
-}
-
-.v2-root .v2-activity__compose-picker-button:hover:not(:disabled) {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-surface-hover);
-}
-
-.v2-activity__compose-hint {
-  color: var(--v2-text-muted);
-  font-size: var(--v2-fs-meta);
-  line-height: var(--v2-lh-meta);
-}
-
-.v2-root .v2-activity__compose button {
-  min-height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--v2-ink);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.v2-root .v2-activity__compose button:hover:not(:disabled) {
-  border-color: var(--v2-ink-hover);
-  background: var(--v2-ink-hover);
-}
-
-/* The destination menu is a light, bounded list even though its options are
-   buttons nested under the composer. Keep this selector stronger than the
-   generic Send-button rule above so a large pod list cannot become a black,
-   unbounded wall of buttons. */
-.v2-root .v2-activity__compose .v2-activity__compose-picker-menu {
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.v2-root .v2-activity__compose .v2-activity__compose-picker-option {
-  min-height: 30px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--v2-text-primary);
-  text-align: left;
-  font: inherit;
-  font-size: var(--v2-fs-meta);
-  font-weight: 500;
-}
-
-.v2-root .v2-activity__compose .v2-activity__compose-picker-option.is-active {
-  border-color: transparent;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-/* The generic composer hover rule includes :not(:disabled) and a button
-   element, so it outranks the picker option's class-only hover selector.
-   Match that specificity here to keep the light Signal option treatment in
-   the real hovered and selected+hovered states without changing Send. */
-.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-/* The generic composer button treatment above is for Send. The destination
-   picker is a neutral selector and needs a stronger selector so it cannot
-   inherit Send's ink fill. */
-.v2-root .v2-activity__compose .v2-activity__compose-picker-button {
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__compose .v2-activity__compose-picker-button:hover:not(:disabled) {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__compose .v2-activity__compose-picker-button:focus-visible {
-  outline: none;
-  box-shadow: var(--v2-focus-ring);
-  border-color: var(--v2-accent);
-}
-
-.v2-activity__section-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.v2-activity__count {
-  color: var(--v2-text-secondary);
-  font: 500 11px/16px var(--v2-font-mono);
-}
-
-.v2-activity__section h2 {
-  margin: 0;
-  font-size: 15px;
-  line-height: 20px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-/* Needs-you rows: no box, no dividers (TASK-122). Each
-   row carries a permanent transparent 1px border and changes only its fill on
-   hover, so nothing shifts by a pixel. Board rows keep their box until Phase B. */
-.v2-activity__queue {
-  display: grid;
-  gap: 2px;
-}
-
-.v2-activity__queue-more {
-  justify-self: start;
-  min-height: 36px;
-  margin-top: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--v2-accent);
-  border-radius: var(--v2-radius-sm);
-  background: transparent;
-  color: var(--v2-accent-text);
-  font: 600 12px/16px var(--v2-font);
-}
-
-.v2-activity__queue-more:hover:not(:disabled) {
-  background: var(--v2-accent-soft);
-}
-
-.v2-activity__queue-more:disabled {
-  opacity: 0.65;
-  cursor: default;
-}
-
-.v2-activity__queue-row {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
-  min-width: 0;
-  padding: 11px 13px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
-  transition: background 80ms ease;
-}
-
-.v2-activity__queue-row:hover {
-  background: var(--v2-surface);
-}
-
-/* Decision elevation: a pending decision or approval sits one step above the
-   settled rows — the one shadow allowed on a chrome card, and only while
-   pending. Hover does not move it; it is already up. */
-.v2-activity__queue-row--decision,
-.v2-activity__queue-row--approval {
-  background: var(--v2-surface);
-  border-color: var(--v2-border);
-  border-radius: var(--v2-radius);
-  box-shadow: none;
-}
-
-.v2-activity__queue-row--decision:hover,
-.v2-activity__queue-row--approval:hover {
-  background: var(--v2-surface);
-}
-
-/* A ruled decision has settled: it drops back to the flat row. */
-.v2-activity__queue-row--settled {
-  background: transparent;
-  border: 1px solid var(--v2-border);
-  padding: 12px 14px;
-  box-shadow: none;
-}
-
-.v2-activity__queue-row--settled:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-activity__queue-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-size: 12px;
-  font-weight: 700;
-}
-.v2-activity__queue-row--decision .v2-activity__queue-mark {
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-}
-
-.v2-activity__queue-row--approval .v2-activity__queue-mark {
-  background: var(--v2-warning-soft);
-  color: #a85d08;
-}
-
-.v2-activity__queue-row--onboarding .v2-activity__queue-mark {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-/* One seat, one mark everywhere: the chat's cobalt agent mark and tint human mark. */
-.v2-activity__queue-row .v2-activity__queue-mark--agent {
-  background: var(--v2-accent);
-  color: var(--v2-on-ink);
-  font: 600 12px/16px var(--v2-font);
-}
-
-.v2-activity__queue-row .v2-activity__queue-mark--human {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-  font: 600 12px/16px var(--v2-font);
-}
-
-.v2-activity__queue-copy {
-  min-width: 0;
-}
-
-.v2-activity__queue-kind,
-.v2-activity__queue-copy > span,
-.v2-activity__queue-topline > span {
-  color: var(--v2-text-muted);
-  font-size: var(--v2-fs-meta);
-  line-height: var(--v2-lh-meta);
-}
-
-.v2-activity__queue-copy strong,
-.v2-activity__queue-copy p {
-  overflow-wrap: anywhere;
-}
-
-.v2-activity__queue-kind {
-  font: 500 11px/16px var(--v2-font-mono);
-  color: var(--v2-text-secondary);
-}
-
-.v2-activity__queue-copy strong {
-  display: block;
-  margin-top: 2px;
-  color: var(--v2-text-primary);
-  font-size: var(--v2-fs-body);
-  line-height: var(--v2-lh-body);
-}
-
-.v2-activity__queue-copy p {
-  margin: 3px 0;
-  color: var(--v2-text-secondary);
-  font-size: var(--v2-fs-body);
-  line-height: var(--v2-lh-body);
-}
-
-/* Activity details stay compact until the reader hovers, focuses, or taps to
-   expand them. The button keeps the full copy available without adding a
-   permanent paragraph to every queue row. */
-.v2-root .v2-activity__queue-detail {
-  display: -webkit-box;
-  min-height: 0;
-  max-width: 100%;
-  margin: 3px 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--v2-text-secondary);
-  font: 400 var(--v2-fs-body)/var(--v2-lh-body) var(--v2-font);
-  text-align: left;
-  white-space: normal;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.v2-root button.v2-activity__queue-detail {
-  color: var(--v2-text-secondary);
-}
-
-.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail {
-  color: var(--v2-text-primary);
-}
-
-/* Focus previews the full copy (Tab in), but a detail the reader just
-   collapsed is marked --dismissed and stays closed while focus remains on it,
-   so aria-expanded and the visible copy agree. Blur clears the mark. */
-.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed),
-.v2-root .v2-activity__queue-detail--expanded {
-  display: block;
-  overflow: visible;
-  -webkit-line-clamp: unset;
-}
-
-/* Pointer hover is only a reveal affordance on devices that have hover. A
-   focused button is intentionally excluded: after a pointer click the focus
-   must not keep a second click from collapsing the detail again. */
-@media (hover: hover) {
-  .v2-root .v2-activity__queue-detail:hover:not(:focus) {
-    display: block;
-    overflow: visible;
-    -webkit-line-clamp: unset;
-  }
-}
-
-.v2-activity__queue-actions,
-.v2-activity__queue-row button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.v2-activity__queue-row button {
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.v2-root .v2-activity__queue-actions button {
-  min-height: 32px;
-  padding: 0 12px;
-  white-space: nowrap;
-  border-color: var(--v2-ink);
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
-}
-
-.v2-root .v2-activity__queue-actions button:hover:not(:disabled) {
-  border-color: var(--v2-ink-hover);
-  background: var(--v2-ink-hover);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary {
-  border-color: var(--v2-border);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary:hover:not(:disabled) {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread {
-  padding-inline: 4px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--v2-accent-text);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-}
-
-/* Activity's navigation and acknowledgement controls are secondary actions:
-   keep them visibly distinct from the ink send/approve actions while making
-   their hit targets as clear as the approved board. */
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered {
-  padding-inline: 12px;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered:hover:not(:disabled) {
-  border: 1px solid var(--v2-border-strong);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-/* DecisionRequest alternatives are content, not row actions: a decision gets
-   its own full-width action line below the question. Preserve the asking
-   agent's option order; only the first authored option receives the cobalt
-   primary treatment. */
-.v2-activity__queue-row--decision .v2-activity__queue-actions {
-  grid-column: 1 / -1;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-/* Mention rows (canvas board 3): the reply line sits UNDER the message,
-   indented past the mark, never squeezed beside it. The mark already says
-   "@", so the kind label is redundant and hidden. */
-.v2-activity__queue-row--mention {
-  align-items: start;
-}
-.v2-activity__queue-topline {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-.v2-activity__queue-topline strong {
-  margin-top: 0;
-  font-weight: 600;
-}
-.v2-activity__queue-row--mention .v2-activity__queue-copy p {
-  color: var(--v2-text-primary);
-}
-.v2-activity__queue-row--mention .v2-activity__queue-actions {
-  grid-column: 2 / -1;
-  align-items: center;
-  margin-top: 4px;
-}
-.v2-root .v2-activity__queue-actions button:disabled {
-  opacity: 0.7;
-  cursor: default;
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__option {
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__option--primary {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent);
-  color: var(--v2-on-ink);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__option--primary:hover:not(:disabled) {
-  border-color: var(--v2-accent-strong);
-  background: var(--v2-accent-strong);
-  color: var(--v2-on-ink);
-}
-
-.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary {
-  border: 0;
-  background: transparent;
-  color: var(--v2-accent-text);
-}
-
-.v2-activity__option-choice {
-  display: grid;
-  flex: 0 1 220px;
-  min-width: 0;
-  gap: 4px;
-}
-
-.v2-activity__option-choice button {
-  width: 100%;
-  justify-content: center;
-}
-
-.v2-activity__option-description {
-  color: var(--v2-text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.v2-activity__option-recommended,
 .v2-decision-card__option-recommended {
   font: 500 11px/14px var(--v2-font-mono);
   opacity: 0.9;
-}
-
-.v2-activity__decision-other {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  flex-basis: 100%;
-  gap: 8px;
-  align-items: end;
-}
-
-.v2-activity__decision-other textarea {
-  width: 100%;
-  min-height: 44px;
-  resize: vertical;
-  padding: 8px 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.v2-activity__decision-ruled {
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.v2-activity__action-error {
-  margin-top: 10px;
-  color: var(--v2-danger);
-  font-size: 13px;
-}
-
-.v2-root .v2-activity__row-action-error {
-  grid-column: 1 / -1;
-  color: var(--v2-ink);
-}
-
-.v2-activity__queue-row button:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-@media (max-width: 640px) {
-  .v2-activity { padding-top: 0; }
-
-  .v2-activity__header,
-  .v2-activity__section-heading {
-    align-items: baseline;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  /* The window and scope rows are set in the ≤760 block after the ≤1100 filter row. */
-  .v2-activity__scope select { width: 100%; max-width: none; }
-  .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .v2-activity__compose-pod { width: 100%; }
-  .v2-activity__compose-pod > span { white-space: nowrap; }
-  .v2-activity__compose-picker { flex: 1 1 auto; min-width: 0; width: 100%; }
-  .v2-root .v2-activity__compose-picker-button { width: 100%; max-width: none; text-align: left; }
-  .v2-root .v2-activity__compose button { min-height: 44px; padding: 0 18px; }
-  /* The picker option rule is more specific than the generic composer
-     button floor above; repeat the menu scope so every option keeps a 44px
-     touch target on phones. */
-  .v2-root .v2-activity__compose .v2-activity__compose-picker-menu .v2-activity__compose-picker-option { min-height: 44px; }
-  .v2-activity__section-heading { flex-wrap: wrap; }
-
-  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
-
-  .v2-activity__queue-row > button,
-  .v2-activity__queue-actions { grid-column: 2; }
-
-  .v2-activity__queue-actions { flex-wrap: wrap; }
-  /* Options are one-tap decisions. Keep their touch targets honest even
-     when a 390px viewport makes the pills wrap onto separate rows. */
-  .v2-root .v2-activity__queue-actions button { min-height: 44px; }
-  .v2-activity__option-choice { flex-basis: min(100%, 220px); }
-  .v2-activity__decision-other { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -4167,7 +3623,7 @@ body.modern-ui.v2-canvas {
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-tools__count strong,
-.v2-root:lang(zh) .v2-artifacts__title,
+.v2-root:lang(zh) .v2a-title,
 .v2-root:lang(zh) .v2-pods__page-title,
 .v2-root:lang(zh) .v2-first-run__title,
 .v2-root:lang(zh) .v2-login__title,
@@ -4184,8 +3640,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h4,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
-.v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__section h2,
 .v2-root:lang(zh) .v2-empty--room .v2-empty__title {
   letter-spacing: 0;
 }
@@ -4217,9 +3671,6 @@ body.modern-ui.v2-canvas {
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-first-run__lede,
 .v2-root:lang(zh) .v2-first-run__step-body,
-.v2-root:lang(zh) .v2-activity__queue-copy p,
-.v2-root:lang(zh) .v2-activity__queue-detail,
-.v2-root:lang(zh) .v2-activity__empty,
 .v2-root:lang(zh) .v2-modal__hint,
 .v2-root:lang(zh) .v2-invite__description,
 .v2-root:lang(zh) .v2-login__field-hint {
@@ -4477,46 +3928,6 @@ body.modern-ui.v2-canvas {
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }
-}
-
-/* Activity queue: reply-in-place on mention rows (2026-09-01). The
-   textarea shares the row's action cluster; on narrow screens it takes the
-   full width of the row so the thumb has something to hit. */
-.v2-activity__reply {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 260px;
-  min-width: 0;
-}
-.v2-root .v2-activity__reply button {
-  flex: 0 0 auto;
-  min-width: max-content;
-  min-height: 32px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-.v2-root textarea.v2-activity__reply-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 32px;
-  min-height: 32px;
-  padding: 6px 10px;
-  resize: none;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-size: 13px;
-  line-height: 18px;
-}
-.v2-root textarea.v2-activity__reply-input:focus-visible {
-  border-color: var(--v2-accent); /* the global halo carries the ring; no hard outline */
-}
-@media (max-width: 640px) {
-  .v2-activity__reply { flex-basis: 100%; }
-  .v2-root .v2-activity__reply button { min-height: 44px; }
 }
 
 /* ---------- Workspace sidebar (TASK-129 PR 1) ----------
@@ -4967,6 +4378,25 @@ body.modern-ui.v2-canvas {
 
 .v2-pods-aside--page .v2-pods__view { padding: 0 0 10px; }
 
+/* The phone page's Recent · All · Pinned segment is the frame's 28px (d215 sidebar
+   390), not the primitives' 44px phone size, which made this bar 58 tall and pushed
+   the list down (#3373). Each option keeps a 44px touch area through a transparent
+   ::before; the segment sits alone in its row, so no neighbour's area covers it.
+   The bar keys and rows stay at the 44px floor (Cofounder ruling 11-04). */
+@media (max-width: 760px) {
+  .v2-pods-aside--page .v2-pods__view .v2p-seg button { position: relative; height: 28px; }
+  .v2-pods-aside--page .v2-pods__view .v2p-seg button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+    background: transparent;
+  }
+}
+
 .v2-pods__list {
   display: flex;
   min-height: 0;
@@ -5069,17 +4499,26 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-r-8, 8px);
   background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
-  visibility: hidden;
+  /* At rest the pin is drawn invisible but stays in the accessibility tree and
+     the tab order, so a screen reader reaches it by swiping, without the hold.
+     It takes no taps until it shows. */
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* D215: the pin is an icon on row hover that takes the time's slot. Out of
    sight at rest, pinned or not; the Pinned segment lists the pinned pods.
-   visibility (not opacity) so a hidden pin cannot catch a tap. Keyboard focus
-   anywhere in the row shows it, so Tab reaches it; a mouse click does not set
-   :focus-visible, so a clicked row keeps its time. Touch screens have no hover,
-   so they show the pin at rest in place of the time. */
+   Hidden by opacity with pointer-events off, so it stays in the accessibility
+   tree (a screen reader reaches it by swiping, Cofounder 11-04) but a hidden
+   pin cannot catch a tap. Keyboard focus anywhere in the row shows it, and so
+   does focus on the pin itself (a screen reader moving to it); a mouse click
+   does not set :focus-visible, so a clicked row keeps its time. Touch screens
+   have no hover: the 390 frame draws the time at rest there too, and a press
+   and hold on the row (--reveal, V2PodsSidebar) is its hover state. */
 .v2-pods__rowwrap:hover .v2-pods__pin,
-.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,
+.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,
+.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }
 
 .v2-root button.v2-pods__pin:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 .v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); }
@@ -5088,11 +4527,13 @@ body.modern-ui.v2-canvas {
 .v2-pods__row-time { display: inline-block; min-width: 24px; text-align: right; }
 
 .v2-pods__rowwrap:hover .v2-pods__row-time,
-.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }
+.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,
+.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,
+.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }
 
+/* The press and hold must not open the system callout or select the name. */
 @media (hover: none) and (pointer: coarse) {
-  .v2-root button.v2-pods__pin { visibility: visible; }
-  .v2-pods__row-time { visibility: hidden; }
+  .v2-root button.v2-pods__row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
 
 .v2-root button.v2-pods__row:hover { background: var(--v2-surface-hover); }
@@ -5187,6 +4628,20 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-pods__pin {
     width: 28px;
     height: 28px;
+  }
+
+  /* The pin draws at 28 inside the 44px row and takes its 44px touch area from a
+     transparent ::before, which stays inside the row (ruling 11-04): it ends at the
+     row's right edge (the pin sits 6px in), since the list clips past it. */
+  .v2-root button.v2-pods__pin::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: -6px;
+    width: 44px;
+    height: 44px;
+    transform: translateY(-50%);
+    background: transparent;
   }
 }
 
@@ -5344,6 +4799,13 @@ body.modern-ui.v2-canvas {
   cursor: default;
 }
 
+.v2-lightbox__failed {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font: 500 13px/20px var(--v2-font);
+  cursor: default;
+}
+
 .v2-lightbox__name {
   position: absolute;
   top: 14px;
@@ -5387,70 +4849,6 @@ body.modern-ui.v2-canvas {
 /* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
 
 /* Jump pill: white, #dde0e6 border, r14, ink 13/600, cobalt count (walk-3 miss 58). */
-/* Direction C Activity board: a 52px bar over a readable 760px column.
-   The composer remains under the explicit destination ruling. */
-.v2-activity { position: relative; width: 100%; max-width: none; padding: 0 0 28px; }
-.v2-activity__header { min-height: 64px; align-items: baseline; padding: 20px 16px 4px; gap: 16px; border-bottom: 0; overflow: visible; }
-.v2-activity__title { font: 700 32px/36px var(--v2-font-display); letter-spacing: -0.03em; white-space: nowrap; }
-.v2-activity__controls { position: absolute; top: 22px; right: 16px; gap: 8px; z-index: 2; }
-.v2-activity__scope { display: flex; flex-wrap: nowrap; gap: 2px; position: relative; padding: 3px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
-.v2-activity__scope-menu { position: absolute; top: calc(100% + 4px); right: 0; display: grid; gap: 2px; width: min(300px, 85vw); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
-.v2-root button.v2-activity__scope-button { min-height: 30px; max-width: 150px; padding: 0 9px; border: 0; border-radius: calc(var(--v2-radius-sm) - 2px); background: transparent; color: var(--v2-text-secondary); font: 600 11px/16px var(--v2-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v2-root button.v2-activity__scope-button--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); font-weight: 600; }
-.v2-root button.v2-activity__scope-button--menu { max-width: none; white-space: normal; text-align: left; }
-.v2-root button.v2-activity__window-button { font: 600 11px/16px var(--v2-font-mono); }
-.v2-activity__sections { width: min(100%, 760px); margin: 28px auto 0; gap: 34px; }
-.v2-activity__section-heading { margin-bottom: 10px; }
-.v2-activity__queue { gap: 10px; }
-.v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 11px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
-.v2-activity__queue-row:hover { background: var(--v2-surface); }
-.v2-activity__queue-row--decision { border-color: var(--v2-border); box-shadow: none; }
-.v2-activity__queue-row--approval { border-color: var(--v2-border); box-shadow: none; }
-/* The cobalt ring marks the row you are in, not every open ask (slop tell 2). */
-.v2-activity__queue-row:focus-within,
-.v2-activity__queue-row--decision:focus-within,
-.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }
-.v2-activity__queue-row--settled,
-.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }
-.v2-activity__queue-kind { font: 500 11px/16px var(--v2-font-mono); text-transform: lowercase; }
-.v2-activity__queue-topline strong { font-size: 14px; line-height: 20px; }
-.v2-activity__queue-copy p { font-size: 14px; line-height: 20px; }
-.v2-activity__queue-more { min-height: 36px; border: 1px solid var(--v2-accent); color: var(--v2-accent); font: 600 12px/16px var(--v2-font); }
-.v2-activity__empty--plain { min-height: 0; padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); align-items: flex-start; text-align: left; }
-.v2-activity__moved-list { display: grid; gap: 10px; }
-.v2-activity__moved-group { border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; background: var(--v2-surface); }
-.v2-activity__moved-head { display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--v2-border-soft); color: var(--v2-text-secondary); font: 400 11px/16px var(--v2-font-mono); }
-.v2-activity__moved-lines { display: grid; }
-.v2-activity__moved-line { display: grid; grid-template-columns: minmax(100px, auto) minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px; font-size: 13px; line-height: 18px; }
-.v2-activity__moved-line + .v2-activity__moved-line { border-top: 1px solid var(--v2-border-soft); }
-.v2-activity__moved-line strong { font-weight: 600; color: var(--v2-text-primary); }
-.v2-activity__moved-line span { min-width: 0; overflow-wrap: anywhere; }
-.v2-activity__moved-line time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); white-space: nowrap; }
-.v2-activity__moved-cap-note { display: block; padding: 6px 12px 8px; color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
-.v2-root button.v2-activity__moved-more { width: 100%; padding: 8px 12px; border: 0; border-top: 1px solid var(--v2-border-soft); background: transparent; color: var(--v2-accent-text); text-align: left; font: 600 12px/16px var(--v2-font); }
-@media (max-width: 640px) {
-  .v2-activity__header { min-height: 56px; align-items: baseline; flex-direction: row; flex-wrap: wrap; padding: 16px 12px 4px; gap: 8px; }
-  .v2-activity__sections { margin-top: 20px; padding: 0 12px; }
-  .v2-activity__moved-line { grid-template-columns: minmax(0, 1fr) auto; }
-  .v2-activity__moved-line span { grid-column: 1 / -1; grid-row: 2; }
-}
-
-/* Direction C owns the full pane edge. The generic feature wrapper is padded
-   for legacy pages, which would inset the Activity bar and make its 52px
-   contract impossible to reach. */
-.v2-feature--activity > .v2-feature__body { padding: 0 0 28px; }
-.v2-feature--activity .v2-feature__legacy { max-width: none; }
-
-.v2-activity__compose { width: min(calc(100% - 24px), 760px); margin: 20px auto 0; }
-.v2-root button.v2-activity__queue-more {
-  border: 0;
-  background: transparent;
-  color: var(--v2-accent);
-  font: 600 12px/16px var(--v2-font);
-}
-.v2-root button.v2-activity__queue-more:hover:not(:disabled) { background: var(--v2-accent-soft); color: var(--v2-accent); }
-.v2-root .v2-activity__scope-menu button.v2-activity__scope-button { width: 100%; max-width: none; }
-.v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
 /* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
 .v2-rail__item-icon .MuiBadge-badge {
   top: -7px;
@@ -5472,255 +4870,6 @@ body.modern-ui.v2-canvas {
 .v2-rail__item-icon .v2-rail__badge--activity .MuiBadge-badge {
   right: -6px;
 }
-.v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
-/* ≤760 (66390): the two toggles stack — in the block after the ≤1100 filter row below, which
-   it must outrank. The card-action stack lives in the trailing ≤760 block at the end of the
-   Activity rules, after every row/action rule it must outrank. */
-.v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
-/* Categories are marks, only the deciding act is a word (direction A). The
-   mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
-   title and the accessible name. Nothing is hidden in a menu. */
-.v2-root .v2-activity__queue-mark svg { width: 16px; height: 16px; }
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 32px; min-width: 32px; padding: 0; justify-content: center; }
-.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon svg { width: 16px; height: 16px; flex: none; }
-.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3; grid-row: 1; max-width: 320px; justify-content: flex-end; flex-wrap: wrap; margin-top: 0; }
-.v2-activity__queue-row .v2-activity__option-choice { flex: 0 1 auto; max-width: 150px; }
-.v2-activity__queue-row .v2-activity__option { white-space: normal; }
-/* Opening a reply or a free-text ruling gives that editor a full content row. */
-.v2-activity__queue-row .v2-activity__queue-actions:has(textarea) { grid-column: 2 / -1; grid-row: 2; max-width: none; justify-content: flex-start; }
-.v2-activity__empty--plain span { color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
-/* Keep filters on a separate row when the pane cannot fit them beside the
-   title. Both rows stay in normal reading order, without a clipped title. */
-@media (max-width: 1100px) {
-  .v2-activity__controls { position: relative; top: auto; right: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
-  .v2-activity__window { width: auto; flex: 0 0 auto; }
-  .v2-activity__scope { min-width: 0; max-width: 100%; flex-wrap: wrap; }
-}
-/* ≤760 (d215 activity 390): window and scope are two full-width rows under the top bar —
-   12px gutters, 8px apart, 12px above the composer, no rule under them. Same selectors as the
-   ≤1100 row above, so this block wins by order. The gutter is margin, not padding, so the block
-   is the frame's 366px box; 2px inside the 1px border is the frame's 3px inset. The window's two
-   buttons split the row, the scope's keep their own width from the left. The artboard draws 36px
-   buttons; they hold at 44px, like every other Activity control at this width (TASK-735: a
-   deliberate touch floor, flagged for UX Lead). The scope stays one row: the ≤1100 row lets it
-   wrap, so a long pod name dropped buttons to a second line. Here the pod buttons shrink into
-   their ellipsis instead, never below 44px wide; "All pods" and the "more" trigger (while it
-   reads "more", not a chosen pod's name) keep their full width so the menu stays legible. */
-@media (max-width: 760px) {
-  .v2-activity__controls { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: auto; margin: 12px 12px 0; padding: 0; border-bottom: 0; }
-  .v2-activity__window,
-  .v2-activity__scope { width: auto; padding: 2px; }
-  .v2-root button.v2-activity__window-button { flex: 1 1 0; justify-content: center; min-height: 44px; }
-  .v2-activity__scope { flex-wrap: nowrap; }
-  .v2-root button.v2-activity__scope-button { min-height: 44px; min-width: 44px; }
-  .v2-root .v2-activity__scope > button.v2-activity__scope-button:first-child,
-  .v2-root button.v2-activity__scope-button--more { flex-shrink: 0; }
-  .v2-activity__controls + .v2-activity__compose { margin-top: 12px; }
-}
-@media (max-width: 640px) {
-  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 44px; }
-
-  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; }
-  .v2-activity__queue-row .v2-activity__option-choice { max-width: 100%; }
-}
-
-/* Decision alternatives are one inline line below the question (ux-lead
-   66400 fix 4): 32px options in authored order, primary cobalt, the rest
-   bordered, `Other…` as cobalt text beside them, Open at the end. These rules
-   intentionally come after the generic queue-row overrides above so the
-   options are neither squeezed into the 320px action column nor capped at
-   150px each. */
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__queue-actions {
-  grid-column: 1 / -1;
-  grid-row: auto;
-  max-width: none;
-  width: 100%;
-  justify-content: flex-start;
-  align-items: flex-start;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.v2-activity__queue-row.v2-activity__queue-row--decision {
-  align-items: start;
-  row-gap: 12px;
-}
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: auto;
-  flex: 0 1 auto;
-  max-width: 280px;
-}
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button {
-  justify-content: center;
-  min-height: 32px;
-  padding-block: 0;
-  padding-inline: 12px;
-  text-align: left;
-  line-height: 20px;
-  white-space: normal;
-}
-/* The footer's children (Other…, the free-text editor, Open) flow on the same line. */
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer { display: contents; }
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-other { flex: 1 1 100%; }
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button.v2-activity__option:not(.v2-activity__option--primary):hover:not(:disabled) {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-recommended {
-  display: block;
-  color: var(--v2-text-muted);
-  font: 500 11px/14px var(--v2-font-mono);
-}
-.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-description {
-  color: var(--v2-text-secondary);
-  font-size: 14px;
-  line-height: 20px;
-}
-.v2-activity__decision-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-/* ≤760 (ux-lead 66428; sprint-review 66435 — the ruling's number is 760, not 640, so the
-   641–760 band stacks too): decision options stack like every other action — 44px, full
-   width. This block sits AFTER the inline option rules above so it wins at equal specificity. */
-@media (max-width: 760px) {
-  /* Every card action drops under the context line at 44px full width (66390 / 66438 at 720):
-     same selectors as the desktop rules above so this block wins by order, not by luck. */
-  .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; flex-wrap: wrap; }
-  /* One action row per card (d215 s-activity, walk 11-02): the text act (Reply, Approve, Mark
-     handled) grows to fill the row and the 44px icon squares below sit beside it on the right. */
-  .v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }
-  /* The reply editor's nested Send only grows in HEIGHT (sprint-review 66493/66498): a descendant
-     rule here gave it flex-basis 100% and it ate the textarea (489px Send beside a 139px input). */
-  .v2-root .v2-activity__reply > button { min-height: 44px; }
-  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
-  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
-  /* Other… grows and the ↗ handoff square sits beside it: one footer row, as d215 s-activity draws it. */
-  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 auto; min-height: 44px; }
-  /* Icon acts stay 44px squares under 760 — the full-width `> button` rule above would stretch them. */
-  .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }
-  .v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }
-}
-/* Get started — day zero (ux-lead 66658/66666, board 66663/66664). One bordered card above
-   Needs you; a step is not an ask: no ring, no count, no badge. Ink numbered marks, dividers,
-   32px buttons at desktop (the current step ink, later steps bordered), 44 full width at ≤760. */
-.v2-activity__start { width: min(100%, 760px); margin: 20px auto 0; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); overflow: hidden; }
-.v2-activity__start-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--v2-border-soft); }
-.v2-activity__start-head h2 { margin: 0; font: 600 14px/20px var(--v2-font); color: var(--v2-text-primary); }
-.v2-activity__start-kicker { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
-.v2-activity__start-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border-bottom: 1px solid var(--v2-border-soft); }
-.v2-activity__start-row:last-child { border-bottom: 0; }
-.v2-activity__start-num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 500 11px/16px var(--v2-font-mono); }
-.v2-activity__start-copy { min-width: 0; }
-.v2-activity__start-copy strong { display: block; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
-.v2-activity__start-copy p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }
-.v2-activity__start-act { display: flex; align-items: center; }
-.v2-root .v2-activity__start-act button { min-height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/18px var(--v2-font); white-space: nowrap; }
-.v2-root .v2-activity__start-act button.v2-activity__start-cta--current { border-color: var(--v2-ink); background: var(--v2-ink); color: var(--v2-on-ink); }
-@media (max-width: 760px) {
-  .v2-activity__start { width: auto; margin: 16px 12px 0; }
-  .v2-activity__start-head { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .v2-activity__start-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .v2-activity__start-act { grid-column: 1 / -1; }
-  .v2-root .v2-activity__start-act button { width: 100%; min-height: 44px; }
-}
-/* Get started, checking (d215 s-activity): while the roster and connector count are in flight the
-   card holds its place — real head, two step rows of bars on the same line boxes as the loaded
-   rows (20px lines, 32px key; 44px full width at ≤760) — so for the two-step day-zero card nothing
-   below it moves; one or three steps shift it by a row. */
-.v2-activity__start--pending .v2-activity__start-num--pending { background: var(--v2-surface-hover); }
-.v2-activity__start-bar { display: block; position: relative; height: 20px; }
-.v2-activity__start-bar::after { content: ""; position: absolute; left: 0; top: 5px; width: 92%; height: 10px; border-radius: 5px; background: var(--v2-surface-hover); }
-.v2-activity__start-bar--title + .v2-activity__start-bar { margin-top: 2px; }
-.v2-activity__start-bar--title::after { width: 34%; background: var(--v2-border); }
-.v2-activity__start-bar--phone { display: none; }
-.v2-activity__start-bar--phone::after { width: 64%; }
-.v2-activity__start-bar--key { width: 132px; height: 32px; }
-.v2-activity__start-bar--key::after { top: 0; width: 100%; height: 100%; border-radius: var(--v2-radius-sm); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border); }
-@media (max-width: 760px) {
-  .v2-activity__start-bar--phone { display: block; }
-  .v2-activity__start-bar--key { width: 100%; height: 44px; }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .v2-activity__start--pending .v2-activity__start-bar::after { animation: v2-activity-start-pulse 1.4s ease-in-out infinite; }
-}
-@keyframes v2-activity-start-pulse {
-  50% { opacity: 0.55; }
-}
-/* ---------------------------------------------------------------------------
-   Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).
-   Every file and page shared in your pods. Display head + muted meta; two
-   segment groups on one grammar (bordered white group, active = tint + ink
-   600); a bordered search; a plain table whose numbers are mono; the ext chip
-   is the file's own extension, bordered mono, never a colour square.
-   --------------------------------------------------------------------------- */
-.v2-feature--artifacts > .v2-feature__body { padding: 0 0 28px; }
-.v2-feature--artifacts .v2-feature__legacy { max-width: none; }
-.v2-artifacts { display: flex; flex-direction: column; gap: 20px; width: 100%; padding: 20px 16px 0; }
-.v2-artifacts__head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
-.v2-artifacts__title { margin: 0; font: 700 32px/1.1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
-.v2-artifacts__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.v2-artifacts__seg { position: relative; display: flex; flex-wrap: nowrap; gap: 2px; padding: 3px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
-.v2-root button.v2-artifacts__seg-button { min-height: 30px; max-width: 150px; padding: 0 9px; border: 0; border-radius: calc(var(--v2-radius-sm) - 2px); background: transparent; color: var(--v2-text-secondary); font: 600 11px/16px var(--v2-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v2-root button.v2-artifacts__seg-button--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); font-weight: 600; }
-.v2-root button.v2-artifacts__seg-button--menu { width: 100%; max-width: none; white-space: normal; text-align: left; }
-.v2-artifacts__seg-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 3; display: grid; gap: 2px; width: min(300px, 85vw); max-height: 240px; overflow-y: auto; padding: 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
-.v2-artifacts__search { display: flex; align-items: center; gap: 8px; min-width: 220px; height: 36px; margin-left: auto; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); }
-.v2-artifacts__search input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
-.v2-artifacts__search input::placeholder { color: var(--v2-text-muted); }
-.v2-artifacts__search:focus-within { border-color: var(--v2-accent); }
-.v2-artifacts__search-key { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
-.v2-artifacts__table-wrap { overflow-x: auto; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); }
-.v2-artifacts__table { width: 100%; border-collapse: collapse; font: 400 13px/18px var(--v2-font); color: var(--v2-text-primary); }
-.v2-artifacts__table th { padding: 8px 12px; border-bottom: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); text-align: left; text-transform: lowercase; white-space: nowrap; }
-.v2-artifacts__table td { padding: 9px 12px; border-bottom: 1px solid var(--v2-border-soft); vertical-align: middle; }
-.v2-artifacts__table tr:last-child td { border-bottom: 0; }
-.v2-artifacts__row:hover td { background: var(--v2-surface-hover); }
-.v2-artifacts__file { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.v2-artifacts__ext { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 20px; padding: 0 5px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); letter-spacing: 0.02em; }
-.v2-artifacts__pod-line { display: none; color: var(--v2-text-secondary); font: 500 11px/16px var(--v2-font-mono); }
-.v2-root button.v2-artifacts__name { min-width: 0; padding: 0; border: 0; background: transparent; color: var(--v2-text-primary); font: 600 13px/18px var(--v2-font); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v2-root button.v2-artifacts__name:hover { color: var(--v2-accent-text); }
-.v2-artifacts__mono { color: var(--v2-text-secondary); font: 500 11px/16px var(--v2-font-mono); white-space: nowrap; }
-.v2-artifacts__foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.v2-root button.v2-artifacts__more { padding: 6px 4px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); }
-.v2-artifacts__empty { padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
-.v2-artifacts__error { padding: 12px 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
-.v2-artifacts__loading { display: grid; place-items: center; padding: 24px; }
-/* Day zero (d215 s-artifacts): nothing shared and no filter set, so the page drops its controls and
-   count for one bordered card — Get started's card grammar (14px 20px lines, ink key, 32px at desktop,
-   44 full width at ≤760). The key links to the account's oldest pod, the one signup creates. */
-.v2-artifacts__zero { width: min(100%, 760px); padding: 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
-.v2-artifacts__zero h2 { margin: 0; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
-.v2-artifacts__zero p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }
-.v2-root a.v2-artifacts__open { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--v2-ink); border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/18px var(--v2-font); text-align: center; overflow-wrap: anywhere; }
-.v2-root a.v2-artifacts__open:hover { background: var(--v2-ink-hover); }
-/* ≤760 (ux-lead 66462): no sideways scroll — keep file / kind / when, fold the pod under
-   the name as a mono line, hide pod / shared-by / size. The head is the pinned 52px bar (the d215 .mtop block below). */
-@media (max-width: 760px) {
-  .v2-artifacts { padding: 16px 12px 0; gap: 16px; }
-  .v2-artifacts__controls { flex-direction: column; align-items: stretch; }
-  .v2-artifacts__search { margin-left: 0; }
-  .v2-artifacts__table { table-layout: fixed; }
-  .v2-artifacts__table th:nth-child(3), .v2-artifacts__table td:nth-child(3),
-  .v2-artifacts__table th:nth-child(4), .v2-artifacts__table td:nth-child(4),
-  .v2-artifacts__table th:nth-child(6), .v2-artifacts__table td:nth-child(6) { display: none; }
-  .v2-artifacts__table th:nth-child(2), .v2-artifacts__table td:nth-child(2) { width: 64px; }
-  .v2-artifacts__table th:nth-child(5), .v2-artifacts__table td:nth-child(5) { width: 52px; }
-  .v2-artifacts__file { flex-wrap: wrap; row-gap: 2px; }
-  .v2-artifacts__pod-line { display: block; flex: 1 1 100%; }
-  .v2-root button.v2-artifacts__name { white-space: normal; overflow-wrap: anywhere; }
-  .v2-root a.v2-artifacts__open { display: flex; width: 100%; min-height: 44px; }
-}
-
 /* Public Privacy and Terms pages (TASK-530). Outside .v2-root, so no root-scoped selectors. */
 /* .v2-root sets height:100vh and overflow:hidden; the legal pages must scroll, so override both (same as the landing). */
 .v2-root.v2-legal { display: block; height: 100vh; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; padding: 48px 24px; background: var(--v2-bg-subtle); color: var(--v2-text-primary); }
@@ -5755,48 +4904,12 @@ body.modern-ui.v2-canvas {
   }
   .v2-feature__header .v2-page-head__meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .v2-feature__body { padding: 12px 12px 16px; }
-}
-
-/* d215 activity/artifacts 390: the page head is the frame's pinned 52px bar
-   (.mtop), the bar .v2-feature__header gives the other feature pages. These two
-   pages render their own head (it carries their counts) inside the scrolling
-   .v2-feature__body, so the bar pins with sticky at the body's top edge, where
-   the body has no top padding. Desktop keeps the 32px display head. */
-@media (max-width: 760px) {
-  .v2-activity__header,
-  .v2-artifacts__head {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    box-sizing: border-box;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    min-height: 52px;
-    padding: 0 12px 0 16px;
-    gap: 8px;
-    border-bottom: 1px solid var(--v2-border-soft);
-    background: var(--v2-surface);
-  }
-  .v2-activity__header .v2-page-head__identity,
-  .v2-artifacts__head .v2-page-head__identity { flex: 1; align-items: center; gap: 8px; }
-  /* Closed, the bar is one line: the meta truncates instead of wrapping under the title. An open
-     hint still takes its own row (flex-basis 100% above), so wrap stays on while one is open. */
-  .v2-activity__header .v2-page-head__identity:not(:has(.v2-hint--open)),
-  .v2-artifacts__head .v2-page-head__identity:not(:has(.v2-hint--open)) { flex-wrap: nowrap; }
-  .v2-activity__header .v2-activity__title,
-  .v2-artifacts__head .v2-artifacts__title {
-    font: 800 22px/1 var(--v2-font-display); /* tracking stays the head's own, so :lang(zh) still resets it */
-    flex-shrink: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .v2-activity__header .v2-page-head__meta,
-  .v2-artifacts__head .v2-page-head__meta { margin-left: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* Artifacts pads its column 12px; the bar bleeds to the pane edge and the column starts under it. */
-  .v2-artifacts { padding-top: 0; }
-  .v2-artifacts__head { margin: 0 -12px; }
+  .v2-feature__scroll { padding: 12px 12px 16px; }
+  /* A head with actions gives them their own full-width row under the title
+     (Your team, the profiles): 44px keys never squeeze the title at 390. */
+  .v2-feature__header.v2-page-head--wrap { flex-wrap: wrap; row-gap: 0; padding-bottom: 12px; }
+  .v2-feature__header.v2-page-head--wrap > .v2-page-head__identity { flex: 1 1 auto; min-height: 52px; }
+  .v2-feature__header.v2-page-head--wrap > .v2-page-head__actions { flex: 1 0 100%; display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; }
 }
 
 /* ---------- Motion (D220) ---------- */

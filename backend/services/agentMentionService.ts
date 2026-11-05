@@ -1650,6 +1650,9 @@ const enqueueWakeOnMessage = async ({
           // Inline cue, not only metadata — the flag below is for the
           // wrapper's claim decision; the model reads the content.
           content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,
+          // F109: the author's words with no frames (digest content is a
+          // whitespace-collapsed 200-char preview; this is the full text).
+          rawContent,
           userId,
           username,
           source,
@@ -1823,6 +1826,7 @@ const enqueueMentions = async ({
                 isCollaborativePod(adjacent.podType, installations),
                 authorFrame,
               )}`,
+              rawContent,
               userId,
               username,
               mentions: rawMentions,
@@ -2104,6 +2108,7 @@ const enqueueMentions = async ({
                 podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame,
                 await handoffFrom(directMatch),
               ),
+              rawContent,
               userId,
               username,
               mentions: rawMentions,
@@ -2156,6 +2161,7 @@ const enqueueMentions = async ({
                     podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame,
                     await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId }),
                   ),
+                  rawContent,
                   userId,
                   username,
                   mentions: rawMentions,
@@ -2231,6 +2237,7 @@ const enqueueMentions = async ({
                     podId, rawContent, eventType, agentType, collaborativePod, authorFrame,
                     await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' }),
                   ),
+                  rawContent,
                   userId,
                   username,
                   mentions: rawMentions,
@@ -2306,6 +2313,7 @@ const enqueueMentions = async ({
                 collaborativePod,
                 authorFrame,
               ),
+              rawContent,
               userId,
               username,
               mentions: rawMentions,
@@ -2586,6 +2594,7 @@ const enqueueDmEvent = async ({
           ? String(message?._id || message?.id)
           : undefined,
         content: framedContent,
+        rawContent: content,
         userId,
         username,
         mentions: [mentionHandle],

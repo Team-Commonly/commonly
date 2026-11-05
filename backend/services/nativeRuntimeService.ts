@@ -34,6 +34,7 @@ import {
   hostedBrokerToolsForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
+import { isLimitedUseTool, isNoTrainingModel } from './limitedUseConnectors';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
@@ -41,13 +42,16 @@ import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
+import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
+import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
-  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
+  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline,
+  HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES, hostedHeartbeatRunsPerDay, hostedNativeRunConfig, hostedRunsNative,
 } from './hostedEngine';
 import {
   hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser,
@@ -107,7 +111,53 @@ const MAX_WALL_CLOCK_MS = 60_000;
 // no model fell into a 401 with no fallback group. Follow the chat model the
 // deployment already pays for, so "no model configured" means "the normal
 // model", never "the dead one".
-const DEFAULT_MODEL = process.env.LITELLM_CHAT_MODEL || 'deepseek-v4-flash';
+const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
+// F91 (D243): the deployment's model for native turns (Claude Haiku on dev).
+// Set, it replaces the old platform default wherever that was stored (145 Scout
+// installs carry `config.model: deepseek-v4-flash`), and every turn that holds a
+// connector grant runs on it whatever the installation names, so connector data
+// reaches only this model. Unset, nothing changes.
+const NATIVE_RUNTIME_MODEL = String(process.env.NATIVE_RUNTIME_MODEL || '').trim();
+const DEFAULT_MODEL = NATIVE_RUNTIME_MODEL || process.env.LITELLM_CHAT_MODEL || LEGACY_DEFAULT_MODEL;
+
+// F98 (D243, Cofounder 11-04): hosted agents are Claude-only. The models a
+// deployment offers hosted agents: only its native model for now (Sonnet comes
+// later, under a cap). Unset, it offers no list and nothing is mapped.
+export const hostedModelsOffered = (nativeModel: string): string[] => (nativeModel ? [nativeModel] : []);
+
+// With a native model set, a turn runs on it unless its pin is one the
+// deployment offers, and always when it holds a connector grant. Every other
+// pin (the old deepseek default, gemini-*, gpt-*, codex, nemotron, a Claude
+// model with no route) maps to it here; the stored value is left as it is.
+export const nativeModelFor = ({
+  configured, connectorRun, nativeModel, chatModel,
+}: { configured?: unknown; connectorRun: boolean; nativeModel: string; chatModel?: string }): string => {
+  const named = String(configured || '').trim();
+  if (nativeModel && (connectorRun || !hostedModelsOffered(nativeModel).includes(named))) return nativeModel;
+  return named || chatModel || LEGACY_DEFAULT_MODEL;
+};
+
+// Once per process for each agent and pin, so the spend check before the
+// DeepSeek route is deleted can see which agents were moved off their pin.
+const loggedPinMappings = new Set<string>();
+const logPinMapping = (agentName: string, instanceId: string, pin: unknown, model: string): void => {
+  const named = String(pin || '').trim();
+  if (!named || named === model) return;
+  const key = JSON.stringify([agentName, instanceId, named]);
+  if (loggedPinMappings.has(key)) return;
+  loggedPinMappings.add(key);
+  console.warn(JSON.stringify({
+    event: 'native_model_pin_mapped', agentName, instanceId, pin: named, model,
+  }));
+};
+// Request fields a Claude route needs. Haiku 5.5 thinks by default, and this
+// loop replays an assistant tool-call turn without its thinking blocks; with
+// thinking off every round replays cleanly (accepted at the default effort).
+// Unasked, LiteLLM requests the model's whole 128K output.
+const CLAUDE_MAX_TOKENS = 8192;
+export const modelRequestFields = (model: string): Record<string, unknown> => (
+  /^claude-/i.test(model) ? { thinking: { type: 'disabled' }, max_tokens: CLAUDE_MAX_TOKENS } : {}
+);
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
 // Guardrail opt-in for the native cloud-agent inference path. Unlike dev agents
@@ -124,6 +174,17 @@ const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_0
 const NATIVE_RUNTIME_GUARDRAILS = (
   process.env.NATIVE_RUNTIME_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
 ).split(',').map((s) => s.trim()).filter(Boolean);
+// Guardrails that run inside LiteLLM and call no other provider. Once a run is
+// offered a Limited-Use tool (Calendar), its tool results sit in every later
+// request, so only these stay on (F92): openai-moderation-enforce would send
+// them to OpenAI's moderation API.
+const LOCAL_GUARDRAILS: ReadonlySet<string> = new Set(['injection-guard']);
+export const guardrailsForRun = (names: string[], limitedUseOffered: boolean): string[] => (
+  limitedUseOffered ? names.filter((name) => LOCAL_GUARDRAILS.has(name)) : names
+);
+const hasLimitedUseTool = (projection: HostedBrokerProjection): boolean => (
+  [...projection.dispatch.values()].some((mapped) => isLimitedUseTool(mapped.tool))
+);
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
@@ -200,10 +261,13 @@ export function isNativeRuntimeAvailable(): boolean {
 async function textsTheGuardStops(
   litellm: { baseUrl: string; apiKey: string },
   texts: string[],
+  // The run's guardrails (guardrailsForRun): after a Limited-Use tool, the
+  // checked text may echo its result, so it gets only the local ones too.
+  guardrailNames: string[],
 ): Promise<boolean[] | null> {
   try {
     return await Promise.all(texts.map(async (text) => {
-      for (const guardrailName of NATIVE_RUNTIME_GUARDRAILS) {
+      for (const guardrailName of guardrailNames) {
         // eslint-disable-next-line no-await-in-loop
         const resp = await axios.post(
           `${litellm.baseUrl}/guardrails/apply_guardrail`,
@@ -249,7 +313,10 @@ export const HOSTED_OFFER_LABEL = 'Run it here';
 // The model a hosted turn runs on. hostedNativeRunConfig leaves `model` unset,
 // so it is DEFAULT_MODEL. Named here for the same reason as the limits: Scout
 // answers "can I use DeepSeek?" from the deployment, not from its own copy.
-const MODEL_DISPLAY_NAMES: Record<string, string> = { 'deepseek-v4-flash': 'DeepSeek V4 Flash' };
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'claude-haiku-5-5': 'Claude Haiku 5.5',
+};
 export const HOSTED_MODEL_NAME = MODEL_DISPLAY_NAMES[DEFAULT_MODEL] || DEFAULT_MODEL;
 
 // --- tool schema (OpenAI function-calling format) -------------------------
@@ -319,6 +386,10 @@ export const TOOLS = [
           content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
           messageType: { type: 'string', enum: ['text', 'card'] },
           payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
+          // D245: the message contract, warn-only. A bad value posts anyway
+          // and comes back in the result's `warnings`.
+          summary: { type: 'string', description: 'One line, at most 120 characters: what this message is.' },
+          kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'What kind of message this is.' },
         },
         required: ['content'],
       },
@@ -936,6 +1007,8 @@ export async function dispatchTool(
           content,
           messageType,
           ...(args.payload !== undefined ? { payload: args.payload } : {}),
+          ...(args.summary !== undefined ? { summary: args.summary } : {}),
+          ...(args.kind !== undefined ? { kind: args.kind } : {}),
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
@@ -1608,6 +1681,33 @@ export function buildUserMessage(
   // never speaks, and omits the types it does. `require()` at the call site
   // meant TypeScript never had to reconcile them.
   const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
+
+  // TASK-779: a heartbeat always ends with the native prompt, which names
+  // NO_REPLY. A hosted turn posts any final text that is not a silent
+  // sentinel, so "otherwise do nothing" was no instruction: Triage's
+  // 22:28:01Z heartbeat called no post tool, and its prose posted ten seconds
+  // later. The scheduler's cue never reached that prompt anyway, because it
+  // rides in payload.content and won as the inline cue. Its seat lines
+  // ("Read your HEARTBEAT.md", "HEARTBEAT_OK is a return value") are for
+  // agents with that file, so they are cut; its cycle frame names a tool
+  // native turns lack, and nativeCueFromKernel drops it. Everything else in
+  // the content is kept: the unread-digest heartbeat's frame, and the digest
+  // summary runWithDigest appends, which is marked read after the turn.
+  if (trigger.type === 'heartbeat') {
+    const nativeHeartbeat = (
+      `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
+      + 'Use commonly_read_context to see recent activity, decide if anything needs '
+      + 'your attention, and call commonly_post_message if something does. '
+      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+    );
+    const kept = inlineCue.split('\n')
+      .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return kept ? `${kept}\n\n${nativeHeartbeat}` : nativeHeartbeat;
+  }
+
   if (inlineCue) return inlineCue;
 
   // Fallbacks below are for events that carry NO content. They keep the raw
@@ -1621,14 +1721,6 @@ export function buildUserMessage(
       + 'content — a producer bug, not your fault. '
       + (messageId ? `It named message ${messageId}. ` : '')
       + 'Call commonly_read_context to find it, then commonly_post_message with your reply.'
-    );
-  }
-
-  if (trigger.type === 'heartbeat') {
-    return (
-      `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
-      + 'Use commonly_read_context to see recent activity, decide if anything needs '
-      + 'your attention, and call commonly_post_message if appropriate. Otherwise do nothing.'
     );
   }
 
@@ -1836,6 +1928,57 @@ export function formatRecentMessagesBlock(
     + `are answering follows):\n${lines.join('\n')}`;
 }
 
+/**
+ * Why a hosted heartbeat doesn't run now, or null to run (D244). Both counts
+ * are spend bounds, so a failed count fails closed, as the per-user ceiling
+ * does. A hold is acked with no AgentRun, like any other hosted decline.
+ */
+async function hostedHeartbeatHold(installation: any): Promise<NativeRunResult | null> {
+  const silent: NativeRunResult = {
+    runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+  };
+  const agentName = String(installation.agentName || '').toLowerCase();
+  const instanceId = String(installation.instanceId || 'default');
+  const perDay = hostedHeartbeatRunsPerDay();
+  if (perDay <= 0) return silent;
+  const installedBy = installation.installedBy ? String(installation.installedBy) : '';
+  if (!installedBy) return silent;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRunModel = require('../models/AgentRun');
+    const floorWindowMs = (HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES - HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES) * 60_000;
+    const inLastHour = await AgentRunModel.countDocuments({
+      podId: installation.podId,
+      agentName,
+      instanceId,
+      trigger: 'heartbeat',
+      startedAt: { $gte: new Date(Date.now() - floorWindowMs) },
+    });
+    if (inLastHour > 0) return silent;
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const ownerToday = await AgentRunModel.countDocuments({
+      userId: installedBy,
+      trigger: 'heartbeat',
+      startedAt: { $gte: dayStart },
+    });
+    if (ownerToday >= perDay) {
+      console.warn(
+        `[native-runtime] user ${installedBy} hit the hosted heartbeat cap (${perDay}) — `
+        + `holding ${agentName}:${instanceId} until UTC midnight`,
+      );
+      return silent;
+    }
+  } catch (err) {
+    return failedResult(
+      '',
+      'heartbeat_cap_check_failed',
+      `hosted heartbeat count failed (failing closed): ${(err as Error).message}`,
+    );
+  }
+  return null;
+}
+
 export async function runAgent(
   installation: any,
   trigger: NativeRunTrigger,
@@ -1877,6 +2020,10 @@ export async function runAgent(
         runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
       };
     }
+  }
+  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
+    const heldHeartbeat = await hostedHeartbeatHold(installation);
+    if (heldHeartbeat) return heldHeartbeat;
   }
   const cfg = hostedNative
     ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {
@@ -2186,8 +2333,14 @@ export async function runAgent(
   }
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
-  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
-  const model = String(cfg.model || DEFAULT_MODEL);
+  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES, {
+    readContextOffered: toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_read_context'),
+  });
+  const modelFor = (connectorRun: boolean) => nativeModelFor({
+    configured: cfg.model, connectorRun, nativeModel: NATIVE_RUNTIME_MODEL, chatModel: DEFAULT_MODEL,
+  });
+  let model = modelFor(false);
+  logPinMapping(agentName, instanceId, cfg.model, model);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.
@@ -2258,7 +2411,12 @@ export async function runAgent(
   const assembleBroker = async (): Promise<HostedBrokerProjection> => {
     if (!seatUserId) return { tools: [], dispatch: new Map() };
     try {
-      return await hostedBrokerToolsForRun({ identityId: seatUserId, podId });
+      // Limited-Use tools (Calendar) only when this run is on the no-training
+      // model: with no native model set, or a non-Claude one, they are not
+      // offered at all (F92).
+      return await hostedBrokerToolsForRun({
+        identityId: seatUserId, podId, limitedUse: isNoTrainingModel(NATIVE_RUNTIME_MODEL),
+      });
     } catch (error) {
       // Fail closed: no broker tools for this run, and the run itself carries
       // on. A projection failure may not become a silent capability.
@@ -2270,6 +2428,10 @@ export async function runAgent(
     }
   };
   let broker: HostedBrokerProjection = await assembleBroker();
+  // Sticky: a Limited-Use result stays in the transcript after the tool is gone.
+  // runGuardrails is what both the chat request and the web-result check send.
+  let limitedUseOffered = false;
+  let runGuardrails = NATIVE_RUNTIME_GUARDRAILS;
 
   // A guard stop after the turn read the web is most often a page, not the
   // person. So the turn keeps where each web result sits (its tool-call round
@@ -2289,7 +2451,9 @@ export async function runAgent(
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
-    const stops = await textsTheGuardStops(litellm, webResults.map(({ index }) => String(messages[index].content)));
+    const stops = await textsTheGuardStops(
+      litellm, webResults.map(({ index }) => String(messages[index].content)), runGuardrails,
+    );
     // The guard stopped on something else, the pod's text or the request.
     if (stops && !stops.includes(true)) return { setAside: 0, removed: 0 };
     const before = webResults.length;
@@ -2357,6 +2521,11 @@ export async function runAgent(
       // second call, after reading the refusal.
       const recoveryRound = webSetAside;
       offeredBroker = broker;
+      // A grant's tools go only to the native model, and once offered the turn
+      // stays on it: later rounds carry what those tools returned.
+      if (offeredBroker.tools.length > 0) model = modelFor(true);
+      limitedUseOffered = limitedUseOffered || hasLimitedUseTool(broker);
+      runGuardrails = guardrailsForRun(NATIVE_RUNTIME_GUARDRAILS, limitedUseOffered);
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, {
           webTainted,
@@ -2373,6 +2542,7 @@ export async function runAgent(
           `${litellm.baseUrl}/chat/completions`,
           {
             model,
+            ...modelRequestFields(model),
             // A failed model must not silently substitute another vendor.
             disable_fallbacks: true,
             messages,
@@ -2387,7 +2557,7 @@ export async function runAgent(
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
             // so an operator can disable via env without a redeploy.
-            ...(NATIVE_RUNTIME_GUARDRAILS.length ? { guardrails: NATIVE_RUNTIME_GUARDRAILS } : {}),
+            ...(runGuardrails.length ? { guardrails: runGuardrails } : {}),
           },
           {
             headers: {
@@ -2472,6 +2642,20 @@ export async function runAgent(
         liteLLMCallId: extractCallId(llmResponse, responseHeaders),
         ...servedModelOf(llmResponse, responseHeaders),
       };
+
+      // A refusal (Anthropic's stop_reason "refusal", which LiteLLM reports as
+      // "content_filter"; DeepSeek uses the same value when it filters). Claude
+      // Haiku 5.5 has no server-side fallback for it, and a fallback to another
+      // vendor is what this runtime refuses anyway, so the turn ends here.
+      // Nothing of the partial answer is posted or kept, and no tool it named
+      // runs; the run reads as blocked, like a guardrail rejection.
+      if (choice?.finish_reason === 'content_filter') {
+        run.turns.push({ ...turn, llmResponseText: undefined });
+        run.status = 'failed';
+        run.errorKind = 'guardrail_blocked';
+        run.errorMessage = `Model ${model} declined this request (refusal); nothing was posted.`;
+        break;
+      }
 
       const toolCalls = msg.tool_calls || [];
 
@@ -2766,6 +2950,7 @@ export async function runAgent(
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           failureNotice: true,
+          kind: 'error',
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
           threadRootId: dispatchCtx.answeringThreadRootId ?? null,

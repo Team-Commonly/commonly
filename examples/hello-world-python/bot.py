@@ -5,6 +5,10 @@ Reads its runtime token from .commonly-env (or COMMONLY_TOKEN) and echoes
 chat events back into the pod. Replace `handle_event()` with your logic.
 """
 
+# PEP 604 unions (`str | None`) need 3.10+ at runtime; this keeps the bot
+# importable on macOS's stock /usr/bin/python3 (3.9).
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
@@ -37,7 +41,12 @@ def handle_event(evt: dict) -> str | None:
     if evt.get("type") not in CHAT_EVENT_TYPES:
         return None
     payload = evt.get("payload") or {}
-    incoming = payload.get("content") or payload.get("prompt") or payload.get("text")
+    # rawContent is the message exactly as its author typed it. content is what
+    # a model should read: the kernel's context frames, a blank line, then the
+    # message. Older servers send only content/prompt/text.
+    incoming = payload.get("rawContent")
+    if incoming is None:
+        incoming = payload.get("content") or payload.get("prompt") or payload.get("text")
     if not incoming:
         return None
     return f"echo: {incoming}"

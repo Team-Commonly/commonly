@@ -23,16 +23,44 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_READ_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
+// The 11-04 capture backs the five Atlassian writers, which Atlassian re-described.
+const ATLASSIAN_1104_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-11-04.json');
+
+const ATLASSIAN_REPINNED_1104 = [
+  'updateConfluenceContent', 'createJiraIssue', 'editJiraIssue', 'transitionJiraIssue', 'addOrEditJiraIssueComment',
+];
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
-// Two Sentry captures, from rows consented with different skills. The 10-19 row
-// had Triage, so its list carries update_issue. The 11-01 row has neither Triage
-// nor Seer, and its list carries the seven search reads as Sentry now spells them.
+// Three Sentry captures, from rows consented with different skills. The 10-19 row
+// had Triage, so its list carries update_issue. The 11-01 and 11-04 lists come
+// from one row with neither Triage nor Seer. 11-01 backs find_organizations and
+// get_sentry_resource; 11-04 backs the project and search reads as Sentry now
+// spells them.
 const SENTRY_TRIAGE_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
-const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
+const SENTRY_1101_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
+const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-04.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
+// The 11-04 capture backs the 14 Notion pins it changed: 11 writers exactly, and
+// three reads without the vendor's tracking-only fields.
+const NOTION_1104_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-11-04.json');
+
+const NOTION_REPINNED_1104_WRITES = [
+  'notion-create-pages', 'notion-update-page', 'notion-move-pages', 'notion-duplicate-page',
+  'notion-create-database', 'notion-create-folder', 'notion-update-folder', 'notion-update-data-source',
+  'notion-create-comment', 'notion-create-view', 'notion-update-view',
+];
+const NOTION_REPINNED_1104_READS = ['notion-get-comments', 'notion-query-data-sources', 'notion-query-meeting-notes'];
+const NOTION_TRACKING_FIELDS = ['skill', 'instructions_version', 'telemetry'];
+const withoutTracking = (schema) => ({
+  ...schema,
+  properties: Object.fromEntries(Object.entries(schema.properties)
+    .filter(([name]) => !NOTION_TRACKING_FIELDS.includes(name))),
+});
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
+// Latchkey annotated none of its 19 tools on 11-01 and all 22 by 11-03, so the
+// entry pins reads on the vendor's own readOnlyHint.
+const LATCHKEY_CAPTURE = require('../../fixtures/hostedMcp/latchkey-tools-list-2026-11-03.json');
 const GITHUB_MCP_SOURCE = require('../../fixtures/hostedMcp/github-mcp-tools-source-2026-10-15.json');
 const GITHUB_MCP_PIN = require('../../../integrations/hostedMcp/githubMcpSchemas.json');
 
@@ -344,6 +372,303 @@ describe('drift is a named refusal', () => {
     expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('tool_drift');
   });
 
+  // Two loosenings a read pin accepts (CTO ruling 11-04): a nullable type
+  // respelled between `anyOf` of bare types and a `type` array, and a property
+  // leaving `required` where requiring less can only accept more. Neither
+  // lets a call the pin refused start to pass, except by leaving a property
+  // out. An added enum value still drifts until the broker checks values
+  // against the pin (F100).
+  const readPin = (inputSchema) => linear({ tools: [pinned({ inputSchema })] });
+  const assessRead = (pinSchema, liveSchema) => {
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = liveSchema;
+    return assessEntryTools(readPin(pinSchema), upstream).find((a) => a.name === 'list_issues');
+  };
+  const NULLABLE_PIN = {
+    type: 'object',
+    properties: {
+      team: { type: 'string' },
+      sort: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      project: { default: null, anyOf: [{ type: 'string' }, { type: 'null' }] },
+    },
+  };
+
+  test('a nullable type respelled from anyOf to a type array, either way and in any order, is compatible', () => {
+    const respelled = {
+      type: 'object',
+      properties: {
+        team: { type: 'string' },
+        sort: { type: ['string', 'null'] },
+        project: { default: null, type: ['null', 'string'] },
+      },
+    };
+    expect(assessRead(NULLABLE_PIN, respelled)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    expect(assessRead(respelled, NULLABLE_PIN)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    // A one-type array is that type.
+    expect(assessRead(NULLABLE_PIN, {
+      ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, team: { type: ['string'] } },
+    }).verdict).toBe('ok');
+  });
+
+  test.each([
+    ['a type the anyOf did not allow', { type: ['string', 'null', 'number'] }, null],
+    ['a dropped null', { type: 'string' }, null],
+    ['a branch keyword folded into the type array', { type: ['string', 'null'] }, { anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }] }],
+    ['an anyOf beside its own type', { type: 'string', anyOf: [{ type: 'string' }, { type: 'null' }] }, null],
+  ])('a respell that changes what is accepted still drifts: %s', (_change, sort, pinnedSort) => {
+    const pin = pinnedSort ? { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort: pinnedSort } } : NULLABLE_PIN;
+    expect(assessRead(pin, { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort } }).verdict).toBe('tool_drift');
+  });
+
+  test('an anyOf inside a data value is data, not a respellable schema', () => {
+    const pin = { type: 'object', properties: { team: { type: 'string', default: { anyOf: [{ type: 'string' }, { type: 'null' }] } } } };
+    expect(assessRead(pin, {
+      type: 'object', properties: { team: { type: 'string', default: { type: ['string', 'null'] } } },
+    }).verdict).toBe('tool_drift');
+  });
+
+  // A pointer into anyOf names a branch by its index, so reordering or folding
+  // the branches changes what the reference resolves to.
+  const REF_INTO_ANYOF = (ref, branches) => ({
+    type: 'object',
+    properties: { team: { $ref: ref } },
+    $defs: { entry: { anyOf: branches } },
+  });
+  test.each([
+    ['a pointer', '#/$defs/entry/anyOf/0'],
+    ['a percent-encoded pointer', '#/$defs/entry/%61nyOf/0'],
+  ])('a respell is not applied when %s names an anyOf branch', (_form, ref) => {
+    const pin = REF_INTO_ANYOF(ref, [{ type: 'string' }, { type: 'null' }]);
+    // Reordered: the reference now resolves to { type: 'null' }.
+    expect(assessRead(pin, REF_INTO_ANYOF(ref, [{ type: 'null' }, { type: 'string' }])).verdict).toBe('tool_drift');
+    // Folded: the reference no longer resolves at all.
+    const folded = { ...pin, $defs: { entry: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, folded).verdict).toBe('tool_drift');
+  });
+
+  test('a respell beside references into $defs that avoid anyOf is compatible', () => {
+    const pin = {
+      ...NULLABLE_PIN,
+      properties: { ...NULLABLE_PIN.properties, when: { $ref: '#/$defs/DateOrDateTime' } },
+      $defs: { DateOrDateTime: { type: 'string' } },
+    };
+    const live = { ...pin, properties: { ...pin.properties, sort: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
+  test('a property leaving required is compatible, at the top level and in a property, in any order', () => {
+    const pin = {
+      type: 'object',
+      properties: {
+        team: { type: 'string' },
+        limit: { type: 'number' },
+        filter: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } }, required: ['a', 'b'] },
+      },
+      required: ['team', 'limit'],
+    };
+    const looser = (over) => ({ ...pin, ...over });
+    [
+      looser({ required: ['team'] }),
+      looser({ required: [] }),
+      looser({ required: undefined }),
+      looser({ required: ['limit', 'team'] }),
+      looser({ properties: { ...pin.properties, filter: { ...pin.properties.filter, required: ['b'] } } }),
+    ].forEach((live) => {
+      if (live.required === undefined) delete live.required;
+      expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    });
+  });
+
+  test('a property becoming required, or one swapped into required, still drifts', () => {
+    const pin = {
+      type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } }, required: ['team'],
+    };
+    expect(assessRead(pin, { ...pin, required: ['team', 'limit'] }).verdict).toBe('tool_drift');
+    expect(assessRead(pin, { ...pin, required: ['limit'] }).verdict).toBe('tool_drift');
+    // A pin with no required list at all (the key absent, as JSON has it).
+    const { required: _omitted, ...pinWithoutRequired } = pin;
+    expect(assessRead(pinWithoutRequired, pin).verdict).toBe('tool_drift');
+  });
+
+  const TEAM_SCOPE = { team: { type: 'string' }, scope: { type: 'string' } };
+  test.each([
+    // The pin refuses { scope: 'all' } (it falls to else); with less in `if`,
+    // the live schema takes it.
+    ['if', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { required: ['team', 'scope'] },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, if: { required: ['scope'] } })],
+    // The pin takes { team: 'x' }; the live schema refuses it.
+    ['not', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      not: { required: ['team', 'scope'] },
+    }, (pin) => ({ ...pin, not: { required: ['team'] } })],
+    // The pin takes { scope: 'y' }; live, it matches both branches and fails.
+    ['oneOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      oneOf: [{ required: ['team'] }, { required: ['scope'] }],
+    }, (pin) => ({ ...pin, oneOf: [{}, { required: ['scope'] }] })],
+    // A $def can be used from any position, a negative one included.
+    ['$defs', {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' } },
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+    }, (pin) => ({ ...pin, $defs: { t: { ...pin.$defs.t, required: [] } } })],
+    // A $ref from `if` into a relaxed position: the pin refuses
+    // { scope: 'all' }, the live schema takes it.
+    ['if, through a $ref into anyOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      anyOf: [{ required: ['team', 'scope'] }, {}],
+      if: { $ref: '#/anyOf/0' },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, anyOf: [{ required: ['scope'] }, {}] })],
+    // A $ref from `not` into a property: the pin takes { team: {} }, the live
+    // schema refuses it.
+    ['not, through a $ref into properties', {
+      type: 'object',
+      properties: { team: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      not: { properties: { team: { $ref: '#/properties/team' } }, required: ['team'] },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+    // The pin takes [{ a: 1, b: 1 }, { a: 1 }] (one match, within
+    // maxContains 1); requiring less, both items match and it is refused.
+    ['contains', {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          contains: { type: 'object', required: ['a', 'b'] },
+          maxContains: 1,
+        },
+      },
+    }, (pin) => ({
+      ...pin,
+      properties: { ids: { ...pin.properties.ids, contains: { type: 'object', required: ['a'] } } },
+    })],
+    // An anchor makes any position a reference target.
+    ['a schema carrying an $anchor', {
+      type: 'object',
+      properties: {
+        team: {
+          $anchor: 'team', type: 'object', properties: { id: { type: 'string' } }, required: ['id'],
+        },
+      },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+  ])('requiring less under %s still drifts', (_position, pin, loosen) => {
+    expect(assessRead(pin, loosen(pin)).verdict).toBe('tool_drift');
+  });
+
+  test('a $ref that stays in $defs leaves the rest of the schema relaxable', () => {
+    const pin = {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' }, limit: { type: 'number' } },
+      required: ['team', 'limit'],
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } } } },
+    };
+    expect(assessRead(pin, { ...pin, required: ['team'] })).toMatchObject({
+      verdict: 'ok', detail: expect.stringContaining('compatib'),
+    });
+  });
+
+  test('requiring less under then, else, allOf and anyOf is compatible', () => {
+    const pin = {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { properties: { team: { const: 'ENG' } } },
+      then: { required: ['team', 'scope'] },
+      else: { required: ['team'] },
+      allOf: [{ required: ['team'] }],
+      anyOf: [{ required: ['team', 'scope'] }, { required: ['scope'] }],
+    };
+    const live = {
+      ...pin,
+      then: { required: ['team'] },
+      else: {},
+      allOf: [{}],
+      anyOf: [{ required: ['scope'] }, { required: ['scope'] }],
+    };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
+  test('properties named required, anyOf and type are properties, not keywords', () => {
+    const pin = {
+      type: 'object',
+      properties: {
+        required: { type: 'array', items: { type: 'string' } },
+        anyOf: { type: 'string' },
+        type: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      required: ['required'],
+    };
+    // A loosening beside them is still accepted, and the property named
+    // `type` is a schema position whose nullable respell is accepted too.
+    expect(assessRead(pin, {
+      ...pin, required: [], properties: { ...pin.properties, type: { type: ['null', 'string'] } },
+    }).verdict).toBe('ok');
+    // Their own schemas still compare exactly.
+    [
+      { required: { type: 'array', items: { type: 'number' } } },
+      { anyOf: { type: 'number' } },
+      { type: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
+    ].forEach((changed) => {
+      expect(assessRead(pin, { ...pin, properties: { ...pin.properties, ...changed } }).verdict).toBe('tool_drift');
+    });
+  });
+
+  test('a loosening and an optional addition together are compatible; a widened enum beside them still drifts', () => {
+    const pin = { type: 'object', properties: { team: { type: 'string' }, sort: { anyOf: [{ type: 'string' }, { type: 'null' }] } }, required: ['team'] };
+    const live = { type: 'object', properties: { team: { type: 'string' }, sort: { type: ['string', 'null'] }, limit: { type: 'number' } } };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    expect(assessRead(
+      { ...pin, properties: { ...pin.properties, team: { type: 'string', enum: ['ENG'] } } },
+      { ...live, properties: { ...live.properties, team: { type: 'string', enum: ['ENG', 'OPS'] } } },
+    ).verdict).toBe('tool_drift');
+  });
+
+  test('write pins accept neither loosening', () => {
+    const write = (inputSchema) => linear({ tools: [pinned({ class: 'write', inputSchema })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort: { type: ['string', 'null'] } } };
+    expect(verdictOf(assessEntryTools(write(NULLABLE_PIN), upstream), 'list_issues')).toBe('tool_drift');
+    upstream[0].inputSchema = { type: 'object', properties: { team: { type: 'string' } } };
+    expect(verdictOf(assessEntryTools(write({ ...upstream[0].inputSchema, required: ['team'] }), upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test("Sentry's real 11-01 respell is compatible with its 10-19 reads, and its value changes still drift", () => {
+    // The 10-19 schemas as read pins, against the 11-01 list. As captured,
+    // search_issues (an added `1h`) and every read whose period pattern gained
+    // minutes still drift. With those two value changes put back, what is left
+    // is Sentry's respell of its nullable strings, and every read is ok.
+    const shared = SENTRY_TRIAGE_CAPTURE.tools.filter((tool) => tool.annotations?.readOnlyHint === true
+      && SENTRY_1101_CAPTURE.tools.some((later) => later.name === tool.name));
+    const entry = linear({
+      tools: shared.map((tool) => pinned({
+        name: tool.name, upstreamName: tool.name, inputSchema: tool.inputSchema, annotations: { readOnlyHint: true },
+      })),
+    });
+    const valuesPutBack = JSON.parse(JSON.stringify(SENTRY_1101_CAPTURE.tools)
+      .replaceAll('[mhdw]', '[hdw]')
+      .replaceAll('["1h","24h"', '["24h"'));
+    const respelled = (tools) => tools.filter((tool) => JSON.stringify(tool.inputSchema).includes('["string","null"]'));
+    expect(respelled(valuesPutBack).length).toBeGreaterThan(1);
+
+    const asCaptured = Object.fromEntries(assessEntryTools(entry, SENTRY_1101_CAPTURE.tools).map((a) => [a.name, a.verdict]));
+    expect(asCaptured.search_issues).toBe('tool_drift');
+    expect(Object.values(asCaptured).filter((verdict) => verdict === 'tool_drift').length).toBeGreaterThan(1);
+
+    const putBack = assessEntryTools(entry, valuesPutBack);
+    expect(putBack.map((a) => [a.name, a.verdict])).toEqual(shared.map((tool) => [tool.name, 'ok']));
+    respelled(valuesPutBack).forEach((tool) => {
+      expect(putBack.find((a) => a.name === tool.name).detail).toEqual(expect.stringContaining('compatib'));
+    });
+  });
+
   test('write pins keep exact schema equality, and a compatible read change cannot excuse a withdrawn annotation', () => {
     const upstream = upstreamOk();
     upstream[0].inputSchema = {
@@ -651,7 +976,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
       'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab', 'supabase',
-      'github-mcp',
+      'github-mcp', 'latchkey',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -769,8 +1094,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toEqual(['createConfluenceContent', 'discover', 'executeDestructive', 'executeRead', 'executeWrite']);
 
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const measured1104 = new Map(ATLASSIAN_1104_CAPTURE.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
-      const found = measured.get(tool.upstreamName);
+      const found = (ATLASSIAN_REPINNED_1104.includes(tool.upstreamName) ? measured1104 : measured)
+        .get(tool.upstreamName);
       expect(found).toBeDefined();
       // The namespace cannot carry camelCase, so the agent-facing name differs
       // from the vendor's; calls and drift use upstreamName.
@@ -785,9 +1112,62 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm'))
       .toHaveLength(5);
     expect(entry.tools.find((tool) => tool.upstreamName === 'addOrEditJiraIssueComment').irreversible).toBe(true);
+    // Since 11-04 a classic-page edit needs a token from a draft read, which
+    // the get_confluence_content pin already allows.
+    expect(entry.tools.find((tool) => tool.upstreamName === 'updateConfluenceContent').description)
+      .toContain('get_confluence_content(draft=true, detail=full)');
+    expect(Object.keys(entry.tools.find((tool) => tool.upstreamName === 'getConfluenceContent').inputSchema.properties))
+      .toEqual(expect.arrayContaining(['draft', 'detail']));
     expect(entryToolProjections(entry).find((tool) => tool.name === 'atlassian.add_or_edit_jira_issue_comment'))
       .toMatchObject({ irreversible: true, requiredWriteMode: 'write-with-confirm' });
     expect(capture.tools).toHaveLength(16);
+  });
+
+  test('the Latchkey pin is its measured list minus apply_migration, classed by the vendor\'s own hints', () => {
+    // An operator key: no issuer, client or scopes. The key's own reach is set
+    // when it is created at Latchkey, so the dashboard is both the access page
+    // and the revoke page; Latchkey has no revocation endpoint.
+    const capture = LATCHKEY_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'latchkey');
+    expect(entry.credentialMode).toBe('operator_key');
+    expect(entry).not.toHaveProperty('issuer');
+    expect(entry).not.toHaveProperty('scopes');
+    expect(capture.resource).toBe(entry.resource);
+    expect(entry.revoke).toEqual({ page: 'https://latchkey.dev/dashboard' });
+    expect(entry.accessPage).toBe('https://latchkey.dev/dashboard');
+    expect(hostedMcpRevokeTarget(entry)).toEqual(entry.revoke);
+
+    expect(capture.tools).toHaveLength(22);
+    expect(capture.tools.every((tool) => typeof tool.annotations?.readOnlyHint === 'boolean')).toBe(true);
+    // Operator-key intake refuses a key carrying migration:apply, so the tool
+    // that needs it is not pinned.
+    expect(capture.tools.map((tool) => tool.name).filter((name) => !entry.tools.some((pin) => pin.upstreamName === name)))
+      .toEqual(['apply_migration']);
+
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.description).not.toBe(found.description);
+    }
+    // The vendor warns that run_workflow inputs are visible; our shorter text keeps that.
+    const runWorkflow = entry.tools.find((tool) => tool.name === 'run_workflow');
+    expect(runWorkflow.description).toContain('not hidden in job logs');
+    expect(runWorkflow.description).toContain('set it as a secret in Latchkey');
+    expect(entry.tools.filter((tool) => tool.class === 'read')).toHaveLength(16);
+    expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm')
+      .map((tool) => tool.name).sort()).toEqual([
+      'latchkey.cancel_job', 'latchkey.dispatch_workflow', 'latchkey.run_job', 'latchkey.run_workflow',
+      'latchkey.set_batch_budget',
+    ]);
+    // Starting or cancelling compute cannot be taken back: each call parks even on a write grant.
+    expect(entry.tools.filter((tool) => tool.irreversible).map((tool) => tool.name).sort())
+      .toEqual(['cancel_job', 'dispatch_workflow', 'run_job', 'run_workflow']);
   });
 
   test('the Atlassian domain notice uses this instance\'s public API origin', () => {
@@ -859,9 +1239,88 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
-  test('the Sentry pin follows the 11-01 list, keeps the Triage writer, and restricts resource lookup to type and ID', () => {
+  test('the Sentry pin follows the 11-04 list, pins none of its new tools, and keeps the Triage writer', () => {
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     const capture = SENTRY_CAPTURE;
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.tools).toHaveLength(49);
+    const listed = new Set(capture.tools.map((tool) => tool.name));
+    // The same row as 11-01: no Triage writer, no Seer, and the by-name
+    // dispatcher is gone from every list.
+    ['update_issue', 'analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']
+      .forEach((name) => expect(listed.has(name)).toBe(false));
+    // The pin set is reviewed by hand, so a tool Sentry adds is never pinned by
+    // a re-capture: this list changes only with a review.
+    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual([
+      'find_organizations', 'find_projects', 'update_issue', 'search_errors', 'search_logs',
+      'search_traces', 'search_metrics', 'search_profiles', 'search_replays', 'search_issues',
+      'get_sentry_resource',
+    ]);
+    entry.tools.filter((tool) => tool.name !== 'update_issue')
+      .forEach((tool) => expect(listed.has(tool.upstreamName)).toBe(true));
+    // Which capture backs each pin's schema.
+    const backedBy = (name) => {
+      if (name === 'update_issue') return SENTRY_TRIAGE_CAPTURE;
+      if (name === 'find_organizations' || name === 'get_sentry_resource') return SENTRY_1101_CAPTURE;
+      return capture;
+    };
+    entry.tools.forEach((tool) => {
+      const found = backedBy(tool.upstreamName).tools.find((t) => t.name === tool.upstreamName);
+      expect(found).toBeDefined();
+      if (tool.name !== 'get_sentry_resource') {
+        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      }
+      // Every pin's annotations match its own capture, the writer's included,
+      // and every read pin's still match the live 11-04 list.
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      const live = capture.tools.find((t) => t.name === tool.upstreamName);
+      if (live) {
+        expect(tool.annotations?.readOnlyHint).toBe(live.annotations.readOnlyHint);
+        expect(tool.annotations?.destructiveHint).toBe(live.annotations.destructiveHint);
+      }
+    });
+    // On the 11-04 row every read assesses ok, the two older pins as compatible
+    // additions; the writer is unavailable to a row without Triage.
+    const assessed = assessEntryTools(entry, capture.tools);
+    expect(assessed.filter((tool) => tool.verdict !== 'ok'))
+      .toEqual([expect.objectContaining({ name: 'update_issue', verdict: 'tool_unavailable' })]);
+    ['find_organizations', 'get_sentry_resource'].forEach((name) => expect(assessed.find((tool) => tool.name === name))
+      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') }));
+  });
+
+  test('the 11-01 Sentry pins meet the 11-04 list only by loosenings, which the read rule now accepts', () => {
+    // On 11-04 each of these reads dropped organizationSlug from `required`
+    // and added an optional `fresh`. That was drift before the read rule took
+    // a property leaving `required`, and #3396 re-pinned all eight for it.
+    // Compared exactly, as a write pin is, the same pins still drift.
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
+    const reads = ['find_projects', 'search_errors', 'search_logs', 'search_traces', 'search_metrics',
+      'search_profiles', 'search_replays', 'search_issues'];
+    const old = {
+      ...entry,
+      tools: entry.tools.map((tool) => {
+        if (!reads.includes(tool.upstreamName)) return tool;
+        const captured = SENTRY_1101_CAPTURE.tools.find((t) => t.name === tool.upstreamName);
+        return { ...tool, inputSchema: captured.inputSchema };
+      }),
+    };
+    const localName = new Map(entry.tools.map((tool) => [tool.upstreamName, tool.name]));
+    const names = reads.map((upstream) => localName.get(upstream));
+    const assessed = assessEntryTools(old, SENTRY_CAPTURE.tools).filter((tool) => names.includes(tool.name));
+    expect(assessed.map((tool) => [tool.name, tool.verdict])).toEqual(names.map((name) => [name, 'ok']));
+    assessed.forEach((tool) => expect(tool.detail).toEqual(expect.stringContaining('compatib')));
+    const exact = {
+      ...old,
+      tools: old.tools.map((tool) => (reads.includes(tool.upstreamName) ? { ...tool, class: 'write', annotations: {} } : tool)),
+    };
+    const drifted = assessEntryTools(exact, SENTRY_CAPTURE.tools)
+      .filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name);
+    expect(drifted).toEqual(names);
+  });
+
+  test('the Sentry entry keeps its scopes, restricts resource lookup to type and ID, and parks the writer', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     expect(entry).toMatchObject({
       resource: 'https://mcp.sentry.dev/mcp',
       issuer: 'https://mcp.sentry.dev',
@@ -871,44 +1330,61 @@ describe('the shipped catalogue cannot land half-wired', () => {
         endpoint: 'https://mcp.sentry.dev/oauth/token',
       },
     });
-    expect(capture.server).toBe(entry.resource);
     expect(SENTRY_TRIAGE_CAPTURE.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
-    const excluded = new Set(['analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']);
-    // update_issue needs the Triage skill, so only the 10-19 list carries it.
-    expect(entry.tools.map((tool) => tool.upstreamName).filter((name) => name !== 'update_issue')).toEqual(
-      capture.tools.filter((tool) => !excluded.has(tool.name)).map((tool) => tool.name),
-    );
-    expect(capture.tools).toHaveLength(12);
-    expect(capture.tools.some((tool) => tool.name === 'update_issue')).toBe(false);
-    // find_dropped_events is no longer top-level for any row, so it is not pinned.
+    // find_dropped_events is top-level again on 11-04, but unreviewed, so it is not pinned.
     expect(entry.tools.some((tool) => tool.name === 'find_dropped_events')).toBe(false);
-    const measured = new Map([
-      ...SENTRY_TRIAGE_CAPTURE.tools.filter((tool) => tool.name === 'update_issue').map((tool) => [tool.name, tool]),
-      ...capture.tools.map((tool) => [tool.name, tool]),
-    ]);
     const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
-    expect(resource.inputSchema.properties.url).toBeUndefined();
-    expect(measured.get('get_sentry_resource').inputSchema.properties.url).toBeDefined();
+    // None of the vendor's URL-shaped routes is offered: `url` (11-01), and
+    // `resourceUrl` and `issueUrl` (added by 11-04).
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(resource.inputSchema.properties[name]).toBeUndefined());
+    const live = SENTRY_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties;
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(live[name]).toBeDefined());
+    expect(SENTRY_1101_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties.url)
+      .toBeDefined();
     expect(resource.inputSchema.properties.resourceType.enum).toEqual([
       'issue', 'event', 'trace', 'ai_conversation', 'replay', 'monitor', 'snapshot', 'dashboard',
     ]);
     expect(resource.description).toContain('by type and ID');
-    expect(assessEntryTools(entry, capture.tools).find((tool) => tool.name === 'get_sentry_resource'))
-      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') });
     expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
-    // On the 11-01 row every read assesses ok; the writer is unavailable to it.
-    expect(assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok'))
-      .toEqual([expect.objectContaining({ name: 'update_issue', verdict: 'tool_unavailable' })]);
-    for (const tool of entry.tools) {
-      const found = measured.get(tool.upstreamName);
-      expect(found).toBeDefined();
-      if (tool.name !== 'get_sentry_resource') {
-        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
-      }
-      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
-      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
-      expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
-    }
+    entry.tools.forEach((tool) => expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read'));
+  });
+
+  test('on the 11-04 lists every Notion and Atlassian pin assesses ok, and the old pins are the ones that drifted', () => {
+    const notion = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion');
+    const atlassian = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'atlassian');
+    const notOk = (entry, capture) => assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok');
+    expect(notOk(notion, NOTION_1104_CAPTURE)).toEqual([]);
+    expect(notOk(atlassian, ATLASSIAN_1104_CAPTURE)).toEqual([]);
+    // The three re-pinned reads leave the tracking-only fields out, so the
+    // model is not offered them and the broker refuses them by name.
+    NOTION_REPINNED_1104_READS.forEach((name) => {
+      const read = notion.tools.find((tool) => tool.upstreamName === name);
+      NOTION_TRACKING_FIELDS.forEach((field) => expect(read.inputSchema.properties[field]).toBeUndefined());
+    });
+    // move-pages now declares itself destructive; it was already irreversible.
+    expect(notion.tools.find((tool) => tool.upstreamName === 'notion-move-pages'))
+      .toMatchObject({ annotations: { destructiveHint: true }, irreversible: true });
+    const oldPins = (entry, capture, names) => ({
+      ...entry,
+      tools: entry.tools.map((tool) => {
+        if (!names.includes(tool.upstreamName)) return tool;
+        const before = capture.tools.find((t) => t.name === tool.upstreamName);
+        const { readOnlyHint, destructiveHint } = before.annotations;
+        return { ...tool, inputSchema: before.inputSchema, annotations: { readOnlyHint, destructiveHint } };
+      }),
+    });
+    const repinnedNotion = [...NOTION_REPINNED_1104_WRITES, ...NOTION_REPINNED_1104_READS];
+    const drifted = (entry, capture) => assessEntryTools(entry, capture.tools)
+      .filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name).sort();
+    expect(drifted(oldPins(notion, NOTION_CAPTURE, repinnedNotion), NOTION_1104_CAPTURE))
+      .toEqual(repinnedNotion.map((name) => name.replace(/-/g, '_')).sort());
+    expect(drifted(oldPins(atlassian, ATLASSIAN_CAPTURE, ATLASSIAN_REPINNED_1104), ATLASSIAN_1104_CAPTURE))
+      .toEqual(atlassian.tools.filter((tool) => ATLASSIAN_REPINNED_1104.includes(tool.upstreamName))
+        .map((tool) => tool.name).sort());
+    // Neither list's new tools are pinned.
+    expect(atlassian.tools.some((tool) => tool.upstreamName === 'listJiraIssueComments')).toBe(false);
+    expect(NOTION_1104_CAPTURE.tools).toHaveLength(74);
+    expect(ATLASSIAN_1104_CAPTURE.tools).toHaveLength(17);
   });
 
   test('the Supabase pin follows the capture and excludes spend, code, and credential tools', () => {
@@ -1239,11 +1715,15 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.scopes).toEqual([capture.tokenShape.grantedScope]);
     expect(entry.tools).toHaveLength(24);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const measured1104 = new Map(NOTION_1104_CAPTURE.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
-      const source = measured.get(tool.upstreamName);
+      const repinnedRead = NOTION_REPINNED_1104_READS.includes(tool.upstreamName);
+      const source = (repinnedRead || NOTION_REPINNED_1104_WRITES.includes(tool.upstreamName) ? measured1104 : measured)
+        .get(tool.upstreamName);
       expect(source).toBeDefined();
       expect(tool.name).toBe(tool.upstreamName.replace(/-/g, '_'));
-      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(source.inputSchema));
+      expect(canonicalJson(tool.inputSchema))
+        .toBe(canonicalJson(repinnedRead ? withoutTracking(source.inputSchema) : source.inputSchema));
       expect(tool.annotations).toMatchObject({
         readOnlyHint: source.annotations.readOnlyHint,
         destructiveHint: source.annotations.destructiveHint,
@@ -1446,5 +1926,37 @@ describe('a read pin has to claim the class, not just avoid denying it', () => {
       verdict: 'tool_drift',
       detail: 'readOnlyHint withdrawn upstream',
     });
+  });
+});
+
+describe('a withheld argument has to be one the pin offers and does not require (F101)', () => {
+  const withSchema = (withheldArgs) => linear({ tools: [pinned({
+    name: 'create_issue',
+    class: 'write',
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, telemetry: { type: 'object' } }, required: ['title'] },
+    withheldArgs,
+  })] });
+
+  test('an optional declared property can be withheld', () => {
+    expect(() => assertHostedMcpEntries([withSchema(['telemetry'])])).not.toThrow();
+  });
+
+  test('a name the pin does not declare is refused', () => {
+    expect(refusal([withSchema(['intent'])])).toContain('withholds an argument it does not declare: linear.create_issue intent');
+  });
+
+  test('a required property is refused, since dropping it would break every call', () => {
+    expect(refusal([withSchema(['title'])])).toContain('withholds a required argument: linear.create_issue title');
+  });
+
+  test('every shipped Notion pin withholds each tracking-only field it declares', () => {
+    const notion = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'notion');
+    // Not vacuous: Notion's writers declare the fields since the 11-04 re-pin.
+    expect(notion.tools.filter((tool) => tool.withheldArgs?.length === 3).length).toBeGreaterThanOrEqual(11);
+    for (const tool of notion.tools) {
+      const declared = Object.keys(tool.inputSchema.properties || {});
+      const tracking = ['skill', 'instructions_version', 'telemetry'].filter((name) => declared.includes(name));
+      expect([tool.name, [...(tool.withheldArgs || [])].sort()]).toEqual([tool.name, tracking.sort()]);
+    }
   });
 });

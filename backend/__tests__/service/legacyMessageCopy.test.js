@@ -56,6 +56,9 @@ d('TASK-503: copy a legacy Mongo message into PostgreSQL', () => {
   beforeAll(async () => {
     pool = connect();
     await pool.query(fs.readFileSync(path.join(__dirname, '../../config/schema.sql'), 'utf8'));
+    // schema.sql is the frozen 0001 baseline; the copy writes 0005's columns.
+    await pool.query(fs.readFileSync(path.join(__dirname, '../../config/migrations/0005_message_summary_kind.sql'), 'utf8'));
+    await pool.query(fs.readFileSync(path.join(__dirname, '../../config/migrations/0006_message_receipt.sql'), 'utf8'));
     await pool.query(
       `INSERT INTO pods (id, name, type, created_by) VALUES ($1, $2, 'chat', $3)
        ON CONFLICT (id) DO NOTHING`,
@@ -157,6 +160,15 @@ d('TASK-503: copy a legacy Mongo message into PostgreSQL', () => {
     const doc = await insertFallback('card', { messageType: 'card', payload, authorKind: 'kernel' });
     await copyOne(doc);
     expect((await pgRowsFor(doc._id))[0]).toMatchObject({ payload, author_kind: 'kernel' });
+  });
+
+  test('the message contract survives the copy (D245)', async () => {
+    const receipt = { adapter: 'codex', turns: 1, source: 'self-reported' };
+    // A Mongo document claiming another source is re-stamped on the copy.
+    const doc = await insertFallback('contract', { summary: 'Fixed it', kind: 'result', receipt: { ...receipt, source: 'server' } });
+    await copyOne(doc);
+    const { rows: [row] } = await pool.query('SELECT summary, kind, receipt FROM messages WHERE legacy_mongo_id = $1', [String(doc._id)]);
+    expect(row).toEqual({ summary: 'Fixed it', kind: 'result', receipt });
   });
 
   test('copied IDs work as replies and thread roots and reject missing or cross-pod targets', async () => {

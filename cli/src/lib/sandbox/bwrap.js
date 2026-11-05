@@ -34,7 +34,14 @@ const expandHome = (p) => {
 // Never advise `sandbox.mode: none` here: a public seat refuses it, and the
 // mechanisms that do exist are named instead.
 const MACOS_MESSAGE = 'bwrap is Linux-only. On macOS a public seat runs under Seatbelt '
-  + '(sandbox.mode workspace or read-only); Windows has no supported sandbox yet, so use WSL 2.';
+  + '(sandbox.mode workspace or read-only).';
+// D245: native Windows has no sandbox for agents. WSL runs the Linux one,
+// Claude Code included since F96, and host-check.js offers it; this message
+// names the native path, which is the user's own opt-in
+// (sandbox/windows-unsandboxed.js).
+const WINDOWS_MESSAGE = 'bwrap is Linux-only, and native Windows has no sandbox for agents yet. '
+  + 'To run this agent without one, with your own access to files and commands, add --unsandboxed.';
+const nonLinuxMessage = (platform) => (platform === 'win32' ? WINDOWS_MESSAGE : MACOS_MESSAGE);
 
 const DEFAULT_RO_BINDS = [
   '/etc/ssl/certs',
@@ -55,7 +62,7 @@ const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
 
 export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } = {}) => {
   if (platform !== 'linux') {
-    return { available: false, error: MACOS_MESSAGE };
+    return { available: false, error: nonLinuxMessage(platform) };
   }
   try {
     const res = spawn('bwrap', ['--version'], { encoding: 'utf8' });
@@ -98,7 +105,7 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
  */
 export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
   if (process.platform !== 'linux') {
-    throw new Error(MACOS_MESSAGE);
+    throw new Error(nonLinuxMessage(process.platform));
   }
   if (!Array.isArray(innerArgv) || innerArgv.length === 0) {
     throw new Error('wrapArgvWithBwrap requires a non-empty innerArgv');

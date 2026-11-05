@@ -19,6 +19,9 @@ const {
 } = require('../../services/webhookDeliveryService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+import { applyRelayCommand, parseRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
+import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
 
@@ -46,6 +49,13 @@ const UNMUTE_COMMAND = '/unmute';
 const HELP_COMMAND = '/help';
 
 const normalizeCommand = (raw = '') => raw.split('@')[0].toLowerCase();
+
+// Telegram's spelling of the shared bridge commands is a leading slash on the
+// core's names; the parse itself is the core's, shared with Discord.
+const TELEGRAM_RELAY_COMMANDS = new Set([MODE_COMMAND, STATUS_COMMAND, MUTE_COMMAND, UNMUTE_COMMAND, HELP_COMMAND]);
+const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => (
+  command && TELEGRAM_RELAY_COMMANDS.has(command) ? parseRelayCommand(command.slice(1), arg) : null
+);
 
 const getMessageFromUpdate = (update: any) => update?.message || update?.channel_post || null;
 
@@ -172,6 +182,32 @@ const handleEnableCommand = async (chat: any, code: any) => {
     return;
   }
 
+  // F143: a group, supergroup or channel is read by people outside the pod, so
+  // binding one takes authority over the pod (its creator or an instance admin).
+  // The chat type is only known here, so the rule runs here, against the row's
+  // creator: the code is theirs (a re-mint on /:id/connect-code keeps the row's
+  // creator, so an admin re-minting a member's row cannot lend it authority).
+  // The code is not spent, so the same person can still redeem it in a private
+  // chat with the bot.
+  const pod = await Pod.findById(integration.podId).lean();
+  try {
+    await assertCanBindSurface({
+      userId: integration.createdBy, pod, type: 'telegram', config: { chatId, chatType },
+    });
+  } catch (error) {
+    if (!(error instanceof SurfaceBindRefusedError)) throw error;
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      // About the code, not the sender: a pod creator redeeming a code minted on
+      // a member's row is refused too, and must not be told they lack authority.
+      "⚠️ This code was made by someone who can't connect a group. "
+      + "The pod's creator or an admin needs to set up the Telegram connection. "
+      + 'This code still works in a private chat with this bot.',
+    );
+    return;
+  }
+
   // `errorMessage: null` because the working bind is the other state of the
   // field the failure writes, and only a bind knows the connector works again
   // (wren 73779). `new: true` is what the confirmation below classifies against:
@@ -194,7 +230,6 @@ const handleEnableCommand = async (chat: any, code: any) => {
     },
   }, { new: true });
 
-  const pod = await Pod.findById(integration.podId).lean();
   const podName = pod?.name || 'your pod';
 
   // Escaped because parse_mode is HTML: a pod named `A <b>` made Telegram reject
@@ -306,6 +341,26 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
     return;
   }
 
+  // F143: /tldr is what a group binding sends OUT — the pod's summary, to
+  // everyone in the chat. A shared chat bound before the rule by someone without
+  // authority over the pod gets nothing until the pod's creator reconnects it.
+  if (surfaceAudienceOf('telegram', integration.config) === 'shared-surface') {
+    const pod = await Pod.findById(integration.podId).lean();
+    try {
+      await assertCanBindSurface({
+        userId: integration.createdBy, pod, type: 'telegram', config: integration.config,
+      });
+    } catch (error) {
+      if (!(error instanceof SurfaceBindRefusedError)) throw error;
+      await telegramService.sendMessage(
+        botToken,
+        chatId,
+        "Only the pod's creator can share this pod's summary with a group or channel. Ask them to reconnect it.",
+      );
+      return;
+    }
+  }
+
   const latestSummary = await Summary.findOne({
     type: 'chats',
     podId: integration.podId,
@@ -346,69 +401,60 @@ const HELP_TEXT = [
   '  • <b>mirror</b>: every agent message in the pod is copied here',
   '  • <b>attention</b>: only escalations and the lead agent reach you',
   '/status — pod, mode, and mute state for this chat',
-  '/mute [minutes] — pause relay to this chat (default 60); /unmute to resume',
+  '/mute [30m | 2h] — pause relay to this chat (default 60 minutes; a bare number is minutes); /unmute to resume',
   '/tldr — latest pod summary',
   '/summary — summarize recent chat here into the pod',
 ].join('\n');
 
-// /mode [mirror|attention] — the two relay modes are one stored flag:
-// mirror ⇔ config.relayAllAgentMessages. Attention mode leaves the
-// escalation gate (markers + lead agent) as the only path to the phone.
-const handleModeCommand = async (chat: any, integration: any, arg?: string) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  const current = integration.config?.relayAllAgentMessages === true ? 'mirror' : 'attention';
-  const wanted = (arg || '').toLowerCase();
-  if (!wanted) {
-    return sendToChat(chatId, `Relay mode: <b>${current}</b>. Switch with /mode mirror or /mode attention.`);
+// The bridge commands' state changes are the shared chat-relay core's
+// (applyRelayCommand); what stays here is Telegram's spelling — `/mode`, the
+// arg lowercased — and its HTML replies.
+const telegramCommandReply = (outcome: RelayCommandOutcome, podName?: string): string => {
+  switch (outcome.kind) {
+    case 'not-linked':
+      return NOT_LINKED;
+    case 'help':
+      return HELP_TEXT;
+    case 'mode-show':
+      return `Relay mode: <b>${outcome.mode}</b>. Switch with /mode mirror or /mode attention.`;
+    case 'mode-usage':
+      return 'Usage: /mode mirror | attention';
+    case 'mode-set':
+      return outcome.mode === 'mirror'
+        ? 'Mode: <b>mirror</b> — every agent message in the pod is copied here.'
+        : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.';
+    case 'mute':
+      return `Muted for ${outcome.minutes} min — nothing relays here until then. /unmute to resume.`;
+    case 'mute-usage':
+      return 'Usage: /mute 30m or /mute 2h (a bare number is minutes, at most 24 hours)';
+    case 'unmute':
+      return 'Unmuted — relay resumes.';
+    case 'status': {
+      const muted = outcome.mutedUntil
+        ? `muted until ${outcome.mutedUntil.toISOString().slice(11, 16)} UTC`
+        : 'not muted';
+      return [
+        `Pod: <b>${escapeHtml(podName || 'unknown')}</b>`,
+        `Mode: <b>${outcome.mode}</b> · Relay: ${outcome.liveRelay ? 'on' : 'off'} · ${muted}`,
+        outcome.lead ? `Lead agent: ${escapeHtml(outcome.lead)}` : null,
+      ].filter(Boolean).join('\n');
+    }
+    default:
+      return HELP_TEXT;
   }
-  if (wanted !== 'mirror' && wanted !== 'attention') {
-    return sendToChat(chatId, 'Usage: /mode mirror | attention');
+};
+
+// Attention mode leaves the escalation gate (markers + lead agent) as the only
+// path to the phone; /status reads the active pod, so it needs one first.
+const handleRelayCommand = async (chat: any, integration: any, command: RelayCommand) => {
+  const chatId = chat?.id?.toString();
+  if (command.name === 'status' && integration && !integration.podId) {
+    return sendToChat(chatId, 'This connector has no active pod. Choose one in Commonly first.');
   }
-  await Integration.findByIdAndUpdate(integration._id, {
-    $set: { 'config.relayAllAgentMessages': wanted === 'mirror' },
-  });
-  return sendToChat(chatId, wanted === 'mirror'
-    ? 'Mode: <b>mirror</b> — every agent message in the pod is copied here.'
-    : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.');
-};
-
-const handleStatusCommand = async (chat: any, integration: any) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  if (!integration.podId) return sendToChat(chatId, 'This connector has no active pod. Choose one in Commonly first.');
-  const pod = await Pod.findById(integration.podId).lean();
-  const mode = integration.config?.relayAllAgentMessages === true ? 'mirror' : 'attention';
-  const mutedUntil = integration.config?.relayMutedUntil;
-  const muted = mutedUntil && new Date(mutedUntil) > new Date()
-    ? `muted until ${new Date(mutedUntil).toISOString().slice(11, 16)} UTC`
-    : 'not muted';
-  const lead = integration.config?.leadAgentUsername;
-  return sendToChat(chatId, [
-    `Pod: <b>${escapeHtml(pod?.name || 'unknown')}</b>`,
-    `Mode: <b>${mode}</b> · Relay: ${integration.config?.liveRelay ? 'on' : 'off'} · ${muted}`,
-    lead ? `Lead agent: ${escapeHtml(lead)}` : null,
-  ].filter(Boolean).join('\n'));
-};
-
-const handleMuteCommand = async (chat: any, integration: any, arg?: string) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  const minutes = Math.min(Math.max(parseInt(arg || '60', 10) || 60, 1), 24 * 60);
-  const until = new Date(Date.now() + minutes * 60_000);
-  await Integration.findByIdAndUpdate(integration._id, {
-    $set: { 'config.relayMutedUntil': until },
-  });
-  return sendToChat(chatId, `Muted for ${minutes} min — nothing relays here until then. /unmute to resume.`);
-};
-
-const handleUnmuteCommand = async (chat: any, integration: any) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  await Integration.findByIdAndUpdate(integration._id, {
-    $unset: { 'config.relayMutedUntil': '' },
-  });
-  return sendToChat(chatId, 'Unmuted — relay resumes.');
+  const outcome = applyRelayCommand(command, integration);
+  if ('update' in outcome) await Integration.findByIdAndUpdate(integration._id, outcome.update);
+  const pod = outcome.kind === 'status' ? await Pod.findById(integration.podId).lean() : null;
+  return sendToChat(chatId, telegramCommandReply(outcome, pod?.name));
 };
 
 // Dedup TTL: Telegram redelivers an unacked update for well under this window;
@@ -480,28 +526,10 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
       return res.sendStatus(200);
     }
 
-    if (command === MODE_COMMAND) {
-      await handleModeCommand(chat, integration, args[0]);
-      return res.sendStatus(200);
-    }
-
-    if (command === STATUS_COMMAND) {
-      await handleStatusCommand(chat, integration);
-      return res.sendStatus(200);
-    }
-
-    if (command === MUTE_COMMAND) {
-      await handleMuteCommand(chat, integration, args[0]);
-      return res.sendStatus(200);
-    }
-
-    if (command === UNMUTE_COMMAND) {
-      await handleUnmuteCommand(chat, integration);
-      return res.sendStatus(200);
-    }
-
-    if (command === HELP_COMMAND) {
-      await sendToChat(chatId, HELP_TEXT);
+    // /mute reads its whole argument (`/mute 2 hours`); /mode reads one word.
+    const relayCommand = parseTelegramRelayCommand(command, command === MUTE_COMMAND ? args.join(' ') : args[0]);
+    if (relayCommand) {
+      await handleRelayCommand(chat, integration, relayCommand);
       return res.sendStatus(200);
     }
 

@@ -1,0 +1,302 @@
+/* eslint-disable global-require, import/no-unresolved, import/extensions --
+   the requires must follow jest.mock, and this corpus resolves TS through the TS parser */
+// F91 (D243): native turns run on the deployment's native model (Claude Haiku
+// on dev), and a turn that holds a connector grant runs only on it, with no
+// fallback, so connector data never reaches another vendor. Google's Limited
+// Use for Calendar (F83) rests on this. Mocks as in the hosted-broker test.
+const mockAxiosPost = jest.fn();
+jest.mock('axios', () => ({ __esModule: true, default: { post: (...args) => mockAxiosPost(...args) } }));
+
+const mockSeatFind = jest.fn();
+const mockSeatFindOne = jest.fn();
+// The models are mocked with BOTH shapes on purpose: this file's code reaches
+// them two ways — `nativeRuntimeService` uses the CommonJS `require(...)` it
+// already used (`User.findOne`), and `grantBrokerProjectionService` uses a
+// default import (`default.find`). Their real modules export both (the CJS-compat
+// tail at the bottom of each model), so a mock that offers only one would fail on
+// a shape the production code never sees.
+//
+// `find` is still mocked even though the seat lookup no longer calls it: it is
+// the query the OLD name-pair resolution used, so a witness can hand it a
+// DIFFERENT in-pod row and show which row the broker actually follows.
+jest.mock('../../../models/User', () => ({
+  __esModule: true,
+  default: { find: (...args) => mockSeatFind(...args), findOne: (...args) => mockSeatFindOne(...args) },
+  find: (...args) => mockSeatFind(...args),
+  findOne: (...args) => mockSeatFindOne(...args),
+}));
+
+const mockPodFindById = jest.fn();
+const mockPodFind = jest.fn();
+jest.mock('../../../models/Pod', () => ({
+  __esModule: true,
+  default: {
+    findById: (...args) => mockPodFindById(...args),
+    find: (...args) => mockPodFind(...args),
+  },
+  findById: (...args) => mockPodFindById(...args),
+  find: (...args) => mockPodFind(...args),
+}));
+
+const mockRoomGrantFind = jest.fn();
+jest.mock('../../../models/RoomGrant', () => ({
+  __esModule: true,
+  default: { find: (...args) => mockRoomGrantFind(...args), findOne: jest.fn() },
+  find: (...args) => mockRoomGrantFind(...args),
+  findOne: jest.fn(),
+}));
+
+const mockCallTool = jest.fn();
+const mockOutsiderGrantPolicy = jest.fn();
+jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
+  podHasOutsiderWritableGrant: (...args) => mockOutsiderGrantPolicy(...args),
+}));
+jest.mock('../../../services/toolBrokerService', () => ({
+  ...jest.requireActual('../../../services/toolBrokerService'),
+  callTool: (...args) => mockCallTool(...args),
+}));
+
+const mockRunSave = jest.fn();
+jest.mock('../../../models/AgentRun', () => ({
+  create: jest.fn(),
+  // The per-user ceiling and the daily cap both count through this model, and
+  // the ceiling fails CLOSED on a missing counter (user_ceiling_check_failed),
+  // so a mock without it silently turns every run into a failed run.
+  countDocuments: jest.fn().mockResolvedValue(0),
+}));
+
+jest.mock('../../../services/agentTypingService', () => ({
+  emitAgentTypingStart: jest.fn(),
+  emitAgentTypingStop: jest.fn(),
+}));
+
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn().mockResolvedValue({ success: true }),
+}));
+// The pod-message read follows PG_HOST (TASK-503) and the unit setup unsets
+// it, so name a host for the mocked PG model below to answer.
+process.env.PG_HOST = 'pg.test';
+jest.mock('../../../models/pg/Message', () => ({
+  findByPodId: jest.fn().mockResolvedValue([]),
+}));
+
+
+// Read at module load, like LITELLM_CHAT_MODEL.
+process.env.NATIVE_RUNTIME_MODEL = 'claude-haiku-5-5';
+process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
+const AgentRun = require('../../../models/AgentRun');
+const { postMessage } = require('../../../services/agentMessageService');
+const {
+  runAgent, nativeModelFor, guardrailsForRun, hostedModelsOffered,
+} = require('../../../services/nativeRuntimeService');
+
+const POD = '507f1f77bcf86cd799439011';
+const SEAT = '507f1f77bcf86cd799439013';
+const NATIVE = 'claude-haiku-5-5';
+const chain = (rows) => ({ select: () => ({ lean: async () => rows }) });
+
+const installation = (model) => ({
+  podId: POD,
+  agentName: 'scout',
+  instanceId: 'default',
+  displayName: 'Scout',
+  installedBy: '507f1f77bcf86cd799439099',
+  config: { runtime: { runtimeType: 'native' }, tools: ['commonly_post_message'], ...(model ? { model } : {}) },
+});
+const CALENDAR_GRANT = {
+  grantId: 'grant-calendar',
+  target: { kind: 'seat', id: SEAT },
+  audience: [SEAT],
+  tools: ['google-calendar.list_events'],
+  writeMode: 'read',
+};
+const reply = (content, finishReason = 'stop') => ({
+  status: 200,
+  data: {
+    choices: [{ finish_reason: finishReason, message: { role: 'assistant', content } }],
+    usage: { prompt_tokens: 12, completion_tokens: 6, total_tokens: 18 },
+  },
+  headers: {},
+});
+const TRIGGER = { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'what is on my calendar?' } };
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockOutsiderGrantPolicy.mockResolvedValue(false);
+  process.env.LITELLM_BASE_URL = 'http://litellm.test';
+  process.env.LITELLM_MASTER_KEY = 'test-key';
+  mockPodFindById.mockReturnValue(chain({ name: 'Launch Room', members: [SEAT] }));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
+  mockSeatFindOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: SEAT }) }) });
+  mockSeatFind.mockReturnValue(chain([{ _id: SEAT }]));
+  mockRoomGrantFind.mockReturnValue(chain([]));
+  AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: mockRunSave }));
+});
+
+afterAll(() => {
+  delete process.env.LITELLM_BASE_URL;
+  delete process.env.LITELLM_MASTER_KEY;
+  delete process.env.NATIVE_RUNTIME_MODEL;
+  delete process.env.LITELLM_CHAT_MODEL;
+});
+
+describe('which model a native turn runs on', () => {
+  test('the old platform default and an unset model both follow the native model', () => {
+    const env = { nativeModel: NATIVE, chatModel: 'deepseek-v4-flash' };
+    expect(nativeModelFor({ ...env, configured: undefined, connectorRun: false })).toBe(NATIVE);
+    expect(nativeModelFor({ ...env, configured: 'deepseek-v4-flash', connectorRun: false })).toBe(NATIVE);
+  });
+
+  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only. Every pin the
+  // deployment does not offer maps to the native model server-side; the
+  // stored value is left as it is.
+  test.each([
+    'deepseek-v4-flash', 'deepseek-flash-1017', 'gemini-2.5-flash', 'google/gemini-2.5-flash', 'gpt-5.4',
+    'openai-codex/gpt-5.4', 'codex-mini-latest', 'nvidia/nemotron-3-super-120b-a12b:free',
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'claude-sonnet-5-5',
+  ])('a legacy pin %s runs on the native model, with or without a grant', (pin) => {
+    const env = { nativeModel: NATIVE, chatModel: 'deepseek-v4-flash' };
+    expect(nativeModelFor({ ...env, configured: pin, connectorRun: false })).toBe(NATIVE);
+    expect(nativeModelFor({ ...env, configured: pin, connectorRun: true })).toBe(NATIVE);
+  });
+
+  test('the deployment offers only the native model, so a pin on it is kept', () => {
+    expect(hostedModelsOffered(NATIVE)).toEqual([NATIVE]);
+    expect(hostedModelsOffered('')).toEqual([]);
+    const env = { nativeModel: NATIVE, chatModel: 'deepseek-v4-flash' };
+    expect(nativeModelFor({ ...env, configured: NATIVE, connectorRun: false })).toBe(NATIVE);
+  });
+
+  test('with no native model set, nothing changes', () => {
+    const env = { nativeModel: '', chatModel: 'deepseek-v4-flash' };
+    expect(nativeModelFor({ ...env, configured: undefined, connectorRun: true })).toBe('deepseek-v4-flash');
+    expect(nativeModelFor({ ...env, configured: 'gpt-5.4', connectorRun: true })).toBe('gpt-5.4');
+  });
+
+  test('Scout, stored with the old default, answers on the native model', async () => {
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+    await runAgent(installation('deepseek-v4-flash'), TRIGGER);
+    const request = mockAxiosPost.mock.calls[0][1];
+    expect(request.model).toBe(NATIVE);
+    expect(request.disable_fallbacks).toBe(true);
+    // Thinking off, so a tool round replays without thinking blocks; a bounded output.
+    expect(request.thinking).toEqual({ type: 'disabled' });
+    expect(request.max_tokens).toBe(8192);
+  });
+
+  test('a turn holding a Calendar grant calls only the native model, with no fallback', async () => {
+    mockRoomGrantFind.mockReturnValue(chain([CALENDAR_GRANT]));
+    mockAxiosPost.mockResolvedValueOnce(reply('Nothing today.'));
+    // Pinned to a model that is not the native one: the grant still wins.
+    await runAgent(installation('gpt-5.4'), TRIGGER);
+    const request = mockAxiosPost.mock.calls[0][1];
+    expect(request.tools.map((tool) => tool.function.name).some((name) => /calendar/.test(name))).toBe(true);
+    expect(request.model).toBe(NATIVE);
+    expect(request.disable_fallbacks).toBe(true);
+  });
+
+  // F92 (CodeRabbit on #3383): a Calendar result would otherwise ride every
+  // later request into openai-moderation-enforce. Once Calendar is offered only
+  // guardrails that call no other provider stay on; without it both stay.
+  test('a turn offered Calendar drops the OpenAI moderation guardrail; other turns keep it', async () => {
+    mockRoomGrantFind.mockReturnValue(chain([CALENDAR_GRANT]));
+    mockAxiosPost.mockResolvedValueOnce(reply('Nothing today.'));
+    await runAgent(installation('gpt-5.4'), TRIGGER);
+    expect(mockAxiosPost.mock.calls[0][1].guardrails).toEqual(['injection-guard']);
+
+    mockAxiosPost.mockClear();
+    mockRoomGrantFind.mockReturnValue(chain([]));
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+    await runAgent(installation(), TRIGGER);
+    expect(mockAxiosPost.mock.calls[0][1].guardrails).toEqual(['openai-moderation-enforce', 'injection-guard']);
+  });
+
+  test('guardrailsForRun keeps only local guardrails once Limited-Use is offered', () => {
+    expect(guardrailsForRun(['openai-moderation-enforce', 'injection-guard'], true)).toEqual(['injection-guard']);
+    expect(guardrailsForRun(['openai-moderation-enforce'], true)).toEqual([]);
+    expect(guardrailsForRun(['openai-moderation-enforce', 'injection-guard'], false))
+      .toEqual(['openai-moderation-enforce', 'injection-guard']);
+  });
+
+  test('a non-Claude pin without a grant runs on the native model too', async () => {
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+    await runAgent(installation('gpt-5.4'), TRIGGER);
+    const request = mockAxiosPost.mock.calls[0][1];
+    expect(request.model).toBe(NATIVE);
+    expect(request.disable_fallbacks).toBe(true);
+    expect(request.thinking).toEqual({ type: 'disabled' });
+  });
+});
+
+// The spend check before DeepSeek is deleted reads who was moved, so a mapped
+// pin is logged once per agent and pin, with the model it now runs on.
+describe('a mapped pin is logged once per agent', () => {
+  let warn;
+  beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => warn.mockRestore());
+  const mapped = () => warn.mock.calls.map(([line]) => line)
+    .filter((line) => typeof line === 'string' && line.includes('native_model_pin_mapped'))
+    .map((line) => JSON.parse(line));
+
+  test('names the agent, the old pin and the new model, once', async () => {
+    const pinned = { ...installation('gemini-2.5-flash'), agentName: 'pod-welcomer', instanceId: 'w-1' };
+    mockAxiosPost.mockResolvedValue(reply('Hi.'));
+    await runAgent(pinned, TRIGGER);
+    await runAgent(pinned, TRIGGER);
+    expect(mapped()).toEqual([{
+      event: 'native_model_pin_mapped', agentName: 'pod-welcomer', instanceId: 'w-1', pin: 'gemini-2.5-flash', model: NATIVE,
+    }]);
+  });
+
+  test('an unset model or a pin the deployment offers logs nothing', async () => {
+    mockAxiosPost.mockResolvedValue(reply('Hi.'));
+    await runAgent({ ...installation(), agentName: 'quiet-a' }, TRIGGER);
+    await runAgent({ ...installation(NATIVE), agentName: 'quiet-b' }, TRIGGER);
+    expect(mapped()).toEqual([]);
+  });
+});
+
+describe('a refusal', () => {
+  // Haiku 5.5 has no server-side fallback for a refusal; LiteLLM v1.106.2 maps
+  // Anthropic's stop_reason "refusal" to finish_reason "content_filter".
+  test('posts nothing of a partial answer and records a blocked run', async () => {
+    mockAxiosPost.mockResolvedValueOnce(reply('Here is how to', 'content_filter'));
+    const result = await runAgent(installation(), TRIGGER);
+    expect(postMessage.mock.calls.some(([args]) => /Here is how to/.test(JSON.stringify(args)))).toBe(false);
+    expect(mockAxiosPost).toHaveBeenCalledTimes(1);
+    const saved = await AgentRun.create.mock.results[0].value;
+    expect(saved.status).toBe('failed');
+    expect(saved.errorKind).toBe('guardrail_blocked');
+    expect(saved.errorMessage).toMatch(/declined/);
+    expect(result.status).toBe('failed');
+  });
+});
+
+// F103 proof for the DeepSeek delete (Cofounder's condition 1): every
+// first-party native agent (Scout, Recorder, pod-welcomer, task-clerk,
+// pod-summarizer) still pins deepseek-v4-flash in its config, and the seed
+// installs it as a native agent with that pin. On a deployment with a native
+// model, each one's turn runs on that model, not on its pin.
+describe('every first-party native agent answers on the native model', () => {
+  const { FIRST_PARTY_APPS } = require('../../../config/native-agents/apps');
+  const { buildInstallationConfig } = require('../../../scripts/seed-native-agents');
+
+  test('the list covers Scout and Recorder', () => {
+    expect(FIRST_PARTY_APPS.map((app) => app.agentName)).toEqual(expect.arrayContaining(['scout', 'recorder']));
+  });
+
+  test.each(FIRST_PARTY_APPS.map((app) => [app.agentName, app]))('%s, installed as seeded', async (_name, app) => {
+    const seeded = buildInstallationConfig(app);
+    expect(seeded.runtime).toEqual({ runtimeType: 'native' });
+    expect(seeded.model).toBe(app.model);
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+
+    await runAgent({
+      ...installation(seeded.model),
+      agentName: app.agentName,
+      displayName: app.displayName || app.agentName,
+    }, TRIGGER);
+
+    expect(mockAxiosPost.mock.calls[0][1].model).toBe(NATIVE);
+  });
+});

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ShellGlyph } from '../icons/glyphs';
 
 // TASK-730 (D223): the d215 Settings frame (#s-settings) rebuilt from the
 // shared primitives alone. Same groups, rows and order as the artboard; the
@@ -19,14 +20,14 @@ const V2SettingsFrame: React.FC = () => (
         <div className="lb">alex-kim</div>
         <div className="vl"><span className="mo">@alex-kim · member</span></div>
         <div className="ac">
-          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Edit name and username">✎</button>
+          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Edit name and username"><ShellGlyph name="pencil" /></button>
         </div>
       </div>
       <div className="v2p-lrow">
         <div className="lb">Email</div>
         <div className="vl"><span className="mo">[email]</span></div>
         <div className="ac">
-          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Change email">✎</button>
+          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Change email"><ShellGlyph name="pencil" /></button>
         </div>
       </div>
       <div className="v2p-lrow">
@@ -55,7 +56,7 @@ const V2SettingsFrame: React.FC = () => (
         <div className="lb">Connectors</div>
         <div className="vl"><span className="mo">0 connected</span></div>
         <div className="ac">
-          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Open Connectors">›</button>
+          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Open Connectors"><ShellGlyph name="chevron-right" /></button>
         </div>
       </div>
     </div>

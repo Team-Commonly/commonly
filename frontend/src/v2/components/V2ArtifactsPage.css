@@ -1,0 +1,110 @@
+/* Artifacts, lifted from docs/design/artboards/d215 #s-artifacts-signal (the .sg block:
+   .ph head, .gtitle labels over hairline-split .list groups, the .sg-ext badge, Memory's
+   .hv hover keys, .seg, .sel, .search, .b keys). Class names keep the frame's under a v2a-
+   prefix; the list, group title, segment and keys are the v2p- primitives. Colours come only
+   from --v2-* tokens, so light and dark share one rule set. Pinned by v2-layout-invariants. */
+
+/* The page fills the pane: no feature-page inset or cap (the route passes v2-feature--artifacts,
+   the same opt-out connectors and memory use). The head stays put; the body scrolls under it. */
+.v2-feature--artifacts > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--artifacts .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2a { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; color: var(--v2-text-primary); }
+
+/* Mono never sits under the 11px type floor (ruling h), so the frame's 10.5px key cap and 9.5px
+   badge are set at 11px. */
+/* ---- head: the shared .v2p-ph bar Activity uses (64px, hairline under it, Bricolage 24/800 at
+   -0.03em, 28px in from the pane), then search, kind segment and pod select at the right ---- */
+.v2a-head.v2p-ph { min-width: 0; }
+.v2a-head.v2p-ph .meta { min-width: 0; font: 500 11.5px/1 var(--v2-font-mono); overflow: hidden; text-overflow: ellipsis; }
+.v2-root:lang(zh) .v2a-title { letter-spacing: 0; }
+.v2a-search { flex: none; width: 240px; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 10px; border-radius: var(--v2-r-10); background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); color: var(--v2-text-placeholder); font-size: 13px; min-width: 0; }
+.v2a-search svg.i { flex: none; width: 15px; height: 15px; }
+.v2a-search input { all: unset; flex: 1; min-width: 0; font-size: 13px; color: var(--v2-text-primary); }
+.v2a-search input::placeholder { color: var(--v2-text-placeholder); }
+.v2a-search input::-webkit-search-cancel-button { display: none; }
+.v2a-search:focus-within { box-shadow: inset 0 0 0 1px var(--v2-border-soft), var(--v2-focus-ring); }
+.v2a-kb { margin-left: auto; padding: 3px 5px; border-radius: 5px; background: var(--v2-surface); box-shadow: 0 0 0 1px var(--v2-border-soft); font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+/* .sel: a native select dressed as the frame's select key, as agent settings dresses its own. */
+.v2a-sel { --box-h: 32px; position: relative; flex: none; height: var(--box-h); box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 11px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border); font: 500 12.5px/1 var(--v2-font); color: var(--v2-ink-2); white-space: nowrap; }
+.v2a-sel select { all: unset; box-sizing: border-box; cursor: pointer; max-width: 180px; height: var(--box-h); padding-right: 20px; margin-right: -20px; font: inherit; line-height: var(--box-h); color: inherit; overflow: hidden; text-overflow: ellipsis; }
+.v2a-sel svg.i { width: 14px; height: 14px; color: var(--v2-text-muted); pointer-events: none; }
+.v2a-sel:focus-within { box-shadow: inset 0 0 0 1px var(--v2-border), var(--v2-focus-ring); }
+.v2a-head svg.i, .v2a-body svg.i { flex: none; }
+
+/* ---- body: one centred 760 column ---- */
+.v2a-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; box-sizing: border-box; }
+.v2a-col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; }
+.v2a-gtitle svg.i { width: 13px; height: 13px; }
+.v2a-group + .v2a-group .v2a-gtitle { margin-top: 18px; }
+.v2a-group:first-child .v2a-gtitle { margin-top: 0; }
+.v2a-list { list-style: none; margin: 0; padding: 0; overflow: hidden; }
+
+/* ---- rows: hairline-split, no rail or inset (D225) ---- */
+.v2a-row { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 58px; padding: 9px 12px 9px 14px; border-top: 1px solid var(--v2-border-soft); box-sizing: border-box; }
+.v2a-row:first-child { border-top: 0; }
+.v2a-row > svg.i { width: 16px; height: 16px; color: var(--v2-text-secondary); align-self: start; margin-top: 2px; }
+.v2a-row--one > svg.i { align-self: center; margin-top: 0; }
+.v2a-row--open { align-items: start; }
+.v2a-file { grid-template-columns: 38px minmax(0, 1fr) auto; }
+.v2a-file:hover, .v2a-file:focus-within { background: var(--v2-bg-subtle); }
+.v2a-ext { height: 22px; margin-top: 1px; align-self: start; border-radius: var(--v2-r-6); background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 600 11px/22px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-secondary); text-align: center; overflow: hidden; }
+.v2a-main { min-width: 0; }
+/* The name is the row's open target: its hit area stretches over the whole row. */
+.v2a-name { all: unset; box-sizing: border-box; cursor: pointer; display: block; max-width: 100%; font-size: 13.5px; line-height: 20px; font-weight: 600; color: var(--v2-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2a-name::after { content: ""; position: absolute; inset: 0; }
+.v2a-sn { margin-top: 1px; font-size: 12.5px; line-height: 18px; color: var(--v2-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2a-mo { font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2a-sn .v2a-mo { line-height: 18px; }
+.v2a-tx { margin: 0; font-size: 13.5px; line-height: 20px; }
+.v2a-tx--plain { font-weight: 400; color: var(--v2-ink-2); }
+.v2a-ac { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; }
+/* Memory's hover keys: hidden until the row is hovered or holds focus, then they take the size's place. */
+.v2a-hv { display: none; gap: 2px; padding: 2px; border-radius: var(--v2-r-8); background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); }
+.v2a-file:hover .v2a-hv, .v2a-file:focus-within .v2a-hv { display: flex; }
+.v2a-file:hover .v2a-size, .v2a-file:focus-within .v2a-size { display: none; }
+/* A wide touch screen has no hover, so the keys stay out and the size steps aside. */
+@media (hover: none) and (min-width: 761px) {
+  .v2a-file .v2a-hv { display: flex; }
+  .v2a-file .v2a-size { display: none; }
+}
+.v2a-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.v2a-empty { margin: 0; padding: 11px 14px 11px 42px; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
+/* Errors speak memory's one-line state (p.v2m-state): text only, no icon, no box. */
+.v2a-state { margin: 0; padding: 4px 2px; font: 400 13.5px/20px var(--v2-font); color: var(--v2-text-secondary); }
+.v2a-loading { display: grid; place-items: center; padding: 24px; }
+
+/* ---- foot: shown of total, then a quiet "N more" ---- */
+.v2a-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 4px 0; }
+.v2a .v2a-more { color: var(--v2-text-primary); }
+.v2a .v2a-more:disabled { cursor: default; color: var(--v2-text-muted); }
+
+/* ---- 390 (.app.m.sg): the head is the 52px top bar with the search key; one 44px control
+   row; rows and keys at the 44px touch floor; the 12px side gutter of the picked pages; the
+   size folds into the secondary line ---- */
+@media (max-width: 760px) {
+  .v2a-head.v2p-ph { height: 52px; gap: 8px; padding: 0 10px 0 12px; }
+  .v2a-head.v2p-ph h1 { font-size: 21px; min-width: 0; flex: none; }
+  .v2a .v2a-searchkey { width: 44px; height: 44px; margin-right: -4px; }
+  .v2a .v2a-searchkey svg.i { width: 18px; height: 18px; }
+  .v2a-body { padding: 12px 12px 16px; }
+  .v2a-col { gap: 10px; }
+  .v2a-search { width: auto; height: 44px; }
+  .v2a-kb { display: none; }
+  .v2a-ctl { display: flex; gap: 8px; }
+  .v2a-ctl .v2a-seg { flex: 1; display: flex; min-width: 0; }
+  /* 40px items in the segment's 2px track: the segment is 44 tall, level with the select. */
+  .v2a-ctl .v2a-seg button { flex: 1; justify-content: center; height: 40px; min-width: 0; }
+  .v2a-ctl .v2a-sel { --box-h: 44px; }
+  .v2a-ctl .v2a-sel select { max-width: 120px; }
+  .v2a-gtitle { margin: 8px 4px 0; }
+  .v2a-group + .v2a-group .v2a-gtitle { margin-top: 8px; }
+  .v2a-group .v2a-gtitle { margin-bottom: 10px; }
+  .v2a-row { min-height: 60px; padding: 8px 8px 8px 12px; gap: 10px; }
+  .v2a-row--open { padding: 12px; }
+  .v2a-name { white-space: normal; overflow-wrap: anywhere; }
+  .v2a-hv { display: flex; padding: 0; background: transparent; box-shadow: none; }
+  .v2a .v2a-hv .v2p-ib { width: 44px; height: 44px; }
+  .v2a-keys { flex-direction: column; }
+  .v2a .v2a-keys .v2a-open { width: 100%; height: 44px; }
+  .v2a .v2a-foot .v2a-more { height: 44px; }
+}

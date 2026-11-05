@@ -94,6 +94,14 @@ const drainMicrotasks = async () => {
 
 let savedGitConfig;
 
+
+// D245 item 4: a reply the wrapper posts carries its receipt (lib/reply-receipt.js).
+const reply = (content, extra = {}) => ({
+  content,
+  receipt: expect.objectContaining({ adapter: expect.any(String), durationMs: expect.any(Number) }),
+  ...extra,
+});
+
 describe('performRun', () => {
   beforeEach(() => {
     savedGitConfig = new Map(['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
@@ -145,6 +153,71 @@ describe('performRun', () => {
     expect(ackPosts(mockPost)).toEqual(expect.arrayContaining([[expect.any(String), expect.objectContaining({
       result: expect.objectContaining({ reason: 'own-key-requires-scoped-spawn', outcome: 'no_action' }),
     })]]));
+  });
+
+  // D247: an empty device effort list says nothing about the level, so the
+  // saved effort reaches the harness. Only a non-empty list that leaves it out
+  // drops it.
+  test.each([
+    [[], 'xhigh'],
+    [['low', 'xhigh'], 'xhigh'],
+    [['low', 'high'], undefined],
+  ])('a device reporting efforts %j spawns with effort %s', async (efforts, expected) => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn, inventory: async () => ({ models: null, efforts }) },
+      environment: { model: 'gpt-6-sol', effort: 'xhigh' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment.effort).toBe(expected);
+  });
+
+  // D247: a listener seat (no daemon) spawns with the model and effort its
+  // owner saved on the server, read before the turn; the reply receipt names them.
+  test('a listener seat spawns with the model and effort saved on the server', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
+      ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
+        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+      : { events: [makeEvent()] }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async (_prompt, ctx) => ({ text: 'ok',
+      stats: { model: ctx.environment.model, effort: ctx.environment.effort } }));
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', podId: 'pod-abc', readSavedControls: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      environment: { model: 'gpt-6-sol' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment).toEqual(expect.objectContaining({ model: 'gpt-6.1-sol', effort: 'max' }));
+    expect(replyPosts(mockPost)[0][1].receipt).toEqual(expect.objectContaining({
+      adapter: 'codex', model: 'gpt-6.1-sol', effort: 'max' }));
+  });
+
+  // A record with no environment keeps running as it did, and says once why
+  // the saved model and effort don't reach it.
+  test('a listener with no saved environment says once that saved controls cannot apply', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
+      ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
+        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+      : { events: [makeEvent()] }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const logs = [];
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', podId: 'pod-abc', readSavedControls: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      environment: null, setTimeoutImpl: noopTimeout, log: (line) => logs.push(line) });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment).toBeNull();
+    expect(logs.filter((line) => line.includes("don't apply to it"))).toHaveLength(1);
+    expect(logs.join('\n')).toContain('Run once: commonly agent config my-stub --model gpt-6.1-sol --effort max');
+    expect(logs.join('\n')).not.toContain('--force');
   });
 
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
@@ -201,7 +274,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'hello back' },
+      reply('hello back'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
@@ -830,7 +903,7 @@ describe('performRun', () => {
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'Hi! What are you working on today?' },
+      reply('Hi! What are you working on today?'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-first-contact/ack',
@@ -917,7 +990,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'my real reply' },
+      reply('my real reply'),
     );
   });
 
@@ -964,7 +1037,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'my real reply' },
+      reply('my real reply'),
     );
   });
 
@@ -1148,7 +1221,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'The release owner needs to choose a date.' },
+      reply('The release owner needs to choose a date.'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb-update/ack',
@@ -1182,7 +1255,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content },
+      reply(content),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb-prefixed-update/ack',
@@ -1551,7 +1624,7 @@ describe('performRun', () => {
       await drainMicrotasks();
       expect(spawn).toHaveBeenCalledTimes(1);
       expect(replyPosts(post)).toEqual([[
-        '/api/agents/runtime/pods/pod-abc/messages', { content: 'BYO reply' },
+        '/api/agents/runtime/pods/pod-abc/messages', reply('BYO reply'),
       ]]);
       expect(ackPosts(post)).toHaveLength(1);
       expect(wasEventHandled('my-stub', event._id)).toBe(true);
@@ -2212,8 +2285,8 @@ describe('performRun', () => {
 
     expect(held).toBe(true);
     expect(replyPosts(post)).toEqual([
-      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.' }],
-      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.', continueAnyway: true }],
+      ['/api/agents/runtime/pods/pod-abc/messages', reply('Summary of 43 minutes of work.')],
+      ['/api/agents/runtime/pods/pod-abc/messages', reply('Summary of 43 minutes of work.', { continueAnyway: true })],
     ]);
     expect(logs.some((l) => /posted .* as 1 message \(single\)/.test(l))).toBe(true);
     expect(wasEventHandled('my-stub', event._id)).toBe(true);
@@ -2543,6 +2616,48 @@ describe('performRun', () => {
       ([route]) => route === '/api/agents/runtime/memory/sync',
     );
     expect(syncCalls).toHaveLength(0);
+  });
+
+  // F118: a public seat's summary comes from its own output, which a stranger
+  // in the pod can steer, so the wrapper never writes it back. The seat still
+  // reads its long_term before the turn.
+  describe.each([
+    ['public', { sandbox: { mode: 'workspace', trust: 'public' } }],
+    ['legacy internal (read as public)', { sandbox: { mode: 'workspace', trust: 'internal' } }],
+  ])('memory bridge on a %s seat', (_label, environment) => {
+    test('reads long_term but does NOT sync back a memorySummary', async () => {
+      const events = [makeEvent({ _id: 'pub-sum' })];
+      const mockGet = jest.fn(async (route) => {
+        if (route === '/api/agents/runtime/memory') return { sections: { long_term: { content: 'kept notes' } } };
+        if (route.endsWith('/send-freshness')) return { ok: true };
+        return { events };
+      });
+      const mockPost = jest.fn().mockResolvedValue({});
+      createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+      const spawn = jest.fn(async () => ({ text: 'reply', memorySummary: 'a stranger told me to remember this' }));
+      const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter,
+        agentName: 'my-stub',
+        setTimeoutImpl: noopTimeout,
+        environment,
+      });
+      for (let i = 0; i < 400 && !mockPost.mock.calls.some(([r]) => r.endsWith('/ack')); i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalled();
+      expect(spawn.mock.calls[0][1].memoryLongTerm).toBe('kept notes');
+      expect(mockPost.mock.calls.some(([r]) => r.endsWith('/ack'))).toBe(true);
+      expect(mockPost.mock.calls.filter(([route]) => route === '/api/agents/runtime/memory/sync')).toHaveLength(0);
+    });
   });
 
   test('memory bridge: sync failure is non-fatal — message still posted, event still acked', async () => {
@@ -2983,7 +3098,7 @@ describe('performRun — ADR-018 enforcement', () => {
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(CLAIM_PATH, { podId: 'pod-abc', leaseSeconds: 90 });
-    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', { content: 'on it' });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', reply('on it'));
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
@@ -3359,7 +3474,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'still answering' },
+      reply('still answering'),
     );
   });
 
@@ -3844,7 +3959,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(prompt).toContain('materially different');
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'a materially different take' },
+      reply('a materially different take'),
     );
     expect(del).not.toHaveBeenCalled(); // nothing was held
     expect(post).toHaveBeenCalledWith(
@@ -3895,7 +4010,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(del).not.toHaveBeenCalled(); // nothing was held
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'glad you picked that up — one addition' },
+      reply('glad you picked that up — one addition'),
     );
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',

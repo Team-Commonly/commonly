@@ -81,6 +81,121 @@ for summarization. Issue an `cm_int_*` ingest token through
 - Rate-limit webhook routes; strip PII beyond what’s needed for summaries.
 - Store secrets encrypted (reuse existing config patterns).
 
+## Who may bind a pod to a chat (F143)
+A chat that people outside the pod can read is a **shared surface**: a Slack
+channel, a Discord guild channel, a Telegram group, supergroup or channel, and
+a GroupMe group. Binding a pod to one takes authority over the pod: the pod's
+creator (still a listed member) or an instance admin (`User.role === 'admin'`).
+Pod membership is not enough. A **private 1:1** chat with the bot (a Telegram
+`private` chat, the Slack OAuth DM) is read only by the person who bound it and
+stays member-level.
+
+The rule lives in one place, `backend/services/chatRelay/bindSurface.ts`. Each
+platform declares there who can read its chat; an unknown type, or a chat type
+not declared private, counts as shared. The server refuses with 403
+`{ code: 'shared_surface_needs_pod_authority' }`, and the v2 pages map that code
+to `connectors.sharedSurfaceCreatorOnly` (en and zh-CN).
+
+It is checked at:
+- **create**: `POST /api/integrations` (Slack, Discord, GroupMe; a non-string
+  `type` is refused with 400 first), and Discord's
+  `GET /api/discord/install-link/:podId`;
+- **retarget**: `PATCH /api/integrations/:id`, when a field that picks the chat
+  changes (Slack `channelId`, GroupMe `groupId`/`botId`; Discord's are fixed by
+  F90), or when a user-scoped connector's `podId` moves;
+- **redemption**: Telegram's `/commonly-enable`, because the chat type is only
+  known there. It is judged against the row's `createdBy`, and a refused code is
+  left unspent for a private chat;
+- **outbound summaries**, judged against the row's `createdBy`: Telegram
+  `/tldr` (`/pod_summary`), GroupMe `!pod`, and Discord `/commonly-summary`.
+  Each posts the pod's latest summary to everyone in the chat.
+
+Rows bound by plain members before the rule keep working. The only runtime
+gates are the three outbound summary commands above, which answer with a short
+refusal and no summary on such a row until the pod's creator reconnects it.
+
+## Who a relayed line is written as (F131)
+A live relay writes an external line into the pod **as `config.linkedUserId`**.
+That is honest only when the platform proves the sender is that person, so each
+platform declares its proof as an inbound adapter (`InboundRelayAdapter` in
+`backend/services/chatRelay/chatRelayCore.ts`, registered in
+`chatRelay/adapters.ts` as `inboundRelayAdapters`):
+- **Telegram**: the chat is `private`, so the sender is its one counterpart.
+- **Slack**: the DM's `event.user` is the `slackUserId` the OAuth bind proved.
+- **Discord**: a guild channel proves nothing, so the author must be the
+  installer's own Discord account. The install link asks for `identify`, the
+  OAuth callback reads `users/@me` with the exchange's user token, the id rides
+  in the signed install proof, and `POST /api/integrations` stores it as the
+  server-owned `config.discordUserId`. A line relays live only when
+  `author.id === discordUserId` and `linkedUserId` is the row's creator; every
+  other line stays in the summary buffer. Bots, webhooks (our own echo) and
+  system messages are ignored.
+
+`writeInboundAsLinkedUser` and `loadInboundAuthor` take a `ProvenSender`, which
+only `proveInboundSender` mints, after the adapter's proof passes. The same
+adapter declares `liveRelayRefusal`, which both integration write routes read
+before `liveRelay` goes on: the private-chat rule for Telegram and Slack (and
+any undeclared type), the proven installer for Discord.
+
+A platform that pushes one message to every backend replica (Discord's gateway
+socket) claims it with `claimInboundMessage(provider, integrationId, messageId)`
+before writing; that is the WebhookDelivery unique index the HTTP bridges'
+redelivery dedupe already uses.
+
+**An explicit exception to review rule 19** (`docs/development/review-checklist.md`:
+a guard that cannot do its job fails toward the noisy outcome, and "noisy" names
+an audience). When the claim store is unavailable, Discord relays the line
+**nothing live**: it fails closed, under-delivering. Failing open would write
+the same line once per replica, each copy authored in the installer's name and
+each waking the pod's agents. That is worse than a missed live line, and it
+can't be undone. The line is not lost: the gateway buffered it for the
+channel's summaries before the bridge ran. The audience is the operator: the
+warning names the integration and the Discord message id. The sender isn't
+told: on a shared channel a notice would reach everyone in the guild. Telegram
+fails open at the same point, because its HTTP redelivery gives it one
+delivery per update. A gateway socket per replica doesn't.
+
+Once the claim is held, no other replica writes the line. So the read-only
+author load (`loadInboundAuthor`) is retried up to three times on a thrown
+error, then logged with the same two ids. The write itself is single-attempt.
+Inbound and outbound are separate registries (`inboundRelayAdapters` and
+`chatRelayAdapters`); since F132 all three chat platforms are in both.
+
+## Agent lines out to the chat (F132)
+With `liveRelay` on, an agent's pod message reaches the bound chat through the
+core's ladder (`relayAgentMessageThroughAdapter`): card hold, relayable row,
+mute (`relayMutedUntil`), then mode (`connectorRelayPolicy.shouldEscalate`:
+`mirror` sends every line, `attention` only escalations and the lead). Each
+platform is one `ChatRelayAdapter` in its bridge, registered in
+`chatRelay/adapters.ts`. The dispatcher (`installable/eventHandlers.ts`) selects
+rows by the registry's keys, and hands a row with no Installable parent to
+`<type>.relay` only when its adapter declares `directRows` (Telegram's legacy
+binds, and every Discord row, which the OAuth install writes directly).
+
+**Discord** sends server-side through the channel webhook the install
+created, resolved from the stored `config.webhookUrlRef`. Outbound uses no bot
+token at all:
+- `allowed_mentions: { parse: [] }`, so agent text pings nobody in the guild,
+  and `@everyone`/`@here` are defused in the text too;
+- `[Pod] **Agent**: text`, cut to Discord's 2000 characters with an ellipsis
+  (the Telegram and Slack adapters truncate too; none splits a line);
+- one lane per webhook, about 5 sends per 2 s. A 429 waits out `retry_after`
+  once (up to 5 s) and retries; a longer wait cools the lane, and lines that
+  arrive meanwhile are dropped and logged. **An under-delivering guard, by
+  design (rule 19):** the line is still in the pod, and the audience is the
+  operator log, which names the row and channel. Pacing is per replica;
+  Discord's 429 is the backstop between replicas;
+- 10003, 10015, 50001, 50013 and 50027 flip the row to `status: 'error'` with a
+  reason written for a person (`connectorDeliveryFailureService`). The flip
+  keeps `config.channelId` (F90 fixes the binding); `POST /:id/connect` sets
+  the row connected again once the bot can post. It does not recreate a
+  deleted webhook (10015) while `webhookUrlRef` is set, so that case needs the
+  bot added again. 429 and 5xx never flip.
+
+The webhook's copy of each line is webhook-authored, and the inbound gateway
+ignores webhook messages, so nothing loops back into the pod. Who may switch
+it on is F131's rule: only the row's creator holding a proven `discordUserId`.
+
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:
   - validates `ingestEvent` produces required fields

@@ -284,6 +284,19 @@ describe('a hosted-MCP grant through the broker', () => {
     },
   );
 
+  // F92: a Limited-Use connector (Calendar) runs only for a hosted run on the
+  // no-training model, which says so with limitedUse. Any other caller, a hosted
+  // turn included, is refused before the grant is even read.
+  it('refuses a Calendar call without limitedUse, before anything loads', async () => {
+    for (const extra of [{}, { hostedTurn: true }, { limitedUse: 'yes' }]) {
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'google-calendar.list_events', args: {}, ...extra,
+      })).rejects.toMatchObject({ code: 'limited_use_native_only', statusCode: 403 });
+    }
+    expect(mockRoomGrant.findOne).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+  });
+
   // F40 review: a task-bound grant is usable from a hosted turn only inside its
   // task's pod. A seat grant reaches the agent everywhere; its claim is checked
   // against the task's pod, not the run's.
@@ -733,6 +746,55 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
   });
 
+  // F101: Notion's writers offer "tracking only" fields the pin keeps and the
+  // model's schema leaves out, so one a seat sends anyway is refused by name,
+  // before a budget slot, an approval or a tools/call (only tools/list runs).
+  it('refuses a withheld Notion tracking field before parking, budget or a vendor call', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['notion.notion_create_pages'], writeMode: 'write-with-confirm',
+    }));
+    const row = hostedRow({ config: { entryId: 'notion', credentialRef: 'cred-1' } });
+    mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+    // The shipped Notion entry, beside this file's fixture catalogue, and a
+    // vendor that lists the writer exactly as pinned, tracking fields included.
+    const notion = shippedEntries.find((entry) => entry.id === 'notion');
+    const writer = notion.tools.find((tool) => tool.name === 'notion_create_pages');
+    expect(writer.withheldArgs).toContain('telemetry');
+    HOSTED_MCP_ENTRIES.push(notion);
+    global.fetch = sessionFetch(async (url, init) => {
+      if (JSON.parse(init.body).method !== 'tools/list') {
+        return new Response(JSON.stringify(okReply), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: notion.tools.map((tool) => ({
+        name: tool.upstreamName, inputSchema: tool.inputSchema, ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      })) } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    try {
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'notion.notion_create_pages',
+        args: { pages: [], telemetry: { intent: 'what the agent is doing', feedback: 'none' } },
+      })).rejects.toMatchObject({ code: 'invalid_tool_args' });
+    } finally {
+      HOSTED_MCP_ENTRIES.splice(HOSTED_MCP_ENTRIES.findIndex((entry) => entry.id === 'notion'), 1);
+    }
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+    expect(refusedRow().reason).toBe('invalid_tool_args');
+  });
+
+  // F100: a read pin's values are checked against the pin, as its names are,
+  // before a budget slot or a tools/call (only the tools/list assessment runs).
+  it('refuses a read value the pin does not allow, before budget or a tools/call', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: { limit: 'every-issue' },
+    })).rejects.toMatchObject({ code: 'invalid_tool_args', message: expect.stringContaining('limit') });
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+    expect(refusedRow().reason).toBe('invalid_tool_args');
+  });
+
   it('refuses when the row names another entry, and never reaches the vendor', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const wrong = hostedRow({ config: { entryId: 'sentry', credentialRef: 'cred-1' } });
@@ -948,6 +1010,48 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockDmService.getOrCreateAgentRoom).not.toHaveBeenCalled();
     expect(mockProposeAction).not.toHaveBeenCalled();
     expect(toolCalls()).toHaveLength(0);
+  });
+
+  // F102: a write pin on a row whose recorded consent lacks the entry's
+  // writeScope. The mint refuses write-with-confirm on such a row; a grant
+  // minted before the scope was required meets the same refusal at the call.
+  describe('a write pin on a row that never consented to write', () => {
+    const bothTools = () => hostedGrant({
+      tools: ['linear.list_issues', 'linear.create_issue'], writeMode: 'write-with-confirm',
+    });
+    beforeEach(() => {
+      ENTRY.writeScope = 'write';
+      const row = hostedRow({ config: { entryId: 'linear', credentialRef: 'cred-1', grantedScope: 'read' } });
+      mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+      upstreamTools = upstreamTools.filter((tool) => tool.name !== 'createIssue');
+    });
+    afterEach(() => { delete ENTRY.writeScope; });
+
+    it('refuses the call write_scope_required before parking an approval or calling the vendor', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args: { title: 'x' },
+      })).rejects.toMatchObject({ code: 'write_scope_required' });
+      expect(mockProposeAction).not.toHaveBeenCalled();
+      expect(toolCalls()).toHaveLength(0);
+      expect(refusedRow()).toMatchObject({ outcome: 'refused', reason: 'write_scope_required' });
+    });
+
+    it('leaves the write out of the listing and keeps the read', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' });
+      expect(listed.map((definition) => definition.name)).toEqual(['linear.list_issues']);
+    });
+
+    it('reverse: on a row that consented to write, the same missing write is tool_unavailable', async () => {
+      const row = hostedRow({ config: { entryId: 'linear', credentialRef: 'cred-1', grantedScope: 'read write' } });
+      mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args: { title: 'x' },
+      })).rejects.toMatchObject({ code: 'tool_unavailable' });
+      expect(toolCalls()).toHaveLength(0);
+    });
   });
 
   it('offers the hosted tool to the grant that names it, in both listing surfaces', async () => {

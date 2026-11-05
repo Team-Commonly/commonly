@@ -6,10 +6,7 @@ import { Types } from 'mongoose';
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../../models/Pod');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const telegramBridgeService = require('../telegramBridgeService');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const slackBridgeService = require('../slackBridgeService');
+import { chatRelayDirectRowTypes, chatRelayEventHandlers, chatRelayIntegrationTypes } from '../chatRelay/adapters';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { handleGithubGig } = require('../githubGigService');
 
@@ -32,8 +29,8 @@ export type InternalEventHandler = (
 // component tests can pin selection at this seam and future component types
 // add one registration instead of another dispatcher branch.
 export const eventHandlers: Record<string, InternalEventHandler> = {
-  'telegram.relay': telegramBridgeService.relayAgentMessageToTelegram,
-  'slack.relay': slackBridgeService.relayAgentMessageToSlack,
+  // `telegram.relay`, `slack.relay`, `discord.relay` — one per chat-relay adapter.
+  ...chatRelayEventHandlers(),
   // Inbound App activity is selected by the webhook's indexed pod binding.
   'github.gig': handleGithubGig,
 };
@@ -67,13 +64,15 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
   )).map((id) => new Types.ObjectId(id));
   if (!memberIds.length) return [];
   const gateEnabledPath = `config.gates.${String(podId)}.enabled`;
+  const relayTypes = chatRelayIntegrationTypes();
+  const directRowTypes = chatRelayDirectRowTypes();
   // A decision card must record why it was deliberately withheld. Ordinary
   // chat retains the narrow selector below; cards additionally reach paused
   // and gate-off member bindings so their bridge can write a `hold` verdict
   // without sending anything to the channel.
   const selection = includeCardHolds
     ? {
-      type: { $in: ['telegram', 'slack'] },
+      type: { $in: relayTypes },
       isActive: true,
       status: { $ne: 'error' },
       'config.liveRelay': true,
@@ -89,7 +88,7 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
       ],
     }
     : {
-      type: { $in: ['telegram', 'slack'] },
+      type: { $in: relayTypes },
       isActive: true,
       status: { $ne: 'error' },
       'config.liveRelay': true,
@@ -139,18 +138,20 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
     {
       $project: {
         integration: '$$ROOT',
-        // Existing direct Integration rows predate D17. The old live-relay
-        // shape is Telegram-only; Slack is always an Installable projection
-        // because its token is an opaque ConnectorSecret reference.
+        // A direct Integration row (no Installable parent) relays only when
+        // its adapter declares `directRows`: legacy Telegram binds that predate
+        // D17, and Discord, whose OAuth install writes the row itself (F132).
+        // Slack is always an Installable projection because its token is an
+        // opaque ConnectorSecret reference.
         handlers: {
           $cond: [
             {
               $and: [
                 { $eq: [{ $ifNull: ['$installationId', null] }, null] },
-                { $eq: ['$type', 'telegram'] },
+                { $in: ['$type', directRowTypes] },
               ],
             },
-            [{ config: { eventHandler: 'internal:telegram.relay' } }],
+            [{ config: { eventHandler: { $concat: ['internal:', '$type', '.relay'] } } }],
             {
               $let: {
                 vars: { parent: { $arrayElemAt: ['$installation', 0] } },

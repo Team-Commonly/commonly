@@ -43,6 +43,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
@@ -55,7 +56,8 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
-const { adapterForRuntimeBinding } = require('../services/grantBrokerConfinement');
+const { adapterForRuntimeBinding, normalizeAdapter } = require('../services/grantBrokerConfinement');
+const { grantBrokersForRuntimeSeat } = require('../services/seatGrantBrokerProjection');
 const {
   assertAgentRuntimeMayJoinPod,
   runtimeTypeFromConfig,
@@ -546,6 +548,49 @@ router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: an
   }
 });
 
+const controlText = (value: unknown): value is string => typeof value === 'string'
+  && value.length > 0 && value.length <= 256
+  && !Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
+const runtimeControlsFor = (config: any): { model?: string; effort?: string } => {
+  const read = (key: 'model' | 'effort') => {
+    const declared = config?.environment?.[key];
+    return declared !== undefined ? declared : config?.runtime?.[key];
+  };
+  const controls: { model?: string; effort?: string } = {};
+  const model = read('model');
+  const effort = read('effort');
+  if (controlText(model)) controls.model = model;
+  if (controlText(effort)) controls.effort = effort;
+  return controls;
+};
+
+/**
+ * GET /grant-brokers?adapter=<name> (agent runtime token auth) — F150.
+ *
+ * The grant brokers a seat run with `commonly agent run` (no daemon) receives:
+ * the same `{ servers, refusal }` the daemon's /assigned projects per seat,
+ * from the same function. The seat is the token's own bot User; nothing in the
+ * request names an identity, so no other seat's grant can come back. The
+ * caller declares the adapter it runs, which is judged on top of the row's
+ * own runtime: a declaration can add `adapter_cannot_confine`, never remove it,
+ * and naming (F94) never lifts that one. The cli applies its own
+ * `withholdGrantBroker` after merging, and the broker re-checks every call.
+ */
+router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const adapter = normalizeAdapter(req.query?.adapter);
+    if (!adapter) {
+      return res.status(400).json({ code: 'adapter_required', message: 'Declare the adapter this seat runs (?adapter=)' });
+    }
+    const agentUserId = req.agentUser?._id ? String(req.agentUser._id) : '';
+    if (!agentUserId) return res.json({ servers: [], refusal: null });
+    return res.json(await grantBrokersForRuntimeSeat({ agentUserId, adapter }));
+  } catch (error) {
+    console.error('Error projecting grant brokers:', (error as Error).message || error);
+    return res.status(500).json({ message: 'Failed to read grant brokers' });
+  }
+});
+
 router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const installations = req.agentInstallations || [];
@@ -593,6 +638,19 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       }
       : {});
 
+    // D247: the installation Settings reads the model and effort from, by the
+    // daemon projection's rule: the oldest active one that declares a seat.
+    // A listener uses this row's controls only, so it runs what Settings shows.
+    // Settings reads the owner's rows only, so a row this agent installed
+    // itself (an auto-join copies the source's config) never counts.
+    const agentUserId = req.agentUser?._id ? String(req.agentUser._id) : null;
+    const source = [...installations]
+      .filter((inst: any) => (inst?.status || 'active') === 'active'
+        && (!agentUserId || String(inst?.installedBy || '') !== agentUserId)
+        && declaresSeat(inst?.config))
+      .sort((a: any, b: any) => String(a?._id || '').localeCompare(String(b?._id || '')))[0];
+    const runtimeSourcePodId = source?.podId ? String(source.podId) : null;
+
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
       return {
@@ -606,6 +664,9 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
         // Known runtime kinds (such as a connect-page `webhook`) stay null.
         // Expose only this non-secret discriminator, never the full config.
         runtimeAdapter: adapterForRuntimeBinding(inst?.config?.runtime),
+        // D247: the saved model/effort, for a listener seat that has no daemon
+        // projection. Two plain strings; no other environment field leaves.
+        runtimeControls: runtimeControlsFor(inst?.config),
         ...podVisibility(pod),
         type: 'installation',
       };
@@ -627,6 +688,8 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     return res.json({
       agentName,
       instanceId,
+      // null when no installation declares a seat: then nothing is saved.
+      runtimeSourcePodId,
       installations: [...installationList, ...dmList],
     });
   } catch (error: any) {
@@ -2330,7 +2393,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, replyToMessageId, threadRootId, payload: cardPayload,
+      content, metadata, replyToMessageId, threadRootId, payload: cardPayload, summary, kind, receipt,
     } = req.body || {};
     const messageType = hostFallback ? 'text' : req.body?.messageType;
     const payload = hostFallback ? undefined : cardPayload;
@@ -2342,6 +2405,13 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      // D245: optional and warn-only. Problems come back as `warnings` on the
+      // 200; they never refuse the post.
+      summary,
+      kind,
+      // D245 item 4: a BYO run's self-reported receipt; stored as such,
+      // warn-only like the contract.
+      receipt,
       ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, the independence

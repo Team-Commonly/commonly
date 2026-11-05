@@ -1,5 +1,7 @@
 /** Qwen Code 0.25.1 and 0.26.2 wrapper. Public turns have fresh HOME, config and keys. */
 import { requireSeatModel } from './seat-model.js';
+import { isPatchAfterNewestTested, probeVersion } from './tested-version.js';
+import * as childProcess from 'child_process';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -15,7 +17,7 @@ import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
 const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
@@ -40,8 +42,8 @@ const EXCLUDED_TOOLS = [
 const PUBLIC_READ_TOOLS = [
   'read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp',
   // Both spellings of a Commonly MCP tool, as with the aliases above
-  // (public-withheld-tools.js).
-  ...PUBLIC_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
+  // (public-withheld-tools.js; self-install and memory writes, F118).
+  ...PUBLIC_SEAT_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
 ];
 
 const parseVersion = (output) => {
@@ -49,10 +51,13 @@ const parseVersion = (output) => {
   return match ? match[1] : null;
 };
 
-const readVersion = (binary, env) => {
-  const result = spawnSync(binary, ['--version'], { encoding: 'utf8', env, timeout: 5000 });
-  return result.status === 0 && !result.error ? parseVersion(result.stdout) : null;
-};
+// Async and cached per binary (tested-version.js probeVersion): a synchronous
+// probe stalled every other seat's provider proxy on the daemon's loop. The
+// namespace import is read at call time, so a suite that mocks child_process
+// without execFile falls back to the real one.
+const readVersion = (binary, env) => probeVersion(binary, {
+  env, timeoutMs: 5000, parse: parseVersion, execFileImpl: childProcess.execFile,
+});
 
 const resolvedBinary = (env) => {
   const where = spawnSync('which', ['qwen'], { encoding: 'utf8', env });
@@ -74,7 +79,8 @@ const withProbeEnv = async (source, run) => {
     env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
     env.QWEN_USAGE_STATISTICS_ENABLED = 'false';
     for (const name of PROXY_ENV) env[name] = '';
-    return run(env);
+    // Awaited here, so the probe home outlives an async probe.
+    return await run(env);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -253,17 +259,21 @@ export default {
     }
     const keyFile = await this.validateEnvironment(ctx.environment, ctx.cwd);
     const sourceEnv = ctx.env || process.env;
-    const { binary, version } = await withProbeEnv(sourceEnv, (probeEnv) => {
+    const { binary, version } = await withProbeEnv(sourceEnv, async (probeEnv) => {
       const path = ctx._binaryPath || resolvedBinary(probeEnv);
-      return { binary: path, version: readVersion(path, probeEnv) };
+      return { binary: path, version: await readVersion(path, probeEnv) };
     });
     if (!TESTED_QWEN_VERSIONS.includes(version)) {
       const versions = TESTED_QWEN_VERSIONS.join(', ');
-      if (isPublic && process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] !== '1') {
+      const allowOverride = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] === '1';
+      const patchAfterTested = isPatchAfterNewestTested(version, TESTED_QWEN_VERSIONS);
+      if (isPublic && !allowOverride && !patchAfterTested) {
         throw new Error(`Public Qwen seats refuse version ${version || 'unknown'}; smoke-tested: ${versions}. Set ${ALLOW_UNTESTED_QWEN_VERSION_ENV}=1 in the host process to override.`);
       }
+      let outcome = 'trusted seat continues';
+      if (isPublic) outcome = allowOverride ? 'host override accepted' : 'a patch release on the newest smoke-tested line, so the public seat continues';
       // eslint-disable-next-line no-console
-      console.warn(`[qwen] installed ${version || 'unknown'} differs from smoke-tested ${versions}; ${isPublic ? 'host override accepted' : 'trusted seat continues'}`);
+      console.warn(`[qwen] installed ${version || 'unknown'} differs from smoke-tested ${versions}; ${outcome}`);
     }
     // npm launches through a symlink into the package. Qwen loads chunks next
     // to that entry file, so public sandboxes need that exact read-only tree.
@@ -310,6 +320,8 @@ export default {
       // be resumed. The kernel memory preamble supplies continuity instead.
       const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
         freshSession: true,
+        // F118: a public seat reads its memory but is not offered a write.
+        memoryReadOnly: isPublic,
       });
       const args = [
         '--bare', '--safe-mode', '--auth-type', 'openai', '-m', seatModel,
@@ -317,9 +329,12 @@ export default {
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),
         // Qwen ignores settings permissions in bare/safe mode, but still
-        // honours CLI allow rules. A private seat needs its declared Commonly
-        // tools approved before non-interactive execution begins.
-        ...(!isPublic && Object.hasOwn(mcp.mcpServers, 'commonly')
+        // honours CLI allow rules. Any seat needs its declared Commonly tools
+        // approved before non-interactive execution begins, public included:
+        // without it a public seat's commonly_post_message was declined
+        // (D247 walk, 11-04). Public parity with Claude's --allowedTools
+        // mcp__commonly__*; the withheld tools stay in --exclude-tools above.
+        ...(Object.hasOwn(mcp.mcpServers, 'commonly')
           ? ['--allowed-tools', 'mcp__commonly__*'] : []),
         '-o', 'stream-json', '-p', fullPrompt,
       ];

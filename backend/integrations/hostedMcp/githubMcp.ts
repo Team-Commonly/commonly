@@ -13,6 +13,7 @@
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 import pin from './githubMcpSchemas.json';
+import { hostedVendorFetch } from '../../services/hostedVendorFetch';
 
 const descriptions: Record<string, string> = {
   get_me: 'Read the account profile for this GitHub connection.',
@@ -44,6 +45,37 @@ export const githubMcpAccessPage = (env: NodeJS.ProcessEnv = process.env): strin
 
 const accessPage = githubMcpAccessPage();
 
+const INSTALLATIONS_TIMEOUT_MS = 5000;
+
+// D248: a GitHub App user token reads nothing until the person installs the
+// App on an account and picks repositories. GET /user/installations lists the
+// installations this token can see; none means the next step is the install
+// page. Anything unreadable answers false: a wrong "no" only skips a shortcut.
+export const githubNeedsAccessSetup = async (
+  accessToken: string,
+  { fetchImpl = hostedVendorFetch }: { fetchImpl?: typeof fetch } = {},
+): Promise<boolean> => {
+  if (!accessToken) return false;
+  try {
+    const res = await fetchImpl('https://api.github.com/user/installations?per_page=1', {
+      method: 'GET',
+      redirect: 'error',
+      signal: AbortSignal.timeout(INSTALLATIONS_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'commonly-connect',
+      },
+    });
+    if (!res.ok) return false;
+    const body = await res.json() as { total_count?: unknown };
+    return body?.total_count === 0;
+  } catch {
+    return false;
+  }
+};
+
 export const GITHUB_MCP_ENTRY: HostedMcpEntry = {
   id: 'github-mcp',
   title: 'GitHub',
@@ -57,6 +89,6 @@ export const GITHUB_MCP_ENTRY: HostedMcpEntry = {
   tokenEndpointAuthMethod: 'client_secret_post',
   scopes: ['offline_access'],
   revoke: { page: 'https://github.com/settings/applications' },
-  ...(accessPage ? { accessPage } : {}),
+  ...(accessPage ? { accessPage, needsAccessSetup: githubNeedsAccessSetup } : {}),
   tools,
 };

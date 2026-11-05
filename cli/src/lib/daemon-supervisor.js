@@ -8,6 +8,7 @@ import {
 
 import { seatBaseline } from './default-environment.js';
 import { getAdapter } from './adapters/index.js';
+import { providerRefusal } from './environment.js';
 import { withholdGrantBroker } from './grant-broker-guard.js';
 
 /**
@@ -65,6 +66,9 @@ export const createDaemonSupervisor = ({
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
   runtimeInventory = async () => undefined,
+  // Machine-level facts for the check-in, read locally each beat (D245: the
+  // Windows unsandboxed opt-in). Never derived from anything the server sent.
+  machineReport = () => ({}),
   resolveAdapter, // async (runtime) => adapter name for THIS machine
   persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
@@ -313,8 +317,15 @@ export const createDaemonSupervisor = ({
         nextAdapter = declaredAdapter;
         adapterChanged = existing.adapter !== nextAdapter;
       }
-      if (existing.environment?.provider && !getAdapter(nextAdapter)?.supportsProvider) {
-        log(`[${row.agentName}] host-local provider requires a provider-capable adapter — keeping the current seat`);
+      const providerRefused = existing.environment?.provider
+        ? providerRefusal(existing.environment, getAdapter(nextAdapter)) : null;
+      if (providerRefused) {
+        // The record stays as it is, and the seat is not started: a retained
+        // adapter that needs a server binding (opencode) refuses to run under
+        // the server's new one, so starting it would only crash-loop. The
+        // owner sets the adapter back, or moves the provider to one it speaks.
+        log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current record and not starting it; `
+          + `set the adapter back to ${existing.adapter || 'the previous one'} in Commonly, or change the provider`);
         return false;
       }
       if (wanted) {
@@ -555,7 +566,11 @@ export const createDaemonSupervisor = ({
   const heartbeat = async () => {
     if (stopped || now() < reconnectAfter) return;
     try {
-      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates(), runtimeInventory: await runtimeInventory() });
+      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, {
+        ...machineReport(),
+        agents: agentStates(),
+        runtimeInventory: await runtimeInventory(),
+      });
       connectionRestored();
     } catch (error) {
       connectionFailure(error, 'heartbeat failed');

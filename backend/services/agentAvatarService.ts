@@ -9,11 +9,11 @@ const {
 
 const GEMINI_IMAGE_MODEL = 'gemini-2.5-flash-image';
 
-type AvatarProviderPriority = 'openai' | 'gemini' | 'auto';
+type AvatarProviderPriority = 'openai' | 'gemini' | 'design' | 'auto';
 
 const resolveAvatarProvider = (): AvatarProviderPriority => {
   const raw = (process.env.AVATAR_PROVIDER || 'auto').trim().toLowerCase();
-  if (raw === 'openai' || raw === 'gemini') return raw;
+  if (raw === 'openai' || raw === 'gemini' || raw === 'design') return raw;
   return 'auto';
 };
 
@@ -34,8 +34,9 @@ const resolveAvatarProvider = (): AvatarProviderPriority => {
  *   3. SVG avatar — built from an AI-generated design description via llmService.
  *   4. Initial-letter fallback — guarantees we always return something.
  *
- * AVATAR_PROVIDER env var controls the preferred engine: 'openai' | 'gemini' | 'auto'.
- * Default is 'auto' which prefers Gemini (the cheap, free-tier path).
+ * AVATAR_PROVIDER env var controls the preferred engine: 'openai' | 'gemini' |
+ * 'design' | 'auto'. Default is 'auto' which prefers Gemini (the cheap, free-tier
+ * path). 'design' skips both image engines and starts at step 3.
  */
 class AgentAvatarService {
   /**
@@ -75,6 +76,9 @@ class AgentAvatarService {
       const provider = resolveAvatarProvider();
       // Gemini is preferred in auto mode — it's the free-tier path and our
       // OAuth ChatGPT accounts can't reach DALL-E anyway (different product).
+      // `design` calls no image engine: the SVG design below is the avatar. For an
+      // instance with no working image key, where both engines could only send
+      // the prompt out and fail (F78).
       const geminiEnabled = provider === 'gemini' || provider === 'auto';
       const openaiEnabled = provider === 'openai'
         // In auto mode OpenAI is only tried as a fallback AFTER Gemini fails;

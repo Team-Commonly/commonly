@@ -175,6 +175,26 @@ describe('installable catalog service', () => {
     expect(Integration.find).not.toHaveBeenCalled();
   });
 
+  it('per-repository GitHub rows (F172) are offered by their row id, never by the installation they share', async () => {
+    process.env.GITHUB_APP_ID = 'app-1';
+    process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
+    mockInstallables([], [githubTool()]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      { _id: 'row-widget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Widget' } },
+      { _id: 'row-gadget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' } },
+    ]));
+    const tool = (await catalogFor(userId)).installables.find((entry) => entry.list === 'tools');
+    expect(tool.connections).toEqual([
+      { connectionId: 'row-widget', owner: 'Outside-Team', repo: 'Widget' },
+      { connectionId: 'row-gadget', owner: 'Outside-Team', repo: 'Gadget' },
+    ]);
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+  });
+
   it('the catalogue returns the GitHub tool Installable with its tools, broker and the caller\'s connections, on the tools list', async () => {
     process.env.GITHUB_APP_ID = 'app-1';
     process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
@@ -314,6 +334,34 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   }
 });
 
+// TASK-782: the grant step reads this to say a connection can see nothing.
+it('a hosted connection whose probe found no projects says reach none; an unknown or positive one says nothing', async () => {
+  const shipped = HOSTED_MCP_ENTRIES.slice();
+  const linearEntry = shipped.find((entry) => entry.id === 'linear');
+  try {
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    const row = (id, reach) => ({
+      _id: id, type: 'hosted-mcp', status: 'connected', createdBy: userId,
+      createdAt: new Date('2026-11-05T10:00:00Z'),
+      config: { entryId: 'linear', intake: 'oauth', credentialRef: `ref-${id}`, ...(reach === undefined ? {} : { reach }) },
+    });
+    Integration.find.mockReturnValue(lean([
+      row('conn-empty', { projects: 0, checkedAt: new Date() }),
+      row('conn-busy', { projects: 3, checkedAt: new Date() }),
+      row('conn-unknown', null),
+      row('conn-old'),
+    ]));
+    const catalog = await catalogFor(userId);
+    const linear = catalog.installables.find((entry) => entry.list === 'tools' && entry.installableId === 'linear');
+    expect(linear.connections.map((c) => [c.connectionId, c.reach])).toEqual([
+      ['conn-empty', 'none'], ['conn-busy', undefined], ['conn-unknown', undefined], ['conn-old', undefined],
+    ]);
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
+
 it("a hosted entry's connections each say how they differ: when, and for a key its agent", async () => {
   const shipped = HOSTED_MCP_ENTRIES.slice();
   const linearEntry = shipped.find((entry) => entry.id === 'linear');
@@ -431,5 +479,58 @@ it('offers a hidden hosted entry only to its configured walk user', async () => 
     else process.env.HOSTED_MCP_HIDDEN_ENTRIES = hiddenBefore;
     if (allowBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
     else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowBefore;
+  }
+});
+
+// Which connect route the page calls is the entry's fact. An operator-key entry's
+// OAuth start route answers 404 `unknown_entry`, so the row has to say so; an
+// OAuth entry's row stays exactly as it was, with no field.
+it("a hosted entry's row says when it takes a pasted key, and only then", async () => {
+  const keyed = {
+    id: 'keyed',
+    title: 'Keyed',
+    description: 'A vendor that takes a pasted key.',
+    connectNotice: 'Create a key with read scopes only.',
+    accessPage: 'https://keyed.example/keys',
+    resource: 'https://mcp.keyed.example/mcp',
+    credentialMode: 'operator_key',
+    revoke: { page: 'https://keyed.example/keys' },
+    tools: [{
+      name: 'list_things', upstreamName: 'list_things', description: 'List things',
+      class: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true },
+    }],
+  };
+  const shipped = [...HOSTED_MCP_ENTRIES];
+  HOSTED_MCP_ENTRIES.push(keyed);
+  try {
+    const linearEntry = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'linear');
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry), buildHostedMcpToolInstallable(keyed)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([{
+      _id: 'conn-keyed', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+      createdAt: new Date('2026-11-01T09:00:00Z'),
+      config: { entryId: 'keyed', intake: 'operator_key', agentId: '6a0000000000000000000009', credentialRef: 'ref-keyed-secret' },
+    }]));
+
+    const rows = (await catalogFor(userId)).installables.filter((entry) => entry.list === 'tools');
+    const keyedRow = rows.find((entry) => entry.installableId === 'keyed');
+    const linear = rows.find((entry) => entry.installableId === 'linear');
+
+    expect(keyedRow).toMatchObject({
+      connectionType: 'hosted-mcp',
+      entryId: 'keyed',
+      credentialMode: 'operator_key',
+      connectNotice: keyed.connectNotice,
+      accessPage: keyed.accessPage,
+      available: true,
+    });
+    expect(keyedRow.connections).toEqual([{
+      connectionId: 'conn-keyed', owner: '', repo: '', connectedAt: '2026-11-01T09:00:00.000Z',
+      agentId: '6a0000000000000000000009',
+    }]);
+    expect(Object.prototype.hasOwnProperty.call(linear, 'credentialMode')).toBe(false);
+    expect(JSON.stringify(rows)).not.toContain('ref-keyed-secret');
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }
 });

@@ -71,6 +71,32 @@ describe('getRecentMessages — PG path', () => {
     expect(out.readSource).toBe('postgres');
   });
 
+  test('returns the D245 summary and kind on the PG agent read, and omits them when absent', async () => {
+    PGMessage.findByPodId.mockResolvedValue([
+      {
+        id: 1,
+        user_id: SELF,
+        username: 'me-bot',
+        is_bot: true,
+        content: 'Fixed.',
+        summary: 'Fixed it',
+        kind: 'result',
+        receipt: { adapter: 'claude', source: 'self-reported' },
+      },
+      {
+        id: 2, user_id: OTHER, username: 'other-bot', is_bot: true, content: 'plain', summary: null, kind: null,
+      },
+    ]);
+
+    const out = await AgentMessageService.getRecentMessages(POD, 10);
+
+    expect(out[0]).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    // A receipt is for people reading the pod, not other agents' context.
+    expect(out[0]).not.toHaveProperty('receipt');
+    expect(out[1]).not.toHaveProperty('summary');
+    expect(out[1]).not.toHaveProperty('kind');
+  });
+
   test('passes the exclusive history cursor to PostgreSQL', async () => {
     const beforeMs = Date.parse('2026-08-01T00:00:00.000Z');
     PGMessage.findByPodId.mockResolvedValue([]);
@@ -161,6 +187,24 @@ describe('getRecentMessages — Mongo fallback path', () => {
 
     expect(out[0].isBot).toBe(true);
     expect(out.readSource).toBe('mongo');
+  });
+
+  test('returns the D245 summary and kind on the Mongo path, and omits them when absent', async () => {
+    mockMongoChain([
+      { _id: 'm2', content: 'plain', userId: { _id: OTHER, username: 'other-bot', isBot: true } },
+      {
+        _id: 'm1',
+        content: 'Fixed the redirect.',
+        summary: 'Fixed it',
+        kind: 'result',
+        userId: { _id: SELF, username: 'me-bot', isBot: true },
+      },
+    ]);
+
+    const out = await AgentMessageService.getRecentMessages(POD, 10);
+
+    expect(out.find((m) => m._id === 'm1')).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    expect(out.find((m) => m._id === 'm2')).not.toHaveProperty('summary');
   });
 
   test('stamps `self` on the Mongo path too', async () => {

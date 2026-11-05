@@ -24,6 +24,10 @@ export interface ConnectorConfig {
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
   leadAgentUsername?: string;
+  // F131/F132: the Discord account the bot-add proved for this row's creator.
+  // Server-owned, and withheld from every viewer but the creator, so its
+  // presence is what says "you may switch live relay on here".
+  discordUserId?: string;
   gates?: Record<string, ConnectorGate>;
   // Projected by the server as { reason, at } only — the admin is never named.
   adminPause?: { reason?: string; at?: string };
@@ -52,6 +56,8 @@ export interface Connector {
   updatedAt?: string;
   config?: ConnectorConfig;
   podId?: { _id: string; name?: string } | string | null;
+  // An id, or a populated user on the pod-scoped read.
+  createdBy?: string | { _id?: string } | null;
 }
 
 export interface CatalogInstallation {
@@ -93,6 +99,9 @@ export interface CatalogEntry {
   // the provider, and the callback's `revokeAt` is linked only when it equals
   // this server-owned value.
   revokePage?: string;
+  // Where the person picks what the connection reaches (GitHub: the App's
+  // install page). A callback's next step links this value, never the query's.
+  accessPage?: string;
   installation: CatalogInstallation | null;
   integration: Connector | null;
 }
@@ -118,7 +127,7 @@ export interface SlackAuthorizeResponse {
 
 export type ConnectorAction =
   | 'manage' | 'show-code' | 'new-code' | 'authorize' | 'confirm'
-  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod';
+  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod' | 'reinstall';
 
 export interface ConnectorRow {
   action: ConnectorAction | null;
@@ -175,7 +184,23 @@ export const mappedTypeLabel = (type: string): string | null => TYPE_LABELS[type
 export const CONNECT_DETAIL: Record<string, { key: string; defaultValue: string }> = {
   telegram: { key: 'connectors.availableTelegram', defaultValue: 'one message' },
   slack: { key: 'connectors.availableSlack', defaultValue: 'one click in your workspace' },
+  discord: { key: 'connectors.availableDiscord', defaultValue: 'add the bot to your server' },
 };
+
+// Providers whose Connect sends the person to the provider's own install page
+// instead of the Installable lifecycle. No builtin row is installed for them, so
+// the catalog reports `offered: false`, but the install link and the provider's
+// callback are the whole flow and `available` already says this instance holds
+// their keys. Discord: the bot add returns to /api/discord/callback, and the
+// success page binds the channel.
+export const LINK_INSTALL_PROVIDERS = new Set(['discord']);
+
+// Offered for a channel picker: a rostered provider, or a link-install one
+// whose keys this instance holds. Without the keys a link-install provider stays
+// unlisted, exactly like an unrostered one.
+export const entryOffered = (entry: { installableId: string; offered?: boolean; available?: boolean }): boolean => (
+  entry.offered !== false || (entry.available === true && LINK_INSTALL_PROVIDERS.has(entry.installableId))
+);
 
 // Fallback only: when the catalog cannot be read the page still offers the
 // two providers it can drive, exactly as it did before the catalog existed.
@@ -209,6 +234,24 @@ export const installErrorResponse = (error: unknown): { status?: number; data?: 
   (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
 );
 
+// F143: binding a pod to a chat people outside it can read (a Slack or Discord
+// channel, a Telegram or GroupMe group) takes the pod's creator or an admin.
+// The server refuses with this code from POST and PATCH /api/integrations
+// (backend/services/chatRelay/bindSurface.ts); the page says it in the reader's
+// language. Null for any other refusal, so each caller keeps its own fallback.
+export const SHARED_SURFACE_REFUSAL_CODE = 'shared_surface_needs_pod_authority';
+
+export const sharedSurfaceRefusal = (
+  t: (key: string, options: { defaultValue: string }) => string,
+  data: { code?: unknown } | null | undefined,
+): string | null => (
+  data?.code === SHARED_SURFACE_REFUSAL_CODE
+    ? t('connectors.sharedSurfaceCreatorOnly', {
+      defaultValue: 'Only the pod creator can connect a shared channel to this pod.',
+    })
+    : null
+);
+
 // Row C: the Slack authorize and bind verbs refuse with a `code` the server
 // already sends (`slackError` in backend/routes/installables.ts), so the row
 // can say which refusal it was rather than one generic apology. An unlisted
@@ -222,6 +265,27 @@ export const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string 
   slack_lead_invalid: { key: 'connectors.slackLeadInvalid', defaultValue: 'Choose an agent in the active pod.' },
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
+
+export const connectorCreatorId = (connector: Connector | null | undefined): string => {
+  const createdBy = connector?.createdBy;
+  if (!createdBy) return '';
+  return typeof createdBy === 'object' ? String(createdBy._id || '') : String(createdBy);
+};
+
+// A Discord row relays to a shared guild channel, and only the installer the
+// bot-add proved may switch that on (backend discordInboundAdapter
+// .liveRelayRefusal). The viewer must be the row's creator: an admin is handed
+// the row whole, `discordUserId` included, and the server would still refuse
+// them. A row without the proof gets no switch, never one the server refuses.
+export const viewerCreatedConnector = (connector: Connector | null | undefined, viewerId: string): boolean => (
+  Boolean(viewerId) && connectorCreatorId(connector) === viewerId
+);
+
+export const discordRelayReady = (connector: Connector | null | undefined, viewerId: string): boolean => (
+  connector?.type === 'discord'
+  && Boolean(connector.config?.discordUserId)
+  && viewerCreatedConnector(connector, viewerId)
+);
 
 export const connectorPodId = (connector: Connector | null | undefined): string | null => {
   if (!connector || !connector.podId) return null;

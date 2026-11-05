@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod } from '../hooks/useV2Pods';
 import type { MarkName } from '../icons/glyphs';
@@ -20,6 +21,7 @@ import {
   TRANSIENT_STATUSES,
   installableLifecyclePath,
   installErrorResponse,
+  sharedSurfaceRefusal,
   SLACK_REFUSALS,
   connectorPodId,
   defaultPodForChannel,
@@ -27,6 +29,9 @@ import {
   codeExpiresInMinutes,
   claimIsStale,
   projectionMissing,
+  LINK_INSTALL_PROVIDERS,
+  entryOffered,
+  discordRelayReady,
 } from './channelModel';
 import type {
   ConnectorGate,
@@ -43,6 +48,8 @@ import type {
 export const useChannelConnectors = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [hostedCatalog, setHostedCatalog] = useState<CatalogEntry[] | null>(null);
@@ -78,6 +85,17 @@ export const useChannelConnectors = () => {
   const [hostedMcpCallbackRevoke, setHostedMcpCallbackRevoke] = useState<{
     entryId: string; provider: string; revokePage: string;
   } | null>(null);
+  // D248: a GitHub App install that came back without our state. Only the
+  // entry id is kept; the catalogue names the provider, or nothing is shown.
+  const [pendingAppInstalled, setPendingAppInstalled] = useState<string | null>(null);
+  // A non-error callback outcome: the App was installed, or a connect still
+  // needs the person to pick what it reaches. The link is the catalogue's.
+  const [hostedMcpCallbackNotice, setHostedMcpCallbackNotice] = useState<
+    | { kind: 'installed'; provider: string; connected: boolean }
+    | { kind: 'access'; provider: string; accessPage: string }
+    | { kind: 'reach'; provider: string }
+    | null
+  >(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
@@ -189,6 +207,37 @@ export const useChannelConnectors = () => {
     );
   }, [load, t]);
 
+  // GitHub's "Install & Authorize" returns without our state, so nothing was
+  // connected by it. Consume the query now; the notice waits for the catalogue.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('hostedMcp') !== 'installed') return;
+    setPendingAppInstalled(query.get('entryId') || '');
+    query.delete('hostedMcp');
+    query.delete('entryId');
+    query.delete('code');
+    const remaining = query.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
+    );
+  }, []);
+
+  // Whether the install also left the person connected is read from their own
+  // rows. An entry the catalogue does not hold gets no notice at all.
+  useEffect(() => {
+    if (pendingAppInstalled === null || loading || hostedCatalog === null) return;
+    const entry = hostedCatalog.find((candidate) => candidate.entryId === pendingAppInstalled);
+    if (entry?.label) {
+      const connected = connectors.some((row) => (
+        row.type === 'hosted-mcp' && row.status === 'connected' && row.config?.entryId === pendingAppInstalled
+      ));
+      setHostedMcpCallbackNotice({ kind: 'installed', provider: entry.label, connected });
+    }
+    setPendingAppInstalled(null);
+  }, [connectors, hostedCatalog, loading, pendingAppInstalled]);
+
   // The provider is named only from the catalogue's own entry, so a forged
   // entryId leaves the unnamed notice as it is.
   useEffect(() => {
@@ -224,6 +273,19 @@ export const useChannelConnectors = () => {
     if (loading || hostedCatalog === null) return;
     const entryId = query.get('entryId');
     const revokeAt = query.get('revokeAt');
+    // D248: connected, but nothing is reachable until the App is installed.
+    // The page links the entry's own access page; the query only asks for it.
+    if (entryId && query.get('next') === 'access') {
+      const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
+      if (entry?.label && safeProviderRevokePage(entry.accessPage)) {
+        setHostedMcpCallbackNotice({ kind: 'access', provider: entry.label, accessPage: entry.accessPage });
+      }
+    }
+    // TASK-782: connected, but the account can see nothing to search yet.
+    if (entryId && query.get('next') === 'reach') {
+      const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
+      if (entry?.label) setHostedMcpCallbackNotice({ kind: 'reach', provider: entry.label });
+    }
     if (entryId && revokeAt) {
       const row = connectors.find((candidate) => (
         candidate.type === 'hosted-mcp' && candidate.config?.entryId === entryId
@@ -243,6 +305,7 @@ export const useChannelConnectors = () => {
     query.delete('entryId');
     query.delete('revokeAt');
     query.delete('code');
+    query.delete('next');
     const remaining = query.toString();
     window.history.replaceState(
       window.history.state,
@@ -378,11 +441,37 @@ export const useChannelConnectors = () => {
     }
   };
 
+  // A link-install provider's Connect: the server builds the provider's install
+  // URL for this pod, and the browser leaves for it. The provider sends the
+  // person back to its callback, which lands on the success page that binds the
+  // channel. Only the pod's creator (or an admin) may add a bot to a pod.
+  const linkInstall = async (type: string, podId: string): Promise<boolean> => {
+    try {
+      const result = await api.get<{ installUrl?: string }>(`/api/${type}/install-link/${encodeURIComponent(podId)}`);
+      if (!result?.installUrl) throw new Error('no install link');
+      window.location.assign(result.installUrl);
+      return true;
+    } catch (requestError) {
+      const response = installErrorResponse(requestError);
+      setError(response.status === 403
+        ? t('connectors.linkInstallCreatorOnly', {
+          defaultValue: 'Only the person who created this pod can add the {{connector}} bot to it.',
+          connector: TYPE_LABELS[type] || type,
+        })
+        : t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+      return false;
+    }
+  };
+
   const createConnector = async () => {
     if (!newPodId || !addingType || creating) return;
     setCreating(true);
     setError(null);
     try {
+      if (LINK_INSTALL_PROVIDERS.has(addingType)) {
+        await linkInstall(addingType, newPodId);
+        return;
+      }
       const installed = await install(addingType, newPodId);
       if (installed) setAddingType(null);
     } finally {
@@ -397,8 +486,9 @@ export const useChannelConnectors = () => {
     try {
       await api.patch(`/api/integrations/${connector._id}`, body);
       await load();
-    } catch {
-      setError(t(errorKey, { defaultValue: errorDefault }));
+    } catch (requestError) {
+      setError(sharedSurfaceRefusal(t, installErrorResponse(requestError).data)
+        || t(errorKey, { defaultValue: errorDefault }));
     } finally {
       setBusyId(null);
     }
@@ -546,6 +636,11 @@ export const useChannelConnectors = () => {
     try {
       if (connector.installationId) {
         await api.del(installableLifecyclePath(connector.type));
+      } else if (connector.type === 'discord') {
+        // A Discord row is written by the OAuth install, with no Installable
+        // parent. The full DELETE removes its channel webhook as well; the
+        // isActive PATCH below would leave that webhook able to post.
+        await api.del(`/api/integrations/${connector._id}`);
       } else {
         await api.patch(`/api/integrations/${connector._id}`, { isActive: false });
       }
@@ -616,9 +711,24 @@ export const useChannelConnectors = () => {
     const title = connector.config?.chatTitle || connector.config?.teamName || TYPE_LABELS[connector.type] || connector.type;
 
     if (connector.status === 'error') {
+      // F161: reconnecting a Discord channel is adding the bot again, through
+      // the install link the Connect flow uses.
+      const isDiscordRow = connector.type === 'discord';
+      let errorAction: ConnectorAction | null = null;
+      let errorActionLabel = '';
+      if (isTelegram) {
+        errorAction = 'new-code';
+        errorActionLabel = t('connectors.newCode', { defaultValue: 'New code' });
+      } else if (isSlack) {
+        errorAction = 'authorize';
+        errorActionLabel = t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' });
+      } else if (isDiscordRow && connectorPodId(connector)) {
+        errorAction = 'reinstall';
+        errorActionLabel = t('connectors.discordReinstall', { defaultValue: 'Add the bot again' });
+      }
       return {
-        action: isTelegram ? 'new-code' : isSlack ? 'authorize' : null,
-        actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
+        action: errorAction,
+        actionLabel: errorActionLabel,
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
         line: connector.errorMessageUserFacing && connector.errorMessage
@@ -648,13 +758,21 @@ export const useChannelConnectors = () => {
       const mirror = connector.config?.relayAllAgentMessages === true;
       const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
       const markName: MarkName = relay ? (mirror ? 'mirror' : 'attention') : 'off';
+      // A Discord channel is shared: everyone in the server reads what lands there.
+      const isDiscord = connector.type === 'discord';
+      const mirrorLabel = isDiscord
+        ? t('connectors.discordRowMirror', { defaultValue: 'every agent line reaches everyone in the channel' })
+        : t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' });
+      const attentionLabel = isDiscord
+        ? t('connectors.discordRowAttention', {
+          defaultValue: 'escalations and the lead agent’s lines reach everyone in the channel',
+        })
+        : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' });
       const markLabel = relay
-        ? (mirror
-          ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-          : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' }))
+        ? (mirror ? mirrorLabel : attentionLabel)
         : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
-        action: (isTelegram || isSlack) ? 'manage' : null,
+        action: (isTelegram || isSlack || discordRelayReady(connector, viewerId)) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
         detail: '',
         mark: {
@@ -765,7 +883,7 @@ export const useChannelConnectors = () => {
     // about this instance's keys, not about whether a row exists to install.
     // Showing the Add anyway is what produced a lowercase `discord` row whose
     // click ended in 404 installable_not_found.
-    if (entry.offered === false) {
+    if (!entryOffered(entry)) {
       return {
         action: null,
         detail: '',
@@ -910,7 +1028,7 @@ export const useChannelConnectors = () => {
   // offerability contract), and someone who already installed it keeps their
   // row, which renders in the not-connectable state below.
   const listedCatalog = (catalog || []).filter((entry) => (
-    entry.offered !== false || Boolean(entry.installation) || Boolean(entry.integration)
+    entryOffered(entry) || Boolean(entry.installation) || Boolean(entry.integration)
   ));
   const allItems: ListItem[] = [
     ...listedCatalog.map((entry): ListItem => ({
@@ -976,6 +1094,10 @@ export const useChannelConnectors = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
+    if (action === 'reinstall') {
+      const podId = connectorPodId(connector);
+      return podId ? linkInstall(connector.type, String(podId)) : undefined;
+    }
     // The row opens the aside where the active pod's lead can be chosen.
     // Sending a confirm here would silently omit that choice.
     if (action === 'confirm') return undefined;
@@ -985,6 +1107,7 @@ export const useChannelConnectors = () => {
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
   return {
+    viewerId,
     connectors,
     setConnectors,
     catalog,
@@ -1024,6 +1147,7 @@ export const useChannelConnectors = () => {
     hostedMcpCallbackError,
     setHostedMcpCallbackError,
     hostedMcpCallbackRevoke,
+    hostedMcpCallbackNotice,
     pollRef,
     podPickerRef,
     now,

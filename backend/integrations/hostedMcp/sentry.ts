@@ -13,15 +13,76 @@
  * added `1h` to search_issues. That row was consented without Triage or Seer,
  * so its list leaves out update_issue and Seer analysis: update_issue keeps its
  * 10-19 pin, and a row without Triage sees it as unavailable.
- * find_dropped_events is no longer a top-level tool (it moved behind the
- * dispatcher), so it is not pinned. The get_sentry_resource pin deliberately
- * omits the vendor's optional `url`: that route can reach types outside the
- * pinned enum, so its live schema always reports a compatible addition in the
- * assessment log. The by-name dispatcher and its catalogue are excluded because
+ * The eight project and search reads are re-pinned again from the same row's
+ * capture at 2026-11-04T12:32:32Z, where Sentry had added an optional `fresh`
+ * boolean to every tool and dropped `organizationSlug` from `required`. That
+ * list has 49 tools: the by-name dispatcher is gone and 39 tools are listed
+ * directly, find_dropped_events among them. None of the 39 is pinned, since each
+ * needs its own review. find_organizations and get_sentry_resource keep their
+ * 11-01 pins, which still assess as compatible. The get_sentry_resource pin deliberately
+ * omits the vendor's optional `url`, and the `resourceUrl` and `issueUrl` that
+ * 11-04 added: those routes can reach types outside the pinned enum, so its live
+ * schema always reports a compatible addition in the assessment log. The by-name dispatcher and its catalogue are excluded because
  * they can reach operations outside this reviewed pin. Seer analysis is
  * excluded because it starts a vendor AI workflow.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
+
+// TASK-782: the callback waits on this, so it gets one short deadline.
+const REACH_DEADLINE_MS = 6000;
+// More orgs than this and the probe stops without an answer, never with a 0.
+const REACH_MAX_ORGS = 5;
+
+type ToolCall = (name: string, args: Record<string, unknown>) => Promise<any>;
+
+// The array a tool's structured result names, or null when the reply is not
+// one this probe can read (an error, no structured content, a wrong shape).
+const listIn = (result: any, key: string): { items: any[]; hasMore: boolean } | null => {
+  if (!result || result.isError) return null;
+  const structured = result.structuredContent;
+  if (!structured || !Array.isArray(structured[key])) return null;
+  return { items: structured[key], hasMore: structured.hasMore === true };
+};
+
+/**
+ * How many projects a fresh Sentry token can see (TASK-782). On 11-04 Triage's
+ * connection was in an org with no projects while the DSNs pointed at another
+ * org, so every search returned empty and nothing said why. `{ projects: 0 }`
+ * means every org the account is in was read and none has a project; any
+ * doubt (an error, more orgs than were read, an unreadable reply) is null, so
+ * the page never warns on a guess. Stops at the first org with a project.
+ */
+export const sentryReachProbe = async (
+  accessToken: string,
+  { call }: { call?: ToolCall } = {},
+): Promise<{ projects: number } | null> => {
+  if (!accessToken) return null;
+  const probe = async (callTool: ToolCall): Promise<{ projects: number } | null> => {
+    const orgs = listIn(await callTool('find_organizations', {}), 'organizations');
+    if (!orgs || orgs.hasMore || orgs.items.length > REACH_MAX_ORGS) return null;
+    for (const org of orgs.items) {
+      if (typeof org?.slug !== 'string' || !org.slug) return null;
+      // eslint-disable-next-line no-await-in-loop
+      const found = listIn(await callTool('find_projects', {
+        organizationSlug: org.slug,
+        ...(typeof org.regionUrl === 'string' && org.regionUrl ? { regionUrl: org.regionUrl } : {}),
+      }), 'projects');
+      if (!found) return null;
+      if (found.items.length > 0) return { projects: found.items.length };
+      if (found.hasMore) return null;
+    }
+    return { projects: 0 };
+  };
+  try {
+    if (call) return await probe(call);
+    // Lazy: the frontend's catalogue test imports this entry without the SDK.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { withHostedMcpSession } = require('../../services/hostedMcpToolDefinitions');
+    return await withHostedMcpSession(SENTRY_ENTRY, accessToken, REACH_DEADLINE_MS, probe);
+  } catch {
+    return null;
+  }
+};
 
 export const SENTRY_ENTRY: HostedMcpEntry = {
   id: 'sentry',
@@ -31,6 +92,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
   issuer: 'https://mcp.sentry.dev',
   client: 'cimd',
   scopes: ['org:read', 'project:write', 'team:write', 'event:write', 'alerts:write'],
+  reachProbe: (accessToken: string) => sentryReachProbe(accessToken),
   revoke: {
     page: 'https://sentry.io/settings/account/authorizations/',
     endpoint: 'https://mcp.sentry.dev/oauth/token',
@@ -80,6 +142,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -121,11 +184,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
               },
             ],
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -315,10 +378,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -401,10 +465,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -487,10 +552,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -573,10 +639,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -659,10 +726,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -748,10 +816,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -830,10 +899,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },

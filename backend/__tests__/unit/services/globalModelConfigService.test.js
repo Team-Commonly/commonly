@@ -152,4 +152,109 @@ describe('globalModelConfigService', () => {
       expect(result.llmService.model).toBe('gemini-2.5-flash');
     });
   });
+
+  // F103: the community default names the configured model by its own name,
+  // not the nemotron slug LiteLLM used to serve with DeepSeek.
+  describe('AGENT_DEFAULT_MODEL as the community agent default', () => {
+    const original = process.env.AGENT_DEFAULT_MODEL;
+    afterEach(() => {
+      if (original === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+      else process.env.AGENT_DEFAULT_MODEL = original;
+    });
+    const stored = (value) => SystemSetting.findOne.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValueOnce(value ? { key: 'llm.globalModelConfig', value } : null),
+    });
+
+    it.each([
+      ['unset', undefined, 'openrouter/deepseek-v4-flash'],
+      ['claude-haiku-5-5', 'claude-haiku-5-5', 'openrouter/claude-haiku-5-5'],
+    ])('with AGENT_DEFAULT_MODEL %s, defaults() and an unpersisted config both name it', async (_label, env, primary) => {
+      if (env === undefined) delete process.env.AGENT_DEFAULT_MODEL; else process.env.AGENT_DEFAULT_MODEL = env;
+      stored(null);
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel).toEqual({ primary, fallbacks: [] });
+      expect(GlobalModelConfigService.defaults().openclaw.communityAgentModel).toEqual({ primary, fallbacks: [] });
+    });
+
+    it('keeps an admin-persisted community primary over the env default', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/some-admin-pick', fallbacks: [] } } });
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/some-admin-pick');
+    });
+
+    // CodeRabbit on #3421: setConfig stores the resolved config, so without
+    // this every admin save would pin today's default as an explicit choice.
+    const savedValue = () => SystemSetting.findOneAndUpdate.mock.calls[0][1].$set.value;
+
+    it('an admin save that leaves the community model at its default stores none, so it keeps following the env', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored(null);
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto' } });
+
+      expect(savedValue().openclaw).not.toHaveProperty('communityAgentModel');
+    });
+
+    it('an admin\'s own community model is stored', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored(null);
+
+      await GlobalModelConfigService.setConfig({
+        openclaw: { communityAgentModel: { primary: 'openrouter/some-admin-pick', fallbacks: [] } },
+      });
+
+      expect(savedValue().openclaw.communityAgentModel).toEqual({ primary: 'openrouter/some-admin-pick', fallbacks: [] });
+    });
+
+    // CodeRabbit on #3421: an admin's saved pick that later equals the
+    // default is still their pick, so it survives saves and default changes.
+    it.each([
+      ['an unrelated save', { llmService: { provider: 'auto' } }],
+      ['a save that posts the model back unchanged', { openclaw: { communityAgentModel: { primary: 'openrouter/claude-haiku-5-5', fallbacks: [] } } }],
+    ])('an admin\'s pick that equals the default survives %s, and a later default change', async (_label, patch) => {
+      const pick = { primary: 'openrouter/claude-haiku-5-5', fallbacks: [] };
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: pick } });
+
+      await GlobalModelConfigService.setConfig(patch);
+      expect(savedValue().openclaw.communityAgentModel).toEqual(pick);
+
+      process.env.AGENT_DEFAULT_MODEL = 'claude-sonnet-5-5';
+      stored(savedValue());
+      const result = await GlobalModelConfigService.getConfig({ forceRefresh: true });
+      expect(result.openclaw.communityAgentModel).toEqual(pick);
+    });
+
+    it('a save over the stored retired slug does not pin today\'s default', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbacks: [] } } });
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto' } });
+
+      expect(savedValue().openclaw).not.toHaveProperty('communityAgentModel');
+    });
+
+    it('an admin\'s other nemotron pick is kept; only the retired default slug is mapped', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-ultra-253b', fallbacks: [] } } });
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/nvidia/nemotron-ultra-253b');
+    });
+
+    it('a stored nemotron community primary, retired in F103, reads as the default', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbacks: [] } } });
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/claude-haiku-5-5');
+    });
+  });
 });

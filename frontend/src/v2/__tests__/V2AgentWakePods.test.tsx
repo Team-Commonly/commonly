@@ -227,6 +227,68 @@ describe('per-agent Wake and Pods settings', () => {
     expect(await screen.findByText('24 turns a day · cap unavailable')).toBeInTheDocument();
   });
 
+  describe('an agent that runs on Commonly (hosted)', () => {
+    const hostedRows = (rows: Array<Record<string, unknown>>, runsPerDay = 6) => ({ data: {
+      turnCap: 30, activePodCount: rows.length, podCount: rows.length,
+      hostedHeartbeat: { minMinutes: 60, runsPerDay },
+      installations: rows.map((row, index) => ({
+        podId: `pod-${index}`, podName: `Pod ${index}`, status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
+        hostedHeartbeat: { minMinutes: 60, runsPerDay }, ...row,
+      })),
+    } });
+    const optionValues = () => Array.from((screen.getByLabelText('Heartbeat') as HTMLSelectElement).options)
+      .map((option) => option.value);
+
+    // runtimeType is per installation, so one identity's rows need not agree.
+    it('applies the floor and cap to hosted rows only when an agent has both kinds', async () => {
+      client.get.mockResolvedValue(hostedRows([{}, { hostedHeartbeat: null, heartbeatMinutes: 30 }]));
+      renderSettings();
+      // min(24 hosted, cap 6) + 48 from the row that isn't hosted.
+      expect(await screen.findByText('54 / 30 turns a day')).toBeInTheDocument();
+      const [hosted, other] = screen.getAllByLabelText('Heartbeat') as HTMLSelectElement[];
+      expect(Array.from(hosted.options).map((option) => option.value)).not.toContain('15');
+      expect(Array.from(other.options).map((option) => option.value)).toContain('15');
+    });
+
+    it('offers no interval below the hourly floor', async () => {
+      client.get.mockResolvedValue(hostedRows([{}]));
+      renderSettings();
+      await screen.findByLabelText('Heartbeat');
+      expect(optionValues()).toEqual(['off', '60', '120', '360', '720', '1440']);
+    });
+
+    it('keeps a stored interval below the floor visible, and counts it as hourly', async () => {
+      client.get.mockResolvedValue(hostedRows([{ heartbeatMinutes: 15 }], 30));
+      renderSettings();
+      expect(await screen.findByText('24 / 30 turns a day')).toBeInTheDocument();
+      expect(optionValues()).toContain('15');
+    });
+
+    it('previews against the daily heartbeat cap and says why', async () => {
+      client.get.mockResolvedValue(hostedRows([{}, {}]));
+      renderSettings();
+      expect(await screen.findByText('6 / 30 turns a day')).toBeInTheDocument();
+      expect(screen.queryByText(/This exceeds the daily cap/)).not.toBeInTheDocument();
+      expect(screen.getByText('Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.'))
+        .toBeInTheDocument();
+    });
+
+    it('says heartbeats aren\'t available when the cap is zero, and previews none', async () => {
+      client.get.mockResolvedValue(hostedRows([{}], 0));
+      renderSettings();
+      expect(await screen.findByText('0 / 30 turns a day')).toBeInTheDocument();
+      expect(screen.getByText('Heartbeats aren\'t available yet for your agents that run on Commonly.')).toBeInTheDocument();
+    });
+
+    it('an agent that is not hosted keeps every interval and no hosted line', async () => {
+      renderSettings();
+      await screen.findByLabelText('Heartbeat');
+      expect(optionValues()).toEqual(['off', '15', '30', '60', '120', '360', '720', '1440']);
+      expect(screen.queryByText(/run on Commonly/)).not.toBeInTheDocument();
+    });
+  });
+
   it('warns about key revocation when removing the only active installation beside a paused one', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 2, installations: [
         { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true,

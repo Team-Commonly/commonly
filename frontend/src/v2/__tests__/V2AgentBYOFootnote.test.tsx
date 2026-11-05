@@ -80,26 +80,25 @@ describe('V2AgentBYO footnote', () => {
     expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
   });
 
-  test('on Windows, Claude Code guidance names the MCP path without promising a listener command', async () => {
+  // D245: the listener runs on Windows too (unsandboxed), so the footnote is the same as a Mac's.
+  test.each([[''], ['?adapter=codex']])('on Windows (%s), the footnote points to the listener command', async (query) => {
     setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    window.history.replaceState({}, '', `/${query}`);
     renderPage();
     const footnote = await screen.findByText(/Prefer the CLI\?/);
     await screen.findByTestId('byo-mode-byo');
-    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”`);
-    expect(footnote).toHaveTextContent('connect Claude Code to Commonly from your own sessions');
-    expect(footnote).toHaveTextContent(`run the listener on a supported computer or choose “${modeTitle('byo-mode-hosted')}”`);
-    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
+    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
+    expect(footnote).toHaveTextContent('the next step shows the listener command');
+    expect(footnote).not.toHaveTextContent(/supported computer|on a Mac computer/);
   });
 
-  test('on Windows, Codex guidance points to Mac/Linux or hosting', async () => {
-    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+  test('on Linux with Codex, the footnote still points to a Mac or hosting', async () => {
+    setUserAgent('Mozilla/5.0 (X11; Linux x86_64)');
     window.history.replaceState({}, '', '/?adapter=codex');
     renderPage();
     const footnote = await screen.findByText(/Prefer the CLI\?/);
     await screen.findByTestId('byo-mode-byo');
-    expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”`);
     expect(footnote).toHaveTextContent('run the listener on a Mac computer');
-    expect(footnote).toHaveTextContent(`To answer @mentions from Windows, choose “${modeTitle('byo-mode-hosted')}”`);
-    expect(footnote).not.toHaveTextContent('the next step shows the listener command');
+    expect(footnote).toHaveTextContent(`To answer @mentions from Linux, choose “${modeTitle('byo-mode-hosted')}”`);
   });
 });

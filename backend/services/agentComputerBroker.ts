@@ -60,6 +60,7 @@ const templateUrl = (template: string, userId: string): string => {
 };
 
 export const agentComputerEnabled = (): boolean => process.env.AGENT_COMPUTER_ENABLED === 'true'
+  && Boolean(process.env.AGENT_COMPUTER_STEEL_TOKEN)
   && Boolean(process.env.AGENT_COMPUTER_STEEL_API_URL_TEMPLATE)
   && Boolean(process.env.AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE)
   && Boolean(process.env.AGENT_COMPUTER_WAKER_URL)
@@ -72,16 +73,33 @@ const configured: ComputerConfig = {
     .split(',').map((host) => host.trim().toLowerCase()).filter(Boolean)),
 };
 
-const steelRequest = async <T>(url: string, method: 'GET' | 'POST'): Promise<T> => {
+// Steel takes no credentials of its own, so its pod runs a token gate in front
+// of it (agentComputerSteelGate.ts). Every API call and the CDP connection
+// carry this header. The backend holds the token for this broker, and so does
+// ops-runner, which carries the backend's env for operator scripts. No other
+// workload's env has it, though any that can read the namespace's Secrets can.
+const steelAuthorization = (): Record<string, string> => ({
+  Authorization: `Bearer ${process.env.AGENT_COMPUTER_STEEL_TOKEN || ''}`,
+});
+
+export const steelRequest = async <T>(url: string, method: 'GET' | 'POST'): Promise<T> => {
   const response = await fetch(url, {
     method,
-    ...(method === 'POST' ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ persist: true }) } : {}),
+    headers: {
+      ...steelAuthorization(),
+      ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+    },
+    ...(method === 'POST' ? { body: JSON.stringify({ persist: true }) } : {}),
     redirect: 'error',
     signal: AbortSignal.timeout(SESSION_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Steel session request failed (${response.status}).`);
   return response.json() as Promise<T>;
 };
+
+export const connectSteel: Connect = (endpoint) => chromium.connectOverCDP(endpoint, {
+  timeout: SESSION_TIMEOUT_MS, headers: steelAuthorization(),
+});
 
 const wakeSteel = async (userId: string): Promise<void> => {
   if (!USER_ID.test(userId)) throw new Error('A human owner is required for the agent computer.');
@@ -156,7 +174,7 @@ export class AgentComputerBroker {
   constructor(
     private readonly config: ComputerConfig = configured,
     private readonly request: typeof steelRequest = steelRequest,
-    private readonly connect: Connect = (endpoint) => chromium.connectOverCDP(endpoint, { timeout: SESSION_TIMEOUT_MS }),
+    private readonly connect: Connect = connectSteel,
     private readonly wake: (userId: string) => Promise<void> = wakeSteel,
     private readonly takeoverState: TakeoverStore = takeoverStore,
     private readonly resolve: Resolve = resolveAddresses,

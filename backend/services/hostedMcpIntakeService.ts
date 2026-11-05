@@ -255,6 +255,7 @@ export interface HostedMcpAuthorizationServer {
   registration_endpoint?: string;
   token_endpoint_auth_methods_supported?: string[];
   revocation_endpoint_auth_methods_supported?: string[];
+  code_challenge_methods_supported?: string[];
 }
 
 /**

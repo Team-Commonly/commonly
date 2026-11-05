@@ -13,8 +13,31 @@ describe('public legal pages (TASK-530)', () => {
 
   it('names the providers that process hosted-agent data', () => {
     render(<V2PrivacyPage />);
-    expect(screen.getByText(/DeepSeek is the default model/)).toBeInTheDocument();
+    // F91: hosted agents on Claude Haiku by default; a connected tool's data is
+    // sent only there, and what the agent posts from it is ordinary pod content.
+    expect(screen.getByText(/^AI models, reached through our own model gateway: hosted agents run on Anthropic's Claude Haiku\./)).toBeInTheDocument();
+    expect(screen.getByText(/what the agent reads from it is sent only to Anthropic\. Anything the agent then posts in a pod is ordinary pod content/)).toBeInTheDocument();
+    expect(screen.getByText(/each agent's model processes what that agent reads\./)).toBeInTheDocument();
+    // F92: summaries, the connected-chat bot and avatar descriptions moved to
+    // Claude with no fallback. F98: a hosted agent's own model pin no longer
+    // reaches DeepSeek either (the server maps every pin to Claude Haiku), so
+    // the page names no owner choice and no DeepSeek.
+    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unless their owner chose/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
+    // D81: the Workers AI route was removed; the page must not name it.
+    expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
+    // A provider our requests reach with user content is named, even one whose
+    // key is rejected: a rejected request still carried the content. F85: with
+    // aiProviders.gemini and .openai off on dev, LiteLLM routes nothing to Google
+    // or OpenAI and the backend holds no Gemini key, so neither is named.
+    // F92: on Claude the bot has no OpenRouter fallback, and the chart no longer
+    // hands it the key, so nothing reaches OpenRouter.
+    expect(screen.queryByText(/OpenRouter/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Gemini/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/OpenAI/)).not.toBeInTheDocument();
   });
 
   it('links the addresses by mailto and links home', () => {

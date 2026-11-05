@@ -27,6 +27,25 @@ export interface ToolGrant {
    * known connector.
    */
   connector?: { id: string; label: string } | null;
+  /**
+   * F94: the granter's own agents that run outside Commonly, named on this
+   * read-only grant, and the consent that named them with each one's sandbox
+   * state as it was recorded then.
+   */
+  byoAgents?: string[];
+  byoConsent?: { by: string; at: string; version: string; agents: Array<{ userId: string; sandbox: ByoSandbox }> };
+}
+
+export type ByoSandbox = 'confined' | 'unconfined' | 'unknown';
+
+/** One of the viewer's agents in a pod that runs outside Commonly (GET /api/grants/byo-candidates). */
+export interface ByoCandidate {
+  userId: string;
+  agentName: string;
+  instanceId: string;
+  nameable: boolean;
+  reason?: 'unconfined_host' | 'adapter_unsupported';
+  sandbox: ByoSandbox;
 }
 
 /** `superseded` is a DERIVED read-only value the server reports for a parked
@@ -72,6 +91,12 @@ export interface ToolCatalogEntry {
    */
   connectionType?: 'github-app' | 'hosted-mcp';
   entryId?: string;
+  /**
+   * How a hosted entry is connected. Absent means OAuth (the start route); an
+   * operator-key entry takes one pasted key per agent at its own route, and its
+   * start route answers 404.
+   */
+  credentialMode?: 'operator_key';
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
@@ -88,6 +113,8 @@ export interface ToolConnection {
   connectedAt?: string;
   /** The bot User a key row is bound to; absent on the OAuth sign-in. */
   agentId?: string;
+  /** TASK-782: at connect, the account could see nothing to search (Sentry with no projects). */
+  reach?: 'none';
 }
 
 export interface HiddenToolConnection {
@@ -111,6 +138,8 @@ export interface PodSeat {
   name: string;
   instanceId?: string;
   internal?: boolean;
+  /** Who installed the seat in this pod: the roster's own field. */
+  installedBy?: string | null;
   // Set by the pod roster: connector grants reach more than one of this seat's pods.
   runtimeNarrowedByMultipleGrantPods?: boolean;
   // Set by the pod roster: exactly one of this seat's several pods has a grant,
@@ -130,6 +159,11 @@ export interface DraftGrant {
   expiryDays: 7 | 30 | 90;
   /** Change access: the grant this one replaces (revoked after the mint). */
   replaces: string | null;
+  /**
+   * F94: the named agents the person consented for, as a key. A consent covers
+   * exactly the agents it was given for, so checking another one clears it.
+   */
+  byoConsentFor?: string | null;
 }
 
 export interface GithubAppSetup {
@@ -180,6 +214,18 @@ export const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(g
 export const entryCovers = (entry: ToolCatalogEntry, grant: ToolGrant): boolean => (
   (grant.tools || []).some((name) => (entry.tools || []).some((tool) => tool.name === name))
 );
+/**
+ * The agent an operator-key connection belongs to, or null for any other
+ * connection. The grant route refuses a grant on a key connection unless its
+ * audience is exactly this agent (operatorKeyAudienceRefusal in
+ * backend/services/hostedMcpOperatorKey.ts), so the draft starts there and
+ * offers no one else.
+ */
+export const boundAgentOf = (entry: ToolCatalogEntry, connectionId: string): string | null => {
+  if (entry.credentialMode !== 'operator_key') return null;
+  return entry.connections.find((connection) => connection.connectionId === connectionId)?.agentId || null;
+};
+
 // A grant that names no tool of this entry grants nothing on it — that is what
 // the enforcement path does (roomGrantService refuses any tool the grant does
 // not list), so the page must not read such an entry as granted.

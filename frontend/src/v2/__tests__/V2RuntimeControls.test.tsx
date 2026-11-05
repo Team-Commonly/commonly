@@ -20,15 +20,11 @@ test('saved, passed and confirmed remain separate, and a disconnected process is
   expect(screen.queryByText('running')).not.toBeInTheDocument();
   expect(screen.getByText('disconnected')).toBeInTheDocument();
 });
-test('missing model inventory permits text, but missing effort inventory never permits free text or a pending dot', async () => {
+test('missing model inventory permits text; with no effort ladder anywhere the effort row is hidden', async () => {
   const save = jest.fn().mockResolvedValue(undefined);
   render(<Controls runtime={{ ...runtime, inventory: [{ ...runtime.inventory[0], efforts: [] }] }} onSave={save} />);
-  expect(screen.getByLabelText('effort')).toBeDisabled();
-  expect(screen.getByText(/max stays stored, not sent/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('effort')).toBeNull();
   expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
-  expect(screen.getByLabelText('effort')).not.toHaveClass('is-unsupported');
-  const effortRow = screen.getByLabelText('effort').closest('.lrow')!;
-  expect(within(effortRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
   fireEvent.change(screen.getByLabelText('model'), { target: { value: 'new-unlisted-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', model: 'new-unlisted-model' }));
@@ -125,4 +121,143 @@ test('a set key keeps its date and Remove when the harness cannot take a key, an
   expect(screen.getByLabelText('API key')).toBeInTheDocument();
   expect(screen.getByText(/^set · /)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+});
+
+// D247 (Sam): effort was greyed out, the harness list stopped at two, Codex
+// could not pick a model, and Claude's list read as aliases.
+const catalog = [
+  { id: 'claude', label: 'Claude Code', models: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'codex', label: 'Codex', models: ['gpt-6.1-sol', 'gpt-6-sol'], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'opencode', label: 'OpenCode', models: null, efforts: [] },
+  { id: 'qwen', label: 'Qwen Code', models: null, efforts: [] },
+  { id: 'goose', label: 'Goose', models: null, efforts: [] },
+  { id: 'hermes', label: 'Hermes', models: null, efforts: [] },
+  { id: 'pi', label: 'pi', models: null, efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'dsh', label: 'DeepSeek Harness', models: null, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+];
+const listener = { runtimeType: 'webhook', adapter: 'codex', model: '', effort: '', catalog, inventory: [], observation: null, processConnected: null };
+const optionTexts = (label: string) => Array.from((screen.getByLabelText(label) as HTMLSelectElement).options).map((o) => o.textContent);
+
+test('a listener agent with no device inventory can pick a Codex model and effort, saved as full ids', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  render(<Controls runtime={listener} onSave={save} />);
+  const effort = screen.getByLabelText('effort');
+  expect(effort).toBeEnabled();
+  expect(optionTexts('effort')).toEqual(['harness default', 'low', 'medium', 'high', 'xhigh', 'max']);
+  expect(optionTexts('model')).toEqual(['harness default', 'gpt-6.1-sol', 'gpt-6-sol', 'Other…']);
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'gpt-6.1-sol' } });
+  fireEvent.change(effort, { target: { value: 'xhigh' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' }));
+});
+
+test('Claude Code lists full model ids only, and Other… reveals a free-text id', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  render(<Controls runtime={{ ...listener, adapter: 'claude', model: 'claude-opus-5-5' }} onSave={save} />);
+  expect(optionTexts('model')).toEqual(['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'Other…']);
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: '__other__' } });
+  const input = screen.getByLabelText('model');
+  expect(input.tagName).toBe('INPUT');
+  expect(input).toHaveAttribute('placeholder', 'Full model id');
+  fireEvent.change(input, { target: { value: 'claude-opus-5-5-20261101' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', model: 'claude-opus-5-5-20261101' }));
+});
+
+test('a stored model outside the list still shows', () => {
+  render(<Controls runtime={{ ...listener, model: 'gpt-old-preview' }} onSave={jest.fn()} />);
+  expect(screen.getByLabelText('model')).toHaveValue('gpt-old-preview');
+  expect(optionTexts('model')[0]).toBe('gpt-old-preview · stored');
+});
+
+test('every catalogue harness is listed, plain, Claude Code and Codex first, with no tested marks', () => {
+  render(<Controls runtime={listener} onSave={jest.fn()} />);
+  expect(optionTexts('harness')).toEqual(['Claude Code', 'Codex', 'OpenCode', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness']);
+  expect(document.body.textContent).not.toMatch(/[Tt]ested/);
+});
+
+test('a reported inventory marks each harness and sorts the installed ones first', () => {
+  render(<Controls runtime={{ ...listener, runtimeType: 'wrapper', inventory: [
+    { harness: 'claude', installed: false, version: null, models: null, efforts: [] },
+    { harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [] },
+    { harness: 'opencode', installed: true, version: '1.19.3', models: null, efforts: [] },
+  ] }} onSave={jest.fn()} />);
+  expect(optionTexts('harness')).toEqual(['Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.3',
+    'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness']);
+});
+
+test('a harness with no effort flag hides the effort row instead of greying it', () => {
+  render(<Controls runtime={{ ...listener, adapter: 'opencode' }} onSave={jest.fn()} />);
+  expect(screen.queryByLabelText('effort')).toBeNull();
+  expect(screen.getByLabelText('model').tagName).toBe('INPUT');
+});
+
+test('a hosted agent shows no effort row and a read-only model', () => {
+  render(<Controls runtime={{ ...listener, runtimeType: 'hosted', host: 'cloud', model: 'deepseek-v4-flash' }} onSave={jest.fn()} />);
+  expect(screen.queryByLabelText('effort')).toBeNull();
+  expect(screen.getByLabelText('model')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Save runtime' })).toBeNull();
+  expect(screen.getByText('read only · runs on commonly')).toBeInTheDocument();
+});
+
+test('after a real reply, one quiet line names what answered, with a duration only when recorded', () => {
+  const done = { connectedAt: at, lastSeenAt: at, turnRunning: false, lastTurnAt: at, lastSpawnOutcome: 'completed' as const, confirmed: null };
+  const view = render(<Controls runtime={{ ...listener, observation: { ...done, lastSpawn: { ...receipt, harness: 'codex', version: '0.162.1' } } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-answered')).toHaveTextContent('Answered with Codex 0.162.1');
+  view.unmount();
+  render(<Controls runtime={{ ...listener, observation: { ...done, lastSpawn: { ...receipt, harness: 'codex', version: '0.162.1', durationMs: 4200 } } }} onSave={jest.fn()} />);
+  expect(screen.getByTestId('runtime-answered')).toHaveTextContent('Answered in 4.2s with Codex 0.162.1');
+});
+
+test('no reply yet, no answered line', () => {
+  render(<Controls runtime={runtime} onSave={jest.fn()} />);
+  expect(screen.queryByTestId('runtime-answered')).toBeNull();
+});
+
+// D247 walk, 11-04: a harness switch carried the old harness's model ("· stored")
+// and dropped the effort, so Save could write a Codex model under Claude Code.
+test('a harness switch resets model and effort to the new harness default, and switching back restores the saved pair', () => {
+  render(<Controls runtime={{ ...listener, model: 'gpt-6.1-sol', effort: 'xhigh' }} onSave={jest.fn()} />);
+  fireEvent.change(screen.getByLabelText('harness'), { target: { value: 'claude' } });
+  expect(screen.getByLabelText('model')).toHaveValue('');
+  expect(optionTexts('model')).not.toContain('gpt-6.1-sol · stored');
+  expect(screen.getByLabelText('effort')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('harness'), { target: { value: 'codex' } });
+  expect(screen.getByLabelText('model')).toHaveValue('gpt-6.1-sol');
+  expect(screen.getByLabelText('effort')).toHaveValue('xhigh');
+});
+
+test('after a switch, Save sends only a model the new harness lists, or one typed under Other…', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  render(<Controls runtime={{ ...listener, model: 'gpt-6.1-sol', effort: 'xhigh' }} onSave={save} />);
+  fireEvent.change(screen.getByLabelText('harness'), { target: { value: 'claude' } });
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'claude-sonnet-5-5' } });
+  fireEvent.change(screen.getByLabelText('effort'), { target: { value: 'high' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', model: 'claude-sonnet-5-5', effort: 'high' }));
+  save.mockClear();
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: '__other__' } });
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'claude-next-preview' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ adapter: 'claude', model: 'claude-next-preview' })));
+});
+
+test('a model another harness left behind blocks Save on a listed harness until one is picked', () => {
+  // A record saved before this fix: Claude Code with a Codex model.
+  render(<Controls runtime={{ ...listener, adapter: 'claude', model: 'gpt-6.1-sol', effort: 'high' }} onSave={jest.fn()} />);
+  expect(optionTexts('model')[0]).toBe('gpt-6.1-sol · stored');
+  fireEvent.change(screen.getByLabelText('effort'), { target: { value: 'max' } });
+  expect(screen.getByRole('button', { name: 'Save runtime' })).toBeDisabled();
+  expect(screen.getByText('gpt-6.1-sol isn’t a Claude Code model · pick one from the list')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('model'), { target: { value: 'claude-opus-5-5' } });
+  expect(screen.getByRole('button', { name: 'Save runtime' })).toBeEnabled();
+});
+
+test('a stored id no catalogue lists (an earlier Other…) still saves an effort change', async () => {
+  const save = jest.fn().mockResolvedValue(undefined);
+  render(<Controls runtime={{ ...listener, adapter: 'claude', model: 'claude-opus-5-5-20261101', effort: 'high' }} onSave={save} />);
+  fireEvent.change(screen.getByLabelText('effort'), { target: { value: 'max' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith({ adapter: 'claude', effort: 'max' }));
 });

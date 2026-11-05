@@ -1145,24 +1145,29 @@ const ChatRoom = () => {
         }
     };
 
-    const getDiscordOAuthUrl = (podId, guildId = null) => {
-        const clientId = process.env.REACT_APP_DISCORD_CLIENT_ID;
-        const redirectUri = encodeURIComponent(`${getApiBaseUrl()}/api/discord/callback`);
-        const scopes = encodeURIComponent('bot applications.commands');
-        const permissions = '536873984';
-        const state = `pod_${podId}`;
-        const timestamp = Date.now();
-        return `https://discord.com/api/oauth2/authorize?client_id=${clientId}&scope=${scopes}&permissions=${permissions}`
-            + `&redirect_uri=${redirectUri}&response_type=code&state=${state}`
-            + (guildId ? `&guild_id=${guildId}` : '')
-            + `&t=${timestamp}`;
+    // The install link comes from the server: its OAuth state is signed and names
+    // the person asking, and the callback refuses any other state. Opened in a tab
+    // synchronously (so the popup blocker allows it), then pointed at the link.
+    const openDiscordInstall = async (guildId = null) => {
+        if (!roomId) return;
+        const tab = window.open('', '_blank');
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(`/api/discord/install-link/${roomId}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const url = new URL(res.data.installUrl);
+            if (guildId) url.searchParams.set('guild_id', guildId);
+            if (tab) tab.location.href = url.toString();
+            else window.location.assign(url.toString());
+        } catch (err) {
+            if (tab) tab.close();
+            console.warn('Failed to get the Discord install link:', err.response?.status);
+        }
     };
 
     const getIntegrationRedirectUrl = (type) => {
         if (!roomId) return '#';
-        if (type === 'discord') {
-            return getDiscordOAuthUrl(roomId);
-        }
         const externalSetupLinks = {
             slack: 'https://api.slack.com/apps',
             groupme: 'https://dev.groupme.com/bots/new',
@@ -1731,7 +1736,7 @@ const ChatRoom = () => {
                 if (config.serverId && config.channelId) {
                     return `https://discord.com/channels/${config.serverId}/${config.channelId}`;
                 }
-                return getDiscordOAuthUrl(roomId, config.serverId);
+                return null;
             case 'slack':
                 return 'https://api.slack.com/apps';
             case 'groupme':
@@ -1764,6 +1769,10 @@ const ChatRoom = () => {
             return;
         }
         const url = getIntegrationManageUrl(type, integration);
+        if (!url && type === 'discord') {
+            openDiscordInstall(integration?.config?.serverId || null);
+            return;
+        }
         if (url) {
             window.open(url, '_blank', 'noopener,noreferrer');
         }
@@ -3626,7 +3635,10 @@ const ChatRoom = () => {
                                                             target={['groupme', 'telegram', 'x', 'instagram'].includes(item.id) ? undefined : '_blank'}
                                                             rel={['groupme', 'telegram', 'x', 'instagram'].includes(item.id) ? undefined : 'noopener noreferrer'}
                                                             onClick={(event) => {
-                                                                if (item.id === 'groupme') {
+                                                                if (item.id === 'discord') {
+                                                                    event.preventDefault();
+                                                                    openDiscordInstall();
+                                                                } else if (item.id === 'groupme') {
                                                                     event.preventDefault();
                                                                     handleGroupmeSetupOpen();
                                                                 } else if (item.id === 'telegram') {

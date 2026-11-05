@@ -15,23 +15,23 @@ Services.
 ## Secrets (External Secrets Operator)
 
 ESO syncs secrets from Secret Manager into the staging namespace. The staging
-render references **47** keys across three ExternalSecrets — **41 staging-prefixed**
+render references **47** keys across four ExternalSecrets — **43 staging-prefixed**
 (`commonly-staging-*`, disjoint from prod's `commonly-dev-*`, via
-`externalSecrets.keyPrefix: commonly-staging-`) and **6 shared with prod**
+`externalSecrets.keyPrefix: commonly-staging-`) and **4 shared with prod**
 (`commonly-*`):
 
-- **api-keys (43)** — 38 staging-prefixed + 5 shared.
-  - Of the 38 staging-prefixed: model/search **API keys are copied** from the dev
+- **api-keys (42)** — 39 staging-prefixed + 3 shared.
+  - Of the 39 staging-prefixed: model/search **API keys are copied** from the dev
     values (gemini, openrouter×2, openai, anthropic, brave×2); **JWT, session, and
     internal-connector** secrets (clawdbot-gateway, commonly-bot-runtime,
     litellm-master) are **freshly generated**; the **OAuth** (google/github/x client
     id + secret), **GitHub-App** (id, private-key, installation-id), **codex**, and
     **external-bot** (groupme, telegram) keys are **non-functional placeholders**,
     filled only when those integrations are configured for staging.
-  - The 5 shared (`commonly-*`, deliberately not staging-prefixed): the Cloudflare
-    Workers-AI token + account id (low power), the Git author name + email
-    (harmless), and the shared DeepSeek API key (a spend risk, not access — a
-    post-11/1 row swaps it for a capped staging key).
+  - The 3 shared (`commonly-*`, deliberately not staging-prefixed): the Git
+    author name + email (harmless), and the shared DeepSeek API key (a spend risk, not access — a
+    post-11/1 row swaps it for a capped staging key). The Cloudflare Workers-AI
+    token + account id were dropped from the ring on 11-03 with the route (D81).
   - **Deliberately NOT shared — the prod GitHub PAT.** `commonly-github-pat` has
     write power over prod repos, and staging auto-deploys every merge (the reckless
     lane), so `githubPat.enabled: false` in values-staging omits the `GITHUB_PAT`
@@ -43,6 +43,7 @@ render references **47** keys across three ExternalSecrets — **41 staging-pref
 - **database-credentials (3, all staging-prefixed).** The Postgres role password,
   and the Mongo URI + password (see Databases).
 - **postgres-ca-cert (1, shared).** Reuses `commonly-pg-ca-cert`.
+- **cloudflared-commonly-staging (1, staging-prefixed).** The staging tunnel's token.
 
 No SMTP2GO or Discord keys are **fetched** — both are disabled for staging
 (`email.enabled: false`, `discord.enabled: false`), so the `api-keys` ExternalSecret

@@ -34,6 +34,12 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
   `http://localhost:3102`. Do not change prod CORS for this.
 - **Ports.** Each target has its own port: staging 3102, prod 3101. Two origins never
   share `localStorage`, so a prod token cannot reach a staging run.
+- **Another port.** To run beside another session, set `DEV_LIVE_PORT` to a port in the
+  target's own range: prod 3110–3119, staging 3120–3129. For example,
+  `DEV_LIVE_PORT=3113 DEV_LIVE_TARGET=prod npm run dev:live`. It moves the API base too.
+  The ranges never overlap, so one origin never serves both targets and a prod token saved
+  there never reaches a staging run. `dev:live` refuses `--port`, which would move the server
+  but leave the app calling the target's default port.
 - **Prod, read-only.** `DEV_LIVE_TARGET=prod npm run dev:live` serves on localhost:3101
   and points at `https://api.commonly.me`. HTTP writes are refused at the proxy (the response is
   a Vite 404), and `/socket.io` is not proxied, so the page renders from GET
@@ -56,8 +62,7 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
 {
   "jest": {
     "moduleNameMapper": {
-      "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
-      "^d3$": "<rootDir>/src/__mocks__/d3.js"
+      "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js"
     }
   }
 }
@@ -65,7 +70,6 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
 
 ### Mock Files
 - `src/__mocks__/react-markdown.js` - ES module mock for react-markdown
-- `src/__mocks__/d3.js` - ES module mock for d3 with force simulation, scales
 
 ## Common Testing Patterns
 
@@ -165,7 +169,7 @@ test('handles timer delays in refresh function', async () => {
 
 ### ES Module Compatibility
 **Issues Fixed:**
-- `react-markdown` and `d3` ES module parsing errors in Jest
+- `react-markdown` ES module parsing errors in Jest
 - `SyntaxError: Unexpected token 'export'` errors
 
 **Solutions Applied:**
@@ -184,23 +188,6 @@ const ReactMarkdown = ({ children }) => {
 };
 
 export default ReactMarkdown;
-```
-
-### d3 Mock
-```javascript
-export const select = jest.fn(() => ({
-  append: jest.fn().mockReturnThis(),
-  attr: jest.fn().mockReturnThis(),
-  style: jest.fn().mockReturnThis(),
-  // ... more d3 methods
-}));
-
-export const forceSimulation = jest.fn(() => ({
-  force: jest.fn().mockReturnThis(),
-  nodes: jest.fn().mockReturnThis(),
-  on: jest.fn().mockReturnThis(),
-  stop: jest.fn().mockReturnThis(),
-}));
 ```
 
 ## Troubleshooting Common Issues
@@ -234,8 +221,7 @@ These are all expected and do not indicate test failures.
 ```
 src/
 ├── __mocks__/
-│   ├── react-markdown.js
-│   └── d3.js
+│   └── react-markdown.js
 ├── components/
 │   ├── WhatsHappening.test.js (22 tests)
 │   ├── ChatRoom.test.js (2 tests)

@@ -273,6 +273,47 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     navigate(`/v2/pods/${podId}`);
   }, [navigate]);
 
+  // d215 s-sidebar 390 draws each row's time at rest and the pin only in the
+  // row's hover state (.pod.hov), which a touch screen has no pointer for. A
+  // press and hold is that state on touch: it reveals the row's pin in the
+  // time's slot, and the click the press ends in does not open the pod. A tap
+  // anywhere outside the row puts the time back.
+  const [revealedPin, setRevealedPin] = useState<string | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressRevealed = useRef(false);
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }, []);
+  const startPress = (podId: string) => (event: React.PointerEvent) => {
+    pressRevealed.current = false;
+    if (event.pointerType === 'mouse') return;
+    cancelPress();
+    pressTimer.current = setTimeout(() => {
+      pressTimer.current = null;
+      pressRevealed.current = true;
+      setRevealedPin(podId);
+    }, 500);
+  };
+  // The click a hold ends in comes straight after the release, so the guard
+  // lives only that long. Some browsers (Chrome on Android) send no click after
+  // a long press, and a guard left set would swallow the next mouse click or
+  // keyboard Enter instead (#3412 review).
+  const endPress = useCallback(() => {
+    cancelPress();
+    if (pressRevealed.current) setTimeout(() => { pressRevealed.current = false; }, 400);
+  }, [cancelPress]);
+  useEffect(() => cancelPress, [cancelPress]);
+  useEffect(() => {
+    if (!revealedPin) return undefined;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest?.('.v2-pods__rowwrap--reveal')) setRevealedPin(null);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [revealedPin]);
+
   const chooseListView = (view: PodListView) => {
     setListView(view);
     writeListView(view);
@@ -319,11 +360,21 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const selected = pod._id === selectedPodId;
     const count = attentionCountByPod[pod._id] || 0;
     const direct = isDirectPod(pod);
+    const rowName = pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
+      ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
+      : pod.name;
     const peer = direct ? directMemberFor(pod, currentUser?._id) : undefined;
     const time = relativeTime(podMessageTime(pod) || null, now);
     const isPinned = pinned.has(pod._id);
     return (
-      <div key={pod._id} className={`v2-pods__rowwrap${isPinned ? ' v2-pods__rowwrap--pinned' : ''}`}>
+      <div
+        key={pod._id}
+        className={[
+          'v2-pods__rowwrap',
+          isPinned ? 'v2-pods__rowwrap--pinned' : '',
+          revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : '',
+        ].filter(Boolean).join(' ')}
+      >
       <button
         type="button"
         className={[
@@ -332,7 +383,15 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           count > 0 ? 'v2-pods__row--unread' : '',
           inFold ? 'v2-pods__row--in-fold' : '',
         ].filter(Boolean).join(' ')}
-        onClick={() => selectPod(pod._id)}
+        onClick={() => {
+          if (pressRevealed.current) { pressRevealed.current = false; return; }
+          selectPod(pod._id);
+        }}
+        onPointerDown={startPress(pod._id)}
+        onPointerUp={endPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onContextMenu={(event) => { if (pressRevealed.current || pressTimer.current) event.preventDefault(); }}
         aria-current={selected ? 'page' : undefined}
       >
         {peer ? (
@@ -347,11 +406,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         ) : (
           <span className="v2-pods__row-mark" aria-hidden="true">{podInitials(pod.name)}</span>
         )}
-        <span className="v2-pods__row-name">
-          {pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
-            ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
-            : pod.name}
-        </span>
+        <span className="v2-pods__row-name">{rowName}</span>
         <span className="v2-pods__row-meta">
           {count > 0 && (
             <span className="v2-pods__row-pill" aria-label={t('podsSidebar.workspace.needsYouCount', { count })}>
@@ -361,12 +416,14 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           {time && <span className="v2-pods__row-time" aria-hidden="true">{time}</span>}
         </span>
       </button>
-      {/* D215: the pin is an icon on row hover that takes the time's slot. */}
+      {/* D215: the pin is an icon on row hover (or a touch press and hold) that takes the time's slot. */}
       <button
         type="button"
         className={`v2-pods__pin${isPinned ? ' v2-pods__pin--active' : ''}`}
         onClick={(event) => { event.stopPropagation(); togglePin(pod._id); }}
-        aria-label={isPinned ? t('podsSidebar.unpinAriaLabel') : t('podsSidebar.pinAriaLabel')}
+        // Named for its pod: the pin stays in the accessibility tree at rest, so a
+        // screen reader reaches it by swiping, one per row, without the hold.
+        aria-label={isPinned ? t('podsSidebar.unpinAriaLabel', { name: rowName }) : t('podsSidebar.pinAriaLabel', { name: rowName })}
         title={isPinned ? t('podsSidebar.unpinTitle') : t('podsSidebar.pinTitle')}
         aria-pressed={isPinned}
       >

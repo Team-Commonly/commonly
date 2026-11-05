@@ -13,8 +13,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { REPO_ROOT } = require('../../utils/repoRoot');
 
-const repo = path.join(__dirname, '../../../..');
+const repo = REPO_ROOT;
 const chart = path.join(repo, 'k8s/helm/commonly');
 const signal = path.join(chart, 'files/litellm/model_fallback_signal.py');
 const read = (rel) => fs.readFileSync(path.join(chart, rel), 'utf8');

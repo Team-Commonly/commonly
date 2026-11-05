@@ -8,6 +8,7 @@ import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
+import { compactAge, compactNow } from '../utils/compactTime';
 import V2Segmented from './V2Segmented';
 import { ShellGlyph, ShellGlyphName } from '../icons/glyphs';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
@@ -31,12 +32,12 @@ const extOf = (name: string): string => { const m = /\.([a-z0-9]{1,5})$/i.exec(n
 const whenLabel = (value: string | null | undefined): string => {
   if (!value) return '';
   const minutes = Math.floor(Math.max(0, Date.now() - new Date(value).getTime()) / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return compactNow();
+  if (minutes < 60) return compactAge('minute', minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return compactAge('hour', hours);
   const days = Math.floor(hours / 24);
-  return days < 30 ? `${days}d` : `${Math.floor(days / 30)}mo`;
+  return days < 30 ? compactAge('day', days) : compactAge('month', Math.floor(days / 30));
 };
 
 type InspectorView = 'pod' | 'threads';

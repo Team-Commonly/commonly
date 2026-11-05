@@ -11,7 +11,7 @@ import en from '../../i18n/locales/en.json';
 import i18n, { i18nReady } from '../../i18n';
 import {
   axios, authValue, mockApi, renderPage, renderWithRoutes, pageReady, tileNode, findTile, clickTile,
-  openDrawer, openPopover, findDrawer, expandOff,
+  openDrawer, openPopover, findDrawer, expandOff, adminAuth,
 } from '../__testkit__/connectorsKit';
 
 jest.mock('axios', () => require('../__testkit__/axiosMock').axiosFactory());
@@ -240,6 +240,40 @@ describe('Connectors page: channels', () => {
       { config: { liveRelay: true } },
       expect.anything(),
     ));
+  });
+
+  // F143: a PATCH that would point a connector at a shared chat is refused with
+  // a code; the page names that refusal in the reader's language. Any other
+  // refusal keeps the action's own copy.
+  it.each([
+    ['en', 'Only the pod creator can connect a shared channel to this pod.'],
+    ['zh-CN', '只有这个 Pod 的创建者才能把共享频道连接进来。'],
+  ])('names a shared-surface refusal from a PATCH in %s', async (lang, expected) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(lang); });
+    try {
+      mockGets();
+      axios.patch.mockRejectedValue({
+        response: { status: 403, data: { code: 'shared_surface_needs_pod_authority', message: 'Server wording.' } },
+      });
+      renderPage();
+      const drawer = await openDrawer('Slack');
+      fireEvent.click(within(drawer).getAllByRole('checkbox')[0]);
+      expect(await screen.findByText(expected)).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  it('keeps the action\'s own copy for a PATCH refusal with any other code', async () => {
+    mockGets();
+    axios.patch.mockRejectedValue({ response: { status: 403, data: { message: 'Access denied' } } });
+    renderPage();
+    const drawer = await openDrawer('Slack');
+    fireEvent.click(within(drawer).getByRole('checkbox', { name: 'Relay' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalled());
+    expect(await screen.findByText(/Could not/)).toBeInTheDocument();
+    expect(screen.queryByText('Only the pod creator can connect a shared channel to this pod.')).toBeNull();
   });
 
   it('PATCHes the mirror mode from the channel drawer', async () => {
@@ -1190,18 +1224,18 @@ describe('Connectors page: channels', () => {
     });
 
     it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
-      // Slack's line is in the map; Discord's is not. The point of the map is that
-      // Discord renders NO sentence rather than Slack's.
+      // Slack's line is in the map; GroupMe's is not. The point of the map is that
+      // GroupMe renders NO sentence rather than Slack's.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: true }),
         entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
       ]);
       renderPage();
 
-      const discord = await openPopover('Discord');
-      expect(discord.textContent).not.toContain('one click in your workspace');
-      expect(discord.textContent).not.toContain('one message');
-      expect(within(discord).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      const groupme = await openPopover('GroupMe');
+      expect(groupme.textContent).not.toContain('one click in your workspace');
+      expect(groupme.textContent).not.toContain('one message');
+      expect(within(groupme).getByRole('button', { name: 'Add' })).toBeInTheDocument();
 
       const slack = await openPopover('Slack');
       expect(slack.textContent).toContain('one click in your workspace');
@@ -1210,19 +1244,20 @@ describe('Connectors page: channels', () => {
     });
 
     it('does not list a provider this instance does not offer (D215)', async () => {
-      // Discord on commonly.me: usable keys, no builtin Installable row, never
-      // walked. A stranger must not see it, not even behind "+N off".
+      // Usable keys, no builtin Installable row, and no install link of its own.
+      // A stranger must not see it, not even behind "+N off". (Discord was this
+      // example until it got a link install; see the Discord block below.)
       mockCatalog([
         entry(),
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false }),
       ]);
       renderPage();
 
       await findTile('Telegram');
       // The off button only exists when a dead tile does, so its absence is the
-      // assertion; a collapsed group would hide a listed Discord from the query.
+      // assertion; a collapsed group would hide a listed GroupMe from the query.
       expect(screen.queryByRole('button', { name: /^\+\d+ off$/ })).toBeNull();
-      expect(tileNode('Discord')).toBeNull();
+      expect(tileNode('GroupMe')).toBeNull();
     });
 
     it('keeps an installed but no-longer-offered provider as not connectable, with no Add anywhere', async () => {
@@ -1230,17 +1265,17 @@ describe('Connectors page: channels', () => {
       // the roster row went away: it states the state and offers no action. Before
       // #1826 the row rendered an Add whose click ended in 404 installable_not_found.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
       ]);
       renderPage();
 
       await pageReady();
       await expandOff('Channels');
-      const tile = await findTile('Discord');
+      const tile = await findTile('GroupMe');
       expect(tile).toHaveClass('v2-cx-tile--dim');
       expect(tile.querySelector('svg')).not.toBeNull();
       fireEvent.click(tile);
-      const drawer = await findDrawer('Discord');
+      const drawer = await findDrawer('GroupMe');
       expect(within(drawer).getByText('Unavailable here.')).toBeInTheDocument();
       // No Add and no connect verb: an offered provider is the only thing that may
       // produce them, and there is none in this catalog.
@@ -1255,14 +1290,95 @@ describe('Connectors page: channels', () => {
       // went away can leave an integration with no installation. Dropping it from
       // the list would hide a live connection from its owner.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, integration: liveIntegration() }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false, integration: liveIntegration() }),
       ]);
       renderPage();
 
       await pageReady();
       await expandOff('Channels');
-      expect(await findTile('Discord')).toHaveClass('v2-cx-tile--dim');
+      expect(await findTile('GroupMe')).toHaveClass('v2-cx-tile--dim');
     });
+
+    describe('Discord: a link install, offered on its keys alone', () => {
+      // Discord has no builtin Installable row (the catalog says offered: false),
+      // but its install is the bot-add link plus Discord's callback, so it is
+      // offered wherever the instance holds its keys (available). Connect sends
+      // the browser to the link the server builds for the chosen pod; it never
+      // calls the Installable lifecycle, which would 422 provider_not_offered.
+      const realLocation = window.location;
+      let assign;
+      beforeEach(() => {
+        assign = jest.fn();
+        Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, assign } });
+      });
+      afterEach(() => {
+        Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+      });
+
+      const discordEntry = entry({ installableId: 'discord', label: 'Discord', description: '', available: true, offered: false });
+      const INSTALL_URL = 'https://discord.com/api/oauth2/authorize?client_id=1&response_type=code';
+
+      it('lists Discord with Add and its own onboarding line', async () => {
+        mockCatalog([entry(), discordEntry]);
+        renderPage();
+
+        const popover = await openPopover('Discord');
+        expect(popover.textContent).toContain('add the bot to your server');
+        expect(popover.textContent).not.toContain('Unavailable here.');
+        expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      });
+
+      it('offers Discord beside Telegram and Slack in Connect a channel, and Connect leaves for its install link', async () => {
+        mockApi({
+          installables: [entry(), entry({ installableId: 'slack', label: 'Slack', offered: true }), discordEntry],
+          pods: [{ _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] }],
+          route: (url) => (url === '/api/discord/install-link/p1'
+            ? Promise.resolve({ data: { installUrl: INSTALL_URL, podId: 'p1', status: 'ready' } })
+            : undefined),
+        });
+        renderPage();
+
+        fireEvent.click(await findTile('Channel'));
+        const drawer = await findDrawer('Connect a channel');
+        const providers = within(drawer).getByRole('group', { name: 'Channel provider' });
+        expect(within(providers).getAllByRole('button').map((b) => b.textContent)).toEqual(['Telegram', 'Slack', 'Discord']);
+        fireEvent.click(within(providers).getByRole('button', { name: 'Discord' }));
+        fireEvent.click(within(drawer).getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => expect(assign).toHaveBeenCalledWith(INSTALL_URL));
+        expect(axios.get).toHaveBeenCalledWith('/api/discord/install-link/p1', expect.anything());
+        expect(axios.post).not.toHaveBeenCalledWith('/api/installables/discord/install', expect.anything(), expect.anything());
+      });
+
+      it('does not list Discord on an instance without its keys', async () => {
+        mockCatalog([entry(), entry({ installableId: 'discord', label: 'Discord', available: false, offered: false })]);
+        renderPage();
+
+        await findTile('Telegram');
+        expect(screen.queryByRole('button', { name: /^\+\d+ off$/ })).toBeNull();
+        expect(tileNode('Discord')).toBeNull();
+      });
+
+      it('says who may add the bot when the server refuses the link', async () => {
+        mockApi({
+          installables: [discordEntry],
+          pods: [{ _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] }],
+          route: (url) => (url === '/api/discord/install-link/p1'
+            ? Promise.reject(Object.assign(new Error('403'), { response: { status: 403, data: { error: 'Access denied' } } }))
+            : undefined),
+        });
+        renderPage();
+
+        const popover = await openPopover('Discord');
+        fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+        const drawer = await findDrawer('Connect a channel');
+        fireEvent.click(within(drawer).getByRole('button', { name: 'Connect' }));
+
+        expect(await screen.findByText('Only the person who created this pod can add the Discord bot to it.')).toBeInTheDocument();
+        expect(assign).not.toHaveBeenCalled();
+      });
+    });
+
 
     it('renders an unavailable provider with its blocker and an available one with Add', async () => {
       mockCatalog([
@@ -1593,3 +1709,161 @@ const ConnectorsPageForRoutes = () => {
   const Page = require('../connectors/ConnectorsPage').default;
   return <Page />;
 };
+
+// F132 (D249): a Discord row relays agent lines out to a SHARED channel, so its
+// relay switch is offered only on a row whose installer the bot-add proved —
+// the server stamps `discordUserId` on the creator's row and withholds it from
+// everyone else's view. The copy says who reads the channel.
+describe('Connectors page: Discord live relay (F132)', () => {
+  const discordRow = (config = {}, over = {}) => ({
+    _id: 'i-discord',
+    type: 'discord',
+    status: 'connected',
+    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    config: { serverId: '111111111111111111', channelId: '222222222222222222', ...config },
+    podId: { _id: 'p2', name: 'Ops' },
+    createdBy: 'u1',
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/v2/connectors');
+  });
+
+  // Review finding 2: the server withholds `discordUserId` from everyone but the
+  // creator, so its absence on someone else's row says nothing about proof.
+  it('shows a viewer who is not the creator neither the switch nor the add-the-bot-again note', async () => {
+    mockGets([discordRow({ liveRelay: true, relayAllAgentMessages: true }, { createdBy: 'u2' })]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
+  });
+
+  it('shows an admin who is not the creator no switch, even though the row reaches them whole', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false }, { createdBy: { _id: 'u2' } })]);
+    renderPage({ auth: adminAuth() });
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('offers the installer the relay switch, and turning it on PATCHes liveRelay', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText('What the channel sees')).toBeInTheDocument();
+    expect(within(drawer).getByText('Messages stay in the pod.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('checkbox', { name: 'Relay' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { liveRelay: true } },
+      expect.anything(),
+    ));
+  });
+
+  it('says the whole server reads the channel, and switches mode', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: true })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).getByText('Your own messages in the channel reach the pod as you.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Attention' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { relayAllAgentMessages: false } },
+      expect.anything(),
+    ));
+  });
+
+  it('shows no relay switch on a row whose installer was not proven, and says how to fix it', async () => {
+    mockGets([discordRow({})]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).getByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeInTheDocument();
+  });
+
+  // CodeRabbit 4475336552: the drawer is the only removal control, so a
+  // connected Discord row must keep Remove. It goes through the full DELETE
+  // route, which deletes the channel webhook too, not the isActive PATCH.
+  it('removes a connected Discord row through DELETE /api/integrations/:id', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true })]);
+    axios.delete.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Really remove — the channel goes quiet' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/i-discord', expect.anything()));
+    expect(axios.patch).not.toHaveBeenCalled();
+  });
+
+  // F161 item 10: a Discord row in error said "reconnect to resume" with nothing
+  // to press. Reconnecting a Discord channel is adding the bot again, through
+  // the same install link the Connect flow uses.
+  it('offers a Discord row in error the install link again, and the button leaves for it', async () => {
+    const realLocation = window.location;
+    const assign = jest.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, assign } });
+    try {
+      const INSTALL_URL = 'https://discord.com/api/oauth2/authorize?client_id=1&response_type=code';
+      mockApi({
+        connectors: [discordRow({}, { status: 'error' })],
+        route: (url: string) => (url === '/api/discord/install-link/p2'
+          ? Promise.resolve({ data: { installUrl: INSTALL_URL, podId: 'p2', status: 'ready' } })
+          : undefined),
+      });
+      renderPage();
+      const drawer = await openDrawer('Discord');
+      expect(within(drawer).getByText('The connection dropped.')).toBeInTheDocument();
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Add the bot again' }));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(INSTALL_URL));
+      expect(axios.get).toHaveBeenCalledWith('/api/discord/install-link/p2', expect.anything());
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    }
+  });
+
+  it('has the reconnect label in en and zh-CN', () => {
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    expect(en.connectors.discordReinstall).toBe('Add the bot again');
+    expect(zh.connectors.discordReinstall).toBe('重新添加机器人');
+  });
+
+  // CodeRabbit (body, minor): attention mode also sends every lead-agent line.
+  // The row mark has no renderer on the v2 page, so the copy is asserted where
+  // it lives, in both locales.
+  it('says the lead agent’s lines reach a Discord channel in attention mode, in en and zh-CN', () => {
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    expect(en.connectors.discordRowAttention).toMatch(/lead agent/);
+    expect(zh.connectors.discordRowAttention).toMatch(/主导智能体/);
+  });
+
+  it('renders the shared-channel copy in zh-CN', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: false })]);
+      renderPage();
+      const drawer = await openDrawer('Discord');
+      expect(within(drawer).getByText(
+        '只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。',
+      )).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+});

@@ -31,6 +31,10 @@ const ADAPTERS = {
 
 export const listAdapterNames = () => Object.keys(ADAPTERS);
 
+// The adapters a person can choose: every one but the internal test stub. Help
+// text and "Known:" lists read this, so they never drift from the registry.
+export const listPublicAdapterNames = () => listAdapterNames().filter((name) => name !== stub.name);
+
 export const getAdapter = (name) => ADAPTERS[name] || null;
 
 /**

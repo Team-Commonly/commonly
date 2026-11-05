@@ -1,7 +1,8 @@
 /**
  * ADR-026 D1: install-once service registration for the resident daemon.
  *
- * macOS gets a launchd LaunchAgent, Linux a systemd user unit. Both run the
+ * macOS gets a launchd LaunchAgent, Linux a systemd user unit, Windows a
+ * per-user Task Scheduler task (daemon-service-windows.js). All three run the
  * exact interpreter + CLI entry that executed `daemon install`, resolved at
  * install time — a PATH lookup at boot would race version managers and
  * silently run a different install than the one the user tested.
@@ -14,17 +15,20 @@ import { randomBytes } from 'crypto';
 import { existsSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir, userInfo } from 'os';
 import { join, dirname, resolve } from 'path';
+import {
+  installWindowsService, uninstallWindowsService, windowsServiceAction, windowsServicePaths,
+} from './daemon-service-windows.js';
 
 export const LAUNCHD_LABEL = 'me.commonly.daemon';
 export const SYSTEMD_UNIT = 'commonly-daemon.service';
 
 export const daemonLogPath = (home = homedir()) => join(home, '.commonly', 'logs', 'daemon', 'daemon.log');
 
-export const servicePaths = (platform = process.platform, home = homedir()) => (
-  platform === 'darwin'
-    ? { kind: 'launchd', file: join(home, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`) }
-    : { kind: 'systemd', file: join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT) }
-);
+export const servicePaths = (platform = process.platform, home = homedir()) => {
+  if (platform === 'darwin') return { kind: 'launchd', file: join(home, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`) };
+  if (platform === 'win32') return windowsServicePaths(home);
+  return { kind: 'systemd', file: join(home, '.config', 'systemd', 'user', SYSTEMD_UNIT) };
+};
 
 const xmlEscape = (value) => String(value)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -287,7 +291,22 @@ export const installDaemonService = async ({
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
 
   let startsAtBoot = false;
-  if (target.kind === 'launchd') {
+  if (target.kind === 'schtasks') {
+    // A logon task, like a LaunchAgent: it starts when this user logs in.
+    mkdirp(dirname(target.launcher));
+    await installWindowsService({
+      home,
+      nodePath,
+      cliPath,
+      logPath: daemonLogPath(home),
+      providerEnv,
+      env,
+      writeFile,
+      execCmd,
+      lookupUsername,
+      warn,
+    });
+  } else if (target.kind === 'launchd') {
     // The mode and the atomicity are the WRITER's, not an ordering rule here:
     // `writeServiceFile` creates a 0600 sibling and renames it over the target,
     // so no chmod is needed on this path and no half-written unit is ever
@@ -335,6 +354,11 @@ export const uninstallDaemonService = async ({
     log('No installed daemon service found.');
     return null;
   }
+  if (target.kind === 'schtasks') {
+    await uninstallWindowsService({ home, execCmd, removeFile, existsFile });
+    log(`Removed the ${target.taskName} scheduled task and its files (${dirname(target.file)}).`);
+    return target;
+  }
   if (target.kind === 'launchd') {
     await execCmd(['launchctl', 'unload', '-w', target.file]).catch(() => {});
   } else {
@@ -352,6 +376,7 @@ const serviceAction = async ({
   execCmd,
 }) => {
   const target = servicePaths(platform, home);
+  if (target.kind === 'schtasks') return windowsServiceAction({ action, home, execCmd });
   if (target.kind === 'launchd') {
     if (action === 'start') {
       // `install` already loads the plist. A second `start` should be

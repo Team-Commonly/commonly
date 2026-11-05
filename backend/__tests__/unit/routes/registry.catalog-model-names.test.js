@@ -15,6 +15,45 @@ describe('catalog model names', () => {
     expect(offenders).toEqual([]);
   });
 
+  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the catalog
+  // offers Haiku only (Sonnet comes later, under a cap). Legacy pins still run:
+  // nativeModelFor maps them server-side. These fields are what the catalog says.
+  const HOSTED_MODEL = 'claude-haiku-5-5';
+
+  // webhook-agent brings its own runtime and model, so it recommends none.
+  it('every preset but webhook-agent recommends the hosted model', () => {
+    const offenders = PRESET_DEFINITIONS
+      .filter((p) => p.id !== 'webhook-agent' && p.recommendedModel !== HOSTED_MODEL)
+      .map((p) => `${p.id}: ${p.recommendedModel}`);
+    expect(offenders).toEqual([]);
+    expect(PRESET_DEFINITIONS.find((p) => p.id === 'webhook-agent').recommendedModel).toBeUndefined();
+  });
+
+  // F98 review: preset readiness checks each apiRequirement against the
+  // backend's env, so a stale Gemini "Default model provider" made a preset whose
+  // model is Claude (served through LiteLLM, whose key the backend never holds)
+  // read as not ready wherever Gemini is off.
+  it('no preset requires a model-provider key for its default model', () => {
+    const isModelProviderKey = (r) => /model provider/i.test(r.purpose || '');
+    // Positive control: the requirement this replaced still matches.
+    expect(isModelProviderKey({ key: 'GEMINI_API_KEY', purpose: 'Default model provider' })).toBe(true);
+    expect(isModelProviderKey({ key: 'TAVILY_API_KEY', purpose: 'Web research retrieval' })).toBe(false);
+    const offenders = PRESET_DEFINITIONS.flatMap((p) => (p.apiRequirements || [])
+      .filter(isModelProviderKey)
+      .map((r) => `${p.id}: ${r.key}`));
+    expect(offenders).toEqual([]);
+  });
+
+  it('every published manifest supports and recommends only the hosted model', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry/publish.ts'), 'utf8');
+    const blocks = [...src.matchAll(/models:\s*\{[\s\S]*?supported:\s*\[([^\]]*)\][\s\S]*?recommended:\s*'([^']*)'/g)];
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    blocks.forEach(([, supported, recommended]) => {
+      expect([...supported.matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual([HOSTED_MODEL]);
+      expect(recommended).toBe(HOSTED_MODEL);
+    });
+  });
+
   it('the published openclaw manifest lists no GPT or openai-codex model', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry/publish.ts'), 'utf8');
     const models = src.match(/name: 'openclaw',[\s\S]*?models:\s*\{[\s\S]*?supported:\s*\[([^\]]*)\][\s\S]*?recommended:\s*'([^']*)'/);

@@ -47,7 +47,6 @@
    it carries the page measure like every band does, so the demo does not drift
    to the viewport edge once it stops being a child of the hero. */
 .v2-landing__hero-art,
-.v2-landing__trusted,
 .v2-landing__section,
 .v2-landing__wedge,
 .v2-landing__proof,
@@ -131,9 +130,8 @@
 .v2-root .v2-landing__bar--band button.v2-lang-switch__trigger:hover {
   background: rgba(255, 255, 255, 0.12);
 }
-/* Bar CTA: 40 tall in both states (the board's own height), white with cobalt
-   text while the band is under it. */
-.v2-landing__bar .v2-landing__btn--sm { height: 40px; padding: 0 16px; font-size: 15px; font-weight: 600; }
+/* Bar CTA: the base key (40, 44 on phones), white with cobalt text while the
+   band is under it. */
 .v2-root .v2-landing__bar--band .v2-landing__btn--primary {
   color: #1d3fd1; /* follows the fixed band (UX Lead, msg 120679) */
   background: var(--v2-on-accent, #ffffff);
@@ -144,34 +142,44 @@
   border-color: rgba(255, 255, 255, 0.9);
 }
 
-/* ---------- Buttons (anchors / links — not affected by the v2 <button> reset) ---------- */
+/* ---------- Buttons (anchors / links — not affected by the v2 <button> reset) ----------
+   One key system on the front door (11-04 consistency audit, finding 13): every
+   landing button takes the auth keys' geometry (v2.css `.v2-login__submit`,
+   `.v2-login__oauth-btn`): 40 tall at r10, 14/600, and 44 at 16px on phones
+   (the ≤760 block below). The landing used to carry its own flat r4 set at
+   40/44/48/56. Colour roles stay the front door's: the fill is the cobalt key
+   (the `--v2-accent-fill-a/b` pair, as `.v2p-b-c`), the bordered one is the
+   grey key (`--v2-key-*`, as the auth provider keys), and on the band they are
+   white and outlined. No size override sits on any section's button. The grey
+   key drops the auth key's `--v2-key-inset` drop shadow: the landing draws
+   nothing with an outer shadow (the flat-cards guard in v2-layout-invariants). */
 .v2-landing__btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 22px;
-  font-size: 15px;
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
   font-weight: 600;
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-r-10, 10px);
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-.v2-landing__btn--sm { height: 36px; padding: 0 16px; font-size: 14px; }
 .v2-landing__btn--primary {
   color: var(--v2-on-accent, #ffffff);
-  background: var(--v2-accent-fill, var(--v2-accent));
-  border: 1px solid var(--v2-accent-fill, var(--v2-accent));
+  background: linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b));
+  border: 1px solid var(--v2-accent-fill-b);
 }
 .v2-landing__btn--primary:hover { background: var(--v2-accent-strong); border-color: var(--v2-accent-strong); }
 .v2-landing__btn--ghost {
   color: var(--v2-text-primary);
-  background: transparent;
-  border: 1px solid var(--v2-border);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  border: 1px solid var(--v2-key-edge);
 }
-.v2-landing__btn--ghost:hover { background: var(--v2-surface-hover); border-color: var(--v2-border-strong, var(--v2-border)); }
+.v2-landing__btn--ghost:hover { border-color: var(--v2-border-strong); }
 .v2-landing__btn--onaccent {
   color: #1d3fd1; /* on-band CTA text follows the fixed band */
   background: var(--v2-on-accent, #ffffff);
@@ -208,16 +216,29 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
-.v2-landing__hero-actions .v2-landing__btn,
-.v2-landing__cta .v2-landing__btn { height: 56px; font-size: 17px; }
+/* D38: the Discord door. Its own row under the keys and the install line, set
+   like the demo caption (14/20, on-accent) so it reads as a line on the band,
+   not a third button. Underlined at rest because it is the only plain link on
+   the band; the underline thickens on hover. */
+.v2-landing__hero-community {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.v2-root .v2-landing__hero-community a {
+  color: var(--v2-on-accent, #ffffff);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.55);
+  text-underline-offset: 3px;
+}
+.v2-root .v2-landing__hero-community a:hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
+.v2-root .v2-landing__hero-community a:focus-visible { outline: 2px solid var(--v2-on-accent, #ffffff); outline-offset: 3px; border-radius: 2px; }
 /* White on cobalt, not cobalt on cobalt (ux-lead's #2018 finding 2: the primary
    fill IS the band's colour, so the button had no shape). Self-host is the
-   outlined sibling of the same pair, so the two rules move together. The CTA
-   band's own button sits on the page's white and keeps --primary. */
-.v2-landing__hero-actions .v2-landing__btn--onaccent,
-.v2-landing__cta .v2-landing__btn--primary { padding: 0 26px; font-weight: 700; }
-.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost,
-.v2-landing__cta .v2-landing__btn--ghost { padding: 0 22px; }
+   outlined sibling of the same pair. Both are the base key's size: the hero
+   and the close no longer carry 56px buttons of their own (finding 13). The
+   CTA band's own button sits on the page's white and keeps --primary. */
 
 /* ---------- Hero ----------
 /* Copy above, the product below. The hero demo (TASK-147) is the real thing
@@ -253,6 +274,11 @@
   flex-direction: column;
   gap: 22px;
 }
+/* The landing's ONE uppercase eyebrow (D225; 11-04 audit, finding 14). It
+   earns the place: it is the hero's credential (open source, the licence), set
+   once on the band above the h1. Every other label on the page is sentence-case
+   mono with no tracking: the section kickers, the trusted line, the tier names
+   and the footer heads. v2-slop-tells tell 9 holds the landing to this one. */
 .v2-landing__eyebrow {
   font-family: var(--v2-font-mono);
   font-size: 12px;
@@ -462,6 +488,9 @@
      why the ≤680 `padding: 24px 0` below can no longer eat the 48. Row B owns
      this rule and drops the grey here. */
   margin-top: 94px;
+  /* Full-bleed at every width: the hairlines run edge to edge and the marquee fades
+     out at both edges, so the strip takes no page gutter and is not in the gutter
+     lists above (it used to be listed, but this rule always won except at 681-760). */
   /* 22 above and below, and a floor rather than the board's spacing: with the
      min-height and `justify-content: center` doing the centring, this is what
      the reduced-motion wrap falls back to when the logos need a second line. */
@@ -483,8 +512,6 @@
   font-size: 12px;
   line-height: 20px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--v2-text-muted);
 }
 
@@ -743,8 +770,6 @@
   font-size: 12px;
   line-height: 20px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--v2-accent);
   margin-bottom: 12px;
 }
@@ -872,8 +897,7 @@
 .v2-landing__open-lede { margin: 20px 0 0; font-size: 20px; line-height: 32px; color: var(--v2-text-secondary); }
 .v2-landing__open .v2-landing__cta-row { margin-top: 24px; }
 /* This section's own button is the bordered one: row A's hero owns the page's
-   fill, and row D's Pro tier takes the one cobalt button. */
-.v2-landing__open .v2-landing__btn { height: 48px; padding: 0 20px; font-size: 16px; font-weight: 600; }
+   fill, and row D's Pro tier takes the one cobalt button. Base key size. */
 /* One bordered list, rows divided by hairlines, with the corners on the frame
    so a hovered row cannot paint outside the radius. */
 .v2-landing__open-list {
@@ -1141,8 +1165,6 @@
   font-size: 12px;
   line-height: 20px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--v2-text-tertiary);
 }
 /* The price and its period share a baseline and wrap together at 390. */
@@ -1168,10 +1190,9 @@
   color: var(--v2-text-tertiary);
 }
 .v2-landing__tier-note { margin: 12px 0 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
-/* Pro's button is the section's one cobalt fill, and it is the widest type in
-   the row: 700 rather than the 600 the bordered buttons carry. */
-.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; justify-content: center; height: 48px; padding: 0 20px; font-size: 16px; }
-.v2-landing__tier--featured .v2-landing__btn { font-weight: 700; }
+/* Pro's button is the section's one cobalt fill; the colour carries it, at the
+   base key's size and weight like the bordered ones. */
+.v2-landing__tier .v2-landing__btn { margin-top: auto; width: 100%; }
 
 /* Enterprise is a row, not a third box: same frame as the lists above it. */
 .v2-landing__tier-enterprise {
@@ -1195,7 +1216,6 @@
   letter-spacing: -0.03em;
   color: var(--v2-text-primary);
 }
-.v2-landing__tier-enterprise .v2-landing__btn { padding: 0 20px; }
 .v2-landing__price-foot {
   max-width: 1312px;
   margin: 24px auto 0;
@@ -1267,8 +1287,6 @@
   font-size: 12px;
   line-height: 20px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--v2-text-primary);
   margin-bottom: 4px;
 }
@@ -1327,6 +1345,22 @@
 }
 
 @media (max-width: 760px) {
+  /* The phone gutter is the app's 12 (design-system README, Layout rules),
+     not the 24 the page floor keeps from 761 up: the measure is the same
+     max() pair, so the column still centres at 1312 on a wide screen. */
+  .v2-landing__bar,
+  .v2-landing__hero,
+  .v2-landing__hero-art,
+  .v2-landing__section,
+  .v2-landing__wedge,
+  .v2-landing__proof,
+  .v2-landing__cta,
+  .v2-landing__footer {
+    padding-left: max(12px, calc((100% - 1312px) / 2));
+    padding-right: max(12px, calc((100% - 1312px) / 2));
+  }
+  /* The auth keys' phone size: 44 tall, 16px type (finding 13). */
+  .v2-landing__btn { height: 44px; font-size: 16px; }
   /* The overlap shrinks with the band: 376/360 becomes 196/180, so the frame
      still sits half on the cobalt at 390 rather than swallowing it. The
      caption's own offsets shrink with it (44 → 28), which is the 16px the band
@@ -1371,14 +1405,6 @@
   .v2-landing__hero { padding-top: 40px; }
   .v2-landing__hero-inner { gap: 16px; }
   .v2-landing__hero-actions { gap: 16px; margin-top: 8px; }
-  .v2-landing__hero-actions .v2-landing__btn,
-  .v2-landing__cta .v2-landing__btn { height: 48px; }
-  .v2-landing__hero-actions .v2-landing__btn--onaccent,
-  .v2-landing__cta .v2-landing__btn--primary { padding: 0 20px; font-size: 16px; }
-  /* Self-host takes the board's 16 as well (finding 4); it inherited 17 from
-     the row above, which the fill button does not. */
-  .v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }
-  .v2-landing__cta .v2-landing__btn--ghost { padding: 0 18px; font-size: 16px; }
   .v2-landing__cta { padding-top: 48px; padding-bottom: 48px; gap: 20px; }
   .v2-landing__cta-title { font-size: 36px; line-height: 38px; }
   .v2-landing__footer { padding-top: 32px; }

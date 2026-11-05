@@ -101,6 +101,16 @@ describe('projectIntegrationForViewer', () => {
     expect(out.config).not.toHaveProperty('messageBuffer');
   });
 
+  it('keeps a Discord installer’s user id from every viewer but the creator and an admin (F131)', () => {
+    const discord = () => connector({ type: 'discord', config: { channelId: 'c', linkedUserId: CREATOR, discordUserId: '345678901234567890' } });
+    const other = projectIntegrationForViewer(discord(), { requesterId: '64b000000000000000000099', isAdmin: false });
+    expect(other.config).not.toHaveProperty('discordUserId');
+    expect(projectIntegrationForViewer(discord(), { requesterId: CREATOR, isAdmin: false }).config.discordUserId)
+      .toBe('345678901234567890');
+    expect(projectIntegrationForViewer(discord(), { requesterId: 'x', isAdmin: true }).config.discordUserId)
+      .toBe('345678901234567890');
+  });
+
   it('gives the connector creator and an admin the row whole, `linked` included', () => {
     for (const viewer of [{ requesterId: CREATOR, isAdmin: false }, { requesterId: 'someone-else', isAdmin: true }]) {
       const out = projectIntegrationForViewer(connector(), viewer);

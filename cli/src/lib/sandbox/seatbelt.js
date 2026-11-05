@@ -390,6 +390,12 @@ export const buildSeatbeltProfile = ({
   // workspace seat granted write keeps its project's .git read-only, so every
   // change it makes is one `git status` shows the person (TASK-294).
   readOnlyWorkspaceEntries = [],
+  // Whose process information a jailed process may read: 'same-sandbox' (the
+  // baseline) or 'self'. 'self' stops a child from inspecting its jailed parent
+  // (lsof/proc_pidinfo: open files, cwd), which matters when that parent holds
+  // a seat credential in memory, as a public pi does. Signals are not narrowed:
+  // a parent must still stop the children it started.
+  processInfo = 'same-sandbox',
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -405,6 +411,9 @@ export const buildSeatbeltProfile = ({
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error('Seatbelt loopbackNetworkPorts entries must be valid TCP ports');
     }
+  }
+  if (!['same-sandbox', 'self'].includes(processInfo)) {
+    throw new Error('Seatbelt processInfo must be same-sandbox or self');
   }
   if (!['open', 'loopback'].includes(network)) {
     throw new Error('Seatbelt network must be open or loopback');
@@ -495,6 +504,10 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     readOnlyWorkspaceRules,
     ...claudeRuntimeRules,
+    // Later rules win, so this narrows the baseline's same-sandbox allow.
+    processInfo === 'self'
+      ? '(deny process-info* (target same-sandbox))\n(allow process-info* (target self))'
+      : '',
   ].filter(Boolean).join('\n\n');
 };
 

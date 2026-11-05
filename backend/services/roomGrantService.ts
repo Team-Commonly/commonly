@@ -5,12 +5,13 @@ import Task from '../models/Task';
 import Pod from '../models/Pod';
 import RoomGrant, {
   IRoomGrant,
+  IRoomGrantByoConsent,
   IRoomGrantBudget,
   RoomGrantTargetKind,
   RoomGrantTaskBinding,
   RoomGrantWriteMode,
 } from '../models/RoomGrant';
-import { BOARD_ACTOR, emitRecord, type RecordActor } from './recordService';
+import { BOARD_ACTOR, emitRecord, SERVER_ACTOR, type RecordActor } from './recordService';
 
 export interface RoomGrantCreateInput {
   grantId?: string;
@@ -22,6 +23,11 @@ export interface RoomGrantCreateInput {
   writeMode: RoomGrantWriteMode;
   budget?: IRoomGrantBudget;
   audience: string[];
+  /** F94: set by the mint route after its checks, never copied from the body. */
+  byoAgents?: string[];
+  byoConsent?: IRoomGrantByoConsent;
+  /** TASK-783: set by the mint route after its checks, or inherited by a child; never copied from the body. */
+  prWrite?: boolean;
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
@@ -41,6 +47,8 @@ export interface RoomGrantAttenuationInput {
   budget?: IRoomGrantBudget;
   audience?: string[];
   expiresAt?: Date | string | number;
+  /** TASK-783: only `false` is meaningful (drop the scope); a child can never add it. */
+  prWrite?: boolean;
   /** Accepted for API compatibility but never copied into the row. */
   grantId?: string;
   /** The delegating agent, from authentication; set by the route, never the body. */
@@ -468,6 +476,14 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     writeMode: validateWriteMode(input.writeMode),
     budget,
     audience: uniqueStrings(input.audience, 'audience'),
+    // The consent is kept whenever there is one, even for a child that names
+    // nobody: the pod gate exempts by it (F94). The mint route only builds one
+    // with named agents.
+    ...(input.byoConsent
+      ? { byoAgents: uniqueStrings(input.byoAgents || [], 'byoAgents'), byoConsent: input.byoConsent } : {}),
+    // Stored only when exactly true, so a read of the field cannot meet a
+    // truthy non-boolean.
+    ...(input.prWrite === true ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     rootGrantId,
@@ -564,6 +580,16 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     throw new RoomGrantError('grant_not_attenuated', 'child writeMode cannot be stronger than its parent');
   }
 
+  // TASK-783: a child keeps the parent's PR access unless it drops it, and
+  // never gains it. A read child holds no write, so it holds no PR access.
+  if (input.prWrite !== undefined && typeof input.prWrite !== 'boolean') {
+    throw new RoomGrantError('invalid_grant', 'prWrite must be a boolean');
+  }
+  if (input.prWrite === true && parent.prWrite !== true) {
+    throw new RoomGrantError('grant_not_attenuated', 'a child cannot add pull-request access');
+  }
+  const prWrite = parent.prWrite === true && input.prWrite !== false && writeMode !== 'read';
+
   const requestedBudget = normalizeBudget(input.budget);
   const budget = mergeBudget(parent.budget, requestedBudget);
   assertBudgetAttenuated(budget, parent.budget);
@@ -599,6 +625,15 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     writeMode,
     budget,
     audience,
+    // A child names only the parent's BYO agents it still reaches, under the
+    // parent's consent; it can never name a new one. The consent rides even
+    // when the child names nobody: the pod gate exempts by it, so a grandchild
+    // of a child scoped away from the agent still works in the shared pod.
+    ...(parent.byoConsent ? {
+      byoAgents: (parent.byoAgents || []).map(String).filter((id) => audience.includes(id)),
+      byoConsent: parent.byoConsent,
+    } : {}),
+    ...(prWrite ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,
@@ -609,6 +644,13 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     issuer: input.issuer,
   });
 };
+
+/**
+ * The `revokedBy` of a revocation no person asked for (F174: a takeover ending
+ * the previous owner's grants). It is the record format's server actor id, so
+ * the grant.revoked line names the system rather than a user.
+ */
+export const SYSTEM_REVOKER = SERVER_ACTOR.id;
 
 export const revokeGrant = async (grantId: string, revokedBy: string): Promise<number> => {
   const id = asId(grantId, 'grantId');
@@ -692,27 +734,52 @@ export const assertGrantUsable = async (
 export const revokeConnectionGrants = async (options: {
   connection?: {
     _id?: unknown;
+    type?: unknown;
     installationId?: unknown;
     config?: { installationId?: unknown };
   } | null;
   revokedBy: string;
+  /** Only grants this person minted (F174: an old owner's sweep never reaches a new owner's grants). */
+  ownerId?: string;
+  /** Only grants minted before this moment (F174: a takeover never sweeps the new owner's grants). */
+  createdBefore?: Date;
 }): Promise<number> => {
-  const identifiers = new Set<string>();
   const connection = options.connection;
-  if (connection?._id) identifiers.add(String(connection._id));
-  // Both slots independently: they are written together today, but the
+  const rowId = connection?._id ? String(connection._id) : '';
+  // A per-repository GitHub App row (F172) carries its installation only in
+  // `config` and shares it with every other repository on that installation.
+  // Its grants name the row `_id` (the only id that finds it), so removing
+  // one repository must not reach a sibling's grants through the shared id.
+  const perRepositoryRow = connection?.type === 'github-app' && !connection?.installationId;
+  // Both slots independently: they are written together on legacy rows, but the
   // top-level one is request-supplied on some rows and the config one is
   // server-owned, so a grant may have been minted against either (Vera 74451).
-  if (connection?.installationId) identifiers.add(String(connection.installationId));
-  if (connection?.config?.installationId) identifiers.add(String(connection.config.installationId));
-  if (identifiers.size === 0) return 0;
+  const installationIds = new Set<string>();
+  if (!perRepositoryRow) {
+    if (connection?.installationId) installationIds.add(String(connection.installationId));
+    if (connection?.config?.installationId) installationIds.add(String(connection.config.installationId));
+  }
+  if (!rowId && installationIds.size === 0) return 0;
 
-  const addressed = [...identifiers];
+  const clauses: Array<Record<string, unknown>> = [];
+  if (rowId) clauses.push({ connectionId: rowId }, { connectionRowId: rowId });
+  if (installationIds.size > 0) {
+    const addressed = [...installationIds];
+    // L1: a grant reached through the installation id belongs to THIS row only
+    // when it is bound to no row (minted before binding existed) or to this
+    // one. A grant bound to a newer per-repository row on the same
+    // installation also stores the installation id, and is not this row's.
+    clauses.push({
+      $and: [
+        { $or: [{ connectionId: { $in: addressed } }, { installationId: { $in: addressed } }] },
+        { $or: [{ connectionRowId: null }, ...(rowId ? [{ connectionRowId: rowId }] : [])] },
+      ],
+    });
+  }
   const grants = await RoomGrant.find({
-    $or: [
-      { connectionId: { $in: addressed } },
-      { installationId: { $in: addressed } },
-    ],
+    $or: clauses,
+    ...(options.ownerId ? { ownerId: options.ownerId } : {}),
+    ...(options.createdBefore ? { createdAt: { $lt: options.createdBefore } } : {}),
   }).select('grantId').lean() as Array<{ grantId?: string }>;
 
   let revoked = 0;

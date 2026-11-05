@@ -64,14 +64,19 @@ const validateRecord = (record) => {
   return record;
 };
 
-export const loadDaemonRecord = () => {
+export const loadDaemonRecord = ({ platform = process.platform } = {}) => {
   const path = daemonRecordPath();
   const dir = daemonDir();
   if (!existsSync(path)) return null;
-  if ((statSync(dir).mode & 0o077) !== 0) {
+  // D245: Windows has no POSIX mode bits. Node reports every file there as
+  // 0o666 (0o444 when read-only) whatever its ACL, so this check refused every
+  // registration on Windows. Access there is the ACL's job; the record sits in
+  // the user's profile, which only that user (and administrators) can read.
+  const posix = platform !== 'win32';
+  if (posix && (statSync(dir).mode & 0o077) !== 0) {
     throw new Error(`Daemon credential directory permissions are insecure at ${dir}. Set them to 0700 before running the daemon.`);
   }
-  if ((statSync(path).mode & 0o077) !== 0) {
+  if (posix && (statSync(path).mode & 0o077) !== 0) {
     throw new Error(`Daemon credential file permissions are insecure at ${path}. Set them to 0600 before running the daemon.`);
   }
   try {

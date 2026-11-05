@@ -16,6 +16,12 @@ interface MessageRow {
   content: string;
   message_type: string;
   author_kind?: 'kernel' | null;
+  // D245: the optional message contract (services/messageContract.ts). NULL
+  // unless an agent post carried them; same visibility as `content`.
+  summary?: string | null;
+  kind?: string | null;
+  // D245 item 4: a BYO agent's self-reported receipt (services/byoReceipt.ts).
+  receipt?: unknown;
   // ADR-020 D3: structured component payload (approval cards). JSONB; null
   // for ordinary messages.
   payload?: unknown;
@@ -119,6 +125,10 @@ class Message {
     // the attention writer and never stored: not a column, not a reply edge.
     answeringMessageId: string | null = null,
     authorKind: 'kernel' | null = null,
+    // D245: already normalized by services/messageContract.ts. Columns are
+    // written only when a value is present, so a post without them runs the
+    // same INSERT as before.
+    contract: { summary?: string | null; kind?: string | null; receipt?: unknown } | null = null,
   ): Promise<MessageRow> {
     if (replyToMessageId != null && replyToMessageId !== '') {
       const resolvedReply = await Message.resolveId(replyToMessageId);
@@ -163,9 +173,19 @@ class Message {
     // pg-mem — which is what lets this exact query be exercised at the unit
     // tier instead of only against a real server. A cast that costs nothing in
     // production and buys a fast test everywhere is worth writing down.
+    const contractColumns: string[] = [];
+    const contractValues: unknown[] = [];
+    if (contract?.summary) { contractColumns.push('summary'); contractValues.push(contract.summary); }
+    if (contract?.kind) { contractColumns.push('kind'); contractValues.push(contract.kind); }
+    if (contract?.receipt) { contractColumns.push('receipt'); contractValues.push(JSON.stringify(contract.receipt)); }
+    const extraColumns = contractColumns.map((column) => `, ${column}`).join('');
+    // JSONB needs its cast: in an INSERT … SELECT list an untyped parameter
+    // is text to pg-mem, which then refuses it for a jsonb column.
+    const extraParams = contractColumns
+      .map((column, index) => `, $${9 + index}${column === 'receipt' ? '::jsonb' : ''}`).join('');
     const query = `
       INSERT INTO messages (
-        pod_id, user_id, content, message_type, author_kind, reply_to_message_id, payload, thread_root_id
+        pod_id, user_id, content, message_type, author_kind, reply_to_message_id, payload, thread_root_id${extraColumns}
       )
       SELECT $1, $2, $3, $4, $5, $6::int, $7,
              COALESCE(
@@ -173,7 +193,7 @@ class Message {
                (SELECT COALESCE(parent.thread_root_id, parent.id)
                   FROM messages parent
                  WHERE parent.id = $6::int)
-             )::int
+             )::int${extraParams}
        WHERE ($6::int IS NULL
               OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $6::int))
          AND ($8::int IS NULL
@@ -186,6 +206,7 @@ class Message {
         replyToMessageId || null,
         payload == null ? null : JSON.stringify(payload),
         resolvedThreadRootId ?? null,
+        ...contractValues,
       ]);
       // No row: the reply target or the named root is not in this pod
       // (services/threadRootResolver). Callers check first; this is the
@@ -256,6 +277,7 @@ class Message {
       let query = `
         SELECT
           m.id, m.legacy_mongo_id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
+          m.summary, m.kind, m.receipt,
           m.reply_to_message_id,
           -- MUST be selected. Late columns are easy to miss in an explicit
           -- projection, and this one is read by the wake path.
@@ -313,6 +335,7 @@ class Message {
       const query = `
         SELECT
           m.id, m.legacy_mongo_id, m.pod_id, m.user_id, m.content, m.message_type, m.author_kind, m.payload,
+          m.summary, m.kind, m.receipt,
           m.reply_to_message_id,
           -- MUST be selected. The controller prefers THIS row over create()'s
           -- RETURNING * (message = populated || created) and hands it to
@@ -433,12 +456,14 @@ class Message {
     return (result.rows as Array<{ content?: unknown }>).map((row) => String(row.content || ''));
   }
 
+  // An edit clears the D245 summary: it described the old content, and a
+  // stale summary would keep text the edit removed visible beside the new one.
   static async update(id: string, content: string): Promise<MessageRow | undefined> {
     const pgId = await Message.resolveId(id);
     if (!pgId) return undefined;
     const query = `
       UPDATE messages
-      SET content = $1, updated_at = CURRENT_TIMESTAMP
+      SET content = $1, summary = NULL, receipt = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
       RETURNING *
     `;

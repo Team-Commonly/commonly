@@ -139,9 +139,8 @@ agents:
 #     gating them on codex-enabled is a follow-up — TASK filed.)
 #
 # No new secret and no new database: every key litellm needs already exists in the
-# staging api-keys ring (deepseek-api-key, cloudflare-account-id/-workers-ai-token,
-# gemini/openrouter/openai-api-key, litellm-master-key — all unconditional in the
-# ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
+# staging api-keys ring (deepseek-api-key, gemini/openrouter/openai-api-key,
+# litellm-master-key — all unconditional in the ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
 # ?schema=litellm. Guard test: backend/__tests__/unit/helm/litellmStagingEnabled.test.js.
 litellm:
   enabled: true
@@ -176,8 +175,10 @@ backend:
     # TASK-284: on here only, for the supervised seat-push walk (PR #2546/#3244).
     seatGithubPushEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
-    agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
+    agentComputerSteelCdpUrlTemplate: "ws://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"
+    # Its own waker, never the prod one values-dev names.
+    agentComputerWakerUrl: "http://agent-computer-waker.commonly-staging.svc.cluster.local"
     # Team-only staging sign-in. Any value flips isInstanceAccessRestricted()
     # true and gates BOTH register and login; prod (values-dev) sets neither and
     # stays public. Domains cover the seed accounts (@seed.staging.commonly.me) and
@@ -284,6 +285,11 @@ mongodb:
       key: workload-tier
       operator: Equal
       value: spot
+
+# Require AUTH from clients (password via ESO: commonly-staging-redis-password).
+redis:
+  auth:
+    enabled: true
 
 # Staging-only connector key ring (commonly-staging-connector-secret-keys / -active-key in SM,
 # fresh keys, never prod's). Without it every hosted-MCP OAuth callback on staging threw.

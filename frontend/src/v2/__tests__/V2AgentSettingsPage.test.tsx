@@ -171,6 +171,42 @@ test('identity edits go through the shared installation PATCH with the exact ins
   ));
 });
 
+// TASK-780: a hosted agent's description is its persona line, editable after install.
+test('a hosted agent\'s description can be edited from Rename and saves as about', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'triage', instanceId: 'default', displayName: 'Triage', runtime: { runtimeType: 'hosted' },
+      about: 'Watches errors.',
+    } } });
+    return Promise.resolve({ data: [] });
+  });
+  axios.patch.mockResolvedValue({ data: { success: true } });
+  renderPage('/v2/agents/triage/default');
+  await openRename();
+  const field = await screen.findByRole('textbox', { name: 'Description' });
+  expect(field).toHaveValue('Watches errors.');
+  expect(screen.getByText('Your agent reads this as who it is, from its next reply.')).toBeInTheDocument();
+  const save = screen.getByRole('button', { name: 'Save identity' });
+  expect(save).toBeDisabled();
+  fireEvent.change(field, { target: { value: 'Posts findings; never files rows.' } });
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+    '/api/registry/pods/pod-1/agents/triage',
+    { instanceId: 'default', about: 'Posts findings; never files rows.' },
+  ));
+});
+
+test('an agent that is not hosted shows no description field', async () => {
+  renderPage();
+  await openRename();
+  await screen.findByRole('textbox', { name: 'Display name' });
+  expect(screen.queryByRole('textbox', { name: 'Description' })).not.toBeInTheDocument();
+});
+
 test('OpenClaw identity keeps the live Persona editor and saves its changes', async () => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/agent-memory/')) return Promise.resolve({ data: {
@@ -547,6 +583,7 @@ test('standalone CLI settings label the saved preference without claiming a runt
       writablePodId: 'pod-1', runtimeSourcePodId: null, runtimeManaged: false,
       runtimeEditable: false, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: '', effort: '' },
       runtimeSavedControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'max' },
+      harnessCatalog: [{ id: 'claude', label: 'Claude Code', models: null, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }],
       installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -952,6 +989,10 @@ describe('one Identity & access list (d215 frame)', () => {
     for (const control of controls) {
       if (control.tagName === 'A') {
         expect(control.getAttribute('href')).toMatch(/^\/v2\//);
+      } else if (control.getAttribute('aria-label') === 'Save runtime') {
+        // D247: an owned agent's runtime is editable, and its Save is an
+        // action, not a panel toggle. It waits until something changes.
+        expect(control).toBeDisabled();
       } else {
         expect(control).toHaveAttribute('aria-controls');
         expect(control).toHaveAttribute('aria-expanded', 'false');

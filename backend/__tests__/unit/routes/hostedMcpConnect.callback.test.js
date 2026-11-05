@@ -60,6 +60,8 @@ jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
   dcrClientForRow: jest.fn(),
   refuseDcrClient: jest.fn(),
+  // The real classifier: which refusals mean the vendor doesn't know the client.
+  refusalNamesUnknownClient: jest.requireActual('../../../services/hostedMcpDcrRegistry').refusalNamesUnknownClient,
 }));
 
 jest.mock('../../../services/connectorSecrets', () => ({
@@ -195,6 +197,8 @@ const outcome = (res) => {
   const entryId = url.searchParams.get('entryId');
   const revokeAt = url.searchParams.get('revokeAt');
   const extraScopes = url.searchParams.getAll('extraScope');
+  const next = url.searchParams.get('next');
+  if (next) result.next = next;
   if (entryId) result.entryId = entryId;
   if (revokeAt) result.revokeAt = revokeAt;
   if (extraScopes.length) result.extraScopes = extraScopes;
@@ -429,6 +433,37 @@ describe('hosted-mcp connect: callback', () => {
     expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'client_auth_refused' });
     expect(dcr.refuseDcrClient).toHaveBeenCalledWith(FIXTURE_ENTRY, 'refused-public-client');
     expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
+  it('refuses a DCR client the vendor calls unrecognized (Supabase 422) and retires only that registration', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    setStoredRow({ pendingAuth: {
+      state: 'st-1', codeVerifier: 'verifier-1',
+      expiresAt: new Date(Date.now() + 60000), browserNonce: 'browser-1',
+      clientId: 'deleted-supabase-client',
+    } });
+    dcr.dcrClientForRow.mockResolvedValue({ clientId: 'deleted-supabase-client' });
+    global.fetch.mockResolvedValue({
+      ok: false, status: 422, json: async () => ({ message: 'Unrecognized client_id' }),
+    });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'client_auth_refused' });
+    expect(dcr.refuseDcrClient).toHaveBeenCalledWith(FIXTURE_ENTRY, 'deleted-supabase-client');
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
+  it('keeps a DCR client the vendor refuses for another reason (Supabase 422 missing secret)', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    setStoredRow({ pendingAuth: {
+      state: 'st-1', codeVerifier: 'verifier-1',
+      expiresAt: new Date(Date.now() + 60000), browserNonce: 'browser-1',
+      clientId: 'live-supabase-client',
+    } });
+    dcr.dcrClientForRow.mockResolvedValue({ clientId: 'live-supabase-client' });
+    global.fetch.mockResolvedValue({
+      ok: false, status: 422, json: async () => ({ message: 'Required parameter: client_secret' }),
+    });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'exchange_refused' });
+    expect(dcr.refuseDcrClient).not.toHaveBeenCalled();
   });
   it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
     const captures = [

@@ -5,7 +5,8 @@ const { hash, safeEqual } = require('../utils/secret');
 // Indexed selection followed by fixed-size verification, including misses.
 export const findApiTokenUser = async (token: string) => {
   const digest: string = hash(token);
-  const projection = '_id username email role isBot verified apiTokenScopes apiTokenCreatedAt '
+  // `botMetadata` lets auth name a bot caller's agent identity (F149).
+  const projection = '_id username email role isBot botMetadata verified apiTokenScopes apiTokenCreatedAt '
     + 'banned accountDeletionRequestedAt +apiTokenHash';
   // Digest only. The plaintext reader was removed once staging and production
   // both measured zero legacy rows (docs/runbooks/api-token-storage.md).

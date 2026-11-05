@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RuntimeObservation, HarnessInventory, RuntimeUpdate } from '../components/V2RuntimeControls';
+import type { HarnessCatalogEntry } from '../utils/harnessCatalog';
 import axios from '../../utils/axiosConfig';
 
 export interface AgentSettingsInstallation {
@@ -53,6 +54,7 @@ interface ManageSettingsResponse {
   processConnected?: boolean | null;
   runtimeEditable?: boolean;
   runtimeManaged?: boolean;
+  harnessCatalog?: HarnessCatalogEntry[];
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
@@ -69,6 +71,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [processConnected, setProcessConnected] = useState<boolean | null>(null);
   const [runtimeEditable, setRuntimeEditable] = useState(true);
   const [runtimeManaged, setRuntimeManaged] = useState<boolean | undefined>(undefined);
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const requestId = useRef(0);
@@ -109,6 +112,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
           setProcessConnected(typeof settingsResponse.data.processConnected === 'boolean' ? settingsResponse.data.processConnected : null);
           setRuntimeEditable(settingsResponse.data.runtimeEditable !== false);
           setRuntimeManaged(settingsResponse.data.runtimeManaged);
+          setHarnessCatalog(Array.isArray(settingsResponse.data.harnessCatalog) ? settingsResponse.data.harnessCatalog : []);
           setError(null);
         }
         return response.data.agent;
@@ -193,6 +197,6 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     await refresh();
   }, [instanceId, installationUrl, refresh, runtimeSourcePodId]);
 
-  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, loading,
+  return { access, installation, podId, ownKeyCapability, runtimeControls, runtimeObservation, runtimeInventory, processConnected, runtimeEditable, runtimeManaged, harnessCatalog, loading,
     error, refresh, update, updatePod, updateRuntime };
 };

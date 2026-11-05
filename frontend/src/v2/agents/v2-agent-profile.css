@@ -28,12 +28,12 @@
 .v2-aprofile .v2-aprofile__avatar-button { all: unset; cursor: pointer; flex: none; display: inline-flex; position: relative; border-radius: 14px; }
 .v2-aprofile .v2-aprofile__avatar .v2-avatar,
 .v2-aprofile .v2-aprofile__avatar-button .v2-avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
-.v2-aprofile .v2-aprofile__avatar-hint { position: absolute; right: -4px; bottom: -4px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 600 10.5px/18px var(--v2-font); color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__avatar-hint { position: absolute; right: -4px; bottom: -4px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 600 12px/18px var(--v2-font); color: var(--v2-text-secondary); }
 .v2-aprofile .v2-aprofile__hero-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .v2-aprofile .v2-aprofile__name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .v2-aprofile .v2-aprofile__name { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
-.v2-aprofile .v2-aprofile__runtime { font: 600 10.5px/18px var(--v2-font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--v2-text-secondary); background: var(--v2-surface-tint); padding: 0 7px; border-radius: 5px; }
-.v2-aprofile .v2-aprofile__badge { font: 600 11px/18px var(--v2-font); color: var(--v2-accent-text); background: var(--v2-accent-soft); padding: 0 8px; border-radius: 9px; }
+.v2-aprofile .v2-aprofile__runtime { font: 600 11px/18px var(--v2-font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--v2-text-secondary); background: var(--v2-surface-tint); padding: 0 7px; border-radius: 5px; }
+.v2-aprofile .v2-aprofile__badge { font: 600 12px/18px var(--v2-font); color: var(--v2-accent-text); background: var(--v2-accent-soft); padding: 0 8px; border-radius: 9px; }
 .v2-aprofile .v2-aprofile__desc { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
 .v2-aprofile .v2-aprofile__meta { margin: 2px 0 0; font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-aprofile .v2-aprofile__keys { flex: none; display: flex; gap: 8px; }
@@ -131,6 +131,9 @@
   .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn { position: relative; }
   .v2-aprofile .v2-aprofile__navlink::before,
   .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn::before { content: ''; position: absolute; inset: -5px -6px; }
+  /* The bar key draws 34 with a 1px border, and an absolute overlay measures from
+     inside the border (32), so it reaches 6px each way: 32 + 12 = 44. */
+  .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn::before { inset: -6px; }
   .v2-aprofile .v2-aprofile__navlink::before { inset: -14px -7px; }
   .v2-aprofile .v2-agent-settings__tabs > * { box-sizing: border-box; min-height: 44px; display: inline-flex; align-items: center; }
   .v2-aprofile .v2-aprofile__pod-remove { height: 44px; line-height: 44px; }

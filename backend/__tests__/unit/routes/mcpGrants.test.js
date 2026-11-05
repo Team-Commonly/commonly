@@ -196,4 +196,40 @@ describe('MCP grant transport', () => {
     expect(listed.text).toContain('grant_revoked');
     expect(listed.text).not.toContain('github.list_issues');
   });
+
+  // F92: this endpoint serves runtimes Commonly does not drive, so their model
+  // is unknown. A Limited-Use connector's tools (Calendar) are never listed or
+  // called here; native runs on the no-training model are their only path.
+  describe('a Limited-Use connector', () => {
+    const post = (body) => {
+      const app = express();
+      app.use(express.json());
+      app.use('/api/mcp/grants', router);
+      return request(app)
+        .post('/api/mcp/grants/grant-1')
+        .set('Accept', 'application/json, text/event-stream')
+        .send(body);
+    };
+
+    it('is left out of the tool list, and the grant’s other tools stay', async () => {
+      mockListToolsForGrant.mockResolvedValue([
+        ...mockDefinitions,
+        { name: 'google-calendar.list_events', description: 'List events', inputSchema: { type: 'object', properties: {} } },
+      ]);
+
+      const listed = mcpReply(await post({ jsonrpc: '2.0', id: 7, method: 'tools/list', params: {} }));
+
+      expect(listed.result.tools.map((tool) => tool.name)).toEqual(['github.list_issues']);
+    });
+
+    it('is refused on call before the broker runs', async () => {
+      const reply = mcpReply(await post({
+        jsonrpc: '2.0', id: 8, method: 'tools/call',
+        params: { name: 'google-calendar.list_events', arguments: {} },
+      }));
+
+      expect(mockCallTool).not.toHaveBeenCalled();
+      expect(JSON.stringify(reply)).toContain('limited_use_native_only');
+    });
+  });
 });

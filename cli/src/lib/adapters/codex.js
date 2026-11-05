@@ -70,7 +70,9 @@ import {
   resolve as pathResolve,
   sep,
 } from 'path';
-import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { isOurGrantBroker } from '../grant-broker-guard.js';
+import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from './codex-broker-bridge.mjs';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
@@ -78,7 +80,8 @@ import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '..
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -118,7 +121,8 @@ const buildPrompt = buildMemoryPreamble;
 //
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
-//     are skipped rather than half-wired.
+//     are skipped rather than half-wired. The one exception is our grant
+//     broker, which runs behind a stdio bridge (bridgeGrantBroker, F175b).
 //   - Only entries that DECLARE stdio (or name no transport) are emitted, even
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
@@ -152,6 +156,73 @@ const substitutePlaceholders = (value, ctx) => {
 // JSON.stringify doubles as the TOML quoter for command/args/env values.
 const toml = (s) => JSON.stringify(String(s));
 
+const HTTP_TRANSPORTS = new Set(['http', 'streamable-http']);
+// A server name becomes a TOML key path, so it must not hold a dot.
+const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
+// What fetch accepts in a header: Latin-1, no CR, LF or NUL.
+// eslint-disable-next-line no-control-regex
+const HEADER_TEXT = /^[^\r\n\0\u0100-\uffff]*$/;
+
+// F175b: the grant broker is a Streamable HTTP server and codex runs stdio
+// servers here, so the broker is wired as OUR stdio bridge
+// (codex-broker-bridge.mjs) with the broker's url, its headers as templates and
+// this spawn's credential-file path, none of them a secret. The command the
+// entry declares, if any, is never run. Whether this seat may hold the broker
+// at all was decided before the adapter (grant-broker-guard.js), which
+// withholds it from a seat that is not confined.
+const bridgeGrantBroker = (server, ctx) => {
+  const skip = (why) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[codex] grant broker ${server.name}: ${why}, so it is not wired for this spawn.`);
+    return null;
+  };
+  if (!SERVER_NAME.test(server.name)) return skip('its name is not a plain config key');
+  if (!ctx.credentialFile) return skip('there is no seat credential to read');
+  // Resolve the instance placeholders only: the token placeholder stays in the
+  // header template and is filled by the bridge from the file.
+  const resolve = (value) => substitutePlaceholders(value, { instanceUrl: ctx.instanceUrl });
+  const resolvedUrl = resolve(server.url);
+  const headers = Object.fromEntries(Object.entries(server.headers || {})
+    .map(([name, value]) => [String(name), resolve(String(value))]));
+  const carriesToken = (value) => !!ctx.runtimeToken && value.includes(ctx.runtimeToken);
+  if (carriesToken(resolvedUrl)
+    || Object.entries(headers).some(([name, value]) => carriesToken(name) || carriesToken(value))) {
+    return skip('the entry holds the seat token as a literal, which would ride argv');
+  }
+  if (resolvedUrl.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
+  // A header fetch would reject quotes its value in the error, and that value
+  // holds the token once the bridge fills it, so such an entry is not wired.
+  if (Object.entries(headers).some(([name, value]) => !HEADER_TEXT.test(name) || !HEADER_TEXT.test(value))) {
+    return skip('a header holds a control or non-Latin-1 character');
+  }
+  // The url the guard judged (isOurGrantBroker) is normalised: resolved against
+  // the instance, with doubled slashes collapsed. The bridge fetches that same
+  // url, on the instance's own origin, or nothing.
+  let url;
+  try {
+    const instance = new URL(ctx.instanceUrl);
+    const parsed = new URL(resolvedUrl, instance);
+    if (parsed.origin !== instance.origin) return skip('its url is not on this instance');
+    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
+    url = parsed.href;
+  } catch {
+    return skip('its url does not resolve against this instance');
+  }
+  const env = [
+    [BRIDGE_URL_VAR, url],
+    [BRIDGE_HEADERS_VAR, JSON.stringify(headers)],
+    [CREDENTIAL_FILE_VAR, ctx.credentialFile],
+  ];
+  return [
+    '-c', `mcp_servers.${server.name}.command=${toml(process.execPath)}`,
+    // The broker parks every write for the owner's approval itself, so codex
+    // approving the call is the same boundary the stdio servers get below.
+    '-c', `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
+    '-c', `mcp_servers.${server.name}.args=[${toml(BRIDGE_PATH)}]`,
+    '-c', `mcp_servers.${server.name}.env={${env.map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
+  ];
+};
+
 const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
@@ -159,6 +230,17 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const mcpReadDirectories = [];
   for (const server of mcpServers || []) {
     const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (server?.name && HTTP_TRANSPORTS.has(transport)
+      && isOurGrantBroker(server, { instanceUrl: ctx.instanceUrl })) {
+      const bridged = bridgeGrantBroker(server, ctx);
+      if (bridged) {
+        flags.push(...bridged);
+        // A public seat's MCP children run under its permission profile; the
+        // bridge imports node builtins only, so the file is all it reads.
+        if (ctx.publicSeat) mcpReadDirectories.push(BRIDGE_PATH);
+      }
+      continue;
+    }
     if (!server?.name || transport !== 'stdio'
       || !Array.isArray(server.command) || !server.command.length) continue;
     // TASK-174: the command that will EXECUTE — the warmed build from the seat's
@@ -183,7 +265,13 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       credentialFile: ctx.credentialFile,
       label: 'codex',
     }).env;
-    const [command, ...rest] = spawnCommand.map((a) => substitutePlaceholders(a, ctx));
+    // Win32 only: codex spawns the server without a shell, so an `npx.cmd` is
+    // resolved to its target here (#2141). Identity on every other platform.
+    const [command, ...rest] = resolveMcpCommand(
+      spawnCommand.map((a) => substitutePlaceholders(a, ctx)),
+      ctx.commandResolution,
+      { label: 'codex', name: server.name },
+    );
     // The doc block above promises bearer tokens never ride in argv, and this is
     // the place that had to hold it: an env value that carries the token is
     // diverted to env_vars, but a COMMAND ARGUMENT has no such route — codex
@@ -220,9 +308,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       '-c',
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
-    // ...except the tools no public seat is offered (public-withheld-tools.js).
+    // ...except the tools no public seat is offered (public-withheld-tools.js),
+    // self-install and the memory writes included (F118).
     if (ctx.publicSeat) {
-      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_WITHHELD_TOOLS.map(toml).join(',')}]`);
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_SEAT_WITHHELD_TOOLS.map(toml).join(',')}]`);
     }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
@@ -734,7 +823,7 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
   args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  turnReap = turnReapEnabled(),
+  turnReap = turnReapEnabled(), commandResolution = {},
 }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
@@ -744,7 +833,11 @@ const runCodex = ({
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
   // What the turn leaves running is stopped once it has closed (see claude.js).
   const turn = markTurn(env ?? process.env, { enabled: turnReap });
-  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
+  // On Windows `npm i -g @openai/codex` leaves a `codex.cmd`; it is read and
+  // its target spawned directly, never through cmd.exe, because the prompt is
+  // the last argv element and is pod content (#2141). Identity elsewhere.
+  const launch = resolveLaunch('codex', args, { env: turn.env, ...commandResolution });
+  const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
@@ -798,9 +891,17 @@ export default {
 
   inventory: codexRuntimeInventory,
 
-  async detect() {
+  // `opts` is a test seam only: `_commandResolution` overrides the Windows
+  // resolver's platform/env/fs. Production calls detect() with no argument.
+  async detect(opts = {}) {
     try {
-      const res = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
+      const located = resolveWindowsCommandWithReason('codex', opts._commandResolution);
+      if (!located.command) {
+        // Windows only: a `codex.cmd` this CLI cannot read safely, or none.
+        process.stderr.write(`codex adapter: ${located.reason}\n`);
+        return null;
+      }
+      const res = spawnSync(located.command, [...located.args, '--version'], { encoding: 'utf8', timeout: 5000 });
       if (res.error || res.status !== 0) return null;
       // `codex --version` prints e.g. "codex-cli 0.125.0" — last token is
       // the version. Defensive against future format tweaks: if no
@@ -808,6 +909,7 @@ export default {
       const stdout = (res.stdout || '').trim();
       const versionMatch = stdout.match(/(\d+\.\d+(?:\.\d+)?)/);
       const version = versionMatch ? versionMatch[1] : (stdout || 'unknown');
+      if (located.source) return { path: located.source, version };
       const where = spawnSync('which', ['codex'], { encoding: 'utf8' });
       const path = where.status === 0 ? (where.stdout || '').trim() || 'codex' : 'codex';
       return { path, version };
@@ -833,6 +935,8 @@ export default {
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
+      // F118: a public seat reads its memory but is not offered a write.
+      memoryReadOnly: sandbox?.trust === 'public',
     });
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
@@ -854,6 +958,7 @@ export default {
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: sandbox?.trust === 'public',
+        commandResolution: { env: ctx.env || process.env, ...ctx._commandResolution },
       });
       if (mcp.unavailableMcp.length) throw publicMcpUnavailableError(mcp.unavailableMcp);
       // A derived record stores `trust: 'public'` and no mode (the block is
@@ -927,6 +1032,7 @@ export default {
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
+        commandResolution: ctx._commandResolution, // test seam only
       });
 
       let text = '';
@@ -943,7 +1049,13 @@ export default {
       // came in with > null. The wrapper persists whichever non-null value
       // we return so subsequent turns hit `codex exec resume <id>`.
       const newSessionId = threadId || ctx.sessionId || null;
-      return { text, newSessionId };
+      // D247: the reply receipt names the model and effort this spawn passed
+      // (`--model`, `model_reasoning_effort`); codex's own stream does not
+      // restate them.
+      const effort = ctx.environment?.effort;
+      const stats = { ...(seatModel ? { model: String(seatModel) } : {}),
+        ...(typeof effort === 'string' && effort ? { effort } : {}) };
+      return { text, newSessionId, ...(Object.keys(stats).length ? { stats } : {}) };
     } finally {
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }

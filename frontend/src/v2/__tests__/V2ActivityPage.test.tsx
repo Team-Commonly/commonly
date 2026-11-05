@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
-import V2ActivityPage from '../components/V2ActivityPage';
+import V2ActivityPage, { plainLine } from '../components/V2ActivityPage';
 import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
 import { AuthContext } from '../../context/AuthContext';
 import { setupFocusManagement } from '../../utils/focusUtils';
@@ -69,6 +69,12 @@ const renderPage = () => render(
     <CurrentPath />
   </MemoryRouter>,
 );
+
+// The pod scope is one select key (d215 activity): open it, then pick the pod.
+const chooseScope = (name: string) => {
+  fireEvent.click(document.querySelector('.v2-activity__scope-button') as HTMLElement);
+  fireEvent.click(within(screen.getByRole('listbox', { name: 'Pod scope' })).getByRole('option', { name, exact: true }));
+};
 
 const renderPageWithAuth = (currentUser: { _id: string } | null) => render(
   <AuthContext.Provider value={{ currentUser, loading: false } as any}>
@@ -180,7 +186,7 @@ describe('V2ActivityPage', () => {
     }));
   });
 
-  test('preserves authored decision order and makes only the first option primary', async () => {
+  test('preserves authored decision order; every choice is a raised key inside the row (d215 activity)', async () => {
     const authoredOrder = {
       ...decisionQueue,
       items: [{
@@ -197,12 +203,17 @@ describe('V2ActivityPage', () => {
 
     const first = await screen.findByRole('button', { name: 'Rule: Hold for review' });
     const second = screen.getByRole('button', { name: 'Rule: Ship now (Recommended)' });
-    expect(first).toHaveClass('v2-activity__option--primary');
-    expect(second).not.toHaveClass('v2-activity__option--primary');
-    expect(second).not.toHaveTextContent('Recommended');
-    expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
+    // No cobalt primary: the frame draws every option as the same raised key, Other… quiet.
+    for (const key of [first, second]) expect(key).toHaveClass('v2p-b', 'v2p-b-s');
+    expect(screen.getByRole('button', { name: 'Other…' })).toHaveClass('v2p-b-g');
+    // "recommended" rides inside its own key, in mono, not as a caption under it.
+    expect(second).toHaveTextContent('Recommended');
     expect(first).not.toHaveTextContent('Recommended');
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The keys sit in the decision row itself, which is the one open row.
+    const row = first.closest('article') as HTMLElement;
+    expect(row).toHaveClass('v2-activity__queue-row--open');
+    expect(row).toContainElement(second);
   });
 
   test('keeps long decision labels and descriptions readable when the recommendation is second', async () => {
@@ -238,15 +249,11 @@ describe('V2ActivityPage', () => {
     const first = await screen.findByRole('button', { name: 'Rule: Keep account-wide cap' });
     const second = screen.getByRole('button', { name: 'Rule: Change to squad-drafted only (Recommended)' });
     const third = screen.getByRole('button', { name: 'Rule: Use a rolling seven-day cap for all sends' });
-    expect(first).toHaveClass('v2-activity__option--primary');
-    expect(second).not.toHaveClass('v2-activity__option--primary');
-    expect(third).not.toHaveClass('v2-activity__option--primary');
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText('Recommended default: retain five total X posts per day, including casual replies. Simple to count and limits total volume; casual use reduces squad capacity.')).toBeInTheDocument();
     expect(screen.getByText('Change the current rule to five squad-drafted sends per day, excluding Sam’s casual replies. Preserves squad capacity but permits more than five total posts and requires identifying draft origin.')).toBeInTheDocument();
-    expect(second).not.toHaveTextContent('Recommended');
-    expect(within(second.parentElement as HTMLElement).getByText('Recommended')).toBeInTheDocument();
+    expect(second).toHaveTextContent('Recommended');
     expect(second).toHaveAttribute('aria-describedby', expect.stringContaining('description'));
   });
 
@@ -298,7 +305,7 @@ describe('V2ActivityPage', () => {
     renderPage();
     await screen.findByText('Review requested');
 
-    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
     // toHaveBeenCalledWith, not Last: the decision-queue request now fires
     // alongside recap, so "last call" is no longer the recap by construction.
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/activity/recap', expect.objectContaining({
@@ -353,7 +360,7 @@ describe('V2ActivityPage', () => {
     mockGet.mockImplementation(mockFor([], []));
     const first = renderPage();
     expect(await screen.findByRole('heading', { name: 'Get started' })).toBeInTheDocument();
-    expect(await screen.findByText('3 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(await screen.findByText('3 steps')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hire an agent' })).toHaveClass('v2-activity__start-cta--current');
     expect(screen.getByRole('button', { name: 'Open Launch pod' })).not.toHaveClass('v2-activity__start-cta--current');
     expect(screen.getByRole('button', { name: 'Add a connector' })).toBeInTheDocument();
@@ -374,7 +381,7 @@ describe('V2ActivityPage', () => {
     const introSeat = { name: 'scout', displayName: 'Scout', lastActiveAt: '2026-09-08T10:00:00.000Z', lastMessage: { content: 'Hi, I am Scout.', createdAt: '2026-09-08T10:00:01.000Z' } };
     mockGet.mockImplementation(mockFor([introSeat, { name: 'hosted-smoke', internal: true }], [], false));
     const second = renderPage();
-    expect(await screen.findByText('2 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(await screen.findByText('2 steps')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Hire an agent' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Launch pod' })).toHaveClass('v2-activity__start-cta--current');
     expect(screen.getByRole('textbox', { name: i18n.t('activity.compose.placeholder') })).toBeInTheDocument();
@@ -424,7 +431,7 @@ describe('V2ActivityPage', () => {
     await waitFor(() => expect(screen.queryByTestId('activity-start-pending')).not.toBeInTheDocument());
     const card = screen.getByRole('heading', { name: 'Get started' }).closest('section') as HTMLElement;
     expect(card).not.toHaveAttribute('aria-busy');
-    expect(within(card).getByText('2 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(within(card).getByText('2 steps')).toBeInTheDocument();
     expect(within(card).getByText("Say hello in the pod where it lives. If it doesn't answer, @mention it.")).toBeInTheDocument();
     first.unmount();
 
@@ -455,7 +462,7 @@ describe('V2ActivityPage', () => {
       ? { items: [], count: 0, countsByPod: {} } : { ...recap, needsYou: [], agents: [], board: [] } }));
     renderPage();
     expect(await screen.findByText('Nothing yet today.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    fireEvent.click(screen.getByRole('radio', { name: '7 days' }));
     expect(await screen.findByText('Nothing moved in the last 7 days.')).toBeInTheDocument();
     expect(screen.queryByText('Nothing yet today.')).not.toBeInTheDocument();
 
@@ -475,7 +482,7 @@ describe('V2ActivityPage', () => {
       return Promise.resolve({ data: empty });
     });
     const first = renderPage();
-    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    expect(await screen.findByText('1 step')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Launch pod' })).toHaveClass('v2-activity__start-cta--current');
     first.unmount();
 
@@ -489,7 +496,7 @@ describe('V2ActivityPage', () => {
       return Promise.resolve({ data: empty });
     });
     renderPage();
-    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    expect(await screen.findByText('1 step')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open Launch pod' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
@@ -505,7 +512,7 @@ describe('V2ActivityPage', () => {
       return Promise.resolve({ data: empty });
     });
     renderPage();
-    expect(await screen.findByText('1 step · until your first ask arrives')).toBeInTheDocument();
+    expect(await screen.findByText('1 step')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open Launch pod' }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
   });
@@ -668,7 +675,7 @@ describe('V2ActivityPage', () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Rule: Ship now (Recommended)' }));
-    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    expect(await screen.findByText('You ruled: Ship now')).toBeInTheDocument();
   });
 
   test('restores a settled Activity card from durable history after leave and return', async () => {
@@ -685,11 +692,11 @@ describe('V2ActivityPage', () => {
     });
 
     const first = renderPage();
-    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    expect(await screen.findByText('You ruled: Ship now')).toBeInTheDocument();
     first.unmount();
 
     renderPage();
-    expect(await screen.findByText('✓ You ruled: Ship now')).toBeInTheDocument();
+    expect(await screen.findByText('You ruled: Ship now')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rule:/ })).not.toBeInTheDocument();
   });
 
@@ -897,24 +904,117 @@ describe('V2ActivityPage', () => {
     const settled = await screen.findByText('Settled earlier');
     // Panel first, settled card under it.
     expect(panel.compareDocumentPosition(settled) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByText('oldest waiting first')).not.toBeInTheDocument();
+    expect(screen.queryByText(/oldest first/)).not.toBeInTheDocument();
   });
 
-  test('a human whose name matches an agent label keeps the human mark when the id is present', async () => {
-    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
-      ? { ...decisionQueue, items: [
-        { id: 'm-human', attentionItemId: 'a-human', kind: 'mention', title: 'Kai mentioned you', detail: 'x', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', actorUserId: 'human-user-99', createdAt: '2026-08-26T11:00:00.000Z' },
-        { id: 'm-agent', attentionItemId: 'a-agent', kind: 'mention', title: 'Kai mentioned you', detail: 'y', podId: 'pod-1', podName: 'Launch pod', actorName: 'Kai', createdAt: '2026-08-26T10:00:00.000Z' },
-      ], count: 2, countsByPod: { 'pod-1': 2 } }
-      : { ...recap, agents: [{ ...recap.agents[0], id: 'agent-kai', name: 'Kai' }] } }));
+  test('every ask carries one line mark named by its kind, never a filled square (d215 activity)', async () => {
     renderPage();
-    await screen.findAllByText('Kai');
+    await screen.findByText('Review requested');
     const marks = [...document.querySelectorAll('.v2-activity__queue-mark')];
-    const human = document.querySelector('[data-activity-item-id="m-human"] .v2-activity__queue-mark') as HTMLElement;
-    const agent = document.querySelector('[data-activity-item-id="m-agent"] .v2-activity__queue-mark') as HTMLElement;
-    expect(marks.length).toBeGreaterThanOrEqual(2);
-    expect(human.className).toContain('v2-activity__queue-mark--human');
-    expect(agent.className).toContain('v2-activity__queue-mark--agent');
+    expect(marks).toHaveLength(2);
+    expect(screen.getByRole('img', { name: 'mention' })).toHaveClass('v2-activity__queue-mark');
+    expect(screen.getByRole('img', { name: 'decision' })).toHaveClass('v2-activity__queue-mark');
+    for (const mark of marks) expect(mark.className).toBe('v2-activity__queue-mark');
+    // Both asks are rows of one list, not a stack of cards.
+    expect(document.querySelectorAll('.v2-activity__queue > article')).toHaveLength(2);
+  });
+
+  test('a desktop row keeps its secondary acts in the hover cluster beside its one key', async () => {
+    const approval = { id: 'approval-9', kind: 'approval', title: 'Approval requested', detail: 'Deploy.', podId: 'pod-1', podName: 'Launch pod', createdAt: '2026-08-26T08:00:00.000Z' };
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { ...decisionQueue, items: [...decisionQueue.items, approval], count: 3 } : recap }));
+    renderPage();
+    const mention = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+    const cluster = mention.querySelector('.v2-activity__hv') as HTMLElement;
+    expect(within(cluster).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Mark handled', 'Open']);
+    // The key follows the cluster in the DOM, so Tab reaches Reply first; CSS draws the cluster before it.
+    const reply = within(mention).getByRole('button', { name: 'Reply' });
+    expect(reply.compareDocumentPosition(cluster) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const approvalRow = screen.getByText('Approval requested').closest('article') as HTMLElement;
+    expect(within(approvalRow.querySelector('.v2-activity__hv') as HTMLElement).getAllByRole('button').map((b) => b.getAttribute('aria-label')))
+      .toEqual(['Deny', 'Open pod']);
+    expect(within(approvalRow).getByRole('button', { name: 'Approve' })).toHaveClass('v2p-b-s');
+    // No ⋯ menu at desktop, and the decision row's Open sits beside the row, not in a cluster.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    const decision = screen.getByText('Choose the eslint scope').closest('article') as HTMLElement;
+    expect(decision.querySelector('.v2-activity__hv')).toBeNull();
+    expect(within(decision).getByRole('button', { name: 'Open' })).toBeInTheDocument();
+  });
+
+  test('the composer is one line until its text area takes focus, and stays open while it holds a draft', async () => {
+    renderPage();
+    const box = await screen.findByRole('textbox', { name: i18n.t('activity.compose.placeholder') });
+    const composer = box.closest('section') as HTMLElement;
+    expect(composer).not.toHaveClass('v2-activity__compose--open');
+    expect(box).toHaveAttribute('rows', '1');
+    fireEvent.focus(box);
+    expect(composer).toHaveClass('v2-activity__compose--open');
+    expect(box).toHaveAttribute('rows', '2');
+    fireEvent.blur(box, { relatedTarget: document.body });
+    expect(composer).not.toHaveClass('v2-activity__compose--open');
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: 'Draft' } });
+    fireEvent.blur(box, { relatedTarget: document.body });
+    expect(composer).toHaveClass('v2-activity__compose--open');
+    // Focus moving to the destination key inside the composer keeps it open.
+    fireEvent.change(box, { target: { value: '' } });
+    fireEvent.focus(box);
+    fireEvent.blur(box, { relatedTarget: composer.querySelector('.v2-activity__compose-picker-button') });
+    expect(composer).toHaveClass('v2-activity__compose--open');
+  });
+
+  test('the ruled line is text only, with no ✓ glyph', async () => {
+    expect(i18n.t('activity.decision.ruled', { by: 'You', value: 'Ship now', lng: 'en' })).toBe('You ruled: Ship now');
+    expect(i18n.t('activity.decision.ruled', { by: 'sam', value: 'A', lng: 'zh-CN' })).toBe('sam 已裁定：A');
+  });
+
+  describe('at phone width', () => {
+    let original: typeof window.matchMedia;
+    beforeEach(() => {
+      original = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(max-width: 760px)', media: query, onchange: null,
+        addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+      })) as unknown as typeof window.matchMedia;
+    });
+    afterEach(() => { window.matchMedia = original; });
+
+    test('the head holds only the title and count; the window and scope are one row in the page', async () => {
+      renderPage();
+      await screen.findByText('Review requested');
+      const head = screen.getByRole('heading', { name: 'Activity' }).closest('header') as HTMLElement;
+      expect(within(head).queryByRole('radiogroup')).not.toBeInTheDocument();
+      const controls = screen.getByRole('group', { name: 'Activity controls' });
+      expect(head).not.toContainElement(controls);
+      expect(within(controls).getByRole('radio', { name: 'Today' })).toBeInTheDocument();
+      expect(controls.querySelector('.v2-activity__scope-button')).toHaveTextContent('All pods');
+      // The order text gives way on a phone; the count stays.
+      expect(screen.getByLabelText('2 waiting on you')).toBeInTheDocument();
+      expect(screen.queryByText('· oldest first')).not.toBeInTheDocument();
+    });
+
+    test('a row\'s secondary acts live behind its ⋯ key, and the menu runs them', async () => {
+      let reads = 0;
+      mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+        ? (++reads === 1 ? { ...decisionQueue, items: [decisionQueue.items[0]], count: 1 } : { items: [], count: 0, countsByPod: {} })
+        : recap }));
+      mockPost.mockResolvedValue({ data: { success: true } });
+      renderPage();
+      const row = (await screen.findByText('Review requested')).closest('article') as HTMLElement;
+      expect(row.querySelector('.v2-activity__hv')).toBeNull();
+      expect(within(row).queryByRole('button', { name: 'Mark handled' })).not.toBeInTheDocument();
+      const more = within(row).getByRole('button', { name: 'More actions' });
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+      fireEvent.click(more);
+      const menu = within(row).getByRole('menu');
+      expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Mark handled', 'Open']);
+      fireEvent.keyDown(menu, { key: 'Escape' });
+      expect(within(row).queryByRole('menu')).not.toBeInTheDocument();
+      expect(more).toHaveFocus();
+      fireEvent.click(more);
+      fireEvent.click(within(within(row).getByRole('menu')).getByRole('menuitem', { name: 'Mark handled' }));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/activity/attention-1/acknowledge', {}, expect.anything()));
+    });
   });
 
   test('renders a handoff as a handled action, never as a decision', async () => {
@@ -1164,7 +1264,7 @@ describe('V2ActivityPage', () => {
     expect(await screen.findByLabelText('91 waiting on you')).toHaveTextContent('91');
   });
 
-  test('describes the count in the active queue scope without claiming rail/inspector parity', async () => {
+  test('counts the active queue scope beside its label, with the order and no hint', async () => {
     const scopedRecap = { ...recap, pods: [...recap.pods, { id: 'pod-2', name: 'GTM Programs' }] };
     mockGet.mockImplementation((url: string, config: any) => {
       if (url === '/api/activity/decision-queue') {
@@ -1176,11 +1276,13 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
 
-    expect(await screen.findByText('oldest waiting first')).toBeInTheDocument();
+    // The order rides the label's right edge as plain text; no (i) hint carries it any more.
+    expect(await screen.findByText('· oldest first')).toBeInTheDocument();
     expect(screen.getByLabelText('56 waiting on you')).toHaveTextContent('56');
-    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
-    expect(await screen.findByText('oldest waiting first · this pod')).toBeInTheDocument();
-    expect(screen.getByLabelText('9 waiting on you')).toHaveTextContent('9');
+    expect(screen.queryByRole('button', { name: /about/i })).not.toBeInTheDocument();
+    chooseScope('GTM Programs');
+    expect(await screen.findByLabelText('9 waiting on you')).toHaveTextContent('9');
+    expect(document.querySelector('.v2-activity__scope-button')).toHaveTextContent('GTM Programs');
   });
 
   test('appends the next server page without losing the existing rows', async () => {
@@ -1275,7 +1377,7 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Review requested');
-    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
+    chooseScope('GTM Programs');
     expect(await screen.findByText('GTM 8')).toBeInTheDocument();
     expect(screen.queryByText('Nothing needs you.')).not.toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue', expect.objectContaining({
@@ -1300,9 +1402,9 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Review requested');
-    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs' }));
+    chooseScope('GTM Programs');
     await waitFor(() => expect(resolveScoped).not.toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'All pods' }));
+    chooseScope('All pods');
     await screen.findByText('Review requested');
 
     await act(async () => {
@@ -1401,9 +1503,9 @@ describe('V2ActivityPage', () => {
     });
     renderPage();
     await screen.findByText('Review requested');
-    fireEvent.click(screen.getByRole('button', { name: 'GTM Programs', exact: true }));
+    chooseScope('GTM Programs');
     await screen.findByRole('button', { name: 'Retry' });
-    expect(screen.getByRole('button', { name: 'GTM Programs', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelector('.v2-activity__scope-button')).toHaveTextContent('GTM Programs');
     expect(screen.queryByText('Review requested')).not.toBeInTheDocument();
     expect(screen.getByText('Count unavailable')).toBeInTheDocument();
   });
@@ -1538,22 +1640,30 @@ describe('V2ActivityPage', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  test('keeps an overflow pod selection visible and returns focus to its trigger', async () => {
+  test('every pod is in the one scope select, and a choice returns focus to it (d215 activity)', async () => {
     const extraPods = [2, 3, 4].map((id) => ({ id: `pod-${id}`, name: `Pod ${id}` }));
     mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, pods: [...recap.pods, ...extraPods] } }));
     renderPage();
-    const more = await screen.findByRole('button', { name: i18n.t('activity.morePods') });
-    fireEvent.click(more);
-    const choice = screen.getByRole('button', { name: 'Pod 4', exact: true });
+    await screen.findByText('Review requested');
+    const scope = document.querySelector('.v2-activity__scope-button') as HTMLButtonElement;
+    expect(scope).toHaveTextContent('All pods');
+    expect(scope).toHaveAttribute('aria-haspopup', 'listbox');
+    // No pill row: the pods are not buttons in the head until the select opens.
+    expect(screen.queryByRole('button', { name: 'Pod 4', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(scope);
+    const list = screen.getByRole('listbox', { name: 'Pod scope' });
+    expect(within(list).getAllByRole('option').map((option) => option.textContent)).toEqual(['All pods', 'Launch pod', 'Pod 2', 'Pod 3', 'Pod 4']);
+    const choice = within(list).getByRole('option', { name: 'Pod 4' });
     choice.focus();
     fireEvent.click(choice);
-    expect(more).toHaveTextContent('Pod 4');
-    expect(more).toHaveAttribute('aria-expanded', 'false');
-    expect(more).toHaveFocus();
-    fireEvent.click(more);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Pod 3', exact: true }), { key: 'Escape' });
-    expect(more).toHaveAttribute('aria-expanded', 'false');
-    expect(more).toHaveFocus();
+    expect(scope).toHaveTextContent('Pod 4');
+    expect(scope).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => expect(scope).toHaveFocus());
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/activity/recap', expect.objectContaining({ params: { window: 'today', podId: 'pod-4' } })));
+    fireEvent.click(scope);
+    fireEvent.keyDown(within(screen.getByRole('listbox', { name: 'Pod scope' })).getByRole('option', { name: 'Pod 3' }), { key: 'Escape' });
+    expect(scope).toHaveAttribute('aria-expanded', 'false');
+    expect(scope).toHaveFocus();
   });
 
   test('paginates all moved-forward lines in twenty-line batches and retains keyboard focus', async () => {
@@ -1580,6 +1690,37 @@ describe('V2ActivityPage', () => {
     fireEvent.click(less);
     expect(lines()).toHaveLength(3);
     await waitFor(() => expect(within(group).getByRole('button', { name: '17 more in launch pod' })).toHaveFocus());
+  });
+
+  test('a Moved forward line reads an agent post as one plain line, not raw markdown', async () => {
+    expect(plainLine('F82 walk — **correction:** the [Atlassian tools](https://x.test) are *on*\n\n- one\n- `two`')).toBe('F82 walk — correction: the Atlassian tools are on one two');
+    expect(plainLine('## Shipped\n> quoted __done__ ~~old~~')).toBe('Shipped quoted done old');
+    expect(plainLine('see ```js\nconst a = 1;\n``` then 2 * 3 = 6')).toBe('see then 2 * 3 = 6');
+    expect(plainLine('snake_case_name stays')).toBe('snake_case_name stays');
+    // The recap clips at 180: a clipped post drops the half-open mark and ends on an ellipsis.
+    const clipped = `What I saw:\n- \`atlassian_search ${'x'.repeat(200)}`.slice(0, 180);
+    expect(plainLine(clipped)).toMatch(/^What I saw: atlassian_search x+…$/);
+    expect(plainLine('Short and done.')).toBe('Short and done.');
+    expect(plainLine('What I saw: - `atla')).toBe('What I saw: atla');
+    expect(plainLine('pages 2 - 4 moved')).toBe('pages 2 - 4 moved');
+    // The shape agent posts arrive in: whitespace already folded by the recap.
+    expect(plainLine('Done: - a - b - c ## Shipped **ok**')).toBe('Done: a - b - c Shipped ok');
+    expect(plainLine('```\nlog line\n```')).toBe('log line');
+    // Folded, as agent posts arrive: the fence ends where its closing marks are, not at the end.
+    expect(plainLine('Before ```js code ``` after')).toBe('Before after');
+    expect(plainLine('```sh npm test```')).toBe('npm test');
+    expect(plainLine('中_文_字 and __init__.py stay')).toBe('中_文_字 and __init__.py stay');
+    const link = `${'y'.repeat(160)} see [the doc](https://example.com/aaaaaaaaaaaa`.slice(0, 180);
+    expect(plainLine(link)).toMatch(/ see the doc…$/);
+    const emoji = `${'x'.repeat(179)}🎉`.slice(0, 180);
+    expect(plainLine(emoji)).toBe(`${'x'.repeat(179)}…`);
+    const updates = [{ id: 'md-1', podId: 'pod-1', podName: 'Launch pod', content: '**Walked** the [connectors](https://x.test) page\n\n- all green', timestamp: '2026-08-26T11:00:00.000Z' }];
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }], board: [] } }));
+    renderPage();
+    expect(await screen.findByText('Walked the connectors page all green')).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*/)).toBeNull();
+    // The clamp hides the end of a long line; the whole line stays in the title.
+    expect(screen.getByText('Walked the connectors page all green').closest('.v2-activity__moved-text')).toHaveAttribute('title', expect.stringContaining('Walked the connectors page all green'));
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {

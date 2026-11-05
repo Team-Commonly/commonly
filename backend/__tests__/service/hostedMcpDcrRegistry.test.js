@@ -412,6 +412,75 @@ describe('instance-scoped hosted MCP DCR registry', () => {
     });
   });
 
+  // GitLab.com lists only secret methods, yet answers every registration with a
+  // public client that must use PKCE (captured 2026-11-03). A vendor may issue
+  // a public client where we asked for a confidential one; it is accepted only
+  // when it says so outright and S256 binds the code to this start.
+  describe('a vendor that issues a public client where we asked for a confidential one', () => {
+    const GITLAB = require('../fixtures/hostedMcp/gitlab-authorization-server-2026-11-03.json');
+    const { GITLAB_ENTRY } = require('../../integrations/hostedMcp/gitlab');
+    const gitlabCallback = 'https://api.commonly.me/api/integrations/connect/hosted-mcp/gitlab/callback';
+    const publicAnswer = (seen, overrides = {}) => jest.fn(async (url, init) => {
+      seen.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({
+        ...GITLAB.registrationAnswer.body,
+        client_id: 'gitlab-public-1',
+        redirect_uris: [gitlabCallback],
+        ...overrides,
+      }), { status: 201 });
+    });
+
+    test('GitLab registers once, stores a public client with no secret, and its token call sends only the client_id', async () => {
+      const sent = [];
+      const fetch = publicAnswer(sent);
+      const client = await ensureDcrClient(GITLAB_ENTRY, GITLAB.metadata, gitlabCallback, fetch);
+      const again = await ensureDcrClient(GITLAB_ENTRY, GITLAB.metadata, gitlabCallback, fetch);
+
+      expect(client).toEqual({ clientId: 'gitlab-public-1' });
+      expect(again).toEqual(client);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(sent[0].url).toBe('https://gitlab.com/oauth/register');
+      expect(sent[0].body.token_endpoint_auth_method).toBe('client_secret_basic');
+      const row = await Model.findOne({ entryId: 'gitlab', current: true }).lean();
+      expect(row).toMatchObject({ tokenEndpointAuthMethod: 'none', clientSecretRef: null });
+      expect(await ConnectorSecret.countDocuments({})).toBe(0);
+
+      const exchange = buildTokenExchangeRequest(GITLAB_ENTRY, GITLAB.metadata, client, {
+        code: 'code-1', codeVerifier: 'verifier-1', redirectUri: gitlabCallback,
+      });
+      const refresh = buildRefreshRequest(GITLAB_ENTRY, GITLAB.metadata, client, { refreshToken: 'rt-1' });
+      const revoke = buildRevocationRequest(GITLAB_ENTRY, GITLAB.metadata, client, { token: 'rt-1', tokenTypeHint: 'refresh_token' });
+      expect(exchange.body.get('code_verifier')).toBe('verifier-1');
+      for (const request of [exchange, refresh, revoke]) {
+        expect(request.headers.Authorization).toBeUndefined();
+        expect(request.body.get('client_id')).toBe('gitlab-public-1');
+        expect(request.body.get('client_secret')).toBeNull();
+      }
+    });
+
+    test('is refused without S256 at the authorization server, and stores nothing', async () => {
+      const noS256 = { ...GITLAB.metadata, code_challenge_methods_supported: ['plain'] };
+      await expect(ensureDcrClient(GITLAB_ENTRY, noS256, gitlabCallback, publicAnswer([])))
+        .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      await expect(ensureDcrClient(GITLAB_ENTRY, { ...GITLAB.metadata, code_challenge_methods_supported: undefined }, gitlabCallback, publicAnswer([])))
+        .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      expect(await Model.countDocuments({})).toBe(0);
+    });
+
+    test('a public answer that still carries a secret, or does not confirm the callback, is refused', async () => {
+      for (const overrides of [
+        { client_secret: 'stray-secret' },
+        { redirect_uris: ['https://elsewhere.example/cb'] },
+      ]) {
+        // eslint-disable-next-line no-await-in-loop
+        await expect(ensureDcrClient(GITLAB_ENTRY, GITLAB.metadata, gitlabCallback, publicAnswer([], overrides)))
+          .rejects.toMatchObject({ code: 'client_registration_unsupported' });
+      }
+      expect(await Model.countDocuments({})).toBe(0);
+      expect(await ConnectorSecret.countDocuments({})).toBe(0);
+    });
+  });
+
   test('Airtable registers once, as a public client, at its captured registration endpoint', async () => {
     const airtableCallback = 'https://api.commonly.me/api/integrations/connect/hosted-mcp/airtable/callback';
     const sent = [];
@@ -490,6 +559,17 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(await dcrClientForRow(entry, 'registered-1')).toEqual({ clientId: 'registered-1' });
     });
 
+    test('is replaced when the vendor says so in its own words (Supabase: 422 Unrecognized client_id)', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(422, { message: 'Unrecognized client_id' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(true);
+
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: false });
+      expect(await ensureDcrClient(entry, metadata, callback, fetch)).toEqual({ clientId: 'registered-2' });
+    });
+
     test('is kept when the vendor still knows it, and asked about at most once an interval', async () => {
       const sent = [];
       const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
@@ -531,6 +611,8 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       const replies = [
         () => answer(500, { error: 'server_error' }),
         () => answer(400, { error: 'invalid_request' }),
+        // Supabase's answer when the client is known but the secret is missing.
+        () => answer(422, { message: 'Required parameter: client_secret' }),
         () => answer(200, { access_token: 'never-for-a-made-up-code' }),
         () => new Response('not json', { status: 401 }),
         () => { throw new Error('connect ECONNREFUSED'); },

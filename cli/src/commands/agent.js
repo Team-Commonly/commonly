@@ -37,7 +37,7 @@ import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
-import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
+import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
   getSessionEntry,
@@ -60,12 +60,14 @@ import { detectMemorySources, composeImport, importMemory } from '../lib/memory-
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
 import {
+  effectiveSandboxTrust,
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
   refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  providerRefusal,
   WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
 import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
@@ -73,12 +75,13 @@ import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
+  ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
   defaultMcpServers,
   seatBaseline,
   withDefaultMcpServer,
   withDefaultSandbox,
 } from '../lib/default-environment.js';
-import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
+import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
@@ -89,7 +92,10 @@ import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
-import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import {
+  UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
+} from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
@@ -131,6 +137,8 @@ import {
   peerHoldsFrame,
   resolveCascadeSettings,
 } from '../lib/enforcement.js';
+import { buildReplyReceipt } from '../lib/reply-receipt.js';
+import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -307,6 +315,8 @@ export const printAttachRunGuidance = ({
   }
 };
 
+export { providerRefusal };
+
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token
 // file's adapter is what runs. A different `--adapter` used to be dropped
@@ -382,7 +392,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   name,
   env = process.env,
   clientFactory = createClient,
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   adapterOverride = null,
   log = () => {},
   startDir = process.cwd(),
@@ -418,7 +428,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   if (adapterOverride) {
     const adapter = adapterRegistry.getAdapter(adapterOverride);
     if (!adapter) {
-      throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${adapterRegistry.listAdapterNames().join(', ')}`);
+      throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`);
     }
     if (!await adapter.detect()) {
       throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
@@ -971,7 +981,7 @@ export const updateAgentConfiguration = async ({
   envPath = null,
   runtimeKey = false,
   parseEnv = parseEnvironmentFile,
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
 }) => {
   if (!record?.agentName) {
     throw new Error('token record is missing agentName — re-attach the agent');
@@ -1001,7 +1011,7 @@ export const updateAgentConfiguration = async ({
     const selectedAdapter = adapterRegistry.getAdapter(normalizedAdapter);
     if (!selectedAdapter || !knownAdapters.includes(normalizedAdapter)) {
       throw new Error(
-        `Unknown adapter '${normalizedAdapter}'. Known: ${knownAdapters.join(', ')}`,
+        `Unknown adapter '${normalizedAdapter}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`,
       );
     }
     if (!await selectedAdapter.detect()) {
@@ -1041,9 +1051,10 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment?.provider !== undefined
-    && !adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase())?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment,
+      adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()));
+    if (refusal) throw new Error(refusal);
   }
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
@@ -1147,7 +1158,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (!confined || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
+    && (!confined || !ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );
@@ -1170,13 +1181,15 @@ export const performAttach = async ({
   memoryFrom = null,
   memoryInstance = 'default',
   log = () => {},
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
+  bwrap: probeBwrap = detectBwrap,
+  platform = process.platform,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
     throw new Error(
-      `Unknown adapter "${adapterName}". Known: ${adapterRegistry.listAdapterNames().join(', ')}`,
+      `Unknown adapter "${adapterName}". Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`,
     );
   }
 
@@ -1197,8 +1210,9 @@ export const performAttach = async ({
     // An explicit spec augments the seat; it does not remove the Commonly
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
-    if (environment?.provider !== undefined && !adapter.supportsProvider) {
-      throw new Error('environment.provider requires a provider-capable adapter');
+    {
+      const refusal = providerRefusal(environment, adapter);
+      if (refusal) throw new Error(refusal);
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
@@ -1206,10 +1220,37 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter, platform });
+    // D245: native Windows has neither sandbox, so its refusal names Windows
+    // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
+    // refuses there, as before; only the words differ.
+    const windowsRefusal = () => new Error(adapterName === 'dsh'
+      ? `confined dsh sandbox.mode=${sandboxMode} needs a sandbox, and Commonly has no sandbox for Windows yet, `
+        + 'so dsh cannot run confined on native Windows. Choose "Run it here" on the Connect page for a hosted agent.'
+      : `This environment file asks for sandbox.mode=${sandboxMode}, which Commonly cannot enforce on Windows, `
+        + 'so attach stops here.\n'
+        // This attach made no agent, so Claude's options name the path that works on
+        // Windows: the Connect page's commands, which set the two env vars and run with
+        // the flag, keeping the public trust and policy (#3407 review B1). Other
+        // adapters keep the shared Windows text.
+        + (adapterName === 'claude' ? [
+          'Instead:',
+          '  - Run it without an OS sandbox, which is your choice: use the commands on the Connect page.'
+            + ' They set COMMONLY_API_URL and COMMONLY_AGENT_TOKEN, then run'
+            + ` commonly agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
+            + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level"
+            + ' confines it, and it gets no connector grants.'
+            // agent run prefers a saved record over the page's env vars, so an
+            // older record of that name would run with its own settings (#3407).
+            + ' If this computer already has an agent saved under that name, the run uses that one and its'
+            + ' settings instead: remove it first with commonly agent detach <name> --force.',
+          '  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.',
+          '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
+        ].join('\n') : windowsSandboxMessage(adapterName)));
     if (sandboxMode === 'bwrap') {
-      const bwrap = detectBwrap();
+      const bwrap = probeBwrap();
       if (!bwrap.available) {
+        if (platform === 'win32') throw windowsRefusal();
         throw new Error(`sandbox.mode=bwrap requested but unavailable: ${bwrap.error}`);
       }
       if (environment.sandbox?.network?.policy === 'restricted') {
@@ -1235,6 +1276,7 @@ export const performAttach = async ({
           || adapterName;
         const seatbelt = probeSeatbelt();
         if (!seatbelt.available) {
+          if (platform === 'win32') throw windowsRefusal();
           // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
           throw new Error(adapterName === 'dsh'
             ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`
@@ -1581,6 +1623,9 @@ export const performRun = ({
   instanceId = 'default',
   podId = null,
   environment = null,
+  // D245: the user's own Windows opt-in for this run; reaches the adapter's
+  // spawn context only (never the environment).
+  hostUnconfined = false,
   workspacePath = null,
   intervalMs = 5000,
   log = () => {},
@@ -1588,6 +1633,8 @@ export const performRun = ({
   setTimeoutImpl = setTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
+  // The host's bubblewrap probe, for a turn placed public; tests pin it.
+  detectBwrapImpl,
   setDeadlineTimeoutImpl = setTimeout,
   clearDeadlineTimeoutImpl = clearTimeout,
   turnTimeoutMs,
@@ -1616,6 +1663,13 @@ export const performRun = ({
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
   reportRuntime = false,
+  // D247: a listener seat (no daemon) reads the model and effort its owner
+  // saved on the server before each turn. Off for daemon seats, whose daemon
+  // projects the same values into `environment`.
+  readSavedControls = false,
+  // F150: a seat with no daemon reads its live grant brokers before each turn.
+  // Off for daemon seats, whose daemon merges /assigned's into the record.
+  readGrantBrokers = false,
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
@@ -1637,8 +1691,9 @@ export const performRun = ({
 }) => {
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
-  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment, adapter);
+    if (refusal) throw new Error(refusal);
   }
   const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
@@ -1692,32 +1747,67 @@ export const performRun = ({
     return spawnPolicyPromise;
   };
 
-  // THE SEAT'S OWN RECORD IS THE ONLY DECLARATION THERE IS. The broker reaches a
-  // seat as an injected MCP entry written by hand into its environment — no
-  // server projection puts it there (`GRANT_BROKER_URL` is imported by one
-  // route, the daemon assignment, and that one already refuses). So a seat run
-  // by `commonly agent run` under launchd spawns the entry verbatim, and the
-  // confinement it promises is declared in a different field (`sandbox`), which
-  // can disagree. The daemon half of this refusal already runs
-  // (`daemon-supervisor.js`); this is the same predicate at the only other site
-  // that can see the record — same code, so one refusal with two emitters.
+  // THE BROKER REACHES A SEAT AS AN INJECTED MCP ENTRY, and the confinement it
+  // promises is declared in a different field (`sandbox`), which can disagree.
+  // Two sources put the entry there. Under the daemon, its work list
+  // (`/api/agent-binding/assigned`) merges the seat's live grants into the
+  // record before this process starts. Without a daemon (`readGrantBrokers`),
+  // this loop reads `/api/agents/runtime/grant-brokers` itself, before every
+  // turn, and merges the same projection the same way (`mergeGrantBrokers`)
+  // (F150). Either way the entry is then judged HERE by `withholdGrantBroker`,
+  // the same predicate the daemon runs: one refusal with two emitters, so the
+  // server's answer can add a broker and the seat's own guard can still
+  // withhold it (pi, an absent sandbox the grant does not name).
   //
-  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what
-  // the adapter spawns with, and the stored record keeps its broker, so the
-  // daemon stays the layer that judges a host it knows. Applied once for the
-  // run rather than per turn: `agent run` reads its record once at boot.
-  const requestedSeatEnvironment = withholdGrantBroker(environment, adapter?.name, {
-    instanceUrl,
-    onRefuse: (refusal, names) => log(
-      `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
-    ),
-  });
+  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what the adapter
+  // spawns with, and the stored record keeps its own entries, so the daemon
+  // stays the layer that judges a host it knows.
+  //
+  // Read per turn, not once at boot: a grant is revoked or expires while a seat
+  // runs, and one GET beside the per-turn reads already made here is cheap; the
+  // daemon re-reads /assigned every 30s and restarts the seat, which is coarser.
+  // A failed read keeps the last answer: a stale entry reaches nothing, because
+  // the broker re-reads the grant and refuses a revoked or expired one on every
+  // call (`toolBrokerService` → `assertGrantUsable`).
+  let lastRefusalKey = null;
+  const guardedEnvironment = (grantBrokers) => withholdGrantBroker(
+    mergeGrantBrokers(environment, grantBrokers), adapter?.name, {
+      instanceUrl,
+      onRefuse: (refusal, names) => {
+        // Said once per change, not once per turn.
+        const key = `${refusal.reason}:${names.join(',')}`;
+        if (key === lastRefusalKey) return;
+        lastRefusalKey = key;
+        log(`${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`);
+      },
+    },
+  );
+  let lastGrantBrokers = [];
+  let lastServerGrantRefusal = null;
+  let requestedSeatEnvironment = guardedEnvironment(lastGrantBrokers);
+  const refreshGrantBrokers = async () => {
+    if (!readGrantBrokers) return;
+    try {
+      const projection = await client.get('/api/agents/runtime/grant-brokers', { adapter: adapter?.name }, {
+        signal: AbortSignal.timeout(5000),
+      });
+      lastGrantBrokers = Array.isArray(projection?.servers) ? projection.servers : [];
+      const refusal = projection?.refusal || null;
+      const refusalKey = refusal ? `${refusal.reason}` : null;
+      if (refusal && refusalKey !== lastServerGrantRefusal) {
+        log(`${refusal.code} (${refusal.reason}) — a live grant was withheld by the server: ${refusal.detail}`);
+      }
+      lastServerGrantRefusal = refusalKey;
+    } catch { /* keep the last answer; the broker refuses a revoked grant on every call */ }
+    requestedSeatEnvironment = guardedEnvironment(lastGrantBrokers);
+  };
   // Without native effort inventory a machine runner cannot promise that a
   // stored effort is supported. Preserve the record and use harness default.
   // Standalone CLI behavior remains under the operator's control.
   const runtimeInventoryPromise = reportRuntime ? Promise.resolve(adapter.inventory?.()).then((value) => value || { models: null, efforts: [] })
     .catch(() => ({ models: null, efforts: [] })) : Promise.resolve(null);
   let seatEnvironment = requestedSeatEnvironment;
+  let lastSavedControls = null;
   // OpenCode retains tool-call IDs in its resumed history. A Gemini proxy
   // marks those IDs with signature references, so changing providers must
   // start a fresh session before another upstream can receive them.
@@ -1801,7 +1891,48 @@ export const performRun = ({
   // a conversation that read the workspace, whatever claude's resume would
   // find from another folder.
   let lastPlacementReason = null;
+  // D247: the model and effort this turn spawns with. A listener seat reads
+  // its saved controls first; then an effort is dropped only when the device
+  // listed its levels and this one is not among them.
+  let savedControlsNoticeShown = false;
+  const refreshSeatEnvironment = async () => {
+    const inventory = await runtimeInventoryPromise;
+    await refreshGrantBrokers();
+    let desiredEnvironment = requestedSeatEnvironment;
+    if (readSavedControls) {
+      try {
+        const identity = await client.get('/api/agents/runtime/installations', {}, {
+          signal: AbortSignal.timeout(5000),
+        });
+        lastSavedControls = savedRuntimeControls({
+          installations: identity?.installations, podId, instanceId,
+          ...(identity && 'runtimeSourcePodId' in identity ? { runtimeSourcePodId: identity.runtimeSourcePodId } : {}),
+        });
+      } catch { /* keep the last controls read; a failed read changes nothing */ }
+      // Keyed on the RECORD's environment, not the merged one: grant brokers
+      // (F150) can give a record with none an `mcp` list, and that must not
+      // turn on saved controls the notice below says don't apply.
+      desiredEnvironment = environment
+        ? withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls) : requestedSeatEnvironment;
+      // A record with no environment (from before attach wrote one) isn't
+      // given one silently. `agent config` writes one to the record, and from
+      // then on saved controls apply. Say so once, with the command.
+      if (!environment && lastSavedControls && !savedControlsNoticeShown) {
+        savedControlsNoticeShown = true;
+        const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
+        const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
+        log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
+          + `don't apply to it yet. Run once: commonly agent config ${agentName}${flags}`);
+      }
+    }
+    // Dropped only when the device listed its levels and this one is not
+    // among them; with nothing reported the harness decides (D247).
+    seatEnvironment = reportRuntime && desiredEnvironment
+      && effortRefusedByDevice(inventory, desiredEnvironment.effort)
+      ? { ...desiredEnvironment, effort: undefined } : desiredEnvironment;
+  };
   const placeTurn = async () => {
+    await refreshSeatEnvironment();
     if (seatEnvironment?.sandbox?.trust !== 'workspace') {
       return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
@@ -1832,10 +1963,6 @@ export const performRun = ({
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
-    const inventory = await runtimeInventoryPromise;
-    if (reportRuntime && requestedSeatEnvironment && !inventory?.efforts.includes(requestedSeatEnvironment.effort)) {
-      seatEnvironment = { ...requestedSeatEnvironment, effort: undefined };
-    }
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -2102,14 +2229,19 @@ export const performRun = ({
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
     // not be read) is confined as a public seat, which this host may not be
-    // able to do: Claude Code on Linux has only the workspace jail. Refuse it
-    // as the run start would, before anything is read or spawned. The model
+    // able to do (a Linux host without bubblewrap). Refuse it as the run start
+    // would, before anything is read or spawned. The model
     // never runs and nothing is posted. A public pod is a settled answer, so a
     // human's message is handed to another listener (claim-outcome.js). A
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      const turnRefusal = hostSandboxRefusal({
+        environment: placement.environment,
+        adapterName: adapter.name,
+        hostUnconfined,
+        ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
+      });
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -2155,6 +2287,12 @@ export const performRun = ({
     // The adapter also denies the memory tools for it (memoryWithheld).
     const memoryWithheld = Boolean(placement.reason);
     const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
+    // F118: a public seat reads its memory but never writes it. Its summary is
+    // its own output, which a stranger in the pod can steer, so the wrapper does
+    // not sync it back; the adapters withhold the memory-write tools the same
+    // way. A workspace seat's public turn is covered by memoryWithheld too.
+    const memoryWriteWithheld = memoryWithheld
+      || effectiveSandboxTrust(placement.environment?.sandbox?.trust) === 'public';
 
     // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -2290,6 +2428,8 @@ export const performRun = ({
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
+    // D245 item 4: how long the runtime ran, for the reply receipt.
+    let spawnDurationMs;
     let observedSpawn = false;
     let commitAttribution = null;
     try {
@@ -2336,6 +2476,8 @@ export const performRun = ({
         memoryLongTerm,
         memoryWithheld,
         environment: placement.environment,
+        // Only when set, so every other spawn context stays as it was.
+        ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
@@ -2356,7 +2498,9 @@ export const performRun = ({
       };
       // Supervised or plain, a failure is thrown exactly as the adapter's own
       // would be, so the run loop's classification and retry apply unchanged.
+      const spawnStartedAt = Date.now();
       result = await turn.run(adapter, spawnPrompt, spawnCtx);
+      spawnDurationMs = Date.now() - spawnStartedAt;
       spawnCompleted = true;
     } finally {
       try {
@@ -2543,6 +2687,12 @@ export const performRun = ({
           maxChunks: maxChatChunks,
           uploadName: `${agentName}-reply-${event._id}.md`,
           log: (line) => log(`[${event.type}] ${line}`),
+          // D245 item 4: the wrapper's own account of this turn.
+          receipt: buildReplyReceipt({
+            adapterName: adapter.name,
+            stats: result.stats,
+            durationMs: spawnDurationMs,
+          }),
         });
       } catch (deliveryError) {
         // TASK-535: every rung threw, so the reply reached nobody. The throw
@@ -2618,7 +2768,7 @@ export const performRun = ({
       }
     }
     turn.finish(turnOutcome);
-    if (result.memorySummary && !memoryWithheld) {
+    if (result.memorySummary && !memoryWriteWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
         log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);
@@ -4026,7 +4176,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|dsh|…)')
+    .description(`Wrap a local CLI as a Commonly agent (${listPublicAdapterNames().join('|')})`)
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--memory-from <agent>', 'Copy long-term memory from a hosted agent you own')
@@ -4212,13 +4362,21 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode|qwen); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', `CLI to wrap on first-run bootstrap (${listPublicAdapterNames().join('|')}); an existing token file bound to a different adapter stops the run`)
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
+    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants.')
     .action(async (name, opts) => {
+      if (opts.unsandboxed) {
+        const flagRefusal = unsandboxedFlagRefusal();
+        if (flagRefusal) {
+          console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          process.exit(1);
+        }
+      }
       let allow;
       try {
         allow = parseAllowGrants(opts.allow);
@@ -4258,9 +4416,21 @@ Docs:
         bootstrapped = true;
       }
 
+      // D245: on native Windows the user may choose to run without an OS
+      // sandbox, by typing the flag or by installing the daemon with it (the
+      // marker is read only by the seats that daemon spawns). Nothing from the
+      // server decides this, and the environment never carries it: the seat
+      // keeps its trust and tool policy, and only the OS jail is skipped.
+      const hostUnconfined = hostUnconfinedForRun({
+        optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
+        adapterName: record.adapter,
+        environment: record.environment,
+      });
+      if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
+
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter });
+      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter, hostUnconfined });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -4291,7 +4461,7 @@ Docs:
 
       const adapter = getAdapter(record.adapter);
       if (!adapter) {
-        console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
+        console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listPublicAdapterNames().join(', ')}`);
         process.exit(1);
       }
 
@@ -4349,6 +4519,7 @@ Docs:
         instanceId: record.instanceId,
         podId: record.podId,
         environment: record.environment || null,
+        hostUnconfined,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),
@@ -4360,6 +4531,8 @@ Docs:
         resolveOwnProviderKey: createOwnKeyResolver({ instanceUrl: record.instanceUrl,
           machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
         reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
+        readSavedControls: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
+        readGrantBrokers: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),

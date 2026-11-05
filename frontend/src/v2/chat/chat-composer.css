@@ -110,6 +110,9 @@
      z-index keeps it above later positioned siblings such as the transcript. */
   .v2-root button.v2-composer__plus,
   .v2-root button.v2-composer__send { position: relative; z-index: 1; }
+  /* The drawn 32x32 stays (D223); the primitives' 44px phone size does not apply. */
+  .v2-root button.v2-composer__plus,
+  .v2-root button.v2-composer__send { width: 32px; height: 32px; }
   .v2-root button.v2-composer__plus::after,
   .v2-root button.v2-composer__send::after {
     content: '';
@@ -205,6 +208,8 @@
 }
 
 .v2-root button.v2-composer__tag-cancel {
+  display: inline-grid;
+  place-items: center;
   width: 16px;
   height: 16px;
   padding: 0;

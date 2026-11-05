@@ -49,13 +49,22 @@ const {
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 // eslint-disable-next-line global-require
-const { revokeConnectionGrants } = require('../services/roomGrantService');
+const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
+import { isGithubAppConfigured } from '../services/githubAppNames';
+import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, proveConnectRepository } from '../services/githubConnectProof';
+import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 import { Types } from 'mongoose';
 import {
-  invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
+  DISCORD_BINDING_ID_FIELDS, invalidDiscordIdError, isDiscordSnowflake, isSupplied,
+  malformedDiscordBindingField, serverOwnedConfigError,
 } from '../utils/discordBinding';
+import { readDiscordInstallProof } from '../utils/discordInstallProof';
+import {
+  assertCanBindSurface, isSurfaceBindType, retargetsSurface, SurfaceBindRefusedError,
+} from '../services/chatRelay/bindSurface';
+import { liveRelayRefusalFor } from '../services/chatRelay/adapters';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -64,6 +73,51 @@ import {
   ingestIngressRateLimit,
   ingestIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
+
+// F90: the instance bot is in many guilds, so a request naming a guild proves
+// nothing. The caller has authority over a guild when they themselves bound it
+// to one of their pods before, or, on a first install, when they carry the
+// OAuth callback's proof for this pod and guild (F89). A binding someone else
+// made does not count: anyone can join a listed pod, and membership must not
+// hand over every channel in that pod's guild. The channel list (routes/
+// discord.ts) is looser, since it only shows channel names.
+const hasDiscordGuildAuthority = async (
+  userId: unknown, podId: string, guildId: string, install: unknown,
+): Promise<boolean> => {
+  const callerPods = await Pod.find({ $or: [{ members: userId }, { createdBy: userId }] })
+    .select('_id')
+    .lean();
+  const podIds = (callerPods || []).map((pod: { _id: unknown }) => pod._id);
+  if (podIds.length
+    && await Integration.findOne({
+      type: 'discord', 'config.serverId': guildId, podId: { $in: podIds }, createdBy: userId,
+    })) return true;
+  const proof = readDiscordInstallProof(install);
+  return !!proof && proof.guildId === guildId && proof.podId === podId
+    && proof.userId === String(userId)
+    && podIds.some((id: unknown) => String(id) === podId);
+};
+
+// A text or announcement channel, the kinds the picker lists and a webhook
+// can be made on; a thread, category or forum would fail after the row saves.
+const WEBHOOK_CHANNEL_TYPES = new Set([0, 5]);
+
+// The guild a channel belongs to, as Discord answers it, or '' when it doesn't
+// (or when it is not a channel a connector can use).
+const discordChannelGuild = async (channelId: string): Promise<string> => {
+  if (!isDiscordSnowflake(channelId)) return '';
+  try {
+    const response = await axios.get(`https://discord.com/api/channels/${channelId}`, {
+      headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+      timeout: 10_000,
+    });
+    const channel = response.data as { guild_id?: unknown; type?: unknown };
+    if (!WEBHOOK_CHANNEL_TYPES.has(Number(channel?.type))) return '';
+    return String(channel?.guild_id || '');
+  } catch {
+    return '';
+  }
+};
 
 // The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
 // and this strip read the same one (TASK-140).
@@ -239,41 +293,210 @@ router.get('/catalog', listIntegrationsRateLimit, auth, async (req: AuthReq, res
   }
 });
 
-// GitHub App installations are administrator-owned user-scope connections.
-// They intentionally do not pass through the pod-member connector route: a
-// member must never be able to bind the broker to Commonly's App credential.
+// ─── GitHub App connections (one row per App, installation and repository) ──
+//
+// F172. A `github-app` row is one repository on one installation of one App:
+// `tools` (the private commonly-tools App, admin route only) or `connect` (the
+// public Commonly Connect App, self-serve with proof). An installation covers
+// many repositories, so a row written here keeps its installation in `config`
+// and leaves the top-level `installationId` unset: that field is unique per
+// installation and still holds the rows written before F172. Grants on these
+// rows name the row `_id`.
+const GITHUB_SLUG = /^[A-Za-z0-9_.-]{1,100}$/;
+const GITHUB_INSTALLATION_ID = /^\d{1,20}$/;
+
+type GithubAppRowShape = {
+  _id?: unknown;
+  createdBy?: unknown;
+  status?: unknown;
+  revokedAt?: unknown;
+  installationId?: unknown;
+  config?: { app?: unknown; installationId?: unknown; owner?: unknown; repo?: unknown };
+};
+
+/** The row already holding (app, installation, repository), legacy rows included. */
+const findGithubAppRepositoryRow = async (
+  app: 'tools' | 'connect', installationId: string, repoKey: string,
+): Promise<GithubAppRowShape | null> => {
+  const rows = await Integration.find({
+    type: 'github-app',
+    $or: [{ installationId }, { 'config.installationId': installationId }],
+  }).lean() as GithubAppRowShape[];
+  return rows.find((row) => {
+    const rowApp = row.config?.app === undefined || row.config?.app === null ? 'tools' : row.config.app;
+    const rowKey = `${String(row.config?.owner || '')}/${String(row.config?.repo || '')}`.toLowerCase();
+    return rowApp === app && rowKey === repoKey;
+  }) || null;
+};
+
+const isDuplicateKeyError = (error: unknown): boolean => (error as { code?: unknown })?.code === 11000;
+
+// The admin route binds a tools-App installation (our own org). It must never
+// pass through the pod-member connector route: a member must never be able to
+// bind the broker to Commonly's private App credential.
 router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
-    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
+    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown; ownerUserId?: unknown; app?: unknown };
     const installationId = String(body.installationId || '').trim();
     const owner = String(body.owner || '').trim();
     const repo = String(body.repo || '').trim();
     if (!installationId || !owner || !repo) {
       return res.status(400).json({ message: 'installationId, owner, and repo are required' });
     }
-    const existing = await Integration.findOne({ type: 'github-app', installationId });
+    if (!GITHUB_INSTALLATION_ID.test(installationId) || !GITHUB_SLUG.test(owner) || !GITHUB_SLUG.test(repo)) {
+      return res.status(400).json({ message: 'installationId must be numeric, and owner and repo valid GitHub names' });
+    }
+    // A Connect row is created only with the person's own proof, on the
+    // self-serve route; this route cannot write one.
+    if (body.app !== undefined && body.app !== 'tools') {
+      return res.status(400).json({ message: 'the administrator route binds commonly-tools installations only' });
+    }
+    // The connection owner is the granter of every grant on it. Default the
+    // admin; a named owner must be a usable human account (never a bot).
+    let ownerUserId = String(req.user?.id || '');
+    if (body.ownerUserId !== undefined) {
+      const named = String(body.ownerUserId || '').trim();
+      const refusal = Types.ObjectId.isValid(named) && /^[a-f\d]{24}$/i.test(named)
+        ? sessionRefusal(await loadSessionAccount(named))
+        : 'missing';
+      if (refusal) return res.status(400).json({ error: 'invalid_owner', message: 'ownerUserId must name an existing human account' });
+      ownerUserId = named;
+    }
+    const repoKey = `${owner}/${repo}`.toLowerCase();
+    const existing = await findGithubAppRepositoryRow('tools', installationId, repoKey);
     if (existing) {
-      const current = existing.config || {};
-      if (String(current.owner || '') !== owner || String(current.repo || '') !== repo) {
-        return res.status(409).json({ message: 'installationId is already bound to a different repository' });
-      }
-      // Connection rows are immutable in this cut. In particular, do not
-      // reassign createdBy or revive/retarget grants on a repeated POST.
-      return res.json({ integration: existing });
+      // Rows are immutable here: never reassign createdBy or retarget grants.
+      return res.status(409).json({ error: 'connection_exists', message: 'that repository is already connected on this installation', integrationId: String(existing._id) });
     }
     const integration = new Integration({
-      installationId,
       type: 'github-app',
       scope: 'user',
       status: 'connected',
-      config: { installationId, owner, repo },
-      createdBy: req.user?.id,
+      config: { app: 'tools', installationId, owner, repo, repoKey },
+      createdBy: ownerUserId,
       isActive: true,
     });
-    await integration.save();
+    try {
+      await integration.save();
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return res.status(409).json({ error: 'connection_exists', message: 'that repository is already connected on this installation' });
+      throw error;
+    }
     return res.status(201).json({ integration });
   } catch (error) {
     console.error('Error creating GitHub App integration:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Self-serve (F172): a signed-in person connects one repository of a Commonly
+// Connect installation. The installation and repository are proven from the
+// person's own GitHub App user token (services/githubConnectProof), never
+// taken from the body, and the person becomes the owner. Remove it with
+// DELETE /api/integrations/:id, which admits the row's creator.
+router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
+    const installationId = typeof body.installationId === 'number' || typeof body.installationId === 'string'
+      ? String(body.installationId).trim() : '';
+    const owner = typeof body.owner === 'string' ? body.owner.trim() : '';
+    const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
+    if (!GITHUB_INSTALLATION_ID.test(installationId) || !GITHUB_SLUG.test(owner) || !GITHUB_SLUG.test(repo)) {
+      return res.status(400).json({ error: 'invalid_repository', message: 'installationId, owner and repo are required' });
+    }
+    // A row the broker could never sign for is not created.
+    if (!isGithubAppConfigured('connect')) {
+      return res.status(503).json({ error: 'github_app_not_configured', message: 'Commonly Connect is not configured on this instance' });
+    }
+    let proven;
+    try {
+      proven = await proveConnectRepository({ userId, installationId, owner, repo });
+    } catch (error) {
+      if (error instanceof GithubConnectProofError) {
+        return res.status(error.statusCode).json({
+          error: error.code,
+          message: error.message,
+          ...(error.code === 'github_connect_required'
+            ? { connect: `/api/integrations/connect/hosted-mcp/${GITHUB_MCP_ENTRY_ID}/start` } : {}),
+        });
+      }
+      throw error;
+    }
+    const repoKey = `${proven.owner}/${proven.repo}`.toLowerCase();
+    const existing = await findGithubAppRepositoryRow('connect', proven.installationId, repoKey);
+    if (existing) {
+      // Only its owner learns which row it is.
+      const own = String(existing.createdBy || '') === userId;
+      // A row nobody can use (disconnected when its owner's GitHub connection
+      // was removed, or revoked) does not hold the repository. A fresh proof
+      // takes it: its owner revives it, or another person replaces the owner
+      // (F173). Every grant on the row ends first, so none survives the change
+      // of owner; the old owner's identity and memory are untouched. A
+      // connected row is never taken.
+      const stale = existing.status !== 'connected' || Boolean(existing.revokedAt);
+      if (stale) {
+        // Win the row first, conditionally on it still being dead and still
+        // held by the owner this request read (F174). A request that read a
+        // row its owner has since revived loses here and revokes nothing.
+        // Grants minted before the takeover then end, as the system: the
+        // broker already refuses them, because a Connect grant runs only for
+        // the row's current owner (connection_owner_changed).
+        const takenAt = new Date();
+        const taken = await Integration.findOneAndUpdate(
+          {
+            _id: existing._id,
+            createdBy: existing.createdBy,
+            $or: [{ status: { $ne: 'connected' } }, { revokedAt: { $ne: null } }],
+          },
+          {
+            $set: {
+              createdBy: userId,
+              status: 'connected',
+              'config.owner': proven.owner,
+              'config.repo': proven.repo,
+              'config.repositoryId': proven.repositoryId,
+            },
+            $unset: { revokedAt: 1 },
+          },
+          { new: true },
+        );
+        if (taken) {
+          await revokeConnectionGrants({ connection: taken, revokedBy: SYSTEM_REVOKER, createdBefore: takenAt });
+          return res.json({ integration: taken });
+        }
+      }
+      return res.status(409).json({
+        error: 'connection_exists',
+        message: own ? 'you already connected this repository' : 'this repository is already connected by someone else',
+        ...(own ? { integrationId: String(existing._id) } : {}),
+      });
+    }
+    const integration = new Integration({
+      type: 'github-app',
+      scope: 'user',
+      status: 'connected',
+      config: {
+        app: 'connect',
+        installationId: proven.installationId,
+        owner: proven.owner,
+        repo: proven.repo,
+        repoKey,
+        repositoryId: proven.repositoryId,
+      },
+      createdBy: userId,
+      isActive: true,
+    });
+    try {
+      await integration.save();
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return res.status(409).json({ error: 'connection_exists', message: 'this repository is already connected' });
+      throw error;
+    }
+    return res.status(201).json({ integration });
+  } catch (error) {
+    console.error('Error creating Commonly Connect repository connection:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -301,7 +524,7 @@ router.put('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, adminAut
     return res.status(403).json({ message: 'Only pod members can bind GitHub activity' });
   }
   const binding = await GithubGigBinding.findOneAndUpdate(
-    { installationId: String(integration.installationId), owner, repo },
+    { installationId: String(integration.installationId || integration.config?.installationId || ''), owner, repo },
     { $set: { podId: new Types.ObjectId(podId) }, $setOnInsert: { createdBy: new Types.ObjectId(String(req.user?.id)) } },
     { new: true, upsert: true },
   );
@@ -316,7 +539,7 @@ router.delete('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, admin
   const owner = String(req.body?.owner || integration.config?.owner || '').toLowerCase();
   const repo = String(req.body?.repo || integration.config?.repo || '').toLowerCase();
   if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) return res.status(400).json({ message: 'Valid owner and repo required' });
-  await GithubGigBinding.deleteOne({ installationId: String(integration.installationId), owner, repo });
+  await GithubGigBinding.deleteOne({ installationId: String(integration.installationId || integration.config?.installationId || ''), owner, repo });
   return res.status(204).json({});
 });
 
@@ -442,9 +665,56 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
+// F161: "Add the bot again" on a Discord row that dropped starts a fresh
+// install, and the bind below writes a new row. The caller's own dropped rows
+// on the same pod, guild and channel are then retired the way Remove retires a
+// row: grants revoked, webhook deleted, platform record gone. The row itself is
+// kept, inactive, rather than deleted. Best effort: a failure here leaves a
+// stale row, never a failed bind.
+const retireDroppedDiscordRows = async (
+  keepId: unknown, podId: unknown, userId: string, serverId: string, channelId: string,
+): Promise<void> => {
+  // Every value comes from the request path: pin each to the shape it must
+  // have, so the filter can only ever hold plain strings.
+  const guild = String(serverId);
+  const channel = String(channelId);
+  const pod = String(podId);
+  if (!/^\d{17,20}$/.test(guild) || !/^\d{17,20}$/.test(channel) || !/^[a-f0-9]{24}$/i.test(pod)) return;
+  let dropped: Array<{ _id: unknown }> = [];
+  try {
+    dropped = await Integration.find({
+      _id: { $ne: String(keepId) },
+      type: 'discord',
+      isActive: true,
+      podId: pod,
+      createdBy: String(userId),
+      'config.serverId': guild,
+      'config.channelId': channel,
+      status: { $in: ['error', 'disconnected'] },
+    }) as Array<{ _id: unknown }>;
+  } catch (error) {
+    console.warn(`Discord rebind: could not look up dropped rows: ${(error as Error).message}`);
+    return;
+  }
+  await Promise.all(dropped.map(async (row) => {
+    try {
+      await revokeConnectionGrants({ connection: row, revokedBy: userId });
+      const service = new DiscordService(row._id);
+      if (await service.initialize()) await service.disconnect();
+      await DiscordIntegration.findOneAndDelete({ integrationId: row._id });
+      await Integration.findByIdAndUpdate(row._id, { $set: { isActive: false, status: 'disconnected' } });
+    } catch (error) {
+      console.warn(`Discord rebind: could not retire integration ${String(row._id)}: ${(error as Error).message}`);
+    }
+  }));
+};
+
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
-    const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
+    const { podId, type, config } = (req.body || {}) as { podId?: string; type?: unknown; config?: Record<string, unknown> };
+    // First, so every check below compares a string: an array or object `type`
+    // must not reach the shared-surface gate or a Mongoose cast (F143).
+    if (type !== undefined && typeof type !== 'string') return res.status(400).json({ message: 'type must be a string' });
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
     // `hosted-mcp` is refused by NAME for the reason the type exists (TASK-172,
@@ -492,6 +762,17 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (relay.invalid) return res.status(400).json(relayFlagError(relay.invalid));
     const nextConfig: Record<string, unknown> = relay.next;
     if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
+    // F131: the installer's Discord user id, from the OAuth callback's proof and
+    // nowhere else (a body copy was stripped above). Only a proof for this pod,
+    // this guild and this caller counts; without one the row has no proven
+    // Discord author and cannot relay live.
+    if (type === 'discord') {
+      const proof = readDiscordInstallProof((req.body as { install?: unknown })?.install);
+      if (proof?.discordUserId && proof.podId === String(podId)
+        && proof.guildId === String(config.serverId) && proof.userId === String(req.user?.id)) {
+        nextConfig.discordUserId = proof.discordUserId;
+      }
+    }
     // First-run default: mirror. A fresh connector has no leadAgentUsername
     // and its agents use no escalation markers, so attention mode relays
     // NOTHING — a new user's first experience of the bridge would be silence.
@@ -506,8 +787,38 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // streaming outbound. The creator IS the authenticated caller, so the
     // defaulted case is stamped exactly like an explicit liveRelay:true.
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
+    // The platform's live-relay rule (its adapter's declaration), on the config
+    // as it will be stored, before the row or any webhook exists.
+    if (nextConfig.liveRelay === true) {
+      const refusal = liveRelayRefusalFor(
+        type, { config: nextConfig, createdBy: req.user?.id, pod: targetPod }, String(req.user?.id || ''),
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
+    }
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    // F143: a chat surface people outside the pod can read (a Slack channel, a
+    // Discord channel, a Telegram group) takes authority over the POD — its
+    // creator or an instance admin — not membership. Before the row or any
+    // Discord webhook exists. `nextConfig` is past the server-owned strip, so a
+    // body cannot claim a private chat; a Telegram row's chat is judged where
+    // its code is redeemed (routes/webhooks/telegram.ts).
+    if (isSurfaceBindType(type)) {
+      await assertCanBindSurface({
+        userId: req.user?.id, pod: targetPod, type, config: nextConfig,
+      });
+    }
+    if (type === 'discord') {
+      // Guild authority, then the channel. One answer for both refusals, as on
+      // the channel list. The prior-binding arm proves the guild, not the pod:
+      // the rule above is what keeps a plain member from bridging a pod.
+      const guildId = String(config.serverId);
+      const install = (req.body as { install?: unknown })?.install;
+      if (!await hasDiscordGuildAuthority(req.user?.id, String(podId), guildId, install)
+        || await discordChannelGuild(String(config.channelId)) !== guildId) {
+        return res.status(404).json({ message: 'Guild not found' });
+      }
+    }
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(type, nextConfig);
     let rowConfig = nextConfig;
@@ -559,9 +870,13 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       if (!initialized) return res.status(500).json({ message: 'Failed to initialize integration' });
       const connected = await service.connect();
       if (!connected) console.warn('Integration initialized but failed to connect');
+      await retireDroppedDiscordRows(
+        integration._id, podId, String(req.user?.id), String(config.serverId), String(config.channelId),
+      );
     }
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
+    if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
     console.error('Error creating integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -786,6 +1101,12 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
         if (!activePod || !isConnectorTargetPod(activePod, requesterId)) {
           return res.status(403).json({ message: 'Access denied' });
         }
+        // Moving a connector bound to a shared chat (F143) binds THAT pod to it.
+        if (isSurfaceBindType(integration.type)) {
+          await assertCanBindSurface({
+            userId: requesterId, pod: activePod, type: integration.type, config: currentConfig,
+          });
+        }
       }
       const requestedGates = config?.gates;
       if (requestedGates !== undefined) {
@@ -840,6 +1161,18 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       const malformed = malformedDiscordBindingField(config);
       if (malformed) return res.status(400).json(invalidDiscordIdError(malformed));
       if (isSupplied(config.botToken)) return res.status(400).json(serverOwnedConfigError('botToken'));
+      // F90: the binding is fixed once the row exists. The create path checks
+      // authority over the guild and the channel; a retarget here would skip
+      // both, so a new binding is a new connector.
+      const moved = DISCORD_BINDING_ID_FIELDS.find((field) => isSupplied(config[field])
+        && String(config[field]) !== String(currentConfig[field] ?? ''));
+      if (moved) {
+        return res.status(400).json({
+          code: 'discord_binding_fixed',
+          field: moved,
+          message: 'A Discord connector stays bound to its server and channel; connect a new one instead.',
+        });
+      }
     }
     const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
     if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));
@@ -848,12 +1181,36 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       return res.status(400).json({ message: 'config keys must be field names, not update paths' });
     }
     const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
+    // F143: a write that changes which chat a row points at is a bind, judged
+    // against the pod the row will serve (the new one when podId moves too).
+    // Fields that do not select the surface (relay flags, lead, gates) are not.
+    if (incoming && isSurfaceBindType(integration.type)
+      && retargetsSurface(integration.type, currentConfig, nextConfig)) {
+      await assertCanBindSurface({
+        userId: requesterId,
+        // String(): podId is validated as an id string above, and the rule must
+        // never be handed a query object in its place.
+        pod: await Pod.findById(String(podId !== undefined ? podId : integration.podId)),
+        type: integration.type,
+        config: nextConfig,
+      });
+    }
     if (incoming && incoming.liveRelay === true) {
-      // Relay authors inbound as linkedUserId and streams outbound to chatId;
-      // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
-      if (nextConfig.chatId && nextConfig.chatType !== 'private') {
-        return res.status(400).json({ message: 'Live relay requires a private chat with the bot; this connector is bound to a group' });
-      }
+      // Relay authors inbound as linkedUserId, which is stamped from this caller.
+      // Each platform declares when that is honest (its inbound adapter's
+      // liveRelayRefusal): a 1:1 private chat for Telegram and Slack (#1289
+      // inbound, F2 outbound), the proven installer for Discord (F131), who must
+      // still be a listed member of the pod the row serves (F132 review).
+      const refusal = liveRelayRefusalFor(
+        integration.type,
+        {
+          config: nextConfig,
+          createdBy: integration.createdBy,
+          pod: integration.podId ? await Pod.findById(String(integration.podId)) : null,
+        },
+        requesterId,
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
       nextConfig.linkedUserId = req.user?.id;
     }
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);
@@ -894,6 +1251,7 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // pod read withholds (chatId, linkedUserId, relayMap, messageBuffer).
     return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
+    if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
     console.error('Error updating integration:', error);
     return res.status(500).json({ message: 'Server error' });
   }
@@ -951,6 +1309,19 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     // reads the owner bound on each grant at mint, not the row, so the order no
     // longer decides who may revoke. It still matters: removal ends these grants
     // here, while the row they were minted against is still present (TASK-145).
+    //
+    // A per-repository GitHub App row can change owner (F174 takeover). The
+    // delete is scoped to the owner read above, so a row taken over since is
+    // left alone, and so are the grants its new owner minted.
+    const perRepositoryGithubRow = integration.type === 'github-app' && !integration.installationId;
+    const readOwner = integration.createdBy ? String(integration.createdBy) : '';
+    if (perRepositoryGithubRow) {
+      if (!readOwner) return res.status(404).json({ message: 'Integration not found' });
+      await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy, ownerId: readOwner });
+      const deleted = await Integration.findOneAndDelete({ _id: id, createdBy: readOwner });
+      if (!deleted) return res.status(404).json({ message: 'Integration not found' });
+      return res.json({ message: 'Integration deleted successfully' });
+    }
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }

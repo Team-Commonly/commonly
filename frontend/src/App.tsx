@@ -15,7 +15,7 @@ import { checkAndRefresh } from './utils/refreshUtils';
 // thing that delivers them. Without these static imports the @font-face rules
 // would move into the app shell's async CSS, and the public landing would paint
 // in fallback fonts until the shell loaded (it never does on the landing).
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -35,14 +35,14 @@ import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
 const GuidePage = React.lazy(() => import('./components/landing/GuidePage'));
 const GuidesIndexPage = React.lazy(() => import('./components/landing/GuidesIndexPage'));
 const UseCasePage = React.lazy(() => import('./components/landing/UseCasePage'));
-const DiscordCallback = React.lazy(() => import('./components/DiscordCallback'));
+const V2DiscordCallback = React.lazy(() => import('./v2/components/V2DiscordCallback'));
 const V2App = React.lazy(() => import('./v2/V2App'));
 const V2LandingPage = React.lazy(() => import('./v2/landing/V2LandingPage'));
 const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize'));
 
 // Covers the moment a route's chunk is in flight. It deliberately depends on no
 // route chunk and paints NOTHING of its own: the pre-mount canvas belongs to
-// the bare body (App.css `body { background-color: #f8f8fb }`, the light
+// the bare body (App.css `body { background-color: #eef0f4 }`, the light
 // default the 2026-08-24 ruling established), so the frame only has to not
 // cover it.
 //
@@ -310,9 +310,9 @@ function App(): React.ReactElement {
                         answers with `verifyUrl: <origin>/cli/authorize`. Deleting this
                         route 404'd every `commonly login` (#1534, 2026-09-04 → 09-08). */}
                     <Route path="/cli/authorize" element={<V2CliAuthorize />} />
-                    <Route path="/discord/callback" element={<DiscordCallback />} />
-                    <Route path="/discord/success" element={<DiscordCallback type="success" />} />
-                    <Route path="/discord/error" element={<DiscordCallback type="error" />} />
+                    <Route path="/discord/callback" element={<V2DiscordCallback />} />
+                    <Route path="/discord/success" element={<V2DiscordCallback type="success" />} />
+                    <Route path="/discord/error" element={<V2DiscordCallback type="error" />} />
                     </Routes>
                     </Suspense>
                   </div>

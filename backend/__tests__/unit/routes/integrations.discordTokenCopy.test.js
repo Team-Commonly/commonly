@@ -89,6 +89,14 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
     await DiscordIntegration.deleteMany({});
     axios.post.mockReset();
     axios.post.mockResolvedValue({ data: { id: 'wh-1', token: 'wh-token', name: 'Commonly Bot' } });
+    // F90: creating a binding needs authority over the guild, here an existing
+    // binding of this pod to it, and Discord placing the channel in that guild.
+    await Integration.create({
+      podId: pod._id, type: 'discord', createdBy: creator._id, status: 'connected',
+      config: { serverId: GUILD, channelId: '123456789012345670' },
+    });
+    axios.get.mockReset();
+    axios.get.mockResolvedValue({ data: { id: CHANNEL, type: 0, guild_id: GUILD } });
   });
 
   afterEach(() => {
@@ -146,6 +154,24 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
     // The pointer to the encrypted URL is a secret-config key, so it does not
     // ride out either.
     expect(res.body.integration.config).not.toHaveProperty('webhookUrlRef');
+  });
+
+  it('F90: another member of the bound pod gets no authority over the guild from that binding', async () => {
+    // The binding seeded above is the creator's. A member who only joined the
+    // pod must not be able to bind another channel of that guild on its strength.
+    const joiner = await User.create({ username: 'joiner', email: 'joiner@discord-token.test', password: 'placeholder' });
+    await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: joiner._id } });
+
+    const res = await request(app)
+      .post('/api/integrations')
+      .set('x-test-user', String(joiner._id))
+      .send({ podId: String(pod._id), type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } });
+
+    // Refused at the pod check now (only the creator or an admin binds a
+    // channel); before that, at the guild check. Either way nothing is written.
+    expect(res.status).toBe(403);
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(await DiscordIntegration.countDocuments({ channelId: CHANNEL })).toBe(0);
   });
 
   it('still requires a token to connect: with the env var absent the create is refused', async () => {

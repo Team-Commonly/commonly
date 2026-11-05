@@ -103,6 +103,18 @@ Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-dep
    The rotator polls that signal file every 10s during its 10-min sleep and, if a
    <120s-old signal is present, rotates immediately without waiting for the next tick.
 
+**DeepSeek is an optional provider** (`aiProviders.deepseek.enabled`, F159). On
+by default, so a self-hosted install gets the `deepseek-v4-flash` and
+`deepseek-flash-1017` routes, LiteLLM's `DEEPSEEK_API_KEY` (from
+`commonly-deepseek-api-key`), the Gemini/`gpt-4o` stand-ins and Gemini fallbacks
+that target it, and `LITELLM_CHAT_MODEL=deepseek-v4-flash` on the backend. Off,
+none of that renders and `LITELLM_CHAT_MODEL` follows `litellm.agentDefaultModel`,
+which must then name another route. Dev turns it off: hosted agents run Claude
+only (D243), and DeepSeek had no calls in the window before deletion (see
+`docs/runbooks/anthropic-native-route.md`). Tests:
+`backend/__tests__/unit/helm/devNoDeepseek.test.js`, and
+`scripts/verify-agent-default-model.js --no-deepseek` on the dev render in CI.
+
 **DeepSeek tool shim** (`/app/deepseek_tool_shim.py`, source in
 `k8s/helm/commonly/files/litellm/`, mounted from the `litellm-config` ConfigMap). It's
 the second entry in `litellm_settings.callbacks` and applies only to the
@@ -121,7 +133,8 @@ group is served, and `deepseek-flash-1017` requests are refused with the load
 error. Verified 2026-10-24 on the pinned image, with a real codex turn going through
 a fake upstream. One quirk to expect: the `response.created` echo of the request's
 tools still shows the flat names. To shim another DeepSeek group, add it to
-`SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
+`SHIM_MODEL_GROUPS`. With `aiProviders.deepseek` off (dev) the callback still
+loads and acts on nothing, because the group is not served. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
 
 **Model fallback signal** (`/app/model_fallback_signal.py`, same source dir and
 mount; the third callback). When `router_settings.fallbacks` answers a request
@@ -194,20 +207,29 @@ issued by the backend provisioner (`issueLiteLLMVirtualKey` / `issueLiteLLMOpenR
 `backend/services/agentProvisionerServiceK8s.ts`, which set `metadata.agent_id`). **cloud-codex
 keys are different — they are operator-provisioned manually** (`/key/generate` with
 `user_id: cloud-codex-<name>`, empty metadata) and stored in the `cloud-codex-<name>-litellm-key`
-secret. When you add a model alias that a cloud-codex / codex-CLI agent must call (e.g.
-`codex-cli/gpt-5.4`), you MUST add it to that agent's key allowlist or the call 403s:
+secret. A cloud-codex agent's codex CLI calls `litellm.agentDefaultModel` (F103; it was
+`codex-cli/gpt-5.4`), so that model MUST be in the agent's key allowlist or every call 403s.
+**Before scaling a cloud-codex agent back up after F103, add the default model** (on dev,
+`claude-haiku-5-5`) to its key, and again whenever `agentDefaultModel` changes:
 
 ```bash
 # inspect:  GET  /key/info?key=<sk-...>                                  (master-key auth)
-# update:   POST /key/update  {"key":"<sk-...>","models":[...,"codex-cli/gpt-5.4"]}
+# update:   POST /key/update  {"key":"<sk-...>","models":[...,"<agentDefaultModel>"]}
 ```
 
 This allowlist lives only in LiteLLM's Postgres (`LiteLLM_VerificationToken`), **not in IaC** —
-if a cloud-codex key is ever regenerated, re-add `codex-cli/*`. (Verified gap, 2026-06-08, PR #472.)
+if a cloud-codex key is ever regenerated, re-add the default model. (Verified gap, 2026-06-08, PR #472.)
 
 ---
 
 ## Codex: chat path vs responses path (the `responses/` prefix rule)
+
+> **Status (F98, 2026-11-04): history.** GPT access was revoked on 2026-10-27, and
+> every `gpt-5.4*`, `openai-codex/*` and `codex-cli/*` alias became a DeepSeek
+> stand-in, not a `chatgpt/` route. F103 deleted them, and the driver defaults that
+> named them now name `litellm.agentDefaultModel`. cloud-codex's codex CLI sends
+> that name on the responses wire as is. The rule below applies again only if GPT
+> access returns.
 
 LiteLLM exposes the chatgpt/ provider on TWO endpoints, and the codex model name must match
 the endpoint the caller uses:
@@ -232,6 +254,11 @@ the endpoint the caller uses:
 ---
 
 ## Config (`litellm-config.yaml`)
+
+> **Status (F103, 2026-11-04): history.** The sample below is the config from when GPT access
+> was live. Its `gpt-5.4`, `openai-codex/*`, `codex-cli/*` and nemotron routes are gone. The
+> current routes are in `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`, and every
+> agent driver default names `litellm.agentDefaultModel` (see `values.yaml`).
 
 ```yaml
 model_list:

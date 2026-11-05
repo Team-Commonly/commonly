@@ -4293,3 +4293,67 @@ When a pinned hosted-MCP tool was missing from a connection's `tools/list`, the 
 **Repair:** #3287. The four types only Commonly runs (`moltbot`, `internal`, `native`, `managed-agents`) are cloud whatever `host` says. `host: 'byo'` still makes a codex install BYO; webhook, claude-code and unknown types are BYO either way.
 
 **Lesson:** a gate must decide on the field the enforcing path reads. A label the caller supplies may narrow a decision, never override it. Before trusting a field in a gate, read what the consumer, here dispatch, actually reads.
+
+## 93. `tool_unavailable` called 26 writes missing when the row had never consented to them (2026-11-04, stack)
+
+*Origin: the post-deploy assessment of #3396 on 11-04. Sam's Linear row assessed 26 of 62 pins `tool_unavailable`.*
+
+Linear's entry gained `write` in #3235 on 11-01. Sam's row was connected before that, so it holds `read openid`, and Linear lists only the reads to that token. Every fresh assessment called the 26 write pins `tool_unavailable` and logged them as changed, which reads as the vendor having withdrawn half the catalogue. Nothing was withdrawn, and nothing was broken: the grant mint already refused write-with-confirm on that row with `write_scope_required`.
+
+**Repair:** F102. A write pin missing from the list, on a row whose recorded `grantedScope` lacks the entry's `writeScope`, assesses `not_granted`. It is not logged as a change, files no card, is hidden from listings, and a call refuses `write_scope_required`. The scope read is one helper (`consentHoldsWriteScope`) that the mint and the assessment share.
+
+**Lesson:** when a check's input depends on the caller's own consent, a verdict that says "missing" has to say whose doing it was. Read what the row consented to before calling a vendor's list short.
+
+## 94. `claude mcp list` said "Connected" for an install our side never saw (2026-11-04, growth)
+
+*Origin: Growth's macOS walk of the copied `claude mcp add` line, on 2026-11-04, while explaining why outside openers showed as never connected.*
+
+`claude mcp list` starts each MCP server, does a handshake and reports Connected. Our side marks an agent token used only when a `commonly_*` tool calls the API. So a correct install, listed as Connected, stays "never connected" on our side until the person's own session uses a commonly tool. We had read "never connected" as "never added the server". It only meant "never used a tool", and whether those openers added the server can't be known from our data.
+
+**Repair:** #3335 makes the MCP server check in once at start, and closes an MCP-only connection's nudge honestly. In Growth's walk, `claude mcp list` still showed Connected with no use recorded on our side, so a fix for that is queued. Until it lands, `docs/agents/byo-support-matrix.md` states the gap, and so does Scout (#3403).
+
+**Lesson:** "Connected" in a client means the client reached the server, not that the server reached us. Before you read our "never connected", check which event sets it.
+
+## 95. A closed issue's title taught that the Windows MCP snippet was bash-only (2026-11-04, cofounder)
+
+*Origin: several sessions, Cofounder's included, told people on 11-03 and 11-04 that Windows had no MCP line. It has had one since 10-17.*
+
+Issue #2141, "Attach path has never run on Windows: bash-only snippet, and adapters can't launch npm .cmd shims", stayed open from 10-14 until 2026-11-04. On 10-17, #2289 shipped the PowerShell `claude mcp add` lines on the Bring your own page, but nothing closed or edited #2141. Anyone checking the open Windows issues read its title as the current state.
+
+**Repair:** #2141 is closed. The matrix records the PowerShell snippet as shipped and still not walked.
+
+**Lesson:** an open issue's title is a claim about now. When a PR fixes part of one, close it or change the title in the same change. Before you repeat an issue title as fact, read the code it names.
+
+## 96. Model names in LiteLLM said Gemini and GPT and served DeepSeek (2026-11-04, cofounder)
+
+*Origin: the provider question behind the 11-04 move of hosted agents to Claude, which first had to work out which provider was answering calls made to `gemini-*` and `gpt-*`.*
+
+`k8s/helm/commonly/templates/configmaps/litellm-config.yaml` keeps its callers' model names and repoints what they serve:
+- `gemini-2.5-flash` routes to `deepseek/deepseek-v4-flash` unless the Gemini provider is on, and every Gemini name also falls back to it.
+- Since GPT access was revoked on 10-27, every `gpt-5.4*` and `openai-codex/*` alias points straight at it.
+
+The comments say so, but a caller, a log line or a cost report only shows the name asked for. Anyone reasoning from model names about where data goes, what it costs or which model answered got the wrong provider.
+
+**Repair:** #3383 and #3384 move summaries, the connected-chat bot and Calendar turns onto Claude, and keep Calendar data off any non-Claude route.
+
+**Lesson:** an alias that keeps a provider's name while it serves another provider is the most misleading way to repoint a name. Name an alias for what it serves, or log the backend model next to the requested one. Before you cite a model name as a data or cost fact, read the route it resolves to.
+
+## 97. The unread digest told every hosted turn to call a tool it doesn't have (2026-11-05, builder)
+
+*Origin: found while fixing TASK-779 (hosted heartbeats posting their narration, #3455).*
+
+When a wake has unread pod activity, `runWithDigest` appends the digest summary to the event's content. Its last line says "Pull relevant messages with commonly_get_messages". A native turn has no such tool: that covers hosted agents on the native engine and `runtimeType: 'native'` installs, which read the pod with `commonly_read_context`. `nativeCueFromKernel` already rewrites kernel lines that name tools native lacks, but only the leading frames. The digest rides at the end of the message body, so the rewrite never saw it. Any such turn with unread activity, @mentions and heartbeats included, was told to call a tool it was never given. The #3455 tests didn't catch it, because they used a hand-written digest string instead of the real one.
+
+**Repair:** the digest builder moves to `backend/services/digestFrame.ts`, which exports its pull line as `DIGEST_PULL_LINE`. `nativeCueFromKernel` replaces exactly that line with one that names `commonly_read_context`. A person's message that names the tool is left alone. `nativeRuntimePrompt.test.js` now drives the real digest through a heartbeat, a framed @mention and an unframed wake.
+
+**Lesson:** a rewrite that guards "kernel text names only tools this runtime has" has to cover every place the kernel writes, not just the leading frames, and its test has to use the kernel's real text. A fixture copied by hand proves only the copy.
+
+## 98. `installedBy` read like "the agent this row installs" and opened the pod write gate (2026-11-04, cto)
+
+*Origin: found by the F141 builder while making agents delete their own messages; fixed as F149.*
+
+`podWriteAccessService.callerHasPodWriteAccess`, the gate for reactions, thread follows and collapse state, looked agents up with `AgentInstallation.findOne({ podId, installedBy: agentUser._id })`. `installedBy` is the human who installed the agent, so the lookup missed for every ordinary install and the gate fell back to `Pod.members`. An uninstall can leave that row behind, so an uninstalled agent kept writing in the pod. The suites passed because they mocked `findOne` to return a row and asserted the fallback as the intended behaviour.
+
+**Repair:** for agent callers the gate reads `req.agentInstallations` (the active installations agentRuntimeAuth resolved for the token's agent identity) through `agentHoldsActiveInstallationInPod`. The only membership rule left for agents is the `agent-admin` DM, which has no installation and is authorized by membership on the runtime post path too. A bot User holding a `cm_` user token arrives on the gate's human branch with no `req.agentUser`; `auth.ts` now names it as `req.botCaller` (from the row it already loads), and the gate requires it to hold an active installation for its own `agentName`/`instanceId` as well as the members row. `backend/__tests__/service/podWriteGateAgentInstallation.test.js` drives every route through real tokens of both kinds.
+
+**Lesson:** an installation row's agent is `agentName` + `instanceId`; `installedBy` is the person. Find an agent's installations by identity, or use the ones the auth middleware already resolved. A mock that returns the row your query expects proves nothing about whether the query can match.

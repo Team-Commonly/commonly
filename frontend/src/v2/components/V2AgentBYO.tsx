@@ -17,7 +17,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -35,6 +35,12 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import {
+  FALLBACK_HARNESSES, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, harnessDeviceNote, harnessLabel,
+  orderHarnessIds,
+} from '../utils/harnessCatalog';
+import V2HarnessChoice from './V2HarnessChoice';
+import { InstallNarrowing, V2InstallNarrowingNotice, installNarrowingFromError } from './V2OutsiderGrantNarrowing';
 import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
@@ -47,6 +53,75 @@ const DEFAULT_POD_TYPE = 'chat';
 // line because the binary already resolves.
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
 const MEMORY_FILE_NAME = 'MEMORY.md';
+
+// A PowerShell double-quoted string treats ` as its escape and expands $, and
+// it ends at " and at the typographic quotes (U+201C, U+201D, U+201E), which
+// it reads as the same character. Each one gets a backtick. The key is opaque,
+// so the escape assumes nothing about its alphabet.
+const POWERSHELL_SPECIAL = /[`"$\u201C\u201D\u201E]/g;
+export const powerShellQuote = (value: string): string => '"' + value.replace(POWERSHELL_SPECIAL, (ch) => '`' + ch) + '"';
+
+export type ConnectSnippetOs = 'unix' | 'windows';
+// The command that makes the agent LISTEN, for bash/zsh or for PowerShell.
+// PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
+// only in that window. Install line and run line are the same on both, except
+// that on native Windows `agent run` refuses Claude Code without --unsandboxed:
+// there is no sandbox there, and the flag is the person choosing to run without
+// one. Codex keeps its own permission profile, which the flag doesn't change,
+// so its line carries no flag.
+export const connectSnippet = ({
+  os, apiUrl, token, agentName, adapter, allow = '',
+}: {
+  os: ConnectSnippetOs;
+  apiUrl: string;
+  token: string;
+  agentName: string;
+  adapter: string;
+  allow?: string;
+}): string => {
+  const env = os === 'windows'
+    ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
+    : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
+  return [
+    CLI_INSTALL_COMMAND,
+    ...env,
+    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' && adapter !== 'codex' ? ' --unsandboxed' : ''}`,
+  ].join('\n');
+};
+// D247: OpenCode can't start from the page's key: a public OpenCode seat needs
+// a provider and a key file on that Mac (adapters/opencode.js), so it is
+// connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
+// is typed into its own line first, because a pasted block would feed its own
+// next line to the prompt. A public seat never uses the person's own OpenCode
+// login (adapters/opencode.js), so a provider is named: Anthropic's
+// OpenAI-compatible endpoint is the example, and any OpenAI-compatible
+// provider works by changing baseURL and model.
+export const OPENCODE_DEFAULT_MODEL = 'claude-haiku-5-5';
+export const opencodeKeySnippet = (): string => (
+  '(umask 077; mkdir -p ~/.config/commonly; printf \'Anthropic API key: \'; stty -echo; IFS= read -r KEY; stty echo; echo;'
+  + ' printf \'%s\' "$KEY" > ~/.config/commonly/anthropic-key)'
+);
+export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string; podId: string; model?: string }): string => {
+  const safeModel = model && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ? model : OPENCODE_DEFAULT_MODEL;
+  const envFile = `~/.config/commonly/${agentName}.json`;
+  return [
+    'npm i -g @commonlyai/cli@latest opencode-ai',
+    'commonly login',
+    `cat > ${envFile} <<EOF`,
+    `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
+    'EOF',
+    `commonly agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
+    `commonly agent run ${agentName}`,
+  ].join('\n');
+};
+// Harnesses that can't answer from this page today, and why in plain words.
+// Every agent added here is a public one. dsh, pi and Hermes refuse a public
+// seat outright. Qwen Code 0.26.2 and Goose 1.54.0 pass as public agents on
+// CLI 0.1.242 (Growth walk 2026-11-04) but are set up from Terminal, not from
+// this page yet; Goose 1.56 stays refused in open pods (#3430).
+const REFUSED_HERE: Record<string, 'dsh' | 'qwen' | 'goose' | 'public'> = {
+  dsh: 'dsh', qwen: 'qwen', pi: 'public', goose: 'goose', hermes: 'public',
+};
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
 const HOSTED_STATUS_MAX_TICKS = 15;
@@ -66,6 +141,8 @@ type MachineRow = {
   createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
+  // What the daemon found installed there (D247): marks and sorts the adapter list.
+  runtimeInventory?: HarnessDeviceRow[];
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
@@ -73,16 +150,17 @@ const MACHINE_STATUS_MAX_TICKS = 30;
 // act — this page's job is to make it ONE paste (daemonSetupCommand), after
 // which "On my computer" appears here.
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
-type MachineAdapter = '' | 'claude' | 'codex';
+// '' is auto-detect on that computer; anything else is a catalogue harness.
+type MachineAdapter = string;
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
 // Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
 // On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
 // workspace seat, which the CLI allows only while every pod it answers in is
 // invite-only (TASK-027); a public Claude Code seat there is refused. Native
-// Windows has no sandbox for either.
-// PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
-// for the MCP connection instead (windows-latest, 2026-10-16).
+// Windows has no sandbox for either, so there the listener runs unconfined and
+// the page says so (D245). PowerShell has no `export`, so a Windows visitor
+// gets PowerShell lines for both commands (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
 const browserOs = (): SetupOs => {
   if (typeof navigator === 'undefined') return 'mac';
@@ -91,7 +169,8 @@ const browserOs = (): SetupOs => {
   // Browser spellings only, case-sensitive: jsdom's user agent carries the
   // host's process.platform in lower case ("(linux)"), which must not flip the
   // page on a Linux CI host.
-  if (/Windows/.test(platform)) return 'windows';
+  // navigator.platform reads "Win32" on every Windows browser, 64-bit included.
+  if (/Windows/.test(platform) || /^Win/.test(nav.platform || '')) return 'windows';
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
@@ -113,15 +192,15 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
   { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
 ];
-// Windows with Codex is stricter here than in the CLI on purpose: the CLI's
-// host check leaves Codex alone (it confines with its own profiles, not
-// Seatbelt or bubblewrap), but this page's command is bash `export` lines,
-// which PowerShell cannot run, and Codex on native Windows is unmeasured.
-// Not drift: the page only offers what it has seen work. Codex on Linux is
-// not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
-// Claude Code on Linux runs only in a pod that passes the CLI's own test
-// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
-// and invite-only. A pod that omits a flag is not private.
+// Windows runs either CLI without a sandbox (D245): the command is PowerShell
+// lines, and the page says beside it that nothing confines the agent there.
+// Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
+// tested"), so no listener.
+// Claude Code on Linux runs in any pod since F96 (#3395): a public seat runs in
+// the bubblewrap jail on the person's own login. Tested in CI with a stand-in
+// model; no person's walk yet, and the reach note says so.
+// A pod confirmed private (workspace-trust.js podIsConfirmedPrivate): both
+// flags reported and false, and invite-only. A pod that omits a flag is not.
 const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
   typeof pod?.publicRead === 'boolean'
   && typeof pod?.communityListed === 'boolean'
@@ -133,18 +212,15 @@ const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
 // the page names the command they missed.
 const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 
-const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
-  os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
-);
-type ModelOption = { value: string; labelKey: string };
-const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
-  { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
-  { value: 'sonnet', labelKey: 'agentByo.form.modelSonnet' },
-  { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
-];
-// Suggestions only: the installed Codex CLI catalog decides which slugs work.
-const LISTEN_RUNNERS = ['claude', 'codex'] as const;
-const CODEX_MODEL_SUGGESTIONS = ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
+// Claude Code and Codex keep the OS rules above. No other harness answers from
+// the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
+// line saying what works instead.
+const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
+  if (adapter === 'claude') return true;
+  if (adapter === 'codex') return os === 'mac' || os === 'windows';
+  // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
+  return false;
+};
 
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
@@ -177,7 +253,7 @@ const V2AgentBYO: React.FC = () => {
       fromCard: params.get('from') === 'card',
       reconnect: params.get('reconnect') === '1',
       machine: params.get('mode') === 'machine',
-      adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
+      adapter: ((a): string | null => (a && KNOWN_HARNESS_IDS.includes(a) ? a : null))(params.get('adapter')),
     };
   })();
   // 2026-09-01: persona deep links carry context into this otherwise
@@ -208,6 +284,10 @@ const V2AgentBYO: React.FC = () => {
   const [nameLookupError, setNameLookupError] = useState(false);
   const [nameLookupRetry, setNameLookupRetry] = useState(0);
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
+  // F164: the install route asks for a confirm when joining this pod would
+  // confine the agent's writes elsewhere. A confirm only ever applies to the
+  // name, pod and mode it was shown for.
+  const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
     connection: AgentConnection; runtimeType: string; installedBy?: string;
   } | null>(null);
@@ -229,15 +309,17 @@ const V2AgentBYO: React.FC = () => {
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
-  const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>(prefill.adapter || 'claude');
+  const [listenAdapter, setListenAdapter] = useState<string>(prefill.adapter || 'claude');
+  // D247: every harness `agent run --adapter` accepts, from the server. The
+  // two the page always offered stand in until it arrives.
+  // Read fourth in the mount sequence below, once.
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>(FALLBACK_HARNESSES);
+  const catalogRequested = useRef(false);
+  const listenTool = harnessLabel(harnessCatalog, listenAdapter);
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(
-    setupOs,
-    listenAdapter,
-    pods.find((p) => p._id === (issued?.podId || podId)),
-  );
+  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
   // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
@@ -339,7 +421,6 @@ const V2AgentBYO: React.FC = () => {
   // Compact only where the command exists (#2289): "One command in Terminal"
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
-  const wontAnswerBeforeInstall = mode === 'byo' && !issued && !listenerAvailable && setupOs === 'windows';
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
   const selectedMachine = machines.find((m) => m.machineId === machineId);
   const selectedMachineName = selectedMachine
@@ -350,6 +431,11 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  const [effort, setEffort] = useState<string>('');
+  // A model or effort belongs to the harness it was picked for.
+  useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
+  useEffect(() => { setPendingNarrowing(null); }, [name, podId, mode]);
+  const machineInventory = selectedMachine?.runtimeInventory || [];
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
       || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
@@ -617,6 +703,19 @@ const V2AgentBYO: React.FC = () => {
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
       }
+      // Fourth, and once: the page works on the two-harness fallback until
+      // the full list arrives (D247).
+      if (!catalogRequested.current) {
+        catalogRequested.current = true;
+        try {
+          const catalog = await api.get<{ harnesses?: HarnessCatalogEntry[] }>('/api/registry/harness-catalog');
+          const rows = Array.isArray(catalog?.harnesses)
+            ? catalog.harnesses.filter((row) => row && typeof row.id === 'string') : [];
+          if (rows.length) setHarnessCatalog(rows);
+        } catch {
+          catalogRequested.current = false;
+        }
+      }
       if (!cancelled) setChoicesKnown(true);
     })();
     return () => { cancelled = true; };
@@ -642,7 +741,7 @@ const V2AgentBYO: React.FC = () => {
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
   // answers 403 hosted_cap_reached), then ask the kernel to provision. No
   // token round-trips through the browser.
-  const submitHosted = async (cleanName: string) => {
+  const submitHosted = async (cleanName: string, confirmNarrowing = false) => {
     setSubmitting(true);
     try {
       try {
@@ -654,8 +753,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return false;
+        }
         const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number; holders?: Array<{ agentName?: string }> } } })
           ?.response?.data;
         if (data?.code === 'hosted_cap_reached') {
@@ -712,7 +817,7 @@ const V2AgentBYO: React.FC = () => {
   // + persona, then file the placement request. The daemon on that machine
   // adopts (D3 CAS), mints the credential server-side (nothing secret renders
   // here either), and starts the agent — the page watches it come up.
-  const submitMachine = async (cleanName: string) => {
+  const submitMachine = async (cleanName: string, confirmNarrowing = false) => {
     if (!machineId) {
       setErrorField('machine');
       setError(t('agentByo.errors.machineRequired'));
@@ -730,15 +835,22 @@ const V2AgentBYO: React.FC = () => {
             runtime: {
               runtimeType: 'wrapper',
               ...(adapter ? { adapter } : {}),
-              ...(model ? { model } : {}),
+              ...(adapter && model.trim() ? { model: model.trim() } : {}),
+              ...(adapter && effort ? { effort } : {}),
             },
             ...(personaCard ? { persona: personaCard.key } : {}),
           },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         // Same identity-continuity tolerance as the BYO path below.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
@@ -782,10 +894,11 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const submit = async () => {
+  const submit = async (confirmNarrowing = false) => {
     setError(null);
     setErrorField(null);
     setPendingReplacement(null);
+    setPendingNarrowing(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
       setErrorField('name');
@@ -799,11 +912,11 @@ const V2AgentBYO: React.FC = () => {
     }
     if (!mode) return;
     if (mode === 'hosted') {
-      await submitHosted(cleanName);
+      await submitHosted(cleanName, confirmNarrowing);
       return;
     }
     if (mode === 'machine') {
-      await submitMachine(cleanName);
+      await submitMachine(cleanName, confirmNarrowing);
       return;
     }
     setSubmitting(true);
@@ -818,12 +931,24 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_INSTALL_SCOPES,
-          config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          // D247: the runner, model and effort travel with the agent, so
+          // Settings shows them and the listener reads them before each turn.
+          // Any adapter besides Claude Code and Codex must be declared here, or
+          // `agent run` refuses to start it.
+          config: { runtime: { runtimeType: 'webhook', adapter: listenAdapter,
+            ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) },
+          ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
@@ -1090,7 +1215,12 @@ const V2AgentBYO: React.FC = () => {
   };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
-  const daemonCommand = daemonSetupCommand(apiUrl);
+  // Windows PowerShell 5.1, the one every Windows ships, has no `&&`: the same
+  // steps go one per line there, and each runs after the one before. The
+  // install takes --unsandboxed there, as `agent run` does.
+  const daemonCommand = setupOs === 'windows'
+    ? `${daemonSetupCommand(apiUrl).split(' && ').join('\n')} --unsandboxed`
+    : daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -1099,8 +1229,12 @@ const V2AgentBYO: React.FC = () => {
   // start an npm `.cmd` shim directly, so it goes through `cmd /c`. The server
   // is installed first: started through npx on a fresh machine, it was still
   // downloading when Claude Code gave up at 30 s (windows-latest, 2026-10-16).
+  // The -e flags come after the command, with no `--`: PowerShell drops a bare
+  // `--` on its way through npm's claude.ps1 shim, and -e then took the command
+  // as one more value ("missing required argument 'commandOrUrl'",
+  // windows-latest, 2026-11-04). mcp-windows.yml runs this exact line.
   const claudeSnippetWindows = issued
-    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token} -- cmd /c commonly-mcp`
+    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
     : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling
@@ -1116,7 +1250,14 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
+    ? connectSnippet({
+      os: setupOs === 'windows' ? 'windows' : 'unix',
+      apiUrl,
+      token: issued.token,
+      agentName: issued.agentName,
+      adapter: listenAdapter,
+      allow: allowFlag,
+    })
     : '';
 
   const cursorSnippet = issued
@@ -1146,13 +1287,13 @@ const V2AgentBYO: React.FC = () => {
   };
   // The daemon block lives in Other ways to connect on both the start form and
   // the result page, so the stop-on-close line can point to it from the result.
-  // Windows has no daemon install (systemd), so there is no block to offer.
-  const addComputerBlock = machines.length === 0 && setupOs !== 'windows' ? (
+  // On Windows `daemon install` registers a logon task (D245).
+  const addComputerBlock = machines.length === 0 ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
       <div className="v2-byo__add-computer-row">
-        <code>{daemonCommand}</code>
+        <code className={setupOs === 'windows' ? 'v2-byo__add-computer-lines' : undefined}>{daemonCommand}</code>
         <button
           type="button"
           className="v2-byo__copy"
@@ -1161,16 +1302,70 @@ const V2AgentBYO: React.FC = () => {
           {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
         </button>
       </div>
+      {setupOs === 'windows' && (
+        <p className="v2-byo__hint" data-testid="byo-add-computer-windows">
+          <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
+        </p>
+      )}
       <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
     </div>
   ) : null;
+  // D247: a runner other than Claude Code and Codex takes the place of the
+  // install button with what works for it. OpenCode gets its own Mac lines;
+  // the rest a plain line naming what can answer instead.
+  const hostedName = t('agentByo.mode.hosted');
+  const refusedLine = (harness: string) => {
+    const reason = REFUSED_HERE[harness] || 'public';
+    const values = { tool: harnessLabel(harnessCatalog, harness), hosted: hostedName };
+    if (reason === 'dsh') return t('agentByo.refused.dsh', values);
+    if (reason === 'qwen') return t('agentByo.refused.qwen', values);
+    if (reason === 'goose') return t('agentByo.refused.goose', values);
+    return t('agentByo.refused.public', values);
+  };
+  const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
+  const opencodeLines = podId ? opencodeSnippet({ agentName: opencodeName, podId, model: model.trim() }) : '';
+  const byoAlternative = mode === 'byo' && listenAdapter !== 'claude' && listenAdapter !== 'codex' ? (
+    listenAdapter !== 'opencode' ? (
+      <p className="v2-byo__needs" data-testid="byo-runner-refused">{refusedLine(listenAdapter)}</p>
+    ) : setupOs !== 'mac' ? (
+      <p className="v2-byo__needs" data-testid="byo-opencode-unavailable">
+        {t('agentByo.listen.unavailableOther', {
+          tool: listenTool, os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
+        })}
+      </p>
+    ) : (
+      <div className="v2-byo__opencode" data-testid="byo-opencode">
+        <p className="v2-byo__needs">{t('agentByo.opencode.keyStep')}</p>
+        <div className="v2-byo__command">
+          <pre className="v2-byo__pre" data-testid="byo-opencode-key">{opencodeKeySnippet()}</pre>
+          <button type="button" className="v2-byo__copy" onClick={() => copy('opencode-key', opencodeKeySnippet())}>
+            {copied === 'opencode-key' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+          </button>
+        </div>
+        <p className="v2-byo__needs">{t('agentByo.opencode.runStep', { name: opencodeName })}</p>
+        {opencodeLines && (
+          <div className="v2-byo__command">
+            <pre className="v2-byo__pre" data-testid="byo-opencode-lines">{opencodeLines}</pre>
+            <button type="button" className="v2-byo__copy" onClick={() => copy('opencode', opencodeLines)}>
+              {copied === 'opencode' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+            </button>
+          </div>
+        )}
+        <p className="v2-byo__hint">
+          {t('agentByo.opencode.provider')}{' '}
+          <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/cli/opencode.md" target="_blank" rel="noopener noreferrer">{t('agentByo.opencode.guide')}</a>
+        </p>
+      </div>
+    )
+  ) : null;
+  const machineBlocked = mode === 'machine' && (Boolean(REFUSED_HERE[adapter]) || adapter === 'opencode');
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
     // A segment (d215 frame) under a visible label: the frame doesn't draw this
     // picker, so it keeps the "Adapter" label the page always showed.
     <>
     <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
     <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
-      {LISTEN_RUNNERS.map((runner) => (
+      {orderHarnessIds(harnessCatalog).map((runner) => (
         <button
           key={runner}
           type="button"
@@ -1181,10 +1376,19 @@ const V2AgentBYO: React.FC = () => {
           // The name follows the runner, so a key prompt for the old name is stale.
           onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
         >
-          {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+          {harnessLabel(harnessCatalog, runner)}
         </button>
       ))}
     </p>
+    <V2HarnessChoice
+      key={`byo:${listenAdapter}`}
+      catalog={harnessCatalog}
+      harness={listenAdapter}
+      model={model}
+      effort={effort}
+      onModel={setModel}
+      onEffort={setEffort}
+    />
     </>
   ) : null;
 
@@ -1196,16 +1400,33 @@ const V2AgentBYO: React.FC = () => {
         // "Bring your own agent" after the click). A persona hire keeps the
         // page's own title: what it names is the persona, not the tool.
         if ((showCompactByo || issued) && !personaCard) {
-          return listenAdapter === 'codex' ? t('agentByo.compactByo.titleCodex') : t('agentByo.compactByo.titleClaude');
+          if (listenAdapter === 'codex') return t('agentByo.compactByo.titleCodex');
+          if (listenAdapter === 'claude') return t('agentByo.compactByo.titleClaude');
+          return t('agentByo.compactByo.titleOther', { tool: listenTool });
         }
         return t('agentByo.title');
       })()}
+      // d215 s-byo draws the page's lead as the head's "i" hint, at 1440 and 390.
       hint={(() => {
         if (issued) return undefined;
         if (showCompactHosted && !hosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
-        if (showCompactByo) return t('agentByo.compactByo.lead');
+        if (showCompactByo) return t(setupOs === 'windows' ? 'agentByo.compactByo.leadWindows' : 'agentByo.compactByo.lead');
         return t('agentByo.description');
       })()}
+      // d215 s-byo 390: the phone head leads with a back key to Your team; the
+      // 1440 head has none, so the key is hidden above 760.
+      lead={(
+        <button
+          type="button"
+          className="v2-byo__back"
+          aria-label={t('yourTeam.title')}
+          title={t('yourTeam.title')}
+          onClick={() => navigate('/v2/agents')}
+          data-testid="byo-back"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+        </button>
+      )}
       showPodsSidebar={false}
       className="v2-feature--byo"
     >
@@ -1386,55 +1607,39 @@ const V2AgentBYO: React.FC = () => {
                 onChange={(e) => {
                   setAdapter(e.target.value as MachineAdapter);
                   setModel('');
+                  setEffort('');
                 }}
                 className="v2-byo__input"
                 data-testid="byo-adapter-select"
               >
                 <option value="">{t('agentByo.form.adapterDefault')}</option>
-                <option value="claude">{t('agentByo.form.adapterClaude')}</option>
-                <option value="codex">{t('agentByo.form.adapterCodex')}</option>
+                {/* What the computer reported decides the order and the note;
+                    one it lacks stays selectable, since it may be installed next. */}
+                {orderHarnessIds(harnessCatalog, machineInventory).map((id) => {
+                  const note = harnessDeviceNote(machineInventory, id, t);
+                  return <option key={id} value={id}>{harnessLabel(harnessCatalog, id)}{note ? ` · ${note}` : ''}</option>;
+                })}
               </select>
             </label>
           )}
+          {machineBlocked && (
+            <p className="v2-byo__needs" data-testid="byo-machine-refused">
+              {adapter === 'opencode'
+                ? t('agentByo.opencode.machine', { byo: t('agentByo.mode.byo') })
+                : refusedLine(adapter)}
+            </p>
+          )}
           {mode === 'machine' && (
-            <label className="v2-byo__field">
-              <span className="v2-byo__label">{t('agentByo.form.modelLabel')}</span>
-              {adapter === 'codex' ? (
-                <>
-                  <input
-                    type="text"
-                    list="byo-codex-models"
-                    value={model}
-                    onChange={(e) => { setModel(e.target.value); }}
-                    placeholder={t('agentByo.form.modelDefault')}
-                    className="v2-byo__input"
-                    data-testid="byo-model-select"
-                  />
-                  <datalist id="byo-codex-models">
-                    {CODEX_MODEL_SUGGESTIONS.map((slug) => (
-                      <option key={slug} value={slug} label={slug} />
-                    ))}
-                  </datalist>
-                </>
-              ) : (
-                <select
-                  value={model}
-                  onChange={(e) => { setModel(e.target.value); }}
-                  className="v2-byo__input"
-                  data-testid="byo-model-select"
-                >
-                  <option value="">{t('agentByo.form.modelDefault')}</option>
-                  {adapter === 'claude' && CLAUDE_MODEL_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                  ))}
-                </select>
-              )}
-              <span className="v2-byo__hint">
-                {adapter === 'codex'
-                  ? t('agentByo.form.modelHintCodex')
-                  : (adapter === 'claude' ? t('agentByo.form.modelHintClaude') : t('agentByo.form.modelHintAuto'))}
-              </span>
-            </label>
+            <V2HarnessChoice
+              key={`machine:${adapter}`}
+              catalog={harnessCatalog}
+              harness={adapter}
+              device={machineInventory.find((row) => row.harness === adapter) || null}
+              model={model}
+              effort={effort}
+              onModel={setModel}
+              onEffort={setEffort}
+            />
           )}
           {runnerPicker}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
@@ -1477,32 +1682,6 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
-          {/* Said before the agent exists, not after (11-02: four agents made on
-              Windows, none ever answered, because the only warning came after
-              install). Mac always runs the listener; Linux is the pod's call. */}
-          {wontAnswerBeforeInstall && (
-            <div className="v2-byo__needs" role="status" data-testid="byo-wont-answer-before-install">
-              {t(hosting?.configured ? 'agentByo.form.wontAnswerBeforeInstall' : 'agentByo.form.wontAnswerBeforeInstallNoHosted', {
-                os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osWindows'),
-                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                hosted: t('agentByo.mode.hosted'),
-              })}
-              {hosting?.configured && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className="v2-byo__submit"
-                    data-testid="byo-wont-answer-run-here"
-                    disabled={submitting}
-                    onClick={() => chooseMode('hosted')}
-                  >
-                    {t('agentByo.mode.hosted')}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
           {mode === null ? (
             // Signal §3 not yet: a muted line where the act will be, until a
             // place to run it is chosen. Plain text, not a box, so it can't
@@ -1518,15 +1697,15 @@ const V2AgentBYO: React.FC = () => {
               }}>
                 {t('agentConnection.reconnect')}
               </button>
-            ) : isOtherOwner ? null : (
+            ) : isOtherOwner ? null : byoAlternative || (
             <button
               type="button"
               // Keep the focused field's hint visible through the press. If blur
               // hides it on mousedown, this button can move before mouseup.
               onMouseDown={(event) => event.preventDefault()}
-              onClick={submit}
-              disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
-              className={wontAnswerBeforeInstall && hosting?.configured ? 'v2-byo__submit v2-byo__submit--quiet' : 'v2-byo__submit'}
+              onClick={() => { void submit(); }}
+              disabled={submitting || (mode === 'byo' && !namesReady) || !podId || machineBlocked}
+              className="v2-byo__submit"
             >
               {(() => {
                 if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
@@ -1538,7 +1717,7 @@ const V2AgentBYO: React.FC = () => {
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
-            <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
+            <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they
@@ -1551,9 +1730,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              : listenAdapter === 'claude'
-                ? (setupOs === 'linux' ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable' : 'agentByo.footnote.cliRouteClaudeUnavailable')
-                : 'agentByo.footnote.cliRouteCodexUnavailable', {
+              // Only Codex on Linux has no listener among the page's two.
+              : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
               os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
@@ -1565,6 +1743,16 @@ const V2AgentBYO: React.FC = () => {
           </p>
           </details>
         </div>
+      )}
+
+      {pendingNarrowing && !issued && (
+        <V2InstallNarrowingNotice
+          agentName={pendingNarrowing.agentName}
+          narrowing={pendingNarrowing.narrowing}
+          busy={submitting}
+          onConfirm={() => { void submit(true); }}
+          onCancel={() => setPendingNarrowing(null)}
+        />
       )}
 
       {pendingReplacement && !issued && (
@@ -1681,7 +1869,7 @@ const V2AgentBYO: React.FC = () => {
           */}
           <div className="v2-byo__snippet v2-byo__snippet--listen" data-testid="byo-listen">
             <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.listen.title')}</span>
+              <span>{t(setupOs === 'windows' ? 'agentByo.listen.titleWindows' : 'agentByo.listen.title')}</span>
             </div>
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
@@ -1722,13 +1910,14 @@ const V2AgentBYO: React.FC = () => {
             )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? `${t('agentByo.listen.needs', {
-                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
-                : t(listenAdapter === 'claude'
-                  ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
-                  : 'agentByo.listen.unavailableCodex', {
+                ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
+                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
+                : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
+                : t(listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
+                    : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
+                  tool: listenTool,
                 })}{' '}
               <button
                 type="button"
@@ -1739,6 +1928,19 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
+            {/* Directly above the lines it explains. Claude Code's last line
+                carries --unsandboxed; Codex keeps its own profile and no flag. */}
+            {listenerAvailable && setupOs === 'windows' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
+                {listenAdapter === 'codex' ? t('agentByo.listen.windowsCodex') : (
+                  <Trans
+                    i18nKey="agentByo.listen.windowsNote"
+                    values={{ name: issued.agentName }}
+                    components={{ cmd: <code /> }}
+                  />
+                )}
+              </p>
+            )}
             {listenerAvailable && (
               <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
@@ -1753,12 +1955,14 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t('agentByo.listen.npmPermission')}
+                {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
               </p>
             )}
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
-                {t(machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer')}
+                {t(setupOs === 'windows'
+                  ? (machines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
+                  : (machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
@@ -1777,11 +1981,13 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && (
               <>
                 <p className="v2-byo__listen-note">
-                  {t('agentByo.listen.note', { name: issued.agentName })}
+                  {t(setupOs === 'windows' ? 'agentByo.listen.noteWindows' : 'agentByo.listen.note', { name: issued.agentName })}
                 </p>
               </>
             )}
-            {listenerAvailable && listenAdapter === 'claude' && (
+            {/* Both reach notes describe a confinement Windows doesn't have; the
+                Windows note above says what holds there instead. */}
+            {listenerAvailable && listenAdapter === 'claude' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
                 {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
@@ -1824,7 +2030,7 @@ const V2AgentBYO: React.FC = () => {
                 )}
               </div>
             )}
-            {listenerAvailable && listenAdapter === 'codex' && (
+            {listenerAvailable && listenAdapter === 'codex' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
                 {t('agentByo.listen.reachCodex')}
               </p>
@@ -1836,13 +2042,11 @@ const V2AgentBYO: React.FC = () => {
             const mcpBlock = (
   <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
                 <div className="v2-byo__snippet-head">
-                  {/* Where no listener runs, this is the way in, not an extra. */}
-                  <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+                  <span>{t('agentByo.snippets.claudeCode')}</span>
                 </div>
                 <p className="v2-byo__hint">
                   {t(
-                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
-                      : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
+                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows' : 'agentByo.snippets.claudeCodeBody',
                     { name: issued.agentName },
                   )}
                 </p>
@@ -1858,16 +2062,16 @@ const V2AgentBYO: React.FC = () => {
                 </div>
               </div>
             );
-            // With a listener, the MCP command is the extra: folded away and
-            // labelled, because a stranger copied it three times, never ran the
-            // listener, and the agent never answered (walk 2026-10-31). Without a
-            // listener it is the only way in, so it stays open.
-            return listenerAvailable ? (
+            // Claude Code always has a listener now (F96), so the MCP command is
+            // the extra: folded away and labelled, because a stranger copied it
+            // three times, never ran the listener, and the agent never answered
+            // (walk 2026-10-31).
+            return (
               <details className="v2-byo__more" data-testid="byo-mcp-details">
                 <summary>{t('agentByo.snippets.mcpSummary')}</summary>
                 {mcpBlock}
               </details>
-            ) : mcpBlock;
+            );
           })()}
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">

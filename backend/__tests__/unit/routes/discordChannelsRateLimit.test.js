@@ -107,7 +107,10 @@ it('redirects a failed Discord OAuth exchange even without FRONTEND_URL', async 
   axios.post.mockRejectedValueOnce(new Error('exchange failed'));
   const log = jest.spyOn(console, 'error').mockImplementation(() => {});
   try {
-    const res = await request(app).get('/api/discord/callback?code=oauth-code&state=pod_123');
+    process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+    const state = encodeURIComponent(require('../../../utils/discordInstallProof')
+      .mintDiscordInstallState({ podId: '123', userId: 'user-1' }));
+    const res = await request(app).get(`/api/discord/callback?code=oauth-code&state=${state}`);
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe('http://localhost:3000/discord/error?error=OAuth%20authorization%20failed');
   } finally {

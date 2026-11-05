@@ -18,7 +18,9 @@
  */
 
 import { Type } from 'typebox';
-import { connectMcp, takeServers, toPiResult } from './pi-mcp-client.mjs';
+import {
+  connectMcp, registrableTools, takeServers, toPiResult,
+} from './pi-mcp-client.mjs';
 
 export default async function commonlyMcpBridge(pi) {
   // Read once and consume: the read drains the pipe, so the list (which carries
@@ -37,7 +39,8 @@ export default async function commonlyMcpBridge(pi) {
     clients.push(client);
     try {
       await client.initialize();
-      const tools = await client.listTools();
+      // A public seat's entries name the tools it is not offered.
+      const tools = registrableTools(await client.listTools(), server);
       for (const tool of tools) {
         pi.registerTool({
           name: tool.name,

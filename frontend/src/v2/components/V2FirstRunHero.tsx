@@ -5,10 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
-import { ShellGlyph } from '../icons/glyphs';
+import { ActGlyph, ShellGlyph } from '../icons/glyphs';
 
 const POLL_INTERVAL_MS = 3_000;
-const EXTERNAL_LINK_MARK = '↗';
 export { FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 interface ConnectedAgent {
@@ -272,7 +271,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
                   onClick={openSetup}
                 >
                   {t('firstRun.steps.connect.openSetup')}
-                  <span aria-hidden="true">{EXTERNAL_LINK_MARK}</span>
+                  <ActGlyph name="open" size={14} />
                 </a>
               )}
             </div>
