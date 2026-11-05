@@ -70,22 +70,30 @@ const FUNCTION_KINDS = new Set([
   ts.SyntaxKind.GetAccessor,
   ts.SyntaxKind.SetAccessor,
 ]);
-const ROUTE_CALL = /^router\.(get|post|put|patch|delete)$/;
+const INLINE_METHODS = new Set(['map', 'forEach', 'then', 'catch', 'finally']);
+const INLINE_FUNCTIONS = new Set(['setTimeout', 'setImmediate']);
 
-// An inline callback runs as part of the function that wrote it: passed to a
-// call, or called on the spot. A route handler is the exception, since being
-// passed to `router.post(` is how it comes to exist at all.
+// A callback runs as part of the function that wrote it only in a known shape:
+// the array and promise methods above, `new Promise(`, a one-shot timer, or
+// called on the spot. Anything else may run at any time, so it fails closed and
+// stands alone: `router.post(`, `adminRouter.get(`, `cron.schedule(`, `.on(`,
+// `wrap(`, `setInterval(`. A write there needs its mirror in that callback.
 const isInlineCallback = (node, source) => {
   if (!ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return false;
   // `(async () => {...})()` reaches its call through the parentheses.
-  const { parent } = ts.isParenthesizedExpression(node.parent) ? node.parent : node;
-  if (!ts.isCallExpression(parent) && !ts.isNewExpression(parent)) return false;
-  return !ROUTE_CALL.test(parent.expression.getText(source));
+  const callback = ts.isParenthesizedExpression(node.parent) ? node.parent : node;
+  const call = callback.parent;
+  if (ts.isNewExpression(call)) return call.expression.getText(source) === 'Promise';
+  if (!ts.isCallExpression(call)) return false;
+  if (call.expression === callback) return true;
+  if (ts.isIdentifier(call.expression)) return INLINE_FUNCTIONS.has(call.expression.text);
+  return ts.isPropertyAccessExpression(call.expression) && INLINE_METHODS.has(call.expression.name.text);
 };
 
 // The start and end of every function, outermost first. An inline callback
 // inside a function gets no span of its own, so what it holds belongs to that
-// function. One at the top level has nothing to belong to, so it stands alone.
+// function, and two inline callbacks in one function count as one. An inline
+// callback at the top level has nothing to belong to, so it stands alone.
 const functionSpans = (text) => {
   const source = ts.createSourceFile('scan.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const spans = [];
@@ -127,8 +135,9 @@ const scanSource = (text, patterns, window, mirror = MIRROR) => {
   sites.forEach((offset) => {
     const i = lineOf(code, offset);
     if (/PGPod|pg\/Pod/.test(lines[i])) return;
-    // Only a mirror write in this function counts, so a neighbour's cannot
-    // vouch for this one.
+    // Only a mirror write in this function counts. A neighbouring function or
+    // standalone callback cannot vouch for this one; an inline callback can,
+    // because it is part of this function.
     const fn = enclosing(spans, offset);
     if (!mirrors.some((m) => m.fn === fn && m.line >= i && m.line < i + window)) unvouched.add(i);
   });
@@ -455,6 +464,116 @@ describe('PG mirror write-site detector', () => {
     ].join('\n'))).toEqual([]);
   });
 
+  it.each([
+    ['.map', '  await Promise.all(pods.map(async (p) => {', '  }));'],
+    ['.forEach', '  pods.forEach((p) => {', '  });'],
+    ['.then', '  await load().then((p) => {', '  });'],
+    ['.catch', '  await load().catch((p) => {', '  });'],
+    ['.finally', '  await load().finally(() => {', '  });'],
+    ['new Promise', '  await new Promise((resolve) => {', '  });'],
+    ['setTimeout', '  setTimeout(() => {', '  }, 10);'],
+    ['setImmediate', '  setImmediate(() => {', '  });'],
+    ['an immediately called arrow', '  await (async () => {', '  })();'],
+    ['an immediately called function', '  await (function run() {', '  })();'],
+  ])('treats %s as part of the function around it', (_name, open, close) => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      open,
+      '    pod.members.push(userId);',
+      close,
+      '  await mirrorMemberAdded(pod._id, userId);',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  // #3538 review. An unknown callback may run at any time, so it fails closed:
+  // it stands alone, and the mirror belongs inside it.
+  const twoCallbacks = {
+    'two cron.schedule callbacks': ["  cron.schedule('* * * * *', async () => {", '  });'],
+    'two socket.on callbacks': ["  socket.on('event', async (d) => {", '  });'],
+    'two bus.on callbacks': ["  bus.on('event', async (d) => {", '  });'],
+    'two on callbacks': ["  on('event', async (d) => {", '  });'],
+    'two wrap consts': ['  const handler = wrap(async (d) => {', '  });'],
+    'two setInterval callbacks': ['  setInterval(async () => {', '  }, 1000);'],
+    'two new Worker callbacks': ['  new Worker(async (job) => {', '  });'],
+  };
+
+  it.each(Object.entries(twoCallbacks))('keeps %s apart', (_name, [open, close]) => {
+    expect(flagged([
+      'async function register(pod, userId) {',
+      open,
+      '    pod.members.push(userId);',
+      close,
+      open,
+      '    await mirrorMemberAdded(pod._id, userId);',
+      close,
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it.each(Object.entries(twoCallbacks))('does not let the outer function vouch for %s', (_name, [open, close]) => {
+    expect(flagged([
+      'async function register(pod, userId) {',
+      open,
+      '    pod.members.push(userId);',
+      close,
+      '  await mirrorMemberAdded(pod._id, userId);',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it.each(Object.entries(twoCallbacks))('accepts a mirror in the same callback for %s', (_name, [open, close]) => {
+    expect(flagged([
+      'async function register(pod, userId) {',
+      open,
+      '    pod.members.push(userId);',
+      '    await mirrorMemberAdded(pod._id, userId);',
+      close,
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('lets an inline callback at the top level stand alone', () => {
+    expect(flagged([
+      'pods.forEach((pod) => {',
+      '  pod.members.push(userId);',
+      '});',
+      'mirrorMemberAdded(podId, userId);',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('attributes an inline callback to the unknown callback holding it', () => {
+    const inCron = (...body) => flagged([
+      'async function register(pods, userId) {',
+      "  cron.schedule('* * * * *', async () => {",
+      '    pods.forEach((pod) => {',
+      '      pod.members.push(userId);',
+      '    });',
+      ...body,
+      '  });',
+      '  await mirrorMemberAdded(podId, userId);',
+      '}',
+    ].join('\n'));
+    expect(inCron('    await mirrorMemberAdded(podId, userId);')).toEqual([]);
+    expect(inCron()).toHaveLength(1);
+  });
+
+  it.each(['adminRouter.post', 'publishRouter.post', 'router.get', 'router.put', 'router.patch', 'router.delete'])(
+    'keeps two %s handlers in one function apart',
+    (route) => {
+      expect(flagged([
+        'export const mount = () => {',
+        `  ${route}('/leave', auth, async (req, res) => {`,
+        '    req.pod.members.push(req.userId);',
+        '  });',
+        `  ${route}('/join', auth, async (req, res) => {`,
+        '    await mirrorMemberAdded(req.podId, req.userId);',
+        '  });',
+        '};',
+      ].join('\n'))).toHaveLength(1);
+    },
+  );
+
   it('keeps inline callbacks in one handler away from the next handler', () => {
     expect(flagged([
       'async function leave(pods, userId) {',
@@ -477,13 +596,31 @@ describe('PG mirror write-site detector', () => {
       '  pod.members.push(userId);',
       '}',
     ].join('\n'))).toHaveLength(1);
+  });
+
+  it('counts a mirror call on the line of the write', () => {
     expect(flagged([
       'async function join(pod, userId) {',
-      '  pod.members.push(userId);',
-      ...Array.from({ length: MEMBER_WINDOW }, () => '  step();'),
-      '  await mirrorMemberAdded(pod._id, userId);',
+      '  pod.members.push(userId); await mirrorMemberAdded(pod._id, userId);',
       '}',
-    ].join('\n'))).toHaveLength(1);
+    ].join('\n'))).toEqual([]);
+  });
+
+  // `window` lines starting at the write: the last one counts, the next does not.
+  it.each([
+    ['member writes', MEMBER_MUTATION, MEMBER_WINDOW, MIRROR, 'pod.members.push(userId);', 'mirrorMemberAdded(a, b);'],
+    ['pod creations', POD_CREATE, CREATE_WINDOW, MIRROR, 'await Pod.create({ name });', 'mirrorPodCreated(pod);'],
+    ['User creations', USER_CREATE, USER_WINDOW, USER_MIRROR, 'await User.create({ name });', 'mirrorUser(user);'],
+  ])('ends the window exactly for %s', (_name, patterns, window, mirror, write, call) => {
+    const withGap = (gap) => scanSource([
+      'async function join() {',
+      `  ${write}`,
+      ...Array.from({ length: gap }, () => '  step();'),
+      `  ${call}`,
+      '}',
+    ].join('\n'), patterns, window, mirror);
+    expect(withGap(window - 2)).toEqual([]);
+    expect(withGap(window - 1)).toHaveLength(1);
   });
 
   it('reports a write outside any function, and pairs it with a mirror outside any function', () => {

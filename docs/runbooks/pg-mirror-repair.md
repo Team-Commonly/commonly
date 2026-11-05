@@ -35,12 +35,18 @@ by the queued `finishWorkspaceOnboarding` tail, not on the response path. User l
 `routes/` and `services/` for Mongo member mutations and pod creations without a
 mirror write after them, and for User creations without `mirrorUser` /
 `syncUserToPostgreSQL`. The mirror must sit in the same function, within the
-scan's window of lines. The TypeScript parser decides which function that is, so
-a neighbour's mirror call cannot vouch for a write. An inline callback, one
-passed to a call or called on the spot, counts as part of the function around
-it; a `router.post(` handler counts as its own function. Comments are stripped
-before matching (a mirror call in a comment does not count), and patterns match
-across lines, so a `$pull: {` whose `members` sits on the next line is caught.
+scan's window of lines. The TypeScript parser decides which function that is.
+A callback counts as part of the function around it only in a known inline
+shape: `.map`, `.forEach`, `.then`, `.catch`, `.finally`, `new Promise(`,
+`setTimeout(`, `setImmediate(`, or a function called on the spot, so a mirror
+elsewhere in that function vouches for it, and two such callbacks vouch for each
+other. Every other callback stands alone, including `router.post(`,
+`adminRouter.get(`, `cron.schedule(`, `.on(`, `wrap(` and `setInterval(`: a write
+there needs its mirror in the same callback. If a real site needs another shape,
+add it to `INLINE_METHODS` or `INLINE_FUNCTIONS` only when it runs before the
+function around it moves on. Comments are stripped before matching (a mirror
+call in a comment does not count), and patterns match across lines, so a
+`$pull: {` whose `members` sits on the next line is caught.
 Fixture tests in the same file pin each shape the detector must catch and each
 it must pass. A new site fails it until it mirrors, or until it is added to
 `ALLOWED` with the reason the mirror may lag.
