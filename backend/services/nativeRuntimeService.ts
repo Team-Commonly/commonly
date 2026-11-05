@@ -1522,6 +1522,19 @@ export const wasDirectlyAddressed = (trigger: NativeRunTrigger): boolean => (
 );
 
 /**
+ * Whether a turn's final assistant text (one written without calling
+ * commonly_post_message) is posted to the pod. Not on a heartbeat (F190): a
+ * heartbeat answers nobody, so prose that ends it is the model talking to
+ * itself, and on 2026-11-05 09:54Z a hosted agent's "This is a periodic
+ * heartbeat ... No reply is needed." posted to its owner's pod. A heartbeat
+ * reaches the pod only through an explicit post tool call. Decided by the
+ * trigger, never by the text: the same prose on a mention posts verbatim.
+ * Other unaddressed turns keep the fallback on purpose: first_contact is told
+ * to post a greeting, and an ambient wake's NO_REPLY contract already covers it.
+ */
+export const finalTextReachesPod = (trigger: NativeRunTrigger): boolean => String(trigger.type) !== 'heartbeat';
+
+/**
  * Whether the agent holding a message's claim was itself addressed by it: it
  * has an addressed event for that message. False on any failure, so an
  * addressed turn that cannot tell answers rather than defers.
@@ -1682,11 +1695,11 @@ export function buildUserMessage(
   // meant TypeScript never had to reconcile them.
   const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
 
-  // TASK-779: a heartbeat always ends with the native prompt, which names
-  // NO_REPLY. A hosted turn posts any final text that is not a silent
-  // sentinel, so "otherwise do nothing" was no instruction: Triage's
+  // TASK-779: a heartbeat always ends with the native prompt. Triage's
   // 22:28:01Z heartbeat called no post tool, and its prose posted ten seconds
-  // later. The scheduler's cue never reached that prompt anyway, because it
+  // later; telling it to return NO_REPLY did not hold either (F190, 11-05), so
+  // a heartbeat's final text is now never posted (finalTextReachesPod) and the
+  // prompt says so: only the post tool reaches the pod. The scheduler's cue never reached that prompt anyway, because it
   // rides in payload.content and won as the inline cue. Its seat lines
   // ("Read your HEARTBEAT.md", "HEARTBEAT_OK is a return value") are for
   // agents with that file, so they are cut; its cycle frame names a tool
@@ -1698,7 +1711,8 @@ export function buildUserMessage(
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
-      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+      + 'Only commonly_post_message reaches the pod: your final text on a heartbeat is never posted, '
+      + 'so if nothing needs a post, just end the turn.'
     );
     const kept = inlineCue.split('\n')
       .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
@@ -2874,7 +2888,14 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
-      if (textOut && !postedViaTool && !fallbackBlocked) {
+      if (textOut && !postedViaTool && !fallbackBlocked && !finalTextReachesPod(trigger)) {
+        // F190: a heartbeat's closing prose is not a reply. Logged by length
+        // only, so the narration's content stays out of the logs.
+        console.log(
+          `[native-runtime] ${agentName}:${instanceId} heartbeat ended in ${textOut.length} chars of final text `
+          + 'without a post call; not posted (F190)',
+        );
+      } else if (textOut && !postedViaTool && !fallbackBlocked) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
         try {

@@ -79,25 +79,28 @@ describe('content-less events still get something usable', () => {
 // it is written for seats that read a HEARTBEAT.md file, which a hosted agent
 // does not have, and its cycle frame names a tool native turns lack, so the
 // native cue rewrite drops it and leaves only the HEARTBEAT.md instruction.
-describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
+describe('a hosted heartbeat with nothing to post just ends: only the post tool reaches the pod', () => {
+  // F190: the final text of a heartbeat is never posted (finalTextReachesPod),
+  // so the prompt says the post tool is the only way in, not "return NO_REPLY".
+  const HEARTBEAT_POST_LINE = 'Only commonly_post_message reaches the pod: your final text on a heartbeat is never posted';
   const { buildHeartbeatContent } = require('../../../services/heartbeatCue');
   const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
   const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
 
-  it('a content-less heartbeat names NO_REPLY, not "do nothing"', () => {
+  it('a content-less heartbeat names the post tool as the only way into the pod', () => {
     const out = buildUserMessage({ type: 'heartbeat', payload: {} }, POD);
-    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).toContain(HEARTBEAT_POST_LINE);
     expect(out).not.toContain('Otherwise do nothing');
   });
 
-  it('the scheduler\'s heartbeat, as a native turn reads it, names NO_REPLY and no HEARTBEAT.md', () => {
+  it('the scheduler\'s heartbeat, as a native turn reads it, names the post tool and no HEARTBEAT.md', () => {
     const podId = '6aeb8bc75a12e3e23872e765';
     const out = nativeCueFromKernel(
       buildUserMessage({ type: 'heartbeat', payload: { content: buildHeartbeatContent(podId) } }, POD),
       podId,
       NATIVE_TOOL_NAMES,
     );
-    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).toContain(HEARTBEAT_POST_LINE);
     expect(out).toContain(POD);
     expect(out).not.toContain('HEARTBEAT.md');
     expect(out).not.toContain('HEARTBEAT_OK');
@@ -110,16 +113,16 @@ describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
   // turn, so a heartbeat prompt that drops its content hides them for good.
   const digestSummary = '[Unread since your last turn: 3 messages in thread 129000, 1 in the main channel.]';
 
-  it('keeps the digest the scheduled heartbeat carries, and still names NO_REPLY', () => {
+  it('keeps the digest the scheduled heartbeat carries, and still names the post tool', () => {
     const podId = '6aeb8bc75a12e3e23872e765';
     const content = `${buildHeartbeatContent(podId)}\n\n${digestSummary}`;
     const out = nativeCueFromKernel(buildUserMessage({ type: 'heartbeat', payload: { content } }, POD), podId, NATIVE_TOOL_NAMES);
     expect(out).toContain(digestSummary);
-    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).toContain(HEARTBEAT_POST_LINE);
     expect(out).not.toContain('HEARTBEAT.md');
   });
 
-  it('keeps the unread-digest heartbeat\'s own frame and its digest, and names NO_REPLY', () => {
+  it('keeps the unread-digest heartbeat\'s own frame and its digest, and names the post tool', () => {
     const frame = '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]';
     const out = nativeCueFromKernel(
       buildUserMessage({ type: 'heartbeat', payload: { trigger: 'unread-digest', content: `${frame}\n\n${digestSummary}` } }, POD),
@@ -128,7 +131,7 @@ describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
     );
     expect(out.startsWith(frame)).toBe(true);
     expect(out).toContain(digestSummary);
-    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).toContain(HEARTBEAT_POST_LINE);
   });
 });
 
@@ -196,4 +199,21 @@ describe('a native turn\'s digest names only tools a native turn has', () => {
     expect(out).toContain(said);
     expect(out.match(/commonly_get_messages/g)).toHaveLength(1);
   });
+});
+
+// F190: which turns may post their final text. Decided by the trigger alone,
+// never by the text: every addressed or asked-to-post turn keeps the fallback.
+describe('finalTextReachesPod', () => {
+  const { finalTextReachesPod } = require('../../../services/nativeRuntimeService');
+
+  it('a heartbeat\'s final text does not reach the pod', () => {
+    expect(finalTextReachesPod({ type: 'heartbeat', payload: {} })).toBe(false);
+  });
+
+  it.each(['chat.mention', 'thread.mention', 'dm.message', 'mention', 'chat.message', 'message.posted', 'first_contact', 'task.assigned', 'pod.join'])(
+    'a %s turn keeps posting its final text',
+    (type) => {
+      expect(finalTextReachesPod({ type, payload: {} })).toBe(true);
+    },
+  );
 });

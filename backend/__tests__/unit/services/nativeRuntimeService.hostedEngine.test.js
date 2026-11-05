@@ -644,6 +644,82 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       expect(axios.post).toHaveBeenCalledTimes(1);
       expect(AgentRun.countDocuments.mock.calls.some(([query]) => query.trigger === 'heartbeat')).toBe(false);
     });
+
+    // F190 (prod, 2026-11-05 09:54Z): a hosted agent's heartbeat ended with
+    // prose about itself ("This is a periodic heartbeat with ambient updates
+    // ... No reply is needed.") and the fallback posted it to the owner's pod.
+    // Nobody addressed a heartbeat, so its final text is never a reply: only
+    // an explicit commonly_post_message reaches the pod. Structural, not a
+    // phrase filter — the narration below is posted on a mention, verbatim.
+    describe('a heartbeat\'s final text never reaches the pod (F190)', () => {
+      const NARRATION = 'This is a periodic heartbeat with ambient updates. The pod activity is greetings and a '
+        + 'launch walk; lily-shen just joined and nothing is addressed to me with a question. No reply is needed.';
+      const finalText = (content) => ({
+        status: 200,
+        headers: {},
+        data: {
+          choices: [{ message: { role: 'assistant', content } }],
+          usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18 },
+        },
+      });
+      let AgentMessageService;
+      beforeEach(() => {
+        AgentMessageService = require('../../../services/agentMessageService');
+        counts();
+      });
+
+      test('a hosted heartbeat that ends in narration posts nothing and still succeeds', async () => {
+        axios.post.mockResolvedValueOnce(finalText(NARRATION));
+        const result = await runAgent(hostedInstall(), heartbeat);
+        expect(result.status).toBe('succeeded');
+        expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      });
+
+      test('a first-party native heartbeat (pod-summarizer shape) that ends in prose posts nothing', async () => {
+        axios.post.mockResolvedValueOnce(finalText('Fewer than 5 new human messages, skipping the TLDR.'));
+        const result = await runAgent({
+          podId: POD,
+          agentName: 'pod-summarizer',
+          instanceId: 'default',
+          displayName: 'Pod Summarizer',
+          config: { runtime: { runtimeType: 'native' }, tools: ['commonly_read_context', 'commonly_post_message'] },
+        }, heartbeat);
+        expect(result.status).toBe('succeeded');
+        expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      });
+
+      test('a heartbeat that calls commonly_post_message posts exactly that, once', async () => {
+        axios.post
+          .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Standup moved to 3pm.' })))
+          .mockResolvedValueOnce(finalText('Posted the standup change; nothing else to do.'));
+        const result = await runAgent(hostedInstall(), heartbeat);
+        expect(result.status).toBe('succeeded');
+        expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+        expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          podId: POD, content: 'Standup moved to 3pm.',
+        }));
+      });
+
+      test('an addressed mention still posts its final text, the same prose included', async () => {
+        axios.post.mockResolvedValueOnce(finalText(NARRATION));
+        const result = await runAgent(hostedInstall(), mention);
+        expect(result.status).toBe('succeeded');
+        expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+        expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          content: NARRATION, metadata: expect.objectContaining({ fallback: true }),
+        }));
+      });
+
+      test('a first-contact greeting written as final text still posts (unaddressed, but asked to post)', async () => {
+        axios.post.mockResolvedValueOnce(finalText('Hi! What should we start on?'));
+        await runAgent(hostedInstall(), {
+          type: 'first_contact', eventId: '507f1f77bcf86cd799439013', payload: { content: 'Greet them.', userId: OWNER },
+        });
+        expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          content: 'Hi! What should we start on?',
+        }));
+      });
+    });
   });
 
   test('HOSTED_TURNS_PER_DAY=0 means no hosted turns, not an uncapped install', async () => {

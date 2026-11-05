@@ -295,14 +295,16 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
       }));
     });
 
+    // F190: a heartbeat's final text no longer posts, so the unwoken turn
+    // here is a first-contact greeting, which still does.
     test('a turn no message woke answers no message', async () => {
       axios.post.mockResolvedValueOnce({
-        status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Heartbeat note.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
+        status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Hello there.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
       });
 
-      await runAgent(installation, { type: 'heartbeat', eventId: 'evt-3', payload: {} });
+      await runAgent(installation, { type: 'first_contact', eventId: 'evt-3', payload: {} });
 
-      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Heartbeat note.' }));
+      expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Hello there.' }));
       expect(AgentMessageService.postMessage.mock.calls[0][0].answeringMessageId).toBeUndefined();
     });
   });
