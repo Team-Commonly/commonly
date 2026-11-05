@@ -106,9 +106,13 @@ export const createBrokerBridge = ({
     };
   };
 
-  // The timer covers the whole exchange, body included: a stream that never
-  // closes still ends in an error answer, not a request codex waits on forever.
-  const post = async (body) => {
+  // One exchange: POST the line, then hand each JSON-RPC message in the answer
+  // to `onMessage` as it arrives. An event stream is read event by event, so a
+  // notification sent before the response reaches codex then, and reading stops
+  // once `onMessage` says the request is answered, whether or not the server
+  // closes the stream. The timer covers the whole exchange, body included: a
+  // stream that never answers still ends in an error, not a wait forever.
+  const exchange = async (body, onMessage) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -121,7 +125,36 @@ export const createBrokerBridge = ({
         // redirect may point at another origin (same rule as connectHttpMcp).
         redirect: 'error',
       });
-      return { res, text: await res.text() };
+      const contentType = res.headers?.get?.('content-type') || '';
+      const reader = res.ok && contentType.includes('text/event-stream') ? res.body?.getReader?.() : null;
+      if (!reader) return { res, text: await res.text() };
+      // Not every fetch errors a body it has already handed over when the
+      // signal fires, so the timeout ends the read itself.
+      const stopReading = () => reader.cancel().catch(() => {});
+      controller.signal.addEventListener('abort', stopReading, { once: true });
+      const decoder = new TextDecoder();
+      let buffered = '';
+      const drain = (final) => {
+        const blocks = buffered.split(/\r?\n\r?\n/);
+        buffered = final ? '' : blocks.pop();
+        return blocks.flatMap((block) => ssePayloads(`${block}\n\n`)).some((raw) => onMessage(raw));
+      };
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop
+        const { value, done } = await reader.read();
+        if (done) {
+          buffered += decoder.decode();
+          drain(true);
+          break;
+        }
+        buffered += decoder.decode(value, { stream: true });
+        if (drain(false)) {
+          stopReading();
+          break;
+        }
+      }
+      if (controller.signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      return { res, text: null };
     } finally {
       clearTimeout(timer);
     }
@@ -138,14 +171,31 @@ export const createBrokerBridge = ({
     }
     const id = message?.id;
     const isRequest = id !== undefined && id !== null && typeof message?.method === 'string';
+    let answered = false;
     const fail = (text) => {
-      if (isRequest) write(JSON.stringify(rpcError(id, -32000, `grant broker: ${scrub(text)}`)));
+      if (isRequest && !answered) write(JSON.stringify(rpcError(id, -32000, `grant broker: ${scrub(text)}`)));
       else process.stderr.write(`[commonly-broker-bridge] ${scrub(text)}\n`);
+    };
+    // Writes one message back to codex; true once this request is answered.
+    const forward = (raw) => {
+      let answer;
+      try {
+        answer = JSON.parse(raw);
+      } catch {
+        return false;
+      }
+      if (message?.method === 'initialize' && answer?.id === id
+        && typeof answer?.result?.protocolVersion === 'string') {
+        protocolVersion = answer.result.protocolVersion;
+      }
+      write(JSON.stringify(answer));
+      if (isRequest && answer?.id === id && ('result' in answer || 'error' in answer)) answered = true;
+      return answered;
     };
     let res;
     let text;
     try {
-      ({ res, text } = await post(line));
+      ({ res, text } = await exchange(line, forward));
     } catch (error) {
       fail(error?.name === 'AbortError' ? `timed out after ${timeoutMs}ms` : (error?.message || String(error)));
       return;
@@ -156,18 +206,8 @@ export const createBrokerBridge = ({
       fail(`HTTP ${res.status}${text ? `: ${text.slice(0, MAX_ERROR_TEXT)}` : ''}`);
       return;
     }
-    for (const raw of parseMessages(text || '', res.headers?.get?.('content-type') || '')) {
-      let answer;
-      try {
-        answer = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (message?.method === 'initialize' && answer?.id === id
-        && typeof answer?.result?.protocolVersion === 'string') {
-        protocolVersion = answer.result.protocolVersion;
-      }
-      write(JSON.stringify(answer));
+    if (text !== null) {
+      for (const raw of parseMessages(text || '', res.headers?.get?.('content-type') || '')) forward(raw);
     }
   };
 

@@ -111,6 +111,56 @@ describe('createBrokerBridge', () => {
     expect(out).toEqual([{ jsonrpc: '2.0', id: 7, result: { ok: true } }]);
   });
 
+  // Our broker (mcpGrants.ts, the MCP SDK's StreamableHTTPServerTransport with
+  // no enableJsonResponse) answers a POST as an event stream and ends it once
+  // the response is written. The bridge still reads it event by event.
+  const streamed = () => {
+    let push;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({ start(controller) { push = controller; } });
+    return {
+      response: { ok: true, status: 200, body, headers: { get: (n) => (n.toLowerCase() === 'content-type' ? 'text/event-stream' : null) },
+        text: async () => { throw new Error('a streamed body is not read whole'); } },
+      send: (msg) => push.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(msg)}\n\n`)),
+    };
+  };
+
+  test('an event sent before the response reaches codex before the stream closes', async () => {
+    const stream = streamed();
+    const out = [];
+    const bridge = createBrokerBridge({ url: URL, headerTemplates: TEMPLATES, tokenFile: await tokenFile(),
+      fetchImpl: async () => stream.response, write: (line) => out.push(JSON.parse(line)) });
+
+    const pending = bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/call' }));
+    stream.send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progress: 1 } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(out).toEqual([{ jsonrpc: '2.0', method: 'notifications/progress', params: { progress: 1 } }]);
+
+    // The response ends the exchange even though the server never closes the stream.
+    stream.send({ jsonrpc: '2.0', id: 8, result: { ok: true } });
+    await pending;
+    expect(out[1]).toEqual({ jsonrpc: '2.0', id: 8, result: { ok: true } });
+    expect(out).toHaveLength(2);
+  });
+
+  test('a stream that never answers times out with one error, after what it did send', async () => {
+    const stream = streamed();
+    const out = [];
+    const bridge = createBrokerBridge({ url: URL, headerTemplates: TEMPLATES, tokenFile: await tokenFile(),
+      // A fetch that leaves the body open when the signal fires.
+      fetchImpl: async () => stream.response,
+      write: (line) => out.push(JSON.parse(line)), timeoutMs: 50 });
+
+    const pending = bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call' }));
+    stream.send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progress: 1 } });
+    await pending;
+
+    expect(out[0].method).toBe('notifications/progress');
+    expect(out[1].id).toBe(9);
+    expect(out[1].error.message).toMatch(/timed out after 50ms/);
+    expect(out).toHaveLength(2);
+  });
+
   test('an HTTP failure answers the request with a JSON-RPC error instead of leaving codex waiting', async () => {
     const fetchImpl = jest.fn(async () => jsonResponse({ error: 'grant_revoked' }, { status: 403 }));
     const { bridge, out } = await bridgeWith(fetchImpl);
