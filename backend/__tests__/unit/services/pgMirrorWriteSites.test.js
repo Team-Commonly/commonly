@@ -8,14 +8,16 @@
  * repair (pgMirrorRepairService) heals drift, but a new bypass would show up
  * again every night. This scan catches the next one at review time.
  *
- * Detection is textual and deliberately coarse: a mutation counts as mirrored
- * when a mirror write appears within WINDOW lines after it. That is weaker than
- * a behaviour test, so every wired site also has one (pgMirrorWrite.test.js,
- * podController.pgMirror.test.js, pods.rename.test.js). Adding a site to
- * ALLOWED is a decision: say why the mirror may lag.
+ * Sites and mirror calls are found by text and deliberately coarse: a mutation
+ * counts as mirrored when a mirror write appears within WINDOW lines after it,
+ * in the same function. The TypeScript parser decides what "the same function"
+ * means. That is weaker than a behaviour test, so every wired site also has one
+ * (pgMirrorWrite.test.js, podController.pgMirror.test.js, pods.rename.test.js).
+ * Adding a site to ALLOWED is a decision: say why the mirror may lag.
  */
 const fs = require('fs');
 const path = require('path');
+const ts = require('typescript');
 
 const ROOT = path.join(__dirname, '../../..');
 const DIRS = ['controllers', 'routes', 'services'];
@@ -33,7 +35,6 @@ const MEMBER_MUTATION = [
 const POD_CREATE = [/\bPod\.create\(/, /\bnew Pod\(/];
 const USER_CREATE = [/\bUser\.create\(/, /\bnew User\(/, /\bUser\.insertMany\(/];
 const USER_WINDOW = 40;
-const FUNCTION_START = /^(\s{2}(static\s+)?(async\s+)?[a-zA-Z_]+\s*\([^)]*\)[^;]*\{\s*$|(export\s+)?(async\s+)?function\b|(export\s+)?const\s+\w+\s*=\s*async\b|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*(:[^=]*)?=>|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?\(\s*$|exports\.\w+\s*=|router\.(get|post|put|patch|delete)\()/;
 const MIRROR = /mirrorMember(Added|Removed)|mirrorPodCreated|syncPgDmMembers|syncPodFromMongo|PGPod\.(addMember|removeMember|create)|pod_members|ensureGlobalPodPostgresSync/;
 const USER_MIRROR = /mirrorUser\(|syncUserToPostgreSQL\(/;
 
@@ -60,34 +61,78 @@ const stripComments = (text) => text.replace(
   (match, str) => (str !== undefined ? str : match.replace(/[^\n]/g, ' ')),
 );
 
+const FUNCTION_KINDS = new Set([
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.MethodDeclaration,
+  ts.SyntaxKind.Constructor,
+  ts.SyntaxKind.GetAccessor,
+  ts.SyntaxKind.SetAccessor,
+]);
+const ROUTE_CALL = /^router\.(get|post|put|patch|delete)$/;
+
+// An inline callback runs as part of the function that wrote it: passed to a
+// call, or called on the spot. A route handler is the exception, since being
+// passed to `router.post(` is how it comes to exist at all.
+const isInlineCallback = (node, source) => {
+  if (!ts.isArrowFunction(node) && !ts.isFunctionExpression(node)) return false;
+  // `(async () => {...})()` reaches its call through the parentheses.
+  const { parent } = ts.isParenthesizedExpression(node.parent) ? node.parent : node;
+  if (!ts.isCallExpression(parent) && !ts.isNewExpression(parent)) return false;
+  return !ROUTE_CALL.test(parent.expression.getText(source));
+};
+
+// The start and end of every function, outermost first. An inline callback
+// inside a function gets no span of its own, so what it holds belongs to that
+// function. One at the top level has nothing to belong to, so it stands alone.
+const functionSpans = (text) => {
+  const source = ts.createSourceFile('scan.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const spans = [];
+  const visit = (node, insideFunction) => {
+    const stands = FUNCTION_KINDS.has(node.kind) && Boolean(node.body)
+      && !(insideFunction && isInlineCallback(node, source));
+    if (stands) spans.push({ start: node.getStart(source), end: node.end });
+    ts.forEachChild(node, (child) => visit(child, insideFunction || stands));
+  };
+  visit(source, false);
+  return spans;
+};
+
+// The innermost span holding the offset. Code outside every function gets
+// undefined, so the module's top level compares as one function.
+const enclosing = (spans, offset) => spans
+  .filter(({ start, end }) => start <= offset && offset < end)
+  .pop();
+
+const offsetsOf = (code, patterns) => patterns.flatMap((re) => (
+  [...code.matchAll(new RegExp(re.source, 'g'))].map((m) => m.index)
+));
+
+const lineOf = (code, offset) => code.slice(0, offset).split('\n').length - 1;
+
 // Patterns match across newlines (`\s*` spans them), so a mutation split over
 // lines is caught at the line it starts on. A mirror call only counts when it
-// is code, never when it is a comment.
+// is code, never when it is a comment. Blanking comments keeps every offset, so
+// spans parsed from the raw text apply to the blanked code.
 const scanSource = (text, patterns, window, mirror = MIRROR) => {
   const code = stripComments(text);
+  const sites = offsetsOf(code, patterns);
+  if (sites.length === 0) return [];
   const lines = code.split('\n');
-  const starts = new Set();
-  patterns.forEach((re) => {
-    const global = new RegExp(re.source, 'g');
-    let m = global.exec(code);
-    while (m) {
-      starts.add(code.slice(0, m.index).split('\n').length - 1);
-      m = global.exec(code);
-    }
+  const spans = functionSpans(text);
+  const mirrors = offsetsOf(code, [mirror])
+    .map((offset) => ({ line: lineOf(code, offset), fn: enclosing(spans, offset) }));
+  const unvouched = new Set();
+  sites.forEach((offset) => {
+    const i = lineOf(code, offset);
+    if (/PGPod|pg\/Pod/.test(lines[i])) return;
+    // Only a mirror write in this function counts, so a neighbour's cannot
+    // vouch for this one.
+    const fn = enclosing(spans, offset);
+    if (!mirrors.some((m) => m.fn === fn && m.line >= i && m.line < i + window)) unvouched.add(i);
   });
-  const hits = [];
-  [...starts].sort((a, b) => a - b).forEach((i) => {
-    const line = lines[i];
-    if (/PGPod|pg\/Pod/.test(line)) return;
-    // The window ends at the next function boundary, so a mirror write in
-    // the following method cannot vouch for this one.
-    const tail = lines.slice(i + 1, i + window);
-    const end = tail.findIndex((l) => FUNCTION_START.test(l));
-    const after = [line, ...(end === -1 ? tail : tail.slice(0, end))].join('\n');
-    if (mirror.test(after)) return;
-    hits.push(line.trim());
-  });
-  return hits;
+  return [...unvouched].sort((a, b) => a - b).map((i) => lines[i].trim());
 };
 
 const unmirrored = (patterns, window, mirror = MIRROR) => {
@@ -172,6 +217,305 @@ describe('PG mirror write-site detector', () => {
       '};',
       'export const join = async (podId: string): Promise<boolean> => mirrorMemberAdded(podId, u);',
     ].join('\n'))).toHaveLength(1);
+  });
+
+  // CodeRabbit on #3500, the two shapes a one-line guess gets wrong.
+  it('does not treat a parenthesised value as the start of a function', () => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  const value = (',
+      '    userId.toString()',
+      '  );',
+      '  await mirrorMemberAdded(pod._id, value);',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('sees a function whose parameter list starts on the declaration line and spans lines', () => {
+    expect(flagged([
+      'const leave = async (pod, userId) => {',
+      '  pod.members.push(userId);',
+      '};',
+      'const join = (podId: string,',
+      '  userId: string,',
+      '  role: string,',
+      ') => mirrorMemberAdded(podId, userId);',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('does not treat an if block at method indent as a function', () => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  if (pod.type !== "agent-dm") {',
+      '    await mirrorMemberAdded(pod._id, userId);',
+      '  }',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  // Every kind of function is a boundary: the second one's mirror call must
+  // not vouch for the first one's write.
+  it.each([
+    ['function declarations', [
+      'async function leave(pod, userId) {',
+      '  pod.members.push(userId);',
+      '}',
+      'async function join(podId, userId) {',
+      '  await mirrorMemberAdded(podId, userId);',
+      '}',
+    ]],
+    ['a function declared inside another', [
+      'async function outer(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  async function inner(podId) {',
+      '    await mirrorMemberAdded(podId, userId);',
+      '  }',
+      '  return inner;',
+      '}',
+    ]],
+    ['function expressions', [
+      'const leave = async function (pod, userId) {',
+      '  pod.members.push(userId);',
+      '};',
+      'const join = function (podId, userId) {',
+      '  return mirrorMemberAdded(podId, userId);',
+      '};',
+    ]],
+    ['exports assignments', [
+      'exports.leave = async (req, res) => {',
+      '  req.pod.members.push(req.userId);',
+      '};',
+      'exports.join = async (req, res) => {',
+      '  await mirrorMemberAdded(req.podId, req.userId);',
+      '};',
+    ]],
+    ['class methods with multi-line parameters', [
+      'class PodService {',
+      '  static async leave(pod, userId) {',
+      '    pod.members.push(userId);',
+      '  }',
+      '',
+      '  static async join(',
+      '    podId: string,',
+      '    userId: string,',
+      '  ): Promise<void> {',
+      '    await mirrorMemberAdded(podId, userId);',
+      '  }',
+      '}',
+    ]],
+    ['class property arrow functions', [
+      'class PodService {',
+      '  leave = async (pod, userId) => {',
+      '    pod.members.push(userId);',
+      '  };',
+      '',
+      '  join = async (podId, userId) => {',
+      '    await mirrorMemberAdded(podId, userId);',
+      '  };',
+      '}',
+    ]],
+    ['a constructor and the code after its class', [
+      'class PodService {',
+      '  constructor(pod, userId) {',
+      '    pod.members.push(userId);',
+      '  }',
+      '}',
+      'mirrorMemberAdded(podId, userId);',
+    ]],
+    ['a getter and the code after its class', [
+      'class PodService {',
+      '  get joined() {',
+      '    return this.pod.members.push(this.userId);',
+      '  }',
+      '}',
+      'mirrorMemberAdded(podId, userId);',
+    ]],
+    ['setters', [
+      'class PodService {',
+      '  set owner(userId) {',
+      '    this.pod.members.push(userId);',
+      '  }',
+      '',
+      '  set joined(userId) {',
+      '    mirrorMemberAdded(this.podId, userId);',
+      '  }',
+      '}',
+    ]],
+    ['object methods', [
+      'const service = {',
+      '  async leave(pod, userId) {',
+      '    pod.members.push(userId);',
+      '  },',
+      '  async join(podId, userId) {',
+      '    await mirrorMemberAdded(podId, userId);',
+      '  },',
+      '};',
+    ]],
+    ['object properties holding functions', [
+      'const service = {',
+      '  leave: async (pod, userId) => {',
+      '    pod.members.push(userId);',
+      '  },',
+      '  join: async (podId, userId) => {',
+      '    await mirrorMemberAdded(podId, userId);',
+      '  },',
+      '};',
+    ]],
+    ['route handlers', [
+      "router.post('/leave', auth, async (req, res) => {",
+      '  req.pod.members.push(req.userId);',
+      '});',
+      "router.post('/join', auth, async (req, res) => {",
+      '  await mirrorMemberAdded(req.podId, req.userId);',
+      '});',
+    ]],
+    ['handlers wrapped at the top level', [
+      'export const leave = wrap(async (req, res) => {',
+      '  req.pod.members.push(req.userId);',
+      '});',
+      'export const join = wrap(async (req, res) => {',
+      '  await mirrorMemberAdded(req.podId, req.userId);',
+      '});',
+    ]],
+    ['route handlers registered inside a function', [
+      'export const mount = (router) => {',
+      "  router.post('/leave', auth, async (req, res) => {",
+      '    req.pod.members.push(req.userId);',
+      '  });',
+      "  router.post('/join', auth, async (req, res) => {",
+      '    await mirrorMemberAdded(req.podId, req.userId);',
+      '  });',
+      '};',
+    ]],
+    ['a returned function and its factory', [
+      'const leave = (pod) => {',
+      '  pod.members.push(pod.ownerId);',
+      '  return async () => {',
+      '    await mirrorMemberAdded(pod._id, pod.ownerId);',
+      '  };',
+      '};',
+    ]],
+  ])('keeps %s apart', (_name, lines) => {
+    expect(flagged(lines.join('\n'))).toHaveLength(1);
+  });
+
+  // A named local helper is a function of its own, but one that sits between
+  // the write and the mirror does not end the handler it lives in.
+  it('reads past a local helper to the mirror call in the same function', () => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  const label = (id: string) => id.toString();',
+      '  await mirrorMemberAdded(pod._id, label(userId));',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  // An inline callback runs as part of the handler that wrote it, so it is
+  // attributed to that handler in both directions.
+  it('attributes a write in an inline callback to the handler holding it', () => {
+    expect(flagged([
+      "router.post('/join', auth, async (req, res) => {",
+      '  await Promise.all(req.pods.map(async (pod) => {',
+      '    pod.members.push(req.userId);',
+      '    await pod.save();',
+      '  }));',
+      '  await mirrorMemberAdded(req.podId, req.userId);',
+      '});',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('attributes a mirror call in an inline callback to the handler holding it', () => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  await pod.save();',
+      '  void (async () => {',
+      '    await mirrorMemberAdded(pod._id, userId);',
+      '  })();',
+      '}',
+    ].join('\n'))).toEqual([]);
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  setImmediate(function later() {',
+      '    mirrorMemberAdded(pod._id, userId);',
+      '  });',
+      '}',
+    ].join('\n'))).toEqual([]);
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      '  await new Promise((resolve) => {',
+      '    mirrorMemberAdded(pod._id, userId).then(resolve);',
+      '  });',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('keeps inline callbacks in one handler away from the next handler', () => {
+    expect(flagged([
+      'async function leave(pods, userId) {',
+      '  pods.forEach((pod) => {',
+      '    pod.members.push(userId);',
+      '  });',
+      '}',
+      'async function join(pods, userId) {',
+      '  pods.forEach((pod) => {',
+      '    mirrorMemberAdded(pod._id, userId);',
+      '  });',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('still needs the mirror after the write, inside the window', () => {
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  await mirrorMemberAdded(pod._id, userId);',
+      '  pod.members.push(userId);',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+    expect(flagged([
+      'async function join(pod, userId) {',
+      '  pod.members.push(userId);',
+      ...Array.from({ length: MEMBER_WINDOW }, () => '  step();'),
+      '  await mirrorMemberAdded(pod._id, userId);',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('reports a write outside any function, and pairs it with a mirror outside any function', () => {
+    expect(flagged('pod.members.push(userId);\nstep();')).toHaveLength(1);
+    expect(flagged('pod.members.push(userId);\nmirrorMemberAdded(podId, userId);')).toEqual([]);
+    expect(flagged([
+      'pod.members.push(userId);',
+      'function join() {',
+      '  return mirrorMemberAdded(podId, userId);',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('applies the same attribution to pod and User creations', () => {
+    expect(scanSource([
+      'const make = async (name) => {',
+      '  return Pod.create({ name });',
+      '};',
+      'const sync = (podId: string,',
+      '  name: string,',
+      ') => mirrorPodCreated(podId, name);',
+    ].join('\n'), POD_CREATE, CREATE_WINDOW)).toHaveLength(1);
+    expect(scanSource([
+      'const make = async (name) => {',
+      '  const user = await User.create({ name });',
+      '  const value = (',
+      '    user.id',
+      '  );',
+      '  await mirrorUser(user);',
+      '  return value;',
+      '};',
+    ].join('\n'), USER_CREATE, USER_WINDOW, USER_MIRROR)).toEqual([]);
   });
 
   it('accepts a real mirror call after the mutation', () => {

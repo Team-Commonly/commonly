@@ -33,12 +33,17 @@ by the queued `finishWorkspaceOnboarding` tail, not on the response path. User l
 
 `__tests__/unit/services/pgMirrorWriteSites.test.js` scans `controllers/`,
 `routes/` and `services/` for Mongo member mutations and pod creations without a
-mirror write nearby, and for User creations without `mirrorUser` /
-`syncUserToPostgreSQL`. Comments are stripped before matching (a mirror call
-in a comment does not count), and patterns match across lines, so a `$pull: {`
-whose `members` sits on the next line is caught. Fixture tests in the same file
-pin each shape the detector must catch and one it must pass. A new site fails it until it mirrors, or until it is added
-to `ALLOWED` with the reason the mirror may lag.
+mirror write after them, and for User creations without `mirrorUser` /
+`syncUserToPostgreSQL`. The mirror must sit in the same function, within the
+scan's window of lines. The TypeScript parser decides which function that is, so
+a neighbour's mirror call cannot vouch for a write. An inline callback, one
+passed to a call or called on the spot, counts as part of the function around
+it; a `router.post(` handler counts as its own function. Comments are stripped
+before matching (a mirror call in a comment does not count), and patterns match
+across lines, so a `$pull: {` whose `members` sits on the next line is caught.
+Fixture tests in the same file pin each shape the detector must catch and each
+it must pass. A new site fails it until it mirrors, or until it is added to
+`ALLOWED` with the reason the mirror may lag.
 
 ## What caused the 2026-11-05 drift
 
