@@ -310,6 +310,9 @@ export async function pruneStaleInstallations(
       const agentUser = await User.findOne({ username }).select('_id').lean();
       if (agentUser && inst.podId) {
         await Pod.updateOne({ _id: inst.podId }, { $pull: { members: agentUser._id } });
+        // F183: best-effort PG mirror write; never fails the prune.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        await require('./pgMirrorWrite').mirrorMemberRemoved(String(inst.podId), String(agentUser._id));
       }
 
       // A pruned install is an uninstall: once none is active, the agent's

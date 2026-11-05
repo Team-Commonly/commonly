@@ -485,6 +485,9 @@ const autoJoinAgentToPod = async (
   // Add to pod.members if not already.
   try {
     await Pod.updateOne({ _id: podId }, { $addToSet: { members: targetUser._id } });
+    // F183: best-effort PG mirror write; it swallows its own failure.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(targetUser._id));
   } catch (err) {
     console.warn('[mention-autojoin] pod.members $addToSet failed:', (err as Error).message);
   }

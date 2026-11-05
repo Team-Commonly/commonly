@@ -250,4 +250,58 @@ describe('pgMessageController', () => {
     expect(res.status).not.toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith([{ id: 'm1' }]);
   });
+
+  // F183: PG `pods.created_by` is a mirror, and on 2026-11-05 39 production pods
+  // carried an owner Mongo disagrees with. The delete decision reads Mongo's
+  // `createdBy`; the mirror row neither grants nor blocks.
+  describe('deleteMessage owner decision (F183)', () => {
+    const mongoOwner = (createdBy) => {
+      MongoPod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(createdBy === null ? null : { createdBy }),
+        }),
+      });
+    };
+    const del = async (userId) => {
+      const res = jsonRes();
+      await controller.deleteMessage({ params: { id: '42' }, userId, user: { id: userId } }, res);
+      return res;
+    };
+    beforeEach(() => {
+      PGMessage.findById.mockResolvedValue({ id: 42, user_id: 'author', pod_id: 'p1' });
+      PGMessage.delete.mockResolvedValue({ id: 42 });
+    });
+
+    it('refuses a non-owner whom the stale PG mirror names as created_by', async () => {
+      PGPod.findById.mockResolvedValue({ id: 'p1', created_by: 'stale-owner' });
+      mongoOwner('real-owner');
+      const res = await del('stale-owner');
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets the Mongo owner delete even when the PG mirror names someone else', async () => {
+      PGPod.findById.mockResolvedValue({ id: 'p1', created_by: 'stale-owner' });
+      mongoOwner('real-owner');
+      const res = await del('real-owner');
+      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).toHaveBeenCalledWith('42');
+      expect(res.json).toHaveBeenCalledWith({ msg: 'Message deleted' });
+    });
+
+    it('refuses a non-author when Mongo has no such pod, whatever the mirror says', async () => {
+      PGPod.findById.mockResolvedValue({ id: 'p1', created_by: 'someone' });
+      mongoOwner(null);
+      const res = await del('someone');
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
+    it('still lets the author delete without consulting either owner', async () => {
+      mongoOwner('real-owner');
+      const res = await del('author');
+      expect(PGMessage.delete).toHaveBeenCalledWith('42');
+      expect(res.status).not.toHaveBeenCalledWith(401);
+    });
+  });
 });

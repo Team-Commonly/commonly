@@ -1359,6 +1359,9 @@ const executeCreatePod = async (row: IApprovalAction): Promise<unknown> => {
         { _id: pod._id, members: { $ne: botUser._id } },
         { $push: { members: botUser._id } },
       );
+      // F183: best-effort PG mirror write; never fails the approval.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('./pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(botUser._id));
       agentJoined = true;
     } else {
       agentJoinError = 'agent identity could not be resolved';

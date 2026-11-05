@@ -705,6 +705,18 @@ spec:
           value: {{ .Values.backend.env.syntheticAccountPurge | quote }}
         {{- end }}
 
+        {{- if .Values.backend.env.pgMirrorRepair }}
+        # F183: the scheduler repairs the PG mirror (pods, pod_members, users)
+        # from Mongo at 03:30 UTC (services/pgMirrorRepairService.ts). Opt-in;
+        # report-only unless pgMirrorRepairApply is "1".
+        - name: PG_MIRROR_REPAIR
+          value: {{ .Values.backend.env.pgMirrorRepair | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.pgMirrorRepairApply }}
+        - name: PG_MIRROR_REPAIR_APPLY
+          value: {{ .Values.backend.env.pgMirrorRepairApply | quote }}
+        {{- end }}
+
         # Native-runtime guardrail set (comma-separated; see
         # docs/runbooks/litellm-guardrails.md). Helm-tracked so the value
         # survives deploys — a kubectl-set env is drift the next upgrade

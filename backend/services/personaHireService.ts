@@ -116,6 +116,9 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
       { _id: podId, members: { $ne: botUser._id } },
       { $push: { members: botUser._id } },
     );
+    // F183: best-effort PG mirror write; never fails the hire.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(botUser._id));
 
     // It speaks first (D2): deterministic and free, so the seat is never a
     // silent tile at the exact moment a first impression forms. Best-effort —
