@@ -324,6 +324,14 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
         && typeof value === 'string'
         && value.includes(ctx.runtimeToken);
       if (carriesRuntimeToken) {
+        // Codex reads these as its own credential or model route, so a value
+        // forwarded under one of these names would be sent to the model endpoint.
+        if (CODEX_OWN_AUTH_ENVS.includes(key)) {
+          throw new Error(
+            `codex MCP server ${server.name} sets ${key} to the seat token; codex reads ${key} `
+            + 'as its own credential, so declare the token under another name',
+          );
+        }
         if (forwardedEnv[key] !== undefined && forwardedEnv[key] !== value) {
           throw new Error(
             `codex MCP servers declare conflicting token-bearing values for env var ${key}`,
@@ -743,6 +751,8 @@ export const publicModelRouteBaseUrl = (source = {}) => {
 // auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
 // CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
 // it counts as a login whatever auth.json says.
+const CODEX_OWN_AUTH_ENVS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'];
+
 const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
   + 'use an API key for a custom route';
 

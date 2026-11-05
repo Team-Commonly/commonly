@@ -1254,6 +1254,28 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
     expect(warned.join('\n')).toMatch(/wants the seat credential as a command argument/);
   });
 
+  test.each(['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'])(
+    'an MCP entry that puts the token under codex\'s own credential name %s is refused before codex runs',
+    async (name) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const err = await codex.spawn('hi', {
+        sessionId: null,
+        _spawnImpl: impl,
+        env: spawnEnv(),
+        runtimeToken: 'cm_agent_secret',
+        instanceUrl: 'https://api.example.test',
+        environment: {
+          model: 'test-model',
+          mcp: [{ name: 'legacy', transport: 'stdio', command: ['legacy-bin'], env: { [name]: '${COMMONLY_AGENT_TOKEN}' } }],
+        },
+      }).then(() => null, (e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain(name);
+      expect(err.message).not.toContain('cm_agent_secret');
+      expect(calls).toHaveLength(0);
+    },
+  );
+
   test('an env value that merely contains the token is forwarded too', async () => {
     const { flags, env, warned } = await spawnCapturingWarnings([{
       name: 'legacy',
