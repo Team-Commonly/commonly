@@ -235,16 +235,18 @@ support is not built yet; when it lands it references the image the same way, an
 pulls it from its publisher.
 
 **Auth hot path** (CI bench `backend/__tests__/bench/authHotPath.bench.js`: 5,000 users, 2,000 pods,
-3,000 timed runs after 200 warm-up, each store on its own runner, ms):
+3,000 timed runs after 200 warm-up, the same three hand-built indexes on both stores, each store on
+its own runner, CI run 42005958108, ms). At this size every row is in cache, so this is the round
+trip, not a cold read:
 
 | Query | FerretDB p50 / p95 / p99 | MongoDB p50 / p95 / p99 |
 |---|---|---|
-| Session account read (auth middleware) | 1.02 / 1.28 / 1.95 | 0.52 / 0.83 / 1.15 |
-| `lastActive` write (auth middleware) | 1.83 / 2.55 / 4.39 | 0.39 / 0.72 / 0.91 |
-| Pods for a member (pod list) | 0.95 / 1.09 / 1.58 | 0.32 / 0.62 / 0.80 |
-| User by username (login) | 0.94 / 1.05 / 1.66 | 0.32 / 0.63 / 0.79 |
+| Session account read (auth middleware) | 1.03 / 1.30 / 1.94 | 0.75 / 1.00 / 1.60 |
+| `lastActive` write (auth middleware) | 1.53 / 1.94 / 3.74 | 0.69 / 0.89 / 1.24 |
+| Pods for a member (pod list) | 0.97 / 1.16 / 1.73 | 0.63 / 0.79 / 1.35 |
+| User by username (login) | 0.94 / 1.07 / 1.70 | 0.63 / 0.69 / 0.90 |
 
-FerretDB adds about 0.5 to 2 ms at p95 per query, the write the most: inside a request's budget for
+FerretDB adds about 0.3 to 1 ms at p95 per query, the write the most: inside a request's budget for
 a self-hosted instance, and the reason production stays on MongoDB until the Postgres port.
 
 ## Risks
