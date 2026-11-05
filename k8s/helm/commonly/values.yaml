@@ -41,6 +41,15 @@ aiProviders:
   anthropic:
     enabled: false
     nativeModel: claude-haiku-5-5
+  # DeepSeek through LiteLLM: the deepseek-v4-flash and deepseek-flash-1017
+  # routes, LiteLLM's DEEPSEEK_API_KEY (from commonly-deepseek-api-key), the
+  # Gemini/gpt-4o stand-ins and the Gemini fallbacks, and the backend's
+  # LITELLM_CHAT_MODEL default. On by default: DeepSeek is the base chart's
+  # default model (litellm.agentDefaultModel) and stays a self-host option.
+  # Off, LITELLM_CHAT_MODEL follows litellm.agentDefaultModel, which must then
+  # name another route. Dev turns it off (F159).
+  deepseek:
+    enabled: true
 
 # Web search for native turns (TASK-267a). Off by default: on, the api-keys
 # ExternalSecret references commonly-dev-search-api-key, and ESO rejects the

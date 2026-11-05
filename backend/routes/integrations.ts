@@ -61,6 +61,7 @@ import { readDiscordInstallProof } from '../utils/discordInstallProof';
 import {
   assertCanBindSurface, isSurfaceBindType, retargetsSurface, SurfaceBindRefusedError,
 } from '../services/chatRelay/bindSurface';
+import { liveRelayRefusalFor } from '../services/chatRelay/adapters';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -492,6 +493,50 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
+// F161: "Add the bot again" on a Discord row that dropped starts a fresh
+// install, and the bind below writes a new row. The caller's own dropped rows
+// on the same pod, guild and channel are then retired the way Remove retires a
+// row: grants revoked, webhook deleted, platform record gone. The row itself is
+// kept, inactive, rather than deleted. Best effort: a failure here leaves a
+// stale row, never a failed bind.
+const retireDroppedDiscordRows = async (
+  keepId: unknown, podId: unknown, userId: string, serverId: string, channelId: string,
+): Promise<void> => {
+  // Every value comes from the request path: pin each to the shape it must
+  // have, so the filter can only ever hold plain strings.
+  const guild = String(serverId);
+  const channel = String(channelId);
+  const pod = String(podId);
+  if (!/^\d{17,20}$/.test(guild) || !/^\d{17,20}$/.test(channel) || !/^[a-f0-9]{24}$/i.test(pod)) return;
+  let dropped: Array<{ _id: unknown }> = [];
+  try {
+    dropped = await Integration.find({
+      _id: { $ne: String(keepId) },
+      type: 'discord',
+      isActive: true,
+      podId: pod,
+      createdBy: String(userId),
+      'config.serverId': guild,
+      'config.channelId': channel,
+      status: { $in: ['error', 'disconnected'] },
+    }) as Array<{ _id: unknown }>;
+  } catch (error) {
+    console.warn(`Discord rebind: could not look up dropped rows: ${(error as Error).message}`);
+    return;
+  }
+  await Promise.all(dropped.map(async (row) => {
+    try {
+      await revokeConnectionGrants({ connection: row, revokedBy: userId });
+      const service = new DiscordService(row._id);
+      if (await service.initialize()) await service.disconnect();
+      await DiscordIntegration.findOneAndDelete({ integrationId: row._id });
+      await Integration.findByIdAndUpdate(row._id, { $set: { isActive: false, status: 'disconnected' } });
+    } catch (error) {
+      console.warn(`Discord rebind: could not retire integration ${String(row._id)}: ${(error as Error).message}`);
+    }
+  }));
+};
+
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: unknown; config?: Record<string, unknown> };
@@ -545,6 +590,17 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (relay.invalid) return res.status(400).json(relayFlagError(relay.invalid));
     const nextConfig: Record<string, unknown> = relay.next;
     if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
+    // F131: the installer's Discord user id, from the OAuth callback's proof and
+    // nowhere else (a body copy was stripped above). Only a proof for this pod,
+    // this guild and this caller counts; without one the row has no proven
+    // Discord author and cannot relay live.
+    if (type === 'discord') {
+      const proof = readDiscordInstallProof((req.body as { install?: unknown })?.install);
+      if (proof?.discordUserId && proof.podId === String(podId)
+        && proof.guildId === String(config.serverId) && proof.userId === String(req.user?.id)) {
+        nextConfig.discordUserId = proof.discordUserId;
+      }
+    }
     // First-run default: mirror. A fresh connector has no leadAgentUsername
     // and its agents use no escalation markers, so attention mode relays
     // NOTHING — a new user's first experience of the bridge would be silence.
@@ -559,6 +615,14 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // streaming outbound. The creator IS the authenticated caller, so the
     // defaulted case is stamped exactly like an explicit liveRelay:true.
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
+    // The platform's live-relay rule (its adapter's declaration), on the config
+    // as it will be stored, before the row or any webhook exists.
+    if (nextConfig.liveRelay === true) {
+      const refusal = liveRelayRefusalFor(
+        type, { config: nextConfig, createdBy: req.user?.id, pod: targetPod }, String(req.user?.id || ''),
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
+    }
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     // F143: a chat surface people outside the pod can read (a Slack channel, a
@@ -634,6 +698,9 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       if (!initialized) return res.status(500).json({ message: 'Failed to initialize integration' });
       const connected = await service.connect();
       if (!connected) console.warn('Integration initialized but failed to connect');
+      await retireDroppedDiscordRows(
+        integration._id, podId, String(req.user?.id), String(config.serverId), String(config.channelId),
+      );
     }
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
@@ -957,11 +1024,21 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       });
     }
     if (incoming && incoming.liveRelay === true) {
-      // Relay authors inbound as linkedUserId and streams outbound to chatId;
-      // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
-      if (nextConfig.chatId && nextConfig.chatType !== 'private') {
-        return res.status(400).json({ message: 'Live relay requires a private chat with the bot; this connector is bound to a group' });
-      }
+      // Relay authors inbound as linkedUserId, which is stamped from this caller.
+      // Each platform declares when that is honest (its inbound adapter's
+      // liveRelayRefusal): a 1:1 private chat for Telegram and Slack (#1289
+      // inbound, F2 outbound), the proven installer for Discord (F131), who must
+      // still be a listed member of the pod the row serves (F132 review).
+      const refusal = liveRelayRefusalFor(
+        integration.type,
+        {
+          config: nextConfig,
+          createdBy: integration.createdBy,
+          pod: integration.podId ? await Pod.findById(String(integration.podId)) : null,
+        },
+        requesterId,
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
       nextConfig.linkedUserId = req.user?.id;
     }
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);

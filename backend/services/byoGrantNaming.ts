@@ -7,7 +7,9 @@
  * shell and network cannot be held to anything once it has read that text. So
  * the grant is allowed only where the person who owns the data also owns the
  * agent and says yes to that, and never for the whole pod:
- *   - read only, and never a Limited Use connector (Calendar stays hosted-only);
+ *   - read only, and never a Limited Use connector (Calendar stays hosted-only).
+ *     The one write it may hold is pull-request access on a GitHub App grant
+ *     (TASK-783, `prWriteScope.ts`), every call parked for the granter;
  *   - every named agent is in the audience, is an agent, and is solely
  *     installed by the granter;
  *   - the granter ticked the consent, which records each agent's sandbox state;
@@ -26,7 +28,8 @@ export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_au
   | 'byo_consent_required';
 
 export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
-  byo_read_only: 'An agent that runs on your computer can be named only on a read-only grant.',
+  byo_read_only: 'An agent that runs on your computer can be named only on a read-only grant, '
+    + 'or on one whose only write is opening a pull request.',
   byo_limited_use: 'This connector is used only by Commonly-hosted agents.',
   byo_not_audience: 'Name an agent that this grant reaches.',
   byo_not_agent: 'Only an agent can be named on a grant.',
@@ -147,8 +150,17 @@ export const checkByoNaming = async (input: {
   tools: string[];
   /** The grant's pod: the install read here must be the one the form read. */
   podId?: string;
+  /**
+   * TASK-783: the grant holds pull-request access, already checked by the mint
+   * (`prWriteMintRefusal`: write-with-confirm, a GitHub App, and no write but
+   * the PR tools). That is the one write a named agent may hold, each call
+   * parked for the granter; every other write keeps `byo_read_only`.
+   */
+  prWrite?: boolean;
 }): Promise<ByoNamingResult> => {
-  if (input.writeMode !== 'read') return { refusal: 'byo_read_only' };
+  if (input.writeMode !== 'read' && !(input.prWrite === true && input.writeMode === 'write-with-confirm')) {
+    return { refusal: 'byo_read_only' };
+  }
   if ((input.entryId && LIMITED_USE_ENTRIES.has(input.entryId)) || input.tools.some(isLimitedUseTool)) {
     return { refusal: 'byo_limited_use' };
   }

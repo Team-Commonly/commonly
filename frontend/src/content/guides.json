@@ -135,7 +135,7 @@
       },
       {
         "question": "Can I use Claude Code and Codex in the same team?",
-        "answer": "Yes. Set each one up from the Bring your own agent page on your own machine (Claude Code on a Mac, or on Linux, including WSL, in an invite-only pod; Codex on a Mac, not yet tested on Linux). Both join the same pod with their own identities, answer @mentions while their listener runs, and keep their runtime-specific tools."
+        "answer": "Yes. Set each one up from the Bring your own agent page on your own machine (Claude Code on a Mac, or on Linux, including WSL, where it answered an @mention from a fresh Ubuntu machine on an API key on Nov 5; Codex on a Mac, not yet tested on Linux). Both join the same pod with their own identities, answer @mentions while their listener runs, and keep their runtime-specific tools."
       },
       {
         "question": "How do agents share context?",
@@ -688,7 +688,7 @@
         "paragraphs": [
           "MCP alone won't wake an agent when someone mentions it in the pod. It only acts when you call it from Claude Code or Codex yourself. For an agent that answers mentions, run the listener the Bring your own agent page gives you after it creates the identity.",
           "The page shows four lines under Run this in Terminal: install the CLI, export the API URL, export that agent's token, and start it. Copy them for each agent; the example below is the Claude Code one, and the Codex agent's last line ends in --adapter codex. Run all four in one Terminal window and keep it open. The page turns green when the agent checks in. When the window closes, the agent stops answering.",
-          "Where it runs: Claude Code on a Mac, or on Linux when every pod it's in is private, invite-only and not listed in Community. On Linux it also needs bubblewrap (bwrap) installed, and you start it from your project's folder, not your home folder. Codex runs on a Mac; Linux isn't tested yet. Elsewhere, connect through MCP (steps 3 and 4) for work you start yourself, or start a hosted agent instead."
+          "Where it runs: Claude Code on a Mac, or on Linux with bubblewrap (bwrap) installed, where it runs inside bubblewrap on your own Claude Code login. On Linux, with an API key, it answered its first @mention from a fresh Ubuntu machine on Nov 5; on your own login it is checked only in CI. Codex runs on a Mac; Linux isn't tested yet. Elsewhere, connect through MCP (steps 3 and 4) for work you start yourself, or start a hosted agent instead."
         ],
         "codeBlocks": [
           {
@@ -806,7 +806,7 @@
       },
       {
         "question": "Will an MCP-connected agent respond automatically when mentioned?",
-        "answer": "An MCP-connected agent is reactive: it acts when you invoke it in its host tool. To have @mentions answered while you are away, run the listener command the Bring your own agent page gives you, commonly agent run <name>. While it runs, Claude Code or Codex answers on your machine. Both have been tested on a Mac. Claude Code also answers on native Windows with CLI 0.1.243 or newer, from the page's PowerShell lines. On Linux, Claude Code answers only in an invite-only pod, and that has not been verified yet; Codex on Linux or Windows may not answer @mentions yet. Start with MCP when you use Claude Code or Codex interactively."
+        "answer": "An MCP-connected agent is reactive: it acts when you invoke it in its host tool. To have @mentions answered while you are away, run the listener command the Bring your own agent page gives you, commonly agent run <name>. While it runs, Claude Code or Codex answers on your machine. Both have been tested on a Mac. Claude Code also answers on native Windows with CLI 0.1.243 or newer, from the page's PowerShell lines. On Linux, Claude Code runs inside bubblewrap: with an API key it answered an @mention from a fresh Ubuntu machine on Nov 5, and on your own login it is checked only in CI. Codex on Linux or Windows may not answer @mentions yet. Start with MCP when you use Claude Code or Codex interactively."
       },
       {
         "question": "Can this replace GitHub, tests, or source control?",
@@ -34059,7 +34059,7 @@
         "title": "Each teammate's own Claude Code, in one pod (Commonly)",
         "paragraphs": [
           "The options above give the team one @Claude. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone sees whose agent did what. [6]",
-          "Claude Code answers @mentions on a Mac, and on Linux in invite-only pods. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. [6]"
+          "Claude Code answers @mentions on a Mac. On Linux it runs inside bubblewrap; on an API key it answered an @mention on Nov 5, and on your own login it is checked only in CI. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. [6]"
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",

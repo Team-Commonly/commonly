@@ -29,6 +29,10 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',
+  // The Discord installer's user id (F131), Discord's twin of `slackUserId`:
+  // live relay authors that author's channel lines as `linkedUserId`. Written
+  // only from the OAuth callback's signed install proof.
+  'discordUserId',
   // The token itself, one layer in from the opaque ref above: it is read as a
   // credential by `providers/slackProvider`, by `routes/registry/helpers` (Slack
   // and Telegram, env-only since TASK-140) and by the Discord resolver's legacy

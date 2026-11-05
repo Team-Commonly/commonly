@@ -12,6 +12,7 @@ on:
       - 'cli/src/lib/public-withheld-tools.js'
       - 'packages/seats/**'   # claude.js loads the proxy from it (cli depends on file:../packages/seats)
       - 'cli/__tests__/claude.bwrap-public.smoke.test.mjs'
+      - 'cli/scripts/security/deny-rule-refusal.mjs'   # the smoke's refusal verdict (F154)
       - '.github/workflows/claude-bwrap-public.yml'
 
 permissions:

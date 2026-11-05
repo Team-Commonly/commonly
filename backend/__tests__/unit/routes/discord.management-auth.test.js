@@ -172,6 +172,8 @@ describe('discord management route auth', () => {
 
     expect(res.status).toBe(200);
     expect(DiscordService).toHaveBeenCalledWith('integration-1');
+    // F161 item 2: the route no longer claims the legacy set per guild; it is global.
+    expect(res.body.commands).toEqual([]);
   });
 
   it('requires auth and admin access for register-all', async () => {

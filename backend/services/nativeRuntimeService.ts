@@ -2333,7 +2333,9 @@ export async function runAgent(
   }
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
-  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
+  let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES, {
+    readContextOffered: toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_read_context'),
+  });
   const modelFor = (connectorRun: boolean) => nativeModelFor({
     configured: cfg.model, connectorRun, nativeModel: NATIVE_RUNTIME_MODEL, chatModel: DEFAULT_MODEL,
   });

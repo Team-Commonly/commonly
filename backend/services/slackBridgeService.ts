@@ -17,10 +17,11 @@ import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
 import {
   loadInboundAuthor,
+  proveInboundSender,
   relayAgentMessageThroughAdapter,
   writeInboundAsLinkedUser,
 } from './chatRelay/chatRelayCore';
-import type { ChatRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
+import type { ChatRelayAdapter, InboundRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
 
 // One implementation, in slackApi.ts one step above the call that posts it. This
 // file and decisionCardReconcileService each carried their own copy, which is how
@@ -281,6 +282,31 @@ export const routeSlackReplyContent = (opts: {
     : { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
+const SLACK_LIVE_RELAY_REFUSAL = 'Live relay requires a direct message with the bot; '
+  + 'this connector is bound to a channel';
+
+// Slack's inbound proof: the event's sender is the Slack user the OAuth bind
+// proved (`config.slackUserId`), never a value a request supplied.
+export const slackInboundAdapter: InboundRelayAdapter<SlackIntegrationDoc, { user?: string }> = {
+  provider: 'slack',
+  senderIsLinkedUser: (integration, event) => {
+    const slackUserId = integration.config?.slackUserId;
+    return Boolean(slackUserId) && event?.user === slackUserId;
+  },
+  // Slack's own audience test, not the shared private-chat one: the OAuth bind
+  // stores the installer's DM as chatType 'im', which that rule read as a group
+  // and refused. A DM (`im`) with no channel is 1:1; a channelId, or a bound
+  // chat of any other type, is a channel. The same reading as F143's
+  // surfaceBindDeclarations.slack and isRelayableIntegration above. A row with
+  // no chat yet has nothing to judge.
+  liveRelayRefusal: (row) => {
+    const config = row.config || {};
+    if (config.channelId) return SLACK_LIVE_RELAY_REFUSAL;
+    if (config.chatId && config.chatType !== 'im') return SLACK_LIVE_RELAY_REFUSAL;
+    return null;
+  },
+};
+
 // Inbound Slack DM → Commonly pod. The event route has already proven the
 // Slack signature and selected the team/channel row; this function repeats
 // the ownership-shaped checks because a bridge is never allowed to rely on a
@@ -307,12 +333,13 @@ export const relaySlackMessageToPod = async (opts: {
     return { relayed: false };
   }
   const config = integration.config || {};
-  if (
-    !isInboundRelayableIntegration(integration, String(integration.podId))
-    || !config.linkedUserId
-    || !config.slackUserId
-    || event.user !== config.slackUserId
-  ) {
+  // The proof is slackInboundAdapter.senderIsLinkedUser: the DM sender is the
+  // Slack user the OAuth bind proved. The core mints the ProvenSender every
+  // write below requires only when it passes.
+  const sender = isInboundRelayableIntegration(integration, String(integration.podId))
+    ? proveInboundSender(slackInboundAdapter, integration, event)
+    : null;
+  if (!sender) {
     console.warn(
       `[slack-bridge] inbound dropped integration=${String(integration._id)}: `
       + 'unbound or mismatched DM sender',
@@ -399,7 +426,6 @@ export const relaySlackMessageToPod = async (opts: {
     // neither addresses an agent, so they must not turn a plain DM into a mention.
     && extractMentions(String(rawText).replace(/<[^<>]*>/g, ' ')).length === 0;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
-  const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -407,7 +433,7 @@ export const relaySlackMessageToPod = async (opts: {
 
   const author = await loadInboundAuthor({
     podId,
-    linkedUserId,
+    sender,
     logPrefix: '[slack-bridge]',
     onNotMember: () => replyNoActivePod(integration),
   });
@@ -432,7 +458,7 @@ export const relaySlackMessageToPod = async (opts: {
   await writeInboundAsLinkedUser({
     podId,
     podType: pod.type,
-    linkedUserId,
+    sender,
     linkedUser,
     content,
     replyToMessageId,
@@ -453,4 +479,5 @@ module.exports = {
   isRelayableIntegration,
   isInboundRelayableIntegration,
   slackRelayAdapter,
+  slackInboundAdapter,
 };

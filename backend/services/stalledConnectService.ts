@@ -462,7 +462,9 @@ const resolveConnected = async ({
     // `lastListenedAt` leaving null is a PERMANENT transition, so this timestamp
     // survives a wrapper that connected and stopped again between passes —
     // which is why the confirmation needs no time bound (ux-lead, 53307).
-    const firstSeenAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : now;
+    // It is the LATEST listen, not the first: token rows keep no first-listen
+    // time, so the post says "last checked in".
+    const lastCheckInAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : null;
     const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
     let resolutionMessageId = '';
     try {
@@ -482,7 +484,7 @@ const resolveConnected = async ({
           : composeStalledConnectResolution({
             displayName: ep.displayName || String(ep.agentName),
             handle,
-            firstSeenAt,
+            lastCheckInAt,
             // Derived at POST time, not at connect time: the past is a fact, the
             // present is an inference, and they get different voices.
             presentState: derived.state,

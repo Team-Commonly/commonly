@@ -174,18 +174,24 @@ export const scoutApp = {
     // as public seats 2026-11-04. Windows: Claude Code walked on prod from the
     // page's PowerShell lines with the published CLI (D164, byo-windows.yml run
     // 41926949969); 0.1.243 is the first release with the Windows npm fix.
-    // Revisit when Claude Code runs inside the Linux jail: that cell changes,
-    // and so does this text.
+    // Linux: Claude Code runs in the bubblewrap jail since F96 (#3395). The
+    // page's lines answered an @mention on prod on an API key through a model
+    // gateway (byo-linux.yml run 41945040493); the own-login path is CI only.
     + '- Where their own agent can be connected as a teammate that answers '
     + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
     + 'Claude Code on native Windows too, with CLI 0.1.243 or newer: the connect '
     + 'page gives PowerShell lines that run it with no sandbox, and it gets no '
     + 'connector grants. '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
-    + 'other OSs unverified. Claude Code on Linux (WSL included) '
-    + 'is not verified to answer @mentions today; fixes are in flight, '
-    + 'give no date. Codex off a Mac is not tested. For Claude Code on Linux or '
-    + 'WSL, do not propose a connect card: offer "Run it here" with '
+    + 'other OSs unverified. Claude Code on Linux (WSL included) runs in a '
+    + 'bubblewrap sandbox. With an API key (ANTHROPIC_API_KEY), in a pod that is '
+    + 'not fully private, the page\'s Linux lines answered an @mention on Commonly '
+    + 'from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is '
+    + 'checked only in CI with a stand-in model, so say which. '
+    + 'Codex off a Mac is not tested. For Claude Code on Linux or '
+    + 'WSL, do not propose a connect card: point them to "Use my own agent" on the '
+    + 'Bring your own page, which shows the Linux command (it needs bubblewrap '
+    + 'installed), offer "Run it here" with '
     + 'commonly_offer_hosted_agent, and also say they can use the pod from their '
     + 'own Claude Code sessions with the MCP command on the connect page (not '
     + 'yet walked on Linux). `claude mcp list` '

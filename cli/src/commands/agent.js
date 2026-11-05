@@ -81,7 +81,7 @@ import {
   withDefaultMcpServer,
   withDefaultSandbox,
 } from '../lib/default-environment.js';
-import { withholdGrantBroker } from '../lib/grant-broker-guard.js';
+import { mergeGrantBrokers, withholdGrantBroker } from '../lib/grant-broker-guard.js';
 import {
   FOCUS_FRAME_MAX_CODE_POINTS,
   formatPodFocusFrame,
@@ -1667,6 +1667,9 @@ export const performRun = ({
   // saved on the server before each turn. Off for daemon seats, whose daemon
   // projects the same values into `environment`.
   readSavedControls = false,
+  // F150: a seat with no daemon reads its live grant brokers before each turn.
+  // Off for daemon seats, whose daemon merges /assigned's into the record.
+  readGrantBrokers = false,
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
@@ -1744,26 +1747,60 @@ export const performRun = ({
     return spawnPolicyPromise;
   };
 
-  // THE SEAT'S OWN RECORD IS THE ONLY DECLARATION THERE IS. The broker reaches a
-  // seat as an injected MCP entry written by hand into its environment — no
-  // server projection puts it there (`GRANT_BROKER_URL` is imported by one
-  // route, the daemon assignment, and that one already refuses). So a seat run
-  // by `commonly agent run` under launchd spawns the entry verbatim, and the
-  // confinement it promises is declared in a different field (`sandbox`), which
-  // can disagree. The daemon half of this refusal already runs
-  // (`daemon-supervisor.js`); this is the same predicate at the only other site
-  // that can see the record — same code, so one refusal with two emitters.
+  // THE BROKER REACHES A SEAT AS AN INJECTED MCP ENTRY, and the confinement it
+  // promises is declared in a different field (`sandbox`), which can disagree.
+  // Two sources put the entry there. Under the daemon, its work list
+  // (`/api/agent-binding/assigned`) merges the seat's live grants into the
+  // record before this process starts. Without a daemon (`readGrantBrokers`),
+  // this loop reads `/api/agents/runtime/grant-brokers` itself, before every
+  // turn, and merges the same projection the same way (`mergeGrantBrokers`)
+  // (F150). Either way the entry is then judged HERE by `withholdGrantBroker`,
+  // the same predicate the daemon runs: one refusal with two emitters, so the
+  // server's answer can add a broker and the seat's own guard can still
+  // withhold it (pi, an absent sandbox the grant does not name).
   //
-  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what
-  // the adapter spawns with, and the stored record keeps its broker, so the
-  // daemon stays the layer that judges a host it knows. Applied once for the
-  // run rather than per turn: `agent run` reads its record once at boot.
-  const requestedSeatEnvironment = withholdGrantBroker(environment, adapter?.name, {
-    instanceUrl,
-    onRefuse: (refusal, names) => log(
-      `${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`,
-    ),
-  });
+  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what the adapter
+  // spawns with, and the stored record keeps its own entries, so the daemon
+  // stays the layer that judges a host it knows.
+  //
+  // Read per turn, not once at boot: a grant is revoked or expires while a seat
+  // runs, and one GET beside the per-turn reads already made here is cheap; the
+  // daemon re-reads /assigned every 30s and restarts the seat, which is coarser.
+  // A failed read keeps the last answer: a stale entry reaches nothing, because
+  // the broker re-reads the grant and refuses a revoked or expired one on every
+  // call (`toolBrokerService` → `assertGrantUsable`).
+  let lastRefusalKey = null;
+  const guardedEnvironment = (grantBrokers) => withholdGrantBroker(
+    mergeGrantBrokers(environment, grantBrokers), adapter?.name, {
+      instanceUrl,
+      onRefuse: (refusal, names) => {
+        // Said once per change, not once per turn.
+        const key = `${refusal.reason}:${names.join(',')}`;
+        if (key === lastRefusalKey) return;
+        lastRefusalKey = key;
+        log(`${refusal.code} (${refusal.reason}) — withholding ${names.join(', ')}: ${refusal.detail}`);
+      },
+    },
+  );
+  let lastGrantBrokers = [];
+  let lastServerGrantRefusal = null;
+  let requestedSeatEnvironment = guardedEnvironment(lastGrantBrokers);
+  const refreshGrantBrokers = async () => {
+    if (!readGrantBrokers) return;
+    try {
+      const projection = await client.get('/api/agents/runtime/grant-brokers', { adapter: adapter?.name }, {
+        signal: AbortSignal.timeout(5000),
+      });
+      lastGrantBrokers = Array.isArray(projection?.servers) ? projection.servers : [];
+      const refusal = projection?.refusal || null;
+      const refusalKey = refusal ? `${refusal.reason}` : null;
+      if (refusal && refusalKey !== lastServerGrantRefusal) {
+        log(`${refusal.code} (${refusal.reason}) — a live grant was withheld by the server: ${refusal.detail}`);
+      }
+      lastServerGrantRefusal = refusalKey;
+    } catch { /* keep the last answer; the broker refuses a revoked grant on every call */ }
+    requestedSeatEnvironment = guardedEnvironment(lastGrantBrokers);
+  };
   // Without native effort inventory a machine runner cannot promise that a
   // stored effort is supported. Preserve the record and use harness default.
   // Standalone CLI behavior remains under the operator's control.
@@ -1860,6 +1897,7 @@ export const performRun = ({
   let savedControlsNoticeShown = false;
   const refreshSeatEnvironment = async () => {
     const inventory = await runtimeInventoryPromise;
+    await refreshGrantBrokers();
     let desiredEnvironment = requestedSeatEnvironment;
     if (readSavedControls) {
       try {
@@ -1871,11 +1909,15 @@ export const performRun = ({
           ...(identity && 'runtimeSourcePodId' in identity ? { runtimeSourcePodId: identity.runtimeSourcePodId } : {}),
         });
       } catch { /* keep the last controls read; a failed read changes nothing */ }
-      desiredEnvironment = withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls);
+      // Keyed on the RECORD's environment, not the merged one: grant brokers
+      // (F150) can give a record with none an `mcp` list, and that must not
+      // turn on saved controls the notice below says don't apply.
+      desiredEnvironment = environment
+        ? withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls) : requestedSeatEnvironment;
       // A record with no environment (from before attach wrote one) isn't
       // given one silently. `agent config` writes one to the record, and from
       // then on saved controls apply. Say so once, with the command.
-      if (!requestedSeatEnvironment && lastSavedControls && !savedControlsNoticeShown) {
+      if (!environment && lastSavedControls && !savedControlsNoticeShown) {
         savedControlsNoticeShown = true;
         const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
         const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
@@ -4490,6 +4532,7 @@ Docs:
           machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
         reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
         readSavedControls: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
+        readGrantBrokers: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),

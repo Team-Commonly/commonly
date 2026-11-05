@@ -314,6 +314,34 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   }
 });
 
+// TASK-782: the grant step reads this to say a connection can see nothing.
+it('a hosted connection whose probe found no projects says reach none; an unknown or positive one says nothing', async () => {
+  const shipped = HOSTED_MCP_ENTRIES.slice();
+  const linearEntry = shipped.find((entry) => entry.id === 'linear');
+  try {
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    const row = (id, reach) => ({
+      _id: id, type: 'hosted-mcp', status: 'connected', createdBy: userId,
+      createdAt: new Date('2026-11-05T10:00:00Z'),
+      config: { entryId: 'linear', intake: 'oauth', credentialRef: `ref-${id}`, ...(reach === undefined ? {} : { reach }) },
+    });
+    Integration.find.mockReturnValue(lean([
+      row('conn-empty', { projects: 0, checkedAt: new Date() }),
+      row('conn-busy', { projects: 3, checkedAt: new Date() }),
+      row('conn-unknown', null),
+      row('conn-old'),
+    ]));
+    const catalog = await catalogFor(userId);
+    const linear = catalog.installables.find((entry) => entry.list === 'tools' && entry.installableId === 'linear');
+    expect(linear.connections.map((c) => [c.connectionId, c.reach])).toEqual([
+      ['conn-empty', 'none'], ['conn-busy', undefined], ['conn-unknown', undefined], ['conn-old', undefined],
+    ]);
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
+
 it("a hosted entry's connections each say how they differ: when, and for a key its agent", async () => {
   const shipped = HOSTED_MCP_ENTRIES.slice();
   const linearEntry = shipped.find((entry) => entry.id === 'linear');

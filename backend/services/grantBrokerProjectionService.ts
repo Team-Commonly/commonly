@@ -2,8 +2,9 @@
  * One definition of "which live grants does this seat have, and what does it
  * receive from them", shared by the two delivery paths:
  *
- *  - the daemon's assignment projection (`routes/agentBinding.ts`), which hands
- *    a seat an MCP server per live grant, and
+ *  - the BYO seat projection (`services/seatGrantBrokerProjection.ts`), which
+ *    hands a seat an MCP server per live grant through the daemon's /assigned
+ *    or, for `commonly agent run` with no daemon, GET /runtime/grant-brokers, and
  *  - a hosted native run (`services/nativeRuntimeService.ts`), which hands the
  *    model the same grants as function tools dispatched in process.
  *
@@ -28,6 +29,8 @@ import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallable
 import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
 import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
 import { isLimitedUseTool } from './limitedUseConnectors';
+import { grantHoldsPrWrite } from './prWriteScope';
+import { PENDING_APPROVAL_NOTE } from './brokerResultMarker';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import { assertGrantUsable, RoomGrantError } from './roomGrantService';
@@ -46,6 +49,8 @@ export interface LiveGrant {
   /** F94: read through `namedByoAgentIds`, which honours them only with consent. */
   byoAgents?: unknown[];
   byoConsent?: unknown;
+  /** TASK-783: read through `grantHoldsPrWrite`, which honours only `true`. */
+  prWrite?: unknown;
 }
 
 /**
@@ -115,7 +120,8 @@ export const selectLiveGrantsForIdentities = async (
     revokedAt: null,
     expiresAt: { $gt: new Date() },
     audience: { $in: ids },
-  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId ownerId byoAgents byoConsent').lean() as LiveGrant[];
+  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId ownerId '
+    + 'byoAgents byoConsent prWrite').lean() as LiveGrant[];
   if (!grants.length) return output;
 
   const pods = scopedPodIds.length
@@ -180,11 +186,12 @@ export interface HostedBrokerProjection {
  *
  * Two deliberate narrowings, both fail-closed:
  *
- *  - **Reads only**. Only definitions whose `requiredWriteMode` is
- *    `read` are offered, even when the grant's own mode would allow a write: a
- *    hosted write's unattended path is not reconciled with ADR-020 D1 yet.
- *    `callTool` re-checks the mode on every call regardless — this is the
- *    surface, not the gate.
+ *  - **Reads, plus the hosted PR writes on a `prWrite` grant**. A definition
+ *    whose `requiredWriteMode` is `read` is offered; of the writes, only
+ *    `HOSTED_PR_WRITE_TOOLS` and only on a grant that holds `prWrite`
+ *    (TASK-783). Both park every call for the owner, so no hosted write runs
+ *    unattended (ADR-020 D1). `callTool` re-checks the scope, the mode and the
+ *    write rule on every call regardless — this is the surface, not the gate.
  *  - **The grant's `tools` list is authoritative** (`assertGrantUsable` refuses
  *    a tool the grant does not name). Filtering here keeps the model from
  *    seeing a tool that would only be refused; it is not what enforces it.
@@ -217,12 +224,16 @@ export const hostedBrokerToolsForRun = async (
     .filter((grant) => !grant.binding || String(grant.binding.podId) === String(podId));
   if (!grants.length) return { tools, dispatch, limitedUse };
 
-  const readable = allToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read');
+  const definitions = allToolDefinitions();
+  const readable = definitions.filter((definition) => definition.requiredWriteMode === 'read');
+  const prWrites = definitions.filter((definition) => HOSTED_PR_WRITE_TOOLS.includes(definition.name)
+    && definition.requiresApproval === true);
   const ordered = [...grants].sort((a, b) => String(a.grantId).localeCompare(String(b.grantId)));
 
   for (const grant of ordered) {
     const allowed = new Set((grant.tools || []).map(String));
-    for (const definition of readable) {
+    const offered = grantHoldsPrWrite(grant) ? [...readable, ...prWrites] : readable;
+    for (const definition of offered) {
       if (!allowed.has(definition.name)) continue;
       if (!limitedUse && isLimitedUseTool(definition.name)) continue;
       const exposed = sanitizeGrantBrokerToolName(definition.name);
@@ -256,6 +267,12 @@ export const hostedBrokerToolsForRun = async (
 
   return { tools, dispatch, limitedUse };
 };
+
+/**
+ * The PR writes a hosted turn can use. `github.push_branch` is not one: it
+ * carries a git bundle, and a hosted turn has no git.
+ */
+export const HOSTED_PR_WRITE_TOOLS: ReadonlyArray<string> = ['github.commit_files', 'github.create_pull_request'];
 
 export type HostedBrokerOutcome = 'ok' | 'refused' | 'failed' | 'pending_approval';
 
@@ -331,6 +348,7 @@ export const dispatchHostedBrokerTool = async (
         content: {
           status: 'pending_approval',
           approvalId: (e.details?.approvalId as string | undefined) || null,
+          message: PENDING_APPROVAL_NOTE,
         },
         callId,
         outcome: 'pending_approval',
@@ -350,6 +368,7 @@ export const dispatchHostedBrokerTool = async (
 
 export default {
   GRANT_BROKER_TOOL_NAME_PATTERN,
+  HOSTED_PR_WRITE_TOOLS,
   grantBrokerServer,
   sanitizeGrantBrokerToolName,
   selectLiveGrantsForIdentities,

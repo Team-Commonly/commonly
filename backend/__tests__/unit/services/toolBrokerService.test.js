@@ -116,6 +116,9 @@ const seatGrant = (overrides = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // A lineage set by one test must not leak into the next: the broker now
+  // reads it on every GitHub call (TASK-783's prWrite rule).
+  getGrantLineage.mockImplementation(async (grant) => [grant]);
   mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'unbound' });
   mockToolCall.create.mockResolvedValue(undefined);
   mockIntegration.findOne.mockResolvedValue({
@@ -731,7 +734,10 @@ describe('host GitHub command tools', () => {
   it.each(cases)('$tool parks before provider use, then executes only with App auth', async ({
     tool, args, method, result, expected,
   }) => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: [tool], writeMode: 'write' }));
+    // TASK-783: opening a PR needs the grant's pull-request access.
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: [tool], writeMode: 'write', ...(tool === 'github.create_pull_request' ? { prWrite: true } : {}),
+    }));
     mockGithub[method].mockResolvedValue(result);
     await expect(callTool({
       grantId: 'grant-1',
@@ -750,6 +756,8 @@ describe('host GitHub command tools', () => {
       args: approvedArgs,
       expectedArgsDigest: digest(approvedArgs),
       approvalId: 'approval-test',
+      // TASK-783: a PR write is judged again against how its caller was parked.
+      callerConfinement: 'confined',
     })).resolves.toMatchObject({ outcome: 'ok' });
     expect(mockGithub[method]).toHaveBeenCalledWith(expect.objectContaining({
       owner: 'Team-Commonly',
@@ -796,14 +804,14 @@ describe('host GitHub command tools', () => {
   it('refuses a sibling PR branch before proposing and again at approved execution', async () => {
     const args = { title: 'Change', head: 'seat/agent-b/work', base: 'main' };
     mockRoomGrant.findOne.mockResolvedValue(seatGrant({
-      tools: ['github.create_pull_request'], writeMode: 'write',
+      tools: ['github.create_pull_request'], writeMode: 'write', prWrite: true,
     }));
     await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a',
       tool: 'github.create_pull_request', args })).rejects.toMatchObject({ code: 'branch_not_owned_by_seat' });
     const approvedArgs = { ...args, owner: 'Team-Commonly', repo: 'commonly' };
     await expect(executeApprovedToolCall({ grantId: 'grant-1', agentUserId: 'agent-a',
       tool: 'github.create_pull_request', args: approvedArgs,
-      expectedArgsDigest: digest(approvedArgs), approvalId: 'approval-test' }))
+      expectedArgsDigest: digest(approvedArgs), approvalId: 'approval-test', callerConfinement: 'confined' }))
       .rejects.toMatchObject({ code: 'branch_not_owned_by_seat' });
     expect(mockGithub.createPullRequest).not.toHaveBeenCalled();
   });
@@ -852,11 +860,29 @@ describe('host GitHub push authority', () => {
   beforeEach(() => { process.env.SEAT_GITHUB_PUSH_ENABLED = 'true'; });
   afterEach(() => { delete process.env.SEAT_GITHUB_PUSH_ENABLED; });
 
-  it.each(['read', 'write-with-confirm'])('refuses %s mode before an App push', async (writeMode) => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode }));
+  it('refuses read mode before an App push', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'read', prWrite: true }));
     await expect(callTool({
       grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
     })).rejects.toMatchObject({ code: 'write_mode_not_allowed' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
+
+  // TASK-783: a push is a PR write. It needs the grant's pull-request access,
+  // and it parks for the owner whatever the grant's mode.
+  it('refuses a push on a grant without pull-request access', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write-with-confirm' }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).rejects.toMatchObject({ code: 'pr_write_not_granted' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
+
+  it.each(['write-with-confirm', 'write'])('parks a push on a %s grant before any App push', async (writeMode) => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode, prWrite: true }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).rejects.toMatchObject({ code: 'approval_required' });
     expect(mockPushSeatBranch).not.toHaveBeenCalled();
   });
 
@@ -868,23 +894,28 @@ describe('host GitHub push authority', () => {
     expect(mockPushSeatBranch).not.toHaveBeenCalled();
   });
 
+  const approvedArgs = { ...args, owner: 'Team-Commonly', repo: 'commonly' };
+  const runApproved = () => executeApprovedToolCall({
+    grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args: approvedArgs,
+    expectedArgsDigest: digest(approvedArgs), approvalId: 'approval-test', callerConfinement: 'confined',
+  });
+
   it('binds the executing seat identity and uses the pinned App repository', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write-with-confirm', prWrite: true }));
     mockPushSeatBranch.mockResolvedValue({ ref: args.ref, oldOid: '0'.repeat(40), newOid: args.newOid });
-    await expect(callTool({
-      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
-    })).resolves.toMatchObject({ outcome: 'ok' });
+    await expect(runApproved()).resolves.toMatchObject({ outcome: 'ok' });
     expect(mockPushSeatBranch).toHaveBeenCalledWith(args, expect.objectContaining({
       owner: 'Team-Commonly', repo: 'commonly', installationId: 'gh-install-1',
     }), 'agent-a');
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
-      tool: 'github.push_branch', providerRepo: 'Team-Commonly/commonly',
-      providerRef: args.ref, outcome: 'ok',
+      tool: 'github.push_branch', providerRef: args.ref, outcome: 'ok', approvalId: 'approval-test',
     }));
   });
 
-  it('shares a mandatory two-call budget across token-bearing and tokenless broker calls', async () => {
-    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+  // An approved push spends the per-seat and per-grant push budget when it runs.
+  // The per-token line has no token to key on there: a person approved it.
+  it('shares a mandatory two-call budget across approved pushes', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write-with-confirm', prWrite: true }));
     mockPushSeatBranch.mockResolvedValue({ ref: args.ref, oldOid: '0'.repeat(40), newOid: args.newOid });
     const spent = new Map();
     mockReserveBudgetLineage.mockImplementation(async (entries) => {
@@ -892,16 +923,13 @@ describe('host GitHub push authority', () => {
       entries.forEach(({ grantId }) => spent.set(grantId, (spent.get(grantId) || 0) + 1));
       return true;
     });
-    const input = { grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args };
-    await expect(callTool({ ...input, agentTokenHash: 'a'.repeat(64) })).resolves.toMatchObject({ outcome: 'ok' });
-    await expect(callTool(input)).resolves.toMatchObject({ outcome: 'ok' });
-    await expect(callTool({ ...input, agentTokenHash: 'b'.repeat(64) }))
-      .rejects.toMatchObject({ code: 'host_github_push_rate_limited', statusCode: 429 });
+    await expect(runApproved()).resolves.toMatchObject({ outcome: 'ok' });
+    await expect(runApproved()).resolves.toMatchObject({ outcome: 'ok' });
+    await expect(runApproved()).rejects.toMatchObject({ code: 'host_github_push_rate_limited', statusCode: 429 });
     expect(mockPushSeatBranch).toHaveBeenCalledTimes(2);
     expect(mockReserveBudgetLineage.mock.calls[0][0]).toEqual(expect.arrayContaining([
       expect.objectContaining({ grantId: expect.stringMatching(/^host-gh:push:seat:/), calls: 2 }),
       expect.objectContaining({ grantId: expect.stringMatching(/^host-gh:push:grant:/), calls: 2 }),
-      expect.objectContaining({ grantId: `host-gh:push:token:${'a'.repeat(64)}`, calls: 2 }),
     ]));
   });
 

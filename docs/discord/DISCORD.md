@@ -77,7 +77,11 @@ Show the status of your Discord integration.
 ```
 
 #### **`/discord-enable`**
-Enable Discord webhook listener for activity aggregation.
+Enable Discord webhook listener for activity aggregation. Only the person who
+connected the channel may run it or `/discord-disable`: their Discord id must
+equal the row's `config.discordUserId`, the rule the bridge commands use. A row
+connected before that id was recorded admits no one until the bot is added
+again from Commonly (F161).
 
 ```
 /discord-enable
@@ -319,7 +323,7 @@ These are the Discord routes currently served by Commonly:
 | `GET` | `/api/discord/callback` | Complete OAuth and redirect to the frontend. |
 | `POST` | `/api/webhooks/discord` | Receive Discord webhook deliveries and verify their signatures. |
 | `POST` | `/api/discord/interactions` | Receive signed slash-command interactions. |
-| `POST` | `/api/discord/register-commands/:integrationId` | Register commands for one integration. |
+| `POST` | `/api/discord/register-commands/:integrationId` | Clear the guild's per-guild command copies; every command is global (F161). |
 | `POST` | `/api/discord/register-all` | Register commands for all integrations; admin-only. |
 | `GET` | `/api/discord/health` | Check global command registration and health. |
 
@@ -340,8 +344,13 @@ npm run discord:verify   # verify the global command set
 ```
 
 The deployer requires `DISCORD_CLIENT_ID` and `DISCORD_BOT_TOKEN`, retries a
-failed Discord API request up to three times with a five-second delay, and
-prints a registration report. It is not an automatic container-start hook.
+failed Discord API request up to three times with a five-second delay and a
+10-second timeout per request, prints a registration report, and exits 1 on
+failure. `backend/start.sh` runs it at boot when the credentials are set and
+starts the server whatever it returns, so a Discord outage delays boot by at
+most about 45 seconds and never stops it. The set lives in
+`backend/config/discordApplicationCommands.json`; the bridge commands carry
+`contexts: [0]` (guild channels only). Nothing is registered per guild.
 
 For database-backed, integration-scoped registration and inspection:
 

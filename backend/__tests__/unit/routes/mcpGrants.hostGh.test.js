@@ -117,7 +117,9 @@ describe('host GitHub broker command boundary', () => {
       operation: 'pr.create', args: { title: 'Work', head: `seat/${AGENT_ID}/work`, base: 'main' },
     });
     expect(response.status).toBe(202);
-    expect(response.body).toEqual({ status: 'pending_approval', approvalId: 'approval-1' });
+    expect(response.body).toEqual({
+      status: 'pending_approval', approvalId: 'approval-1', message: expect.stringContaining('approval.resolved'),
+    });
     expect(mockCallTool).toHaveBeenCalledTimes(1);
   });
 });
@@ -137,6 +139,20 @@ describe('host GitHub push boundary', () => {
       tool: 'github.push_branch', args: push,
     }));
     expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+  });
+
+  // TASK-783: every push parks for the owner. The shipped git remote helper
+  // prints `error` from any non-200 answer, so the body names the wait.
+  it('answers a parked push 202 with the approval, naming the wait', async () => {
+    mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
+    mockCallTool.mockRejectedValue(Object.assign(new Error('pending'), {
+      code: 'approval_required', statusCode: 403, details: { approvalId: 'approval-7' },
+    }));
+    const response = await request(app).post('/api/mcp/grants/grant-1/push').send(push);
+    expect(response.status).toBe(202);
+    expect(response.body).toMatchObject({
+      status: 'pending_approval', approvalId: 'approval-7', error: 'pending_owner_approval',
+    });
   });
 
   it('refuses a read-only or omitted push tool before budget use', async () => {

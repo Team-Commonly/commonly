@@ -12,6 +12,12 @@
  *
  * The payload carries neither `id` nor `user`, so `middleware/auth` never reads
  * it as a session.
+ *
+ * F131: it also carries the installer's Discord user id when the callback read
+ * it from `users/@me` with the token the code exchange returned. That id is
+ * what makes a live relay honest on a shared channel (only that author's lines
+ * are written as the installer), so it comes from Discord or not at all — the
+ * proof is the only way it reaches `POST /api/integrations`.
  */
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 
@@ -26,6 +32,8 @@ interface DiscordInstallProofPayload extends JwtPayload {
   gid: string;
   // The person whose install this is: the state's user. Only they may spend it.
   uid: string;
+  // Their Discord user id, from `users/@me` (F131). Absent when that read failed.
+  did?: string;
 }
 
 const secret = (): string => {
@@ -35,10 +43,18 @@ const secret = (): string => {
 };
 
 export const mintDiscordInstallProof = (
-  { podId, guildId, userId }: { podId: string; guildId: string; userId: string },
+  {
+    podId, guildId, userId, discordUserId,
+  }: { podId: string; guildId: string; userId: string; discordUserId?: string | null },
   ttlSeconds: number = DISCORD_INSTALL_PROOF_TTL_SECONDS,
 ): string => {
-  const payload: DiscordInstallProofPayload = { pur: PURPOSE, pod: podId, gid: guildId, uid: userId };
+  const payload: DiscordInstallProofPayload = {
+    pur: PURPOSE,
+    pod: podId,
+    gid: guildId,
+    uid: userId,
+    ...(isDiscordSnowflake(discordUserId) ? { did: String(discordUserId) } : {}),
+  };
   return jwt.sign(payload, secret(), { expiresIn: ttlSeconds });
 };
 
@@ -46,13 +62,20 @@ export const mintDiscordInstallProof = (
  * The proof's (pod, guild, user), or null for anything that is not a live proof.
  * A proof without a user (minted before the state was signed) is not a proof.
  */
-export const readDiscordInstallProof = (token: unknown): { podId: string; guildId: string; userId: string } | null => {
+export const readDiscordInstallProof = (token: unknown): {
+  podId: string; guildId: string; userId: string; discordUserId?: string;
+} | null => {
   if (typeof token !== 'string' || !token) return null;
   try {
     const decoded = jwt.verify(token, secret()) as DiscordInstallProofPayload;
     if (decoded.pur !== PURPOSE || typeof decoded.pod !== 'string' || !isDiscordSnowflake(decoded.gid)) return null;
     if (typeof decoded.uid !== 'string' || !decoded.uid) return null;
-    return { podId: decoded.pod, guildId: decoded.gid, userId: decoded.uid };
+    return {
+      podId: decoded.pod,
+      guildId: decoded.gid,
+      userId: decoded.uid,
+      ...(isDiscordSnowflake(decoded.did) ? { discordUserId: String(decoded.did) } : {}),
+    };
   } catch {
     return null;
   }

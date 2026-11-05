@@ -27,6 +27,9 @@ import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
 import { assertCanBindSurface, SurfaceBindRefusedError } from '../services/chatRelay/bindSurface';
 import {
+  discordApplicationCommands, handleDiscordRelayCommand, interactionActorId, isDiscordRelayCommand,
+} from '../services/discordRelayCommandService';
+import {
   mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
 } from '../utils/discordInstallProof';
 
@@ -176,6 +179,25 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
     return res.status(500).json({ type: 4, data: { content: 'Failed to process installation' } });
   }
 
+  // The Commonly bridge commands (F133). They share the core's semantics with
+  // Telegram's and act only on the row bound to this exact channel, so they
+  // never reach the guild-wide fallback the legacy commands below keep.
+  if (type === 2 && isDiscordRelayCommand(data?.name)) {
+    try {
+      const { response, after } = await handleDiscordRelayCommand(interaction);
+      res.json(response);
+      if (after) {
+        after().catch((error: Error) => {
+          console.error('[discord-commands] deferred reply failed:', error.message);
+        });
+      }
+      return undefined;
+    } catch (error) {
+      console.error('[discord-commands] command failed:', (error as Error).message);
+      return res.json({ type: 4, data: { content: '❌ That command did not run. Try again shortly.', flags: 64 } });
+    }
+  }
+
   if (type === 2 && data?.type === 1) {
     const channelId = (interaction as { channel_id?: string }).channel_id;
     try {
@@ -201,7 +223,9 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
         return res.json({ type: 4, data: { content: '❌ Command not recognized.', flags: 64 } });
       }
 
-      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
+      const commandResults = await runDiscordCommandForIntegrations({
+        commandName: data.name, integrations, guildId, channelId, actorId: interactionActorId(interaction),
+      }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
       const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
       const blocks = commandResults.map(({ integration, result }) => {
         const podName = (integration.podId as { name?: string })?.name || integration.config?.channelName || `Pod ${integration.podId || integration._id}`;
@@ -246,7 +270,9 @@ router.get('/install-link/:podId', listIntegrationsRateLimit, auth, async (req: 
     // on prod 2026-11-04).
     const installUrl = new URL('https://discord.com/api/oauth2/authorize');
     installUrl.searchParams.set('client_id', String(clientId));
-    installUrl.searchParams.set('scope', 'bot applications.commands');
+    // `identify` lets the callback read the installer's own Discord user id
+    // (users/@me), the proof a live relay on this shared channel needs (F131).
+    installUrl.searchParams.set('scope', 'bot applications.commands identify');
     installUrl.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS);
     installUrl.searchParams.set('response_type', 'code');
     installUrl.searchParams.set('redirect_uri', discordRedirectUri());
@@ -306,8 +332,12 @@ router.post('/register-commands/:integrationId', auth, async (req: AuthReq, res:
     const discordService = new DiscordService(integrationId);
     await discordService.initialize();
     const success = await discordService.registerSlashCommands(guildId);
-    if (success) res.json({ message: 'Slash commands registered successfully', commands: ['/commonly-summary', '/discord-status', '/discord-enable', '/discord-disable'] });
-    else res.status(500).json({ error: 'Failed to register slash commands' });
+    // Every command is global (F161), so a guild registration clears the
+    // guild's duplicate copies and adds none.
+    if (success) res.json({ message: 'Guild command copies cleared; every command is registered globally', commands: [] });
+    // The service's reason, e.g. the global set is not in place so the guild's
+    // commands were kept (F161). Its text names no credential.
+    else res.status(500).json({ error: discordService.lastRegistrationError || 'Failed to register slash commands' });
   } catch (error) {
     console.error('Error registering slash commands:', error);
     res.status(500).json({ error: 'Failed to register slash commands' });
@@ -322,7 +352,7 @@ router.get('/health', async (_req: AuthReq, res: Res) => {
     const response = await axios.get(url, { headers: { Authorization: `Bot ${botToken}` } });
     if (response.status === 200) {
       const registeredCommands = (response.data as Array<{ name: string }>).map((cmd) => cmd.name);
-      const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+      const expectedCommands = discordApplicationCommands().map((cmd) => cmd.name);
       const missingCommands = expectedCommands.filter((cmd) => !registeredCommands.includes(cmd));
       return res.json({ timestamp: new Date().toISOString(), status: missingCommands.length === 0 ? 'healthy' : 'degraded', globalCommands: { registered: registeredCommands, missing: missingCommands, total: expectedCommands.length }, summary: { total: expectedCommands.length, registered: registeredCommands.length, failed: missingCommands.length } });
     }
@@ -397,11 +427,32 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
         return res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
       }
     }
+    // F131: the installer's Discord user id, read with the user token this
+    // exchange just returned. It rides in the signed proof and nowhere else. A
+    // failed or malformed read leaves it out — the install still binds, and the
+    // row simply cannot relay live — never a guess.
+    let installerDiscordId: string | null = null;
+    const accessToken = (tokenResponse?.data as { access_token?: unknown } | undefined)?.access_token;
+    if (provenGuildId && typeof accessToken === 'string' && accessToken) {
+      try {
+        const me = await axios.get('https://discord.com/api/users/@me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 10_000,
+        });
+        const meId = (me?.data as { id?: unknown } | undefined)?.id;
+        installerDiscordId = isDiscordSnowflake(meId) ? String(meId) : null;
+      } catch {
+        // No provider data in the log: Discord may echo request credentials.
+        console.warn('Discord OAuth users/@me lookup failed; install proof carries no Discord user');
+      }
+    }
     const successUrl = new URL(`${frontend}/discord/success`);
     successUrl.searchParams.append('pod_id', podId);
     successUrl.searchParams.append('guild_id', installedGuildId || '');
     successUrl.searchParams.append('server_name', serverName);
-    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId, userId: installerId }));
+    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({
+      podId, guildId: provenGuildId, userId: installerId, discordUserId: installerDiscordId,
+    }));
     res.redirect(successUrl.toString());
   } catch {
     console.error('Discord OAuth callback error');

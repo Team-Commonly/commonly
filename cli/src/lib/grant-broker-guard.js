@@ -268,6 +268,34 @@ export const withholdGrantBroker = (environment, adapter, {
   return { ...environment, mcp: kept };
 };
 
+/**
+ * Merge the server's grant-broker entries into a seat environment, the way the
+ * daemon's work list does it (`GET /api/agent-binding/assigned` in
+ * `backend/routes/agentBinding.ts`): an existing entry with a broker's name is
+ * replaced, the brokers are appended, and a seat with no environment gets one
+ * holding only them. Used by `agent run` without a daemon (F150), whose
+ * `GET /api/agents/runtime/grant-brokers` returns the same per-seat projection.
+ *
+ * Merge only. The caller runs `withholdGrantBroker` on the result, so the
+ * client-side refusal still applies to whatever the server sent.
+ * Identity is preserved when there is nothing to merge.
+ */
+export const mergeGrantBrokers = (environment, servers) => {
+  const brokers = Array.isArray(servers)
+    ? servers.filter((server) => server && typeof server === 'object' && !Array.isArray(server))
+    : [];
+  if (!brokers.length) return environment;
+  if (!environment) return { mcp: brokers };
+  const existing = Array.isArray(environment.mcp) ? environment.mcp : [];
+  return {
+    ...environment,
+    mcp: [
+      ...existing.filter((server) => !brokers.some((broker) => broker.name === server?.name)),
+      ...brokers,
+    ],
+  };
+};
+
 export default {
   GRANT_BROKER_REFUSAL_CODE,
   ENFORCING_MODES,
@@ -275,4 +303,5 @@ export default {
   declaresGrantBroker,
   confinementReason,
   withholdGrantBroker,
+  mergeGrantBrokers,
 };

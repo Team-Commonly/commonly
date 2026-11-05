@@ -208,3 +208,73 @@ describe('grant broker confinement predicate', () => {
     expect(normalizeAdapter(undefined)).toBeNull();
   });
 });
+
+// #3458 review: `sandbox_absent` is for a seat that runs on someone's own
+// machine with no daemon. A runtime Commonly runs keeps the old reading.
+describe('grantBrokerRefusalWithoutDaemon — only a BYO seat has an absent sandbox refused', () => {
+  // eslint-disable-next-line global-require
+  const confinement = require('../../../services/grantBrokerConfinement');
+  // eslint-disable-next-line global-require
+  const { CLOUD_RUNTIME_TYPES, isCloudRuntime } = require('../../../services/agentIdentityService');
+  // eslint-disable-next-line global-require
+  const { KERNEL_RUN_RUNTIME_TYPES } = require('../../../services/configWriteGuard');
+
+  it('mirrors the cloud and kernel-run runtime sets (the module stays a leaf)', () => {
+    expect([...confinement.COMMONLY_RUN_RUNTIME_TYPES].sort())
+      .toEqual([...new Set([...CLOUD_RUNTIME_TYPES, ...KERNEL_RUN_RUNTIME_TYPES])].sort());
+  });
+
+  it.each([
+    [{ runtimeType: 'native' }],
+    [{ runtimeType: 'moltbot' }],
+    [{ runtimeType: 'internal' }],
+    [{ runtimeType: 'managed-agents' }],
+    [{ runtimeType: 'hosted' }],
+    [{ runtimeType: 'native', host: 'byo' }],
+    [{ runtimeType: 'codex' }],
+  ])('a runtime Commonly runs (%j) keeps the old reading', (runtime) => {
+    expect(confinement.runsOnCommonly(runtime)).toBe(true);
+    expect(confinement.grantBrokerRefusalWithoutDaemon(undefined, runtime)).toBeNull();
+    expect(confinement.grantBrokerRefusalWithoutDaemon({ model: 'x' }, runtime)).toBeNull();
+  });
+
+  // #3458 re-review (MEDIUM): CLI attach writes `adapter` on every BYO row, and
+  // a Settings harness switch used to drop `host`. A codex row that names an
+  // adapter is a seat on someone's machine; only one with `host: 'cloud'`, or
+  // with neither host nor adapter (what the registry install of cloud-codex
+  // writes), is Commonly's.
+  it.each([
+    [{ runtimeType: 'codex', adapter: 'codex' }, false],
+    [{ runtimeType: 'codex', adapter: 'claude' }, false],
+    [{ runtimeType: 'codex', adapter: 'codex', host: 'byo' }, false],
+    [{ runtimeType: 'codex', host: 'byo' }, false],
+    [{ runtimeType: 'codex', host: 'cloud' }, true],
+    [{ runtimeType: 'codex', host: 'cloud', adapter: 'codex' }, true],
+    [{ runtimeType: 'codex' }, true],
+  ])('a codex row %j runs on Commonly: %s', (runtime, expected) => {
+    expect(confinement.runsOnCommonly(runtime)).toBe(expected);
+    const refusal = confinement.grantBrokerRefusalWithoutDaemon(undefined, runtime);
+    if (expected) expect(refusal).toBeNull();
+    else expect(refusal).toMatchObject({ reason: 'sandbox_absent' });
+  });
+
+  it('agrees with isCloudRuntime on the cloud set', () => {
+    [...CLOUD_RUNTIME_TYPES].forEach((runtimeType) => {
+      expect(confinement.runsOnCommonly({ runtimeType })).toBe(isCloudRuntime({ runtimeType }));
+    });
+  });
+
+  it.each([
+    [undefined],
+    [{ runtimeType: 'webhook' }],
+    [{ runtimeType: 'webhook', host: 'byo' }],
+    [{ runtimeType: 'claude-code' }],
+    [{ adapter: 'claude', host: 'byo' }],
+    [{ runtimeType: 'wrapper', adapter: 'codex' }],
+    [{ runtimeType: 'codex', host: 'byo' }],
+  ])('a BYO row (%j) with no sandbox block is refused as sandbox_absent', (runtime) => {
+    expect(confinement.runsOnCommonly(runtime)).toBe(false);
+    expect(confinement.grantBrokerRefusalWithoutDaemon(undefined, runtime))
+      .toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, reason: 'sandbox_absent' });
+  });
+});

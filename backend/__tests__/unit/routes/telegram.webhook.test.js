@@ -337,6 +337,40 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(until).toBeGreaterThan(Date.now());
   });
 
+  // F161 item 6: the whole argument reaches the parse, so `2 hours` is 120 minutes.
+  it('/mute 2 hours mutes for 120 minutes', async () => {
+    const before = Date.now();
+    const res = await post('/mute 2 hours');
+    expect(res.status).toBe(200);
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    const until = new Date(update.$set['config.relayMutedUntil']).getTime();
+    expect(until).toBeGreaterThanOrEqual(before + 120 * 60000);
+    expect(until).toBeLessThanOrEqual(Date.now() + 120 * 60000);
+    expect(telegramService.sendMessage).toHaveBeenCalledWith('bot-token', '42', expect.stringContaining('Muted for 120 min'));
+  });
+
+  it('/mode still reads only its first word', async () => {
+    await post('/mode attention please');
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith(
+      'integration-1',
+      { $set: { 'config.relayAllAgentMessages': false } },
+    );
+  });
+
+  // F161 item 7: a duration the parse cannot read is answered with usage.
+  it.each(['90s', '1.5h'])('/mute %s answers with usage and writes nothing', async (arg) => {
+    await post(`/mute ${arg}`);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(telegramService.sendMessage).toHaveBeenCalledWith('bot-token', '42', expect.stringContaining('Usage: /mute'));
+  });
+
+  it('/help names the duration forms', async () => {
+    await post('/help');
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).toContain('30m');
+    expect(text).toContain('2h');
+  });
+
   it('/unmute only clears the owner mute and cannot clear an admin pause', async () => {
     const res = await post('/unmute');
 

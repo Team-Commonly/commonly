@@ -504,6 +504,20 @@ class AgentIdentityService {
     return { displayName, mirrorSynced };
   }
 
+  /** Set the one-sentence description a card shows; empty clears it. Null when no identity exists. */
+  static async setAgentDescription(agentType: string, instanceId: string, description: string): Promise<string | null> {
+    const resolvedType = AgentIdentityService.resolveAgentType(agentType);
+    const user = await User.findOne({
+      isBot: true,
+      'botMetadata.agentName': resolvedType,
+      'botMetadata.instanceId': instanceId,
+    });
+    if (!user) return null;
+    user.botMetadata = { ...user.botMetadata, description };
+    await user.save();
+    return description;
+  }
+
   /**
    * Get or create an agent user with proper bot metadata
    */

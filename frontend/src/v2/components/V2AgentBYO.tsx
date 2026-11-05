@@ -40,6 +40,7 @@ import {
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
+import { InstallNarrowing, V2InstallNarrowingNotice, installNarrowingFromError } from './V2OutsiderGrantNarrowing';
 import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
@@ -195,9 +196,11 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // lines, and the page says beside it that nothing confines the agent there.
 // Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
 // tested"), so no listener.
-// Claude Code on Linux runs only in a pod that passes the CLI's own test
-// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
-// and invite-only. A pod that omits a flag is not private.
+// Claude Code on Linux runs in any pod since F96 (#3395): a public seat runs in
+// the bubblewrap jail on the person's own login. Tested in CI with a stand-in
+// model; no person's walk yet, and the reach note says so.
+// A pod confirmed private (workspace-trust.js podIsConfirmedPrivate): both
+// flags reported and false, and invite-only. A pod that omits a flag is not.
 const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
   typeof pod?.publicRead === 'boolean'
   && typeof pod?.communityListed === 'boolean'
@@ -212,10 +215,9 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // Claude Code and Codex keep the OS rules above. No other harness answers from
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
-const listenerRunsOn = (os: SetupOs, adapter: string, pod?: V2Pod): boolean => {
-  if (adapter === 'claude' || adapter === 'codex') {
-    return os === 'mac' || os === 'windows' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod));
-  }
+const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
+  if (adapter === 'claude') return true;
+  if (adapter === 'codex') return os === 'mac' || os === 'windows';
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -282,6 +284,10 @@ const V2AgentBYO: React.FC = () => {
   const [nameLookupError, setNameLookupError] = useState(false);
   const [nameLookupRetry, setNameLookupRetry] = useState(0);
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
+  // F164: the install route asks for a confirm when joining this pod would
+  // confine the agent's writes elsewhere. A confirm only ever applies to the
+  // name, pod and mode it was shown for.
+  const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
     connection: AgentConnection; runtimeType: string; installedBy?: string;
   } | null>(null);
@@ -313,11 +319,7 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(
-    setupOs,
-    listenAdapter,
-    pods.find((p) => p._id === (issued?.podId || podId)),
-  );
+  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
   // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
@@ -432,6 +434,7 @@ const V2AgentBYO: React.FC = () => {
   const [effort, setEffort] = useState<string>('');
   // A model or effort belongs to the harness it was picked for.
   useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
+  useEffect(() => { setPendingNarrowing(null); }, [name, podId, mode]);
   const machineInventory = selectedMachine?.runtimeInventory || [];
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
@@ -738,7 +741,7 @@ const V2AgentBYO: React.FC = () => {
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
   // answers 403 hosted_cap_reached), then ask the kernel to provision. No
   // token round-trips through the browser.
-  const submitHosted = async (cleanName: string) => {
+  const submitHosted = async (cleanName: string, confirmNarrowing = false) => {
     setSubmitting(true);
     try {
       try {
@@ -750,8 +753,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return false;
+        }
         const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number; holders?: Array<{ agentName?: string }> } } })
           ?.response?.data;
         if (data?.code === 'hosted_cap_reached') {
@@ -808,7 +817,7 @@ const V2AgentBYO: React.FC = () => {
   // + persona, then file the placement request. The daemon on that machine
   // adopts (D3 CAS), mints the credential server-side (nothing secret renders
   // here either), and starts the agent — the page watches it come up.
-  const submitMachine = async (cleanName: string) => {
+  const submitMachine = async (cleanName: string, confirmNarrowing = false) => {
     if (!machineId) {
       setErrorField('machine');
       setError(t('agentByo.errors.machineRequired'));
@@ -834,8 +843,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         // Same identity-continuity tolerance as the BYO path below.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
@@ -879,10 +894,11 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const submit = async () => {
+  const submit = async (confirmNarrowing = false) => {
     setError(null);
     setErrorField(null);
     setPendingReplacement(null);
+    setPendingNarrowing(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
       setErrorField('name');
@@ -896,11 +912,11 @@ const V2AgentBYO: React.FC = () => {
     }
     if (!mode) return;
     if (mode === 'hosted') {
-      await submitHosted(cleanName);
+      await submitHosted(cleanName, confirmNarrowing);
       return;
     }
     if (mode === 'machine') {
-      await submitMachine(cleanName);
+      await submitMachine(cleanName, confirmNarrowing);
       return;
     }
     setSubmitting(true);
@@ -925,8 +941,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
@@ -1681,7 +1703,7 @@ const V2AgentBYO: React.FC = () => {
               // Keep the focused field's hint visible through the press. If blur
               // hides it on mousedown, this button can move before mouseup.
               onMouseDown={(event) => event.preventDefault()}
-              onClick={submit}
+              onClick={() => { void submit(); }}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId || machineBlocked}
               className="v2-byo__submit"
             >
@@ -1708,10 +1730,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              // Only Linux has no listener now: Claude Code outside an invite-only pod, or Codex.
-              : listenAdapter === 'claude'
-                ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable'
-                : 'agentByo.footnote.cliRouteCodexUnavailable', {
+              // Only Codex on Linux has no listener among the page's two.
+              : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
               os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
@@ -1723,6 +1743,16 @@ const V2AgentBYO: React.FC = () => {
           </p>
           </details>
         </div>
+      )}
+
+      {pendingNarrowing && !issued && (
+        <V2InstallNarrowingNotice
+          agentName={pendingNarrowing.agentName}
+          narrowing={pendingNarrowing.narrowing}
+          busy={submitting}
+          onConfirm={() => { void submit(true); }}
+          onCancel={() => setPendingNarrowing(null)}
+        />
       )}
 
       {pendingReplacement && !issued && (
@@ -1883,10 +1913,8 @@ const V2AgentBYO: React.FC = () => {
                 ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
                 : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
-                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
-                : t(listenAdapter === 'claude'
-                  ? 'agentByo.listen.unavailableClaudeLinux'
-                  : listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
+                : t(listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
                     : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                   tool: listenTool,
@@ -2014,13 +2042,11 @@ const V2AgentBYO: React.FC = () => {
             const mcpBlock = (
   <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
                 <div className="v2-byo__snippet-head">
-                  {/* Where no listener runs, this is the way in, not an extra. */}
-                  <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+                  <span>{t('agentByo.snippets.claudeCode')}</span>
                 </div>
                 <p className="v2-byo__hint">
                   {t(
-                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
-                      : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
+                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows' : 'agentByo.snippets.claudeCodeBody',
                     { name: issued.agentName },
                   )}
                 </p>
@@ -2036,16 +2062,16 @@ const V2AgentBYO: React.FC = () => {
                 </div>
               </div>
             );
-            // With a listener, the MCP command is the extra: folded away and
-            // labelled, because a stranger copied it three times, never ran the
-            // listener, and the agent never answered (walk 2026-10-31). Without a
-            // listener it is the only way in, so it stays open.
-            return listenerAvailable ? (
+            // Claude Code always has a listener now (F96), so the MCP command is
+            // the extra: folded away and labelled, because a stranger copied it
+            // three times, never ran the listener, and the agent never answered
+            // (walk 2026-10-31).
+            return (
               <details className="v2-byo__more" data-testid="byo-mcp-details">
                 <summary>{t('agentByo.snippets.mcpSummary')}</summary>
                 {mcpBlock}
               </details>
-            ) : mcpBlock;
+            );
           })()}
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">

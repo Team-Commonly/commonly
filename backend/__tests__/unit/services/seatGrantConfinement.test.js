@@ -25,7 +25,10 @@ const mockGithub = {
   closeIssue: jest.fn(),
 };
 
-jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
+// `runtimeIdentityOwnership` requires the module and calls `Pod.find` on it.
+jest.mock('../../../models/Pod', () => ({
+  __esModule: true, default: mockPod, find: (...args) => mockPod.find(...args),
+}));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
@@ -441,5 +444,123 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
       tool: 'github.list_issues',
       args: {},
     })).rejects.toMatchObject({ code: 'grant_revoked' });
+  });
+});
+
+// F150 security review (HIGH): a seat with no machine has no daemon to derive a
+// sandbox baseline, so an ABSENT sandbox block on its row confines nothing. The
+// per-call judgement refuses it with a refusal naming lifts (F94); a daemon
+// seat (with a machineId) keeps today's daemon-decided reading.
+describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F150)', () => {
+  beforeEach(() => {
+    // The naming check reads the granter's installations' pods (ownsRuntimeIdentity).
+    mockPod.find = jest.fn(() => ({ select: () => ({ lean: async () => [] }) }));
+  });
+  afterEach(() => {
+    delete mockPod.find;
+  });
+  const unboundSeat = async () => {
+    // No machineId: a seat run with `commonly agent run`, or a Connect-page token.
+    await User.create({
+      _id: SEAT, username: `${AGENT}-${INSTANCE}`, email: `${AGENT}-${INSTANCE}@agents.test`,
+      password: 'fixture-only', isBot: true, botType: 'agent', botMetadata: { agentName: AGENT, instanceId: INSTANCE },
+    });
+  };
+  const namedPodGrant = () => podGrant({
+    audience: [SEAT],
+    ownerId: OWNER,
+    byoAgents: [SEAT],
+    byoConsent: { by: OWNER, at: new Date(), version: 'byo-v1', agents: [{ userId: SEAT, sandbox: 'unknown' }] },
+  });
+  const call = () => callTool({
+    grantId: 'grant-1', agentUserId: SEAT, agentName: AGENT, instanceId: INSTANCE,
+    tool: 'github.list_issues', args: {},
+  });
+
+  test('is refused as sandbox_absent, a refusal naming can lift', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { runtimeType: 'webhook', host: 'byo' } });
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'sandbox_absent' }),
+      scope: 'seat',
+    });
+  });
+
+  test.each([
+    [{ runtimeType: 'native' }],
+    [{ runtimeType: 'moltbot' }],
+  ])('a runtime Commonly runs (%j) keeps the old reading: no refusal', async (runtime) => {
+    await unboundSeat();
+    await installRow({ runtime });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('an adapter-shaped BYO row with no sandbox block is refused too', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' } });
+    expect((await judge()).refusal?.reason).toBe('sandbox_absent');
+  });
+
+  test.each([
+    [{ runtimeType: 'codex', adapter: 'codex' }],
+    // The same row after the owner's Settings harness switch.
+    [{ runtimeType: 'codex', adapter: 'claude' }],
+  ])('a codex row that names an adapter (%j) is a BYO seat: refused', async (runtime) => {
+    await unboundSeat();
+    await installRow({ runtime });
+    expect((await judge()).refusal?.reason).toBe('sandbox_absent');
+  });
+
+  test('a cloud codex row (no adapter, no host) keeps the old reading', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { runtimeType: 'codex' } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('a declared confining sandbox still judges the seat confinable', async () => {
+    await unboundSeat();
+    await installRow({
+      runtime: { runtimeType: 'webhook' }, environment: { sandbox: { mode: 'workspace', trust: 'public' } },
+    });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('a daemon seat with no sandbox block is unchanged: daemon-decided, not refused', async () => {
+    await bindSeat();
+    await installRow({ runtime: { runtimeType: 'webhook', host: 'byo' } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('an unnamed grant is refused per call, before any tool work', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { runtimeType: 'webhook', host: 'byo' } });
+    mockPod.findById.mockImplementation(() => ({
+      select: () => ({ lean: async () => ({
+        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+      }) }),
+    }));
+    await RoomGrant.create(podGrant({ audience: [SEAT] }));
+    await expect(call()).rejects.toMatchObject({
+      code: 'grant_broker_unconfined', statusCode: 403,
+      details: expect.objectContaining({ reason: 'sandbox_absent' }),
+    });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+  });
+
+  test('the grant that names it is allowed and recorded named_unconfined', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { runtimeType: 'webhook', host: 'byo' } });
+    mockPod.findById.mockImplementation(() => ({
+      select: () => ({ lean: async () => ({
+        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+      }) }),
+    }));
+    await RoomGrant.create(namedPodGrant());
+    const result = await call();
+    expect(result.callId).toBeTruthy();
+    expect(mockGithub.listOpenIssues).toHaveBeenCalled();
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'ok', callerConfinement: 'named_unconfined',
+    }));
   });
 });

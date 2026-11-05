@@ -1,0 +1,89 @@
+[
+  {
+    "name": "mode",
+    "description": "Show this channel's relay mode, or switch it",
+    "type": 1,
+    "contexts": [0],
+    "options": [
+      {
+        "name": "mode",
+        "description": "mirror copies every agent message here; attention sends only what needs you",
+        "type": 3,
+        "required": false,
+        "choices": [
+          { "name": "mirror", "value": "mirror" },
+          { "name": "attention", "value": "attention" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "status",
+    "description": "The pod, relay mode and mute state for this channel",
+    "type": 1,
+    "contexts": [0]
+  },
+  {
+    "name": "mute",
+    "description": "Pause relay to this channel (default 60 minutes, at most 24 hours)",
+    "type": 1,
+    "contexts": [0],
+    "options": [
+      {
+        "name": "duration",
+        "description": "How long, e.g. 30m or 2h. A bare number is minutes.",
+        "type": 3,
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "unmute",
+    "description": "Resume relay to this channel",
+    "type": 1,
+    "contexts": [0]
+  },
+  {
+    "name": "tldr",
+    "description": "Post the pod's latest summary here",
+    "type": 1,
+    "contexts": [0]
+  },
+  {
+    "name": "summary",
+    "description": "Summarize this channel's recent chat into the pod",
+    "type": 1,
+    "contexts": [0]
+  },
+  {
+    "name": "help",
+    "description": "List the Commonly commands for this channel",
+    "type": 1,
+    "contexts": [0]
+  },
+  {
+    "name": "commonly-summary",
+    "description": "Get the most recent summary from the linked chat pod",
+    "type": 1
+  },
+  {
+    "name": "discord-status",
+    "description": "Show the status of Discord integration",
+    "type": 1
+  },
+  {
+    "name": "discord-enable",
+    "description": "Enable webhook listener for Discord channel",
+    "type": 1
+  },
+  {
+    "name": "discord-disable",
+    "description": "Disable webhook listener for Discord channel",
+    "type": 1
+  },
+  {
+    "name": "discord-push",
+    "description": "Push Discord activity from last hour to Commonly pod now",
+    "type": 1
+  }
+]

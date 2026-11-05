@@ -33,6 +33,8 @@ import {
   byoNamingRefusalMessage, checkByoNaming, listByoCandidates, byoPodExemptAgentIds, namedByoAgentIds,
 } from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
+import { prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
+import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 
 const plainGrant = (grant: unknown) => {
@@ -479,6 +481,23 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
+    // TASK-783: pull-request access is chosen here or not at all. Only `true`
+    // asks for it; it is a GitHub App scope that sits beside the PR tools and no
+    // other write, and every one of its calls parks for this granter.
+    if (body.prWrite !== undefined && typeof body.prWrite !== 'boolean') {
+      return res.status(400).json({ error: 'invalid_pr_write', message: 'prWrite must be a boolean' });
+    }
+    const prWrite = body.prWrite === true;
+    if (prWrite) {
+      const refusal = prWriteMintRefusal({
+        connectionType: connection.type,
+        writeMode: body.writeMode,
+        tools: requestedTools,
+        requiredWriteModeOf: (tool) => TOOL_DEFINITIONS[tool]?.requiredWriteMode,
+      });
+      if (refusal) return res.status(403).json({ error: refusal, message: prWriteMintRefusalMessage(refusal) });
+    }
+
     // F94: the granter's own agents that run outside Commonly, named with
     // consent. Checked before the pod gate, which then exempts only them.
     if (body.byoAgents !== undefined && (!Array.isArray(body.byoAgents)
@@ -497,6 +516,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
         entryId: hosted ? String(connection.config?.entryId || '') : undefined,
         tools: requestedTools,
         podId: String(target.id),
+        prWrite,
       });
       if (naming.refusal) {
         return res.status(403).json({ error: naming.refusal, message: byoNamingRefusalMessage(naming.refusal) });
@@ -535,6 +555,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       budget: body.budget,
       audience: audienceValues,
       ...(byoConsent ? { byoAgents, byoConsent } : {}),
+      ...(prWrite ? { prWrite: true } : {}),
       expiresAt: body.expiresAt,
       brokerId: broker.brokerId,
       // Bound here, at mint, to the row the caller just proved they own.
@@ -593,6 +614,7 @@ router.post(
       budget: body.budget as any,
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
+      prWrite: body.prWrite as boolean | undefined,
       issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
     // An agent attenuated its own grant: the agent is the issuer.

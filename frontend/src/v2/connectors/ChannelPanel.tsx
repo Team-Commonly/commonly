@@ -11,6 +11,8 @@ import {
   codeIsLive,
   connectorRelativeTimeOptions,
   botMembers,
+  discordRelayReady,
+  viewerCreatedConnector,
 } from './channelModel';
 import type {
   Connector,
@@ -28,6 +30,7 @@ interface Props {
 const ChannelPanel: React.FC<Props> = ({ m, item: panelItem }) => {
   const { t } = useTranslation();
   const {
+    viewerId,
     pods,
     busyId,
     confirmRemove,
@@ -229,8 +232,16 @@ const ChannelPanel: React.FC<Props> = ({ m, item: panelItem }) => {
     const connector = item.connector as Connector;
     const isTelegram = connector.type === 'telegram';
     const isSlack = connector.type === 'slack';
+    const isDiscord = connector.type === 'discord';
     const connected = connector.status === 'connected';
-    const supportsRelayControls = isTelegram || isSlack;
+    // F132: a Discord row shows the card always (its hint says why a switch is
+    // missing) and the switch only when its installer is proven.
+    const supportsRelayControls = isTelegram || isSlack || isDiscord;
+    const relaySwitchOffered = !isDiscord || discordRelayReady(connector, viewerId);
+    // Only the creator is handed `discordUserId`, so only for them does its
+    // absence mean the bot-add proof is missing.
+    const discordNeedsProof = isDiscord && viewerCreatedConnector(connector, viewerId)
+      && !connector.config?.discordUserId;
     const mirror = connector.config?.relayAllAgentMessages === true;
     const pendingBind = connector.config?.pendingBind;
     const activePod = podList.find((pod) => pod._id === connectorPodId(connector));
@@ -337,11 +348,23 @@ const ChannelPanel: React.FC<Props> = ({ m, item: panelItem }) => {
             <p>
               {connector.config?.liveRelay
                 ? (mirror
-                  ? t('connectors.mirrorHint', { defaultValue: 'Every agent message reaches the channel.' })
-                  : t('connectors.attentionHint', { defaultValue: 'Only escalations and the lead agent reach the channel.' }))
+                  ? (isDiscord
+                    ? t('connectors.discordMirrorHint', { defaultValue: 'Every agent message is posted in the Discord channel, where everyone in the server can read it.' })
+                    : t('connectors.mirrorHint', { defaultValue: 'Every agent message reaches the channel.' }))
+                  : (isDiscord
+                    ? t('connectors.discordAttentionHint', { defaultValue: 'Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.' })
+                    : t('connectors.attentionHint', { defaultValue: 'Only escalations and the lead agent reach the channel.' })))
                 : t('connectors.relayOffHint', { defaultValue: 'Messages stay in the pod.' })}
             </p>
-            {connected && (
+            {isDiscord && relaySwitchOffered && connector.config?.liveRelay && (
+              <p>{t('connectors.discordInboundNote', { defaultValue: 'Your own messages in the channel reach the pod as you.' })}</p>
+            )}
+            {discordNeedsProof && (
+              <p className="v2-connector-aside__note">
+                {t('connectors.discordNeedsProof', { defaultValue: 'Add the bot again from Commonly to turn on relay for this channel.' })}
+              </p>
+            )}
+            {connected && relaySwitchOffered && (
               <div className="v2-connector-aside__controls">
                 <label className="v2-connector-aside__relay">
                   <input

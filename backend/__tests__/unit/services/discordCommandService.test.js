@@ -162,3 +162,48 @@ describe('DiscordCommandService /commonly-summary on a shared channel', () => {
   );
 });
 
+
+// F161 item 1: /discord-enable and /discord-disable change what a shared
+// channel feeds into the pod, so they take the rule the bridge commands use:
+// only the installer, matched by the Discord id the bot-add proved.
+describe('DiscordCommandService /discord-enable and /discord-disable authority', () => {
+  const INSTALLER = '345678901234567890';
+  const STRANGER = '456789012345678901';
+  const toggle = async (which, actorId, config = { discordUserId: INSTALLER }) => {
+    Integration.findOne.mockResolvedValue({ _id: 'integration123', config: { serverId: 'g', channelId: 'c', ...config } });
+    Integration.findByIdAndUpdate.mockResolvedValue({});
+    const service = new DiscordCommandService({ integrationId: 'integration123' });
+    await service.initialize();
+    return which === 'enable' ? service.handleEnableCommand(actorId) : service.handleDisableCommand(actorId);
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each([['enable', true], ['disable', false]])('the installer may %s sync', async (which, flag) => {
+    const result = await toggle(which, INSTALLER);
+    expect(result.success).toBe(true);
+    expect(Integration.findByIdAndUpdate).toHaveBeenCalledWith('integration123', { 'config.webhookListenerEnabled': flag });
+  });
+
+  it.each(['enable', 'disable'])('someone else in the channel is refused /discord-%s', async (which) => {
+    const result = await toggle(which, STRANGER);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.content).toMatch(/only the person who connected this channel/i);
+    // No ping: the legacy reply carries no allowed_mentions guard.
+    expect(result.content).not.toContain('<@');
+  });
+
+  it('a caller with no Discord id is refused', async () => {
+    const result = await toggle('enable', undefined);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+  });
+
+  it('a row with no proven installer admits no one, and says how to fix it', async () => {
+    const result = await toggle('disable', INSTALLER, {});
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.content).toMatch(/add the bot again/i);
+  });
+});

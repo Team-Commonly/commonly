@@ -1068,7 +1068,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac, and Linux in invite-only pods"
+          "label": "Mac; Linux run once with an API key"
         },
         "codex": {
           "name": "Codex",
@@ -1828,7 +1828,6 @@
     },
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
-      "cliRouteClaudeLinuxUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only; otherwise choose “{{hosted}}”.",
       "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
@@ -1851,9 +1850,7 @@
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
       "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
-      "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
-      "claudeCodeMain": "Let Claude Code use the pod in your own sessions",
       "mcpSummary": "Claude Code in your own sessions. This does not answer @mentions."
     },
     "memory": {
@@ -1886,7 +1883,7 @@
       "titleWindows": "Run this in PowerShell",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
       "noteWindows": "MCP alone won't wake {{name}} for @mentions. Keep this PowerShell window open.",
-      "reachClaudeLinux": "On Linux, {{name}} answers only while every pod it's in is private, invite-only and not listed in Community, and it reads only the folder you run this from. Run it from your project's folder, not your home folder, with bubblewrap (bwrap) installed. If any of its pods stops being invite-only, {{name}} stops answering until that pod is invite-only again. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "reachClaudeLinux": "On Linux, {{name}} runs inside bubblewrap (bwrap). Usually it works in its own scratch folder, on your ANTHROPIC_API_KEY if you set one, or else your own Claude Code login. When every pod it's in is private, invite-only and not listed in Community, and you run this from a project folder rather than your home folder, it reads only that folder instead, and there it needs your Claude Code login: an API key alone won’t do. If your login is about to expire, it stops and asks you to run /login in Claude Code. On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet. In the project-folder case only, you can add --allow write to the last line to let it edit files and run commands, or --allow web to let it fetch web pages. Those commands can read beyond the folder. Either flag lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
@@ -1904,14 +1901,13 @@
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "needsWindows": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one PowerShell window: the $env lines last only there.",
-      "needsLinuxFolder": "On Linux, open the window in your project folder first, with bubblewrap (bwrap) installed: run from your home folder, it won’t start.",
+      "needsLinuxBwrap": "On Linux, install bubblewrap (bwrap) first.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
-      "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI has been tested only on a Mac and may not answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac.",
       "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",
@@ -2559,6 +2555,7 @@
     "hostedMcpAppInstalledFinish": "{{provider}} App installed. Press Connect on {{provider}} to finish.",
     "hostedMcpAccessNext": "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
     "hostedMcpAccessOpen": "Open {{provider}}",
+    "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
     "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
@@ -2664,7 +2661,14 @@
     "untitledPod": "Untitled pod",
     "anotherPod": "another pod",
     "thisSlackWorkspace": "This Slack workspace",
-    "yourSlackUser": "your Slack user"
+    "yourSlackUser": "your Slack user",
+    "discordRowMirror": "every agent line reaches everyone in the channel",
+    "discordRowAttention": "escalations and the lead agent’s lines reach everyone in the channel",
+    "discordMirrorHint": "Every agent message is posted in the Discord channel, where everyone in the server can read it.",
+    "discordAttentionHint": "Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.",
+    "discordInboundNote": "Your own messages in the channel reach the pod as you.",
+    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel.",
+    "discordReinstall": "Add the bot again"
   },
   "artifacts": {
     "title": "Artifacts",
@@ -2698,6 +2702,7 @@
   },
   "tools": {
     "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",
@@ -3038,6 +3043,9 @@
     "heartbeatOff": "Off",
     "connection": "Connection",
     "displayName": "Display name",
+    "about": "Description",
+    "aboutHint": "Your agent reads this as who it is, from its next reply.",
+    "aboutError": "Keep the description to 160 characters.",
     "persona": "Persona",
     "tone": "Tone",
     "toneOptions": {
@@ -3246,5 +3254,24 @@
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",
     "answeredWith": "Answered with {{harness}}"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "Once {{name}} joins this pod, an outside-writable connector grant would reach its pods.",
+      "losesWrites": "It would stop writing in:",
+      "targetBlocked": "It couldn't write in this pod either.",
+      "unavailable": "Commonly couldn't check whether joining this pod would limit where {{name}} can write.",
+      "confirm": "Install anyway",
+      "cancel": "Cancel"
+    },
+    "hiddenPods_one": "{{count}} pod you can't see",
+    "hiddenPods_other": "{{count}} pods you can't see",
+    "runtime": {
+      "onePod": "{{name}} can only write in {{pod}}, because an outside-writable grant reaches it.",
+      "oneHiddenPod": "{{name}} can only write in one pod, which you can't see, because an outside-writable grant reaches it.",
+      "noPod_one": "{{name}} can't write in any pod: an outside-writable grant reaches {{count}} of its pods.",
+      "noPod_other": "{{name}} can't write in any pod: outside-writable grants reach {{count}} of its pods.",
+      "unavailable": "Commonly couldn't check whether an outside-writable grant limits where {{name}} can write. Until it can, {{name}}'s writes are refused."
+    }
   }
 }

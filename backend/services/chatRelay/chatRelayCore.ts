@@ -11,13 +11,19 @@
 //   - how a command is spelled and how its reply reads;
 //   - how an inbound sender is proven to be the linked user.
 //
-// The last two are deliberately not abstracted here: reply text is
-// byte-pinned per platform, and attribution proof is a security argument each
-// bridge makes in its own terms (a private chat on Telegram, a matched DM user
-// on Slack). The core takes the semantic outcome; the adapter writes the words.
+// Reply text is not abstracted here: it is byte-pinned per platform. The core
+// takes the semantic outcome; the adapter writes the words.
+//
+// Attribution proof is a security argument each bridge makes in its own terms
+// (a private chat on Telegram, a matched DM user on Slack, a matched proven
+// author on Discord), declared as an InboundRelayAdapter. The core owns the
+// other half: the only way to reach `writeInboundAsLinkedUser` is a
+// ProvenSender, and only `proveInboundSender` mints one, after the adapter's
+// proof has passed.
 //
 // Adding a platform is one adapter in its bridge plus one entry in
-// ./adapters.ts — the dispatcher's selector reads the registry's keys.
+// ./adapters.ts — the dispatcher's selector reads the registry's keys, and its
+// `directRows` flag.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const IntegrationModel = require('../../models/Integration');
@@ -108,21 +114,66 @@ export type RelayCommandOutcome =
     lead: string | null;
   }
   | { kind: 'mute'; minutes: number; until: Date; update: RelayConfigUpdate }
-  | { kind: 'unmute'; update: RelayConfigUpdate };
+  /** A `/mute` duration the parse cannot read (`90s`, `1.5h`): nothing is written. */
+  | { kind: 'mute-usage' }
+  | { kind: 'unmute'; update: RelayConfigUpdate }
+  /** A settings change from someone the platform could not prove may make it. */
+  | { kind: 'refused'; command: RelayCommand['name'] };
 
 const DEFAULT_MUTE_MINUTES = 60;
 const MAX_MUTE_MINUTES = 24 * 60;
 
 /**
- * Pure: what a command means for this connector, and the config write it
- * needs. The caller applies `update` with its own model call and renders the
- * outcome in its platform's words. `arg` is compared as given — a platform that
- * accepts `/mode Mirror` lowercases before calling, one that does not, doesn't.
+ * Platform-neutral parse: a command's bare name (no slash, no bot suffix) and
+ * its one argument, as a platform received them. Null for a name that is not a
+ * bridge command, so the platform keeps its own handling for it. `/mode` takes
+ * its argument in any case; `/mute` hands its argument on as typed.
  */
-export const applyRelayCommand = (
+export const parseRelayCommand = (name: string | null | undefined, arg?: string): RelayCommand | null => {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (normalized === 'mode') return { name: 'mode', arg: (arg || '').trim().toLowerCase() };
+  if (normalized === 'status') return { name: 'status' };
+  if (normalized === 'mute') return { name: 'mute', arg };
+  if (normalized === 'unmute') return { name: 'unmute' };
+  if (normalized === 'help') return { name: 'help' };
+  return null;
+};
+
+// Read against a trimmed argument of at most 16 characters, with no
+// adjacent optional whitespace, so the match is linear.
+const MUTE_DURATION = /^(\d{1,5}) ?(m|min|mins|minutes?|h|hr|hrs|hours?)?$/i;
+const MUTE_ARG_MAX = 16;
+
+/**
+ * The minutes a `/mute` argument asks for: none means the default, a bare
+ * number is minutes, and `30m` or `2h` carry their unit. Anything else is null,
+ * which the caller answers with usage: a guess at `90s` or `1.5h` would mute
+ * for a time nobody asked for (F161).
+ */
+const muteMinutesOf = (arg?: string): number | null => {
+  const raw = String(arg || '').trim();
+  if (!raw) return DEFAULT_MUTE_MINUTES;
+  if (raw.length > MUTE_ARG_MAX) return null;
+  const match = MUTE_DURATION.exec(raw);
+  if (!match) return null;
+  const asked = parseInt(match[1], 10) * (match[2] && /^h/i.test(match[2]) ? 60 : 1);
+  return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
+};
+
+export interface RelayCommandAuthority {
+  /**
+   * Whether the platform proved the caller may change this connector's relay
+   * settings. Omitted means the platform's surface already proves it (a
+   * private Telegram chat is its linked user's alone). `false` turns every
+   * outcome that writes into `refused`; reads are unaffected.
+   */
+  mayChangeSettings?: boolean;
+}
+
+const decideRelayCommand = (
   command: RelayCommand,
   integration: ChatRelayIntegration | null | undefined,
-  now: Date = new Date(),
+  now: Date,
 ): RelayCommandOutcome => {
   if (command.name === 'help') return { kind: 'help' };
   if (!integration) return { kind: 'not-linked' };
@@ -136,10 +187,8 @@ export const applyRelayCommand = (
     };
   }
   if (command.name === 'mute') {
-    const minutes = Math.min(
-      Math.max(parseInt(command.arg || String(DEFAULT_MUTE_MINUTES), 10) || DEFAULT_MUTE_MINUTES, 1),
-      MAX_MUTE_MINUTES,
-    );
+    const minutes = muteMinutesOf(command.arg);
+    if (minutes === null) return { kind: 'mute-usage' };
     const until = new Date(now.getTime() + minutes * 60_000);
     return { kind: 'mute', minutes, until, update: { $set: { 'config.relayMutedUntil': until } } };
   }
@@ -155,6 +204,28 @@ export const applyRelayCommand = (
     mutedUntil: activeMuteUntil(integration, now),
     lead: lead ? String(lead) : null,
   };
+};
+
+/**
+ * Pure: what a command means for this connector, and the config write it
+ * needs. The caller applies `update` with its own model call and renders the
+ * outcome in its platform's words. `arg` is compared as given — a platform that
+ * accepts `/mode Mirror` lowercases before calling, one that does not, doesn't.
+ */
+export const applyRelayCommand = (
+  command: RelayCommand,
+  integration: ChatRelayIntegration | null | undefined,
+  now: Date = new Date(),
+  authority: RelayCommandAuthority = {},
+): RelayCommandOutcome => {
+  const outcome = decideRelayCommand(command, integration, now);
+  // One rule for every platform: a write needs the authority the platform
+  // proved. Shown here rather than per platform so a new surface cannot ship
+  // its settings commands open by forgetting the check.
+  if ('update' in outcome && authority.mayChangeSettings === false) {
+    return { kind: 'refused', command: command.name };
+  }
+  return outcome;
 };
 
 // ---------------------------------------------------------------------------
@@ -185,6 +256,14 @@ export interface ChatRelayAdapter<I extends ChatRelayIntegration = ChatRelayInte
   provider: string;
   /** The relayMap / cards key the inbound reply router reads back. */
   relayMapKey: string;
+  /**
+   * True when the platform's rows can be plain Integration rows with no
+   * Installable parent (`installationId` absent): legacy Telegram binds, and
+   * every Discord row, which the OAuth install writes directly. The dispatcher
+   * hands such a row to `<provider>.relay` itself; an adapter without this flag
+   * is reached only through an installed event-handler component.
+   */
+  directRows?: boolean;
   findLiveIntegration: (podId: string) => Promise<I | null>;
   isRelayableIntegration: (integration: I, podId: string) => boolean;
   /** Render and send. Return null to skip without a send (e.g. no bot token). */
@@ -306,6 +385,114 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
 // Inbound — write an external line into the pod as the linked user.
 // ---------------------------------------------------------------------------
 
+/** The row fields the live-relay rule reads: the config and who created it. */
+export interface LiveRelayRow {
+  config?: Record<string, unknown> | null;
+  createdBy?: unknown;
+  /** The pod the row serves, for a platform whose rule reads its members (Discord). */
+  pod?: { members?: unknown[] } | null;
+}
+
+/**
+ * One platform's inbound half. Both members are security arguments the
+ * platform makes in its own terms; the core never branches on the provider.
+ */
+export interface InboundRelayAdapter<I = any, E = any> {
+  provider: string;
+  /**
+   * True only when the platform itself guarantees that the external sender
+   * of `evidence` IS `integration.config.linkedUserId`. Every relayed line is
+   * AUTHORED as that user, so a false positive here puts words in their mouth.
+   */
+  senderIsLinkedUser: (integration: I, evidence: E) => boolean;
+  /**
+   * Why turning `liveRelay` on for this row would be dishonest, or null when
+   * it may go on. Read by both integration write routes, after the row's
+   * server-owned fields are settled. `requesterId` is the caller whose id the
+   * route stamps into `linkedUserId`.
+   */
+  liveRelayRefusal: (row: LiveRelayRow, requesterId: string) => string | null;
+}
+
+/**
+ * The rule every chat connector had before adapters declared their own: a
+ * live relay authors inbound as `linkedUserId` and streams outbound to
+ * `chatId`, and both are honest only in a 1:1 private chat (#1289 inbound,
+ * F2 outbound). A row with no `chatId` yet has nothing to judge.
+ */
+export const PRIVATE_CHAT_LIVE_RELAY_REFUSAL = 'Live relay requires a private chat with the bot; '
+  + 'this connector is bound to a group';
+export const privateChatLiveRelayRefusal = (row: LiveRelayRow): string | null => {
+  const config = row.config || {};
+  return config.chatId && config.chatType !== 'private' ? PRIVATE_CHAT_LIVE_RELAY_REFUSAL : null;
+};
+
+declare const provenSenderBrand: unique symbol;
+
+/**
+ * An inbound sender the platform has proven to be `linkedUserId`. Opaque:
+ * the brand is a type no module can name, and the runtime registry below
+ * refuses an object `proveInboundSender` did not mint, so a JS caller cannot
+ * forge one with a literal either.
+ */
+export type ProvenSender = {
+  readonly provider: string;
+  readonly linkedUserId: string;
+  readonly [provenSenderBrand]: true;
+};
+
+const mintedSenders = new WeakSet<object>();
+
+/**
+ * The only constructor of a ProvenSender: the adapter's proof, then a minted
+ * token naming the linked user. Null when the proof fails or the row names no
+ * linked user.
+ */
+export const proveInboundSender = <I extends { config?: { linkedUserId?: unknown } | null }, E>(
+  adapter: InboundRelayAdapter<I, E>,
+  integration: I,
+  evidence: E,
+): ProvenSender | null => {
+  const linkedUserId = integration?.config?.linkedUserId;
+  if (!linkedUserId) return null;
+  let proven = false;
+  try {
+    proven = adapter.senderIsLinkedUser(integration, evidence) === true;
+  } catch {
+    proven = false;
+  }
+  if (!proven) return null;
+  const sender = Object.freeze({ provider: adapter.provider, linkedUserId: String(linkedUserId) }) as ProvenSender;
+  mintedSenders.add(sender);
+  return sender;
+};
+
+const assertProvenSender = (sender: ProvenSender): string => {
+  if (!sender || typeof sender !== 'object' || !mintedSenders.has(sender)) {
+    throw new Error('chat-relay inbound write refused: the sender was not proven by an adapter');
+  }
+  return sender.linkedUserId;
+};
+
+/**
+ * Claim one inbound platform message, once, across every backend replica. A
+ * platform that pushes the same message to more than one listener (a gateway
+ * socket per replica) calls this before the write; the WebhookDelivery unique
+ * index is the boundary the HTTP bridges' redelivery dedupe already uses.
+ * Keyed by the integration as well, because one message reaches every row
+ * bound to its channel and each row's pod should get it once.
+ */
+export const INBOUND_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+export const claimInboundMessage = async (
+  provider: string,
+  integrationId: unknown,
+  externalMessageId: string,
+): Promise<'claimed' | 'duplicate' | 'unavailable'> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { claimDelivery } = require('../webhookDeliveryService');
+  return claimDelivery(provider, `inbound:${String(integrationId)}:${externalMessageId}`, INBOUND_CLAIM_TTL_MS);
+};
+
 export interface InboundAuthor {
   pod: { type?: string; members?: unknown[] };
   linkedUser: { username?: string; profilePicture?: string };
@@ -313,19 +500,20 @@ export interface InboundAuthor {
 
 /**
  * The membership half of inbound authorship: the linked user must still be a
- * listed member of the pod the line lands in. `onRefused` is the adapter's
+ * listed member of the pod the line lands in. `onNotMember` is the adapter's
  * in-chat notice. The other half — that the external sender IS the linked user
- * — each bridge proves before calling, in its platform's terms.
+ * — is the ProvenSender this takes.
  */
 export const loadInboundAuthor = async (opts: {
   podId: string;
-  linkedUserId: string;
+  sender: ProvenSender;
   logPrefix: string;
   onNotMember: () => Promise<void>;
 }): Promise<InboundAuthor | null> => {
   const {
-    podId, linkedUserId, logPrefix, onNotMember,
+    podId, sender, logPrefix, onNotMember,
   } = opts;
+  const linkedUserId = assertProvenSender(sender);
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Pod = require('../../models/Pod');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -352,12 +540,13 @@ export const loadInboundAuthor = async (opts: {
  * repair, and nothing exists yet to duplicate. Failures AFTER it are swallowed:
  * a throw would reach the webhook, return non-2xx, and the platform would
  * redeliver — re-running the write and duplicating the message and every wake
- * it triggers, because nothing dedupes on the platform's message id.
+ * it triggers. (The HTTP bridges dedupe the delivery at their routes; a
+ * pushed platform claims the message first with `claimInboundMessage`.)
  */
 export const writeInboundAsLinkedUser = async (opts: {
   podId: string;
   podType?: string;
-  linkedUserId: string;
+  sender: ProvenSender;
   linkedUser: { username?: string; profilePicture?: string };
   content: string;
   replyToMessageId: string | null;
@@ -365,8 +554,11 @@ export const writeInboundAsLinkedUser = async (opts: {
   logPrefix: string;
 }): Promise<void> => {
   const {
-    podId, podType, linkedUserId, linkedUser, content, replyToMessageId, lateReplyThreadRootId, logPrefix,
+    podId, podType, sender, linkedUser, content, replyToMessageId, lateReplyThreadRootId, logPrefix,
   } = opts;
+  // First, before anything is loaded or written: an unproven sender is a
+  // programming error, and it must fail where nothing exists yet to duplicate.
+  const linkedUserId = assertProvenSender(sender);
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const PGMessage = require('../../models/pg/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require

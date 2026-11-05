@@ -248,3 +248,75 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
   }
   return null;
 };
+
+/**
+ * F150 (security review, HIGH): an ABSENT sandbox block is left to the daemon
+ * above because the daemon derives a confining baseline before it spawns the
+ * seat. A seat with no daemon — `commonly agent run` with no machine binding,
+ * or a token pasted into a client from the Connect page — has nothing that
+ * derives one, so the same absence confines nothing there. The reason string is
+ * the cli guard's own (`cli/src/lib/grant-broker-guard.js`, `sandbox_absent`),
+ * so one refusal reads the same from either emitter. It is a sandbox refusal,
+ * so a grant that names the seat (F94, `namingLiftsRefusal`) lifts it.
+ */
+export const SANDBOX_ABSENT_REASON = 'sandbox_absent';
+
+export const absentSandboxRefusal = (environment: unknown): GrantBrokerRefusal | null => {
+  const sandbox = (environment as { sandbox?: unknown } | null | undefined)?.sandbox;
+  if (sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)) return null;
+  return refusalFor(
+    SANDBOX_ABSENT_REASON,
+    'this seat runs with no daemon to derive a sandbox, and its saved settings declare no sandbox block,'
+      + " so nothing confines it; declare sandbox.trust 'public', name this agent on the grant,"
+      + ' or drop the grant broker from this seat',
+  );
+};
+
+/**
+ * Runtimes Commonly itself runs: `CLOUD_RUNTIME_TYPES` (agentIdentityService)
+ * plus `KERNEL_RUN_RUNTIME_TYPES` (configWriteGuard, which adds `hosted`).
+ * Mirrored, not imported, so this module stays a leaf; the suite asserts the
+ * mirror. A seat on one of these is not a BYO seat, so "no daemon derives its
+ * sandbox" is not a fact about it, and `sandbox_absent` never applies.
+ */
+export const COMMONLY_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set([
+  'moltbot', 'internal', 'native', 'managed-agents', 'hosted',
+]);
+
+/**
+ * Does Commonly run this seat? The order of `isCloudRuntime`, made stricter
+ * for codex: a type above wins whatever `host` says; otherwise `host: 'byo'` is
+ * the person's own compute.
+ *
+ * A codex row is Commonly's only with `host: 'cloud'`, or with neither `host`
+ * nor `adapter`. The second shape is the stored data, not a guess: cloud-codex
+ * (ADR-014) seeds its token file in the pod and is installed through the
+ * registry as `{ runtimeType: 'codex' }` with no host (the inspector reads it as
+ * cloud by default, `normalizeRuntimeIdentity`), so keying on `host === 'cloud'`
+ * alone would refuse every existing cloud codex seat. Every BYO codex row names
+ * an adapter: `commonly agent attach` writes `{ runtimeType, adapter, host:
+ * 'byo' }`, and the Settings harness switch writes `adapter`. A Settings switch
+ * used to drop `host` (`runtimeKeepingType`, #3458 re-review), leaving
+ * `{ runtimeType: 'codex', adapter: 'claude' }`, which the old bare-codex rule
+ * read as Commonly's. Everything else (webhook, claude-code, adapter-shaped,
+ * nothing at all) runs on someone's own machine.
+ */
+export const runsOnCommonly = (runtime: unknown): boolean => {
+  const row = runtime as { runtimeType?: unknown; host?: unknown; adapter?: unknown } | null | undefined;
+  const runtimeType = normalizeAdapter(row?.runtimeType);
+  if (runtimeType && COMMONLY_RUN_RUNTIME_TYPES.has(runtimeType)) return true;
+  const host = normalizeAdapter(row?.host);
+  if (host === 'byo' || runtimeType !== 'codex') return false;
+  if (host === 'cloud') return true;
+  return !host && !normalizeAdapter(row?.adapter);
+};
+
+/**
+ * `grantBrokerRefusal` for a seat no daemon spawns: an absent block refuses
+ * too, but only for a seat that runs on someone's own machine. `runtime` is the
+ * seat's ROW runtime; a runtime Commonly runs keeps the daemon-path reading.
+ */
+export const grantBrokerRefusalWithoutDaemon = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => (
+  grantBrokerRefusal(environment, runtime)
+    ?? (runsOnCommonly(runtime) ? null : absentSandboxRefusal(environment))
+);
