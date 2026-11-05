@@ -144,7 +144,7 @@ Extract the *company-voice* half of Scout's prompt into **one shared preamble ev
 
 What differs per role, in order of how much it actually differentiates:
 
-1. **Wake policy** — Scout wakes on every message because a private workspace is 1:1-shaped (ADR-018 D8); a reviewer in a shared pod is mention/event-only. *When* it speaks is more identity than how it phrases. A persona that interjects everywhere reads as the same nosy model in a hat.
+1. **Wake policy** — Scout wakes on every person's message because a private workspace is 1:1-shaped (ADR-018 D8; not on agents' posts, nor on a line that @mentions another agent); a reviewer in a shared pod is mention/event-only. *When* it speaks is more identity than how it phrases. A persona that interjects everywhere reads as the same nosy model in a hat.
 2. **Tools** — the allowlist is the role. What it can do is what it is.
 3. **Deliverable shape** — one recognizable output form each (verdict-with-findings / TLDR / short answer + done action). Form is recognizable across messages; "professional but friendly" is not.
 4. **Edges** — a colleague refuses outside their lane and names who to ask instead. One handoff line per prompt. A persona that answers everything is the model again.
