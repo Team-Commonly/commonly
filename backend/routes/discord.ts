@@ -246,7 +246,9 @@ router.get('/install-link/:podId', listIntegrationsRateLimit, auth, async (req: 
     // on prod 2026-11-04).
     const installUrl = new URL('https://discord.com/api/oauth2/authorize');
     installUrl.searchParams.set('client_id', String(clientId));
-    installUrl.searchParams.set('scope', 'bot applications.commands');
+    // `identify` lets the callback read the installer's own Discord user id
+    // (users/@me), the proof a live relay on this shared channel needs (F131).
+    installUrl.searchParams.set('scope', 'bot applications.commands identify');
     installUrl.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS);
     installUrl.searchParams.set('response_type', 'code');
     installUrl.searchParams.set('redirect_uri', discordRedirectUri());
@@ -397,11 +399,32 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
         return res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
       }
     }
+    // F131: the installer's Discord user id, read with the user token this
+    // exchange just returned. It rides in the signed proof and nowhere else. A
+    // failed or malformed read leaves it out — the install still binds, and the
+    // row simply cannot relay live — never a guess.
+    let installerDiscordId: string | null = null;
+    const accessToken = (tokenResponse?.data as { access_token?: unknown } | undefined)?.access_token;
+    if (provenGuildId && typeof accessToken === 'string' && accessToken) {
+      try {
+        const me = await axios.get('https://discord.com/api/users/@me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 10_000,
+        });
+        const meId = (me?.data as { id?: unknown } | undefined)?.id;
+        installerDiscordId = isDiscordSnowflake(meId) ? String(meId) : null;
+      } catch {
+        // No provider data in the log: Discord may echo request credentials.
+        console.warn('Discord OAuth users/@me lookup failed; install proof carries no Discord user');
+      }
+    }
     const successUrl = new URL(`${frontend}/discord/success`);
     successUrl.searchParams.append('pod_id', podId);
     successUrl.searchParams.append('guild_id', installedGuildId || '');
     successUrl.searchParams.append('server_name', serverName);
-    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId, userId: installerId }));
+    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({
+      podId, guildId: provenGuildId, userId: installerId, discordUserId: installerDiscordId,
+    }));
     res.redirect(successUrl.toString());
   } catch {
     console.error('Discord OAuth callback error');

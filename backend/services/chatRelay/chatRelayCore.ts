@@ -11,10 +11,15 @@
 //   - how a command is spelled and how its reply reads;
 //   - how an inbound sender is proven to be the linked user.
 //
-// The last two are deliberately not abstracted here: reply text is
-// byte-pinned per platform, and attribution proof is a security argument each
-// bridge makes in its own terms (a private chat on Telegram, a matched DM user
-// on Slack). The core takes the semantic outcome; the adapter writes the words.
+// Reply text is not abstracted here: it is byte-pinned per platform. The core
+// takes the semantic outcome; the adapter writes the words.
+//
+// Attribution proof is a security argument each bridge makes in its own terms
+// (a private chat on Telegram, a matched DM user on Slack, a matched proven
+// author on Discord), declared as an InboundRelayAdapter. The core owns the
+// other half: the only way to reach `writeInboundAsLinkedUser` is a
+// ProvenSender, and only `proveInboundSender` mints one, after the adapter's
+// proof has passed.
 //
 // Adding a platform is one adapter in its bridge plus one entry in
 // ./adapters.ts — the dispatcher's selector reads the registry's keys.
@@ -306,6 +311,112 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
 // Inbound — write an external line into the pod as the linked user.
 // ---------------------------------------------------------------------------
 
+/** The row fields the live-relay rule reads: the config and who created it. */
+export interface LiveRelayRow {
+  config?: Record<string, unknown> | null;
+  createdBy?: unknown;
+}
+
+/**
+ * One platform's inbound half. Both members are security arguments the
+ * platform makes in its own terms; the core never branches on the provider.
+ */
+export interface InboundRelayAdapter<I = any, E = any> {
+  provider: string;
+  /**
+   * True only when the platform itself guarantees that the external sender
+   * of `evidence` IS `integration.config.linkedUserId`. Every relayed line is
+   * AUTHORED as that user, so a false positive here puts words in their mouth.
+   */
+  senderIsLinkedUser: (integration: I, evidence: E) => boolean;
+  /**
+   * Why turning `liveRelay` on for this row would be dishonest, or null when
+   * it may go on. Read by both integration write routes, after the row's
+   * server-owned fields are settled. `requesterId` is the caller whose id the
+   * route stamps into `linkedUserId`.
+   */
+  liveRelayRefusal: (row: LiveRelayRow, requesterId: string) => string | null;
+}
+
+/**
+ * The rule every chat connector had before adapters declared their own: a
+ * live relay authors inbound as `linkedUserId` and streams outbound to
+ * `chatId`, and both are honest only in a 1:1 private chat (#1289 inbound,
+ * F2 outbound). A row with no `chatId` yet has nothing to judge.
+ */
+export const PRIVATE_CHAT_LIVE_RELAY_REFUSAL = 'Live relay requires a private chat with the bot; '
+  + 'this connector is bound to a group';
+export const privateChatLiveRelayRefusal = (row: LiveRelayRow): string | null => {
+  const config = row.config || {};
+  return config.chatId && config.chatType !== 'private' ? PRIVATE_CHAT_LIVE_RELAY_REFUSAL : null;
+};
+
+declare const provenSenderBrand: unique symbol;
+
+/**
+ * An inbound sender the platform has proven to be `linkedUserId`. Opaque:
+ * the brand is a type no module can name, and the runtime registry below
+ * refuses an object `proveInboundSender` did not mint, so a JS caller cannot
+ * forge one with a literal either.
+ */
+export type ProvenSender = {
+  readonly provider: string;
+  readonly linkedUserId: string;
+  readonly [provenSenderBrand]: true;
+};
+
+const mintedSenders = new WeakSet<object>();
+
+/**
+ * The only constructor of a ProvenSender: the adapter's proof, then a minted
+ * token naming the linked user. Null when the proof fails or the row names no
+ * linked user.
+ */
+export const proveInboundSender = <I extends { config?: { linkedUserId?: unknown } | null }, E>(
+  adapter: InboundRelayAdapter<I, E>,
+  integration: I,
+  evidence: E,
+): ProvenSender | null => {
+  const linkedUserId = integration?.config?.linkedUserId;
+  if (!linkedUserId) return null;
+  let proven = false;
+  try {
+    proven = adapter.senderIsLinkedUser(integration, evidence) === true;
+  } catch {
+    proven = false;
+  }
+  if (!proven) return null;
+  const sender = Object.freeze({ provider: adapter.provider, linkedUserId: String(linkedUserId) }) as ProvenSender;
+  mintedSenders.add(sender);
+  return sender;
+};
+
+const assertProvenSender = (sender: ProvenSender): string => {
+  if (!sender || typeof sender !== 'object' || !mintedSenders.has(sender)) {
+    throw new Error('chat-relay inbound write refused: the sender was not proven by an adapter');
+  }
+  return sender.linkedUserId;
+};
+
+/**
+ * Claim one inbound platform message, once, across every backend replica. A
+ * platform that pushes the same message to more than one listener (a gateway
+ * socket per replica) calls this before the write; the WebhookDelivery unique
+ * index is the boundary the HTTP bridges' redelivery dedupe already uses.
+ * Keyed by the integration as well, because one message reaches every row
+ * bound to its channel and each row's pod should get it once.
+ */
+export const INBOUND_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+export const claimInboundMessage = async (
+  provider: string,
+  integrationId: unknown,
+  externalMessageId: string,
+): Promise<'claimed' | 'duplicate' | 'unavailable'> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { claimDelivery } = require('../webhookDeliveryService');
+  return claimDelivery(provider, `inbound:${String(integrationId)}:${externalMessageId}`, INBOUND_CLAIM_TTL_MS);
+};
+
 export interface InboundAuthor {
   pod: { type?: string; members?: unknown[] };
   linkedUser: { username?: string; profilePicture?: string };
@@ -313,19 +424,20 @@ export interface InboundAuthor {
 
 /**
  * The membership half of inbound authorship: the linked user must still be a
- * listed member of the pod the line lands in. `onRefused` is the adapter's
+ * listed member of the pod the line lands in. `onNotMember` is the adapter's
  * in-chat notice. The other half — that the external sender IS the linked user
- * — each bridge proves before calling, in its platform's terms.
+ * — is the ProvenSender this takes.
  */
 export const loadInboundAuthor = async (opts: {
   podId: string;
-  linkedUserId: string;
+  sender: ProvenSender;
   logPrefix: string;
   onNotMember: () => Promise<void>;
 }): Promise<InboundAuthor | null> => {
   const {
-    podId, linkedUserId, logPrefix, onNotMember,
+    podId, sender, logPrefix, onNotMember,
   } = opts;
+  const linkedUserId = assertProvenSender(sender);
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Pod = require('../../models/Pod');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -352,12 +464,13 @@ export const loadInboundAuthor = async (opts: {
  * repair, and nothing exists yet to duplicate. Failures AFTER it are swallowed:
  * a throw would reach the webhook, return non-2xx, and the platform would
  * redeliver — re-running the write and duplicating the message and every wake
- * it triggers, because nothing dedupes on the platform's message id.
+ * it triggers. (The HTTP bridges dedupe the delivery at their routes; a
+ * pushed platform claims the message first with `claimInboundMessage`.)
  */
 export const writeInboundAsLinkedUser = async (opts: {
   podId: string;
   podType?: string;
-  linkedUserId: string;
+  sender: ProvenSender;
   linkedUser: { username?: string; profilePicture?: string };
   content: string;
   replyToMessageId: string | null;
@@ -365,8 +478,11 @@ export const writeInboundAsLinkedUser = async (opts: {
   logPrefix: string;
 }): Promise<void> => {
   const {
-    podId, podType, linkedUserId, linkedUser, content, replyToMessageId, lateReplyThreadRootId, logPrefix,
+    podId, podType, sender, linkedUser, content, replyToMessageId, lateReplyThreadRootId, logPrefix,
   } = opts;
+  // First, before anything is loaded or written: an unproven sender is a
+  // programming error, and it must fail where nothing exists yet to duplicate.
+  const linkedUserId = assertProvenSender(sender);
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const PGMessage = require('../../models/pg/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require

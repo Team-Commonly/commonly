@@ -25,6 +25,7 @@ const OWNER = '6a8f6de2a1dccf2e02f31401';
 const MEMBER = '6a8f6de2a1dccf2e02f31402';
 const POD_ID = '6a8f6de2a1dccf2e02f31499';
 const GUILD = '123456789012345678';
+const INSTALLER_DISCORD = '456789012345678901';
 const CHANNEL = '234567890123456789';
 const WEBHOOK = { id: '345678901234567890', token: 'webhook-token' };
 
@@ -116,6 +117,7 @@ beforeEach(async () => {
       return { data: [{ id: CHANNEL, name: 'general', type: 0 }, { id: '999999999999999999', name: 'Voice', type: 2 }] };
     }
     if (url === `https://discord.com/api/channels/${CHANNEL}`) return { data: { id: CHANNEL, guild_id: GUILD, type: 0 } };
+    if (url === 'https://discord.com/api/users/@me') return { data: { id: INSTALLER_DISCORD, username: 'owner' } };
     throw new Error(`unexpected GET ${url}`);
   });
 });
@@ -133,7 +135,8 @@ test('the install link sends Discord back to the callback with a code', async ()
   // A signed state, not the bare pod id a crafted link could carry.
   expect(url.searchParams.get('state')).not.toBe(`pod_${POD_ID}`);
   expect(url.searchParams.get('state')).not.toContain(POD_ID);
-  expect(url.searchParams.get('scope')).toBe('bot applications.commands');
+  // `identify` lets the callback read the installer's Discord user id (F131).
+  expect(url.searchParams.get('scope')).toBe('bot applications.commands identify');
 });
 
 test('the link ignores a caller-supplied client id', async () => {
@@ -192,6 +195,9 @@ test('a bot add from the link ends in a bound pod', async () => {
   expect(row.config.serverId).toBe(GUILD);
   expect(row.config.channelId).toBe(CHANNEL);
   expect(row.config.webhookUrlRef).toBe('secret-ref-1');
+  // F131: the installer's Discord id, from users/@me through the proof, survives
+  // the strict config subdocument.
+  expect(row.config.discordUserId).toBe(INSTALLER_DISCORD);
   const platform = await DiscordIntegration.findOne({ integrationId: row._id }).lean();
   expect(platform).toMatchObject({ serverId: GUILD, channelId: CHANNEL, webhookId: WEBHOOK.id });
 

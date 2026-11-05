@@ -145,6 +145,12 @@ export interface IIntegration extends Document {
     teamName?: string;
     slackUserId?: string;
     slackUserName?: string;
+    /**
+     * The Discord user id of the person who installed the bot, proven by the
+     * OAuth callback's `users/@me` read (F131). Live relay authors only that
+     * sender's channel messages as `linkedUserId`; server-owned.
+     */
+    discordUserId?: string;
     pendingBind?: {
       teamId: string;
       teamName?: string;
@@ -345,6 +351,8 @@ const IntegrationSchema = new Schema<IIntegration>(
       teamName: String,
       slackUserId: String,
       slackUserName: String,
+      // Declared, or the strict subdocument drops the bind's write (F131).
+      discordUserId: String,
       pendingBind: {
         teamId: String,
         teamName: String,

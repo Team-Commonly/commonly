@@ -114,6 +114,53 @@ Rows bound by plain members before the rule keep working. The only runtime
 gates are the three outbound summary commands above, which answer with a short
 refusal and no summary on such a row until the pod's creator reconnects it.
 
+## Who a relayed line is written as (F131)
+A live relay writes an external line into the pod **as `config.linkedUserId`**.
+That is honest only when the platform proves the sender is that person, so each
+platform declares its proof as an inbound adapter (`InboundRelayAdapter` in
+`backend/services/chatRelay/chatRelayCore.ts`, registered in
+`chatRelay/adapters.ts` as `inboundRelayAdapters`):
+- **Telegram**: the chat is `private`, so the sender is its one counterpart.
+- **Slack**: the DM's `event.user` is the `slackUserId` the OAuth bind proved.
+- **Discord**: a guild channel proves nothing, so the author must be the
+  installer's own Discord account. The install link asks for `identify`, the
+  OAuth callback reads `users/@me` with the exchange's user token, the id rides
+  in the signed install proof, and `POST /api/integrations` stores it as the
+  server-owned `config.discordUserId`. A line relays live only when
+  `author.id === discordUserId` and `linkedUserId` is the row's creator; every
+  other line stays in the summary buffer. Bots, webhooks (our own echo) and
+  system messages are ignored.
+
+`writeInboundAsLinkedUser` and `loadInboundAuthor` take a `ProvenSender`, which
+only `proveInboundSender` mints, after the adapter's proof passes. The same
+adapter declares `liveRelayRefusal`, which both integration write routes read
+before `liveRelay` goes on: the private-chat rule for Telegram and Slack (and
+any undeclared type), the proven installer for Discord.
+
+A platform that pushes one message to every backend replica (Discord's gateway
+socket) claims it with `claimInboundMessage(provider, integrationId, messageId)`
+before writing; that is the WebhookDelivery unique index the HTTP bridges'
+redelivery dedupe already uses.
+
+**An explicit exception to review rule 19** (`docs/development/review-checklist.md`:
+a guard that cannot do its job fails toward the noisy outcome, and "noisy" names
+an audience). When the claim store is unavailable, Discord relays the line
+**nothing live**: it fails closed, under-delivering. Failing open would write
+the same line once per replica, each copy authored in the installer's name and
+each waking the pod's agents. That is worse than a missed live line, and it
+can't be undone. The line is not lost: the gateway buffered it for the
+channel's summaries before the bridge ran. The audience is the operator: the
+warning names the integration and the Discord message id. The sender isn't
+told: on a shared channel a notice would reach everyone in the guild. Telegram
+fails open at the same point, because its HTTP redelivery gives it one
+delivery per update. A gateway socket per replica doesn't.
+
+Once the claim is held, no other replica writes the line. So the read-only
+author load (`loadInboundAuthor`) is retried up to three times on a thrown
+error, then logged with the same two ids. The write itself is single-attempt.
+Inbound and outbound are separate registries:
+Discord relays inbound only, and is not in `chatRelayAdapters`.
+
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:
   - validates `ingestEvent` produces required fields

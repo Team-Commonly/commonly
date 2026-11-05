@@ -286,3 +286,89 @@ describe('the adapter registry drives the dispatcher', () => {
     expect(pipeline[0].$match.type).toEqual({ $in: ['telegram', 'slack', 'discordish'] });
   });
 });
+
+describe('inbound: only a proven sender reaches the write (F131)', () => {
+  const {
+    proveInboundSender,
+    writeInboundAsLinkedUser,
+    loadInboundAuthor,
+    privateChatLiveRelayRefusal,
+  } = require('../../../services/chatRelay/chatRelayCore');
+  const { inboundRelayAdapters, liveRelayRefusalFor } = require('../../../services/chatRelay/adapters');
+
+  const alwaysAdapter = (answer) => ({
+    provider: 'test', senderIsLinkedUser: () => answer, liveRelayRefusal: () => null,
+  });
+
+  test('the adapter’s proof mints a sender naming the linked user', () => {
+    const sender = proveInboundSender(alwaysAdapter(true), { config: { linkedUserId: 'user-1' } }, {});
+    expect(sender).toMatchObject({ provider: 'test', linkedUserId: 'user-1' });
+    expect(Object.isFrozen(sender)).toBe(true);
+  });
+
+  test.each([
+    ['a failed proof', alwaysAdapter(false), { config: { linkedUserId: 'user-1' } }],
+    ['a truthy non-true proof', alwaysAdapter('yes'), { config: { linkedUserId: 'user-1' } }],
+    ['a proof that throws', { provider: 't', senderIsLinkedUser: () => { throw new Error('x'); } }, { config: { linkedUserId: 'user-1' } }],
+    ['no linked user', alwaysAdapter(true), { config: {} }],
+  ])('mints nothing on %s', (_label, adapter, integration) => {
+    expect(proveInboundSender(adapter, integration, {})).toBeNull();
+  });
+
+  test('the write refuses a hand-built sender before loading or writing anything', async () => {
+    const forged = { provider: 'telegram', linkedUserId: 'victim' };
+    await expect(writeInboundAsLinkedUser({
+      podId: 'pod-1', sender: forged, linkedUser: {}, content: 'x', replyToMessageId: null, logPrefix: '[t]',
+    })).rejects.toThrow(/not proven/);
+    await expect(loadInboundAuthor({
+      podId: 'pod-1', sender: forged, logPrefix: '[t]', onNotMember: async () => {},
+    })).rejects.toThrow(/not proven/);
+    expect(Pod.findById).not.toHaveBeenCalled();
+  });
+
+  test('every platform that relays inbound declares an inbound adapter; outbound stays telegram and slack', () => {
+    expect(Object.keys(inboundRelayAdapters)).toEqual(['telegram', 'slack', 'discord']);
+    Object.entries(inboundRelayAdapters).forEach(([provider, adapter]) => {
+      expect(adapter.provider).toBe(provider);
+      expect(typeof adapter.senderIsLinkedUser).toBe('function');
+      expect(typeof adapter.liveRelayRefusal).toBe('function');
+    });
+    expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack']);
+  });
+
+  test('Telegram keeps the private-chat live-relay rule; an undeclared type falls back to it', () => {
+    const group = { config: { chatId: '42', chatType: 'group' } };
+    const privateChat = { config: { chatId: '42', chatType: 'private' } };
+    const unbound = { config: {} };
+    ['telegram', 'groupme', undefined].forEach((type) => {
+      expect(liveRelayRefusalFor(type, group, 'u')).toBe(privateChatLiveRelayRefusal(group));
+      expect(liveRelayRefusalFor(type, group, 'u')).toMatch(/private chat/);
+      expect(liveRelayRefusalFor(type, privateChat, 'u')).toBeNull();
+      expect(liveRelayRefusalFor(type, unbound, 'u')).toBeNull();
+    });
+  });
+
+  test('Slack’s rule is its own: the OAuth DM (`im`, no channel) may relay live, a channel may not', () => {
+    // Slack stores its DM as chatType 'im'; the shared private-chat rule read
+    // that as a group and refused every bound Slack DM (CodeRabbit on #3456).
+    // Same audience test as F143's surfaceBindDeclarations.slack.
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'D1', chatType: 'im' } }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('slack', { config: {} }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'D1', chatType: 'im', channelId: 'C1' } }, 'u'))
+      .toMatch(/direct message/);
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'C1', chatType: 'channel' } }, 'u')).toMatch(/direct message/);
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'C1', chatType: 'private' } }, 'u')).toMatch(/direct message/);
+    // A legacy per-channel row names only channelId.
+    expect(liveRelayRefusalFor('slack', { config: { channelId: 'C1' } }, 'u')).toMatch(/direct message/);
+  });
+
+  test('Discord’s rule is its own declaration: a proven installer, not a chat type', () => {
+    expect(liveRelayRefusalFor('discord', { config: {}, createdBy: 'u' }, 'u')).toMatch(/Discord account/);
+    expect(liveRelayRefusalFor('discord', { config: { discordUserId: '345678901234567890' }, createdBy: 'u' }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('discord', { config: { discordUserId: '345678901234567890' }, createdBy: 'u' }, 'v')).toMatch(/Only the person/);
+  });
+
+  test('an inherited property name is not a platform', () => {
+    expect(liveRelayRefusalFor('toString', { config: {} }, 'u')).toBeNull();
+  });
+});

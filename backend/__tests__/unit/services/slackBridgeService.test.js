@@ -211,6 +211,34 @@ describe('Slack installable bridge', () => {
     expect(PGMessage.create.mock.calls[0][0]).toBe('pod-1');
   });
 
+  test('a plain DM from a Slack user other than the bound one writes nothing (F131 review)', async () => {
+    Pod.findById.mockReturnValue(podWithMembers('Alpha'));
+    PGMessage.create.mockResolvedValue({ id: 'pg-1' });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ username: 'sam' }) }),
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await relaySlackMessageToPod({
+        integration: {
+          ...integration,
+          scope: 'user',
+          config: {
+            ...integration.config, linkedUserId: 'user-1', slackUserId: 'U1', gates: {},
+          },
+        },
+        // No thread, no mention: the plain-DM path, with a sender who is not U1.
+        event: { text: 'hello', user: 'U2' },
+      });
+
+      expect(result).toEqual({ relayed: false });
+      expect(PGMessage.create).not.toHaveBeenCalled();
+      expect(deliverMessageToAgents).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('addresses an unquoted plain message to the active pod lead', async () => {
     Pod.findById.mockReturnValue(podWithMembers('Alpha', ['user-1', 'bot-1']));
     User.findOne.mockResolvedValue({ _id: 'bot-1', username: 'kai', isBot: true });

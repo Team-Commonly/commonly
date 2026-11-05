@@ -16,6 +16,8 @@ interface ChannelTarget {
   integrationId: unknown;
   webhookListenerEnabled: boolean;
   maxBufferSize: number;
+  // Only a hint for which rows to hand the bridge; the bridge re-reads the row.
+  liveRelay?: boolean;
 }
 
 interface IntegrationDoc {
@@ -25,13 +27,17 @@ interface IntegrationDoc {
     serverId?: string;
     webhookListenerEnabled?: boolean;
     maxBufferSize?: number;
+    liveRelay?: boolean;
   };
 }
 
 interface DiscordMessage {
   guild?: { id: string };
   channel?: { id: string };
-  author?: { id?: string; username?: string; bot?: boolean };
+  author?: { id?: string; username?: string; globalName?: string | null; bot?: boolean };
+  type?: number;
+  system?: boolean;
+  webhookId?: string | null;
   member?: { displayName?: string };
   content?: string;
   id?: string;
@@ -117,7 +123,8 @@ class DiscordGatewayService {
       type: 'discord',
       isActive: true,
     })
-      .select('_id config.channelId config.serverId config.webhookListenerEnabled config.maxBufferSize')
+      .select('_id config.channelId config.serverId config.webhookListenerEnabled config.maxBufferSize '
+        + 'config.liveRelay')
       .lean() as IntegrationDoc[];
 
     this.channelCache.clear();
@@ -133,6 +140,7 @@ class DiscordGatewayService {
         integrationId: integration._id,
         webhookListenerEnabled: !!integration?.config?.webhookListenerEnabled,
         maxBufferSize: integration?.config?.maxBufferSize || 1000,
+        liveRelay: integration?.config?.liveRelay === true,
       });
       this.channelCache.set(key, existing);
     });
@@ -190,6 +198,24 @@ class DiscordGatewayService {
           },
         })),
     );
+
+    // F131: a live-relay row also gets the line in its pod, when the bridge
+    // proves the author. The buffer above is unchanged for every line, relayed
+    // or not, so channel summaries still see the whole channel.
+    const liveTargets = targets.filter((target) => target.liveRelay);
+    if (!liveTargets.length) return;
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { relayDiscordMessageForIntegration } = require('./discordBridgeService');
+    await Promise.all(liveTargets.map(async (target) => {
+      try {
+        await relayDiscordMessageForIntegration(target.integrationId, message);
+      } catch (error) {
+        console.error(
+          `[discord-bridge] live relay failed integration=${String(target.integrationId)}:`,
+          (error as Error).message,
+        );
+      }
+    }));
   }
 }
 
