@@ -374,7 +374,7 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
-      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* runs inside bubblewrap \(bwrap\), on your own Claude Code login/);
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* runs inside bubblewrap \(bwrap\)\. Usually it works in its own scratch folder/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
     });
 
@@ -383,9 +383,12 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken();
       const reach = screen.getByTestId('byo-listen-reach');
-      expect(reach).toHaveTextContent(/checked in CI with a stand-in model; no one has run it end to end on Linux yet/);
+      expect(reach).toHaveTextContent(/The scratch-folder setup has been checked in CI with a stand-in model; no one has run either setup end to end on Linux yet/);
       expect(reach).toHaveTextContent(/run \/login in Claude Code/);
-      expect(reach).toHaveTextContent(/Otherwise, or when you run it from your home folder, it works in its own scratch folder/);
+      // The CLI's workspace seat copies a login and drops ANTHROPIC_API_KEY (claude.js),
+      // and refuses --allow anywhere else (agent.js, firstRunWorkspace).
+      expect(reach).toHaveTextContent(/there it needs your Claude Code login: an API key alone won’t do/);
+      expect(reach).toHaveTextContent(/In the project-folder case only, you can add --allow write to the last line to let it edit files and run commands, or --allow web/);
     });
 
     test('Linux with Codex: no listener command, and Codex says it is not tested yet', async () => {
@@ -403,7 +406,7 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken(undefined, PRIVATE_POD);
       expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
-      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/reads only the folder you run this from/);
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/it reads only that folder instead/);
     });
 
     test('Linux with Claude Code: the bubblewrap requirement sits beside the command, with no home-folder refusal', async () => {

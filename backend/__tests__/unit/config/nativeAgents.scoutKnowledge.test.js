@@ -236,7 +236,7 @@ describe('Scout onboarding knowledge', () => {
     const zh = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/zh-CN.json'), 'utf8'));
     expect(en.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
     expect(zh.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
-    expect(en.agentByo.listen.reachClaudeLinux).toMatch(/checked in CI with a stand-in model; no one has run it end to end on Linux yet/);
+    expect(en.agentByo.listen.reachClaudeLinux).toMatch(/The scratch-folder setup has been checked in CI with a stand-in model; no one has run either setup end to end on Linux yet/);
     expect(en.agentByo.listen.unavailableCodex).toMatch(/has been tested only on a Mac and may not answer @mentions from \{\{os\}\} yet\. Choose “Run it here” for a hosted agent, or run the command on a Mac\./);
   });
 
