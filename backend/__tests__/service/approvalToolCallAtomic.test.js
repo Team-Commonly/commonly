@@ -329,3 +329,45 @@ describe('a reused approval reports to every run waiting on it (F184 item 4)', (
     expect([...resolved[0].payload.runIds].sort()).toEqual([firstRun, laterRun].sort());
   });
 });
+
+describe('a card that lands after its row closed (F184 follow-up)', () => {
+  test('a row mooted between create and card post is not revived, and its card shows it is closed', async () => {
+    const original = AgentMessageService.postMessage.bind(AgentMessageService);
+    // The cardless sweep runs while the card post is still in flight.
+    const spy = jest.spyOn(AgentMessageService, 'postMessage').mockImplementationOnce(async (input) => {
+      const posted = await original(input);
+      await ApprovalAction.updateOne(
+        { _id: input.metadata.approvalId },
+        { $set: { status: 'moot' }, $unset: { 'toolCall.canonicalArgs': 1 } },
+      );
+      return posted;
+    });
+    let error;
+    try { error = await callWith(ISSUE).then(() => null, (e) => e); } finally { spy.mockRestore(); }
+    expect(error).toMatchObject({ code: 'approval_unavailable', statusCode: 503 });
+    const row = await ApprovalAction.findOne({}).lean();
+    expect(row.status).toBe('moot');
+    expect(row.messageId).toBeUndefined();
+    const posted = await cards();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].payload).toMatchObject({ approvalId: String(row._id), status: 'moot' });
+    // Its slot and identity are free: the same call parks on a new card.
+    const again = await callWith(ISSUE).then(() => null, (e) => e);
+    expect(again).toMatchObject({ code: 'approval_required' });
+    expect(String(again.details.approvalId)).not.toBe(String(row._id));
+  });
+});
+
+describe('waitingRuns is bounded (F184 follow-up)', () => {
+  test('25 reusing runs keep only the 20 most recent', async () => {
+    const creator = new mongoose.Types.ObjectId().toString();
+    const first = await callWith(ISSUE, { runId: creator, runPodId: String(pod._id) }).then(() => null, (e) => e);
+    const runs = Array.from({ length: 25 }, () => new mongoose.Types.ObjectId().toString());
+    await runs.reduce((prior, runId) => prior.then(() => callWith(ISSUE, { runId, runPodId: String(pod._id) })
+      .then(() => null, (e) => e)), Promise.resolve());
+    // A run that reuses twice is recorded once.
+    await callWith(ISSUE, { runId: runs[24], runPodId: String(pod._id) }).then(() => null, (e) => e);
+    const row = await ApprovalAction.findById(first.details.approvalId).lean();
+    expect(row.waitingRuns.map((r) => String(r.runId))).toEqual(runs.slice(5));
+  });
+});

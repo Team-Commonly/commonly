@@ -482,8 +482,15 @@ const queueFull = (waiting: number): ProposeResult => ({
 const reuseOpenToolCall = async (same: OpenToolCallRow, waitingRun: WaitingRun | null): Promise<ProposeResult> => {
   if (waitingRun) {
     await ApprovalAction.updateOne(
-      { _id: same._id, status: 'flagged', runId: { $ne: waitingRun.runId } },
-      { $addToSet: { waitingRuns: waitingRun } },
+      {
+        _id: same._id,
+        status: 'flagged',
+        runId: { $ne: waitingRun.runId },
+        'waitingRuns.runId': { $ne: waitingRun.runId },
+      },
+      // Bounded: an agent retrying in a loop must not grow the row without
+      // limit. The newest runs are the ones still likely to care.
+      { $push: { waitingRuns: { $each: [waitingRun], $slice: -MAX_WAITING_RUNS } } },
     );
   }
   return {
@@ -494,6 +501,9 @@ const reuseOpenToolCall = async (same: OpenToolCallRow, waitingRun: WaitingRun |
     callId: String(same.toolCall?.callId || ''),
   };
 };
+
+/** Later runs one approval remembers for its decision event (F184). */
+export const MAX_WAITING_RUNS = 20;
 
 /** How long a racing identical call waits for the winner's card (F184). */
 const TWIN_CARD_WAIT_MS = 2000;
@@ -857,7 +867,31 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
 
   const messageId = String(posted.message._id || posted.message.id || '');
   row.messageId = messageId;
-  await row.save();
+  if (actionType === 'tool_call') {
+    // Guarded (F184): if the cardless sweep closed the row while the card was
+    // posting, a plain save would attach the card to a closed row and leave
+    // the posted card reading as pending. The row stays closed; the card is
+    // rewritten from the closed row so it shows that, and the call did not
+    // park. Legacy action rows are not swept, so they keep the plain save.
+    const attached = await ApprovalAction.updateOne(
+      { _id: row._id, status: 'flagged' },
+      { $set: { messageId } },
+    );
+    if (attached && attached.matchedCount === 0) {
+      const closed = await ApprovalAction.findById(row._id);
+      if (closed) {
+        closed.messageId = messageId;
+        await updateCardEverywhere(closed);
+      }
+      return {
+        ok: false,
+        code: 'approval_unavailable',
+        error: 'the approval closed before its card was posted; nothing ran',
+      };
+    }
+  } else {
+    await row.save();
+  }
   // The card in the room is not enough: the inbox is where "what needs you"
   // lives, and its count is the ledger (#1650). Advisory — a projection
   // failure never turns a posted proposal into an error for the agent.
