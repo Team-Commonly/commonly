@@ -82,7 +82,7 @@ describe('content-less events still get something usable', () => {
 describe('a hosted heartbeat with nothing to post just ends: only the post tool reaches the pod', () => {
   // F190: the final text of a heartbeat is never posted (finalTextReachesPod),
   // so the prompt says the post tool is the only way in, not "return NO_REPLY".
-  const HEARTBEAT_POST_LINE = 'Only commonly_post_message reaches the pod: your final text on a heartbeat is never posted';
+  const HEARTBEAT_POST_LINE = 'Your final text on a heartbeat is never posted: to say something, call commonly_post_message';
   const { buildHeartbeatContent } = require('../../../services/heartbeatCue');
   const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
   const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');

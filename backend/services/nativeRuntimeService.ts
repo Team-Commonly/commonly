@@ -1711,8 +1711,8 @@ export function buildUserMessage(
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
-      + 'Only commonly_post_message reaches the pod: your final text on a heartbeat is never posted, '
-      + 'so if nothing needs a post, just end the turn.'
+      + 'Your final text on a heartbeat is never posted: to say something, call commonly_post_message, '
+      + 'and if nothing needs a post, just end the turn.'
     );
     const kept = inlineCue.split('\n')
       .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
@@ -2878,7 +2878,8 @@ export async function runAgent(
       // The fallback post is a post like any other: after an external result,
       // re-read the bridge before letting it through. A silent reply (NO_REPLY)
       // is a decline, not a held-back answer: it would post nothing anyway.
-      const fallbackBlocked = Boolean(textOut && !postedViaTool
+      // A heartbeat's final text is never posted (F190), so there is nothing to hold back.
+      const fallbackBlocked = Boolean(textOut && !postedViaTool && finalTextReachesPod(trigger)
         && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow()
         && require('./agentMessageService').sanitizeAgentContent(textOut));
       // Held back, the reply never reached the person: the run failed, so it

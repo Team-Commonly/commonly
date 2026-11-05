@@ -337,6 +337,20 @@ describe('native turn with commonly_web_search', () => {
       expect(mockBridged).toHaveBeenCalledTimes(3);
     });
 
+    test('a heartbeat that called a granted tool and ends in text is not a held-back answer (F190)', async () => {
+      // Its final text is never posted, so a bridged pod has nothing to guard.
+      mockBridged.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+      axios.post
+        .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
+        .mockResolvedValueOnce(finalReply);
+
+      await runAgent(install, { type: 'heartbeat', eventId: '507f1f77bcf86cd799439099', payload: {} });
+
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+      expect(savedRun.errorKind).not.toBe('guardrail_blocked');
+      expect(savedRun.status).not.toBe('failed');
+    });
+
     test('an unbridged final-text fallback still carries noOutboundRelay', async () => {
       axios.post
         .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
