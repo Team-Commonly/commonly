@@ -325,16 +325,33 @@ describe('F149: a bot holding a cm_ user API token gets no pod-creator override 
     expect(await MongoMessage.findById(msg._id)).not.toBeNull();
   });
 
-  test('the same bot still deletes its own message with a cm_ user token', async () => {
+  test('an uninstalled bot cannot delete even its own message with a cm_ user token', async () => {
     const owner = await human('owner');
     const bot = await AgentIdentityService.getOrCreateAgentUser('builder', { instanceId: 'default' });
     const botPod = await Pod.create({
       name: 'Bot pod', type: 'chat', createdBy: bot._id, members: [bot._id, owner._id],
     });
     const msg = await MongoMessage.create({
-      podId: botPod._id, userId: bot._id, content: 'mine', messageType: 'text', 
+      podId: botPod._id, userId: bot._id, content: 'mine', messageType: 'text',
     });
     const token = await withApiToken(bot, `cm_${new mongoose.Types.ObjectId().toHexString()}y`);
+    const res = await del(msg._id, token);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('agent_not_installed_in_pod');
+    expect(await MongoMessage.findById(msg._id)).not.toBeNull();
+  });
+
+  test('an installed bot deletes its own message with a cm_ user token', async () => {
+    const owner = await human('owner');
+    const bot = await AgentIdentityService.getOrCreateAgentUser('builder', { instanceId: 'default' });
+    const botPod = await Pod.create({
+      name: 'Bot pod', type: 'chat', createdBy: owner._id, members: [bot._id, owner._id],
+    });
+    await install('builder', botPod._id, owner._id);
+    const msg = await MongoMessage.create({
+      podId: botPod._id, userId: bot._id, content: 'mine', messageType: 'text',
+    });
+    const token = await withApiToken(bot, `cm_${new mongoose.Types.ObjectId().toHexString()}w`);
     const res = await del(msg._id, token);
     expect(res.status).toBe(200);
     expect(await MongoMessage.findById(msg._id)).toBeNull();
