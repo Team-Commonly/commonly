@@ -469,6 +469,35 @@ describe('OAuth Controller', () => {
       expect(state.usedAt).toBeTruthy();
     });
 
+    // #3500 review: a hung PG must not hold the sign-in redirect. The user
+    // mirror is started at creation and never awaited.
+    it('redirects a new account while the PG users mirror hangs, and still starts the mirror', async () => {
+      const oldPgHost = process.env.PG_HOST;
+      process.env.PG_HOST = 'localhost';
+      // eslint-disable-next-line global-require
+      const AgentIdentityService = require('../../../services/agentIdentityService');
+      // eslint-disable-next-line global-require
+      const { MIRROR_TIMEOUT_MS } = require('../../../services/pgMirrorWrite');
+      const syncSpy = jest.spyOn(AgentIdentityService, 'syncUserToPostgreSQL')
+        .mockImplementation(() => new Promise(() => {}));
+      try {
+        await seedState();
+        mockGithubProfile();
+        const res = mockRes();
+        const started = Date.now();
+        await oauthController.oauthCallback(callbackReq(), res);
+        const elapsed = Date.now() - started;
+
+        expect(res.redirect.mock.calls[0][0]).toContain('/v2/oauth/complete');
+        expect(elapsed).toBeLessThan(MIRROR_TIMEOUT_MS);
+        expect(syncSpy).toHaveBeenCalledWith(expect.objectContaining({ email: 'octo@example.com' }));
+      } finally {
+        syncSpy.mockRestore();
+        if (oldPgHost === undefined) delete process.env.PG_HOST;
+        else process.env.PG_HOST = oldPgHost;
+      }
+    });
+
     // ?ref=x on the first visit reaches the provider round trip and is kept
     // on the account it creates; signing in to an existing one never sets it.
     it('a new account made through the provider keeps the signup ref', async () => {

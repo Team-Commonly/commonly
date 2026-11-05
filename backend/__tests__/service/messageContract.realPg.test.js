@@ -57,7 +57,8 @@ real('message contract columns on real PostgreSQL (D245)', () => {
     await seed();
     await pool.query("INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, 'kept')", [POD, USER]);
 
-    expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql', '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql']);
+    expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql', '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql',
+      '0008_pg_mirror_repair_runs.sql']);
     expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
       .toEqual([{
         content: 'kept', summary: null, kind: null, receipt: null,

@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Pod = require('../models/Pod');
+const { mirrorMemberAdded, mirrorUser } = require('../services/pgMirrorWrite');
 const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
@@ -297,6 +298,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string =
           { _id: pod._id, members: { $ne: scoutUser._id } },
           { $push: { members: scoutUser._id } },
         );
+        await mirrorMemberAdded(String(pod._id), String(scoutUser._id));
         // Scripted opener — deterministic and free, so the room is never
         // empty and never depends on a model call succeeding at the exact
         // moment a first impression is being formed. The guide's MODEL turns
@@ -372,7 +374,8 @@ const createDefaultWorkspacePod = async (userId: any, locale: string = 'en') => 
       createdBy: userId,
       members: [userId],
     });
-
+    // The PG mirror of this pod is the queued tail's first step
+    // (syncPodFromMongo), so it is not repeated here on the response path.
     void finishWorkspaceOnboarding(pod, userId, locale);
   } catch (podError: any) {
     console.warn('[register] default workspace pod creation failed:', podError?.message);
@@ -544,6 +547,9 @@ exports.register = async (req: any, res: any) => {
       user.username = await deriveUsernameFromEmail(normalizedEmail);
       await user.save();
     }
+    // F183: start the PG `users` mirror now, not on first page load. Not
+    // awaited: a hung PG must not hold the 201, and mirrorUser never rejects.
+    void mirrorUser(user);
 
     // eslint-disable-next-line global-require
     const { normalizeScoutLocale } = require('../config/native-agents/scout');

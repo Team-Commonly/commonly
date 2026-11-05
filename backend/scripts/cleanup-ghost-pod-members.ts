@@ -37,18 +37,15 @@
  */
 
 import mongoose from 'mongoose';
-import MongoPod from '../models/Pod';
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { isListedPodMember } = require('../utils/isPodMember');
+import { classifyMemberRows } from '../services/podMemberClassifier';
+import type { MemberClassification } from '../services/podMemberClassifier';
 
 interface PgPool {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
 }
 
-export interface MemberRow {
-  podId: string;
-  userId: string;
-}
+export type { MemberRow } from '../services/podMemberClassifier';
+import type { MemberRow } from '../services/podMemberClassifier';
 
 export interface CleanupReport {
   dryRun: boolean;
@@ -97,6 +94,12 @@ const deleteMemberRow = async (pool: PgPool, row: MemberRow): Promise<void> => {
   ]);
 };
 
+// The classifier lives in services/ so the nightly mirror repair can share it
+// without a service importing a script (F183). Re-exported for this script's
+// existing callers.
+export { classifyMemberRows };
+export type { MemberClassification };
+
 export async function cleanupGhostPodMembers(
   options: { dryRun?: boolean } = {},
 ): Promise<CleanupReport> {
@@ -104,69 +107,23 @@ export async function cleanupGhostPodMembers(
   const pool = loadPool();
 
   const rows = await readMemberRows(pool);
+  const c = await classifyMemberRows(rows);
 
   const report: CleanupReport = {
     dryRun,
     examined: rows.length,
-    legitimate: 0,
-    ghost: 0,
-    orphan: 0,
-    unreadable: 0,
-    unreadablePodIds: [],
-    toDelete: [],
+    legitimate: c.legitimate,
+    ghost: c.ghostRows.length,
+    orphan: c.orphanRows.length,
+    unreadable: c.unreadable,
+    unreadablePodIds: c.unreadablePodIds,
+    toDelete: [...c.orphanRows, ...c.ghostRows],
     deleted: 0,
     remaining: null,
     reconciled: null,
     refused: false,
-    examples: { legitimate: null, ghost: null, orphan: null },
+    examples: c.examples,
   };
-
-  const rowsByPod = new Map<string, MemberRow[]>();
-  for (const row of rows) {
-    const bucket = rowsByPod.get(row.podId);
-    if (bucket) bucket.push(row);
-    else rowsByPod.set(row.podId, [row]);
-  }
-
-  for (const [podId, podRows] of rowsByPod) {
-    let doc: { members?: unknown[] } | null = null;
-    try {
-      doc = (await MongoPod.findById(podId).select('members').lean()) as { members?: unknown[] } | null;
-    } catch (err) {
-      // Fail closed. "Cannot read this pod" is not "this pod does not exist":
-      // the second reading authorises a delete, so a transient failure must
-      // never be allowed to take on that meaning.
-      if ((err as { name?: string })?.name === 'CastError') {
-        // A pod id Mongo cannot even parse cannot name a pod. Same class as
-        // an id Mongo does not have, and not a failure to read.
-        report.orphan += podRows.length;
-        report.toDelete.push(...podRows);
-        if (!report.examples.orphan) report.examples.orphan = podRows[0];
-        continue;
-      }
-      report.unreadable += podRows.length;
-      report.unreadablePodIds.push(podId);
-      continue;
-    }
-
-    if (doc === null) {
-      report.orphan += podRows.length;
-      report.toDelete.push(...podRows);
-      if (!report.examples.orphan) report.examples.orphan = podRows[0];
-      continue;
-    }
-
-    for (const row of podRows) {
-      if (isListedPodMember(doc, row.userId)) {
-        report.legitimate += 1;
-        if (!report.examples.legitimate) report.examples.legitimate = row;
-      } else {
-        report.ghost += 1;
-        report.toDelete.push(row);
-        if (!report.examples.ghost) report.examples.ghost = row;
-      }
-    }
-  }
 
   if (report.unreadable > 0) {
     // Refuse the whole write rather than sweeping the pods that did read: a

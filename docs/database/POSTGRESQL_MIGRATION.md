@@ -10,6 +10,8 @@ For schema upgrades and the repository extraction template, see
 
 Commonly has been updated to use **PostgreSQL as the default storage for all chat messages**, while maintaining MongoDB for user management and pod metadata. This document describes the current implementation and key changes.
 
+PG `pods`, `pod_members` and `users` are **mirrors** of Mongo and never decide a permission. How they are kept in step, and the nightly repair: [`docs/runbooks/pg-mirror-repair.md`](../runbooks/pg-mirror-repair.md).
+
 ## Current Architecture
 
 ### Database Roles

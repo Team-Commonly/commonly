@@ -31,6 +31,10 @@ export const ensureUserInCommunityPod = async (userId: unknown): Promise<void> =
     );
     if (result.matchedCount === 0) {
       console.warn('[community-pod] configured Pod was not found; automatic membership skipped.');
+    } else if (result.modifiedCount > 0) {
+      // F183: best-effort PG mirror write; never fails the signup.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(userId));
     }
   } catch (err) {
     console.warn('[community-pod] membership update failed:', (err as Error).message);

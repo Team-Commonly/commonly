@@ -675,6 +675,25 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // F183: repair the PG mirror (pods, pod_members, users) from Mongo,
+    // nightly at 03:30 UTC (services/pgMirrorRepairService.ts). Registered only
+    // when the deployment opts in; report-only unless PG_MIRROR_REPAIR_APPLY=1,
+    // which the service reads itself. An advisory lock keeps two replicas from
+    // overlapping.
+    const pgMirrorRepairJob: CronJob = cron.schedule(
+      '30 3 * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { runPgMirrorRepair } = require('./pgMirrorRepairService');
+          await runPgMirrorRepair();
+        } catch (error) {
+          console.error('[pg-mirror-repair] run failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -702,6 +721,7 @@ class SchedulerService {
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
       ...(process.env.AGENT_RUN_CONTENT_WINDOW === 'true' ? [runContentWindowJob] : []),
+      ...(process.env.PG_MIRROR_REPAIR === 'true' ? [pgMirrorRepairJob] : []),
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

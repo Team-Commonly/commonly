@@ -57,10 +57,19 @@ export async function syncPodFromMongo(
     ownerId,
     podId,
   );
-  if (Array.isArray(mongoPod.members)) {
-    await Promise.allSettled(
-      mongoPod.members.map((m) => PGPod.addMember(podId, m.toString())),
-    );
+  const memberIds = Array.isArray(mongoPod.members) ? mongoPod.members.map((m) => m.toString()) : [];
+  if (memberIds.length) {
+    await Promise.allSettled(memberIds.map((m) => PGPod.addMember(podId, m)));
+  }
+  // F183: PGPod.create inserted the owner into pod_members. If Mongo does not
+  // list the owner, that row is a ghost (the nightly mirror diff counts it),
+  // so take it back out. Best-effort: the row grants nothing either way.
+  if (ownerId && !memberIds.includes(String(ownerId))) {
+    try {
+      await PGPod.removeMember(podId, String(ownerId));
+    } catch {
+      // mirror hygiene only
+    }
   }
   return pod;
 }

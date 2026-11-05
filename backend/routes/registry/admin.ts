@@ -359,6 +359,9 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
       }
       pod.members.push(agentUser._id);
       await pod.save();
+      // F183: best-effort PG mirror write; never fails the attach.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('../../services/pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(agentUser._id));
     }
 
     // Upsert AgentInstallation so agentRuntimeAuth authorizes this pod for the token
