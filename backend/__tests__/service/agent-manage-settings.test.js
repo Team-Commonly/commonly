@@ -183,6 +183,37 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeSavedControls.effort).toBe('max');
   });
 
+  // The hosted engine floors a heartbeat to hourly per install and caps an
+  // owner's hosted heartbeats a day (hostedEngine.ts, D244). The wake panel
+  // reads both from here, so it neither offers nor previews more than runs.
+  it('tells the wake panel a hosted agent\'s heartbeat floor and daily cap', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' } },
+    });
+    const get = () => request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    let response = await get();
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 6 });
+
+    process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '0';
+    try {
+      response = await get();
+      expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 0 });
+    } finally {
+      delete process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY;
+    }
+  });
+
+  it('gives no hosted heartbeat bounds to an agent that is not hosted', async () => {
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toBeNull();
+  });
+
   it('shows the installation owner’s quota when an admin opens settings', async () => {
     await User.updateOne({ _id: owner._id }, { $set: { 'entitlements.pro': true } });
     const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')

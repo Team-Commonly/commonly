@@ -25,6 +25,13 @@ const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings
   human: { wakeOnMessage: true, humanOnly: true },
   all: { wakeOnMessage: true, humanOnly: false },
 };
+const HEARTBEAT_INTERVALS = [15, 30, 60, 120, 360, 720, 1440];
+
+interface HostedHeartbeat {
+  minMinutes: number;
+  runsPerDay: number;
+}
+
 const messageWakeChoice = (entry: InstallationSettings): MessageWakeChoice => {
   if (!entry.wakeOnMessage) return 'mentions';
   return entry.humanOnly ? 'human' : 'all';
@@ -46,6 +53,9 @@ const V2AgentWakePods: React.FC<{
   const [turnCap, setTurnCap] = useState<number | null>(null);
   // F164: where runtime auth's outsider-grant narrowing leaves this agent able to write.
   const [runtimeNarrowing, setRuntimeNarrowing] = useState<RuntimeNarrowingStatus | null>(null);
+  // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
+  // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
+  const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -66,6 +76,7 @@ const V2AgentWakePods: React.FC<{
     setLoading(true);
     setInstallations([]);
     setRuntimeNarrowing(null);
+    setHostedHeartbeat(null);
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
@@ -77,7 +88,7 @@ const V2AgentWakePods: React.FC<{
       try {
         const settingsResult = await axios.get<{
           installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
-          runtimeNarrowing?: RuntimeNarrowingStatus | null;
+          runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
         }>(`${base}?${query}`);
         if (!active) return;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
@@ -88,6 +99,7 @@ const V2AgentWakePods: React.FC<{
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
         setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
+        setHostedHeartbeat(settingsResult.data.hostedHeartbeat ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
@@ -185,11 +197,15 @@ const V2AgentWakePods: React.FC<{
   };
 
   // Sum of the draft heartbeat turns, so the header previews the cap as the select changes.
-  const turnsUsed = installations.reduce((total, entry) => {
+  // A hosted agent runs no faster than its floor and no more than its daily cap.
+  const floorMinutes = hostedHeartbeat?.minMinutes ?? 0;
+  const heartbeatTurns = installations.reduce((total, entry) => {
     const off = draftOff[entry.podId] ?? !entry.heartbeatEnabled;
-    const minutes = draftMinutes[entry.podId] ?? entry.heartbeatMinutes;
+    const minutes = Math.max(floorMinutes, draftMinutes[entry.podId] ?? entry.heartbeatMinutes);
     return off ? total : total + Math.ceil(1440 / minutes);
   }, 0);
+  const turnsUsed = hostedHeartbeat ? Math.min(heartbeatTurns, hostedHeartbeat.runsPerDay) : heartbeatTurns;
+  const intervals = HEARTBEAT_INTERVALS.filter((value) => value >= floorMinutes);
   const overCap = turnCap !== null && turnsUsed > turnCap;
 
   if (loading || loadedIdentity !== identity) {
@@ -213,6 +229,11 @@ const V2AgentWakePods: React.FC<{
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
+      {hostedHeartbeat && <p className="v2-agent-wake-pods__hint">
+        {hostedHeartbeat.runsPerDay > 0
+          ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
+          : t('agentSettings.heartbeatHostedOff')}
+      </p>}
       {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
         {installations.length ? (
@@ -276,7 +297,7 @@ const V2AgentWakePods: React.FC<{
                                 if (value !== 'off') setDraftMinutes((current) => ({ ...current, [entry.podId]: Number(value) }));
                               }}>
                               <option value="off">{t('agentSettings.heartbeatOff')}</option>
-                              {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
+                              {[...new Set([...intervals, entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
                                   <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
                                 ))}
