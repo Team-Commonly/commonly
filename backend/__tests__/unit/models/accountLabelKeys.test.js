@@ -2,7 +2,7 @@
 /**
  * Case-insensitive account labels without collation. FerretDB ignores a
  * read's collation, so a check built on it passes a case-variant duplicate.
- * These run on the default in-memory Mongo and, with TEST_MONGO_URI pointed at
+ * These run on the default in-memory Mongo and, with JEST_EXTERNAL_MONGO_URI pointed at
  * a FerretDB server, on FerretDB: the same answers on both stores.
  */
 const fs = require('fs');
