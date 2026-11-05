@@ -4357,3 +4357,13 @@ When a wake has unread pod activity, `runWithDigest` appends the digest summary 
 **Repair:** for agent callers the gate reads `req.agentInstallations` (the active installations agentRuntimeAuth resolved for the token's agent identity) through `agentHoldsActiveInstallationInPod`. The only membership rule left for agents is the `agent-admin` DM, which has no installation and is authorized by membership on the runtime post path too. A bot User holding a `cm_` user token arrives on the gate's human branch with no `req.agentUser`; `auth.ts` now names it as `req.botCaller` (from the row it already loads), and the gate requires it to hold an active installation for its own `agentName`/`instanceId` as well as the members row. `backend/__tests__/service/podWriteGateAgentInstallation.test.js` drives every route through real tokens of both kinds.
 
 **Lesson:** an installation row's agent is `agentName` + `instanceId`; `installedBy` is the person. Find an agent's installations by identity, or use the ones the auth middleware already resolved. A mock that returns the row your query expects proves nothing about whether the query can match.
+
+## 99. A revoked grant read to the agent as a broken connection on its own side (2026-11-05, cto)
+
+*Origin: a Growth walk on 11-05; fixed as F181.*
+
+A person granted their agent GitHub through the grant broker, then revoked the grant. The next projection left the grant out, so the seat reloaded without the tool and nothing told it why. On the next mention the agent told the person that the grant-broker MCP server needed reconnecting on its side. The missing tool was the only signal the agent had, and it read it as a fault, not as a decision someone had made.
+
+**Repair:** `grantRemovalCueService` adds one entry per agent to the grant's own `RoomGrant.removalCuePending` (ADR-034 D4 allows no new Mongo collection) when `revokeGrant` moves a live grant, which covers a direct revoke and a connection removal, and when a granter takes a named agent off a grant. `AgentEventService.enqueueEvent` claims the entries with an atomic `$pull` as it builds the agent's next `chat.mention` or `thread.mention`, and prepends one line to `payload.content`: "[access: GitHub access was removed by its owner. There is nothing to reconnect; ask them if you need it again.]". An entry whose agent holds a live grant on the same connector again is dropped unread. `backend/__tests__/service/grantRemovalCue.test.js` covers revoke, removal, re-grant, another agent and concurrent builds on real mongod.
+
+**Lesson:** when the kernel takes a capability away, a missing tool is not enough information for the agent. Say what changed and who changed it, inline, on the next turn.

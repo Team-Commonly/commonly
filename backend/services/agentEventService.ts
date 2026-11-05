@@ -6,6 +6,7 @@ import { postToPublicAddress } from './outboundUrlGuard';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
+import { prependGrantRemovalCue as prependGrantRemovalLines } from './grantRemovalCueService';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -1475,6 +1476,23 @@ class AgentEventService {
     }
   }
 
+  // F181 (`grantRemovalCueService`): claims the agent's pending notes that a
+  // connector was removed and prepends one line per connector. Skipped on a
+  // lookup error like the memory cue: the cue is a hint, and a mention must
+  // not be lost to it.
+  private static async prependGrantRemovalCue(
+    agentName: string,
+    instanceId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await prependGrantRemovalLines(agentName, instanceId, payload);
+    } catch (err) {
+      console.warn('[agent-event] grant-removal cue prepend skipped:', (err as Error).message);
+      return payload;
+    }
+  }
+
   // Task-board delta cue: use the agent's own most recent `cycles` entry as
   // the cursor, then surface only the number of audit updates in this pod.
   // Like the ADR-012 memory cue, this is deliberately a tool hint, not an
@@ -2012,12 +2030,18 @@ class AgentEventService {
     // Memory-changed cue applies to message-driven events only. Heartbeat
     // already has the HEARTBEAT.md trailer (Phase 2.J) telling agents to
     // pull memory; double-cueing inflates the prompt for no benefit.
-    const memoryCuedPayload = (type === 'chat.mention' || type === 'thread.mention')
+    const isMention = type === 'chat.mention' || type === 'thread.mention';
+    const memoryCuedPayload = isMention
       ? await this.prependMemoryCue(agentName, instanceId, baseEventPayload)
       : baseEventPayload;
-    const eventPayload = type === 'heartbeat'
-      ? await this.prependTaskUpdateCue(agentName, instanceId, podId, memoryCuedPayload)
+    // F181: a connector its owner took away since the agent's last turn is
+    // named inline, so the agent does not ask anyone to reconnect it.
+    const accessCuedPayload = isMention
+      ? await this.prependGrantRemovalCue(agentName, instanceId, memoryCuedPayload)
       : memoryCuedPayload;
+    const eventPayload = type === 'heartbeat'
+      ? await this.prependTaskUpdateCue(agentName, instanceId, podId, accessCuedPayload)
+      : accessCuedPayload;
 
     // Pre-resolve the installation to decide routing. Native-runtime
     // installations skip the external event queue entirely and run the agent

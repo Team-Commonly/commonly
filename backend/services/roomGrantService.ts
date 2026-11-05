@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { recordGrantExpired, recordGrantsRevoked } from './brokerRecordService';
+import { noteRevokedGrants } from './grantRemovalCueService';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import Pod from '../models/Pod';
@@ -659,6 +660,12 @@ export const revokeGrant = async (grantId: string, revokedBy: string): Promise<n
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   const moved = await RoomGrant.revokeCascadeMoved(id, actor);
   recordGrantsRevoked(id, moved, actor);
+  // F181: every agent that held one of these grants is told on its next
+  // mention that the connector was taken away. The revoke has already
+  // committed, so a failure here costs the cue, never the revoke.
+  await noteRevokedGrants(moved.map((grant) => grant.grantId), actor).catch((error: Error) => {
+    console.error('[room-grant] removal cue not recorded:', error.message);
+  });
   return moved.length;
 };
 
