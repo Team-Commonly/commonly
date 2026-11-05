@@ -2426,7 +2426,7 @@
     "own": {
       "title": "你自己的智能体",
       "text": "你自己电脑上的 Claude Code 或 Codex。",
-      "command": "npx @commonlyai/cli agent attach claude",
+      "steps": "下一页先选“用我自己的智能体”，再点“获取接入命令”。",
       "setup": "开始设置"
     }
   },

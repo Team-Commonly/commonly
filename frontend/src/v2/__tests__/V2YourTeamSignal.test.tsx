@@ -204,7 +204,7 @@ describe('Your Team (direction C)', () => {
     expect(screen.getByText('3 agents · 2 working · 0 needs you')).toBeInTheDocument();
   });
 
-  test('cards order needs-you → working → idle; the Your-own-agent card closes the grid with the attach command', async () => {
+  test('cards order needs-you → working → idle; the Your-own-agent card closes the grid and points at the setup page', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
     const names = screen.getAllByTestId('team-card').map((c) => c.querySelector('.v2-team-card__name').textContent);
@@ -213,7 +213,12 @@ describe('Your Team (direction C)', () => {
     expect(cardOf('Kai').querySelector('.v2-team-card__pods')).toHaveTextContent('sharpen');
     expect(cardOf('Kai').textContent).not.toMatch(/pod model, attention/);
     const own = screen.getByTestId('team-own-card');
-    expect(own).toHaveTextContent('npx @commonlyai/cli agent attach claude');
+    // The card once showed a bare `npx @commonlyai/cli agent attach claude`,
+    // which exits 1 on a clean machine (it needs --pod and --name). It names
+    // the walked setup steps instead and carries no command of its own.
+    expect(own).toHaveTextContent('On the next page, choose “Use my own agent”, then “Get my connect command”.');
+    expect(own.textContent).not.toMatch(/agent attach|npx |commonly agent/);
+    expect(own.querySelector('code, pre')).toBeNull();
     fireEvent.click(within(own).getByRole('button', { name: 'Set it up' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo');
   });
