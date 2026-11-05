@@ -680,7 +680,10 @@ export const seatPermissionsText = ({
       : 'You cannot edit or create files, run shell commands, or use web search or fetch.');
   }
   if (web) lines.push('You can fetch web pages. You cannot use web search.');
-  else if (write) lines.push('You cannot use web search or fetch.');
+  else if (write) lines.push('You cannot use the web search or fetch tools.');
+  // A shell's commands can reach the network (workspaceGrantLine says so too),
+  // so a seat with one is never told it is offline.
+  if (write && !noShell) lines.push('Your shell commands can reach the network.');
   lines.push('When someone asks what you can do, describe these limits, not Claude Code\'s usual tools.');
   return lines.join('\n');
 };

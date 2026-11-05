@@ -26,6 +26,7 @@ await jest.unstable_mockModule('child_process', () => ({
 
 const claudeModule = await import('../src/lib/adapters/claude.js');
 const claude = claudeModule.default;
+const { seatPermissionsText } = claudeModule;
 const { spawnSync } = await import('child_process');
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
@@ -1496,7 +1497,16 @@ describe('claude adapter — a workspace seat', () => {
     expect(text).toContain('You can read and edit the files in your working folder and run shell commands there.');
     expect(text).toContain('You can fetch web pages.');
     expect(text).toContain('Its .git is read-only, so you cannot commit.');
+    expect(text).toContain('Your shell commands can reach the network.');
     expect(text).not.toContain('You cannot edit');
+  });
+
+  test('a write seat on a host with no jail is told it can edit but has no shell, and never told .git is held', () => {
+    const text = seatPermissionsText({ trust: 'workspace', allow: ['write'], noShell: true, gitTool: true });
+    expect(text).toContain('You can read and edit the files in your working folder. You cannot run shell commands.');
+    expect(text).toContain('You cannot use the web search or fetch tools.');
+    expect(text).not.toContain('.git');
+    expect(text).not.toContain('reach the network');
   });
 
   test('a public seat is told it can only read its working folder', async () => {
