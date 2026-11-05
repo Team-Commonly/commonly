@@ -432,7 +432,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=4" />
+    <meta property="og:image" content="${siteUrl}/og-card.png?v=5" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -440,7 +440,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=4" />
+    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=5" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
