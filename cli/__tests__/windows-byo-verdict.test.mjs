@@ -213,12 +213,25 @@ describe('the prod verdict names whose failure it was', () => {
     expect(outcome.problems.join('\n')).not.toMatch(/not allowed/);
   });
 
-  test('the host proxy refusing a route codex called is the model route', () => {
+  // provider-proxy.js writes two refusals. An unpinned model is the model
+  // route's; a route the proxy doesn't serve is a mismatch between this codex
+  // and the CLI's provider route, which no gateway or model caused.
+  test('the host proxy refusing an unpinned model is the model route', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [],
+      output: '[codex] provider proxy refused a completion for an unpinned model\n',
+    });
+    expect(outcome.cause).toBe('model');
+  });
+
+  test('the host proxy refusing a route codex called is the harness, named as a route mismatch', () => {
     const outcome = prodOutcome({
       ...base, messages: [mention], acks: [],
       output: '[codex] provider proxy refused POST /v1/chat/completions\n',
     });
-    expect(outcome.cause).toBe('model');
+    expect(outcome.cause).toBe('harness');
+    expect(outcome.problems[0])
+      .toBe("the CLI's provider proxy refused a route the harness called: a mismatch between the harness and the CLI's provider route, not the gateway or the model");
   });
 
   test('a configuration failure with no upstream status is the harness: a missing binary or login', () => {

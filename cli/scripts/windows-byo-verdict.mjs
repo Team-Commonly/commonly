@@ -172,7 +172,16 @@ export const failedTurnsFrom = (output) => {
     });
   }
   if (/the model provider refused the content of event/.test(text)) turns.push({ failureClass: 'content_refused', upstreamStatus: null });
-  if (/provider proxy refused /.test(text)) turns.push({ failureClass: 'proxy_refused', upstreamStatus: null });
+  // The host proxy's two refusals (packages/seats/src/wire/provider-proxy.js):
+  // a completion for a model the turn didn't pin is the model route's; any
+  // other refusal names a method and a path the proxy doesn't serve, which
+  // is the harness calling a route the CLI's provider spec lacks.
+  if (/provider proxy refused a completion for an unpinned model/.test(text)) {
+    turns.push({ failureClass: 'proxy_refused', upstreamStatus: null });
+  }
+  if (/provider proxy refused (?!a completion for an unpinned model)\S/.test(text)) {
+    turns.push({ failureClass: 'proxy_route_refused', upstreamStatus: null });
+  }
   return turns;
 };
 
@@ -183,9 +192,10 @@ export const failedTurnsFrom = (output) => {
  * chat.mention event that carried that message, acked as anything but a
  * refusal (a content refusal's notice in the pod is the CLI's, not a reply).
  *
- * `cause` says whose failure a failed walk was: `model` (the gateway, the
- * model or the host proxy refused), `harness` (the turn failed with no model
- * refusal), or `commonly` (no turn failed, yet the reply or the ack did not
+ * `cause` says whose failure a failed walk was: `model` (the gateway or the
+ * model refused, or the host proxy refused an unpinned model), `harness` (the
+ * turn failed with no model refusal, including a route the host proxy doesn't
+ * serve), or `commonly` (no turn failed, yet the reply or the ack did not
  * happen). Null on a pass, and before anyone has posted the @mention.
  */
 export const prodOutcome = ({
@@ -227,7 +237,9 @@ export const prodOutcome = ({
     problems.push(`the gateway or model refused the turn (${named}): the model route, not Commonly`);
   } else if (mention && (!reply || !ack) && failed.length) {
     cause = 'harness';
-    problems.push(`the agent's turn failed (${failed[0].failureClass}) without a model refusal: the harness, not Commonly`);
+    problems.push(failed.some((t) => t.failureClass === 'proxy_route_refused')
+      ? "the CLI's provider proxy refused a route the harness called: a mismatch between the harness and the CLI's provider route, not the gateway or the model"
+      : `the agent's turn failed (${failed[0].failureClass}) without a model refusal: the harness, not Commonly`);
   } else if (mention && (!reply || !ack)) {
     cause = 'commonly';
   }

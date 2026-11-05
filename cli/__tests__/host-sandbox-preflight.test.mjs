@@ -155,6 +155,9 @@ describe('hostSandboxRefusal', () => {
     // The opt-in that admits Claude Code changes nothing for Codex.
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32', hostUnconfined: true }))
       .toBe(message);
+    // A legacy `internal` trust reads as public here, as it does in the adapter.
+    expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'win32' }))
+      .toBe(message);
   });
 
   test('Codex confines itself off Windows, and a private Codex seat on Windows runs as it did', () => {

@@ -10,8 +10,11 @@
  * class (outcome, reason, refused status), so the verdict can tell a model
  * refusal the CLI acked from a reply (D250). It never records a header, the
  * result's free-text detail, the delivery id, or message content. Claude Code
- * never loads it: a public seat's environment is an allowlist that drops
- * NODE_OPTIONS.
+ * never loads it: a public Claude seat's environment is an allowlist that
+ * drops NODE_OPTIONS. A public Codex seat's environment keeps NODE_OPTIONS, so
+ * codex's Node launcher loads it as well. It records nothing there, because
+ * the launcher makes no Commonly calls, and codex doesn't pass the parent env
+ * to its MCP child.
  */
 import { appendFileSync } from 'fs';
 
