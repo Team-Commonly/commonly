@@ -1725,9 +1725,10 @@ describe('claude adapter — a workspace seat on Linux', () => {
       .toEqual(['--setenv', 'HOME', state]);
     expect(opts.env.HOME).toBe(state);
     expect(opts.env.CLAUDE_CONFIG_DIR).toBeUndefined();
-    // The state folder is the only writable bind; with no write grant the
+    // The state folder is the only writable bind (.claude and tmp bound again
+    // inside it, F153, so the jail cannot swap them); with no write grant the
     // project is read-only.
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')]]);
     expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
 
     expect(foundLogin).toBe(login);
@@ -1775,7 +1776,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
 
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [cwd, cwd]]);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [cwd, cwd]]);
     // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
     expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
     // .git is bound after the project, so it lands on top of it.
@@ -1906,8 +1907,9 @@ describe('claude adapter — a workspace seat on Linux', () => {
       const outer = args.slice(0, args.indexOf('--'));
       expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
         .toEqual(['--setenv', 'HOME', state]);
-      // The state folder is the only writable bind; the project is read-only.
-      expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+      // The state folder is the only writable bind (.claude and tmp bound
+      // again inside it, F153); the project is read-only.
+      expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')]]);
       expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
       const readOnly = outer.flatMap((arg, i) => (/^--ro-bind/.test(arg) ? [outer[i + 1]] : []));
       expect(readOnly).toContain(fs.realpathSync(claudeInstall));

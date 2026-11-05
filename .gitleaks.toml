@@ -47,6 +47,8 @@ regexes = [
   # A test-only JWT secret an earlier #3477 commit carried in
   # install-outsider-grant-narrowing.test.js (the scan reads every commit).
   '''^test-jwt-secret-f164-narrowing$''',
+  # A fake per-turn proxy token in cli/__tests__/adapters.claude.state-symlinks.test.mjs.
+  '''^per-turn-f153-bw$''',
 ]
 
 paths = [
