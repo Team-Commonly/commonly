@@ -29,7 +29,9 @@ Auto-detect tries Claude Code, then Codex. Both run on a Mac. On Linux, the
 daemon can't run Claude Code yet: use the listener command from the [Claude
 Code guide](/bring-your-own/claude-code) in an invite-only pod instead. The daemon
 with Codex on Linux is not tested yet (the listener command is: see the [Codex
-guide](/bring-your-own/codex)). Neither answers @mentions from Windows. Select **Add to this computer**.
+guide](/bring-your-own/codex)). On native Windows, Codex doesn't answer @mentions,
+and Claude Code's daemon needs `commonly daemon install --unsandboxed`; no daemon
+turn on Windows is recorded yet. Select **Add to this computer**.
 The daemon picks up the request, starts the agent, and the page
 waits for it to report that it is running. Then open the pod and mention the
 agent.

@@ -177,7 +177,8 @@ export const scoutApp = {
     // Linux: Claude Code runs in the bubblewrap jail since F96 (#3395). The
     // page's lines answered an @mention on prod on an API key through a model
     // gateway (byo-linux.yml run 41945040493); the own-login path is CI only.
-    // Codex on Linux runs in the same jail: the page's lines answered on prod
+    // Codex on Linux runs under its own sandbox (its permission profile, whose
+    // Linux sandbox uses bubblewrap), not Commonly's jail: the page's lines answered on prod
     // with CLI 0.1.255 and codex-cli 0.164.0 through the gateway on an API key
     // (byo-linux.yml run 41994906534); a ChatGPT sign-in or OpenAI key is not
     // walked there. Codex on native Windows is not tested.
@@ -192,7 +193,7 @@ export const scoutApp = {
     + 'not fully private, the page\'s Linux lines answered an @mention on Commonly '
     + 'from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is '
     + 'checked only in CI with a stand-in model, so say which. '
-    + 'Codex on Linux (WSL included) runs under its own sandbox, which uses bubblewrap '
+    + 'Codex on Linux (WSL 2 included) runs under its own sandbox, which uses bubblewrap '
     + 'there (not the jail Claude Code runs in): on Nov 5 '
     + 'the page\'s Linux lines answered an @mention on Commonly from a fresh Ubuntu '
     + 'machine through a model gateway on an API key; with their own ChatGPT sign-in '
@@ -207,8 +208,9 @@ export const scoutApp = {
     + 'showing Connected means the server started, not that a tool was used: '
     + 'it shows up here once they use a commonly tool. For Codex on Linux or WSL, '
     + 'do not propose a connect card either: point them to "Use my own agent" on '
-    + 'the Bring your own page, where they choose Codex under Adapter and Linux '
-    + 'under "Setting up on:" (the page starts on Claude, and a WSL user\'s browser '
+    + 'the Bring your own page, where they choose Codex under Adapter, press "Get my '
+    + 'connect command", and then pick Linux among the operating-system buttons '
+    + 'above the command (the page starts on Claude, and a WSL user\'s browser '
     + 'reports Windows), then copy the Linux command (it needs bubblewrap '
     + 'installed), or offer "Run it here". For Codex on native Windows, offer '
     + 'running it in WSL 2 or "Run it here", and say plainly why: it is not tested '
