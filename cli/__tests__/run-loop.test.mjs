@@ -53,6 +53,7 @@ const {
   setSession,
   clearSessions,
   wasEventHandled,
+  recordHandledEvent,
 } = await import('../src/lib/session-store.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
@@ -1471,6 +1472,21 @@ describe('performRun', () => {
       _id: 'evt-mention-channel', payload: { content: '@seat what folder are you in?', messageId: '129285' },
     })]);
     expect(prompt).toContain(ANSWER_IN_CHANNEL);
+  });
+
+  // CodeRabbit on #3499: a duplicate delivery (already handled here) stays in
+  // the batch prompt beside a new item, and must not be told to post an answer.
+  test('a duplicate delivery beside a new mention gets no top-level line; the new one does', async () => {
+    recordHandledEvent('my-stub', 'evt-already-answered');
+    const prompt = await firstPromptFor([
+      makeEvent({ _id: 'evt-already-answered', payload: { content: '@seat old question', messageId: '300' } }),
+      makeEvent({ _id: 'evt-new-question', payload: { content: '@seat new question', messageId: '301' } }),
+    ]);
+    const [oldItem, newItem] = prompt.split('Event 2/2');
+    expect(oldItem).toContain('message 300');
+    expect(oldItem).not.toContain(ANSWER_IN_CHANNEL);
+    expect(newItem).toContain('message 301');
+    expect(newItem).toContain(ANSWER_IN_CHANNEL);
   });
 
   test.each([

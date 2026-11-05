@@ -1512,7 +1512,10 @@ const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a t
 
 export const answersInChannel = (entry) => {
   const payload = entry?.event?.payload || {};
+  // A duplicate delivery was already answered here; it stays in the prompt as
+  // context, and must not be told to post (CodeRabbit on #3499).
   return entry?.event?.type === 'chat.mention' && !entry.readOnly
+    && entry.result?.reason !== 'duplicate-delivery'
     && Boolean(payload.messageId)
     && (payload.threadRootId === undefined || payload.threadRootId === null || payload.threadRootId === '')
     && payload.source !== 'dm' && !payload.dmKind;
