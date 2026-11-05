@@ -582,7 +582,10 @@ const V2YourTeamPage: React.FC = () => {
             </span>
           </div>
           <p className="v2-team-card__desc">{t('yourTeam.own.text')}</p>
-          <code className="v2-team-card__command">{t('yourTeam.own.command')}</code>
+          {/* No bare command here: `npx @commonlyai/cli agent attach claude`
+              exited 1 on a clean machine (missing --pod, then --name). The
+              walked path is the setup page, which issues the full command. */}
+          <p className="v2-team-card__desc">{t('yourTeam.own.steps')}</p>
           <div className="v2-team-card__actions">
             <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" onClick={() => navigate('/v2/agents/byo')}>
               {t('yourTeam.own.setup')}
