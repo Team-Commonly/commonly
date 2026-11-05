@@ -17,7 +17,7 @@
 import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 import { createServer, request as httpRequest } from 'http';
-import { mkdtemp, writeFile } from 'fs/promises';
+import { lstat, mkdtemp, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -255,4 +255,53 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
       await new Promise((resolve) => upstream.close(resolve));
     }
   });
+
+  test('a spawn aborted after the proxy started still closes it, and codex never runs', async () => {
+    const closed = [];
+    const { impl, calls } = makeSpawnImpl();
+    const controller = new AbortController();
+    controller.abort(new Error('stalled before spawn'));
+    await expect(codex.spawn('hello', await publicSeat({ CODEX_API_KEY: REAL_KEY },
+      { signal: controller.signal, _startProviderProxy: fakeProxy([], closed), _spawnImpl: impl })))
+      .rejects.toThrow(/stalled before spawn/);
+    expect(calls).toEqual([]);
+    expect(closed).toEqual([true]);
+  });
+
+  test('on the proxy route the public home gets no link to the Codex login, and a stale one is removed', async () => {
+    const { impl } = makeSpawnImpl();
+    const ctx = await publicSeat({ CODEX_API_KEY: REAL_KEY }, { _startProviderProxy: fakeProxy([]), _spawnImpl: impl });
+    const operatorAuth = join(ctx.env.CODEX_HOME, 'auth.json');
+    await writeFile(operatorAuth, '{"test":true}', 'utf8');
+    // Left by an earlier turn on the person's login.
+    await symlink(operatorAuth, join(ctx._publicCodexHome, 'auth.json'));
+    await codex.spawn('hello', ctx);
+    await expect(lstat(join(ctx._publicCodexHome, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
+
+// The public profile is parsed by codex on the seat's own platform. On Windows
+// a POSIX path is not absolute, and codex refused the whole profile, so no
+// public Codex seat on Windows ever started: "filesystem path `/private/tmp`
+// must be absolute, use `~/...`, or start with `:`" (byo-windows, run
+// 41959804055, the first Codex walk on Windows).
+describe('codex adapter — the public profile on Windows', () => {
+  const filesystemOf = (args) => cFlags(args).find((flag) => flag.startsWith('permissions.commonly_public.filesystem='));
+
+  test('names no POSIX-only path on win32, and keeps the deny elsewhere', async () => {
+    const run = async (platform) => {
+      const { impl, calls } = makeSpawnImpl();
+      await codex.spawn('hello', await publicSeat({}, { _platform: platform, _spawnImpl: impl }));
+      return filesystemOf(calls[0].args);
+    };
+    const windows = await run('win32');
+    expect(windows).not.toContain('"/private/tmp"');
+    // Every path codex reads from the table is home-relative or a special root.
+    const keys = [...windows.matchAll(/"((?:[^"\\]|\\.)*)"="(?:read|write|deny)"/g)].map((m) => m[1]);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) expect(key).toMatch(/^(~\/|:|\.|\*)/);
+    expect(await run('darwin')).toContain('"/private/tmp"="deny"');
+    expect(await run('linux')).toContain('"/private/tmp"="deny"');
+  });
+});
+

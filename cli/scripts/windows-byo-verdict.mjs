@@ -120,7 +120,10 @@ const idOf = (m) => String(m?.id ?? m?._id ?? '');
 // failure it was. These are the run loop's lines (cli/src/commands/agent.js):
 // a turn left unacked names its failure class, a turn acked as refused names
 // its reason, and the host proxy names a route it refused.
-const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit', 'configuration']);
+// `configuration` is not among them: it also covers a missing binary or login
+// (CONFIGURATION_RE in cli/src/lib/spawn-retry.js), so it counts as the model
+// route only when the line names an upstream status.
+const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit']);
 const isRefusalReason = (reason) => reason === 'provider-refused' || /^upstream-refused/.test(String(reason || ''));
 
 /** The turns the CLI's log says failed, with the class and upstream status each named. */
@@ -177,7 +180,8 @@ export const prodOutcome = ({
   let cause = null;
   if (mention && refusedAck) {
     cause = 'model';
-    const status = refusedAck.refusedStatus ?? (refusedAck.reason.replace(/^upstream-refused-?/, '') || 'status unknown');
+    // The run loop writes `upstream-refused-undefined` when it saw no status.
+    const status = refusedAck.refusedStatus ?? /^upstream-refused-(\d{3})$/.exec(refusedAck.reason)?.[1] ?? 'status unknown';
     problems.push(refusedAck.reason === 'provider-refused'
       ? 'the model provider refused the @mention\'s content, and the CLI acked it as refused: the gateway or model, not Commonly'
       : `the gateway or model refused the turn (upstream ${status}), and the CLI acked it as refused: the model route, not Commonly`);

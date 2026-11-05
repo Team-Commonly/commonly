@@ -220,6 +220,25 @@ describe('the prod verdict names whose failure it was', () => {
     expect(outcome.cause).toBe('model');
   });
 
+  test('a configuration failure with no upstream status is the harness: a missing binary or login', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [],
+      output: failedTurn('configuration', 'codex: spawn codex ENOENT'),
+    });
+    expect(outcome.cause).toBe('harness');
+  });
+
+  test('an upstream refusal acked with no status says so, not "upstream undefined"', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [{ ...ack, outcome: 'no_action', reason: 'upstream-refused-undefined' }],
+    });
+    expect(outcome.cause).toBe('model');
+    expect(outcome.problems[0]).toMatch(/\(upstream status unknown\)/);
+    expect(prodOutcome({
+      ...base, messages: [mention], acks: [{ ...ack, outcome: 'no_action', reason: 'upstream-refused-502' }],
+    }).problems[0]).toMatch(/\(upstream 502\)/);
+  });
+
   test('a turn that failed with no model refusal is the harness', () => {
     const outcome = prodOutcome({
       ...base, messages: [mention], acks: [],

@@ -351,7 +351,10 @@ const realpathOfNearest = async (path) => {
   }
 };
 
-const preparePublicCodexHome = async (ctx, childEnv) => {
+// `login: false` is the proxy route (D250): codex authenticates with the
+// per-turn token, so the public home gets no link to the person's Codex login,
+// and a link an earlier turn left is removed.
+const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
   const operatorHome = ctx.env?.CODEX_HOME
     || process.env.CODEX_HOME
     || join(homedir(), '.codex');
@@ -415,7 +418,9 @@ const preparePublicCodexHome = async (ctx, childEnv) => {
   if (targetStat && !targetStat.isSymbolicLink()) {
     throw new Error(`refusing to replace non-symlink public Codex credential: ${targetAuth}`);
   }
-  if (sourceStat) {
+  if (!login) {
+    if (targetStat) await unlink(targetAuth);
+  } else if (sourceStat) {
     const currentTarget = targetStat
       ? pathResolve(dirname(targetAuth), await readlink(targetAuth))
       : null;
@@ -544,6 +549,7 @@ const publicPermissionProfileFlags = (
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
+  platform = process.platform,
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -581,7 +587,11 @@ const publicPermissionProfileFlags = (
     '"~/.ssh"="deny"',
     '"~/.aws"="deny"',
     '"~/.config"="deny"',
-    '"/private/tmp"="deny"',
+    // POSIX only. Codex parses the table on the seat's own platform, and on
+    // Windows `/private/tmp` is not absolute, so it refused the whole profile
+    // and no public Codex seat there ever started (byo-windows run
+    // 41959804055, the first Codex walk on Windows).
+    ...(platform === 'win32' ? [] : ['"/private/tmp"="deny"']),
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny","**/.npmrc"="deny","**/.yarnrc*"="deny"}`,
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
@@ -670,6 +680,7 @@ const buildArgs = ({
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
   providerProxy = null,
+  platform = process.platform,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -694,6 +705,7 @@ const buildArgs = ({
         commitAttributionEnv,
         mcpReadDirectories,
         codexHelperReadPaths,
+        platform,
       ),
       ...providerRouteFlags(providerProxy),
     ]
@@ -933,12 +945,12 @@ export default {
         ? sandbox?.mode ?? 'workspace'
         : null;
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      const source = ctx.env || process.env;
+      const route = publicSandboxMode !== null ? publicProviderRoute(source) : null;
       const publicCodexHome = publicSandboxMode !== null
-        ? await preparePublicCodexHome(ctx, childEnv)
+        ? await preparePublicCodexHome(ctx, childEnv, { login: !route })
         : null;
       if (publicSandboxMode !== null) {
-        const source = ctx.env || process.env;
-        const route = publicProviderRoute(source);
         if (route) {
           providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
             provider: { baseURL: route.baseURL },
@@ -968,6 +980,7 @@ export default {
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
         providerProxy,
+        platform: ctx._platform || process.platform,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
