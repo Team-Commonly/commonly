@@ -1,8 +1,9 @@
 /**
  * D164 prod walk (byo-windows.yml, target=prod): the Bring your own page's
  * Windows lines for Claude Code or Codex (the dispatch's `adapter`), pasted into one PowerShell process against
- * the live API with a real model, as a Windows user would. Only the published
- * CLI is walked (the page's `@latest` install line, verbatim).
+ * the live API with a real model, as a Windows user would. The published CLI
+ * is walked (the page's `@latest` install line, verbatim), or, with `cli:
+ * tree`, this checkout's packed CLI in that line's place (walkInstallLines).
  *
  * The run does not post the @mention. When the CLI is polling, it logs
  * `READY: listening in <podId>`, and a person in the pod posts the @mention.

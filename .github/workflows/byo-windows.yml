@@ -8,7 +8,8 @@ name: Bring your own on Windows
 # Claude Code is real; only its model is a stub. The lines come from
 # V2AgentBYO.tsx. It walks the published CLI and this checkout's.
 #
-# Dispatched with target=prod, it walks the published CLI against the live
+# Dispatched with target=prod, it walks the published CLI (or, with cli=tree,
+# this checkout's) against the live
 # API instead, with a real model through the model gateway, as the agent the
 # inputs name. The run does not post the @mention: it logs
 # "READY: listening in <podId>", a person in that pod posts it, and the run
