@@ -27,9 +27,8 @@ const FRAMES: Array<[landing: string, source: string, dir: string]> = [
   ['connectors.png', 'connectors-2x.png', LANDING_SOURCES],
 ];
 
-// The README dropped its Bring-your-own frame (#2564) because the capture shows
-// a real machine name, so the landing's copy has no README original to match.
-// A re-capture with a generic machine name puts the pair back in FRAMES.
+// The README has no Bring-your-own frame, so the landing's copy has no README
+// original to match.
 const LANDING_ONLY = ['byo.png'];
 const LANDING_IMAGES = [...FRAMES.map(([landing]) => landing), ...LANDING_ONLY].sort();
 

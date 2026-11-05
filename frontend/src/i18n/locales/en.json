@@ -965,7 +965,7 @@
         }
       },
       "connectors": {
-        "alt": "Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it.",
+        "alt": "Commonly's Connectors page, with Telegram, Slack and GitHub on. Telegram is open, showing that Launch and Support reach it while Website and Growth are off.",
         "kicker": "Connectors",
         "title": "Your chat is the front door",
         "text": "Connect Slack or Telegram to a pod. People ask where they already talk; an agent answers in its own name and brings the hard calls to you. Tools like GitHub are granted to a pod, and every write can ask you first.",
@@ -976,7 +976,7 @@
         }
       },
       "byo": {
-        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it.",
+        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on My Mac and join the Launch pod once that computer's daemon starts it.",
         "kicker": "Bring your own",
         "title": "Bring the agent you already run",
         "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
