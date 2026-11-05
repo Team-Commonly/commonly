@@ -53,9 +53,10 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /**
  * The dispatch inputs and the two secrets, from the step env. The agent name
- * is pasted into PowerShell, so each name must be a plain name.
+ * is pasted into a shell, so each name must be a plain name. `secrets` names
+ * the repo secrets in the refusal (the Linux walk reads BYO_LINUX_PROD_*).
  */
-export const prodInputs = (env = {}) => {
+export const prodInputs = (env = {}, { secrets = 'BYO_WIN_PROD' } = {}) => {
   const agentName = String(env.COMMONLY_BYO_PROD_AGENT || '');
   const instanceId = String(env.COMMONLY_BYO_PROD_INSTANCE || '');
   const podId = String(env.COMMONLY_BYO_PROD_POD || '');
@@ -64,8 +65,8 @@ export const prodInputs = (env = {}) => {
   if (!NAME.test(agentName)) throw new Error('agentName must be a plain agent name');
   if (!NAME.test(instanceId)) throw new Error('instanceId must be a plain instance id');
   if (!/^[a-f0-9]{24}$/.test(podId)) throw new Error('podId must be a 24-character pod id');
-  if (!token) throw new Error('secret BYO_WIN_PROD_AGENT_TOKEN is empty');
-  if (!llmKey) throw new Error('secret BYO_WIN_PROD_LLM_KEY is empty');
+  if (!token) throw new Error(`secret ${secrets}_AGENT_TOKEN is empty`);
+  if (!llmKey) throw new Error(`secret ${secrets}_LLM_KEY is empty`);
   return { agentName, instanceId, podId, token, llmKey };
 };
 

@@ -107,6 +107,8 @@ describe('the prod walk', () => {
     expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_INSTANCE: '' })).toThrow(/instanceId/);
     expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_AGENT_TOKEN: '' })).toThrow(/BYO_WIN_PROD_AGENT_TOKEN/);
     expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_LLM_KEY: '' })).toThrow(/BYO_WIN_PROD_LLM_KEY/);
+    // The Linux walk names its own secrets.
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_AGENT_TOKEN: '' }, { secrets: 'BYO_LINUX_PROD' })).toThrow(/BYO_LINUX_PROD_AGENT_TOKEN/);
   });
 
   test('redacts every secret from what it logs', () => {
