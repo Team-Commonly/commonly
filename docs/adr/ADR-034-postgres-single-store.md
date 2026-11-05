@@ -7,13 +7,10 @@ direction does not settle three things, and each is named where it lives:** the 
 mismatch log that a read cut may tolerate (D3 sets it at zero unexplained mismatches, which may prove
 too strict for models with clock-derived fields).
 
-**Amended 2026-11-05 (D7).** A self-hosted instance can run its Mongo layer on FerretDB, which
-stores it in Postgres, so self-host gets to one database engine before the per-model migration
-does. Production stays on MongoDB. D1 to D6 are unchanged as the direction; the model-by-model
-work (the dual-store helper and the D6 waves) is paused while D7 ships. **Open in D7:** latency
-under real load (the CI bench seeds its store); deadlocks between concurrent writers that don't
-upsert; failing suites not yet traced to a group; and the compose and Helm path plus a clean-install
-walk, which are not built, so a self-hoster can't pick FerretDB from them yet.
+**Amended 2026-11-05 (D7: considered, not adopted).** Running self-host's Mongo layer on FerretDB
+was measured and walked, and the founder dropped it the same day: FerretDB's last release is v2.7.0
+(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. All
+Postgres-only work, D1 to D7, is paused until the founder reopens it. D7 stays below as the record.
 
 **Deciders:** founder (direction), eng lead (plan).
 
@@ -27,9 +24,7 @@ walk, which are not built, so a self-hoster can't pick FerretDB from them yet.
 - **The vector search index** (`services/vectorSearchService.ts`, a local SQLite file with `sqlite-vec`)
   is derived from pod content and rebuilt from it. It is an index, not a store of record.
 - **ADR-011** (shell-first): this is kernel work and launch does not wait on it.
-- **FerretDB (D7) is a deployment choice for self-host, not the target store.** It changes which
-  server answers the Mongo wire protocol on an instance that picks it, and nothing about where a
-  model's data is meant to end up. Code still talks to Mongoose; D1 to D6 still describe the move off it.
+- **FerretDB (D7) was considered and not adopted.** No supported install uses it.
 
 ## Context: the split, measured at `origin/main` `e2cb8c2fc` (2026-11-02)
 
@@ -182,7 +177,12 @@ step 1 is the only step that edits callers:
 The waves hold 66 models. `Message` leaves in Wave 0, and the three models added after the first count
 join Wave 1, which accounts for all 70. The order inside Wave 5 is open.
 
-### D7. Self-host may run the Mongo layer on FerretDB (amended 2026-11-05)
+### D7. FerretDB for self-host's Mongo layer: considered, not adopted (2026-11-05)
+**Outcome.** Not adopted. Commonly ships no compose or Helm path for it, and a self-hoster shouldn't
+pick it. FerretDB has had no release since v2.7.0 (2025-11-10). The DocumentDB project's own gateway
+(`pg_documentdb_gw`) was named as an alternative, and that spike was stopped before it produced a
+result. What follows records what was measured, in the present tense of that day.
+
 FerretDB 2.7 (Apache-2.0) speaks the Mongo wire protocol and keeps the data in Postgres through
 the DocumentDB extension (MIT). A self-hoster then runs Postgres alone: the chat tables and the
 Mongo layer on one engine. Production stays on MongoDB.
@@ -220,7 +220,7 @@ missing collection errors. The rest of what Commonly leans on behaves the same: 
 `findOneAndUpdate` claims, `$inc`, TTL indexes, partial indexes on equality and `$exists`, `$text`,
 `$lookup`, pipeline updates, `arrayFilters`, majority write concern.
 
-**Rules for new Mongo-layer code**, so self-host does not rot: no collation, no `$in` (or other
+**Rules proposed for new Mongo-layer code, which don't bind now that D7 isn't adopted:** no collation, no `$in` (or other
 operator) in a partial index filter, and every check for a lost race goes through
 `isDuplicateKeyError`. A known gap: existing refusals that read `keyPattern` (signup, username
 change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The
@@ -251,6 +251,12 @@ trip, not a cold read:
 
 FerretDB adds about 0.3 to 1 ms at p95 per query, the write the most: inside a request's budget for
 a self-hosted instance, and the reason production stays on MongoDB until the Postgres port.
+
+**Clean-install walk, 2026-11-05.** The local compose profile with the unmerged FerretDB override
+reached sign-up, pods and messages. A bring-your-own agent failed at attach, because issuing a
+runtime token writes with a collation (`update.updates.collation` is not supported). With the unmerged
+fixes applied (#3491, #3493, #3495 on #3506), Claude Code answered an @mention. None of those PRs
+was merged for this decision.
 
 ## Risks
 - **Copy drift is a bug we already have.** The Postgres `pods`, `pod_members` and `users` rows are synced

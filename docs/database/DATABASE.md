@@ -366,13 +366,12 @@ and pod" or "one open row per identical request" has to hold under concurrent wr
 - **Identity gets its own index.** Identical concurrent callers walk the slots in the same
   order and usually collide on the same slot. They don't when a lower slot frees mid-race, so
   a second partial unique index on the identity key is what guarantees one open row.
-- **Decide which index refused by reading the data, not the error.** FerretDB can answer a
-  lost race with a code-1 error that has no `keyPattern` (ADR-034).
+- **Decide which index refused by reading the data, not the error.** The stored rows say which
+  guarantee was hit; an error's `keyPattern` is a detail of one server.
 - **Adding a unique index to a collection that already has data:** make it partial on a field
   only new code writes (`toolCallSlot: { $exists: true }`). Older rows, including any existing
   duplicates, are never indexed, so the boot-time `autoIndex` build cannot fail on them.
-  Partial filters use equality and `$exists` only; FerretDB refuses `$in` and other operators
-  there (ADR-034).
+  Keep partial filters to equality and `$exists`.
 
 ### Pattern: a terminal transition whose side effects can be retried
 
