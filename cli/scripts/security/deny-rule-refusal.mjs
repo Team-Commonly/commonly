@@ -15,10 +15,12 @@
 //   'inconclusive' none of the above
 // Only 'refused' passes.
 
-// Whole permission-layer sentences only: a bare "denied" elsewhere does not count.
+// Whole permission-layer sentences only, as Claude Code prints them: a bare
+// "denied", or a negated sentence, does not count. The file rule's path may
+// hold spaces, so it is matched through the fixed suffix, within one line.
 const PERMISSION_REFUSALS = [
-  /Permission to read \S+ has been denied/,
-  /\bdenied by your permission settings\b/,
+  /Permission to read [^\n]+ has been denied\./,
+  /File is in a directory that is denied by your permission settings\./,
 ];
 
 const OS_ERRORS = /ENOENT|EACCES|EPERM|no such file|does not exist/i;
