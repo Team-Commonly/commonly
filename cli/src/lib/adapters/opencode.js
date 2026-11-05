@@ -394,6 +394,20 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
       + `(${spawnRoot}): OpenCode's tools could read the credential there; choose a workspace outside the temp directory`,
     );
   }
+  // Containment first: a real repo holding the spawn root also trips the
+  // core.worktree check below, whose message would blame a setting that isn't
+  // there (CI #3487).
+  const toplevels = pairs
+    .map(([parent, child]) => [gitToplevel(parent), child])
+    .filter(([top]) => top);
+  const hit = toplevels.find(([top, child]) => isWithin(top, child));
+  if (hit) {
+    throw new Error(
+      `public OpenCode agents refuse a workspace (${workspace}) whose git worktree (${hit[0]}) contains the per-spawn `
+      + `credential directory (${spawnRoot}): OpenCode's tools could read the credential there; `
+      + 'choose a workspace outside that repository or set TMPDIR outside it',
+    );
+  }
   // Opus review round 7 (#3487): the folder holding .git is the boundary only
   // while git agrees. `core.worktree` makes `--show-toplevel` (OpenCode's
   // worktree) name any folder, $TMPDIR and every spawn root included.
@@ -421,17 +435,6 @@ const assertSpawnRootOutsideWorkspace = (workspace, spawnRoot, {
         );
       }
     }
-  }
-  const toplevels = pairs
-    .map(([parent, child]) => [gitToplevel(parent), child])
-    .filter(([top]) => top);
-  const hit = toplevels.find(([top, child]) => isWithin(top, child));
-  if (hit) {
-    throw new Error(
-      `public OpenCode agents refuse a workspace (${workspace}) whose git worktree (${hit[0]}) contains the per-spawn `
-      + `credential directory (${spawnRoot}): OpenCode's tools could read the credential there; `
-      + 'choose a workspace outside that repository or set TMPDIR outside it',
-    );
   }
   // OpenCode counts the whole git worktree as inside the project, so a
   // node_modules link into it is not a link out.

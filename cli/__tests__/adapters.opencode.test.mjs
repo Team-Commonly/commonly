@@ -2107,12 +2107,27 @@ describe('opencode public seat — the grant broker (F175a)', () => {
   });
 
   // CodeRabbit (#3487): a linked git worktree marks its root with a `.git`
-  // FILE, not a directory; the same refusal holds.
+  // FILE, not a directory; the same refusal holds. The fixture is a real linked
+  // worktree: git answers `--show-toplevel` there, so the refusal is the
+  // containment one, not "could not confirm" (a dangling gitdir fails on git
+  // 2.56, CI #3487).
   test('a public seat refuses when a git worktree (.git file) root contains the spawn root', async () => {
     await withTemp(async (root) => {
+      const main = join(root, 'main');
       const repo = join(root, 'wt');
+      await mkdir(main, { recursive: true });
+      const git = (cwd, ...args) => {
+        const run = realSpawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], {
+          cwd, encoding: 'utf8',
+          env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+        });
+        if (run.status !== 0) throw new Error(`git ${args.join(' ')}: ${run.stderr}`);
+      };
+      git(main, 'init', '-q');
+      git(main, 'commit', '-q', '--allow-empty', '-m', 'init');
+      git(main, 'worktree', 'add', '-q', repo);
+      expect(statSync(join(repo, '.git')).isFile()).toBe(true);
       await mkdir(join(repo, 'tmp'), { recursive: true });
-      await writeFile(join(repo, '.git'), 'gitdir: /elsewhere/.git/worktrees/wt\n');
       const spawn = makeSpawnImpl();
       const ctx = await publicCtx(root, { cwd: join(repo, 'app'), providerKey: 'sk-own-key',
         _tempRoot: join(repo, 'tmp'),
@@ -2840,9 +2855,15 @@ describe('opencode public seat — the grant broker (F175a)', () => {
         await chmod(join(root, 'fsmon.sh'), 0o755);
         await writeFile(join(repo, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\ntouch '${hookMarker}'\n`);
         await chmod(join(repo, '.git', 'hooks', 'pre-commit'), 0o755);
-        // Written through the case-folded spelling the deny misses.
-        const config = join(repo, '.GIT', 'config');
+        // Written through the case-folded spelling the deny misses, where the
+        // volume folds case (APFS); a case-sensitive one (Linux CI) has no
+        // `.GIT`, so the write goes through `.git` and the env still has to win.
+        const probe = join(root, 'case-probe');
+        await writeFile(probe, '');
+        const foldsCase = existsSync(join(root, 'CASE-PROBE'));
+        const config = join(repo, foldsCase ? '.GIT' : '.git', 'config');
         await writeFile(config, `${readFileSync(config, 'utf8')}[core]\n\tfsmonitor = ${join(root, 'fsmon.sh')}\n`);
+        expect(readFileSync(join(repo, '.git', 'config'), 'utf8')).toContain(join(root, 'fsmon.sh'));
         const { ctx, spawn } = await repoCtx(root, join(repo, 'app'));
         ctx.environment = { ...ctx.environment, mcp: [] };
         await opencode.spawn('plain turn', ctx);
