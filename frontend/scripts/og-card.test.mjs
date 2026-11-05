@@ -12,7 +12,7 @@ test('index.html and the SEO generator point at the same og-card version', async
   const seo = versions(String(await read('./generate-seo-pages.mjs')));
   assert.equal(index.length, 2, 'index.html: og:image + twitter:image');
   assert.equal(seo.length, 2, 'generate-seo-pages.mjs: og:image + twitter:image');
-  assert.deepEqual(new Set([...index, ...seo]), new Set(['5']));
+  assert.deepEqual(new Set([...index, ...seo]), new Set(['6']));
 });
 
 test('og-card.png stays 1200x630', async () => {
