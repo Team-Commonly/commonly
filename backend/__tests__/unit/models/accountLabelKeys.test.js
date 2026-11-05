@@ -244,6 +244,24 @@ describe('account label keys', () => {
     });
   });
 
+  describe('a long label stays a query mongod accepts (the fallback regex has a size limit)', () => {
+    it('80 compatibility characters, whose spellings expand, still find an unkeyed holder', async () => {
+      const name = '\u33AF'.repeat(80);
+      await User.collection.insertOne(human({ username: 'wide', displayName: name }));
+      const found = await User.findOne(accountLabelClause('displayName', name)).lean();
+      expect(found?.username).toBe('wide');
+      const titled = '\u01C5'.repeat(80);
+      await expect(User.findOne(accountLabelClause('displayName', titled)).lean()).resolves.toBeNull();
+    });
+
+    it('a 64-character username check runs, keyed and unkeyed', async () => {
+      const long = `${'a'.repeat(63)}Z`;
+      await User.collection.insertOne(human({ username: long }));
+      expect(await isFreeUsername(long.toLowerCase())).toBe(false);
+      expect(await isFreeUsername('b'.repeat(64))).toBe(true);
+    });
+  });
+
   describe('a case-variant duplicate is refused', () => {
     it('isFreeUsername: a username or a previous username in any case', async () => {
       await User.create(human({ username: 'Sam', previousUsernames: ['Samuel'] }));

@@ -115,6 +115,18 @@ describe('Auth Controller Tests', () => {
       expect(saved.onboarding?.signupRef).toBe(stored);
     });
 
+    it('refuses a typed username over 64 characters with a 400, before any lookup', async () => {
+      User.findOne = jest.fn();
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: { username: 'a'.repeat(65), email: 'long@example.com', password: 'Password123!' },
+      }, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(User.findOne).not.toHaveBeenCalled();
+    });
+
     it('should register a new user successfully', async () => {
       // Create a mock for bcrypt
       bcrypt.hash.mockResolvedValueOnce('hashedPassword');

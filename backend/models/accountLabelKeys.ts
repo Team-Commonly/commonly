@@ -119,6 +119,9 @@ const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]
  * backfill writes every key and closes these gaps; the branch is dropped once
  * the backfill verifies.
  */
+/** Above this, the fallback regex leaves out the between-character ignorables. */
+export const MAX_FALLBACK_PATTERN_LENGTH = 8000;
+
 export const accountLabelClause = (field: AccountLabelField, value: string): Doc => {
   const keyPath = LABEL_KEY_PATHS[field];
   const cast = String(castLabel(field, stripIgnorables(String(value))));
@@ -126,7 +129,14 @@ export const accountLabelClause = (field: AccountLabelField, value: string): Doc
     (['NFC', 'NFD', 'NFKC', 'NFKD'] as const).map((form) => cast.normalize(form)).concat(cast),
   ));
   // Each code point escaped, with any run of ignorables allowed around it.
-  const pattern = (spelling: string) => Array.from(spelling).map(escapeRegex).join(`${IGNORABLE_CLASS}*`);
+  // mongod refuses a regex over its size limit ("too large"), so a long label
+  // whose compatibility forms expand (80 x U+33AF) drops the between-character
+  // ignorables and keeps them only at the ends: still a full-length, anchored
+  // match on every spelling. The fallback goes away once the backfill verifies.
+  const between = (spelling: string) => Array.from(spelling).map(escapeRegex).join(`${IGNORABLE_CLASS}*`);
+  const plain = (spelling: string) => Array.from(spelling).map(escapeRegex).join('');
+  const total = spellings.reduce((sum, spelling) => sum + between(spelling).length, 0);
+  const pattern = total > MAX_FALLBACK_PATTERN_LENGTH ? plain : between;
   return {
     $or: [
       { [keyPath]: labelKey(cast) },
@@ -310,8 +320,11 @@ const addsPreviousUsernames = (update: any): boolean => Boolean(update) && !Arra
  * while the key is missing, would stop reserving the older ones.
  *
  * The write is compare-and-set on the array it was computed from and goes past
- * Mongoose (it writes nothing but the key); a user whose array changed in
- * between keeps no key and is keyed by the next add or by the backfill.
+ * Mongoose (it writes nothing but the key). If the array changed in between (a
+ * writer without this plugin: an old pod mid-rollout, or a raw write), the key
+ * stays missing and the add below then creates it holding only the added
+ * names. Backfill --apply, run after the rollout, recomputes that key from the
+ * whole array, which is why it runs then.
  */
 const keyUnkeyedPreviousUsernames = async (model: any, filter: Doc | undefined, session?: unknown) => {
   const path = LABEL_KEY_PATHS.previousUsernames;

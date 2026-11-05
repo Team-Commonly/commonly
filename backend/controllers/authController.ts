@@ -13,6 +13,8 @@ const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
 const { deriveUsernameFromEmail } = require('../services/derivedUsername');
 const { accountLabelClause, stripIgnorables } = require('../models/accountLabelKeys');
+
+const MAX_TYPED_USERNAME_LENGTH = 64;
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
   issueEmailVerificationToken,
@@ -417,6 +419,11 @@ exports.register = async (req: any, res: any) => {
     // dropped, so a typed handle can't pass for another that renders the same.
     const typedUsername = stripIgnorables(String(username || '')).trim();
     const rawPassword = String(password || '');
+    // Generous next to the 40 a derived username gets, and it keeps the taken
+    // check's fallback regex within what mongod accepts (a 500 otherwise).
+    if (typedUsername.length > MAX_TYPED_USERNAME_LENGTH) {
+      return res.status(400).json({ error: `Usernames can be at most ${MAX_TYPED_USERNAME_LENGTH} characters.` });
+    }
 
     if (!normalizedEmail || !rawPassword) {
       return res.status(400).json({ error: 'Email and password are required.' });
