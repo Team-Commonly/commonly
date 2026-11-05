@@ -479,9 +479,12 @@ const queueFull = (waiting: number): ProposeResult => ({
  * that run on it (F184) so the decision event names every run whose call it
  * decides, not only the run that happened to post the card.
  */
-const reuseOpenToolCall = async (same: OpenToolCallRow, waitingRun: WaitingRun | null): Promise<ProposeResult> => {
+const reuseOpenToolCall = async (
+  same: OpenToolCallRow,
+  waitingRun: WaitingRun | null,
+): Promise<ProposeResult | 'retry'> => {
   if (waitingRun) {
-    await ApprovalAction.updateOne(
+    const recorded = await ApprovalAction.updateOne(
       {
         _id: same._id,
         status: 'flagged',
@@ -492,6 +495,13 @@ const reuseOpenToolCall = async (same: OpenToolCallRow, waitingRun: WaitingRun |
       // limit. The newest runs are the ones still likely to care.
       { $push: { waitingRuns: { $each: [waitingRun], $slice: -MAX_WAITING_RUNS } } },
     );
+    // No match is either a run already recorded (fine) or an approval that
+    // closed after the lookup found it open: parking on that would wait for
+    // a decision that has already happened, so the caller claims again.
+    if (recorded && recorded.matchedCount === 0
+      && !await ApprovalAction.exists({ _id: same._id, status: 'flagged' })) {
+      return 'retry';
+    }
   }
   return {
     ok: true,
@@ -536,7 +546,8 @@ const settleOnTwin = async (
     }
     if (twin.messageId) {
       // eslint-disable-next-line no-await-in-loop
-      return { result: await reuseOpenToolCall(twin, waitingRun) };
+      const reused = await reuseOpenToolCall(twin, waitingRun);
+      return reused === 'retry' ? 'retry' : { result: reused };
     }
     if (Date.now() >= deadline) return 'unavailable';
     // eslint-disable-next-line no-await-in-loop
@@ -752,7 +763,11 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       expiresAt: { $gt: new Date() },
       messageId: { $exists: true, $ne: '' },
     }).sort({ createdAt: -1 }).lean() as OpenToolCallRow | null;
-    if (same) return reuseOpenToolCall(same, waitingRun);
+    if (same) {
+      const reused = await reuseOpenToolCall(same, waitingRun);
+      // A 'retry' falls through to the claim, which sees the store as it is now.
+      if (reused !== 'retry') return reused;
+    }
     const waiting = await ApprovalAction.countDocuments(open);
     if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS) return queueFull(waiting);
   }

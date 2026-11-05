@@ -371,3 +371,58 @@ describe('waitingRuns is bounded (F184 follow-up)', () => {
     expect(row.waitingRuns.map((r) => String(r.runId))).toEqual(runs.slice(5));
   });
 });
+
+describe('a reuse that loses its approval mid-registration (F184 review)', () => {
+  test('an approval closed between the reuse lookup and recording the run is not parked on', async () => {
+    const first = await callWith(ISSUE).then(() => null, (e) => e);
+    const closedId = String(first.details.approvalId);
+    const original = ApprovalAction.updateOne.bind(ApprovalAction);
+    // The owner declines (or a sweep closes) just after this call found the
+    // open approval, before it recorded its run there.
+    const spy = jest.spyOn(ApprovalAction, 'updateOne').mockImplementation(async (filter, update, ...rest) => {
+      if (update && update.$push && update.$push.waitingRuns) {
+        await original({ _id: closedId }, { $set: { status: 'moot' } });
+      }
+      return original(filter, update, ...rest);
+    });
+    let later;
+    try {
+      later = await callWith(ISSUE, { runId: new mongoose.Types.ObjectId().toString() })
+        .then(() => null, (e) => e);
+    } finally { spy.mockRestore(); }
+    expect(later).toMatchObject({ code: 'approval_required' });
+    expect(String(later.details.approvalId)).not.toBe(closedId);
+    expect((await ApprovalAction.findById(later.details.approvalId).lean()).status).toBe('flagged');
+    expect(await cards()).toHaveLength(2);
+  });
+});
+
+describe('lapsed rows still holding slots (F184 review)', () => {
+  test('all three slots held, one past its deadline: the new call expires it and takes its slot', async () => {
+    const ids = [];
+    await [1, 2, 3].reduce((prior, n) => prior.then(async () => {
+      ids.push(await park({ title: `Bug ${n}`, body: 'x' }));
+    }), Promise.resolve());
+    await ApprovalAction.updateOne({ _id: ids[1] }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const parked = await callWith({ title: 'Bug 4', body: 'x' }).then(() => null, (e) => e);
+    expect(parked).toMatchObject({ code: 'approval_required' });
+    const lapsed = await ApprovalAction.findById(ids[1]).lean();
+    expect(lapsed.status).toBe('expired');
+    const fresh = await ApprovalAction.findById(parked.details.approvalId).lean();
+    expect(fresh.status).toBe('flagged');
+    expect(fresh.toolCallSlot).toBe(lapsed.toolCallSlot);
+    expect(await ApprovalAction.countDocuments({ status: 'flagged' })).toBe(3);
+  });
+
+  test('an identity twin that has lapsed when the loser looks it up is expired, and the loser claims a slot', async () => {
+    const first = await callWith(ISSUE).then(() => null, (e) => e);
+    const twinId = String(first.details.approvalId);
+    // Past its deadline but not yet swept: still flagged, still holding the identity.
+    await ApprovalAction.updateOne({ _id: twinId }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const later = await callWith(ISSUE).then(() => null, (e) => e);
+    expect(later).toMatchObject({ code: 'approval_required' });
+    expect(String(later.details.approvalId)).not.toBe(twinId);
+    expect((await ApprovalAction.findById(twinId).lean()).status).toBe('expired');
+    expect((await ApprovalAction.findById(later.details.approvalId).lean()).status).toBe('flagged');
+  });
+});
