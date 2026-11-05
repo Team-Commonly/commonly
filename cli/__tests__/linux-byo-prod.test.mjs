@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 
 import {
   installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, runsAtWorkspaceTrust,
+  walkAdapter, walkModelEnv,
 } from '../scripts/linux-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -50,4 +51,28 @@ describe('the Linux prod walk', () => {
     expect(runsAtWorkspaceTrust([{ joinPolicy: 'invite-only' }])).toBe(false);
     expect(runsAtWorkspaceTrust([])).toBe(false);
   });
+
+  // Codex walks the same lines with --adapter codex. Its public seat skips
+  // config.toml (--ignore-user-config) but keeps its environment, so the key
+  // and the gateway reach Codex's built-in provider under Codex's own names.
+  test('reads the page\'s Linux lines for Codex in the shape it pastes', () => {
+    const lines = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'codex' }).split('\n');
+    expect(linuxLineProblems(lines, { ...sample, adapter: 'codex' })).toEqual([]);
+    expect(lines[3]).toBe('commonly agent run linux-walk --adapter codex');
+    // The Claude check does not pass a Codex line, and the reverse.
+    expect(linuxLineProblems(lines, sample)).toEqual([expect.stringMatching(/line 4/)]);
+  });
+
+  test('takes the adapter from the dispatch, Claude Code unless it names Codex', () => {
+    expect(walkAdapter({})).toBe('claude');
+    expect(walkAdapter({ COMMONLY_BYO_PROD_ADAPTER: 'claude' })).toBe('claude');
+    expect(walkAdapter({ COMMONLY_BYO_PROD_ADAPTER: 'codex' })).toBe('codex');
+    expect(() => walkAdapter({ COMMONLY_BYO_PROD_ADAPTER: 'opencode' })).toThrow(/claude or codex/);
+  });
+
+  test('hands the gateway key to each adapter under its own names, and only those', () => {
+    expect(walkModelEnv('claude', 'k', 'https://gw')).toEqual({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'https://gw' });
+    expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ CODEX_API_KEY: 'k', OPENAI_BASE_URL: 'https://gw/v1' });
+  });
 });
+

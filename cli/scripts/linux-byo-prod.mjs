@@ -1,6 +1,6 @@
 /**
  * The Linux prod walk (byo-linux.yml): the Bring your own page's Linux lines
- * for Claude Code, pasted into one bash process on a GitHub-hosted Ubuntu
+ * for Claude Code or Codex (the dispatch's `adapter`), pasted into one bash process on a GitHub-hosted Ubuntu
  * runner against the live API with a real model, as a Linux user would. Only
  * the published CLI is walked (the page's `@latest` install line, verbatim).
  *
@@ -9,6 +9,13 @@
  * the CLI's environment, and the CLI keeps the key on the host behind its
  * per-turn proxy. The person's-own-login path is not walked here: that would
  * put a personal Claude login into repo secrets.
+ *
+ * Codex takes the same path through the same gateway: its public seat skips
+ * config.toml (`--ignore-user-config`) but keeps its environment, so the key
+ * and the gateway reach Codex's built-in provider as CODEX_API_KEY and
+ * OPENAI_BASE_URL (the gateway's Responses route, as cloud-codex uses). The
+ * agent's saved model must be one the gateway serves on that route. A
+ * person's own ChatGPT login is not walked, for the same reason.
  *
  * The run does not post the @mention. When the CLI is polling, it logs
  * `READY: listening in <podId>`, and someone in the pod posts the @mention.
@@ -74,15 +81,32 @@ export const liftConnectSnippet = (pageSource) => {
   ].join('\n'))();
 };
 
-/** What is wrong with the page's Linux lines for Claude Code, if anything. */
-export const linuxLineProblems = (lines, { agentName, apiUrl, token }) => {
+const ADAPTERS = ['claude', 'codex'];
+const ADAPTER_LABEL = { claude: 'Claude Code', codex: 'Codex' };
+
+/** The adapter the dispatch walks: Claude Code unless it names Codex. */
+export const walkAdapter = (env) => {
+  const adapter = String(env.COMMONLY_BYO_PROD_ADAPTER || 'claude');
+  if (!ADAPTERS.includes(adapter)) throw new Error(`adapter must be claude or codex, not ${adapter}`);
+  return adapter;
+};
+
+/** The gateway key and address, under the names each adapter reads. */
+export const walkModelEnv = (adapter, llmKey, gateway) => (adapter === 'codex'
+  ? { CODEX_API_KEY: llmKey, OPENAI_BASE_URL: `${gateway}/v1` }
+  : { ANTHROPIC_API_KEY: llmKey, ANTHROPIC_BASE_URL: gateway });
+
+/** What is wrong with the page's Linux lines for this adapter, if anything. */
+export const linuxLineProblems = (lines, {
+  agentName, apiUrl, token, adapter = 'claude',
+}) => {
   const problems = [];
   if (lines.length !== 4) return [`the page's Linux lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
   if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
   if (lines[1] !== `export COMMONLY_API_URL=${apiUrl}`) problems.push(`line 2 does not set COMMONLY_API_URL: ${lines[1]}`);
   if (lines[2] !== `export COMMONLY_AGENT_TOKEN=${token}`) problems.push('line 3 does not set COMMONLY_AGENT_TOKEN');
-  if (lines[3] !== `commonly agent run ${agentName} --adapter claude`) {
-    problems.push(`line 4 is not a sandboxed Claude Code run: ${lines[3]}`);
+  if (lines[3] !== `commonly agent run ${agentName} --adapter ${adapter}`) {
+    problems.push(`line 4 is not a sandboxed ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
   }
   return problems;
 };
@@ -116,12 +140,18 @@ const pageSnippet = () => liftConnectSnippet(
 );
 
 const check = () => {
-  const sample = { agentName: 'linux-walk', apiUrl: API, token: 'cm_agent_linux_walk_check' };
-  const lines = pageSnippet()({ os: 'linux', ...sample, adapter: 'claude' }).split('\n');
-  const problems = linuxLineProblems(lines, sample);
-  problems.forEach((p) => console.log(`::error::linux walk check: ${p}`));
-  if (!problems.length) console.log(`the page's Linux lines have the shape the walk pastes:\n  ${lines.join('\n  ').replace(sample.token, '***')}`);
-  return problems.length ? 1 : 0;
+  let failed = 0;
+  ADAPTERS.forEach((adapter) => {
+    const sample = {
+      agentName: 'linux-walk', apiUrl: API, token: 'cm_agent_linux_walk_check', adapter,
+    };
+    const lines = pageSnippet()({ os: 'linux', ...sample }).split('\n');
+    const problems = linuxLineProblems(lines, sample);
+    problems.forEach((p) => console.log(`::error::linux walk check (${adapter}): ${p}`));
+    if (!problems.length) console.log(`the page's Linux lines for ${ADAPTER_LABEL[adapter]} have the shape the walk pastes:\n  ${lines.join('\n  ').replace(sample.token, '***')}`);
+    failed += problems.length;
+  });
+  return failed ? 1 : 0;
 };
 
 export const runLinuxProdWalk = async () => {
@@ -130,8 +160,10 @@ export const runLinuxProdWalk = async () => {
     return 2;
   }
   let inputs;
+  let adapter;
   try {
     inputs = prodInputs(process.env, { secrets: 'BYO_LINUX_PROD' });
+    adapter = walkAdapter(process.env);
   } catch (err) {
     console.log(`::error::linux walk: ${err.message}`);
     return 1;
@@ -179,14 +211,18 @@ export const runLinuxProdWalk = async () => {
     return 1;
   }
 
-  const lines = pageSnippet()({ os: 'linux', apiUrl: API, token, agentName, adapter: 'claude' }).split('\n');
-  const problems = linuxLineProblems(lines, { agentName, apiUrl: API, token });
+  const lines = pageSnippet()({
+    os: 'linux', apiUrl: API, token, agentName, adapter,
+  }).split('\n');
+  const problems = linuxLineProblems(lines, {
+    agentName, apiUrl: API, token, adapter,
+  });
   if (problems.length) {
     problems.forEach(fail);
     return 1;
   }
   const script = linuxPasteScript(lines);
-  // A fresh home: no Claude login on it, so the CLI takes the API-key path.
+  // A fresh home: no Claude or Codex login on it, so the CLI takes the API-key path.
   const home = mkdtempSync(join(tmpdir(), 'byo-linux-home-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-linux-acks-')), 'acks.jsonl');
   log(`pasting into bash, home ${home}:\n  ${script.join('\n  ')}`);
@@ -194,14 +230,13 @@ export const runLinuxProdWalk = async () => {
   const env = {
     ...process.env,
     HOME: home,
-    ANTHROPIC_API_KEY: llmKey,
-    ANTHROPIC_BASE_URL: MODEL_GATEWAY,
+    ...walkModelEnv(adapter, llmKey, MODEL_GATEWAY),
     DISABLE_AUTOUPDATER: '1',
     NODE_OPTIONS: `--import=${pathToFileURL(resolve(HERE, 'windows-byo-ack-recorder.mjs')).href}`,
     COMMONLY_BYO_ACK_LOG: ackLog,
   };
-  // The token reaches the CLI through the page's own line, the key through
-  // ANTHROPIC_API_KEY; neither rides under its secret's name as well.
+  // The token reaches the CLI through the page's own line, the key under the
+  // adapter's own name; neither rides under its secret's name as well.
   delete env.COMMONLY_BYO_PROD_AGENT_TOKEN;
   delete env.COMMONLY_BYO_PROD_LLM_KEY;
   const child = spawn('bash', ['--noprofile', '--norc', '-c', script.join('\n')], {
@@ -278,8 +313,8 @@ export const runLinuxProdWalk = async () => {
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply: ${JSON.stringify(said.slice(0, 300))}`);
-    log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with Claude Code `
-      + 'in the bubblewrap jail, on an API key');
+    log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with `
+      + `${ADAPTER_LABEL[adapter]} in the bubblewrap jail, on an API key through the model gateway`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));

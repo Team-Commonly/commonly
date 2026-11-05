@@ -1,7 +1,8 @@
 name: Bring your own on Linux
 
-# The Bring your own page's Linux lines for Claude Code, walked on a real
-# Linux host. Claude Code runs in the CLI's bubblewrap jail (F96).
+# The Bring your own page's Linux lines for Claude Code or Codex (the
+# dispatch's `adapter`), walked on a real Linux host. Both run in the CLI's
+# bubblewrap jail (F96).
 #
 # On a pull request it only reads the page's Linux lines and checks they have
 # the shape the walk pastes: no secrets, no network.
@@ -17,7 +18,9 @@ name: Bring your own on Linux
 # model must be one the gateway key allows, and at least one of its pods must be
 # open to join or publicly readable: when every pod is private and invite-only,
 # the CLI runs it on a copied login, not the key. The two secrets reach only
-# the walk step. See cli/scripts/linux-byo-prod.mjs.
+# the walk step. Codex takes the same gateway key, on the gateway's Responses
+# route, so its agent's saved model must be one the gateway serves there. See
+# cli/scripts/linux-byo-prod.mjs.
 
 on:
   pull_request:
@@ -41,6 +44,11 @@ on:
         description: 'the pod the @mention is posted in'
         type: string
         required: true
+      adapter:
+        description: 'the CLI the page line runs'
+        type: choice
+        options: [claude, codex]
+        default: claude
 
 permissions:
   contents: read
@@ -61,14 +69,21 @@ jobs:
       - name: Check the page's Linux lines
         if: github.event_name != 'workflow_dispatch'
         run: node cli/scripts/linux-byo-prod.mjs --check
-      # What the page tells a Linux user to have: bubblewrap and Claude Code
-      # (the version the other real-Claude smokes pin).
-      - name: Install bubblewrap and Claude Code
+      # What the page tells a Linux user to have: bubblewrap and the CLI the
+      # line runs (Claude Code at the version the other real-Claude smokes
+      # pin; Codex at the version the adapter's Linux sandbox was measured on).
+      - name: Install bubblewrap and the adapter's CLI
         if: github.event_name == 'workflow_dispatch'
+        env:
+          ADAPTER: ${{ inputs.adapter }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
-          npm i -g @anthropic-ai/claude-code@2.1.318
+          if [ "$ADAPTER" = codex ]; then
+            npm i -g @openai/codex@0.164.0
+          else
+            npm i -g @anthropic-ai/claude-code@2.1.318
+          fi
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -76,6 +91,7 @@ jobs:
           COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
           COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
           COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_PROD_ADAPTER: ${{ inputs.adapter }}
           COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ secrets.BYO_LINUX_PROD_AGENT_TOKEN }}
           COMMONLY_BYO_PROD_LLM_KEY: ${{ secrets.BYO_LINUX_PROD_LLM_KEY }}
         run: |
