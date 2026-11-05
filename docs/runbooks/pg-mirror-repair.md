@@ -33,12 +33,26 @@ by the queued `finishWorkspaceOnboarding` tail, not on the response path. User l
 
 `__tests__/unit/services/pgMirrorWriteSites.test.js` scans `controllers/`,
 `routes/` and `services/` for Mongo member mutations and pod creations without a
-mirror write nearby, and for User creations without `mirrorUser` /
-`syncUserToPostgreSQL`. Comments are stripped before matching (a mirror call
-in a comment does not count), and patterns match across lines, so a `$pull: {`
-whose `members` sits on the next line is caught. Fixture tests in the same file
-pin each shape the detector must catch and one it must pass. A new site fails it until it mirrors, or until it is added
-to `ALLOWED` with the reason the mirror may lag.
+mirror write after them, and for User creations without `mirrorUser` /
+`syncUserToPostgreSQL`. The mirror must sit in the same function, within the
+scan's window of lines. The TypeScript parser decides which function that is.
+A callback counts as part of the function around it only in a known inline
+shape: `.map`, `.forEach`, `.then`, `.catch`, `.finally`, `new Promise(`,
+`setTimeout(`, `setImmediate(`, or a function called on the spot, so a mirror
+elsewhere in that function vouches for it, and two such callbacks vouch for each
+other. Every other callback stands alone, including `router.post(`,
+`adminRouter.get(`, `cron.schedule(`, `.on(`, `wrap(` and `setInterval(`: a write
+there needs its mirror in the same callback. If a real site needs another shape,
+add it to `INLINE_METHODS` or `INLINE_FUNCTIONS` only when the callback isn't
+left registered to fire on later events. Comments are stripped before matching (a
+mirror call in a comment does not count), and patterns match across lines, so a
+`$pull: {` whose `members` sits on the next line is caught.
+The scan is an approximation. It checks that a mirror is there, not its order,
+condition or arguments, and it matches names in text, so a mirror name in a
+string vouches for a site, and so does a mirror before the write on the same line.
+Fixture tests in the same file pin each shape the detector must catch and each
+it must pass. A new site fails it until it mirrors, or until it is added to
+`ALLOWED` with the reason the mirror may lag.
 
 ## What caused the 2026-11-05 drift
 
