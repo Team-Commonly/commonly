@@ -429,3 +429,25 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
     }
   });
 });
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx, root) => {
+    const elsewhere = join(root, 'elsewhere');
+    await mkdir(elsewhere);
+    await rm(ctx.cwd, { recursive: true });
+    await symlink(elsewhere, ctx.cwd);
+    const calls = [];
+    const error = await qwen.spawn('hello', {
+      ...ctx,
+      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+      _spawnImpl: (...args) => { calls.push(args); return fakeChild(); },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(error.message).toContain(ctx.cwd);
+    expect(calls).toHaveLength(0);
+  });
+});
+

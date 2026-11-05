@@ -169,6 +169,13 @@ describe('macOS Seatbelt profile', () => {
       expect(() => build({ statePath: `${state}/` })).toThrow(/writable state folder/);
     });
 
+    test('a link named with a trailing dot is refused too', () => {
+      const target = outside();
+      rmSync(state, { recursive: true });
+      symlinkSync(target, state);
+      expect(() => build({ statePath: `${state}/.` })).toThrow(/writable state folder/);
+    });
+
     test('a dangling link at the state folder is refused', () => {
       rmSync(state, { recursive: true });
       symlinkSync(join(root, 'nowhere'), state);

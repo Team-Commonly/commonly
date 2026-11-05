@@ -369,6 +369,8 @@ export default {
           workspaceAccess: mode === 'read-only' ? 'read' : 'write',
           executablePath: executable,
           statePath: home,
+          // Public seat: the CLI made this workspace, so it is pinned (F197).
+          pinWorkspace: true,
           mcpConfigDir: tempDir,
           loopbackNetworkPorts: [proxy.port],
           readOnlyDirectories: [...(packageDir ? [packageDir] : []), ...mcpReadDirectories],

@@ -1453,8 +1453,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspaceAccess: sandboxMode === 'read-only'
         || (sandboxTrust === 'workspace' && !grants.includes('write')) ? 'read' : 'write',
       readOnlyWorkspaceEntries: sandboxTrust === 'workspace' ? ['.git'] : [],
-      // A public seat's workspace is the scratch folder the CLI made; a
-      // workspace seat's is the operator's own folder, which may be a link.
+      // A public seat's workspace is pinned: usually the scratch folder the
+      // CLI made, and an `environment.workspace.path` it was given that is a
+      // link refuses the turn (fail-closed). A workspace seat's folder is the
+      // operator's own choice, which may be a link, and keeps following it.
       pinWorkspace: sandboxTrust === 'public',
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,

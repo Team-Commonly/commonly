@@ -23,7 +23,7 @@ import { spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { homedir } from 'os';
 import {
-  basename, dirname, isAbsolute, join,
+  basename, dirname, isAbsolute, join, resolve,
 } from 'path';
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
@@ -371,7 +371,10 @@ const isSymlink = (path) => {
 // remains is inside this function, between the two realpath reads, and a
 // swap there is caught by the comparison or yields a grant on the real
 // folder.
-const pinnedRealpath = (path, label) => {
+const pinnedRealpath = (given, label) => {
+  // Normalized first, so a trailing `.`, `..` or slash cannot make the name
+  // compared differ from the folder the jail is granted.
+  const path = resolve(given);
   let stat;
   try {
     stat = lstatSync(path);
@@ -442,9 +445,12 @@ export const buildSeatbeltProfile = ({
   // a seat credential in memory, as a public pi does. Signals are not narrowed:
   // a parent must still stop the children it started.
   processInfo = 'same-sandbox',
-  // Pin a writable workspace to its own name (see pinnedRealpath). Set it
-  // only where the CLI made the workspace itself: a public seat's scratch
-  // folder. An operator's chosen folder may be a link on purpose.
+  // Pin a writable workspace to its own name (see pinnedRealpath). Set it for
+  // a public seat. Its workspace is usually the scratch folder the CLI made;
+  // when it is an `environment.workspace.path` the operator gave and that path
+  // is a link, the pin refuses the turn (fail-closed) rather than follow it.
+  // Other seats work in a folder the operator chose, which may be a link on
+  // purpose, and leave this unset.
   pinWorkspace = false,
 }) => {
   for (const [path, label] of [
@@ -481,18 +487,17 @@ export const buildSeatbeltProfile = ({
   // when it is writable. The state folder is always pinned (see
   // pinnedRealpath): the CLI creates it for every seat, so it is never a link
   // on purpose. The writable workspace is pinned only when the caller asks
-  // (pinWorkspace), which is a public seat, whose workspace is a scratch
-  // folder the CLI creates. Any other seat's workspace is a folder the
-  // operator chose, and a link there may be the operator's own, which the
-  // profile cannot tell from one a seat left; it keeps the link-following
-  // grant on its target, as before. A read-only workspace also follows links.
-  // The other write rules in this profile name fixed device paths
-  // (/dev/null, /dev/zero, /dev/dtracehelper, /dev/fd, /dev/ptmx, /dev/ttys*,
-  // /dev/tty), which no seat can replace.
+  // (pinWorkspace), which is a public seat. Its workspace is usually a
+  // scratch folder the CLI creates; a public seat given an
+  // `environment.workspace.path` that is a link is refused (fail-closed).
+  // Any other seat's workspace is a folder the operator chose, and a link
+  // there may be the operator's own, which the profile cannot tell from one a
+  // seat left; it keeps the link-following grant on its target, as before. A
+  // read-only workspace also follows links. The other write rules in this
+  // profile name fixed device paths (/dev/null, /dev/zero, /dev/dtracehelper,
+  // /dev/fd, /dev/ptmx, /dev/ttys*, /dev/tty), which no seat can replace.
   //
-  // Accepted gap: a process that clears its environment (env -i) loses the
-  // turn marker and can outlive the turn reaper; this pin is what keeps such
-  // a process from widening a later turn's grant through a link.
+  // The turn reaper is best-effort; this pin is the boundary.
   const resolvedWorkspace = workspaceAccess === 'write' && pinWorkspace
     ? pinnedRealpath(workspacePath, 'workspace')
     : realpathOrSelf(workspacePath);
