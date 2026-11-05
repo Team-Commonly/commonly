@@ -56,7 +56,8 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
-const { adapterForRuntimeBinding } = require('../services/grantBrokerConfinement');
+const { adapterForRuntimeBinding, normalizeAdapter } = require('../services/grantBrokerConfinement');
+const { grantBrokersForRuntimeSeat } = require('../services/seatGrantBrokerProjection');
 const {
   assertAgentRuntimeMayJoinPod,
   runtimeTypeFromConfig,
@@ -562,6 +563,33 @@ const runtimeControlsFor = (config: any): { model?: string; effort?: string } =>
   if (controlText(effort)) controls.effort = effort;
   return controls;
 };
+
+/**
+ * GET /grant-brokers?adapter=<name> (agent runtime token auth) — F150.
+ *
+ * The grant brokers a seat run with `commonly agent run` (no daemon) receives:
+ * the same `{ servers, refusal }` the daemon's /assigned projects per seat,
+ * from the same function. The seat is the token's own bot User; nothing in the
+ * request names an identity, so no other seat's grant can come back. The
+ * caller declares the adapter it runs, which is judged on top of the row's
+ * own runtime: a declaration can add `adapter_cannot_confine`, never remove it,
+ * and naming (F94) never lifts that one. The cli applies its own
+ * `withholdGrantBroker` after merging, and the broker re-checks every call.
+ */
+router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const adapter = normalizeAdapter(req.query?.adapter);
+    if (!adapter) {
+      return res.status(400).json({ code: 'adapter_required', message: 'Declare the adapter this seat runs (?adapter=)' });
+    }
+    const agentUserId = req.agentUser?._id ? String(req.agentUser._id) : '';
+    if (!agentUserId) return res.json({ servers: [], refusal: null });
+    return res.json(await grantBrokersForRuntimeSeat({ agentUserId, adapter }));
+  } catch (error) {
+    console.error('Error projecting grant brokers:', (error as Error).message || error);
+    return res.status(500).json({ message: 'Failed to read grant brokers' });
+  }
+});
 
 router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {

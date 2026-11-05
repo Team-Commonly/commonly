@@ -20,7 +20,9 @@
  * declaration names neither an adapter nor a runtimeType, stay daemon-decided —
  * undeclared, the daemon resolves only claude or codex
  * (`cli/src/commands/daemon.js:142`), never pi, so failing closed there would
- * refuse working claude seats (Wren 12:17Z).
+ * refuse working claude seats (Wren 12:17Z). An absent SANDBOX block is
+ * daemon-decided only for a seat bound to a machine: with no daemon nothing
+ * derives a baseline, so it refuses as `sandbox_absent` (F150, below).
  *
  * Disagreement fails closed: the seat's rows can be projected by more than one
  * owner, and if any projection withholds the broker, the call is refused. A
@@ -30,7 +32,9 @@ import { Types } from 'mongoose';
 import User from '../models/User';
 import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
-import { GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal } from './grantBrokerConfinement';
+import {
+  GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon,
+} from './grantBrokerConfinement';
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
 /** `unbound` is the same word the grant read uses: nothing projected this seat. */
@@ -166,10 +170,16 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
     }
   }
 
+  // F150 (security review): a seat bound to no machine has no daemon to derive
+  // a sandbox baseline, so an absent sandbox block on its row confines nothing
+  // and is refused (`sandbox_absent`, which naming lifts). A daemon seat, and a
+  // runtime Commonly runs (`runsOnCommonly`, read inside the predicate from the
+  // row), keep the old reading.
+  const judge = seat?.botMetadata?.machineId ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
   let judged = false;
   for (const entry of entries.values()) {
     judged = true;
-    const refusal = grantBrokerRefusal(entry.environment, entry.runtime);
+    const refusal = judge(entry.environment, entry.runtime);
     // Fail closed on disagreement: the first projection that withholds the
     // broker decides, even if a sibling projection would have admitted it.
     if (refusal) return { refusal, scope: 'seat' };
