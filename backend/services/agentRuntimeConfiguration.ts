@@ -63,10 +63,16 @@ export const patchAgentRuntimeConfiguration = async (req: Request, res: Response
     return res.status(403).json({ message: 'Hosted model controls require an owner login' });
   }
   if (machineSeat) {
-    const refusal = await runtimeControlRefusal({ agentName, instanceId, ownerUserId: String(credential.ownerUserId),
-      config: { environment: { model: body.model, effort: body.effort } },
-      effectiveHarness: (rows[0].config as { runtime?: { adapter?: string } } | undefined)?.runtime?.adapter });
-    if (refusal) return res.status(422).json({ code: 'unsupported_runtime_control', message: refusal });
+    // updateMany below writes every row, so every adapter those rows declare
+    // must accept the change, not only the first row's.
+    const adapters = new Set(rows.map((row) => (
+      row.config as { runtime?: { adapter?: string } } | undefined)?.runtime?.adapter));
+    for (const effectiveHarness of adapters) {
+      // eslint-disable-next-line no-await-in-loop
+      const refusal = await runtimeControlRefusal({ agentName, instanceId, ownerUserId: String(credential.ownerUserId),
+        config: { environment: { model: body.model, effort: body.effort } }, effectiveHarness });
+      if (refusal) return res.status(422).json({ code: 'unsupported_runtime_control', message: refusal });
+    }
   }
   const updates: Record<string, string> = {};
   for (const key of ['model', 'effort']) {

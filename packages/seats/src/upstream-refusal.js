@@ -327,12 +327,46 @@ export const scrubAdapterFailure = (text, { credentials = [], limit = MAX_REFUSA
  * spawn-retry.js). The message still names the status so a human log says the
  * same thing as the classifier's decision.
  */
+/**
+ * The provider's own error code (`error.code`, then a top-level `code`), read
+ * from the body a tail carries: the structured body after a status, else the
+ * one JSON object embedded in prose (`unexpected status 404 Not Found: {…}`).
+ * It is a keep-list of one more named field, and narrower than the message:
+ * only a short identifier is kept, and one that echoes a credential this spawn
+ * was handed is dropped. Null when there is none (F178: the keep-list reduced
+ * `{"code":"model_not_found"}` to its message, so the code was lost).
+ */
+const PROVIDER_CODE_RE = /^[A-Za-z][\w.-]{0,63}$/;
+export const providerCodeFrom = (text, { credentials = [] } = {}) => {
+  const raw = String(text ?? '');
+  const { body } = readStatusAndBody(raw.trim());
+  const candidates = [body];
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start >= 0 && end > start) candidates.push(raw.slice(start, end + 1));
+  for (const candidate of candidates) {
+    let parsed;
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    const code = parsed.error?.code ?? parsed.code;
+    if (typeof code !== 'string' || !PROVIDER_CODE_RE.test(code)) return null;
+    return redactKnownCredentials(code, credentials) === code ? code : null;
+  }
+  return null;
+};
+
 export const adapterFailure = (label, text, { credentials = [], exitCode = null, limit } = {}) => {
   const { status, detail } = scrubAdapterFailure(text, { credentials, limit });
   const code = exitCode === null ? '' : ` exited with code ${exitCode}`;
   const named = status === null ? '' : ` (upstream ${status})`;
   const error = new Error(`${label}${code}${named}${detail ? `: ${detail}` : ''}`);
   if (status !== null) error.status = status;
+  const providerCode = providerCodeFrom(text, { credentials });
+  if (providerCode !== null) error.providerCode = providerCode;
   return error;
 };
 

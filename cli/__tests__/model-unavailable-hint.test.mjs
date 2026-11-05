@@ -60,6 +60,15 @@ const UNRELATED = [
     new Error('codex exited with code 1: model: claude-x'),
     { stderr: 'HTTP 404 Not Found: /v1/responses' },
   )],
+  ['the key-scope phrase on a failure that is not a 403', adapterFailure('codex',
+    'HTTP 500: upstream said the model is not available for this API key, retry later', { exitCode: 1 })],
+  ['the key-scope phrase with a 403 on another line', Object.assign(
+    new Error('claude exited with code 1: The requested model claude-x-1 is not available for this API key'),
+    { stderr: 'proxy: 403 from an unrelated health check' },
+  )],
+  ['a message that only quotes model_not_found', new Error('the agent wrote: model_not_found is a code some providers send')],
+  ['a tail quoting model_not_found outside any JSON code', adapterFailure('codex',
+    'HTTP 500: retry failed after a model_not_found note in the log', { exitCode: 1 })],
   ['a quota failure', adapterFailure('claude', "You've hit your weekly limit", { exitCode: 1 })],
   ['a withheld public tool quoting vendor text', Object.assign(
     new Error('tool failed: The requested model x is not available for this API key'),
@@ -77,6 +86,10 @@ describe('modelUnavailableFailure', () => {
     ['a proxy 404 model not found', LITELLM_404, 'qwen-x'],
     ['a 404 inside one multi-line JSON error body', new Error('claude failed:\n{\n  "type": "error",\n'
       + '  "error": {\n    "type": "not_found_error",\n    "message": "model: claude-haiku-9"\n  }\n}'), 'claude-haiku-9'],
+    ['a structured model_not_found code with no other signal', adapterFailure('opencode',
+      '400: {"error":{"message":"Request rejected","code":"model_not_found"}}', { exitCode: 1 }), 'seat-model'],
+    ['a 403 key-scope phrase attached by status', Object.assign(
+      new Error('claude: The requested model claude-x-2 is not available for this API key'), { status: 403 }), 'claude-x-2'],
     ['a 404 whose prose names no id', adapterFailure('codex', 'HTTP 404: model is not found'), 'seat-model'],
   ])('recognises %s', (_label, error, model) => {
     expect(modelUnavailableFailure(error, { fallbackModel: 'seat-model' })).toEqual({ model });
@@ -179,16 +192,22 @@ describe('performRun posts the model hint', () => {
     const post = jest.fn(async (route) => (String(route).endsWith('/messages')
       ? { skipped: true, reason: 'duplicate' } : {}));
     const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] }
-      : route === '/api/agents/runtime/events' ? { events: [makeEvent('evt-skip')] } : {}));
+      : route === '/api/agents/runtime/events' ? { events: [makeEvent(`evt-skip-${Math.random()}`)] } : {}));
     createClient.mockReturnValue({ get, post });
-    const { stop } = performRun({
-      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'hint-seat',
-      environment: { model: 'seat-model' },
-      adapter: { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn().mockRejectedValue(CLAUDE_403) },
-      setTimeoutImpl: () => 0, onError: () => {}, log: () => {},
-    });
-    await drain();
-    stop();
+    const turn = async () => {
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'hint-seat',
+        environment: { model: 'seat-model' },
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn().mockRejectedValue(CLAUDE_403) },
+        setTimeoutImpl: () => 0, onError: () => {}, log: () => {},
+      });
+      await drain();
+      stop();
+    };
+    await turn();
+    expect(podPosts(post)).toHaveLength(1);
     expect(fs.existsSync(path.join(homeDir, '.commonly/sessions/hint-seat.notices.json'))).toBe(false);
+    await turn();
+    expect(podPosts(post)).toHaveLength(2);
   });
 });

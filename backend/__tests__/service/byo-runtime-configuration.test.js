@@ -221,6 +221,23 @@ describe('page-issued key model configuration', () => {
       expect((await patch({ model: 'claude-haiku-5-5' })).status).toBe(200);
       expect((await stored(ownInstall)).environment.model).toBe('claude-haiku-5-5');
     });
+
+    it('checks the model against every adapter its rows declare, and changes no row on a refusal', async () => {
+      await bindKey();
+      const secondPod = await Pod.create({ name: 'BYO second pod', createdBy: owner._id, members: [owner._id] });
+      const secondInstall = await AgentInstallation.create({ agentName: 'byo-config', instanceId: 'default',
+        podId: secondPod._id, version: '1', installedBy: owner._id,
+        config: { runtime: { runtimeType: 'webhook', host: 'byo', adapter: 'codex' }, environment: { model: 'old-model' } } });
+      await AgentInstallation.updateOne({ _id: ownInstall._id }, { $set: { 'config.runtime.adapter': 'claude' } });
+      await Machine.updateOne({ machineId: 'machine-config' }, { $set: { inventoryAt: new Date(), runtimeInventory: [
+        { harness: 'claude', installed: true, models: ['claude-haiku-5-5'], efforts: ['low'] },
+        { harness: 'codex', installed: true, models: ['gpt-9'], efforts: ['low'] },
+      ] } });
+      const response = await patch({ model: 'claude-haiku-5-5' });
+      expect(response.status).toBe(422);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+      expect((await stored(secondInstall)).environment.model).toBe('old-model');
+    });
   });
   it('requires owner login for adapter edits', async () => {
     await expect(command('byo-config', ['--adapter', 'claude'])).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('Not logged in') });

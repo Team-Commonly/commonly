@@ -13,8 +13,10 @@
  * and telling that person to change the model would send them the wrong way.
  * So a failure counts only when it carries one of these shapes:
  *
- *   1. claude / Anthropic 403: "... model ... is not available for this API key"
- *   2. OpenAI-style error code `model_not_found` (codex, opencode, LiteLLM)
+ *   1. claude / Anthropic 403: "... model ... is not available for this API key",
+ *      with the 403 attached as the status or on the phrase's own line
+ *   2. OpenAI-style error code `model_not_found` (codex, opencode, LiteLLM), as
+ *      the structured `providerCode` adapterFailure keeps, not message text
  *   3. a 404 whose text is model-shaped, on the same line or in one JSON
  *      error body: Anthropic's `not_found_error` body,
  *      kept as "model: <id>" by the adapter's keep-list, or "The model `<id>`
@@ -29,7 +31,7 @@ import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-too
 export const MODEL_UNAVAILABLE_HINT_WINDOW_MS = 60 * 60 * 1000;
 
 const NOT_AVAILABLE_FOR_KEY_RE = /\bmodel\b[^\n]{0,160}?\bis not available for (?:this|your) API key\b/i;
-const MODEL_NOT_FOUND_CODE_RE = /\bmodel_not_found\b/i;
+const STATUS_403_RE = /(?:^|[^\d])403(?!\d)/;
 const MODEL_404_SHAPES = [
   /\bmodel:\s*[`'"]?[\w.:/@-]+/i,
   /\bthe model\b[^\n]{0,120}?\bdoes not exist\b/i,
@@ -94,8 +96,13 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   if (!error || error.code === PUBLIC_TOOL_FAILED_CODE || error.code === PUBLIC_MCP_NOT_READY_CODE) return null;
   const text = failureText(error);
   if (!text) return null;
-  const matched = NOT_AVAILABLE_FOR_KEY_RE.test(text)
-    || MODEL_NOT_FOUND_CODE_RE.test(text)
+  // The key-scope phrase counts only on a 403: the attached status, or a 403 on
+  // the phrase's own line. The provider's code counts only as the structured
+  // field adapterFailure keeps, never as words in a message.
+  const keyScope = NOT_AVAILABLE_FOR_KEY_RE.test(text) && (error.status === 403
+    || text.split('\n').some((line) => STATUS_403_RE.test(line) && NOT_AVAILABLE_FOR_KEY_RE.test(line)));
+  const matched = keyScope
+    || error.providerCode === 'model_not_found'
     || sameLine404(text)
     || jsonBody404(text);
   if (!matched) return null;
