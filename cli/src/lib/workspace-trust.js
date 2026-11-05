@@ -17,7 +17,7 @@
 import { realpathSync } from 'fs';
 import { homedir } from 'os';
 import {
-  isAbsolute, join, relative, resolve,
+  isAbsolute, join, relative, resolve, sep,
 } from 'path';
 
 /** A pod is private only when the server says so in all three fields. */
@@ -48,7 +48,7 @@ const realOrResolved = (p) => {
 
 const isInsideOrEqual = (child, parent) => {
   const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  return rel === '' || (rel.split(sep)[0] !== '..' && !isAbsolute(rel));
 };
 
 /**

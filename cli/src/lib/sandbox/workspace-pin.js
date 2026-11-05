@@ -32,7 +32,7 @@ import {
 } from 'fs/promises';
 import { createHash, randomUUID } from 'crypto';
 import {
-  basename, dirname, isAbsolute, join, relative, resolve,
+  basename, dirname, isAbsolute, join, relative, resolve, sep,
 } from 'path';
 
 export const workspacePinDir = (statePath) => join(dirname(statePath), 'workspace-pins');
@@ -43,7 +43,7 @@ export const workspacePinFile = (statePath, cwd) => {
 
 const isInsideOrEqual = (child, parent) => {
   const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  return rel === '' || (rel.split(sep)[0] !== '..' && !isAbsolute(rel));
 };
 
 const readRecord = async (file) => {

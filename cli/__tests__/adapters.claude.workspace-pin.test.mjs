@@ -246,6 +246,17 @@ describe('a Seatbelt workspace seat\'s folder is held to the realpath it was fir
     expect(calls).toHaveLength(0);
   });
 
+  test('a record under a folder whose name starts with two dots still counts as inside the workspace', async () => {
+    const workspace = path.join(root, 'project');
+    fs.mkdirSync(path.join(workspace, '..cache', 'homes'), { recursive: true });
+    const error = await holdWorkspaceRealpath({
+      cwd: workspace,
+      statePath: path.join(workspace, '..cache', 'homes', 'state'),
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/contains this agent's own record/);
+  });
+
   test.each([
     ['corrupt JSON', '{"realpath": '],
     ['null', 'null'],
