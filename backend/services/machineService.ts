@@ -95,17 +95,17 @@ export async function noteMachineAnswered(
   agentUser: { botMetadata?: { machineId?: unknown } } | null | undefined,
   event: { type?: unknown; delivery?: { outcome?: unknown } | null } | null | undefined,
 ): Promise<void> {
-  const machineId = agentUser?.botMetadata?.machineId;
-  if (typeof machineId !== 'string' || !machineId) return;
-  // Required here, not at the top: machineService loads on the auth path, and
-  // the unanswered-mention service pulls in the identity and pod-line services.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { PERSON_WAITING_EVENT_TYPES } = require('./unansweredMentionService') as {
-    PERSON_WAITING_EVENT_TYPES: readonly string[];
-  };
-  if (!PERSON_WAITING_EVENT_TYPES.includes(String(event?.type || ''))) return;
-  if (event?.delivery?.outcome !== 'posted') return;
   try {
+    const machineId = agentUser?.botMetadata?.machineId;
+    if (typeof machineId !== 'string' || !machineId) return;
+    // Required here, not at the top: machineService loads on the auth path, and
+    // the unanswered-mention service pulls in the identity and pod-line services.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { PERSON_WAITING_EVENT_TYPES } = require('./unansweredMentionService') as {
+      PERSON_WAITING_EVENT_TYPES: readonly string[];
+    };
+    if (!PERSON_WAITING_EVENT_TYPES.includes(String(event?.type || ''))) return;
+    if (event?.delivery?.outcome !== 'posted') return;
     await Machine.updateOne({ machineId, firstAnswerAt: null }, { $set: { firstAnswerAt: new Date() } });
   } catch (err) {
     console.warn('[machine] first-answer stamp failed:', (err as Error).message);
