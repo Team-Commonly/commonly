@@ -1,0 +1,85 @@
+name: D14 PR walk (TASK-783)
+
+# Walks issue -> pull request through the grant broker on one throwaway test
+# repo, for a hosted agent and for a named, consented BYO seat. The connection
+# owner's approvals are made by the walk with the owner's session, so each
+# parked call is approved (or, once, declined) exactly as the owner's card
+# would. It also checks that a head on the default branch is refused before
+# parking and that GitHub stays unchanged while a call waits. Everything it
+# creates is removed at the end, pass or fail. Script: scripts/d14-pr-walk.mjs.
+#
+# Secrets (repo or environment level; neither is printed):
+#   D14_OWNER_TOKEN   the Commonly session of the account that owns the
+#                     GitHub App connection on the test repo
+#   D14_GITHUB_TOKEN  a token that can open issues, close PRs and delete
+#                     branches on the test repo only
+
+on:
+  workflow_dispatch:
+    inputs:
+      connection_id:
+        description: "The owner's GitHub App connection id on the test repo"
+        required: true
+      half:
+        description: 'Which half to walk'
+        type: choice
+        options: [both, hosted, byo]
+        default: both
+      default_branch:
+        description: "The test repo's default branch"
+        default: main
+      api_base:
+        description: 'Commonly API origin'
+        default: https://api.commonly.me
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d14-pr-walk
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    name: D14 PR walk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate inputs
+        env:
+          CONNECTION_ID: ${{ inputs.connection_id }}
+          API_BASE: ${{ inputs.api_base }}
+          DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        run: |
+          echo "$CONNECTION_ID" | grep -Eq '^[a-f0-9]{24}$' || { echo "::error::connection_id must be a 24-character id"; exit 1; }
+          echo "$API_BASE" | grep -Eq '^https://api(-staging)?\.commonly\.me$' || { echo "::error::api_base must be the prod or staging API"; exit 1; }
+          echo "$DEFAULT_BRANCH" | grep -Eq '^[A-Za-z0-9._/-]{1,100}$' || { echo "::error::default_branch is not a branch name"; exit 1; }
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Walk
+        env:
+          D14_OWNER_TOKEN: ${{ secrets.D14_OWNER_TOKEN }}
+          D14_GITHUB_TOKEN: ${{ secrets.D14_GITHUB_TOKEN }}
+          D14_CONNECTION_ID: ${{ inputs.connection_id }}
+          D14_WALK_STATE_DIR: ${{ runner.temp }}/d14-walk
+          API_BASE: ${{ inputs.api_base }}
+          HALF: ${{ inputs.half }}
+          DEFAULT_BRANCH: ${{ inputs.default_branch }}
+        run: node scripts/d14-pr-walk.mjs --base "$API_BASE" --half "$HALF" --default-branch "$DEFAULT_BRANCH"
+
+      # Step results and the ids it created (never a token), kept on every outcome.
+      - name: Keep the result and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d14-pr-walk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/d14-walk
+          if-no-files-found: warn
+          retention-days: 30
