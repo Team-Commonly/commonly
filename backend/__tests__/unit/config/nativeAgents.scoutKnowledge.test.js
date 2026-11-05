@@ -151,6 +151,7 @@ describe('Scout onboarding knowledge', () => {
       // 41994906534), and never on native Windows, so no general claim.
       /Codex (works|answers|answered|runs|is verified|is tested) on (native )?(Linux|WSL|Windows)\b/,
       /Codex on (native )?Windows (works|answers|runs)\b/,
+      /Codex on (Linux|WSL) (works|answers|runs on|is verified)\b/,
       /Codex on Linux[^.]*\b(is|was|has been) walked\b/,
       /daemon (works|is working|is verified)/,
       /does not answer @mentions today/,
