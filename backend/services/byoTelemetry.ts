@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import mongoose from 'mongoose';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // Server-side BYO funnel rows. The browser posts its steps through
 // POST /api/stats/byo-step; events only the backend can see (an agent's first
@@ -38,7 +39,7 @@ export async function recordByoEvent(
     await mongoose.connection.db.collection('byo_telemetry').insertOne(doc as any);
   } catch (err: any) {
     // A duplicate key means this seat's row already exists: the expected outcome of a race.
-    if (err?.code === 11000) return;
+    if (isDuplicateKeyError(err)) return;
     // Telemetry must never fail the caller's flow.
     console.warn('[byo-telemetry] write failed:', err?.message);
   }

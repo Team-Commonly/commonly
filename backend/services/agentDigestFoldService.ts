@@ -1,5 +1,6 @@
 import AgentEvent from '../models/AgentEvent';
 import AgentDigestState from '../models/AgentDigestState';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 const FOLD_BATCH_SIZE = 100;
 export const FOLD_TIME_BUDGET_MS = 10_000;
@@ -106,7 +107,7 @@ export async function foldExpiredDigests(threshold: Date, now: () => number = Da
             });
             recorded = true;
           } catch (err) {
-            if ((err as { code?: number }).code !== 11000) throw err;
+            if (!isDuplicateKeyError(err)) throw err;
           }
         } else {
           const conversations = [...(state.conversations || [])].map((item) => ({

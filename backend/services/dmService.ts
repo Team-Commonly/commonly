@@ -2,6 +2,7 @@ import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
@@ -551,7 +552,7 @@ class DMService {
         );
         if (claimed) return claimed;
       } catch (error) {
-        if ((error as { code?: number })?.code !== 11000) throw error;
+        if (!isDuplicateKeyError(error)) throw error;
       }
 
       const winner = await Pod.findOne({ type: 'agent-dm', agentDmPairKey: pairKey });
@@ -604,7 +605,7 @@ class DMService {
       // The unique index is the race arbiter. A competing upsert may lose
       // after both callers missed the read; return the inserted room instead
       // of surfacing a duplicate-key error to the caller.
-      if ((error as { code?: number })?.code !== 11000) throw error;
+      if (!isDuplicateKeyError(error)) throw error;
       const winner = await Pod.findOne({ type: 'agent-dm', agentDmPairKey: pairKey });
       if (winner) return winner;
       throw error;

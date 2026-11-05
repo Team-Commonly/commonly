@@ -6,6 +6,7 @@ import {
   composeStalledConnectResolution,
 } from './stalledConnectCopy';
 import type { StalledConnectCopyEvidence } from './stalledConnectCopy';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 /**
  * The stalled-connect nudge (W4 item 3). Spec: ux-lead, 2026-08-14.
@@ -335,7 +336,7 @@ const nudgeOnce = async ({
     // 11000 means this token-episode was already explained — by an earlier
     // pass, or by the reactive responder that shares this record. Correct
     // outcome, not an error.
-    if (error?.code === 11000) return;
+    if (isDuplicateKeyError(error)) return;
     throw error;
   }
 

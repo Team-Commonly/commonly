@@ -10,6 +10,7 @@ import type {
 import { mintConnectCode } from '../telegramConnectCode';
 import { getProjector } from './projectors';
 import type { ProjectionIds } from './projectors/types';
+import { isDuplicateKeyError } from '../../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Installable = require('../../models/Installable');
@@ -295,7 +296,7 @@ const claimInstallation = async (
       claimedState: statusForClaim(installation.status),
     };
   } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
 
     const winner = await InstallableInstallation.findOne({
       ...keys,

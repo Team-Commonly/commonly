@@ -42,6 +42,7 @@ const {
 import { Types } from 'mongoose';
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { publicAppUrl } from '../utils/publicAppUrl';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 // eslint-disable-next-line global-require
 const {
   InstallLockLostError,
@@ -510,7 +511,7 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   } catch (error) {
     // The unique index closes the gap between the lookup and the write when
     // two different owners confirm the same Slack DM concurrently.
-    if ((error as { code?: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       const raced = await Integration.findOne(bindingSelector);
       if (raced && String(raced._id) !== String(owned.integration._id)) return slackBindConflict(res, raced);
     }

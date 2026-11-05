@@ -48,6 +48,7 @@ const chatSummarizerService = require('./chatSummarizerService');
 const dailyDigestService = require('./dailyDigestService');
 // eslint-disable-next-line global-require
 const digestEmailService = require('./digestEmailService');
+const { isDuplicateKeyError } = require('../utils/duplicateKeyError');
 
 interface CronJob {
   start(): void;
@@ -1194,7 +1195,7 @@ class SchedulerService {
       );
       return true;
     } catch (error: unknown) {
-      if ((error as { code?: number })?.code === 11000) return false;
+      if (isDuplicateKeyError(error)) return false;
       throw error;
     }
   }

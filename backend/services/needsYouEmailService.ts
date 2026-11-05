@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { isReservedEmailDomain } from '../utils/reservedEmailDomain';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
@@ -47,7 +48,7 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
         clickToken, status: 'claimed',
       });
     } catch (error) {
-      if ((error as { code?: number }).code === 11000) return;
+      if (isDuplicateKeyError(error)) return;
       throw error;
     }
     claimedId = claim._id;
@@ -61,7 +62,7 @@ export const sendNeedsYouEmail = async (item: EmailItem): Promise<void> => {
     } catch (error) {
       // Another worker won the day's unique row. Both can contend for one of
       // its three slots below; no fourth email can be claimed.
-      if ((error as { code?: number }).code !== 11000) throw error;
+      if (!isDuplicateKeyError(error)) throw error;
     }
     const slot = await NeedsYouEmailQuota.findOneAndUpdate(
       { recipientUserId: item.recipientUserId, day, count: { $lt: 3 } },

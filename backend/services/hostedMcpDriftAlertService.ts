@@ -27,6 +27,7 @@ import {
   type HostedMcpEntry,
   type HostedMcpToolAssessment,
 } from './hostedMcpEntryService';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const SystemSetting = require('../models/SystemSetting');
@@ -145,7 +146,7 @@ export const createHostedMcpDriftAlert = (deps: HostedMcpDriftAlertDeps) => {
       else report(result.reason || 'not_recorded');
     } catch (error) {
       // Another replica inserted the same card first: it exists, so it is filed.
-      if ((error as { code?: unknown })?.code === 11000) {
+      if (isDuplicateKeyError(error)) {
         filed.add(filedKey);
         return;
       }

@@ -14,6 +14,7 @@ import { getObjectStore } from './objectStore';
 import { disconnectUserSessionSockets } from './sessionSocketService';
 import { stripe } from './billingService';
 import { DM_POD_TYPES_GUARD } from './agentIdentityService';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
@@ -134,7 +135,7 @@ export const sweepAccountDeletions = async (): Promise<void> => {
       { upsert: true, new: true },
     );
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) return;
+    if (isDuplicateKeyError(error)) return;
     throw error;
   }
   const renewLease = async (): Promise<void> => {

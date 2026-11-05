@@ -31,6 +31,7 @@ import {
 } from './hostedMcpIntakeService';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -259,7 +260,7 @@ export const ensureDcrClient = async (
     }
     return client;
   } catch (error) {
-    if ((error as { code?: number })?.code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
     await discardOwnSecret();
     const winner = await HostedMcpDcrRegistration.findOne(currentFilter(entry));
     const client = winner?.redirectUri === redirectUri && !winner.refusedAt ? await clientFromRow(winner) : null;

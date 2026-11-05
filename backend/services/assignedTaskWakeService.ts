@@ -9,6 +9,7 @@ import Pod from '../models/Pod';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { carriesAgentMarkers, isReservedAgentEmail } from './agentIdentityService';
 import { formatBoardPodLine } from './boardPodCue';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 const DELAY_MS = 5 * 60 * 1000;
 const INTERVAL_MS = 30 * 60 * 1000;
@@ -487,7 +488,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
         console.error('[assigned-task-wake] wake not linked to rows:', key, (stateError as Error).message);
       }
     } catch (error) {
-      if ((error as { code?: number }).code === 11000 && !reserved) {
+      if (isDuplicateKeyError(error) && !reserved) {
         logSkip(install, owned, 'seat-interval', now);
         continue;
       }

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import OnboardingSilenceEpisode, { IAgentEventSnapshot } from '../models/OnboardingSilenceEpisode';
 import { HUMAN_FILTER, BOT_FILTER, internalAccountExclusion } from './userClassification';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 /**
  * "Signed up, typed, got no reply" — the onboarding-silence alert (W4 item 2).
@@ -465,7 +466,7 @@ const openOrExtendEpisode = async ({
   } catch (error: any) {
     // The partial unique index is the concurrency guarantee: a second pass
     // racing this one loses here, and losing means "already open", not failure.
-    if (error?.code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
   }
 };
 

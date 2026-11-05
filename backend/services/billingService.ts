@@ -24,6 +24,7 @@
  */
 
 import mongoose from 'mongoose';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Stripe = require('stripe');
@@ -136,7 +137,7 @@ export const handleEvent = async (event: any): Promise<{ outcome: string; detail
       detail: 'claimed',
     });
   } catch (err: any) {
-    if (err?.code === 11000) return { outcome: 'duplicate' };
+    if (isDuplicateKeyError(err)) return { outcome: 'duplicate' };
     throw err;
   }
 

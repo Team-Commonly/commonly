@@ -7,6 +7,7 @@ import { Types } from 'mongoose';
 
 import type { IConnectorSecret } from '../models/ConnectorSecret';
 import type { ConnectorSecretKindSpec } from './connectorSecretKinds';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const ConnectorSecret = require('../models/ConnectorSecret');
@@ -147,7 +148,7 @@ const upsertEncrypted = async (
   } catch (error) {
     // Concurrent OAuth callbacks may race the first upsert. The unique
     // (integrationId, kind) key makes the loser retry as an ordinary update.
-    if ((error as { code?: number }).code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
     const retried = await ConnectorSecret.findOneAndUpdate(filter, update, { new: true }) as IConnectorSecret | null;
     if (!retried) throw new ConnectorSecretStaleWrite();
     return retried;
@@ -195,7 +196,7 @@ export const putIfAbsent = async (
     }) as IConnectorSecret;
     return { ref: String(secret._id), created: true };
   } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
     const existing = await ConnectorSecret.findOne({ integrationId: id, kind: spec.kind }) as IConnectorSecret | null;
     if (!existing) throw error;
     return { ref: String(existing._id), created: false };

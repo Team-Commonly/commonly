@@ -17,6 +17,7 @@
 // ESM import so CodeQL's js/missing-rate-limiting query sees the limiter.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const express = require('express');
@@ -224,7 +225,7 @@ router.patch('/:agentName/:instanceId/editable/:section', auth, async (req: Auth
     res.json({ section, content: current?.content || '', updatedAt: current?.updatedAt || null,
       visibility: current?.visibility || 'private' });
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       res.status(409).json({ error: 'Memory changed since you opened it' }); return;
     }
     console.error('[agent-memory] editor write failed:', (error as Error).message);

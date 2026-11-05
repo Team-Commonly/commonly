@@ -4,6 +4,7 @@ const AgentIdentityService = require('./agentIdentityService');
 const AgentMemory = require('../models/AgentMemory');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { stampSectionsForWrite, decorateSectionsWithProvenance } = require('./agentMemoryService');
+const { isDuplicateKeyError } = require('../utils/duplicateKeyError');
 
 class HandoffRefusal extends Error {
   status: number;
@@ -85,7 +86,7 @@ export async function copyInstallHandoffMemory({
     }, { new: true, upsert: !target, runValidators: true });
     if (!saved) throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach');
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       throw new HandoffRefusal(409, 'Memory changed during handoff; retry attach');
     }
     throw error;

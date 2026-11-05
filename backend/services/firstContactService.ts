@@ -3,6 +3,7 @@ import AgentFirstContact from '../models/AgentFirstContact';
 import Message from '../models/pg/Message';
 import User from '../models/User';
 import AgentEventService from './agentEventService';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 interface FirstContactOptions {
   agentName: string;
@@ -142,7 +143,7 @@ export async function maybeFireFirstContact({
   } catch (error) {
     // Two concurrent upserts can both miss before the unique index picks a
     // winner. The loser is an expected no-op, not an install error.
-    if ((error as { code?: number })?.code === 11000) return false;
+    if (isDuplicateKeyError(error)) return false;
     throw error;
   }
 

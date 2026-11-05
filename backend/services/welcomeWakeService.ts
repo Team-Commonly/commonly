@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import PodMemberFirstMessage from '../models/PodMemberFirstMessage';
 import AgentEventService from './agentEventService';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 /**
  * First-message welcome wake (#834).
@@ -199,7 +200,7 @@ export async function maybeFireWelcomeWake({
   } catch (error) {
     // Concurrent first messages both miss the read; the unique index elects a
     // winner and the loser lands here. Expected, not an error.
-    if ((error as { code?: number })?.code === 11000) return NOOP;
+    if (isDuplicateKeyError(error)) return NOOP;
     console.warn('[welcome-wake] marker upsert failed', {
       pod: String(safePodId),
       user: String(safeUserId),

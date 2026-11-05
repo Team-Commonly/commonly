@@ -3,6 +3,7 @@
 // atomicity boundary; this service only supplies the common TTL/error policy.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const WebhookDelivery = require('../models/WebhookDelivery');
+const { isDuplicateKeyError } = require('../utils/duplicateKeyError');
 
 export const WEBHOOK_DELIVERY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -21,7 +22,7 @@ export const claimDelivery = async (
     });
     return 'claimed';
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) return 'duplicate';
+    if (isDuplicateKeyError(error)) return 'duplicate';
     // Let each route choose its outage policy. Telegram preserves its legacy
     // fail-open behavior; HTTP webhook routes return 503 so the provider
     // retries instead of silently losing an already-acknowledged delivery.

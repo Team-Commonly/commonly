@@ -1,4 +1,5 @@
 import Cursor from '../models/AgentPodReadCursor';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 export type ReadWatermark = { readAt: Date; readRevision?: number };
 
@@ -24,7 +25,7 @@ export async function advanceReadWatermark(
   try {
     await Cursor.updateOne(filter, { $max: maximum, $setOnInsert: { agentUserId, podId } }, { upsert: true });
   } catch (error) {
-    if ((error as { code?: number }).code !== 11000) throw error;
+    if (!isDuplicateKeyError(error)) throw error;
     // Two first reads can race on the deterministic _id. Retry without an
     // upsert so the loser advances the winner without rolling it backwards.
     await Cursor.updateOne(filter, { $max: maximum });

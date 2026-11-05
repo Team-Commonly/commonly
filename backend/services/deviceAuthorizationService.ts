@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import DeviceAuthorization, { IDeviceAuthorization } from '../models/DeviceAuthorization';
 import User from '../models/User';
 import { removeMachinesForDeviceToken } from './machineService';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 export const DEVICE_AUTHORIZATION_TTL_MS = 10 * 60 * 1000;
 export const DEVICE_POLL_INTERVAL_SECONDS = 5;
@@ -64,7 +65,7 @@ export const createDeviceAuthorization = async ({
       });
       return { deviceCode, userCode: code };
     } catch (error: any) {
-      if (error?.code !== 11000 || attempt === 4) throw error;
+      if (!isDuplicateKeyError(error) || attempt === 4) throw error;
     }
   }
   throw new Error('Unable to create device authorization');

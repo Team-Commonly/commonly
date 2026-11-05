@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import AdminUserMutationLock from '../models/AdminUserMutationLock';
 import User from '../models/User';
+import { isDuplicateKeyError } from '../utils/duplicateKeyError';
 
 export class AdminUserMutationError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -19,7 +20,7 @@ export const withAdminUserMutationLock = async <T>(operation: (beginWrite: () =>
   try {
     await AdminUserMutationLock.create([{ _id: LOCK_ID, owner, acquiredAt: new Date() }], { writeConcern });
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) {
+    if (isDuplicateKeyError(error)) {
       throw new AdminUserMutationError(503, 'ADMIN_MUTATION_BUSY',
         'Another administrator change is in progress. Retry shortly; persistent refusal needs operator recovery.');
     }

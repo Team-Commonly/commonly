@@ -6,6 +6,7 @@ import { boundPodForGithubEvent, githubLocation } from '../../services/githubGig
 import GithubGigDelivery from '../../models/GithubGigDelivery';
 import { eventHandlers } from '../../services/installable/eventHandlers';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
+import { isDuplicateKeyError } from '../../utils/duplicateKeyError';
 
 const router = express.Router();
 const DELIVERY_ID = /^[0-9a-fA-F-]{20,80}$/;
@@ -73,7 +74,7 @@ router.post('/', githubGigRateLimit, (req, res, next) => {
   try {
     await GithubGigDelivery.create({ deliveryId, bodyHash });
   } catch (error) {
-    if ((error as { code?: number }).code === 11000) return res.status(204).end();
+    if (isDuplicateKeyError(error)) return res.status(204).end();
     return res.status(503).end();
   }
   try {
