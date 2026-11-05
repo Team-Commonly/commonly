@@ -212,6 +212,29 @@ describe('agent config PATCH — what an installer cannot write', () => {
     expect(row.config.get('runtime')).toMatchObject({ adapter: 'claude' });
   });
 
+  // #3458 re-review: the Settings harness switch sends `{ runtime: { adapter } }`.
+  // Dropping `host` turned a BYO codex row into one every reader takes for
+  // Commonly's (isCloudRuntime, and the grant broker's runsOnCommonly).
+  it('keeps host: byo when the installer switches the adapter of an attached codex seat', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex', host: 'byo' } });
+    given(row);
+    const res = await patch({ runtime: { adapter: 'claude' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toEqual({ runtimeType: 'codex', adapter: 'claude', host: 'byo' });
+  });
+
+  it('never lets the installer write host: an attached seat cannot call itself cloud', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex', host: 'byo' } });
+    given(row);
+    await patch({ runtime: { adapter: 'codex', host: 'cloud' } });
+    expect(row.config.get('runtime').host).toBe('byo');
+
+    const bare = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+    given(bare);
+    await patch({ runtime: { adapter: 'codex', host: 'cloud' } });
+    expect(bare.config.get('runtime')).not.toHaveProperty('host');
+  });
+
   it('lets an admin change the adapter of a hosted agent', async () => {
     const row = installation({ runtime: { runtimeType: 'hosted', adapter: 'codex' } });
     given(row, 'admin');

@@ -501,6 +501,22 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
     expect((await judge()).refusal?.reason).toBe('sandbox_absent');
   });
 
+  test.each([
+    [{ runtimeType: 'codex', adapter: 'codex' }],
+    // The same row after the owner's Settings harness switch.
+    [{ runtimeType: 'codex', adapter: 'claude' }],
+  ])('a codex row that names an adapter (%j) is a BYO seat: refused', async (runtime) => {
+    await unboundSeat();
+    await installRow({ runtime });
+    expect((await judge()).refusal?.reason).toBe('sandbox_absent');
+  });
+
+  test('a cloud codex row (no adapter, no host) keeps the old reading', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { runtimeType: 'codex' } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
   test('a declared confining sandbox still judges the seat confinable', async () => {
     await unboundSeat();
     await installRow({

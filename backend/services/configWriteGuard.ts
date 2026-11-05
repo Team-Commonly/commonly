@@ -174,5 +174,18 @@ export const runtimeKeepingType = (
     const sameAdapter = normalizeRuntimeType(requestedRuntime.adapter) === normalizeRuntimeType(stored.adapter);
     if (!('adapter' in requestedRuntime) || sameAdapter) rest.adapter = stored.adapter;
   }
+  // `host` says who runs the seat (`cloud` or `byo`), and readers decide on it:
+  // `isCloudRuntime` (entitlement) and the grant broker's `runsOnCommonly`. A
+  // caller who may not change the type may not change it either: the stored
+  // value is kept, a request's is ignored. The Settings harness switch sends
+  // `{ runtime: { adapter } }`, and rebuilding without the stored host turned an
+  // attached codex seat into one every reader took for Commonly's (#3458).
+  // An admin's save that omits it keeps it too.
+  if (!mayChangeType) {
+    if (stored && 'host' in stored) rest.host = stored.host;
+    else delete rest.host;
+  } else if (!('host' in requestedRuntime) && stored && 'host' in stored) {
+    rest.host = stored.host;
+  }
   return storedType ? { ...rest, runtimeType: normalizeRuntimeType(storedType) } : rest;
 };

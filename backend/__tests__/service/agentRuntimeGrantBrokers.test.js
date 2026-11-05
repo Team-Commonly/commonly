@@ -280,6 +280,33 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_named'), byoNamed: true })]);
   });
 
+  test.each([
+    [{ runtimeType: 'codex', adapter: 'codex' }],
+    [{ runtimeType: 'codex', adapter: 'claude' }],
+  ])('a codex row that names an adapter (%j) has an unnamed grant withheld', async (runtime) => {
+    const fixture = await seed({ runtime });
+    await grantFor({
+      grantId: 'grant_pod_codex',
+      target: { kind: 'pod', id: String(fixture.pod._id) },
+      audience: [String(fixture.seat._id)],
+    });
+    const res = await read(SEAT_TOKEN, 'codex');
+    expect(res.body.servers).toEqual([]);
+    expect(res.body.refusal).toMatchObject({ reason: 'sandbox_absent' });
+  });
+
+  test('a cloud codex row keeps the old reading', async () => {
+    const fixture = await seed({ runtime: { runtimeType: 'codex' } });
+    await grantFor({
+      grantId: 'grant_pod_codex',
+      target: { kind: 'pod', id: String(fixture.pod._id) },
+      audience: [String(fixture.seat._id)],
+    });
+    const res = await read(SEAT_TOKEN, 'codex');
+    expect(res.body.refusal).toBeNull();
+    expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_pod_codex') })]);
+  });
+
   test('revoking the grant drops it from the next read', async () => {
     const fixture = await seed();
     await namedGrant(fixture);

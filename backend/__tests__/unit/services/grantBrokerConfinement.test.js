@@ -238,6 +238,26 @@ describe('grantBrokerRefusalWithoutDaemon — only a BYO seat has an absent sand
     expect(confinement.grantBrokerRefusalWithoutDaemon({ model: 'x' }, runtime)).toBeNull();
   });
 
+  // #3458 re-review (MEDIUM): CLI attach writes `adapter` on every BYO row, and
+  // a Settings harness switch used to drop `host`. A codex row that names an
+  // adapter is a seat on someone's machine; only one with `host: 'cloud'`, or
+  // with neither host nor adapter (what the registry install of cloud-codex
+  // writes), is Commonly's.
+  it.each([
+    [{ runtimeType: 'codex', adapter: 'codex' }, false],
+    [{ runtimeType: 'codex', adapter: 'claude' }, false],
+    [{ runtimeType: 'codex', adapter: 'codex', host: 'byo' }, false],
+    [{ runtimeType: 'codex', host: 'byo' }, false],
+    [{ runtimeType: 'codex', host: 'cloud' }, true],
+    [{ runtimeType: 'codex', host: 'cloud', adapter: 'codex' }, true],
+    [{ runtimeType: 'codex' }, true],
+  ])('a codex row %j runs on Commonly: %s', (runtime, expected) => {
+    expect(confinement.runsOnCommonly(runtime)).toBe(expected);
+    const refusal = confinement.grantBrokerRefusalWithoutDaemon(undefined, runtime);
+    if (expected) expect(refusal).toBeNull();
+    else expect(refusal).toMatchObject({ reason: 'sandbox_absent' });
+  });
+
   it('agrees with isCloudRuntime on the cloud set', () => {
     [...CLOUD_RUNTIME_TYPES].forEach((runtimeType) => {
       expect(confinement.runsOnCommonly({ runtimeType })).toBe(isCloudRuntime({ runtimeType }));

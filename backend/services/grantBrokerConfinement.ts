@@ -284,18 +284,31 @@ export const COMMONLY_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Does Commonly run this seat? The order of `isCloudRuntime`: a type above wins
- * whatever `host` says; otherwise `host: 'byo'` is the person's own compute;
- * a bare `codex` row is the LiteLLM-proxied cloud seat. Everything else
- * (webhook, claude-code, an adapter-shaped or adapter-keyed row, nothing at
- * all) runs on someone's own machine.
+ * Does Commonly run this seat? The order of `isCloudRuntime`, made stricter
+ * for codex: a type above wins whatever `host` says; otherwise `host: 'byo'` is
+ * the person's own compute.
+ *
+ * A codex row is Commonly's only with `host: 'cloud'`, or with neither `host`
+ * nor `adapter`. The second shape is the stored data, not a guess: cloud-codex
+ * (ADR-014) seeds its token file in the pod and is installed through the
+ * registry as `{ runtimeType: 'codex' }` with no host (the inspector reads it as
+ * cloud by default, `normalizeRuntimeIdentity`), so keying on `host === 'cloud'`
+ * alone would refuse every existing cloud codex seat. Every BYO codex row names
+ * an adapter: `commonly agent attach` writes `{ runtimeType, adapter, host:
+ * 'byo' }`, and the Settings harness switch writes `adapter`. A Settings switch
+ * used to drop `host` (`runtimeKeepingType`, #3458 re-review), leaving
+ * `{ runtimeType: 'codex', adapter: 'claude' }`, which the old bare-codex rule
+ * read as Commonly's. Everything else (webhook, claude-code, adapter-shaped,
+ * nothing at all) runs on someone's own machine.
  */
 export const runsOnCommonly = (runtime: unknown): boolean => {
-  const row = runtime as { runtimeType?: unknown; host?: unknown } | null | undefined;
+  const row = runtime as { runtimeType?: unknown; host?: unknown; adapter?: unknown } | null | undefined;
   const runtimeType = normalizeAdapter(row?.runtimeType);
   if (runtimeType && COMMONLY_RUN_RUNTIME_TYPES.has(runtimeType)) return true;
-  if (normalizeAdapter(row?.host) === 'byo') return false;
-  return runtimeType === 'codex';
+  const host = normalizeAdapter(row?.host);
+  if (host === 'byo' || runtimeType !== 'codex') return false;
+  if (host === 'cloud') return true;
+  return !host && !normalizeAdapter(row?.adapter);
 };
 
 /**
