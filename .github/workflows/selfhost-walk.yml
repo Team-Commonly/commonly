@@ -111,9 +111,9 @@ jobs:
           mkdir -p ~/.commonly && chmod 700 ~/.commonly
           T="$TOKEN" node -e "require('fs').writeFileSync(process.env.HOME+'/.commonly/config.json',JSON.stringify({active:'local',instances:{local:{url:'$API',token:process.env.T,username:'stranger'}}}))"
           timeout 60 commonly agent list --pod "$POD" --instance local > list.log 2>&1
-          row "CLI reaches the instance as the user" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(tail -c 200 list.log | tr '\n' ' ')"
+          row "CLI reaches the instance as the user" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < list.log | tail -c 200 | tr '\n' ' ')"
           timeout 120 commonly agent attach stub --pod "$POD" --name walk-stub --instance local < /dev/null > attach.log 2>&1
-          row "agent attach stub" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' attach.log | tail -c 240 | tr '\n' ' ')"
+          row "agent attach stub" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < attach.log | tail -c 240 | tr '\n' ' ')"
           (commonly agent run walk-stub < /dev/null > run.log 2>&1 &)
           sleep 10
           req POST "/api/messages/$POD" "{\"content\":\"@walk-stub are you there?\"}" "$TOKEN"
@@ -124,11 +124,11 @@ jobs:
             node -e "const b=require('./body.json');const m=(Array.isArray(b)?b:b.messages||[]);process.exit(m.some(x=>/walk-stub/i.test(String(x.username||x.userId?.username||x.authorName||'')))?0:1)" && { replied=PASS; break; }
             sleep 5
           done
-          row "the stub agent replies in the pod" "-" "$replied" "$(sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' run.log | tail -c 300 | tr '\n' ' ')"
+          row "the stub agent replies in the pod" "-" "$replied" "$(redact < run.log | tail -c 300 | tr '\n' ' ')"
 
           # Bring your own agent, for real: Claude Code through the published CLI.
           timeout 120 commonly agent attach claude --pod "$POD" --name walk-claude --instance local < /dev/null > attach2.log 2>&1
-          row "agent attach claude" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' attach2.log | tail -c 240 | tr '\n' ' ')"
+          row "agent attach claude" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < attach2.log | tail -c 240 | tr '\n' ' ')"
           (ANTHROPIC_BASE_URL="$LLM_BASE" ANTHROPIC_API_KEY="$LLM_KEY" ANTHROPIC_MODEL=claude-haiku-5-5 commonly agent run walk-claude < /dev/null > run2.log 2>&1 &)
           sleep 15
           req POST "/api/messages/$POD" "{\"content\":\"@walk-claude in one short sentence, what is 2+2?\"}" "$TOKEN"
@@ -139,7 +139,7 @@ jobs:
             node -e "const b=require('./body.json');const m=(Array.isArray(b)?b:b.messages||[]);const r=m.filter(x=>/walk-claude/i.test(String(x.username||x.userId?.username||x.authorName||'')));const hit=r.find(x=>/\\b4\\b|four/i.test(String(x.content||'')));if(hit){require('fs').writeFileSync('reply.txt',String(hit.content).slice(0,200));process.exit(0)}process.exit(1)" && { replied=PASS; break; }
             sleep 5
           done
-          row "Claude Code answers the @mention (reply contains 4)" "-" "$replied" "$( [ -f reply.txt ] && tr '\n' ' ' < reply.txt || sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' run2.log | tail -c 300 | tr '\n' ' ')"
+          row "Claude Code answers the @mention (reply contains 4)" "-" "$replied" "$( [ -f reply.txt ] && tr '\n' ' ' < reply.txt || redact < run2.log | tail -c 300 | tr '\n' ' ')"
 
           for f in list.log attach.log run.log attach2.log run2.log; do [ -f "$f" ] && show "$f"; done
           exit $fail
