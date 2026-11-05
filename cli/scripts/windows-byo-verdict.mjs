@@ -224,15 +224,15 @@ export const prodOutcome = ({
       : `the agent's turn failed (${failed[0].failureClass}) without a model refusal: most likely the harness`);
   } else if (mention && (!reply || !ack)) {
     // Commonly's only when it was asked and didn't deliver: an event never
-    // handed over, or an ack the server wouldn't take. The recorder has a row
-    // for every ack the CLI tried.
+    // handed over, or an ack the server answered with an error. An ack that
+    // threw on the network leaves no row, so no row means none reached the server.
     const ackRefused = !ack && acks.some((a) => mentionEvents.some((e) => e.eventId === a.eventId));
     cause = !mentionEvents.length || ackRefused ? 'commonly' : 'unclear';
     if (cause === 'unclear' && ack) {
       const how = [ack.outcome, ack.reason].filter(Boolean).join(', ');
       problems.push(`the turn ended without a reply, and the CLI acked it${how ? ` as ${how}` : ''}`);
     } else if (cause === 'unclear' && reply) {
-      problems.push('the agent replied, but the CLI never sent the ack: it hung or exited after the reply');
+      problems.push('the agent replied, but no ack reached the server: the CLI hung, exited, or logged "Ack failed"');
     } else if (cause === 'unclear') {
       problems.push('the CLI was handed the @mention, but its turn never finished and it logged no failure: '
         + 'it hung, outlasted the walk, or the CLI exited');

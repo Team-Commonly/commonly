@@ -342,10 +342,10 @@ describe('the prod verdict names whose failure it was', () => {
   });
 
   // The agent can post through its MCP tool mid-turn and then hang or die.
-  test('a reply whose ack the CLI never sent does not blame Commonly, which was never asked', () => {
+  test('a reply with no ack row does not blame Commonly, which may never have been asked', () => {
     const outcome = prodOutcome({ ...base, messages: [mention, reply], acks: [] });
     expect(outcome).toMatchObject({ passed: false, cause: 'unclear' });
-    expect(outcome.problems[0]).toMatch(/the agent replied, but the CLI never sent the ack/);
+    expect(outcome.problems[0]).toMatch(/the agent replied, but no ack reached the server/);
   });
 
   // A Commonly API call that throws mid-turn reaches the same line, and nothing
