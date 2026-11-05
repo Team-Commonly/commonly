@@ -278,7 +278,7 @@ describe('V2 routing', () => {
       name: 'What Is an Agent Pod? A Shared Workspace for Humans and AI Agents',
     })).toBeInTheDocument();
     expect(screen.getAllByText(/agent-admin/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/capped at 10 versions per section/)).toBeInTheDocument();
+    expect(screen.getByText(/last ten replaced versions of each memory document/)).toBeInTheDocument();
   });
 
   test('OpenClaw guide renders its strict host-config boundary after the app takes over', async () => {
