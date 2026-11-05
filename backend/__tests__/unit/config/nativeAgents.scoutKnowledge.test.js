@@ -123,7 +123,7 @@ describe('Scout onboarding knowledge', () => {
   // with the published CLI (D164, run 41926949969), and works there with CLI
   // 0.1.243 or newer; on Linux or WSL it runs in the bubblewrap jail (F96),
   // walked on prod on an API key (run 41945040493) and CI-only on a login;
-  // Codex on Linux runs in the same jail, walked on prod on an API key (run
+  // Codex on Linux runs under its own sandbox, walked on prod on an API key (run
   // 41994906534); Codex on native Windows is refused for a public agent
   // (#3501), so Scout gives that reason; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
@@ -133,7 +133,7 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) runs in a bubblewrap sandbox\. With an API key \(ANTHROPIC_API_KEY\), in a pod that is not fully private, the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is checked only in CI with a stand-in model, so say which\./);
     expect(prompt).not.toMatch(/native Windows is not verified to answer/);
     expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux\)/);
-    expect(prompt).toMatch(/Codex on Linux \(WSL included\) runs under its own sandbox, which uses bubblewrap there \(not the jail Claude Code runs in\): on Nov 5 the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine through a model gateway on an API key; with their own ChatGPT sign-in or OpenAI key it is not checked on Linux yet, so say which\. Codex on native Windows does not answer @mentions: a public agent needs a sandbox, and Codex can't enforce one on Windows without its elevated setup\./);
+    expect(prompt).toMatch(/Codex on Linux \(WSL 2 included\) runs under its own sandbox, which uses bubblewrap there \(not the jail Claude Code runs in\): on Nov 5 the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine through a model gateway on an API key; with their own ChatGPT sign-in or OpenAI key it is not checked on Linux yet, so say which\. Codex on native Windows does not answer @mentions: a public agent needs a sandbox, and Codex can't enforce one on Windows without its elevated setup\./);
     expect(prompt).not.toMatch(/Codex on native Windows is not tested/);
     expect(prompt).not.toMatch(/Codex off a Mac/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
@@ -153,7 +153,8 @@ describe('Scout onboarding knowledge', () => {
       // 41994906534), and never on native Windows, so no general claim.
       /Codex (works|answers|answered|runs|is verified|is tested) on (native )?(Linux|WSL|Windows)\b/,
       /Codex on (native )?Windows (works|answers|runs)\b/,
-      /Codex on (Linux|WSL) (works|answers|runs on|is verified)\b/,
+      /Codex on (Linux|WSL)( 2)? (works|answers|answered|runs on|runs in|is verified|is tested)\b/,
+      /Codex on Linux \(WSL( 2)? included\) (works|answers|answered|runs in|is verified|is tested)\b/,
       /Codex on Linux[^.]*\b(is|was|has been) walked\b/,
       /daemon (works|is working|is verified)/,
       /does not answer @mentions today/,
@@ -233,7 +234,7 @@ describe('Scout onboarding knowledge', () => {
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
     expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
     expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: point them to "Use my own agent" on the Bring your own page, which shows the Linux command \(it needs bubblewrap installed\), offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
-    expect(prompt).toMatch(/For Codex on Linux or WSL, do not propose a connect card either: point them to "Use my own agent" on the Bring your own page, where they choose Codex under Adapter and Linux under "Setting up on:" \(the page starts on Claude, and a WSL user's browser reports Windows\), then copy the Linux command \(it needs bubblewrap installed\), or offer "Run it here"\. For Codex on native Windows, offer running it in WSL 2 or "Run it here", and say plainly why: Codex can't enforce its sandbox on native Windows, and WSL 2 runs the Linux setup\./);
+    expect(prompt).toMatch(/For Codex on Linux or WSL, do not propose a connect card either: point them to "Use my own agent" on the Bring your own page, where they choose Codex under Adapter, press "Get my connect command", and then pick Linux among the operating-system buttons above the command \(the page starts on Claude, and a WSL user's browser reports Windows\), then copy the Linux command \(it needs bubblewrap installed\), or offer "Run it here"\. For Codex on native Windows, offer running it in WSL 2 or "Run it here", and say plainly why: Codex can't enforce its sandbox on native Windows, and WSL 2 runs the Linux setup\./);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
     // D245: the page no longer says Claude Code can't run on Windows. Its note
     // describes an opt-in --unsandboxed listener and names neither "Run it
