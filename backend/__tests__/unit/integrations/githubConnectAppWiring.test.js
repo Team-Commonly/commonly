@@ -13,6 +13,7 @@ const { githubAppCredentials } = require('../../../services/githubAppNames');
 
 const read = (file) => fs.readFileSync(path.join(HELM_CHART, file), 'utf8');
 const deployment = read('templates/core/backend-deployment.yaml');
+const opsRunner = read('templates/ops/ops-runner-deployment.yaml');
 const apiKeys = read('templates/secrets/api-keys.yaml');
 const values = read('values.yaml');
 
@@ -22,13 +23,17 @@ test.each(['GITHUB_CONNECT_APP_ID', 'GITHUB_CONNECT_APP_PRIVATE_KEY'])('the back
   ));
 });
 
-test('the backend refs render only with githubConnectApp.enabled, so a flag-off render is unchanged', () => {
-  const block = deployment.match(/{{- if \.Values\.githubConnectApp\.enabled }}\n([\s\S]*?){{- end }}/);
+test.each([
+  ['backend', () => deployment],
+  ['ops-runner', () => opsRunner],
+])('the %s refs render only with githubConnectApp.enabled, so a flag-off render is unchanged', (_name, template) => {
+  const tpl = template();
+  const block = tpl.match(/{{- if \.Values\.githubConnectApp\.enabled }}\n([\s\S]*?){{- end }}/);
   expect(block).not.toBeNull();
   expect(block[1]).toContain('- name: GITHUB_CONNECT_APP_ID');
   expect(block[1]).toContain('- name: GITHUB_CONNECT_APP_PRIVATE_KEY');
   // Nowhere outside the conditional.
-  const outside = deployment.replace(block[0], '');
+  const outside = tpl.replace(block[0], '');
   expect(outside).not.toContain('GITHUB_CONNECT_APP');
 });
 

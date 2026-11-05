@@ -133,7 +133,7 @@ beforeEach(async () => {
   mockGithub.failPage = null;
   process.env.GITHUB_CONNECT_APP_ID = CONNECT_APP_ID;
   process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = generateKeyPairSync('rsa', {
-    modulusLength: 1024, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' },
+    modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' },
   }).privateKey;
   await Promise.all([User.deleteMany({}), Integration.deleteMany({}), RoomGrant.deleteMany({})]);
   alice = await User.create({ username: 'alice', email: 'alice@example.test', password: 'pw-123456' });

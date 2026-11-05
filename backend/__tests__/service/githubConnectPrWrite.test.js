@@ -392,6 +392,35 @@ test('removing the owner\'s GitHub connection disconnects their Connect rows, re
   expect(github.createPullRequest).not.toHaveBeenCalled();
 });
 
+test('a revoke that fails after the row is disconnected is finished by the retry', async () => {
+  const row = await connectRow('connect');
+  const grant = await grantOn(row);
+  const { removeConnection } = require('../../services/connectionRemovalService');
+  const { revokeConnectionGrants } = require('../../services/roomGrantService');
+  const deps = {
+    clientIdFor: () => 'client', clientSecretFor: () => 'secret',
+    revokeAtVendor: async () => {},
+    secrets: { get: async () => 'owner-user-token', revoke: async () => {}, writeGenerationOf: async () => 0 },
+  };
+  let failConnectRevoke = true;
+  const revokeGrants = async (input) => {
+    if (failConnectRevoke && String(input.connection._id) === String(row._id)) {
+      failConnectRevoke = false;
+      throw new Error('revoke store down');
+    }
+    return revokeConnectionGrants(input);
+  };
+  const attempt = () => Integration.findById(ownerGithub._id).lean().then((connection) => removeConnection({
+    connection, removedBy: String(owner._id), revokeGrants, deps,
+  }));
+  await expect(attempt()).rejects.toThrow('revoke store down');
+  expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+  expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).revokedAt).toBeFalsy();
+  await attempt();
+  expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).revokedAt).toBeTruthy();
+  expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+});
+
 test('with the GitHub connection gone (not yet swept), a Connect call refuses connection_unproven', async () => {
   await grantOn(await connectRow('connect'));
   await Integration.deleteOne({ _id: ownerGithub._id });

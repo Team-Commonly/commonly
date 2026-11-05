@@ -72,7 +72,7 @@ describe('githubAppOfConfig', () => {
 describe('per-App signing', () => {
   it('a Connect connection signs with the Connect App id and key', async () => {
     await GitHubAppService.getPullRequest({
-      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', forceApp: true, 
+      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', repositoryId: '555', forceApp: true, 
     });
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(axios.post.mock.calls[0][0]).toBe('https://api.github.com/app/installations/900/access_tokens');
@@ -103,18 +103,48 @@ describe('per-App signing', () => {
   });
 });
 
+describe('a Connect token is never installation-wide (CodeRabbit, #3481)', () => {
+  it.each([
+    ['absent', undefined],
+    ['empty', ''],
+    ['not digits', '55a'],
+    ['signed', '-5'],
+    ['decimal', '5.5'],
+    ['zero', '0'],
+    ['leading zeros only', '000'],
+    ['past the safe-integer range', '9007199254740993'],
+    ['exponent notation', '1e3'],
+    ['hex', '0x1f'],
+    ['plus-signed', '+5'],
+    ['padded', ' 5'],
+  ])('refuses a %s repository id before signing anything', async (_label, repositoryId) => {
+    await expect(GitHubAppService.getInstallationToken('900', 'connect', repositoryId))
+      .rejects.toMatchObject({ code: 'github_repository_required' });
+    await expect(GitHubAppService.getPullRequest({
+      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', repositoryId, forceApp: true,
+    })).rejects.toMatchObject({ code: 'github_repository_required' });
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('tools still mints without a repository id, and ignores a malformed one', async () => {
+    await GitHubAppService.getInstallationToken('901', 'tools');
+    await GitHubAppService.getInstallationToken('902', 'tools', 'not-an-id');
+    expect(axios.post.mock.calls.map((call) => call[1])).toEqual([{}, {}]);
+  });
+});
+
 describe('token reuse margin and fresh mints (CodeRabbit, #3481)', () => {
   it('never hands out a cached token with less than 10 minutes left', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'nine-min', expires_at: new Date(Date.now() + 9 * 60000).toISOString() } });
-    await GitHubAppService.getInstallationToken('906', 'connect');
-    const again = await GitHubAppService.getInstallationToken('906', 'connect');
+    await GitHubAppService.getInstallationToken('906', 'connect', '555');
+    const again = await GitHubAppService.getInstallationToken('906', 'connect', '555');
     expect(again.token).not.toBe('nine-min');
     expect(axios.post).toHaveBeenCalledTimes(2);
   });
 
   it('a fresh request skips the cache', async () => {
-    const a = await GitHubAppService.getInstallationToken('907', 'connect');
-    const b = await GitHubAppService.getInstallationToken('907', 'connect', undefined, { fresh: true });
+    const a = await GitHubAppService.getInstallationToken('907', 'connect', '555');
+    const b = await GitHubAppService.getInstallationToken('907', 'connect', '555', { fresh: true });
     expect(a.token).not.toBe(b.token);
     expect(axios.post).toHaveBeenCalledTimes(2);
   });
@@ -150,9 +180,9 @@ describe('Connect with no key configured', () => {
     unset();
     process.env.GITHUB_PAT = 'shared-pat';
     await expect(GitHubAppService.getPullRequest({
-      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', forceApp: true,
+      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', repositoryId: '555', forceApp: true,
     })).rejects.toMatchObject({ code: 'github_app_not_configured' });
-    await expect(GitHubAppService.getInstallationToken('900', 'connect'))
+    await expect(GitHubAppService.getInstallationToken('900', 'connect', '555'))
       .rejects.toMatchObject({ code: 'github_app_not_configured' });
     expect(() => GitHubAppService.generateAppJWT('connect')).toThrow('github_app_not_configured');
     expect(axios.post).not.toHaveBeenCalled();
@@ -176,8 +206,8 @@ describe('Connect with no key configured', () => {
 
 describe('token cache', () => {
   it('reuses a token per (App, installation) and never serves one App\'s token for the other', async () => {
-    const a = await GitHubAppService.getInstallationToken('900', 'connect');
-    const b = await GitHubAppService.getInstallationToken('900', 'connect');
+    const a = await GitHubAppService.getInstallationToken('900', 'connect', '555');
+    const b = await GitHubAppService.getInstallationToken('900', 'connect', '555');
     expect(a.token).toBe(b.token);
     expect(axios.post).toHaveBeenCalledTimes(1);
     const c = await GitHubAppService.getInstallationToken('900', 'tools');
@@ -188,8 +218,8 @@ describe('token cache', () => {
 
   it('mints again when the cached token is about to expire', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'soon', expires_at: new Date(Date.now() + 60000).toISOString() } });
-    await GitHubAppService.getInstallationToken('905', 'connect');
-    await GitHubAppService.getInstallationToken('905', 'connect');
+    await GitHubAppService.getInstallationToken('905', 'connect', '555');
+    await GitHubAppService.getInstallationToken('905', 'connect', '555');
     expect(axios.post).toHaveBeenCalledTimes(2);
   });
 });

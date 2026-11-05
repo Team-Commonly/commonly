@@ -150,6 +150,22 @@ export class GitHubAppNotConfiguredError extends Error {
   }
 }
 
+/** A Connect token request that names no single, valid repository id. */
+export class GitHubRepositoryRequiredError extends Error {
+  code = 'github_repository_required';
+
+  constructor() {
+    super('github_repository_required');
+  }
+}
+
+/** GitHub's repository id as a positive safe integer, or null. Digits only, no sign, no fraction. */
+const repositoryIdNumber = (value: unknown): number | null => {
+  if (typeof value !== 'string' || !/^\d{1,16}$/.test(value)) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+};
+
 /**
  * Reuse a cached installation token only while it has this long left, so a
  * caller that runs several requests (or a slow git push) never starts on a
@@ -210,8 +226,13 @@ class GitHubAppService {
     if (!GITHUB_APP_NAMES.includes(app)) throw new GitHubAppNotConfiguredError(app);
     // A Connect token is narrowed to the connection's one repository (F172 M1),
     // defence in depth under the per-call proof. Tools tokens are unchanged.
-    const narrowTo = app === 'connect' && repositoryId && /^\d{1,20}$/.test(repositoryId)
-      ? Number(repositoryId) : null;
+    // A Connect request with no valid repository id refuses: it must never
+    // mint an installation-wide token.
+    let narrowTo: number | null = null;
+    if (app === 'connect') {
+      narrowTo = repositoryIdNumber(repositoryId);
+      if (narrowTo === null) throw new GitHubRepositoryRequiredError();
+    }
     const cacheKey = `${app}:${installationId}:${narrowTo ?? '*'}`;
     const cached = installationTokenCache.get(cacheKey);
     if (!options.fresh && cached && cached.expiresAt

@@ -55,11 +55,15 @@ token with that App's id and key only:
   written to GitHub. Tools rows are not re-proved.
 - **Removing the owner's GitHub connection** (the hosted-MCP `github-mcp` row)
   disconnects every Connect row they own and revokes those rows' grants,
-  before any provider step. The rows are kept, so the owner sees them; posting
+  before any provider step. A retry after a failed revoke still reaches rows
+  the first attempt already disconnected. The rows are kept, so the owner sees them; posting
   the same repository again with a fresh proof reconnects their own row (its
   old grants stay revoked).
 - **Connect tokens are narrowed** to the connection's repository
-  (`repository_ids` on the token request). Tools tokens are unchanged.
+  (`repository_ids` on the token request). A Connect token request with no
+  valid repository id (absent, not plain digits, zero, or past the safe-integer
+  range) refuses `github_repository_required`; it never mints an
+  installation-wide token. Tools tokens are unchanged.
 - Removing an older row (one with a top-level `installationId`) revokes only
   grants bound to no row or to that row, never a newer per-repository row's
   grants on the same installation.
@@ -93,7 +97,7 @@ token with that App's id and key only:
   `<prefix>github-connect-app-id` and `<prefix>github-connect-app-private-key`.
   Then set `githubConnectApp.enabled: true` in the environment's values. The
   ExternalSecret maps them to `GITHUB_CONNECT_APP_ID` and
-  `GITHUB_CONNECT_APP_PRIVATE_KEY` in `api-keys`, and the backend refs are
+  `GITHUB_CONNECT_APP_PRIVATE_KEY` in `api-keys`, and the backend and ops-runner refs are
   optional. Enabling the flag before both keys exist stalls `api-keys`.
 - No migration is needed. The old unique index on `installationId` stays and
   blocks nothing new; Mongoose builds `unique_github_app_repository` at boot

@@ -375,8 +375,12 @@ export const defaultDeps = (): RemovalDeps => ({
   },
   retireConnectRepositories: async ({ ownerUserId, revokedBy, revokeGrants }) => {
     if (!/^[a-f\d]{24}$/i.test(ownerUserId)) return 0;
+    // Every one of the owner's Connect rows, whatever its status: a retry after
+    // a revoke failed finds the row already disconnected, and must still end
+    // its grants. Revoking is idempotent; the status write only moves a
+    // connected row.
     const rows = await Integration.find({
-      type: 'github-app', 'config.app': 'connect', createdBy: ownerUserId, status: 'connected',
+      type: 'github-app', 'config.app': 'connect', createdBy: ownerUserId,
     }).lean() as unknown as RemovableConnection[];
     let revoked = 0;
     for (const row of rows) {
