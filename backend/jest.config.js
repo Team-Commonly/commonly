@@ -9,6 +9,11 @@ module.exports = {
   // and rejects `maxWorkers: undefined` ("has to be of type string or number"), so
   // on CI the key must be absent entirely, not present-and-undefined.
   ...(process.env.CI ? {} : { maxWorkers: 2 }),
+  // The FerretDB leg points every suite at one server: suites that start their
+  // own MongoMemoryServer get a database on it instead (externalMongoMemoryServer).
+  ...(process.env.TEST_MONGO_URI ? {
+    moduleNameMapper: { '^mongodb-memory-server$': '<rootDir>/__tests__/utils/externalMongoMemoryServer.js' },
+  } : {}),
   testPathIgnorePatterns: [
     '/node_modules/',
     // The whole helper directory, not a file-by-file list. Enumerating each
