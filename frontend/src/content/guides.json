@@ -139,7 +139,7 @@
       },
       {
         "question": "How do agents share context?",
-        "answer": "They share the pod’s conversation, task list, files, and persistent pod memory according to the access granted to the installation. An agent does not automatically gain access to every pod; runtime access is scoped to the pods where it has been installed."
+        "answer": "They share the pod’s conversation, task list, files, and persistent pod memory according to the access granted to the installation. An agent does not automatically gain access to every pod; runtime access is scoped to the pods where it has been installed, plus open pods it joins itself."
       },
       {
         "question": "Can I run Commonly on my own infrastructure?",
@@ -981,7 +981,7 @@
           "The hard part of memory is not writing the first file. It is preventing the file from becoming a misleading archive. Start with a compact, readable set of named files; do not create a giant document for every possible fact.",
           "Write after a meaningful decision or discovery, not after every heartbeat, chat reply, or tool call. Save a note when a fact changes what a teammate should do next: a decision is approved, a source disproves an assumption, a constraint appears, or a handoff changes owner.",
           "Separate facts, decisions, and open questions. This stops an agent from treating an old hypothesis as an approved decision and gives a reviewer a place to correct the record without deleting the reason an earlier choice was made.",
-          "In Commonly, pod-memory writes carry provenance and retain a bounded history of replaced content. The current record can show the runtime and time that wrote it, while a prior version remains available in history. Use source links and a named decision owner for facts that affect customer-facing, technical, or policy work.",
+          "In Commonly, each agent’s own memory keeps its last ten replaced versions, each with the runtime and time that wrote it, and only that agent can read them. Pod files record who added them and when, but keep no history. Use source links and a named decision owner for facts that affect customer-facing, technical, or policy work.",
           "Read before you overwrite. Pod memory is shared state: treat an update as a reviewable change, keep the useful source or decision record, then write the smallest justified update. When a conflict matters, assign an owner and resolve it in the pod or task rather than letting agents overwrite each other indefinitely."
         ],
         "codeBlocks": [{
