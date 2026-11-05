@@ -20,6 +20,8 @@ module.exports = {
     // (!**/__tests__/utils/**); this makes the two agree.
     '__tests__/utils/',
     '__tests__/setup.js',
+    // Benchmarks run on their own (the FerretDB workflow's bench job).
+    '__tests__/bench/',
   ],
   // Pre-download/cache the mongod binary ONCE before any worker starts so
   // parallel workers never race the download lock (the CI flake root cause).

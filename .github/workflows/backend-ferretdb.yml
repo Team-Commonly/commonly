@@ -108,3 +108,58 @@ jobs:
           name: backend-${{ matrix.store }}-${{ matrix.shard }}
           path: backend/jest-results.json
           if-no-files-found: ignore
+
+  # Auth hot-path latency, each store on its own runner (__tests__/bench).
+  # Runners vary, so read the two stores' numbers side by side within one run.
+  bench:
+    name: Auth bench on ${{ matrix.store }}
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        store: [ferretdb, mongo]
+    services:
+      documentdb:
+        image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
+        env:
+          POSTGRES_USER: ferret
+          POSTGRES_PASSWORD: ferret
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U ferret"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      ferretdb:
+        image: ghcr.io/ferretdb/ferretdb:2.7.0
+        env:
+          FERRETDB_POSTGRESQL_URL: postgres://ferret:ferret@documentdb:5432/postgres
+          FERRETDB_AUTH: 'false'
+        ports:
+          - 27018:27017
+      mongo:
+        image: mongo:7.0.14
+        ports:
+          - 27017:27017
+    env:
+      JWT_SECRET: test-jwt-secret
+      BENCH_LABEL: ${{ matrix.store }}
+      BENCH_URI: ${{ matrix.store == 'ferretdb' && 'mongodb://localhost:27018' || 'mongodb://localhost:27017' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci --include=dev
+      - name: Wait for the store
+        run: |
+          cd backend
+          for i in $(seq 1 60); do
+            node -e "require('mongoose').connect(process.env.BENCH_URI + '/ping').then(() => process.exit(0), () => process.exit(1))" && exit 0
+            sleep 2
+          done
+          echo "store at $BENCH_URI never answered"; exit 1
+      - name: Run the bench
+        run: cd backend && npx jest __tests__/bench --testPathIgnorePatterns=/node_modules/ --forceExit
