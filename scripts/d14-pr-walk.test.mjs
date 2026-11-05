@@ -142,7 +142,8 @@ const fakeWorld = (broken = {}) => {
       const podId = p.split('/')[3];
       const agent = s.pods[podId].agents.find((a) => a.runtimeType === 'hosted');
       const grantId = Object.keys(s.grants).find((g) => s.grants[g].podId === podId);
-      const branch = /branch "([^"]+)"/.exec(body.content)[1];
+      const asked = /branch "([^"]+)"/.exec(body.content)[1];
+      const branch = broken.hostedWrongHead ? `seat/${agent.userId}/somewhere-else` : asked;
       const taskId = /board task (\S+):/.exec(body.content)[1];
       s.tasks.find((t) => t.taskId === taskId).claimedByUserId = agent.userId;
       brokerCall(grantId, agent.userId, 'github.commit_files', { branch, base: 'main', message: 'm', files: [] }, podId);
@@ -198,3 +199,19 @@ for (const [rule, stepName] of [
     assert.ok(failed(steps).includes(stepName), `failed steps: ${failed(steps).join(' | ')}`);
   });
 }
+
+test('a hosted card on a different seat head is declined, never approved, and lands nothing', async () => {
+  const world = fakeWorld({ hostedWrongHead: true });
+  const approved = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url).endsWith('/resolve') && JSON.parse(init.body).decision === 'approved') approved.push(url);
+    return world.fetchImpl(url, init);
+  };
+  const { exitCode, steps } = await walk({ ...world, fetchImpl }, 'hosted');
+  assert.equal(exitCode, 1);
+  assert.ok(failed(steps).includes('hosted: the mention leads to a parked commit on its seat head'));
+  assert.ok(!steps.some((x) => x.name.startsWith('hosted: approved commit')), 'the approving step never ran');
+  assert.deepEqual(approved, []);
+  assert.equal(world.s.branches.size, 0);
+  assert.equal(world.s.pending.length, 0, 'the wrong card was declined, not left parked');
+});

@@ -198,7 +198,7 @@ export const runD14Walk = async ({
     expect(pulls.length === 0, `${label}: a pull request already exists for ${branch} (#${pulls[0]?.number})`);
   };
 
-  const issueBody = (h) => `D14 walk ${stamp} (${h}). Add the file docs/d14-walk/${h}-${stamp}.md containing one line: "walked ${stamp}". Throwaway: closed by the walk.`;
+  const issueBody = (h) => `D14 walk ${stamp} (${h}). Add the file d14-walk/${h}-${stamp}.txt containing one line: "walked ${stamp}". Throwaway: closed by the walk.`;
 
   /** The board task the agent claims, one per half. */
   const makeTask = async (podId, h) => {
@@ -311,7 +311,7 @@ export const runD14Walk = async ({
           const before = (await pendingCards(podId)).length;
           const pr = await brokerCall(grantId, seatToken, 'github.create_pull_request', { title: 'must not park', head: defaultBranch, base: defaultBranch });
           const commit = await brokerCall(grantId, seatToken, 'github.commit_files', {
-            branch: defaultBranch, base: defaultBranch, message: 'must not park', files: [{ path: 'docs/d14-walk/nope.md', content: 'no\n' }],
+            branch: defaultBranch, base: defaultBranch, message: 'must not park', files: [{ path: 'd14-walk/refused.txt', content: 'no\n' }],
           });
           // The exact code, so a broken grant or a 401 cannot pass for the rule.
           expect(refusalCode(pr) === HEAD_REFUSAL, `PR with head ${defaultBranch}: expected ${HEAD_REFUSAL}, got ${JSON.stringify(pr)}`);
@@ -323,7 +323,7 @@ export const runD14Walk = async ({
         await step('byo: commit parks, nothing reaches GitHub until the owner approves', async () => {
           const reply = await brokerCall(grantId, seatToken, 'github.commit_files', {
             branch: branch(), base: defaultBranch, message: `docs: d14 walk ${stamp} (byo)`,
-            files: [{ path: `docs/d14-walk/byo-${stamp}.md`, content: `walked ${stamp}\n` }],
+            files: [{ path: `d14-walk/byo-${stamp}.txt`, content: `walked ${stamp}\n` }],
           });
           const approvalId = parkedApprovalId(reply);
           expect(approvalId, `commit_files did not park: ${JSON.stringify(reply)}`);
@@ -397,11 +397,18 @@ export const runD14Walk = async ({
             },
           });
           expect(m.status === 200, `mention ${m.status}: ${JSON.stringify(m.data)}`);
-          commitCard = await waitForCard(podId, { tool: 'github.commit_files', agentName });
-          const head = commitCard.toolCall?.summary?.head;
-          expect(head === branch, `parked head ${head}, expected ${branch}`);
+          const card = await waitForCard(podId, { tool: 'github.commit_files', agentName });
+          const head = card.toolCall?.summary?.head;
+          if (head !== branch) {
+            // Never approve a write the walk did not ask for: it would land on a
+            // branch cleanup does not know about. Decline it and fail the step.
+            await decide(card.approvalId, 'declined');
+            throw new Error(`parked head ${head}, expected ${branch}; declined`);
+          }
           expect(!(await branchExists(branch)), 'the branch exists on GitHub before approval');
-          return `approval ${commitCard.approvalId}`;
+          // Only a card that passed every check reaches the approving step.
+          commitCard = card;
+          return `approval ${card.approvalId}`;
         });
         if (commitCard) {
           await step('hosted: approved commit lands, pull request parks, opens after approval', async () => {
