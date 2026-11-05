@@ -289,8 +289,10 @@ const counts = (list) => Object.entries(list.reduce((acc, p) => ({ ...acc, [p]: 
 const walk = async (label, installLine) => {
   const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token: TOKEN, agentName: AGENT, adapter: HARNESS })
     .split('\n');
+  // The run line exactly: Claude Code's carries --unsandboxed and Codex's
+  // doesn't, so a Codex line that grew the flag can't pass on the refusal.
   if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0])
-    || !lines[3].startsWith(`commonly agent run ${AGENT} --adapter ${HARNESS}`)) {
+    || lines[3] !== `commonly agent run ${AGENT} --adapter ${HARNESS}${HARNESS === 'codex' ? '' : ' --unsandboxed'}`) {
     console.error(`windows-byo-smoke: the page's Windows lines changed shape: ${JSON.stringify(lines)}`);
     process.exit(1);
   }

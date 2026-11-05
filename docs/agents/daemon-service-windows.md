@@ -69,8 +69,9 @@ Rules the code enforces:
   read the seat's token from its environment. A foreground `--unsandboxed` run doesn't report to the
   server (only the daemon's check-in does), so this local rule and the win32 broker withhold are what
   hold for it.
-- **Claude Code only.** OpenCode and Qwen stay refused with the flag; Codex is never refused (its own
-  profiles confine it) and needs no flag.
+- **Claude Code only.** OpenCode and Qwen stay refused with the flag. A public Codex seat is refused
+  too, with or without the flag, since TASK-786: Codex's own Windows sandbox can't enforce its profile's
+  read denies ([byo-support-matrix.md](byo-support-matrix.md)).
 - **No seat on native Windows gets connector grants**, opted in or not: `confinementReason` returns
   `sandbox_mode_unenforceable` on win32 for every adapter.
 - **The server refuses too.** A Windows check-in carries `sandbox: 'native-windows'`, or

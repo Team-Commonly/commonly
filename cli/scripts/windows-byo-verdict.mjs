@@ -72,8 +72,9 @@ export const codexRouteEnv = (gateway, key) => ({
 // or polls and points at WSL 2 (cli/src/lib/sandbox/host-check.js). The
 // Windows walk of the page's Codex lines checks that stop instead of a reply.
 
-/** A phrase of the CLI's refusal (windowsCodexMessage), which the walk looks for. */
+/** Two phrases of the CLI's refusal (windowsCodexMessage): why, and what to do instead. */
 export const CODEX_WINDOWS_REFUSAL = "Codex's own Windows sandbox can't enforce";
+export const CODEX_WINDOWS_DIRECTIONS = 'WSL 2 (Ubuntu): install Node and Codex inside WSL';
 
 /** Whether the Windows walk of this harness's lines expects the refusal. */
 export const expectsWindowsRefusal = (harness) => harness === 'codex';
@@ -82,7 +83,10 @@ export const expectsWindowsRefusal = (harness) => harness === 'codex';
 export const windowsRefusalProblems = ({ out = '', exited = null, polled = false, seconds = 0 } = {}) => {
   if (polled) return ['Codex polled for @mentions on native Windows instead of stopping with the WSL 2 directions'];
   if (exited === null) return [`the run was still going after ${seconds} s and never printed the WSL 2 directions`];
-  if (!String(out).includes(CODEX_WINDOWS_REFUSAL)) return ['the run stopped without the WSL 2 directions'];
+  const text = String(out);
+  if (!text.includes(CODEX_WINDOWS_REFUSAL) || !text.includes(CODEX_WINDOWS_DIRECTIONS)) {
+    return ['the run stopped without the WSL 2 directions'];
+  }
   if (exited === 0) return ['the run printed the directions but exited 0, which a script reads as success'];
   return [];
 };
@@ -156,9 +160,23 @@ const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit']
 const REJECTED_KEY = /invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b/i;
 const isRefusalReason = (reason) => reason === 'provider-refused' || /^upstream-refused/.test(String(reason || ''));
 
-/** The turns the CLI's log says failed, with the class and upstream status each named. */
-export const failedTurnsFrom = (output) => {
-  const text = String(output || '');
+// The CLI stamps its own lines with an ISO time; the proxy's and codex's
+// continuation lines carry none, and are kept, because nothing places them.
+const LINE_STAMP = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s/;
+const linesSince = (text, since) => (Number.isFinite(since)
+  ? text.split('\n').filter((line) => {
+    const stamp = LINE_STAMP.exec(line);
+    return !stamp || Date.parse(stamp[1]) >= since;
+  }).join('\n')
+  : text);
+
+/**
+ * The turns the CLI's log says failed, with the class and upstream status each
+ * named. With `since` (epoch ms), a stamped line from before it is skipped: the
+ * output covers the whole run, and an earlier failure was another event's.
+ */
+export const failedTurnsFrom = (output, { since } = {}) => {
+  const text = linesSince(String(output || ''), since);
   const turns = [];
   const failed = /processing failed \(([a-z_]+);[^\n]*/g;
   let m;
@@ -216,7 +234,7 @@ export const prodOutcome = ({
   const ack = acks.find((a) => a.status >= 200 && a.status < 300
     && mentionEvents.some((e) => e.eventId === a.eventId)) || null;
   const refusedAck = ack && isRefusalReason(ack.reason) ? ack : null;
-  const failed = failedTurnsFrom(output);
+  const failed = failedTurnsFrom(output, { since: mention ? timeOf(mention) : undefined });
   const modelFailure = failed.find((t) => MODEL_FAILURE_CLASSES.has(t.failureClass)
     || t.failureClass === 'proxy_refused' || t.upstreamStatus !== null
     || (t.failureClass === 'configuration' && t.rejectedKey)) || null;

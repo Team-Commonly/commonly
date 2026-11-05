@@ -5,7 +5,7 @@
 // a package npm cannot install must fail the PR, not warn.
 
 import {
-  CODEX_WINDOWS_REFUSAL, codexRouteEnv, describeCause, expectsWindowsRefusal, INSTALL_GUARD, installExitFrom, parseRecorderLog,
+  CODEX_WINDOWS_DIRECTIONS, CODEX_WINDOWS_REFUSAL, codexRouteEnv, describeCause, expectsWindowsRefusal, INSTALL_GUARD, installExitFrom, parseRecorderLog,
   pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, walkHarness, windowsProdRefusal, windowsRefusalProblems,
 } from '../scripts/windows-byo-verdict.mjs';
 import { windowsCodexMessage } from '../src/lib/sandbox/host-check.js';
@@ -216,6 +216,16 @@ describe('the prod verdict names whose failure it was', () => {
   // provider-proxy.js writes two refusals. An unpinned model is the model
   // route's; a route the proxy doesn't serve is a mismatch between this codex
   // and the CLI's provider route, which no gateway or model caused.
+  // The CLI's output covers the whole run, so a turn that failed before the
+  // person's @mention was another event's, and is not this mention's cause.
+  test('a failure logged before the @mention is not blamed on it', () => {
+    const earlier = '2026-11-05T03:00:10.000Z [codex-walk] inbox batch processing failed (rate_limit; 1 consecutive) '
+      + '— retrying 1 held event in 5.9s: codex turn failed (upstream 429)\n';
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier }).cause).toBe('commonly');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier + failedTurn('runtime', 'codex: exited 1') }).cause)
+      .toBe('harness');
+  });
+
   test('the host proxy refusing an unpinned model is the model route', () => {
     const outcome = prodOutcome({
       ...base, messages: [mention], acks: [],
@@ -319,8 +329,14 @@ describe('the Windows walk of the page\'s Codex lines', () => {
     expect(expectsWindowsRefusal('claude')).toBe(false);
   });
 
-  test('the marker it looks for is in the CLI\'s own refusal', () => {
+  test('the markers it looks for are in the CLI\'s own refusal', () => {
     expect(windowsCodexMessage()).toContain(CODEX_WINDOWS_REFUSAL);
+    expect(windowsCodexMessage()).toContain(CODEX_WINDOWS_DIRECTIONS);
+  });
+
+  test('fails when the refusal is printed without the WSL 2 directions', () => {
+    expect(windowsRefusalProblems({ out: `${CODEX_WINDOWS_REFUSAL} the file-read limits\n`, exited: 1, polled: false, seconds: 3 }))
+      .toEqual(['the run stopped without the WSL 2 directions']);
   });
 
   test('passes when the run stops non-zero with the directions and never polls', () => {
