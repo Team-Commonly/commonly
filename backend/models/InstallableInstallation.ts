@@ -128,6 +128,13 @@ export interface IInstallableInstallation extends Document {
   // Lifecycle
   status: InstallationStatus;
   /**
+   * Derived: true exactly when `status` is in LIVE_INSTALLATION_STATUSES. It
+   * exists so the live-target unique index can filter on `live: true`, which
+   * FerretDB accepts, instead of `status: {$in}`, which it refuses. Never write
+   * it by hand; the hooks below derive it on every Mongoose write path.
+   */
+  live?: boolean;
+  /**
    * Opaque ownership generation for a transient install claim. Every parent
    * owner write includes it in its filter; a stale worker is then a no-op
    * instead of overwriting the winner's lifecycle state or bearer code.
@@ -235,6 +242,8 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
       enum: ['installing', 'activating', 'uninstalling', 'active', 'paused', 'uninstalled', 'error', 'stale'],
       default: 'active',
     },
+    // Derived from `status` by the hooks below; see IInstallableInstallation.live.
+    live: { type: Boolean },
     claimId: { type: String },
     claimedAt: { type: Date },
     errorMessage: { type: String },
@@ -261,21 +270,165 @@ const InstallableInstallationSchema = new Schema<IInstallableInstallation>(
 );
 
 // ---------------------------------------------------------------------------
+// Derived `live` flag
+// ---------------------------------------------------------------------------
+
+/**
+ * The statuses that hold a target's one live installation. `uninstalled` and
+ * `stale` rows fall outside: their audit history survives, while a later
+ * install gets a new parent/projection instead of resurrecting a historical
+ * connector. Retained `error` rows stay inside so retry can claim the same
+ * parent and safely reuse its inactive projection.
+ */
+export const LIVE_INSTALLATION_STATUSES: readonly InstallationStatus[] = [
+  'installing', 'activating', 'uninstalling', 'active', 'paused', 'error',
+];
+
+export const isLiveInstallationStatus = (status: unknown): boolean => (
+  typeof status === 'string'
+  && (LIVE_INSTALLATION_STATUSES as readonly string[]).includes(status)
+);
+
+const STATUS_DEFAULT: InstallationStatus = 'active';
+
+// Document writes: save(), create(), insertMany() (validation runs per doc).
+// pre('save') as well as pre('validate'), so `validateBeforeSave: false`
+// cannot skip the derivation.
+function deriveLiveOnDocument(this: IInstallableInstallation): void {
+  this.live = isLiveInstallationStatus(this.status);
+}
+InstallableInstallationSchema.pre('validate', deriveLiveOnDocument);
+InstallableInstallationSchema.pre('save', deriveLiveOnDocument);
+
+type UpdateDoc = Record<string, unknown> & {
+  $set?: Record<string, unknown>;
+  $setOnInsert?: Record<string, unknown>;
+  $unset?: Record<string, unknown>;
+};
+
+const has = (obj: unknown, key: string): boolean => (
+  !!obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, key)
+);
+
+/**
+ * The status an upsert inserts when the update never names one: Mongo seeds a
+ * plain-equality filter value into the new doc; otherwise Mongoose's
+ * setDefaultsOnInsert writes the schema default (unless it is turned off).
+ */
+const insertedStatusFromFilter = (
+  filter: Record<string, unknown> | null,
+  options: { setDefaultsOnInsert?: boolean },
+): unknown => {
+  const condition = filter?.status;
+  if (typeof condition === 'string') return condition;
+  if (options.setDefaultsOnInsert === false) return undefined;
+  return STATUS_DEFAULT;
+};
+
+// Query writes. Each derives `live` from whatever the update does to `status`,
+// so no call site has to remember the flag:
+//   - pipeline update (array): a trailing stage recomputes `live` from the
+//     post-update `status`, covering a $cond-computed status and upserts;
+//   - `$set.status`, a bare top-level `status`, or `$unset.status`;
+//   - `$setOnInsert.status`, or an upsert whose status comes from the filter
+//     or the schema default.
+// An update that never touches status leaves `live` alone.
+// NOT covered (no caller today): Model.bulkWrite and raw Model.collection
+// writes, which run no middleware.
+function deriveLiveOnQuery(this: mongoose.Query<unknown, unknown>): void {
+  const update = this.getUpdate() as UpdateDoc | Array<Record<string, unknown>> | null;
+  if (!update) return;
+  if (Array.isArray(update)) {
+    update.push({
+      $set: {
+        live: { $in: [{ $ifNull: ['$status', null] }, [...LIVE_INSTALLATION_STATUSES]] },
+      },
+    });
+    this.setUpdate(update as unknown as mongoose.UpdateQuery<unknown>);
+    return;
+  }
+
+  const options = this.getOptions() as { upsert?: boolean; setDefaultsOnInsert?: boolean };
+  let touched = false;
+  if (has(update, 'status')) {
+    update.live = isLiveInstallationStatus(update.status);
+    touched = true;
+  }
+  if (update.$set && has(update.$set, 'status')) {
+    update.$set.live = isLiveInstallationStatus(update.$set.status);
+    touched = true;
+  }
+  if (has(update.$unset, 'status')) {
+    update.$set = { ...(update.$set || {}), live: false };
+    touched = true;
+  }
+  if (update.$setOnInsert && has(update.$setOnInsert, 'status')) {
+    update.$setOnInsert.live = isLiveInstallationStatus(update.$setOnInsert.status);
+    touched = true;
+  }
+  if (!touched && options.upsert) {
+    update.$setOnInsert = {
+      ...(update.$setOnInsert || {}),
+      live: isLiveInstallationStatus(
+        insertedStatusFromFilter(this.getFilter() as Record<string, unknown> | null, options),
+      ),
+    };
+  }
+  this.setUpdate(update as mongoose.UpdateQuery<unknown>);
+}
+
+// A replacement document carries `status` (or gets the schema default).
+function deriveLiveOnReplace(this: mongoose.Query<unknown, unknown>): void {
+  const replacement = this.getUpdate() as Record<string, unknown> | null;
+  if (!replacement || Array.isArray(replacement)) return;
+  replacement.live = isLiveInstallationStatus(
+    has(replacement, 'status') ? replacement.status : STATUS_DEFAULT,
+  );
+  this.setUpdate(replacement as mongoose.UpdateQuery<unknown>);
+}
+
+InstallableInstallationSchema.pre(
+  ['updateOne', 'updateMany', 'findOneAndUpdate'],
+  { document: false, query: true },
+  deriveLiveOnQuery,
+);
+InstallableInstallationSchema.pre(
+  ['replaceOne', 'findOneAndReplace'],
+  { document: false, query: true },
+  deriveLiveOnReplace,
+);
+
+// ---------------------------------------------------------------------------
 // Indexes
 // ---------------------------------------------------------------------------
 
-// One live installation of a given Installable per target. `uninstalled`
-// rows intentionally fall outside the index: their audit history survives,
-// while a later install gets a new parent/projection instead of resurrecting
-// a historical connector. Retained `error` rows stay inside so retry can
-// claim the same parent and safely reuse its inactive projection.
+// One live installation of a given Installable per target (which statuses
+// count as live: LIVE_INSTALLATION_STATUSES).
+//
+// The filter is the derived `live: true` because FerretDB's partial indexes
+// accept only $eq, $gt(e)/$lt(e), $type, $exists:true and a top-level $and,
+// and refuse `$in`. Declared before the legacy index so an index build on
+// FerretDB creates it even though the legacy one then fails.
+InstallableInstallationSchema.index(
+  { installableId: 1, targetType: 1, targetId: 1 },
+  {
+    unique: true,
+    name: 'installable_live_target_unique_v2',
+    partialFilterExpression: { live: true },
+  },
+);
+
+// LEGACY. Keep declared until `backfill-installation-live --verify` reports 0
+// on prod, then remove it in a follow-up change (syncIndexes() in
+// seed-builtin-connectors drops it once undeclared). It cannot build on
+// FerretDB, where the v2 index above is the only guarantee.
 InstallableInstallationSchema.index(
   { installableId: 1, targetType: 1, targetId: 1 },
   {
     unique: true,
     name: 'installable_live_target_unique',
     partialFilterExpression: {
-      status: { $in: ['installing', 'activating', 'uninstalling', 'active', 'paused', 'error'] },
+      status: { $in: [...LIVE_INSTALLATION_STATUSES] },
     },
   },
 );
