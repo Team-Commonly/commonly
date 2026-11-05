@@ -12,6 +12,16 @@ const advance = (ms: number) => act(() => { jest.advanceTimersByTime(ms); });
 
 const message = (text: string) => screen.getByText(text);
 
+// A line with an @handle is split around the mention chip, so match the whole
+// paragraph rather than one text node.
+const line = (text: string) => screen.getByText(
+  (_content, element) => element?.tagName === 'P' && element.textContent === text,
+);
+
+// The panel's folds open on demand, as they do in the app.
+const openFold = (name: string) => fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${name}`) }));
+const openBoard = () => fireEvent.click(screen.getByRole('button', { name: /to do$/ }));
+
 // A pod can carry the needs-you count, so its accessible name is "Launch" or
 // "Launch1" depending on state. Matching either is deliberate: several tests
 // below use that difference.
@@ -32,13 +42,17 @@ describe('DemoWorkspace', () => {
 
     // The thread, its header state and the two agents it names.
     expect(screen.getByRole('log')).toBeInTheDocument();
-    expect(message('@wren the signup fix is green. Merge it, then tell me what broke in last night’s deploy.')).toBeInTheDocument();
-    expect(message('#212 merged · deployed 09:21')).toBeInTheDocument();
-    expect(message('● 1 agent working')).toBeInTheDocument();
+    expect(line('@wren the signup fix is green. Merge it, then tell me what broke in last night’s deploy.')).toBeInTheDocument();
+    // Multiplayer from the first state: two people, each talking to an agent.
+    expect(line('@kai can you close the retry gap for good?')).toBeInTheDocument();
+    expect(message('Priya')).toBeInTheDocument();
+    expect(message('working · TASK-31')).toBeInTheDocument();
 
     // The decision card, drawn with the product's own card classes.
     expect(container.querySelector('.v2-decision-card')).not.toBeNull();
-    expect(message('Wren needs you')).toBeInTheDocument();
+    const card = container.querySelector('.v2-decision-card') as HTMLElement;
+    expect(within(card).getByText('Wren')).toBeInTheDocument();
+    expect(within(card).getByText('Tell affected users')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Email them now' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Wait for Friday' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Other…' })).toBeInTheDocument();
@@ -50,15 +64,21 @@ describe('DemoWorkspace', () => {
     expect(screen.getByRole('button', { name: 'Wait for Friday' }))
       .not.toHaveClass('v2-decision-card__choice--primary');
 
-    // Inspector: agents, needs-you, board, channel.
-    expect(message('agents in launch')).toBeInTheDocument();
+    // Inspector: agents and needs-you at rest; the board behind the header's
+    // chip and the channel inside its fold, as the app keeps them.
+    expect(screen.getByRole('button', { name: /^Agents/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /^Needs you/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: '1 to do' })).toBeInTheDocument();
+    openBoard();
     expect(message('TASK-32 Note to users')).toBeInTheDocument();
+    openFold('Who can join');
     expect(message('Telegram · Launch')).toBeInTheDocument();
   });
 
   it('rules the decision: Sam’s line, then the agent’s reply, and the pod settles', () => {
     render(<DemoWorkspace />);
 
+    openBoard();
     fireEvent.click(screen.getByRole('button', { name: 'Email them now' }));
 
     // Sam's ruling is immediate; the agent only starts working afterwards.
@@ -75,7 +95,7 @@ describe('DemoWorkspace', () => {
     // The card is spent, and the pod's "needs you" is answered in all three
     // places it was claimed: the inspector, the board row and the pod count.
     expect(screen.queryByRole('button', { name: 'Email them now' })).not.toBeInTheDocument();
-    expect(message('Nothing. Your agents are working.')).toBeInTheDocument();
+    expect(message('Nothing. Wren and Kai are working.')).toBeInTheDocument();
     expect(message('wren · wip')).toBeInTheDocument();
     expect(screen.queryByText('needs you', { selector: '.v2-demo__board-state' })).not.toBeInTheDocument();
     expect(message('working · note to users')).toBeInTheDocument();
@@ -88,7 +108,7 @@ describe('DemoWorkspace', () => {
     fireEvent.click(screen.getByRole('button', { name: '@kai is the retry fix up?' }));
 
     // The prompt is now a message from Sam, and the chip is used up.
-    expect(message('@kai is the retry fix up?')).toBeInTheDocument();
+    expect(line('@kai is the retry fix up?')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '@kai is the retry fix up?' })).not.toBeInTheDocument();
 
     advance(500);
@@ -131,6 +151,7 @@ describe('DemoWorkspace', () => {
     advance(1200);
 
     fireEvent.click(podButton('Support'));
+    openFold('Who can join');
     // Support has its own ask, its own agents and its own Slack channel.
     expect(message('Dana wants a CSV of the Launch pod. It has two private threads. Leave them out, or export everything?')).toBeInTheDocument();
     expect(message('Slack · #help')).toBeInTheDocument();
@@ -195,7 +216,7 @@ describe('DemoWorkspace', () => {
 
   it('draws faces from the real kit, never from the design canvas', () => {
     const { container } = render(<DemoWorkspace />);
-    const faces = Array.from(container.querySelectorAll('img.v2-demo__face'));
+    const faces = Array.from(container.querySelectorAll('.v2-demo__face img'));
 
     // The board's /_blob/… URLs do not resolve outside the canvas; the kit's
     // data URIs do. A single canvas URL here is a broken face on the landing.
@@ -214,7 +235,8 @@ describe('DemoWorkspace', () => {
 
     // Four pods, and exactly one is current.
     const pods = within(strip).getAllByRole('button');
-    expect(pods.map((p) => p.textContent)).toEqual(['Launch1', 'Support1', 'Website', 'Growth']);
+    expect(pods.map((p) => p.querySelector('.v2-pods__row-name')?.textContent)).toEqual(['Launch', 'Support', 'Website', 'Growth']);
+    expect(pods.map((p) => p.querySelector('.v2-pods__row-pill')?.textContent)).toEqual(['1', '1', undefined, undefined]);
     expect(pods.filter((p) => p.getAttribute('aria-current') === 'true')).toHaveLength(1);
   });
 });

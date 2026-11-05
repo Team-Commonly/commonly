@@ -3222,11 +3222,28 @@ describe('the landing hero demo (TASK-147)', () => {
 
   test('the demo is the workspace at its own canvas, not a smaller invention', () => {
     expect(ruleBody(demo, '.v2-demo')).toContain('max-width: 1312px');
-    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 212px minmax(0, 1fr) 272px');
+    // The app's own grid (.v2-shell): 56 / 260 / fluid / 272 with 14px gaps.
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 260px minmax(0, 1fr) 272px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('gap: 14px');
     expect(ruleBody(demo, '.v2-demo__stage')).toContain('height: 720px');
     expect(ruleBody(demo, '.v2-demo__stage')).toContain('background: var(--v2-page-bg)');
     // The demo is the product's page, so it sits on the app's canvas colour.
     expect(cssVariable(readV2Css(), '--v2-page-bg')).toBe('#eef0f4');
+  });
+
+  test('the demo draws from the app sheets instead of keeping its own copies', () => {
+    // Without these the real classes below draw unstyled: the landing does not
+    // mount V2App, which is what loads them for the shell.
+    ['primitives/primitives.css', 'chat/chat-message.css', 'chat/chat-pane.css', 'chat/chat-composer.css', 'chat/chat-inspector.css']
+      .forEach((sheet) => expect(component).toContain(`import '../${sheet}';`));
+    ['v2-rail__item', 'v2-pods__row', 'v2-thread__header', 'v2-pod-header__board', 'v2-msg__content', 'v2-composer__send', 'v2-workspace-inspector__group']
+      .forEach((name) => expect(component).toContain(name));
+    // The sheets are the app's phone layout too, and two of its rules assume a
+    // whole window: a composer margin that clears the tab bar, and a header meta
+    // moved to the top bar. Each needs the hero's answer or a phone loses it.
+    const phone = phoneBlock(demo);
+    expect(phone).toMatch(/\.v2-demo \.v2-composer \{ margin: 4px 10px 10px; \}/);
+    expect(phone).toMatch(/\.v2-demo \.v2-pod-header__meta \{ display: flex; \}/);
   });
 
   test('a phone stacks the columns and lets the stage grow instead of clipping them', () => {
@@ -3239,55 +3256,30 @@ describe('the landing hero demo (TASK-147)', () => {
     expect(phone).toMatch(/\.v2-demo__stage \{[^}]*height: auto;/);
   });
 
-  test('the transcript keeps a floor on a phone so the thread is never empty', () => {
+  test('the transcript keeps a floor on a phone, and a reply never moves the page', () => {
     const phone = phoneBlock(demo);
     // .v2-demo__log is flex:1 / min-height:0, which needs a sized parent; on a
     // phone the stage is auto-height, so without this floor the hero's thread
     // renders as a blank strip.
     expect(phone).toMatch(/\.v2-demo__log \{[^}]*min-height: 300px;/);
+    // The fixed thread is what keeps the page still: replies land inside it.
+    expect(phone).toMatch(/\.v2-demo__thread \{[^}]*height: 640px;/);
   });
 
-  test('the active pod row keeps its tint on a phone, where a later rule would clear it', () => {
+  test('the phone pod rows stay a two-up grid of real rows', () => {
     const phone = phoneBlock(demo);
-    // ux-lead's 390 gate (#1855, at 62ceda24) measured the strip painting the
-    // open pod like its neighbours. The cause is order, not a missing rule: the
-    // phone row rule below has the same specificity as the desktop --active rule
-    // and comes later, so its surface colour wins and the rail loses its only
-    // position cue at exactly the width where the strip IS the navigation.
-    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod \{[^}]*background: var\(--v2-surface\);/);
-    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod--active \{[^}]*background: var\(--v2-accent-soft\);/);
-    // Order IS the defect, so order is what this guard has to see. The two rules
-    // are the same specificity (0,2,1), so the tint survives only because
-    // --active sits later in the block: move it above the row rule with every
-    // declaration unchanged and the active pod repaints white. sprint-review
-    // measured exactly that in a browser at 390 — 86 parsed rules either way, so
-    // it is the cascade, not a parse break — and this suite stayed green until
-    // this pair. (Textual presence alone cannot see it.)
-    const rowAt = phone.indexOf('.v2-root button.v2-demo__pod {');
-    const activeAt = phone.indexOf('.v2-root button.v2-demo__pod--active {');
-    expect(rowAt).toBeGreaterThanOrEqual(0);
-    expect(activeAt).toBeGreaterThan(rowAt);
-    // And hover cannot wipe it either — hover outranks the active rule, which is
-    // the opposite of the product, where .v2-pods__item:hover is weaker than
-    // .v2-root button.v2-pods__item--active.
-    expect(demo).toMatch(/\.v2-root button\.v2-demo__pod--active:hover \{[^}]*background: var\(--v2-accent-soft\);/);
+    expect(phone).toMatch(/\.v2-demo \.v2-pods__rows \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    // The rail and the search row are what a phone drops, never the pods.
+    expect(phone).toMatch(/\.v2-demo__rail,\s+\.v2-demo \.v2-pods__tools,\s+\.v2-demo \.v2-pods__view \{ display: none; \}/);
   });
 
-  test('the inspector is one column at 390 and two only from 641 up', () => {
-    // At 390 the two columns are ~156px against a board row that needs ~230, so
-    // every row title truncated to an ellipsis with nothing left to read
-    // (ux-lead, #1855 gate at 62ceda24).
-    const twoUp = mediaAt(demo, '@media (max-width: 760px) and (min-width: 641px)');
-    expect(twoUp).toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
-    expect(twoUp).toMatch(/\.v2-demo__needs \{[^}]*grid-column: 1 \/ -1;/);
-    // The phone block itself must not turn the inspector back into a grid: it
-    // covers widths the 640 rule below also covers, and it comes first, so the
-    // two-column layout would win at 390 as surely as it did before the fix.
+  test('the columns give way one at a time between the canvas and a phone', () => {
+    const noRail = mediaAt(demo, '@media (max-width: 1180px) and (min-width: 761px)');
+    expect(noRail).toMatch(/\.v2-demo__rail \{ display: none; \}/);
+    const noPanel = mediaAt(demo, '@media (max-width: 960px) and (min-width: 761px)');
+    expect(noPanel).toMatch(/\.v2-demo__inspector \{ display: none; \}/);
+    // The folds are one column at every width that shows them.
     expect(phoneBlock(demo)).not.toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns/);
-    // Below 641 it is the base flex column again, with needs hoisted to the top.
-    expect(ruleBody(demo, '.v2-demo__inspector')).toContain('flex-direction: column');
-    const oneUp = mediaAt(demo, '@media (max-width: 640px) {');
-    expect(oneUp).toMatch(/\.v2-demo__needs \{ order: -1; \}/);
   });
 
   test('the hero is the product, not the video it replaced', () => {
@@ -3297,7 +3289,7 @@ describe('the landing hero demo (TASK-147)', () => {
     // The demo explains its own honesty limit in its chrome, and the component
     // renders that line unconditionally (the phone layout keeps it wrapping on
     // its own row rather than letting it scroll out of the pod strip).
-    expect(component).toContain('sample workspace · replies are scripted');
+    expect(component).toContain("t('landing.hero.demoSample')");
     expect(phoneBlock(read('../landing/demo-workspace.css'))).toMatch(
       /\.v2-demo__sample \{[^}]*flex: 1 1 100%;/,
     );
@@ -3305,13 +3297,11 @@ describe('the landing hero demo (TASK-147)', () => {
 
   test('the active pod row follows the component, not the board that drew it filled', () => {
     // ux-lead's carry note on #1841: the design board paints the active pod row
-    // cobalt-filled, while the live rail uses a tint plus a 3px accent mark.
-    // The build follows the component — a filled row here would be the landing
-    // showing a product that does not exist.
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).toContain('background: var(--v2-accent-soft)');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).not.toContain('background: var(--v2-accent);');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('width: 3px');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('background: var(--v2-accent);');
+    // cobalt-filled, while the live rail draws its own selected row. The demo
+    // renders that row's class and keeps no look of its own for it.
+    expect(component).toContain('v2-pods__row--selected');
+    expect(demo).not.toContain('v2-demo__pod--active');
+    expect(demo).not.toContain('v2-pods__row--selected');
   });
 
   test('landing screenshot cards are flat: no window bar anywhere, no shadow anywhere', () => {
@@ -6406,14 +6396,11 @@ describe('front door keys, auth gutter and the shell state line (11-04)', () => 
     expect(phone).toContain('.v2-landing__btn { height: 44px; font-size: 16px; }');
   });
 
-  test('the demo\'s decision choices are keys too, scoped to the demo', () => {
-    const choice = ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice');
-    expect(choice).toContain('min-height: 40px');
-    expect(choice).toContain('border-radius: var(--v2-r-10, 10px)');
-    expect(ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice--primary'))
-      .toContain('linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b))');
-    expect(blockContaining(demo, '@media (max-width: 760px)', 'v2-demo__card button.v2-decision-card__choice'))
-      .toContain('.v2-root .v2-demo__card button.v2-decision-card__choice { min-height: 44px;');
+  test('the demo\'s decision card is the app\'s card, with no look of its own', () => {
+    // Finding 13 gave the demo's choices the front-door keys. The hero moved onto
+    // the live pod (v3 pass, 11-05), where the card is the in-app one, and a pod
+    // that draws a different card from the app is the thing that pass removed.
+    expect(demo).not.toContain('v2-decision-card');
   });
 
   test('the auth card keeps its frame\'s 20px side inset at 390 (d215 auth frames)', () => {

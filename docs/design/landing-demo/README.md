@@ -27,6 +27,7 @@ The canvas these boards come from is private to Sam's account, so the sources li
 
 ## Where the build departs from the boards
 
+- **The hero demo follows the live app, not `Demo.dc.html` (v3 pass, 2026-11-05).** The board is the September shell: a 212px pod column with Direct rows, a subtitle and a working count in the pod header, flat inspector panels, a mono "Send" composer. The hero now renders the app's own classes on the app's 56 / 260 / fluid / 272 grid, and its first state has two people and their agents. The board still holds for the sample content and the scripted behaviour. The board and channel panels moved to where the app keeps them: the board behind the header's "N to do" chip, the channel inside the Who can join fold. Chrome uses the app's locale keys; thread content stays English, as people's messages do.
 - **The install command.** The 1440 board draws it as a bare, shortened line beside the buttons. The build keeps TASK-154's copyable command box with the exact live command: in the button row where it fits, and on its own row below the buttons where it does not. The 390 board draws the second case.
 - **The title's line break.** The 1440 board sets the title on one line. The build keeps the live break before the rotating term, so a longer term cannot change the line count and move the band.
 - **The language switch.** "EN" on the boards stands for the live language switch, white on the band.
