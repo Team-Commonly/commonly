@@ -1254,7 +1254,7 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
     expect(warned.join('\n')).toMatch(/wants the seat credential as a command argument/);
   });
 
-  test.each(['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'])(
+  test.each(['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL', 'codex_api_key', 'Openai_Api_Key'])(
     'an MCP entry that puts the token under codex\'s own credential name %s is refused before codex runs',
     async (name) => {
       const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });

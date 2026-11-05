@@ -326,7 +326,9 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       if (carriesRuntimeToken) {
         // Codex reads these as its own credential or model route, so a value
         // forwarded under one of these names would be sent to the model endpoint.
-        if (CODEX_OWN_AUTH_ENVS.includes(key)) {
+        // Compared in upper case on every platform: Windows env names are
+        // case-insensitive, and refusing a lower-case spelling elsewhere costs nothing.
+        if (CODEX_OWN_AUTH_ENVS.includes(key.toUpperCase())) {
           throw new Error(
             `codex MCP server ${server.name} sets ${key} to the seat token; codex reads ${key} `
             + 'as its own credential, so declare the token under another name',
