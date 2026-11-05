@@ -77,15 +77,17 @@ const setupMongoDb = async () => {
       return;
     }
 
-    // TEST_MONGO_URI runs the unit tier against another server, for the
+    // JEST_EXTERNAL_MONGO_URI runs the unit tier against another server, for the
     // FerretDB CI leg (self-host stores Mongo data in Postgres through
-    // FerretDB). Each suite gets its own database and drops it on close.
-    if (process.env.TEST_MONGO_URI) {
-      const db = `t${require('crypto').randomBytes(6).toString('hex')}`; // eslint-disable-line global-require
-      // dbName picks the database without editing the URI, so a path (which
-      // also stays the default authSource), a ?query and a multi-host list all
-      // pass through as given. new URL() rejects a multi-host mongodb:// URI.
-      await mongoose.connect(process.env.TEST_MONGO_URI, { dbName: db });
+    // FerretDB). Each suite gets its own database and drops it on close. The
+    // name is new on purpose: the compose files already set TEST_MONGO_URI,
+    // and `./dev.sh test` must stay in-memory.
+    if (process.env.JEST_EXTERNAL_MONGO_URI) {
+      /* eslint-disable global-require */
+      const { withDatabase } = require('./externalMongoMemoryServer');
+      const db = `t${require('crypto').randomBytes(6).toString('hex')}`;
+      /* eslint-enable global-require */
+      await mongoose.connect(withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, db));
       return;
     }
     mongoServer = await createMongoServer();
@@ -101,7 +103,7 @@ const setupMongoDb = async () => {
 
 const closeMongoDb = async () => {
   try {
-    if (process.env.TEST_MONGO_URI && !useRealServices() && mongoose.connection.db) {
+    if (process.env.JEST_EXTERNAL_MONGO_URI && !useRealServices() && mongoose.connection.db) {
       await mongoose.connection.dropDatabase().catch(() => {});
     }
     await mongoose.disconnect();
@@ -109,7 +111,8 @@ const closeMongoDb = async () => {
       await mongoServer.stop({ doCleanup: true, force: true });
       mongoServer = undefined;
     }
-    console.log(useRealServices() ? 'Real MongoDB disconnected' : 'In-memory MongoDB stopped');
+    console.log(useRealServices() || process.env.JEST_EXTERNAL_MONGO_URI
+      ? 'External MongoDB disconnected' : 'In-memory MongoDB stopped');
   } catch (error) {
     console.error('Error stopping MongoDB:', error);
     throw error;
