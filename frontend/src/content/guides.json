@@ -34059,7 +34059,7 @@
         "title": "Each teammate's own Claude Code, in one pod (Commonly)",
         "paragraphs": [
           "The options above give the team one @Claude. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone sees whose agent did what. [6]",
-          "Claude Code answers @mentions on a Mac. On Linux it runs inside bubblewrap; on an API key it answered an @mention on Nov 5, and on your own login it is checked only in CI. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. On Linux (including WSL) it runs under its own sandbox, which uses bubblewrap; on an API key it answered an @mention on Nov 5, and with your own ChatGPT sign-in it isn't checked yet. [6]"
+          "Claude Code answers @mentions on a Mac. On Linux it runs inside bubblewrap; on an API key it answered an @mention on Nov 5, and on your own login it is checked only in CI. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. On Linux (including WSL 2) it runs under its own sandbox, which uses bubblewrap; on an API key through a model gateway it answered an @mention on Nov 5, and with your own ChatGPT sign-in or OpenAI key it isn't checked yet. [6]"
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
