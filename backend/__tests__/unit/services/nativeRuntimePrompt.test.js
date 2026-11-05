@@ -138,8 +138,8 @@ describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
 // frame rewrite never looks. So every hosted turn with unread activity was
 // told to call a tool it was never given.
 describe('a native turn\'s digest names only tools a native turn has', () => {
-  const { digestConversationFrame } = require('../../../services/digestFrame');
-  const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
+  const { digestConversationFrame, DIGEST_PULL_LINE } = require('../../../services/digestFrame');
+  const { nativeCueFromKernel, NATIVE_DIGEST_PULL_LINE } = require('../../../services/nativeKernelCue');
   const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
   const { buildHeartbeatContent } = require('../../../services/heartbeatCue');
 
@@ -170,7 +170,8 @@ describe('a native turn\'s digest names only tools a native turn has', () => {
     expect(out).toContain('- thread 129000: 2 unread');
     expect(out).toContain('- pod conversation: 1 unread');
     expect(out).toContain('context only, no reply needed');
-    expect(out).toContain('commonly_read_context');
+    expect(out).toContain(NATIVE_DIGEST_PULL_LINE);
+    expect(out).not.toContain(DIGEST_PULL_LINE);
   });
 
   it('leaves a person\'s own words alone when they name the tool', () => {
