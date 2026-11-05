@@ -279,6 +279,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(value).not.toContain('grid-row');
     expect(value).toContain('justify-content: flex-end');
   });
+  test('a hosted description box is name-width, reads left to right, and puts its hint underneath (TASK-780)', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__about textarea')).toContain('text-align: left');
+    const hint = ruleBody(surface, '.v2-agent-settings-page__abouthint');
+    expect(hint).toContain('flex-basis: 100%');
+    expect(hint).toContain('text-align: left');
+    expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));

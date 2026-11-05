@@ -3041,6 +3041,9 @@
     "heartbeatOff": "Off",
     "connection": "Connection",
     "displayName": "Display name",
+    "about": "Description",
+    "aboutHint": "Your agent reads this as who it is, from its next reply.",
+    "aboutError": "Keep the description to 160 characters.",
     "persona": "Persona",
     "tone": "Tone",
     "toneOptions": {
