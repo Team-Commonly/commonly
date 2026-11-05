@@ -5,6 +5,12 @@
  * A legacy row with no `app` still runs as tools. Same harness as
  * prWriteApproval.test.js: memory Mongo, real broker/grant/approval services,
  * GitHub mocked at githubAppService.
+ *
+ * HOLD 1: every Connect write re-proves the owner's access with their current
+ * GitHub user token (fake GitHub at hostedVendorFetch; the hosted-MCP
+ * credential opener returns the row's stored token). Losing push, the
+ * repository changing identity, or removing the GitHub connection refuses
+ * `connection_unproven`, at park and again at execute, and nothing is written.
  */
 process.env.PG_HOST = '';
 process.env.JWT_SECRET = 'github-connect-pr-test-only';
@@ -74,6 +80,29 @@ jest.mock('../../services/outsiderGrantPodEligibility', () => ({
   outsiderGrantPodRefusal: jest.fn(async () => null),
   outsiderGrantRefusalMessage: jest.fn((reason) => reason),
 }));
+// The owner's view of GitHub through their user token.
+const mockView = { push: true, repositoryId: 555, listed: true, suspended: false, calls: 0 };
+jest.mock('../../services/hostedVendorFetch', () => ({
+  hostedVendorFetch: jest.fn(async (url, init) => {
+    mockView.calls += 1;
+    const json = (status, body) => ({ ok: status < 300, status, json: async () => body });
+    if (String(init?.headers?.Authorization || '') !== 'Bearer owner-user-token') return json(401, {});
+    const path = new URL(url).pathname;
+    if (path === '/user/installations') {
+      return json(200, { installations: [{ id: 7001, app_id: 424242, suspended_at: mockView.suspended ? '2026-11-01' : null }] });
+    }
+    if (path === '/user/installations/7001/repositories') {
+      return json(200, { repositories: mockView.listed ? [{
+        id: mockView.repositoryId, name: 'Widget', full_name: 'Outside-Team/Widget', owner: { login: 'Outside-Team' },
+        permissions: { pull: true, push: mockView.push },
+      }] : [] });
+    }
+    return json(404, {});
+  }),
+}));
+jest.mock('../../services/hostedMcpCredentialService', () => ({
+  credentialFor: jest.fn(async (row) => ({ token: String(row.config?.credentialRef || ''), expiresAt: '' })),
+}));
 
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
@@ -94,6 +123,7 @@ let owner;
 let member;
 let seat;
 let pod;
+let ownerGithub;
 
 const ENV_KEYS = ['GITHUB_CONNECT_APP_ID', 'GITHUB_CONNECT_APP_PRIVATE_KEY', 'GITHUB_APP_ID', 'GITHUB_APP_PRIVATE_KEY'];
 const savedEnv = {};
@@ -117,6 +147,8 @@ beforeEach(async () => {
   process.env.GITHUB_APP_ID = '111';
   process.env.GITHUB_APP_PRIVATE_KEY = 'tools-pem-placeholder';
   github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'main' ? '1'.repeat(40) : null));
+  Object.assign(mockView, { push: true, repositoryId: 555, listed: true, suspended: false, calls: 0 });
+  require('../../services/githubConnectReproof')._resetConnectProofCache();
   delete process.env.SEAT_GITHUB_PUSH_ENABLED;
   mockJudge.mockResolvedValue({ refusal: null, scope: 'seat' });
   await Promise.all([User.deleteMany({}), Pod.deleteMany({}), Integration.deleteMany({}),
@@ -149,6 +181,11 @@ beforeEach(async () => {
     status: 'active',
     config: { runtime: { runtimeType: 'native' } },
   });
+  // The owner's own GitHub connection (D248): the user token every re-proof reads.
+  ownerGithub = await Integration.create({
+    type: 'hosted-mcp', scope: 'user', status: 'connected', createdBy: owner._id, isActive: true,
+    config: { entryId: 'github-mcp', credentialRef: 'owner-user-token', intake: 'oauth' },
+  });
 });
 
 /** A per-repository row as the F172 routes write it: no top-level installationId. */
@@ -163,7 +200,8 @@ const connectRow = (app) => Integration.create({
     installationId: '7001',
     owner: 'Outside-Team',
     repo: 'Widget',
-    repoKey: `${app || 'tools'}-outside-team/widget`, 
+    repoKey: `${app || 'tools'}-outside-team/widget`,
+    ...(app === 'connect' ? { repositoryId: '555' } : {}),
   },
 });
 
@@ -220,6 +258,7 @@ test('a PR write on a Connect connection parks for the owner and runs, signed by
     repo: 'Widget',
     installationId: '7001',
     app: 'connect',
+    repositoryId: '555',
     forceApp: true,
     head: head(),
     base: 'main',
@@ -268,4 +307,119 @@ test('a row naming an unknown App is refused, not signed with either key', async
   expect(answer.outcome).toBe('refused');
   expect(await ApprovalAction.countDocuments({})).toBe(0);
   expect(github.createPullRequest).not.toHaveBeenCalled();
+});
+
+// ─── HOLD 1: the owner's access is proved again on every write ───────────────
+
+const parkPr = async () => {
+  const answer = await callFromHostedTurn();
+  expect(answer).toMatchObject({ outcome: 'pending_approval' });
+  return String(answer.content.approvalId);
+};
+
+test('the park re-proves the owner with their current user token', async () => {
+  await grantOn(await connectRow('connect'));
+  await parkPr();
+  expect(mockView.calls).toBeGreaterThan(0);
+});
+
+test('an owner who lost push is refused at park, and nothing parks or reaches GitHub', async () => {
+  await grantOn(await connectRow('connect'));
+  mockView.push = false;
+  const answer = await callFromHostedTurn();
+  expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+  expect(await ApprovalAction.countDocuments({})).toBe(0);
+  expect(github.createPullRequest).not.toHaveBeenCalled();
+  expect(mockTrail.at(-1)).toMatchObject({ outcome: 'refused', reason: 'connection_unproven' });
+});
+
+test('push lost between park and approval: the approved call is refused and never runs', async () => {
+  await grantOn(await connectRow('connect'));
+  const approvalId = await parkPr();
+  // Within the park cache window: execution must not rely on that cache.
+  mockView.push = false;
+  await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+  expect(github.createPullRequest).not.toHaveBeenCalled();
+  expect(mockTrail.at(-1)).toMatchObject({ outcome: 'refused', reason: 'connection_unproven' });
+});
+
+test.each([
+  ['the repository was replaced by another with the same name', () => { mockView.repositoryId = 999; }],
+  ['the repository is no longer in the installation', () => { mockView.listed = false; }],
+  ['the installation is suspended', () => { mockView.suspended = true; }],
+])('refused at park when %s', async (_label, change) => {
+  await grantOn(await connectRow('connect'));
+  change();
+  const answer = await callFromHostedTurn();
+  expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+  expect(await ApprovalAction.countDocuments({})).toBe(0);
+});
+
+test('a Connect row with no recorded repository id is refused', async () => {
+  const row = await connectRow('connect');
+  await Integration.updateOne({ _id: row._id }, { $unset: { 'config.repositoryId': 1 } });
+  await grantOn(row);
+  const answer = await callFromHostedTurn();
+  expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+});
+
+test('a tools row is not re-proved', async () => {
+  await grantOn(await connectRow(undefined));
+  await parkPr();
+  expect(mockView.calls).toBe(0);
+});
+
+test('removing the owner\'s GitHub connection disconnects their Connect rows, revokes the grants, and calls refuse', async () => {
+  const row = await connectRow('connect');
+  const grant = await grantOn(row);
+  const approvalId = await parkPr();
+  const { removeConnection } = require('../../services/connectionRemovalService');
+  const { revokeConnectionGrants } = require('../../services/roomGrantService');
+  await removeConnection({
+    connection: (await Integration.findById(ownerGithub._id).lean()),
+    removedBy: String(owner._id),
+    revokeGrants: revokeConnectionGrants,
+    // Only the vendor side is stubbed; the dependent-row step is the real one.
+    deps: {
+      clientIdFor: () => 'client', clientSecretFor: () => 'secret',
+      revokeAtVendor: async () => {},
+      secrets: { get: async () => 'owner-user-token', revoke: async () => {}, writeGenerationOf: async () => 0 },
+    },
+  });
+  expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+  expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).revokedAt).toBeTruthy();
+  await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+  expect(github.createPullRequest).not.toHaveBeenCalled();
+});
+
+test('with the GitHub connection gone (not yet swept), a Connect call refuses connection_unproven', async () => {
+  await grantOn(await connectRow('connect'));
+  await Integration.deleteOne({ _id: ownerGithub._id });
+  const answer = await callFromHostedTurn();
+  expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+  expect(await ApprovalAction.countDocuments({})).toBe(0);
+});
+
+// ─── M1/M2: the Git Data writes are signed by Connect, narrowed to the repo ──
+
+test('an approved commit_files on Connect signs every Git Data call with Connect, narrowed to the repository', async () => {
+  await grantOn(await connectRow('connect'));
+  github.getCommitTree.mockResolvedValue('3'.repeat(40));
+  github.createTextTree.mockResolvedValue('4'.repeat(40));
+  github.createCommit.mockResolvedValue('5'.repeat(40));
+  const answer = await dispatchHostedBrokerTool({
+    projection: await hostedBrokerToolsForRun({ identityId: String(seat._id), podId: String(pod._id) }),
+    name: 'github_commit_files',
+    args: { branch: head(), base: 'main', message: 'Fix', files: [{ path: 'src/a.js', content: 'a' }] },
+    agentUserId: String(seat._id), agentName: 'helper', instanceId: 'default', runPodId: String(pod._id),
+  });
+  expect(answer.outcome).toBe('pending_approval');
+  await resolveApproval({ approvalId: String(answer.content.approvalId), callerUserId: String(owner._id), decision: 'approved' });
+  expect(github.createBranchRef).toHaveBeenCalledTimes(1);
+  const gitCalls = ['getDefaultBranch', 'getBranchHead', 'getCommitTree', 'getTreeEntries', 'createTextTree',
+    'createCommit', 'createBranchRef'].flatMap((name) => github[name].mock.calls.map(([options]) => [name, options]));
+  expect(gitCalls.length).toBeGreaterThan(6);
+  for (const [, options] of gitCalls) {
+    expect(options).toMatchObject({ installationId: '7001', app: 'connect', repositoryId: '555', forceApp: true });
+  }
 });

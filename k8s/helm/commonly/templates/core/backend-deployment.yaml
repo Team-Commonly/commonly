@@ -406,6 +406,7 @@ spec:
               name: api-keys
               key: GITHUB_APP_PRIVATE_KEY
               optional: true
+        {{- if .Values.githubConnectApp.enabled }}
         # Commonly Connect, the public App outside teams install (F172). Absent:
         # Connect connections refuse github_app_not_configured, never fall back.
         - name: GITHUB_CONNECT_APP_ID
@@ -420,6 +421,7 @@ spec:
               name: api-keys
               key: GITHUB_CONNECT_APP_PRIVATE_KEY
               optional: true
+        {{- end }}
         - name: GITHUB_APP_INSTALLATION_ID_COMMONLY
           valueFrom:
             secretKeyRef:

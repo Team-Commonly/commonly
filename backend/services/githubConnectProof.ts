@@ -32,6 +32,7 @@ export type GithubConnectProofRefusalCode =
   | 'installation_suspended'
   | 'repository_not_visible'
   | 'repository_write_required'
+  | 'repository_changed'
   | 'github_unreachable';
 
 export class GithubConnectProofError extends Error {
@@ -45,6 +46,8 @@ export interface ProvenConnectRepository {
   /** GitHub's own spelling, never the body's. */
   owner: string;
   repo: string;
+  /** GitHub's repository id: survives a rename, differs after a delete-and-recreate or a transfer swap (F172 M1). */
+  repositoryId: string;
 }
 
 interface UserTokenRow {
@@ -132,6 +135,7 @@ interface InstallationEntry {
 }
 
 interface RepositoryEntry {
+  id?: unknown;
   name?: unknown;
   full_name?: unknown;
   owner?: { login?: unknown };
@@ -179,7 +183,14 @@ const canPush = (repository: RepositoryEntry): boolean => {
  * GithubConnectProofError for every refusal.
  */
 export const proveConnectRepository = async (
-  input: { userId: string; installationId: string; owner: string; repo: string },
+  input: {
+    userId: string;
+    installationId: string;
+    owner: string;
+    repo: string;
+    /** Set on a re-proof: the listed repository must be this one, not another with the same name. */
+    expectedRepositoryId?: string;
+  },
   overrides: Partial<GithubConnectProofDeps> = {},
 ): Promise<ProvenConnectRepository> => {
   const deps: GithubConnectProofDeps = { ...defaultGithubConnectProofDeps(), ...overrides };
@@ -224,5 +235,14 @@ export const proveConnectRepository = async (
       403,
     );
   }
-  return { installationId: input.installationId, owner, repo };
+  const repositoryId = String(repository.id ?? '');
+  if (!/^\d{1,20}$/.test(repositoryId)
+    || (input.expectedRepositoryId !== undefined && repositoryId !== input.expectedRepositoryId)) {
+    throw new GithubConnectProofError(
+      'repository_changed',
+      'that repository is no longer the one that was connected',
+      403,
+    );
+  }
+  return { installationId: input.installationId, owner, repo, repositoryId };
 };

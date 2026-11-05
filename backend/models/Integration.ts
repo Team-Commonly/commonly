@@ -77,6 +77,8 @@ export interface IIntegration extends Document {
     app?: 'tools' | 'connect';
     /** `owner/repo` lower-cased: the per-repository uniqueness key (F172). */
     repoKey?: string;
+    /** GitHub's repository id, recorded at a Connect proof and checked on every write (F172). */
+    repositoryId?: string;
     serverId?: string;
     serverName?: string;
     channelId?: string;
@@ -262,6 +264,7 @@ const IntegrationSchema = new Schema<IIntegration>(
       // dropped in silence and a Connect row would read back as a tools row.
       app: { type: String, enum: ['tools', 'connect'] },
       repoKey: String,
+      repositoryId: String,
       serverId: String,
       serverName: String,
       channelId: String,

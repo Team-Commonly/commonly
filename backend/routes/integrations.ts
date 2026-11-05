@@ -308,6 +308,7 @@ const GITHUB_INSTALLATION_ID = /^\d{1,20}$/;
 type GithubAppRowShape = {
   _id?: unknown;
   createdBy?: unknown;
+  status?: unknown;
   installationId?: unknown;
   config?: { app?: unknown; installationId?: unknown; owner?: unknown; repo?: unknown };
 };
@@ -427,6 +428,22 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
     if (existing) {
       // Only its owner learns which row it is.
       const own = String(existing.createdBy || '') === userId;
+      // The owner's own row, disconnected when their GitHub connection was
+      // removed (F172 HOLD 1), comes back on a fresh proof. Its old grants were
+      // revoked then and stay revoked; the row records what was proved now.
+      if (own && existing.status !== 'connected') {
+        const revived = await Integration.findOneAndUpdate(
+          { _id: existing._id, createdBy: userId, status: { $ne: 'connected' } },
+          { $set: {
+            status: 'connected',
+            'config.owner': proven.owner,
+            'config.repo': proven.repo,
+            'config.repositoryId': proven.repositoryId,
+          } },
+          { new: true },
+        );
+        if (revived) return res.json({ integration: revived });
+      }
       return res.status(409).json({
         error: 'connection_exists',
         message: own ? 'you already connected this repository' : 'this repository is already connected by someone else',
@@ -437,7 +454,14 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
       type: 'github-app',
       scope: 'user',
       status: 'connected',
-      config: { app: 'connect', installationId: proven.installationId, owner: proven.owner, repo: proven.repo, repoKey },
+      config: {
+        app: 'connect',
+        installationId: proven.installationId,
+        owner: proven.owner,
+        repo: proven.repo,
+        repoKey,
+        repositoryId: proven.repositoryId,
+      },
       createdBy: userId,
       isActive: true,
     });

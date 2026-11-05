@@ -24,19 +24,45 @@ token with that App's id and key only:
   an existing Connect grant refuses `github_app_not_configured` before it
   parks. A row whose `app` names neither
   App refuses `connection_mismatch`, at the mint and at the call.
-- Installation tokens are cached per (App, installation) and reused while they
-  have more than 5 minutes left.
+- Installation tokens are cached per (App, installation, narrowed repository)
+  and reused only while they have more than 10 minutes left. A bundle push
+  never uses the cache: it mints a fresh token at its start and again right
+  before the write.
 - Uniqueness is per (App, installation, repository), so one installation can
   back many connections. Rows written since F172 keep the installation in
   `config.installationId` only and leave the top-level `installationId` unset,
   because that field is unique per installation and still holds the older rows.
   A partial unique index (`unique_github_app_repository`) enforces it, and the
   routes check the older rows by query. Grants on these rows name the row
-  `_id`, and removing one row revokes only its own grants, not a sibling
-  repository's.
+  `_id`: the Tools catalogue offers that `_id` as the row's `connectionId`, and
+  `POST /api/grants` with the bare installation id answers
+  `connection_not_found` (there is deliberately no installation-only fallback,
+  since one installation now backs several repositories). Removing one row revokes only its own grants, not a
+  sibling repository's.
 - The admin route binds tools installations only. It takes an optional
   `ownerUserId`, which must name an existing human account; the default owner
-  is the admin. The same repository twice answers `409 connection_exists`.
+  is the admin. The same repository twice answers `409 connection_exists`;
+  before F172 a repeated POST for the same repository answered `200` with the
+  existing row, so a script that re-POSTs must treat 409 as "already there".
+- **Access is proved again on every Connect write.** Before a write parks, and
+  again (never from cache) before an approved write runs, the broker re-runs
+  the create-time proof with the owner's CURRENT user token: the installation
+  is visible and is Connect's, not suspended, the repository is listed with
+  the same GitHub repository id recorded at create (so a rename, transfer or
+  delete-and-recreate does not carry over), and the owner can push. A passing
+  park proof is cached for 60 s per row. Any failure refuses
+  `connection_unproven` (the proof's code in `details.reason`) and nothing is
+  written to GitHub. Tools rows are not re-proved.
+- **Removing the owner's GitHub connection** (the hosted-MCP `github-mcp` row)
+  disconnects every Connect row they own and revokes those rows' grants,
+  before any provider step. The rows are kept, so the owner sees them; posting
+  the same repository again with a fresh proof reconnects their own row (its
+  old grants stay revoked).
+- **Connect tokens are narrowed** to the connection's repository
+  (`repository_ids` on the token request). Tools tokens are unchanged.
+- Removing an older row (one with a top-level `installationId`) revokes only
+  grants bound to no row or to that row, never a newer per-repository row's
+  grants on the same installation.
 
 ### What an outside team does
 

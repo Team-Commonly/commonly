@@ -45,7 +45,7 @@ describe('GitHubAppService._apiHeaders credential precedence', () => {
 
   it('mints for an explicit installationId over the default one', async () => {
     configureApp();
-    await GitHubAppService._apiHeaders('99');
+    await GitHubAppService._apiHeaders('99', false, 'tools');
     expect(mint).toHaveBeenCalledWith('99', 'tools');
   });
 
@@ -60,14 +60,14 @@ describe('GitHubAppService._apiHeaders credential precedence', () => {
   it('never falls back to the PAT for an app-only request', async () => {
     process.env.GITHUB_PAT = 'shared-pat';
     await expect(GitHubAppService._apiHeaders(undefined, true)).rejects.toThrow('github_not_configured');
-    await expect(GitHubAppService._apiHeaders('99')).rejects.toThrow('github_not_configured');
+    await expect(GitHubAppService._apiHeaders('99', false, 'tools')).rejects.toThrow('github_not_configured');
     expect(mint).not.toHaveBeenCalled();
   });
 
   it('rejects an explicit empty installationId instead of using the default or the PAT', async () => {
     configureApp();
     process.env.GITHUB_PAT = 'shared-pat';
-    await expect(GitHubAppService._apiHeaders('')).rejects.toThrow('github_not_configured');
+    await expect(GitHubAppService._apiHeaders('', false, 'tools')).rejects.toThrow('github_not_configured');
     expect(mint).not.toHaveBeenCalled();
   });
 

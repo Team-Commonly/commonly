@@ -86,13 +86,58 @@ describe('per-App signing', () => {
     expect(signerOf(axios.post.mock.calls[0])).toEqual({ app: 'tools', iss: '111' });
   });
 
-  it('a legacy call that names no App signs with the tools App', async () => {
-    await GitHubAppService.getPullRequest({
-      owner: 'o', repo: 'r', pullNumber: 1, installationId: '902', forceApp: true, 
-    });
+  it('an installation named without its App is refused, never defaulted to tools', async () => {
+    await expect(GitHubAppService.getPullRequest({
+      owner: 'o', repo: 'r', pullNumber: 1, installationId: '902', forceApp: true,
+    })).rejects.toThrow('github_app_required');
+    await expect(GitHubAppService._apiHeaders('903')).rejects.toThrow('github_app_required');
+    await expect(GitHubAppService.getInstallationToken('903')).rejects.toMatchObject({ code: 'github_app_not_configured' });
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('a call that names no installation uses the tools default installation', async () => {
+    process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY = '42';
+    await GitHubAppService.getPullRequest({ owner: 'o', repo: 'r', pullNumber: 1 });
+    expect(axios.post.mock.calls[0][0]).toBe('https://api.github.com/app/installations/42/access_tokens');
     expect(signerOf(axios.post.mock.calls[0])).toEqual({ app: 'tools', iss: '111' });
-    await GitHubAppService.getInstallationToken('903');
-    expect(signerOf(axios.post.mock.calls[1])).toEqual({ app: 'tools', iss: '111' });
+  });
+});
+
+describe('token reuse margin and fresh mints (CodeRabbit, #3481)', () => {
+  it('never hands out a cached token with less than 10 minutes left', async () => {
+    axios.post.mockResolvedValueOnce({ data: { token: 'nine-min', expires_at: new Date(Date.now() + 9 * 60000).toISOString() } });
+    await GitHubAppService.getInstallationToken('906', 'connect');
+    const again = await GitHubAppService.getInstallationToken('906', 'connect');
+    expect(again.token).not.toBe('nine-min');
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('a fresh request skips the cache', async () => {
+    const a = await GitHubAppService.getInstallationToken('907', 'connect');
+    const b = await GitHubAppService.getInstallationToken('907', 'connect', undefined, { fresh: true });
+    expect(a.token).not.toBe(b.token);
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('M1: a Connect token is narrowed to the connection repository', () => {
+  it('asks GitHub for a token covering only that repository id', async () => {
+    await GitHubAppService.getPullRequest({
+      owner: 'o', repo: 'r', pullNumber: 1, installationId: '900', app: 'connect', repositoryId: '555', forceApp: true,
+    });
+    expect(axios.post.mock.calls[0][1]).toEqual({ repository_ids: [555] });
+  });
+
+  it('a tools token is not narrowed, even when a repository id is passed', async () => {
+    await GitHubAppService.getInstallationToken('901', 'tools', '555');
+    expect(axios.post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('caches per repository, so one repository\'s narrowed token never serves another', async () => {
+    const a = await GitHubAppService.getInstallationToken('900', 'connect', '555');
+    const b = await GitHubAppService.getInstallationToken('900', 'connect', '556');
+    expect(a.token).not.toBe(b.token);
+    expect(axios.post).toHaveBeenCalledTimes(2);
   });
 });
 

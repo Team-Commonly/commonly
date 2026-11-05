@@ -30,7 +30,9 @@ jest.mock('../../middleware/integrationRateLimit', () => ({
 
 // Fake GitHub, keyed by user token: which installations it sees and, per
 // installation, which repositories with what permission.
-const mockGithub = { byToken: {}, requests: [] };
+// Lists paginate 100 per page, as GitHub's do; `failPage` answers 403 from
+// that page of a repository listing on.
+const mockGithub = { byToken: {}, requests: [], failPage: null };
 jest.mock('../../services/hostedVendorFetch', () => ({
   hostedVendorFetch: jest.fn(async (url, init) => {
     const token = String(init?.headers?.Authorization || '').replace('Bearer ', '');
@@ -41,13 +43,17 @@ jest.mock('../../services/hostedVendorFetch', () => ({
     const parsed = new URL(url);
     const page = Number(parsed.searchParams.get('page') || 1);
     if (parsed.pathname === '/user/installations') {
-      return json(200, { total_count: view.installations.length, installations: page === 1 ? view.installations : [] });
+      return json(200, {
+        total_count: view.installations.length,
+        installations: view.installations.slice((page - 1) * 100, page * 100),
+      });
     }
     const match = parsed.pathname.match(/^\/user\/installations\/(\d+)\/repositories$/);
     if (match) {
       const repos = view.repositories[match[1]];
       if (!repos) return json(404, { message: 'Not Found' });
-      return json(200, { total_count: repos.length, repositories: page === 1 ? repos : [] });
+      if (mockGithub.failPage && page >= mockGithub.failPage) return json(403, { message: 'Forbidden' });
+      return json(200, { total_count: repos.length, repositories: repos.slice((page - 1) * 100, page * 100) });
     }
     return json(404, { message: 'Not Found' });
   }),
@@ -80,12 +86,14 @@ let bob;
 let admin;
 let bot;
 
-const repo = (fullName, permissions = { push: true, pull: true }) => {
+let nextRepoId = 1000;
+const repo = (fullName, permissions = { push: true, pull: true }, id = (nextRepoId += 1)) => {
   const [login, name] = fullName.split('/');
   return {
-    name, full_name: fullName, owner: { login }, permissions, 
+    id, name, full_name: fullName, owner: { login }, permissions,
   };
 };
+const filler = (count) => Array.from({ length: count }, (_, i) => repo(`Outside-Team/filler-${i}`));
 
 const giveUserToken = (user, token) => Integration.create({
   type: 'hosted-mcp',
@@ -122,6 +130,7 @@ afterAll(async () => {
 beforeEach(async () => {
   jest.clearAllMocks();
   mockGithub.requests.length = 0;
+  mockGithub.failPage = null;
   process.env.GITHUB_CONNECT_APP_ID = CONNECT_APP_ID;
   process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = generateKeyPairSync('rsa', {
     modulusLength: 1024, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -332,6 +341,106 @@ describe('self-serve Commonly Connect repository connection', () => {
     expect((await RoomGrant.findOne({ grantId: widgetGrant.grantId }).lean()).revokedAt).toBeTruthy();
     // The sibling repository shares the installation id, and keeps its grant.
     expect((await RoomGrant.findOne({ grantId: gadgetGrant.grantId }).lean()).revokedAt).toBeFalsy();
+  });
+});
+
+describe('L2 / M1: the proof reads every page, refuses what it cannot read, and records the repository id', () => {
+  test('stores GitHub\'s repository id with the connection', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const widget = mockGithub.byToken['alice-user-token'].repositories[INSTALL][0];
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(res.status).toBe(201);
+    expect((await Integration.findById(res.body.integration._id).lean()).config.repositoryId).toBe(String(widget.id));
+  });
+
+  test('finds a repository on page 2 after a full page 1', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    view.repositories[INSTALL] = [...filler(100), repo('Outside-Team/Deep')];
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Deep' });
+    expect(res.status).toBe(201);
+    expect(mockGithub.requests.some((r) => r.url.includes('/repositories') && r.url.includes('page=2'))).toBe(true);
+  });
+
+  test('a 403 on a later page refuses rather than reading a partial list as complete', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    view.repositories[INSTALL] = [...filler(100), repo('Outside-Team/Deep')];
+    mockGithub.failPage = 2;
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Deep' });
+    expect(res.status).toBe(403);
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
+  });
+
+  test('an installation on page 2 of the installations list is found', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    view.installations = [
+      ...Array.from({ length: 100 }, (_, i) => ({ id: 9000 + i, app_id: 999, suspended_at: null })),
+      ...view.installations,
+    ];
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(res.status).toBe(201);
+  });
+
+  test('a suspended installation refuses', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.byToken['alice-user-token'].installations[0].suspended_at = '2026-11-01T00:00:00Z';
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('installation_suspended');
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
+  });
+
+  test('a repository GitHub lists with no id refuses', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    delete mockGithub.byToken['alice-user-token'].repositories[INSTALL][0].id;
+    const res = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(res.status).toBe(403);
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
+  });
+
+  test('the owner\'s own disconnected row comes back on a fresh proof; another person\'s stays 409', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    const first = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    await Integration.updateOne({ _id: first.body.integration._id }, { $set: { status: 'disconnected' } });
+    const bobs = await connectRepo(bob, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(bobs.status).toBe(409);
+    const again = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(again.status).toBe(200);
+    const row = await Integration.findById(first.body.integration._id).lean();
+    expect(row.status).toBe('connected');
+    expect(String(row.createdBy)).toBe(String(alice._id));
+    // A revival still needs the proof: without push it stays disconnected.
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+    mockGithub.byToken['alice-user-token'].repositories[INSTALL][0].permissions = { push: false, pull: true };
+    expect((await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' })).status).toBe(403);
+    expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+  });
+});
+
+describe('L1: removing a legacy row revokes only its own grants', () => {
+  test('a per-repository row on the same installation keeps its grant', async () => {
+    const legacy = await Integration.create({
+      type: 'github-app', scope: 'user', status: 'connected', createdBy: admin._id, isActive: true,
+      installationId: '600', config: { installationId: '600', owner: 'Team-Commonly', repo: 'commonly' },
+    });
+    const sibling = (await adminConnect({ installationId: '600', owner: 'Team-Commonly', repo: 'other' })).body.integration;
+    const grant = (over) => createGrant({
+      installationId: '600', target: { kind: 'pod', id: '6a8f6de2a1dccf2e02f31499' }, tools: ['github.get_issue'],
+      writeMode: 'read', audience: [String(bot._id)], expiresAt: new Date(Date.now() + 86400000),
+      brokerId: GRANT_BROKER_ID, ownerId: String(admin._id), ...over,
+    });
+    const unbound = await grant({ connectionId: '600' });
+    const boundToLegacy = await grant({ connectionId: '600', connectionRowId: String(legacy._id) });
+    const siblings = await grant({ connectionId: String(sibling._id), connectionRowId: String(sibling._id) });
+    const res = await request(app).delete(`/api/integrations/${legacy._id}`).set('x-test-user', String(admin._id));
+    expect(res.status).toBe(200);
+    const revoked = async (g) => Boolean((await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt);
+    expect(await revoked(unbound)).toBe(true);
+    expect(await revoked(boundToLegacy)).toBe(true);
+    expect(await revoked(siblings)).toBe(false);
   });
 });
 

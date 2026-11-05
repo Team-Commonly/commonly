@@ -28,7 +28,7 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   'installationId', 'owner', 'repo',
   // F172: which App signs for the installation, and the per-repository key.
   // A body that set `app` would choose the signing key.
-  'app', 'repoKey',
+  'app', 'repoKey', 'repositoryId',
   // OAuth callback and connectorSecrets own Slack identity and its opaque
   // credential reference. Accepting either from a browser body defeats D6.
   'botTokenRef', 'teamId', 'teamName', 'slackUserId', 'slackUserName', 'pendingBind',

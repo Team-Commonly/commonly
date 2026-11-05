@@ -154,3 +154,18 @@ test('a row naming an unknown App is refused as a mismatch', async () => {
   expect(res.body.error).toBe('connection_mismatch');
   expect(await RoomGrant.countDocuments({})).toBe(0);
 });
+
+test('a per-repository row is minted by its row id; its bare installation id finds nothing (no fallback)', async () => {
+  // A per-repository row has no top-level installationId, so the real
+  // `findOne({ installationId })` matches nothing for it.
+  Integration.findById.mockImplementation(async (id) => (String(id) === ROW ? connectionRow('connect') : null));
+  // A database answer: the row carries the installation in config only.
+  Integration.findOne.mockImplementation(async (query) => (
+    String(query?.['config.installationId'] || '') === '7001' ? connectionRow('connect') : null));
+  const byInstallation = await mint({ connectionId: '7001' });
+  expect(byInstallation.status).toBe(404);
+  expect(byInstallation.body.error).toBe('connection_not_found');
+  const byRow = await mint();
+  expect(byRow.status).toBe(201);
+  expect(byRow.body.connectionId).toBe(ROW);
+});

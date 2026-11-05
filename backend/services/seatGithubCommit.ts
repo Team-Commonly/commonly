@@ -23,8 +23,9 @@
 import { RoomGrantError } from './roomGrantService';
 import { PROTECTED_PATH } from './seatGithubPush';
 
+// Typed, so tsc refuses a call that names an installation without its App (F172).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const GitHubAppService = require('./githubAppService');
+const GitHubAppService: typeof import('./githubAppService').default = require('./githubAppService');
 import type { GitHubAppName } from './githubAppNames';
 
 export const COMMIT_FILES_MAX_FILES = 50;
@@ -141,13 +142,14 @@ export const parseCommitFilesArgs = (
   return { branch: raw.branch as string, base: raw.base, message: raw.message, files };
 };
 
-interface Connection { owner: string; repo: string; installationId: string; app: GitHubAppName }
+interface Connection { owner: string; repo: string; installationId: string; app: GitHubAppName; repositoryId?: string }
 
 const gitData = (connection: Connection) => ({
   owner: connection.owner,
   repo: connection.repo,
   installationId: connection.installationId,
   app: connection.app,
+  repositoryId: connection.repositoryId,
   forceApp: true,
 });
 

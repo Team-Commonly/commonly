@@ -3,7 +3,8 @@
  * maps GITHUB_CONNECT_APP_ID / _PRIVATE_KEY from `api-keys` (optional, so an
  * instance without Connect still starts) and `api-keys` references their
  * remote keys behind a default-off flag (a missing remoteRef stalls the whole
- * ExternalSecret). The env names are the ones githubAppNames reads.
+ * ExternalSecret). The backend refs sit behind the same flag, so a flag-off
+ * render is byte-identical to the chart before F172. The env names are the ones githubAppNames reads.
  */
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +20,16 @@ test.each(['GITHUB_CONNECT_APP_ID', 'GITHUB_CONNECT_APP_PRIVATE_KEY'])('the back
   expect(deployment).toMatch(new RegExp(
     `- name: ${name}\\n\\s+valueFrom:\\n\\s+secretKeyRef:\\n\\s+name: api-keys\\n\\s+key: ${name}\\n\\s+optional: true\\n`,
   ));
+});
+
+test('the backend refs render only with githubConnectApp.enabled, so a flag-off render is unchanged', () => {
+  const block = deployment.match(/{{- if \.Values\.githubConnectApp\.enabled }}\n([\s\S]*?){{- end }}/);
+  expect(block).not.toBeNull();
+  expect(block[1]).toContain('- name: GITHUB_CONNECT_APP_ID');
+  expect(block[1]).toContain('- name: GITHUB_CONNECT_APP_PRIVATE_KEY');
+  // Nowhere outside the conditional.
+  const outside = deployment.replace(block[0], '');
+  expect(outside).not.toContain('GITHUB_CONNECT_APP');
 });
 
 test('api-keys references the Connect remote keys only behind githubConnectApp.enabled, off by default', () => {
