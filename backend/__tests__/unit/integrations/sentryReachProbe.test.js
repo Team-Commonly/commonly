@@ -1,7 +1,9 @@
 // TASK-782: a Sentry connection whose account sees no projects connected and
 // granted in silence, and every search came back empty (Triage, 11-04). The
 // probe answers 0 only when every reply was readable and empty; any doubt is null.
-const { sentryReachProbe } = require('../../../integrations/hostedMcp/sentry');
+jest.mock('../../../services/hostedMcpToolDefinitions', () => ({ withHostedMcpSession: jest.fn() }));
+const { withHostedMcpSession } = require('../../../services/hostedMcpToolDefinitions');
+const { sentryReachProbe, SENTRY_ENTRY } = require('../../../integrations/hostedMcp/sentry');
 
 const result = (structuredContent) => ({ content: [{ type: 'text', text: '...' }], structuredContent });
 const orgs = (slugs, hasMore = false) => result({
@@ -75,5 +77,14 @@ describe('sentryReachProbe', () => {
     const call = jest.fn();
     await expect(sentryReachProbe('', { call })).resolves.toBeNull();
     expect(call).not.toHaveBeenCalled();
+  });
+
+  it('with no call injected, runs in one session on the Sentry entry under a 6s deadline', async () => {
+    withHostedMcpSession.mockImplementation(async (_entry, _token, _ms, fn) => fn(async (name) => (
+      name === 'find_organizations' ? orgs([]) : null)));
+    await expect(sentryReachProbe('fresh-token')).resolves.toEqual({ projects: 0 });
+    expect(withHostedMcpSession).toHaveBeenCalledWith(SENTRY_ENTRY, 'fresh-token', 6000, expect.any(Function));
+    withHostedMcpSession.mockRejectedValueOnce(new Error('deadline'));
+    await expect(sentryReachProbe('fresh-token')).resolves.toBeNull();
   });
 });

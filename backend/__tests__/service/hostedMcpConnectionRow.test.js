@@ -122,6 +122,21 @@ describe('the hosted-mcp connection row', () => {
     expect(dropped).toEqual([]);
   });
 
+  // TASK-782: every new pair writes `config.reach: null` before the probe answers.
+  test('the reach answer clears to null and is set as one object, leaving its siblings', async () => {
+    const doc = await Integration.create(shape({ config: { entryId: ENTRY_A, intake: 'oauth', credentialRef: 'secret-access-1' } }));
+    const checkedAt = new Date('2026-11-05T03:00:00.000Z');
+    await Integration.updateOne({ _id: doc._id }, { $set: { 'config.reach': { projects: 0, checkedAt } } });
+    let raw = await Integration.collection.findOne({ _id: doc._id });
+    expect(raw.config.reach).toEqual({ projects: 0, checkedAt });
+    await Integration.updateOne({ _id: doc._id }, { $set: { 'config.reach': null } });
+    raw = await Integration.collection.findOne({ _id: doc._id });
+    expect(raw.config).toHaveProperty('reach', null);
+    expect(raw.config.credentialRef).toBe('secret-access-1');
+    const lean = await Integration.findById(doc._id).lean();
+    expect(lean.config?.reach?.projects === 0).toBe(false);
+  });
+
   test('an empty scope a refresh records is stored as empty, so the write gate reads no write scope', async () => {
     const doc = await Integration.create(shape());
     await setAndRead(doc, 'config.grantedScope', 'read write openid');

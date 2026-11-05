@@ -399,8 +399,8 @@ const IntegrationSchema = new Schema<IIntegration>(
       intake: String, // 'oauth' is the only intake for this type
       clientId: String, // id that minted this pair; DCR rows resolve this against held registrations
       providerSubject: String, // the authorization server's stable id for the account
-      // TASK-782: projects the account could see at connect. Written by the
-      // callback with `|| null`, so a reconnect never keeps an old answer.
+      // TASK-782: projects the account could see at connect. Every new pair
+      // sets it to null first, so a reconnect never keeps an old answer.
       reach: { projects: Number, checkedAt: Date },
       grantedScope: String, // the token response's `scope`: what the person consented to
       expiresAt: Date, // the access token's expiry, when the AS states one

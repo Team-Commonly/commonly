@@ -916,11 +916,13 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     }
     if (reach && Number.isInteger(reach.projects) && reach.projects >= 0) {
       try {
-        await Integration.updateOne(
+        // A refresh or a newer connect in the probe's window moves the ref, so
+        // this write misses and the page says nothing the row doesn't hold.
+        const written = await Integration.updateOne(
           { _id: published._id, 'config.credentialRef': credentialRef },
           { $set: { 'config.reach': { projects: reach.projects, checkedAt: new Date() } } },
         );
-        reachNone = reach.projects === 0;
+        reachNone = written?.matchedCount === 1 && reach.projects === 0;
       } catch {
         reachNone = false;
       }

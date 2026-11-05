@@ -210,7 +210,7 @@ describe('hosted-mcp connect: callback reach step (TASK-782)', () => {
 
   it('a connection that sees no projects says so on return and keeps the answer on the row', async () => {
     FIXTURE_ENTRY.reachProbe = jest.fn().mockResolvedValue({ projects: 0 });
-    Integration.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    Integration.updateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
     expect(outcome(await callback())).toEqual({
       status: 302, hostedMcp: 'connected', code: null, entryId: 'linear', next: 'reach',
     });
@@ -244,6 +244,12 @@ describe('hosted-mcp connect: callback reach step (TASK-782)', () => {
     FIXTURE_ENTRY.reachProbe = probe();
     expect(outcome(await callback())).toEqual({ status: 302, hostedMcp: 'connected', code: null });
     expect(reachWrite()).toBeUndefined();
+  });
+
+  it('a write that missed (the pair moved during the probe) does not warn', async () => {
+    FIXTURE_ENTRY.reachProbe = jest.fn().mockResolvedValue({ projects: 0 });
+    Integration.updateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+    expect(outcome(await callback())).toEqual({ status: 302, hostedMcp: 'connected', code: null });
   });
 
   it('a failed write does not warn', async () => {
