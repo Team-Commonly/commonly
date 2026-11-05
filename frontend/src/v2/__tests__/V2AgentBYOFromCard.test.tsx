@@ -187,8 +187,8 @@ describe('BYO from an approved connect card', () => {
   });
 });
 
-// #2289: the listener runs on a Mac or Windows with either tool (Linux is not
-// tested yet, 10-26). The compact page promises "One command in Terminal", so it opens
+// #2289: the listener runs on a Mac or Windows with either tool, and on Linux
+// with Claude Code (F96, #3395). Codex on Linux is not tested yet. The compact page promises "One command in Terminal", so it opens
 // only where that command will be shown.
 describe('the compact page opens only where the command exists', () => {
   const realUserAgent = window.navigator.userAgent;
@@ -197,11 +197,10 @@ describe('the compact page opens only where the command exists', () => {
   const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
   const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
-  test('a Claude Code card opened on Linux gets the full page, not the promise of one command', async () => {
+  test('a Claude Code card opened on Linux is compact: the command exists there now', async () => {
     setUserAgent(LINUX);
     renderAt(CARD);
-    expect(await screen.findByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
+    expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
   test('a Codex card opened on Linux gets the full page: Codex on Linux is not tested yet', async () => {
