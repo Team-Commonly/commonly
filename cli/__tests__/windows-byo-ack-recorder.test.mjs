@@ -47,4 +47,26 @@ describe('the walk\'s ack recorder', () => {
     });
     expect(text).not.toMatch(/sk-gateway-secret|delivery-secret|cm_agent_secret/);
   });
+
+  const rows = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+
+  // The label filter is what keeps free text out: a reason or outcome that is
+  // not a bare label is dropped, never copied.
+  test('a reason or outcome in free text is dropped, so a secret inside it never reaches the log', async () => {
+    await globalThis.fetch('https://api.example/api/agents/runtime/events/e2/ack', {
+      method: 'POST',
+      body: JSON.stringify({ result: { outcome: 'no action taken', reason: 'invalid key sk-free-text-secret' } }),
+    });
+    expect(rows().find((row) => row.eventId === 'e2')).toEqual({ at: expect.any(String), kind: 'ack', eventId: 'e2', status: 200 });
+    expect(readFileSync(log, 'utf8')).not.toContain('sk-free-text-secret');
+  });
+
+  test('an ack whose body is not JSON is recorded with its event and status only, and the call goes through', async () => {
+    const res = await globalThis.fetch('https://api.example/api/agents/runtime/events/e3/ack', {
+      method: 'POST', body: 'not json sk-raw-body-secret',
+    });
+    expect(res.status).toBe(200);
+    expect(rows().find((row) => row.eventId === 'e3')).toEqual({ at: expect.any(String), kind: 'ack', eventId: 'e3', status: 200 });
+    expect(readFileSync(log, 'utf8')).not.toContain('sk-raw-body-secret');
+  });
 });

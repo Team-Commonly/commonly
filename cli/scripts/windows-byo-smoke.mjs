@@ -32,10 +32,14 @@
  * windows-byo-prod.mjs.
  *
  * COMMONLY_BYO_HARNESS=codex walks the page's Codex lines instead (D250): the
- * same four lines with `--adapter codex` and no `--unsandboxed`, and a stub
- * Responses API as the model, named by CODEX_API_KEY beside OPENAI_BASE_URL
- * in the CLI's environment (the CLI keeps the key behind its proxy). Codex is
- * the real one, installed from npm by the workflow.
+ * same four lines with `--adapter codex` and no `--unsandboxed`. A public
+ * Codex seat cannot run on native Windows (codex-cli 0.162.1's sandbox there
+ * refuses its read denies, byo-windows run 41960954496), so `agent run` stops
+ * before it polls and points at WSL 2 (cli/src/lib/sandbox/host-check.js).
+ * This leg passes when that stop happens: the directions printed, a non-zero
+ * exit, and no poll. Codex is the real one, installed from npm by the
+ * workflow, and a stub Responses API is named by CODEX_API_KEY beside
+ * OPENAI_BASE_URL, so a CLI that polled anyway would be seen reaching it.
  *
  * It installs global packages and writes Claude Code's managed settings.
  * Never run it on a machine you use.
@@ -49,7 +53,8 @@ import { fileURLToPath } from 'url';
 
 import { runProdWalk } from './windows-byo-prod.mjs';
 import {
-  codexRouteEnv, HARNESS_LABELS, installExitFrom, pasteScript, publishedOutcome, walkHarness,
+  codexRouteEnv, expectsWindowsRefusal, HARNESS_LABELS, installExitFrom, pasteScript, publishedOutcome, walkHarness,
+  windowsProdRefusal, windowsRefusalProblems,
 } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +69,7 @@ try {
   process.exit(1);
 }
 const LABEL = HARNESS_LABELS[HARNESS];
+const EXPECT_REFUSAL = expectsWindowsRefusal(HARNESS);
 const REPLY = `Hello from ${LABEL} on Windows (D164 stub model).`;
 const LEG_TIMEOUT_MS = 8 * 60_000;
 
@@ -101,6 +107,11 @@ if (!process.env.CI) {
   process.exit(2);
 }
 if (process.env.COMMONLY_BYO_TARGET === 'prod') {
+  const prodRefusal = windowsProdRefusal(HARNESS);
+  if (prodRefusal) {
+    console.error(`windows-byo-smoke: ${prodRefusal}`);
+    process.exit(1);
+  }
   process.exit(await runProdWalk({ pageConnectSnippet, harness: HARNESS }));
 }
 
@@ -311,7 +322,11 @@ const walk = async (label, installLine) => {
   // After three refused turns the CLI opens its circuit and hands the event
   // back for a requeue 10 to 20 minutes out; nothing more happens in a leg.
   const gaveUp = () => /circuit open; releasing/.test(out);
-  while (Date.now() - start < LEG_TIMEOUT_MS && exited === null && !gaveUp() && !(replied() && leg.acked)) {
+  // Codex on Windows: the run exiting, or its first poll, settles the leg.
+  const settled = EXPECT_REFUSAL
+    ? () => exited !== null || leg.delivered
+    : () => exited !== null || gaveUp() || (replied() && leg.acked);
+  while (Date.now() - start < LEG_TIMEOUT_MS && !settled()) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => { setTimeout(r, 1000); });
   }
@@ -319,12 +334,21 @@ const walk = async (label, installLine) => {
   if (exited === null) killTree(child.pid);
 
   const problems = [];
-  if (!leg.delivered) problems.push('the agent never polled for its @mention');
-  else if (model.paths.length === modelBefore) problems.push(`${LABEL} never reached the model`);
-  if (!replied()) problems.push(`no reply came back to the pod within ${seconds} s`);
-  if (!leg.acked) problems.push('the @mention was never acknowledged');
+  if (EXPECT_REFUSAL) {
+    problems.push(...windowsRefusalProblems({ out, exited, polled: leg.delivered, seconds }));
+  } else {
+    if (!leg.delivered) problems.push('the agent never polled for its @mention');
+    else if (model.paths.length === modelBefore) problems.push(`${LABEL} never reached the model`);
+    if (!replied()) problems.push(`no reply came back to the pod within ${seconds} s`);
+    if (!leg.acked) problems.push('the @mention was never acknowledged');
+  }
   if (leg.badAuth.length) problems.push(`calls without the page's token: ${leg.badAuth.join(', ')}`);
-  if (exited !== null && problems.length) problems.push(`PowerShell exited ${exited} before the walk finished`);
+  if (!EXPECT_REFUSAL && exited !== null && problems.length) problems.push(`PowerShell exited ${exited} before the walk finished`);
+  // How far the CLI got, for publishedOutcome's pull-request rule: its poll,
+  // or for a run that should stop first, reading its token from the page.
+  const reached = EXPECT_REFUSAL
+    ? api.calls.slice(apiBefore).includes('GET /api/agents/runtime/installations')
+    : leg.delivered;
 
   const installExit = installExitFrom(out);
   if (problems.length || installExit !== null) {
@@ -333,10 +357,12 @@ const walk = async (label, installLine) => {
     log(`${label}: the stub model saw:\n  ${counts(model.paths.slice(modelBefore)) || '(nothing)'}`);
     log(`${label}: posts to the pod: ${JSON.stringify(leg.posts).slice(0, 2000)}`);
     log(`${label}: PowerShell output (last 6000 chars):\n${out.slice(-6000)}`);
+  } else if (EXPECT_REFUSAL) {
+    log(`${label}: stopped with the WSL 2 directions after ${seconds} s (PowerShell exit ${exited}), never polled:\n${out.slice(-2000)}`);
   } else {
     log(`${label}: reply posted and @mention acknowledged after ${seconds} s`);
   }
-  return { problems, installExit, delivered: leg.delivered };
+  return { problems, installExit, delivered: reached };
 };
 
 // The published leg is what a person gets today. On a pull request, what the
@@ -357,6 +383,12 @@ else fail('this tree: COMMONLY_BYO_TREE_TARBALL is not set, so this checkout was
 apiServer.close();
 modelServer.close();
 if (failed) process.exit(1);
-log(publishedReportsOnly
-  ? `this tree's CLI answered an @mention from the page's Windows lines for ${LABEL}`
-  : `the page's Windows lines for ${LABEL} answered an @mention, published and from this tree`);
+if (EXPECT_REFUSAL) {
+  log(publishedReportsOnly
+    ? `this tree's CLI stopped the page's Windows lines for ${LABEL} with the WSL 2 directions`
+    : `the page's Windows lines for ${LABEL} stop with the WSL 2 directions, published and from this tree`);
+} else {
+  log(publishedReportsOnly
+    ? `this tree's CLI answered an @mention from the page's Windows lines for ${LABEL}`
+    : `the page's Windows lines for ${LABEL} answered an @mention, published and from this tree`);
+}

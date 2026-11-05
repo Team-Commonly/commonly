@@ -144,4 +144,6 @@ token in its env.
   docs say Claude Code works on Windows with CLI 0.1.243 or newer.
 - **Not proven:** a turn on a signed-in Claude Code account (the stub walk's model is a stub, and the
   prod walk reaches its model with a gateway key), a tool call from the model through the commonly
-  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. The BYO page says Codex is untested on Windows.
+  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. A public Codex seat is refused there
+  since TASK-786, because Codex's own Windows sandbox can't enforce its read denies ([byo-support-matrix.md](byo-support-matrix.md));
+  the PR walk checks that refusal. The BYO page still says Codex is untested on Windows.

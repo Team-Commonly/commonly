@@ -590,7 +590,9 @@ const publicPermissionProfileFlags = (
     // POSIX only. Codex parses the table on the seat's own platform, and on
     // Windows `/private/tmp` is not absolute, so it refused the whole profile
     // and no public Codex seat there ever started (byo-windows run
-    // 41959804055, the first Codex walk on Windows).
+    // 41959804055, the first Codex walk on Windows). Past that, codex's
+    // Windows sandbox refuses the read denies themselves, so `agent run` now
+    // stops a public Codex seat there before it polls (sandbox/host-check.js).
     ...(platform === 'win32' ? [] : ['"/private/tmp"="deny"']),
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny","**/.npmrc"="deny","**/.yarnrc*"="deny"}`,
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),

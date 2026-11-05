@@ -65,6 +65,34 @@ export const codexRouteEnv = (gateway, key) => ({
   OPENAI_BASE_URL: `${String(gateway).replace(/\/+$/, '')}/v1`,
 });
 
+// ── Codex on native Windows (D250) ────────────────────────────────────────
+// A public Codex seat cannot run there: codex-cli 0.162.1's Windows sandbox
+// refuses the read denies that keep it out of ~/.commonly and ~/.ssh
+// (byo-windows run 41960954496), so `agent run` stops before it saves a token
+// or polls and points at WSL 2 (cli/src/lib/sandbox/host-check.js). The
+// Windows walk of the page's Codex lines checks that stop instead of a reply.
+
+/** A phrase of the CLI's refusal (windowsCodexMessage), which the walk looks for. */
+export const CODEX_WINDOWS_REFUSAL = "Codex's own Windows sandbox can't enforce";
+
+/** Whether the Windows walk of this harness's lines expects the refusal. */
+export const expectsWindowsRefusal = (harness) => harness === 'codex';
+
+/** What is wrong with a Windows leg that should have stopped with the WSL 2 directions. */
+export const windowsRefusalProblems = ({ out = '', exited = null, polled = false, seconds = 0 } = {}) => {
+  if (polled) return ['Codex polled for @mentions on native Windows instead of stopping with the WSL 2 directions'];
+  if (exited === null) return [`the run was still going after ${seconds} s and never printed the WSL 2 directions`];
+  if (!String(out).includes(CODEX_WINDOWS_REFUSAL)) return ['the run stopped without the WSL 2 directions'];
+  if (exited === 0) return ['the run printed the directions but exited 0, which a script reads as success'];
+  return [];
+};
+
+/** Why a prod dispatch of this harness on Windows has nothing to walk, or null. */
+export const windowsProdRefusal = (harness) => (expectsWindowsRefusal(harness)
+  ? 'Codex on native Windows stops with the WSL 2 directions before it listens, so a prod walk would wait for a reply'
+    + ' that cannot come. Dispatch target=stub to walk that stop, or walk Codex on Linux (byo-linux.yml).'
+  : null);
+
 // ── the prod walk (target=prod) ───────────────────────────────────────────
 // The page's lines against the live API with a real model. A person in the
 // pod posts the @mention; the walk reads the pod with the agent's own token
@@ -122,8 +150,10 @@ const idOf = (m) => String(m?.id ?? m?._id ?? '');
 // its reason, and the host proxy names a route it refused.
 // `configuration` is not among them: it also covers a missing binary or login
 // (CONFIGURATION_RE in cli/src/lib/spawn-retry.js), so it counts as the model
-// route only when the line names an upstream status.
+// route only when the line names an upstream status or a rejected key (the
+// key and auth words of CONFIGURATION_RE, which name no binary or login).
 const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit']);
+const REJECTED_KEY = /invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b/i;
 const isRefusalReason = (reason) => reason === 'provider-refused' || /^upstream-refused/.test(String(reason || ''));
 
 /** The turns the CLI's log says failed, with the class and upstream status each named. */
@@ -135,7 +165,11 @@ export const failedTurnsFrom = (output) => {
   // eslint-disable-next-line no-cond-assign
   while ((m = failed.exec(text)) !== null) {
     const upstream = /\(upstream (\d{3})\)|upstream refused (\d{3})/.exec(m[0]);
-    turns.push({ failureClass: m[1], upstreamStatus: upstream ? Number(upstream[1] || upstream[2]) : null });
+    turns.push({
+      failureClass: m[1],
+      upstreamStatus: upstream ? Number(upstream[1] || upstream[2]) : null,
+      rejectedKey: REJECTED_KEY.test(m[0]),
+    });
   }
   if (/the model provider refused the content of event/.test(text)) turns.push({ failureClass: 'content_refused', upstreamStatus: null });
   if (/provider proxy refused /.test(text)) turns.push({ failureClass: 'proxy_refused', upstreamStatus: null });
@@ -174,7 +208,8 @@ export const prodOutcome = ({
   const refusedAck = ack && isRefusalReason(ack.reason) ? ack : null;
   const failed = failedTurnsFrom(output);
   const modelFailure = failed.find((t) => MODEL_FAILURE_CLASSES.has(t.failureClass)
-    || t.failureClass === 'proxy_refused' || t.upstreamStatus !== null) || null;
+    || t.failureClass === 'proxy_refused' || t.upstreamStatus !== null
+    || (t.failureClass === 'configuration' && t.rejectedKey)) || null;
 
   const problems = [];
   let cause = null;

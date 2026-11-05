@@ -16,10 +16,12 @@ name: Bring your own on Windows
 # fails 10 minutes after READY. The two secrets reach only the walk step.
 #
 # D250: each run walks one harness. A pull request walks the page's Claude
-# Code lines and its Codex lines (no --unsandboxed; the CLI keeps the
-# gateway key behind its proxy and codex runs under its own permission
-# profile), each against the stub; a dispatch walks the one `harness` names.
-# Codex is real (pinned below); its model is a stub Responses API.
+# Code lines and its Codex lines (no --unsandboxed), each against the stub; a
+# dispatch walks the one `harness` names. A public Codex seat cannot run on
+# native Windows: codex's sandbox there refuses the read denies of its
+# permission profile (run 41960954496). So the Codex leg passes when
+# `agent run` stops at once with the WSL 2 directions and never polls, and a
+# target=prod dispatch of codex is refused. Codex is real (pinned below).
 
 on:
   pull_request:
@@ -37,7 +39,7 @@ on:
   workflow_dispatch:
     inputs:
       harness:
-        description: 'the lines to walk: claude (Claude Code) or codex (Codex). A pull request walks both.'
+        description: 'the lines to walk: claude (Claude Code) or codex (Codex, which stops with the WSL 2 directions; stub only). A pull request walks both.'
         type: choice
         options: [claude, codex]
         default: claude
