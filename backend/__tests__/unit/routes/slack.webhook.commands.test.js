@@ -71,9 +71,11 @@ describe('Slack /commonly command replies', () => {
     ['mute', 60],
     ['mute 15', 15],
     ['mute 0', 60],
-    ['mute -5', 1],
     ['mute 99999', 24 * 60],
-    ['mute soon', 60],
+    ['mute 2h', 120],
+    // F161: the whole argument reaches the parse, not just its first word.
+    ['mute 2 hours', 120],
+    ['mute   30 min', 30],
   ])('%s mutes for %i minutes', async (text, minutes) => {
     bound();
     const before = Date.now();
@@ -84,6 +86,20 @@ describe('Slack /commonly command replies', () => {
     const until = new Date(update.$set['config.relayMutedUntil']).getTime();
     expect(until).toBeGreaterThanOrEqual(before + minutes * 60000);
     expect(until).toBeLessThanOrEqual(Date.now() + minutes * 60000);
+  });
+
+  // F161: a duration the shared core cannot read is usage, not a guess.
+  test.each(['mute -5', 'mute soon', 'mute 90s'])('%s answers with usage and writes nothing', async (text) => {
+    bound();
+    const res = await command(text);
+    expect(res.body).toEqual({ response_type: 'ephemeral', text: 'Usage: /commonly mute 30m|2h' });
+    expect(Integration.updateOne).not.toHaveBeenCalled();
+  });
+
+  test('mode still reads only its first word', async () => {
+    bound();
+    const res = await command('mode attention please');
+    expect(res.body).toEqual({ response_type: 'ephemeral', text: 'Relay mode: attention.' });
   });
 
   test('unmute clears only the owner mute', async () => {

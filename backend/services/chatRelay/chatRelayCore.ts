@@ -114,6 +114,8 @@ export type RelayCommandOutcome =
     lead: string | null;
   }
   | { kind: 'mute'; minutes: number; until: Date; update: RelayConfigUpdate }
+  /** A `/mute` duration the parse cannot read (`90s`, `1.5h`): nothing is written. */
+  | { kind: 'mute-usage' }
   | { kind: 'unmute'; update: RelayConfigUpdate }
   /** A settings change from someone the platform could not prove may make it. */
   | { kind: 'refused'; command: RelayCommand['name'] };
@@ -143,17 +145,18 @@ const MUTE_DURATION = /^(\d{1,5}) ?(m|min|mins|minutes?|h|hr|hrs|hours?)?$/i;
 const MUTE_ARG_MAX = 16;
 
 /**
- * The minutes a `/mute` argument asks for: a bare number is minutes, and `30m`
- * or `2h` carry their unit. Anything else falls back to parseInt, as before
- * units were read, so `2h` no longer means two minutes but `soon` still means
- * the default.
+ * The minutes a `/mute` argument asks for: none means the default, a bare
+ * number is minutes, and `30m` or `2h` carry their unit. Anything else is null,
+ * which the caller answers with usage: a guess at `90s` or `1.5h` would mute
+ * for a time nobody asked for (F161).
  */
-const muteMinutesOf = (arg?: string): number => {
-  const trimmed = String(arg || '').trim().slice(0, MUTE_ARG_MAX);
-  const match = MUTE_DURATION.exec(trimmed);
-  const asked = match
-    ? parseInt(match[1], 10) * (match[2] && /^h/i.test(match[2]) ? 60 : 1)
-    : parseInt(trimmed || String(DEFAULT_MUTE_MINUTES), 10);
+const muteMinutesOf = (arg?: string): number | null => {
+  const raw = String(arg || '').trim();
+  if (!raw) return DEFAULT_MUTE_MINUTES;
+  if (raw.length > MUTE_ARG_MAX) return null;
+  const match = MUTE_DURATION.exec(raw);
+  if (!match) return null;
+  const asked = parseInt(match[1], 10) * (match[2] && /^h/i.test(match[2]) ? 60 : 1);
   return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
 };
 
@@ -185,6 +188,7 @@ const decideRelayCommand = (
   }
   if (command.name === 'mute') {
     const minutes = muteMinutesOf(command.arg);
+    if (minutes === null) return { kind: 'mute-usage' };
     const until = new Date(now.getTime() + minutes * 60_000);
     return { kind: 'mute', minutes, until, update: { $set: { 'config.relayMutedUntil': until } } };
   }

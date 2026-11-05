@@ -493,6 +493,50 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
   }
 });
 
+// F161: "Add the bot again" on a Discord row that dropped starts a fresh
+// install, and the bind below writes a new row. The caller's own dropped rows
+// on the same pod, guild and channel are then retired the way Remove retires a
+// row: grants revoked, webhook deleted, platform record gone. The row itself is
+// kept, inactive, rather than deleted. Best effort: a failure here leaves a
+// stale row, never a failed bind.
+const retireDroppedDiscordRows = async (
+  keepId: unknown, podId: unknown, userId: string, serverId: string, channelId: string,
+): Promise<void> => {
+  // Every value comes from the request path: pin each to the shape it must
+  // have, so the filter can only ever hold plain strings.
+  const guild = String(serverId);
+  const channel = String(channelId);
+  const pod = String(podId);
+  if (!/^\d{17,20}$/.test(guild) || !/^\d{17,20}$/.test(channel) || !/^[a-f0-9]{24}$/i.test(pod)) return;
+  let dropped: Array<{ _id: unknown }> = [];
+  try {
+    dropped = await Integration.find({
+      _id: { $ne: String(keepId) },
+      type: 'discord',
+      isActive: true,
+      podId: pod,
+      createdBy: String(userId),
+      'config.serverId': guild,
+      'config.channelId': channel,
+      status: { $in: ['error', 'disconnected'] },
+    }) as Array<{ _id: unknown }>;
+  } catch (error) {
+    console.warn(`Discord rebind: could not look up dropped rows: ${(error as Error).message}`);
+    return;
+  }
+  await Promise.all(dropped.map(async (row) => {
+    try {
+      await revokeConnectionGrants({ connection: row, revokedBy: userId });
+      const service = new DiscordService(row._id);
+      if (await service.initialize()) await service.disconnect();
+      await DiscordIntegration.findOneAndDelete({ integrationId: row._id });
+      await Integration.findByIdAndUpdate(row._id, { $set: { isActive: false, status: 'disconnected' } });
+    } catch (error) {
+      console.warn(`Discord rebind: could not retire integration ${String(row._id)}: ${(error as Error).message}`);
+    }
+  }));
+};
+
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, type, config } = (req.body || {}) as { podId?: string; type?: unknown; config?: Record<string, unknown> };
@@ -654,6 +698,9 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       if (!initialized) return res.status(500).json({ message: 'Failed to initialize integration' });
       const connected = await service.connect();
       if (!connected) console.warn('Integration initialized but failed to connect');
+      await retireDroppedDiscordRows(
+        integration._id, podId, String(req.user?.id), String(config.serverId), String(config.channelId),
+      );
     }
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {

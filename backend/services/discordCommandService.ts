@@ -59,6 +59,7 @@ interface IntegrationDoc {
     serverId?: string;
     channelId?: string;
     webhookListenerEnabled?: boolean;
+    discordUserId?: string;
   };
   populate(field: string, select: string): Promise<void>;
 }
@@ -73,6 +74,27 @@ interface DiscordSummaryData {
   channelId: string | null;
   summaryType: string;
 }
+
+/**
+ * F161: channel sync changes what a SHARED channel feeds into the pod, so the
+ * toggles take the bridge commands' rule (discordRelayCommandService
+ * `mayChangeRelaySettings`): only the installer, matched by the Discord id the
+ * bot-add proved. A row bound before that proof existed records no id and
+ * admits no one; adding the bot again stamps it. Null means allowed.
+ */
+const syncToggleRefusal = (integration: IntegrationDoc, actorId?: string): CommandResult | null => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { mayChangeRelaySettings } = require('./discordRelayCommandService');
+  if (mayChangeRelaySettings(integration, String(actorId || ''))) return null;
+  // No `<@id>` here: the legacy reply carries no allowed_mentions guard.
+  return {
+    success: false,
+    content: integration.config?.discordUserId
+      ? 'Only the person who connected this channel to Commonly can turn channel sync on or off.'
+      : 'Only the person who connected this channel to Commonly can turn channel sync on or off, and this '
+        + "connection doesn't record their Discord account. They can add the bot again from Commonly to fix that.",
+  };
+};
 
 class DiscordCommandService {
   private guildId: string | null;
@@ -277,7 +299,7 @@ class DiscordCommandService {
     }
   }
 
-  async handleEnableCommand(): Promise<CommandResult> {
+  async handleEnableCommand(actorId?: string): Promise<CommandResult> {
     try {
       if (!this.integration) {
         await this.initialize();
@@ -286,6 +308,9 @@ class DiscordCommandService {
       if (!this.integration) {
         return { success: false, content: '❌ Discord integration not found.' };
       }
+
+      const refusal = syncToggleRefusal(this.integration, actorId);
+      if (refusal) return refusal;
 
       await Integration.findByIdAndUpdate(this.integration._id, {
         'config.webhookListenerEnabled': true,
@@ -301,7 +326,7 @@ class DiscordCommandService {
     }
   }
 
-  async handleDisableCommand(): Promise<CommandResult> {
+  async handleDisableCommand(actorId?: string): Promise<CommandResult> {
     try {
       if (!this.integration) {
         await this.initialize();
@@ -310,6 +335,9 @@ class DiscordCommandService {
       if (!this.integration) {
         return { success: false, content: '❌ Discord integration not found.' };
       }
+
+      const refusal = syncToggleRefusal(this.integration, actorId);
+      if (refusal) return refusal;
 
       await Integration.findByIdAndUpdate(this.integration._id, {
         'config.webhookListenerEnabled': false,

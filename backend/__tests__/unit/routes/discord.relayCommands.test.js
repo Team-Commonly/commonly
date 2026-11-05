@@ -52,6 +52,7 @@ const Integration = require('../../../models/Integration');
 const Summary = require('../../../models/Summary');
 const { runCommandForIntegration } = require('../../../services/discordMultiCommandService');
 const discordRoutes = require('../../../routes/discord');
+const { resetSummaryCooldowns } = require('../../../services/discordRelayCommandService');
 
 const app = express();
 app.use('/api/discord/interactions', express.raw({ type: '*/*' }));
@@ -110,6 +111,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRows.length = 0;
   mockRows.push(row());
+  resetSummaryCooldowns();
   // The pod's creator: the bind rule /tldr re-checks (F143) passes for them.
   User.findById.mockResolvedValue({ _id: 'user-owner', role: 'user' });
 });
@@ -169,6 +171,14 @@ describe('/mute and /unmute', () => {
     expect(until).toBeLessThanOrEqual(Date.now() + 30 * 60_000);
     expect(res.body.data.content).toContain('Muted for 30 min');
     expect(res.body.data.flags).toBe(64);
+  });
+
+  // F161 item 7: the core's usage outcome, in Discord's words.
+  test.each(['90s', '1.5h'])('/mute %s answers with usage and writes nothing', async (value) => {
+    const res = await command('mute', { options: [{ name: 'duration', value }] });
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(res.body.data.flags).toBe(64);
+    expect(res.body.data.content).toContain('Usage: /mute');
   });
 
   test('/unmute clears relayMutedUntil', async () => {
@@ -285,4 +295,95 @@ test('/help answers anywhere, ephemerally', async () => {
   expect(res.body.data.flags).toBe(64);
   expect(res.body.data.content).toContain('/mode');
   expect(res.body.data.content).toContain('/tldr');
+});
+
+const settle = async () => {
+  await new Promise((resolve) => { setImmediate(resolve); });
+  await new Promise((resolve) => { setImmediate(resolve); });
+};
+
+// F161 item 3: /summary and /tldr run only on a connected row (F132's relay
+// rule); a settings write on a row that is not connected says so.
+describe('a bound row that is not connected', () => {
+  test.each(['disconnected', 'error', 'pending'])('/tldr on a %s row posts nothing', async (status) => {
+    mockRows[0] = { ...row(), status };
+    Summary.findOne.mockReturnValue({ sort: () => Promise.resolve({ title: 'T', content: 'secret pod text' }) });
+    const res = await command('tldr');
+    expect(res.body.type).toBe(4);
+    expect(res.body.data.flags).toBe(64);
+    expect(res.body.data.content).not.toContain('secret pod text');
+    expect(res.body.data.content).toContain("isn't active");
+  });
+
+  test('/summary on a disconnected row runs nothing and answers at once', async () => {
+    mockRows[0] = { ...row({ webhookListenerEnabled: true }), status: 'disconnected' };
+    const res = await command('summary');
+    expect(res.body.type).toBe(4);
+    expect(res.body.data.flags).toBe(64);
+    expect(res.body.data.content).toContain("isn't active");
+    await settle();
+    expect(runCommandForIntegration).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['mode', [{ name: 'mode', value: 'mirror' }]],
+    ['mute', [{ name: 'duration', value: '30m' }]],
+    ['unmute', undefined],
+  ])('/%s from the installer on a disconnected row writes nothing and says so', async (name, options) => {
+    mockRows[0] = { ...row(), status: 'disconnected' };
+    const res = await command(name, { options });
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(res.body.data.flags).toBe(64);
+    expect(res.body.data.content).toContain("isn't connected right now");
+  });
+});
+
+// F161 item 4: each /summary is an LLM run, so one row runs it at most once a minute.
+test('/summary twice inside a minute runs once; the second is told to wait, ephemerally', async () => {
+  mockRows[0] = row({ webhookListenerEnabled: true });
+  runCommandForIntegration.mockResolvedValue({ result: { success: true, content: 'ok' } });
+  const first = await command('summary', { actor: STRANGER });
+  expect(first.body.type).toBe(5);
+  await settle();
+  const second = await command('summary', { actor: INSTALLER });
+  expect(second.body.type).toBe(4);
+  expect(second.body.data.flags).toBe(64);
+  expect(second.body.data.content).toMatch(/less than a minute ago/);
+  await settle();
+  expect(runCommandForIntegration).toHaveBeenCalledTimes(1);
+});
+
+test('/summary runs again once the minute has passed', async () => {
+  mockRows[0] = row({ webhookListenerEnabled: true });
+  runCommandForIntegration.mockResolvedValue({ result: { success: true, content: 'ok' } });
+  const realNow = Date.now;
+  try {
+    await command('summary');
+    await settle();
+    Date.now = () => realNow() + 61_000;
+    const again = await command('summary');
+    expect(again.body.type).toBe(5);
+    await settle();
+    expect(runCommandForIntegration).toHaveBeenCalledTimes(2);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+// F161 item 9: an admin pause takes the row out of every command's reach.
+describe('a row under an admin pause', () => {
+  beforeEach(() => { mockRows[0] = row({ adminPause: { at: new Date(), by: 'admin-1' } }); });
+
+  test('the installer cannot change its settings', async () => {
+    const res = await command('mode', { options: [{ name: 'mode', value: 'mirror' }] });
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(res.body.data.flags).toBe(64);
+  });
+
+  test('/tldr posts nothing', async () => {
+    Summary.findOne.mockReturnValue({ sort: () => Promise.resolve({ title: 'T', content: 'secret pod text' }) });
+    const res = await command('tldr');
+    expect(res.body.data.flags).toBe(64);
+    expect(res.body.data.content).not.toContain('secret pod text');
+  });
 });

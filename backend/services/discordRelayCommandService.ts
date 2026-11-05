@@ -127,6 +127,13 @@ const optionValue = (interaction: DiscordInteraction, name: string): string | un
 };
 
 const NOT_CONNECTED = "This channel isn't connected to a Commonly pod. Connect it from the pod's Connectors page.";
+// A row bound here whose connection is not `connected` (F161): the relay's own
+// rule (F132), so a command cannot reach a pod the bridge itself would not.
+const NOT_ACTIVE = "This channel's connection to Commonly isn't active. Reconnect it from the pod's Connectors page.";
+const SETTINGS_NOT_CONNECTED = "This channel isn't connected right now, so its relay settings can't change. "
+  + "Reconnect it from the pod's Connectors page.";
+
+const isConnected = (row: DiscordCommandRow): boolean => row.status === 'connected';
 
 const HELP_TEXT = [
   '**Commonly commands for this channel**',
@@ -176,6 +183,8 @@ const discordCommandReply = (outcome: RelayCommandOutcome, row: DiscordCommandRo
     case 'mute':
       return `Muted for ${outcome.minutes} min. Nothing relays here until ${discordTime(outcome.until)}. `
         + '/unmute to resume.';
+    case 'mute-usage':
+      return 'Usage: /mute 30m or /mute 2h (a bare number is minutes, at most 24 hours)';
     case 'unmute':
       return 'Unmuted. Relay resumes.';
     case 'status': {
@@ -237,8 +246,11 @@ const runSettingsCommand = async (
     const outcome = applyRelayCommand(command, row, new Date(), {
       mayChangeSettings: mayChangeRelaySettings(row, actorId),
     });
-    if ('update' in outcome) await Integration.findByIdAndUpdate(row._id, outcome.update);
     const podName = await podNameOf(row);
+    // Reads stay open on any bound row (/status names a dropped connection);
+    // a write waits for the row to be connected again.
+    if ('update' in outcome && !isConnected(row)) return { podName, text: SETTINGS_NOT_CONNECTED };
+    if ('update' in outcome) await Integration.findByIdAndUpdate(row._id, outcome.update);
     return { podName, text: discordCommandReply(outcome, row, podName) };
   }));
   return reply(joinPerPod(blocks));
@@ -294,34 +306,67 @@ const editDeferredReply = async (interaction: DiscordInteraction, content: strin
   );
 };
 
+// /summary runs the summarizer, an LLM call, so one row runs it at most once a
+// minute (F161). Claimed before the run, so two calls racing in the same
+// second still make one. Per process: a second replica keeps its own clock,
+// which at worst doubles the rate, never removes the limit.
+export const SUMMARY_COOLDOWN_MS = 60_000;
+const summaryRanAt = new Map<string, number>();
+
+const claimSummaryRun = (row: DiscordCommandRow): boolean => {
+  const key = String(row._id);
+  const now = Date.now();
+  const last = summaryRanAt.get(key);
+  if (last !== undefined && now - last < SUMMARY_COOLDOWN_MS) return false;
+  summaryRanAt.set(key, now);
+  // Drop expired entries so the map stays the size of the last minute's rows.
+  summaryRanAt.forEach((at, id) => { if (now - at >= SUMMARY_COOLDOWN_MS) summaryRanAt.delete(id); });
+  return true;
+};
+
+/** Test seam: forget every row's last /summary. */
+export const resetSummaryCooldowns = (): void => { summaryRanAt.clear(); };
+
+const SUMMARY_COOLING = 'A summary ran here less than a minute ago. Try again shortly.';
+
 // /summary: the channel's buffered chat → a summary → Commonly Bot in the pod,
 // the path `/discord-push` has always taken. It calls the summarizer, so it
 // cannot promise Discord's 3 seconds and answers by deferring.
-const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]): DiscordCommandHandled => ({
-  response: { type: 5, data: { flags: EPHEMERAL } },
-  after: async () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const { runCommandForIntegration } = require('./discordMultiCommandService');
-    const blocks = await Promise.all(rows.map(async (row) => {
-      const podName = await podNameOf(row);
-      if (!row.config?.webhookListenerEnabled) {
-        return {
-          podName,
-          text: 'Channel sync is off for this channel, so there is nothing buffered to summarize. '
-            + 'Turn it on with /discord-enable.',
-        };
-      }
-      try {
-        const { result } = await runCommandForIntegration({ commandName: 'discord-push', integration: row });
-        return { podName, text: String(result?.content || '❌ The summary did not run.') };
-      } catch (error) {
-        console.warn(`${LOG} /summary failed integration=${String(row._id)}: ${(error as Error).message}`);
-        return { podName, text: '❌ The summary did not run. Try again shortly.' };
-      }
-    }));
-    await editDeferredReply(interaction, joinPerPod(blocks));
-  },
-});
+const deferSummary = (interaction: DiscordInteraction, rows: DiscordCommandRow[]): DiscordCommandHandled => {
+  // Only rows with sync on run the summarizer, so only they take a slot.
+  const claimed = new Set(rows
+    .filter((row) => row.config?.webhookListenerEnabled && claimSummaryRun(row))
+    .map((row) => String(row._id)));
+  if (!claimed.size && rows.some((row) => row.config?.webhookListenerEnabled)) {
+    return { response: reply(SUMMARY_COOLING) };
+  }
+  return {
+    response: { type: 5, data: { flags: EPHEMERAL } },
+    after: async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { runCommandForIntegration } = require('./discordMultiCommandService');
+      const blocks = await Promise.all(rows.map(async (row) => {
+        const podName = await podNameOf(row);
+        if (!row.config?.webhookListenerEnabled) {
+          return {
+            podName,
+            text: 'Channel sync is off for this channel, so there is nothing buffered to summarize. '
+              + 'Turn it on with /discord-enable.',
+          };
+        }
+        if (!claimed.has(String(row._id))) return { podName, text: SUMMARY_COOLING };
+        try {
+          const { result } = await runCommandForIntegration({ commandName: 'discord-push', integration: row });
+          return { podName, text: String(result?.content || '❌ The summary did not run.') };
+        } catch (error) {
+          console.warn(`${LOG} /summary failed integration=${String(row._id)}: ${(error as Error).message}`);
+          return { podName, text: '❌ The summary did not run. Try again shortly.' };
+        }
+      }));
+      await editDeferredReply(interaction, joinPerPod(blocks));
+    },
+  };
+};
 
 /**
  * One bridge command → its interaction response. Only for names
@@ -334,8 +379,12 @@ export const handleDiscordRelayCommand = async (interaction: DiscordInteraction)
   const channelId = String(interaction.channel_id || '');
   const rows = await findBoundRows(guildId, channelId);
   if (!rows.length) return { response: reply(NOT_CONNECTED) };
-  if (name === 'tldr') return { response: await runTldr(rows) };
-  if (name === 'summary') return deferSummary(interaction, rows);
+  if (name === 'tldr' || name === 'summary') {
+    const connected = rows.filter(isConnected);
+    if (!connected.length) return { response: reply(NOT_ACTIVE) };
+    if (name === 'tldr') return { response: await runTldr(connected) };
+    return deferSummary(interaction, connected);
+  }
   return { response: await runSettingsCommand(interaction, rows) };
 };
 
@@ -347,6 +396,8 @@ module.exports = {
   isBoundToChannel,
   mayChangeRelaySettings,
   findBoundRows,
+  resetSummaryCooldowns,
+  SUMMARY_COOLDOWN_MS,
   renderDiscordTldr,
   handleDiscordRelayCommand,
 };
