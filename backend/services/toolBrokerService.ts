@@ -1769,7 +1769,10 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       // No guard on `prepareApproval`: the helper answers for both members, and
       // a hosted tool's arguments are simply its own.
       const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection, input.agentUserId);
-      let proposal: { ok: boolean; approvalId?: string } | undefined;
+      let proposal: {
+        ok: boolean; approvalId?: string; code?: string; reason?: string;
+        reused?: boolean; callId?: string; pending?: number; error?: string;
+      } | undefined;
       try {
         const approvalPodId = await resolveApprovalPodId(
           grant,
@@ -1835,13 +1838,54 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           callId: refusedCallId,
         });
       }
-      if (proposal && !proposal.ok) {
-        await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+      if (proposal && !proposal.ok && proposal.code === 'approval_queue_full') {
+        // F180: the owner already has this seat's cards waiting here. Asking
+        // again will not help until they act, so it is not retryable.
+        await recordCall(input, grant, 'refused', startedAt, 'approval_queue_full', {
           callId,
           args: canonicalArgs,
           credentialOwnerId,
           callerConfinement,
         });
+        throw new RoomGrantError(
+          'approval_queue_full',
+          proposal.error || 'too many approvals are waiting for the owner',
+          429,
+          { recorded: true, callId, retryable: false, pending: proposal.pending },
+        );
+      }
+      if (proposal?.ok && proposal.reused && proposal.callId) {
+        // F180: the same call is already waiting on the owner. Park again on
+        // that approval and its call id; no new card and no new trail row,
+        // because there is still only one call to decide.
+        throw new RoomGrantError('approval_required', 'tool call requires approval', 403, {
+          approvalId: proposal.approvalId,
+          callId: proposal.callId,
+          recorded: true,
+        });
+      }
+      if (proposal && !proposal.ok) {
+        // A card the message service refused will be refused again (F180):
+        // say so plainly, as a non-retryable refusal. Only a store failure
+        // stays the retryable `approval_unavailable`.
+        const refusedCard = proposal.code === 'approval_card_refused';
+        const code = refusedCard ? 'approval_card_refused' : 'approval_unavailable';
+        await recordCall(input, grant, 'refused', startedAt, code, {
+          callId,
+          args: canonicalArgs,
+          credentialOwnerId,
+          callerConfinement,
+        });
+        if (refusedCard) {
+          throw new RoomGrantError(
+            'approval_card_refused',
+            'The approval request for this call could not be posted in the pod'
+              + `${proposal.reason ? ` (${proposal.reason})` : ''}, so the call was not parked and nothing ran. `
+              + 'Retrying the same call will not help.',
+            409,
+            { recorded: true, callId, retryable: false, ...(proposal.reason ? { reason: proposal.reason } : {}) },
+          );
+        }
         throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
           recorded: true,
           callId,
