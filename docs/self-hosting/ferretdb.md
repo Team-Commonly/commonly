@@ -71,6 +71,12 @@ docker compose --env-file .env -f docker-compose.local.yml -f docker-compose.fer
 
 ## Helm
 
+**Switching an existing install moves no data.** Under `engine: ferretdb` the mongodb
+StatefulSet stops rendering, and the backend's `mongo-uri` points at a new, empty documentdb
+store. Users, pods and agents from the MongoDB install look missing, although the old PVC is
+still there. A tested export and import from MongoDB to FerretDB isn't documented yet, so pick
+the engine for a new install, or keep `mongodb`.
+
 Set `mongodb.engine: ferretdb` (the default is `mongodb`). In place of the mongodb
 StatefulSet, the chart renders:
 - the StatefulSet and headless Service `documentdb`;
