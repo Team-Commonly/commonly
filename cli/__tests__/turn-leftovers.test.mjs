@@ -162,3 +162,56 @@ describe('claude: what a confined turn leaves running', () => {
     }
   }, 20_000);
 });
+
+// The codex adapter's public seat is confined too (F201): it keeps nothing a
+// turn leaves running, as the claude adapter's public seat does. A private
+// codex seat still keeps a process started with the setting.
+describe('codex: what a public seat\'s turn leaves running', () => {
+  const seat = (trust) => {
+    const { OPENAI_BASE_URL: _route, ...outside } = process.env;
+    return {
+      environment: { model: 'test-model', ...(trust ? { sandbox: { mode: 'workspace', trust } } : {}) },
+      agentName: `f201-${trust || 'private'}`,
+      _homeDir: home,
+      _publicCodexHome: path.join(home, `codex-home-${trust || 'private'}-${Date.now()}`),
+      env: { ...outside, HOME: home, CODEX_HOME: path.join(home, 'operator-codex') },
+    };
+  };
+
+  (POSIX ? test : test.skip)('a public seat stops the process set to keep too, and logs that the setting was not honoured', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let pids = {};
+    try {
+      pids = await runTurn(codex, seat('public'));
+
+      expect(await waitFor(() => !alive(pids.leftover))).toBe(true);
+      expect(await waitFor(() => !alive(pids.kept))).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(new RegExp(
+        `^\\[codex\\] stopped 2 processes this turn left running .*${KEEP_PROCESS_ENV}=1 was set on pid ${pids.kept} `
+        + 'and is not honoured on a confined seat$',
+      )));
+    } finally {
+      warn.mockRestore();
+      for (const pid of [pids.leftover, pids.kept]) {
+        if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+    }
+  }, 20_000);
+
+  (POSIX ? test : test.skip)('a private seat still keeps the process set to keep', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let pids = {};
+    try {
+      pids = await runTurn(codex, seat(null));
+
+      expect(await waitFor(() => !alive(pids.leftover))).toBe(true);
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      expect(alive(pids.kept)).toBe(true);
+    } finally {
+      warn.mockRestore();
+      for (const pid of [pids.leftover, pids.kept]) {
+        if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+    }
+  }, 20_000);
+});
