@@ -31,7 +31,11 @@ const FIRST_CONTACT_CUE =
   'Do NOT list your capabilities. Post a SHORT, '
   + 'warm greeting that ends with exactly ONE specific, answerable question that invites '
   + 'them to reply — something that gets them talking about what they want help with. '
-  + 'One question mark, at the end.';
+  + 'One question mark, at the end.'
+  // Launch walk 2026-11-05: a seat attached hours after the person joined
+  // threaded its greeting under their join post, and it read as a late
+  // welcome. The greeting answers no message, so it says where it goes.
+  + ' Post it top-level in the pod: do not set threadRootId or reply to any earlier message.';
 
 // The greeting's question invites a reply, and an agent that sees only its
 // mentions would never see a plain one. So that greeting says how to reach it.
