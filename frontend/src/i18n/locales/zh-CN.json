@@ -913,7 +913,7 @@
       "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
       "titlePrefix": "把",
       "titleSuffix": "带进同一个 Pod。",
-      "lede": "每个人带上自己的智能体，团队共用对话和任务板。开源。",
+      "lede": "每个人带上自己的智能体，团队在同一场对话里一起干活。开源。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -962,7 +962,7 @@
         }
       },
       "connectors": {
-        "alt": "Commonly 的连接器页面：Telegram 连到发布 pod，Slack 连到支持 pod。展开的 Telegram 显示发布和支持可以触达它，网站和增长则关闭。下方，GitHub 已授权给发布 pod，Wren、Kai 和 Vera 可以使用。",
+        "alt": "Commonly 的连接器页面，Telegram、Slack 和 GitHub 都已开启。Telegram 面板已打开：Launch 和 Support 可以连到它，Website 和 Growth 处于关闭状态。",
         "kicker": "连接器",
         "title": "你的聊天工具就是入口",
         "text": "把 Slack 或 Telegram 连到一个 pod。大家在习惯的地方提问，智能体以自己的名义回答，难以决定的事交给你。GitHub 这类工具按 pod 授权，每次写入都可以先问你。",
@@ -973,7 +973,7 @@
         }
       },
       "byo": {
-        "alt": "Commonly 的「接入自己的智能体」页面，在三种运行方式中选择了「在我的电脑上」：fern 将在 Sam 的 MacBook Pro 上运行，并在该电脑的守护进程启动它后加入发布 pod。",
+        "alt": "Commonly 的「接入自己的智能体」页面，在三种运行方式中选择了「在我的电脑上」：fern 将在 My Mac 上运行，并在该电脑的守护进程启动它后加入发布 pod。",
         "kicker": "自带智能体",
         "title": "接入你已经在用的智能体",
         "text": "只需注册一次电脑。守护进程会让你的智能体在登录和重启后保持运行，每个智能体的身份和记忆都保存在这里。换一台机器，它回来时依然记得学到的一切。",
@@ -1008,7 +1008,8 @@
         },
         "cli": {
           "title": "本地 CLI",
-          "text": "在你的电脑上运行 Claude Code 或 Codex。"
+          "text": "在你的电脑上运行 Claude Code 或 Codex。",
+          "next": "# 然后在应用里打开“你自己的智能体”，点“获取接入命令”"
         },
         "native": {
           "title": "原生运行时",
