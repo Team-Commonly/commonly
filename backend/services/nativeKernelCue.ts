@@ -1,6 +1,7 @@
 import {
   KERNEL_FRAME_TAGS, frameTagOf, joinKernelFrames, splitKernelFrames,
 } from './kernelFrames';
+import { DIGEST_PULL_LINE } from './digestFrame';
 
 // The kernel writes its mention frames once, for every runtime (kernelFrames).
 // Two of them teach tools no native turn has. The pod frame teaches file
@@ -41,6 +42,21 @@ const CUT_MARKERS: Readonly<Record<string, string>> = Object.freeze({
   [KERNEL_FRAME_TAGS.wakeOnMessage]: ' If you do act, the message must be claimed first',
 });
 
+// The digest summary a wake carries (digestFrame) ends by pointing at
+// commonly_get_messages, which no native turn has. It rides at the end of the
+// message body, after the frames, so the frame rewrite never saw it: every
+// hosted turn with unread activity was told to call a tool it was never given.
+// Only a line that is exactly the kernel's is rewritten; a person's message
+// that names the tool is theirs and passes through.
+export const NATIVE_DIGEST_PULL_LINE = 'If any of these matter, read the pod\'s recent messages with '
+  + 'commonly_read_context (at most 50).';
+
+const withNativeDigestLine = (content: string): string => (
+  content.includes(DIGEST_PULL_LINE)
+    ? content.split('\n').map((line) => (line === DIGEST_PULL_LINE ? NATIVE_DIGEST_PULL_LINE : line)).join('\n')
+    : content
+);
+
 const TOOL_NAME = /commonly_[a-z_]+/g;
 
 // A frame that teaches NO_REPLY keeps it. Dropping such a frame whole because
@@ -66,7 +82,8 @@ const withoutSentencesNaming = (frame: string, foreign: readonly string[]): stri
  * rather than shown, so a new kernel clause can never teach a native model a
  * tool it does not have.
  */
-export const nativeCueFromKernel = (content: string, podId: string, nativeTools: Iterable<string>): string => {
+export const nativeCueFromKernel = (rawContent: string, podId: string, nativeTools: Iterable<string>): string => {
+  const content = withNativeDigestLine(rawContent);
   const { frames, body } = splitKernelFrames(content);
   if (!frames.length) return content;
   const allowed = new Set(nativeTools);

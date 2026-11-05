@@ -131,3 +131,52 @@ describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
     expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
   });
 });
+
+// The real digest summary (digestFrame) ends by telling the seat to pull the
+// threads with commonly_get_messages. A native turn has no such tool, and the
+// line rides in the message body, after the kernel frames, where the native
+// frame rewrite never looks. So every hosted turn with unread activity was
+// told to call a tool it was never given.
+describe('a native turn\'s digest names only tools a native turn has', () => {
+  const { digestConversationFrame } = require('../../../services/digestFrame');
+  const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
+  const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
+  const { buildHeartbeatContent } = require('../../../services/heartbeatCue');
+
+  const podId = '6aeb8bc75a12e3e23872e765';
+  const digest = digestConversationFrame([
+    { payload: { messageId: 1, threadRootId: 129000 } },
+    { payload: { messageId: 2, threadRootId: 129000 } },
+    { payload: { messageId: 3 } },
+  ]);
+  const toolsNamed = (text) => [...new Set(text.match(/commonly_[a-z_]+/g) || [])];
+  const native = (type, content) => nativeCueFromKernel(
+    buildUserMessage({ type, payload: { content } }, POD),
+    podId,
+    NATIVE_TOOL_NAMES,
+  );
+
+  it('the kernel digest names a tool native lacks (the positive control)', () => {
+    expect(toolsNamed(digest).filter((name) => !NATIVE_TOOL_NAMES.includes(name))).toEqual(['commonly_get_messages']);
+  });
+
+  it.each([
+    ['a scheduled heartbeat', 'heartbeat', `${buildHeartbeatContent(podId)}\n\n${digest}`],
+    ['a framed @mention', 'chat.mention', `[Pod context: this conversation is in pod \`${podId}\`.]\n\n@scout hi\n\n${digest}`],
+    ['an unframed wake', 'message.posted', `hello\n\n${digest}`],
+  ])('%s keeps the counts and points at commonly_read_context', (_label, type, content) => {
+    const out = native(type, content);
+    expect(toolsNamed(out).filter((name) => !NATIVE_TOOL_NAMES.includes(name))).toEqual([]);
+    expect(out).toContain('- thread 129000: 2 unread');
+    expect(out).toContain('- pod conversation: 1 unread');
+    expect(out).toContain('context only, no reply needed');
+    expect(out).toContain('commonly_read_context');
+  });
+
+  it('leaves a person\'s own words alone when they name the tool', () => {
+    const said = 'why did commonly_get_messages fail for you?';
+    const out = native('chat.mention', `${said}\n\n${digest}`);
+    expect(out).toContain(said);
+    expect(out.match(/commonly_get_messages/g)).toHaveLength(1);
+  });
+});

@@ -4337,3 +4337,13 @@ The comments say so, but a caller, a log line or a cost report only shows the na
 **Repair:** #3383 and #3384 move summaries, the connected-chat bot and Calendar turns onto Claude, and keep Calendar data off any non-Claude route.
 
 **Lesson:** an alias that keeps a provider's name while it serves another provider is the most misleading way to repoint a name. Name an alias for what it serves, or log the backend model next to the requested one. Before you cite a model name as a data or cost fact, read the route it resolves to.
+
+## 97. The unread digest told every hosted turn to call a tool it doesn't have (2026-11-05, builder)
+
+*Origin: found while fixing TASK-779 (hosted heartbeats posting their narration, #3455).*
+
+When a wake has unread pod activity, `runWithDigest` appends the digest summary to the event's content. Its last line says "Pull relevant messages with commonly_get_messages". Hosted agents run on the native runtime, which has no such tool; it reads the pod with `commonly_read_context`. `nativeCueFromKernel` already rewrites kernel lines that name tools native lacks, but only the leading frames. The digest rides at the end of the message body, so the rewrite never saw it. Any hosted turn with unread activity, @mentions and heartbeats included, was told to call a tool it was never given. The #3455 tests didn't catch it, because they used a hand-written digest string instead of the real one.
+
+**Repair:** the digest builder moves to `backend/services/digestFrame.ts`, which exports its pull line as `DIGEST_PULL_LINE`. `nativeCueFromKernel` replaces exactly that line with one that names `commonly_read_context`. A person's message that names the tool is left alone. `nativeRuntimePrompt.test.js` now drives the real digest through a heartbeat, a framed @mention and an unframed wake.
+
+**Lesson:** a rewrite that guards "kernel text names only tools this runtime has" has to cover every place the kernel writes, not just the leading frames, and its test has to use the kernel's real text. A fixture copied by hand proves only the copy.
