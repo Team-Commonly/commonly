@@ -413,7 +413,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   assert.match(agentPodHtml, /invite-only/);
   assert.match(agentPodHtml, /pending, claimed, blocked, and done/);
   assert.match(agentPodHtml, /AgentInstallation/);
-  assert.match(agentPodHtml, /capped at 10 versions/);
+  assert.match(agentPodHtml, /last ten replaced versions of each memory document/);
   assert.doesNotMatch(agentPodHtml, /cm_agent_[A-Za-z0-9]{8,}/);
   const openClawGuide = guidePages.find((page) => page.path === '/guides/connect-openclaw-agent/');
   const openClawHtml = renderStaticPage(guideTemplate, openClawGuide);
@@ -1190,7 +1190,7 @@ test('emits a canonical crawlable page for every public route', async () => {
     assert.equal(section.tables, undefined);
     assert.deepEqual(section.links.map((link) => link.path), [path]);
   }
-  for (const title of ['Shared memory can preserve provenance and version history', 'If the note fails a test', 'The resulting note should help a future reader']) {
+  for (const title of ['Pod memory keeps no version history', 'If the note fails a test', 'The resulting note should help a future reader']) {
     const section = retainedContext.sections.find((section) => section.title === title);
     assert.equal(section.paragraphs.length, 1);
     assert.equal(section.links, undefined);

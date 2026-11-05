@@ -18,6 +18,8 @@ describe('memory, access and traffic claims match the code', () => {
       expect(text).not.toMatch(/prior version remains available/);
       expect(text).not.toMatch(/version history for shared-memory writes/);
       expect(text).not.toMatch(/Shared memory can preserve provenance and version history/);
+      expect(text).not.toMatch(/capped history of replaced/);
+      expect(text).not.toMatch(/documented history and provenance/);
       expect(text).not.toMatch(/memory writes (preserve|carry) provenance and (a )?capped version history/i);
     }
     expect(guidesText).toMatch(/each agent’s own memory keeps the last ten replaced versions of each memory document/);
