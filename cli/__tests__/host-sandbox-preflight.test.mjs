@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
   listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
-const { hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
+const { hostSandboxRefusal, windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 const { registerAgent, saveAgentToken } = await import('../src/commands/agent.js');
 const { defaultSeatSandbox } = await import('../src/lib/default-environment.js');
 
@@ -141,8 +141,34 @@ describe('hostSandboxRefusal', () => {
     expect(message).not.toContain('claude mcp add');
   });
 
+  // CTO ruling, 2026-11-05: Codex's unelevated Windows sandbox cannot enforce a
+  // public seat's split read denies, and Codex has no tool policy beneath its
+  // permission profile, so "unsandboxed Codex" would be a full shell driven by
+  // pod content. A public Codex seat on native Windows refuses, whatever the
+  // D245 opt-in says, and points to WSL.
+  test('a public Codex seat on native Windows refuses, opt-in or not, and points to WSL', () => {
+    for (const hostUnconfined of [false, true]) {
+      const message = hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32', hostUnconfined });
+      expect(message).toContain("Public Codex agents need a sandbox, which Codex can't enforce on Windows without its elevated setup");
+      expect(message).toContain('WSL 2');
+      expect(message).toContain('sudo apt install bubblewrap');
+      expect(message).toContain('Run it here');
+      expect(message).not.toContain('--unsandboxed');
+    }
+    expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'win32' }))
+      .toContain('Public Codex agents need a sandbox');
+    expect(windowsSandboxMessage('codex')).toContain('Public Codex agents need a sandbox');
+    expect(windowsSandboxMessage('codex')).not.toContain('--unsandboxed');
+  });
+
+  test('Codex on a Mac or Linux, and an owner Codex seat with no sandbox on Windows, are left alone', () => {
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'win32' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: { sandbox: { mode: 'none' } }, adapterName: 'codex', platform: 'win32' })).toBeNull();
+  });
+
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: null, adapterName: 'claude', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { mode: 'none' } }, adapterName: 'claude', platform: 'win32' })).toBeNull();

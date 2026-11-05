@@ -554,7 +554,7 @@ describe('performAttach', () => {
       fs.writeFileSync(envPath, JSON.stringify({
         version: 1,
         workspace: { path: path.join(root, 'workspace') },
-        sandbox: { trust: 'public', mode },
+        sandbox: { trust: 'public', ...(mode ? { mode } : {}) },
       }));
       const client = makeClient();
       const error = await performAttach({
@@ -607,6 +607,17 @@ describe('performAttach', () => {
       expect(error.message).not.toContain('--unsandboxed');
       expect(error.message).not.toMatch(/macOS|Seatbelt|requested but unavailable/);
     }
+  });
+
+  test('on win32, a public Codex --env refuses with the Codex line and WSL, before anything is published', async () => {
+    const { error, client } = await attachConfined({
+      adapterName: 'codex', mode: undefined, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain("Public Codex agents need a sandbox, which Codex can't enforce on Windows without its elevated setup");
+    expect(error.message).toContain('WSL 2');
+    expect(error.message).not.toContain('--unsandboxed');
+    expect(client.post).not.toHaveBeenCalled();
   });
 
   test('on darwin and linux, the Seatbelt and bwrap refusals keep their text', async () => {
