@@ -1,0 +1,85 @@
+name: Bring your own on Linux
+
+# The Bring your own page's Linux lines for Claude Code, walked on a real
+# Linux host. Claude Code runs in the CLI's bubblewrap jail (F96).
+#
+# On a pull request it only reads the page's Linux lines and checks they have
+# the shape the walk pastes: no secrets, no network.
+#
+# Dispatched, it walks the published CLI on a GitHub-hosted Ubuntu runner
+# against the live API, with a real model through the model gateway, as the
+# agent the inputs name, on the API-key path (ANTHROPIC_API_KEY; the CLI keeps
+# the key on the host behind its proxy). The person's-own-login path is not
+# walked: that would put a personal Claude login into repo secrets. The run
+# does not post the @mention: it logs "READY: listening in <podId>", someone in
+# that pod posts it, and the run passes when the agent's reply is in the pod
+# and the @mention is acked, or fails 10 minutes after READY. The agent's saved
+# model must be one the gateway key allows, and at least one of its pods must be
+# open to join or publicly readable: when every pod is private and invite-only,
+# the CLI runs it on a copied login, not the key. The two secrets reach only
+# the walk step. See cli/scripts/linux-byo-prod.mjs.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/scripts/linux-byo-prod.mjs'
+      - 'cli/scripts/windows-byo-verdict.mjs'
+      - 'cli/scripts/windows-byo-ack-recorder.mjs'
+      - 'frontend/src/v2/components/V2AgentBYO.tsx'
+      - '.github/workflows/byo-linux.yml'
+  workflow_dispatch:
+    inputs:
+      agent_name:
+        description: 'the agent the token belongs to'
+        type: string
+        required: true
+      instance_id:
+        description: 'its instance id'
+        type: string
+        required: true
+      pod_id:
+        description: 'the pod the @mention is posted in'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  byo:
+    # 22.04: Ubuntu 24.04's AppArmor refuses unprivileged user namespaces, so
+    # bwrap is installed there and every sandbox it starts fails.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check the page's Linux lines
+        if: github.event_name != 'workflow_dispatch'
+        run: node cli/scripts/linux-byo-prod.mjs --check
+      # What the page tells a Linux user to have: bubblewrap and Claude Code
+      # (the version the other real-Claude smokes pin).
+      - name: Install bubblewrap and Claude Code
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          npm i -g @anthropic-ai/claude-code@2.1.318
+      - name: Walk the page's Linux lines
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          # Inputs reach the script as env, never inline in the shell.
+          COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
+          COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
+          COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ secrets.BYO_LINUX_PROD_AGENT_TOKEN }}
+          COMMONLY_BYO_PROD_LLM_KEY: ${{ secrets.BYO_LINUX_PROD_LLM_KEY }}
+        run: |
+          for name in COMMONLY_BYO_PROD_AGENT_TOKEN COMMONLY_BYO_PROD_LLM_KEY; do
+            if [ -n "${!name}" ]; then echo "::add-mask::${!name}"; fi
+          done
+          node cli/scripts/linux-byo-prod.mjs

@@ -27,6 +27,10 @@
  *   this tree  - the install line names this checkout's packed CLI instead
  *                (COMMONLY_BYO_TREE_TARBALL), so a PR that breaks it fails
  *
+ * With COMMONLY_BYO_TARGET=prod it walks the published CLI against the live
+ * API with a real model instead, and a person posts the @mention: see
+ * windows-byo-prod.mjs.
+ *
  * It installs global packages and writes Claude Code's managed settings.
  * Never run it on a machine you use.
  */
@@ -37,6 +41,7 @@ import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
+import { runProdWalk } from './windows-byo-prod.mjs';
 import { installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +83,9 @@ if (process.platform !== 'win32') {
 if (!process.env.CI) {
   console.error('windows-byo-smoke: refuses to run outside CI (it installs global npm packages and writes Claude Code managed settings).');
   process.exit(2);
+}
+if (process.env.COMMONLY_BYO_TARGET === 'prod') {
+  process.exit(await runProdWalk({ pageConnectSnippet }));
 }
 
 const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
