@@ -3,8 +3,9 @@ name: Self-host walk
 # Walks the README's "Quick Start: self-host" as a stranger would, on a clean
 # runner: git clone, ./install.sh, sign up with no mail configured, make a pod,
 # post, then bring your own agent through the published CLI: the stub adapter
-# and Claude Code, which must answer an @mention. Runs on MongoDB and again on
-# FerretDB (docs/self-hosting/ferretdb.md).
+# and Claude Code, which must answer an @mention. Two parallel legs: MongoDB, and
+# FerretDB (docs/self-hosting/ferretdb.md). `commonly login` is interactive, so
+# the walk writes the saved profile a login would write.
 #
 # Nightly and on dispatch. Claude Code runs on SELFHOST_WALK_LLM_KEY, a LiteLLM
 # key capped to one model and a monthly budget, behind SELFHOST_WALK_LLM_BASE
@@ -47,7 +48,6 @@ jobs:
         run: |
           set -x
           cd "$RUNNER_TEMP/commonly"
-          docker compose --env-file .env -f docker-compose.local.yml down
           docker compose --env-file .env -f docker-compose.local.yml -f docker-compose.ferretdb.yml up -d --build
       - name: Wait for every service
         run: |
@@ -59,6 +59,10 @@ jobs:
             sleep 5
           done
           echo "api=$api web=$web"; docker compose --env-file .env $FILES ps; exit 1
+      - name: Install the published CLI and Claude Code
+        run: |
+          npm i -g @commonlyai/cli @anthropic-ai/claude-code >/dev/null 2>&1
+          echo "cli $(commonly --version 2>&1)"; echo "claude $(claude --version 2>&1 | head -1)"
       - name: Walk it like a stranger
         id: walk
         env:
@@ -68,12 +72,15 @@ jobs:
           set +e
           cd "$RUNNER_TEMP"
           API=http://localhost:5000
-          show() { echo "--- $1"; sed -E 's/cm_agent_[A-Za-z0-9_-]+/[token]/g; s/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/[jwt]/g' "$1" | tail -40; }
+          echo "::add-mask::$LLM_BASE"
+          # Everything printed goes through redact: the LLM secrets, JWTs, agent tokens.
+          redact() { LLM_KEY="$LLM_KEY" LLM_BASE="$LLM_BASE" node -e "let t=require('fs').readFileSync(0,'utf8');for(const v of [process.env.LLM_KEY,process.env.LLM_BASE])if(v)t=t.split(v).join('[secret]');process.stdout.write(t.replace(/cm_agent_[A-Za-z0-9_-]+/g,'[token]').replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[jwt]'))"; }
+          show() { echo "--- $1"; tail -40 "$1" | redact; }
           S="$GITHUB_STEP_SUMMARY"
           echo "## Self-host walk on ${{ matrix.store }} (README Quick Start)" | tee -a "$S"
           echo "| Step | HTTP | Result | Detail |" >> "$S"; echo "|---|---|---|---|" | tee -a "$S"
           fail=0
-          row() { echo "| $1 | $2 | $3 | ${4//|//} |" | tee -a "$S"; [ "$3" = PASS ] || fail=1; }
+          row() { echo "| $1 | $2 | $3 | ${4//|//} |" | redact | tee -a "$S"; [ "$3" = PASS ] || fail=1; }
           req() { # method path [json] [token] -> sets CODE and BODY
             local m=$1 p=$2 d=${3:-} t=${4:-}
             local args=(-s -o body.json -w '%{http_code}' -X "$m" "$API$p" -H 'Content-Type: application/json')
@@ -99,7 +106,6 @@ jobs:
           row "read it back" "$CODE" "$(grep -q 'hello from a clean install' body.json && echo PASS || echo FAIL)" ""
 
           # Bring your own agent: the published CLI, as the README's BYO link says.
-          npm i -g @commonlyai/cli >/dev/null 2>&1; echo "cli $(commonly --version 2>&1)" | tee -a "$S"
           # `commonly login` is interactive (device auth or a raw-mode password
           # prompt), so the walk saves the same profile it would write.
           mkdir -p ~/.commonly && chmod 700 ~/.commonly
@@ -121,7 +127,6 @@ jobs:
           row "the stub agent replies in the pod" "-" "$replied" "$(sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' run.log | tail -c 300 | tr '\n' ' ')"
 
           # Bring your own agent, for real: Claude Code through the published CLI.
-          npm i -g @anthropic-ai/claude-code >/dev/null 2>&1; echo "claude $(claude --version 2>&1 | head -1)" | tee -a "$S"
           timeout 120 commonly agent attach claude --pod "$POD" --name walk-claude --instance local < /dev/null > attach2.log 2>&1
           row "agent attach claude" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(sed 's/cm_agent_[A-Za-z0-9_-]*/[token]/g' attach2.log | tail -c 240 | tr '\n' ' ')"
           (ANTHROPIC_BASE_URL="$LLM_BASE" ANTHROPIC_API_KEY="$LLM_KEY" ANTHROPIC_MODEL=claude-haiku-5-5 commonly agent run walk-claude < /dev/null > run2.log 2>&1 &)
