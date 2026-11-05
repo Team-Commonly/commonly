@@ -490,17 +490,29 @@ const reuseOpenToolCall = async (
         status: 'flagged',
         runId: { $ne: waitingRun.runId },
         'waitingRuns.runId': { $ne: waitingRun.runId },
+        // Bounded, and never truncated: a run told it is parked must be in
+        // the decision event, so a full list refuses the next run instead.
+        [`waitingRuns.${MAX_WAITING_RUNS - 1}`]: { $exists: false },
       },
-      // Bounded: an agent retrying in a loop must not grow the row without
-      // limit. The newest runs are the ones still likely to care.
-      { $push: { waitingRuns: { $each: [waitingRun], $slice: -MAX_WAITING_RUNS } } },
+      { $push: { waitingRuns: waitingRun } },
     );
-    // No match is either a run already recorded (fine) or an approval that
-    // closed after the lookup found it open: parking on that would wait for
-    // a decision that has already happened, so the caller claims again.
-    if (recorded && recorded.matchedCount === 0
-      && !await ApprovalAction.exists({ _id: same._id, status: 'flagged' })) {
-      return 'retry';
+    if (recorded && recorded.matchedCount === 0) {
+      const current = await ApprovalAction.findById(same._id).select('status runId waitingRuns').lean() as {
+        status?: string; runId?: unknown; waitingRuns?: Array<{ runId?: unknown }>;
+      } | null;
+      // Closed after the lookup found it open: parking on it would wait for a
+      // decision that has already happened, so the caller claims again.
+      if (!current || current.status !== 'flagged') return 'retry';
+      const known = String(current.runId || '') === String(waitingRun.runId)
+        || (current.waitingRuns || []).some((run) => String(run.runId) === String(waitingRun.runId));
+      if (!known) {
+        return {
+          ok: false,
+          code: 'approval_queue_full',
+          error: `Too many runs are already waiting on this approval (${MAX_WAITING_RUNS}), so this call `
+            + 'was not parked on it. Nothing ran. Wait for the owner to decide it.',
+        };
+      }
     }
   }
   return {
@@ -769,7 +781,12 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       if (reused !== 'retry') return reused;
     }
     const waiting = await ApprovalAction.countDocuments(open);
-    if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS) return queueFull(waiting);
+    // A full queue may hold this call's own twin whose card is still posting
+    // (the lookup above sees only carded rows). Then this is not a new card:
+    // the claim meets the twin on the identity index and settles on it.
+    if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS && !await ApprovalAction.exists(identity)) {
+      return queueFull(waiting);
+    }
   }
 
   const doc = {

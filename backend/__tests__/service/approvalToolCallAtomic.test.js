@@ -358,17 +358,71 @@ describe('a card that lands after its row closed (F184 follow-up)', () => {
   });
 });
 
-describe('waitingRuns is bounded (F184 follow-up)', () => {
-  test('25 reusing runs keep only the 20 most recent', async () => {
+describe('waitingRuns is bounded without dropping anyone (F184 review)', () => {
+  test('20 reusing runs park and all reach the decision; a 21st is refused, not parked, and is not in it', async () => {
     const creator = new mongoose.Types.ObjectId().toString();
     const first = await callWith(ISSUE, { runId: creator, runPodId: String(pod._id) }).then(() => null, (e) => e);
-    const runs = Array.from({ length: 25 }, () => new mongoose.Types.ObjectId().toString());
-    await runs.reduce((prior, runId) => prior.then(() => callWith(ISSUE, { runId, runPodId: String(pod._id) })
-      .then(() => null, (e) => e)), Promise.resolve());
-    // A run that reuses twice is recorded once.
-    await callWith(ISSUE, { runId: runs[24], runPodId: String(pod._id) }).then(() => null, (e) => e);
-    const row = await ApprovalAction.findById(first.details.approvalId).lean();
-    expect(row.waitingRuns.map((r) => String(r.runId))).toEqual(runs.slice(5));
+    const approvalId = String(first.details.approvalId);
+    const runs = Array.from({ length: 20 }, () => new mongoose.Types.ObjectId().toString());
+    const parked = [];
+    await runs.reduce((prior, runId) => prior.then(async () => {
+      parked.push(await callWith(ISSUE, { runId, runPodId: String(pod._id) }).then(() => null, (e) => e));
+    }), Promise.resolve());
+    parked.forEach((e) => {
+      expect(e).toMatchObject({ code: 'approval_required' });
+      expect(String(e.details.approvalId)).toBe(approvalId);
+    });
+    // A run already recorded may call again and still parks.
+    const repeat = await callWith(ISSUE, { runId: runs[3], runPodId: String(pod._id) }).then(() => null, (e) => e);
+    expect(repeat).toMatchObject({ code: 'approval_required' });
+
+    const overflowRun = new mongoose.Types.ObjectId().toString();
+    const overflow = await callWith(ISSUE, { runId: overflowRun, runPodId: String(pod._id) })
+      .then(() => null, (e) => e);
+    expect(overflow).toMatchObject({
+      code: 'approval_queue_full',
+      details: expect.objectContaining({ retryable: false }),
+    });
+    expect(overflow.message).toMatch(/too many runs are already waiting on this approval/i);
+    expect(overflow.details.approvalId).toBeUndefined();
+
+    expect((await resolveApproval({ approvalId, callerUserId: String(human._id), decision: 'approved' })).status)
+      .toBe(200);
+    const [event] = AgentEventService.enqueue.mock.calls.map(([e]) => e)
+      .filter((e) => e.type === 'approval.resolved' && e.payload.approvalId === approvalId);
+    expect([...event.payload.runIds].sort()).toEqual([creator, ...runs].sort());
+    expect(event.payload.runIds).not.toContain(overflowRun);
+  });
+});
+
+describe('a full queue that holds the call\'s own twin (F184 review)', () => {
+  test('three slots held, one by a cardless twin of this call: it parks on the twin once its card lands', async () => {
+    await park({ title: 'Bug 1', body: 'x' });
+    await park({ title: 'Bug 2', body: 'x' });
+    const first = await callWith(ISSUE).then(() => null, (e) => e);
+    const twinId = first.details.approvalId;
+    const { messageId } = await ApprovalAction.findById(twinId).lean();
+    await ApprovalAction.updateOne({ _id: twinId }, { $unset: { messageId: 1 } });
+    const landed = new Promise((resolve) => {
+      setTimeout(() => {
+        ApprovalAction.updateOne({ _id: twinId }, { $set: { messageId } }).then(resolve);
+      }, 200);
+    });
+    const later = await callWith(ISSUE).then(() => null, (e) => e);
+    await landed;
+    expect(later).toMatchObject({ code: 'approval_required' });
+    expect(String(later.details.approvalId)).toBe(String(twinId));
+    expect(await ApprovalAction.countDocuments({})).toBe(3);
+  });
+
+  test('a genuinely new call at capacity is still refused as queue full, cardless rows or not', async () => {
+    await park({ title: 'Bug 1', body: 'x' });
+    await park({ title: 'Bug 2', body: 'x' });
+    const third = await callWith(ISSUE).then(() => null, (e) => e);
+    await ApprovalAction.updateOne({ _id: third.details.approvalId }, { $unset: { messageId: 1 } });
+    const fresh = await callWith({ title: 'Bug 4', body: 'x' }).then(() => null, (e) => e);
+    expect(fresh).toMatchObject({ code: 'approval_queue_full', statusCode: 429 });
+    expect(await ApprovalAction.countDocuments({})).toBe(3);
   });
 });
 
