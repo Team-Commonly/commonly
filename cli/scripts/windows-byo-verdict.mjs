@@ -160,15 +160,21 @@ const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit']
 const REJECTED_KEY = /invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b/i;
 const isRefusalReason = (reason) => reason === 'provider-refused' || /^upstream-refused/.test(String(reason || ''));
 
-// The CLI stamps its own lines with an ISO time; the proxy's and codex's
-// continuation lines carry none, and are kept, because nothing places them.
+// The CLI stamps its own lines with an ISO time; the proxy's refusals and
+// codex's continuation lines carry none. An unstamped line takes the time of
+// the stamped line before it, since the walk reads both streams into one
+// buffer in arrival order. One with no stamped line before it is kept,
+// because nothing places it.
 const LINE_STAMP = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s/;
-const linesSince = (text, since) => (Number.isFinite(since)
-  ? text.split('\n').filter((line) => {
+const linesSince = (text, since) => {
+  if (!Number.isFinite(since)) return text;
+  let lastStamp = null;
+  return text.split('\n').filter((line) => {
     const stamp = LINE_STAMP.exec(line);
-    return !stamp || Date.parse(stamp[1]) >= since;
-  }).join('\n')
-  : text);
+    if (stamp) lastStamp = Date.parse(stamp[1]);
+    return lastStamp === null || lastStamp >= since;
+  }).join('\n');
+};
 
 /**
  * The turns the CLI's log says failed, with the class and upstream status each

@@ -226,6 +226,20 @@ describe('the prod verdict names whose failure it was', () => {
       .toBe('harness');
   });
 
+  // The proxy writes its refusals unstamped, so a refusal takes the time of the
+  // CLI line before it: one under an earlier line was another event's.
+  test('an unstamped proxy refusal under a line from before the @mention is not blamed on it', () => {
+    const before = '2026-11-05T03:00:10.000Z [codex-walk] [inbox.batch] spawning codex\n'
+      + '[codex] provider proxy refused a completion for an unpinned model\n';
+    const after = '2026-11-05T03:00:25.000Z [codex-walk] [inbox.batch] spawning codex\n'
+      + '[codex] provider proxy refused a completion for an unpinned model\n';
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before }).cause).toBe('commonly');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before + after }).cause).toBe('model');
+    // With no CLI line before it, nothing places a refusal, so it still counts.
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: '[codex] provider proxy refused POST /v1/x\n' }).cause)
+      .toBe('harness');
+  });
+
   test('the host proxy refusing an unpinned model is the model route', () => {
     const outcome = prodOutcome({
       ...base, messages: [mention], acks: [],
