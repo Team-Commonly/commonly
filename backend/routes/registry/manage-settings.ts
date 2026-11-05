@@ -2,7 +2,7 @@
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
-import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay } from '../../services/hostedEngine';
+import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
@@ -159,12 +159,17 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       instanceId: normalizeInstanceId(req.query.instanceId),
       viewerId: userId,
     }) : null;
-    // D244: the hosted engine runs a heartbeat at most hourly per install, and
-    // caps an owner's hosted heartbeats a day. The wake panel offers and
-    // previews against these, not against the interval the row stores.
-    const hostedHeartbeat = [source, writable].some((entry) => entry && isHostedInstallation(entry))
-      ? { minMinutes: HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, runsPerDay: hostedHeartbeatRunsPerDay() }
-      : null;
+    // D244: a hosted install's heartbeat runs only on the native engine
+    // (hostedRunsNative, the predicate nativeRuntimeService gates
+    // hostedHeartbeatHold on), at most hourly, and within the owner's daily cap.
+    // A hosted install the engine doesn't run (the Durable Object, a
+    // deprovisioned row, an unfinished migration) runs no heartbeat at all, so
+    // the panel is told 0. The wake panel offers and previews against these.
+    const hostedRow = [source, writable].find((entry) => entry && isHostedInstallation(entry));
+    const hostedHeartbeat = hostedRow ? {
+      minMinutes: HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES,
+      runsPerDay: hostedRunsNative(hostedRow) ? hostedHeartbeatRunsPerDay() : 0,
+    } : null;
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       runtimeNarrowing,
       hostedHeartbeat,
