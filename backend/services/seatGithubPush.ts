@@ -199,7 +199,7 @@ export const pushSeatBranch = async (
   const bundlePath = join(directory, 'input.bundle');
   const url = `https://github.com/${connection.owner}/${connection.repo}.git`;
   try {
-    const { token } = await GitHubAppService.getInstallationToken(connection.installationId);
+    const { token } = await GitHubAppService.getInstallationToken(connection.installationId, connection.app);
     const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
     const env = {
       PATH: '/usr/bin:/bin', HOME: directory, GIT_CONFIG_NOSYSTEM: '1',

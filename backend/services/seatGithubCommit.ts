@@ -25,6 +25,7 @@ import { PROTECTED_PATH } from './seatGithubPush';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
+import type { GitHubAppName } from './githubAppNames';
 
 export const COMMIT_FILES_MAX_FILES = 50;
 export const COMMIT_FILES_MAX_BYTES = 512 * 1024;
@@ -140,12 +141,13 @@ export const parseCommitFilesArgs = (
   return { branch: raw.branch as string, base: raw.base, message: raw.message, files };
 };
 
-interface Connection { owner: string; repo: string; installationId: string }
+interface Connection { owner: string; repo: string; installationId: string; app: GitHubAppName }
 
 const gitData = (connection: Connection) => ({
   owner: connection.owner,
   repo: connection.repo,
   installationId: connection.installationId,
+  app: connection.app,
   forceApp: true,
 });
 

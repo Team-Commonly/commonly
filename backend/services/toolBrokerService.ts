@@ -25,6 +25,7 @@ import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
+import { githubAppOfConfig, isGithubAppConfigured, type GitHubAppName } from './githubAppNames';
 
 export interface ToolDefinitionBase {
   name: string;
@@ -45,6 +46,8 @@ export interface ToolDefinitionBase {
 export interface GithubToolConnection {
   type: 'github-app';
   installationId: string;
+  /** The GitHub App that signs for `installationId` (F172). Required, so no path can drop it to a default. */
+  app: GitHubAppName;
   owner: string;
   repo: string;
   ownerUserId?: string;
@@ -232,6 +235,7 @@ const listIssues: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       perPage,
     });
@@ -273,6 +277,7 @@ const createIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       title,
       body: rawArgs.body as string | undefined,
@@ -299,6 +304,7 @@ const getIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       issueNumber: positiveInteger(rawArgs.issueNumber, 'issueNumber'),
     });
@@ -323,6 +329,7 @@ const getPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
@@ -376,6 +383,7 @@ const createPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       title,
       head,
@@ -485,6 +493,7 @@ const commentPullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
         forceApp: true,
         pullNumber,
       });
@@ -499,6 +508,7 @@ const commentPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       issueNumber: pullNumber,
       body,
@@ -534,6 +544,7 @@ const reviewPullRequestComment: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       pullNumber,
       event: 'COMMENT',
@@ -606,6 +617,7 @@ const listPullRequestFiles: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
@@ -643,6 +655,7 @@ const commentIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       issueNumber,
       body,
@@ -677,6 +690,7 @@ const closeIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       issueNumber,
     });
@@ -707,6 +721,7 @@ const mergePullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
       forceApp: true,
       pullNumber,
     }) as Record<string, unknown>;
@@ -737,6 +752,7 @@ const mergePullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
         forceApp: true,
         pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
         mergeMethod: mergeMethod as 'merge' | 'squash' | 'rebase' | undefined,
@@ -996,7 +1012,7 @@ const resolveConnection = async (
     revokedAt?: Date | null;
     createdBy?: unknown;
     createdAt?: unknown;
-    config?: { installationId?: string; owner?: string; repo?: string };
+    config?: { installationId?: string; owner?: string; repo?: string; app?: unknown };
   } | null;
   const config = row?.config;
   if (
@@ -1037,9 +1053,25 @@ const resolveConnection = async (
     );
   }
 
+  // The App that signs is the row's, never the grant's or the caller's. A row
+  // naming no App predates F172 and is the tools App's; a value that names no
+  // App at all is refused rather than signed with either key.
+  const app = githubAppOfConfig(config.app);
+  if (!app) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection names an unknown GitHub App', 403);
+  }
+  if (app === 'connect' && !isGithubAppConfigured('connect')) {
+    throw new RoomGrantError(
+      'github_app_not_configured',
+      'the Commonly Connect GitHub App is not configured on this instance',
+      503,
+    );
+  }
+
   return {
     type: 'github-app',
     installationId: String(config.installationId),
+    app,
     owner: String(config.owner),
     repo: String(config.repo),
     ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
@@ -1306,6 +1338,7 @@ const providerConnection = (connection: ToolConnection): ToolConnection => (conn
   : {
     type: 'github-app',
     installationId: connection.installationId,
+    app: connection.app,
     owner: connection.owner,
     repo: connection.repo,
   });

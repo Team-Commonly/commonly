@@ -41,6 +41,7 @@ jest.mock('../../../models/Integration', () => {
 
   Integration.findById = jest.fn();
   Integration.findOne = jest.fn();
+  Integration.find = jest.fn();
   Integration.findByIdAndUpdate = jest.fn();
   Integration.aggregate = jest.fn().mockResolvedValue([]);
   Integration.__getLastInstance = () => lastInstance;
@@ -85,6 +86,7 @@ describe('integration manifest validation', () => {
   });
 
   it('creates a user-scoped GitHub App connection without a pod', async () => {
+    Integration.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
     const res = await request(app)
       .post('/api/integrations/github-app')
       .send({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
@@ -93,25 +95,28 @@ describe('integration manifest validation', () => {
     expect(instance.scope).toBe('user');
     expect(instance.status).toBe('connected');
     expect(instance.podId).toBeUndefined();
-    expect(instance.config).toEqual({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
+    // F172: one row per (App, installation, repository); the installation lives
+    // in config only, so the top-level one-row-per-installation slot stays free.
+    expect(instance.installationId).toBeUndefined();
+    expect(instance.config).toEqual({
+      app: 'tools', installationId: '42', owner: 'Team-Commonly', repo: 'commonly', repoKey: 'team-commonly/commonly',
+    });
   });
 
-  it('keeps an existing GitHub App row immutable and rejects retargeting', async () => {
+  it('keeps an existing GitHub App row immutable: the same repository again is 409', async () => {
     const existing = {
+      _id: 'integration-0',
       type: 'github-app',
+      installationId: '42',
       config: { installationId: '42', owner: 'Team-Commonly', repo: 'commonly' },
       save: jest.fn(),
     };
-    Integration.findOne.mockResolvedValue(existing);
+    Integration.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([existing]) });
     const same = await request(app)
       .post('/api/integrations/github-app')
       .send({ installationId: '42', owner: 'Team-Commonly', repo: 'commonly' });
-    expect(same.status).toBe(200);
+    expect(same.status).toBe(409);
     expect(existing.save).not.toHaveBeenCalled();
-    const changed = await request(app)
-      .post('/api/integrations/github-app')
-      .send({ installationId: '42', owner: 'other', repo: 'repo' });
-    expect(changed.status).toBe(409);
   });
 
   afterEach(() => {

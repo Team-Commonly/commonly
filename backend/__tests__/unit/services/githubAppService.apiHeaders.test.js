@@ -39,14 +39,14 @@ describe('GitHubAppService._apiHeaders credential precedence', () => {
     process.env.GITHUB_PAT = 'shared-pat';
     const headers = await GitHubAppService._apiHeaders();
     expect(headers.Authorization).toBe('Bearer app-installation-token');
-    expect(mint).toHaveBeenCalledWith('42');
+    expect(mint).toHaveBeenCalledWith('42', 'tools');
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('mints for an explicit installationId over the default one', async () => {
     configureApp();
     await GitHubAppService._apiHeaders('99');
-    expect(mint).toHaveBeenCalledWith('99');
+    expect(mint).toHaveBeenCalledWith('99', 'tools');
   });
 
   it('falls back to GITHUB_PAT only when no App is configured, and logs it', async () => {
