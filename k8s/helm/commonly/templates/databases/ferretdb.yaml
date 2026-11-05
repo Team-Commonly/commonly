@@ -72,6 +72,18 @@ spec:
           {{- toYaml $d.resources | nindent 10 }}
         # TCP, not the socket: the image restarts Postgres during first init,
         # and only the final server listens on TCP.
+        # First init (initdb, the preload restart, CREATE EXTENSION documentdb)
+        # listens on the socket only. Killing it there leaves a half-built
+        # PGDATA that later starts skip, so liveness waits on this: up to 10 min.
+        startupProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -h 127.0.0.1 -U {{ .Values.postgresql.username }} -d postgres
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 60
         livenessProbe:
           exec:
             command:

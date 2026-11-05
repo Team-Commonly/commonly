@@ -6,7 +6,8 @@ the Mongo wire protocol and stores the documents in Postgres through the Documen
 extension. Then you run one database engine, Postgres, for everything. The backend code
 doesn't change: it still talks to Mongoose. Production (commonly.me) stays on MongoDB.
 
-The decision and measurements are in [ADR-034 D7](../adr/ADR-034-postgres-single-store.md).
+The decision and measurements are in ADR-034 D7 (#3503), and the CI leg that runs the backend
+suite on FerretDB is #3492. Both are open: until they merge, read them on their PRs.
 
 ## When to pick it
 
@@ -49,7 +50,7 @@ ops-runner pod, never in the serving backend. Each run exits 0 only when its ver
 - The backend's `MONGO_URI` and `PG_*` point at them.
 
 Chat gets its own database (`PG_DATABASE`, default `commonly`) on the same server. You
-need Docker Compose 2.24 or later.
+need Docker Compose 2.24.4 or later.
 
 ```bash
 # development stack
@@ -95,6 +96,8 @@ postgresql:
 backend:
   env:
     pgHost: documentdb.<namespace>.svc.cluster.local
+    pgUser: postgres          # = postgresql.username, the documentdb superuser
+    pgDatabase: commonly      # = postgresql.database, created on first init
     pgSslEnabled: "false"
 ```
 
@@ -111,8 +114,9 @@ covered in the [Helm values reference](helm-reference.md).
 
 - **You need a Postgres you own; managed Postgres won't work.** The DocumentDB extension
   needs a superuser and `shared_preload_libraries` (`pg_cron`, `documentdb`). The image
-  sets both on first init. Managed Postgres services don't offer either, so neither the
-  Compose override nor the chart can use one.
+  sets both on first init. No managed Postgres service offers the DocumentDB extension or a
+  real superuser (some allow `pg_cron`), so neither the Compose override nor the chart can
+  use one.
 - **The DocumentDB extension lives in the `postgres` database.** pg_cron's
   `cron.database_name` is `postgres`, so leave `POSTGRES_DB` alone. Chat uses its own
   database.
@@ -129,15 +133,12 @@ covered in the [Helm values reference](helm-reference.md).
   deadlock. The upsert retry doesn't cover them.
 - **A few signup and rename refusals return 500 instead of 409.** Some existing refusals
   read `keyPattern` and surface FerretDB's code-1 duplicate as a 500. #3495 lists them.
-- **Some failing suites aren't traced yet.** The FerretDB CI leg (`backend-ferretdb.yml`)
-  isn't green. Some of its failing suites haven't been traced to a cause (ADR-034 D7).
+- **Some failing suites aren't traced yet.** The FerretDB CI leg (#3492) isn't green. Some
+  of its failing suites haven't been traced to a cause.
 - **No Postgres backup job for this layout.** The chart's mongodb backup CronJob doesn't
   render under `engine: ferretdb`, because `mongodump` against FerretDB is untested. The
-  postgres backup CronJob targets the `postgres` StatefulSet, not `documentdb`. Back up
-  the documentdb Postgres yourself, for example with `pg_dumpall` or a volume snapshot.
-- **The Telegram and Slack connectors don't seed on FerretDB while the legacy index is
-  declared.** At #3491, `InstallableInstallation` still declares the legacy `$in` partial
-  index. FerretDB refuses it, so `syncIndexes()` throws in `seed-builtin-connectors`, and
-  that seed's remaining steps are skipped. The v2 index that enforces uniqueness does
-  build. The legacy index's removal, which #3491 plans as a follow-up, closes this.
+  postgres backup CronJob dumps `backend.env.pgDatabase` only: with the one-engine values
+  above that is the chat database, never the `postgres` database that holds the documents.
+  A green `postgres-backup` does not mean the documents are backed up. Back up the
+  documentdb Postgres yourself, for example with `pg_dumpall` or a volume snapshot.
 - **Not supported, and unused today:** change streams and multi-document transactions.

@@ -110,7 +110,8 @@ app: mongodb
 {{/*
 Which server answers the Mongo wire protocol: "mongodb" (default) or
 "ferretdb" (FerretDB on Postgres with the DocumentDB extension; ADR-034 D7,
-docs/self-hosting/ferretdb.md). Any other value fails the render.
+docs/self-hosting/ferretdb.md). Any other value fails the render wherever this
+helper is evaluated (the mongodb templates and the mongodb backup).
 */}}
 {{- define "commonly.mongodb.engine" -}}
 {{- $engine := .Values.mongodb.engine | default "mongodb" -}}

@@ -10,7 +10,7 @@
 #   docker compose --env-file .env -f docker-compose.local.yml -f docker-compose.ferretdb.yml up -d --build
 #
 # Guide, constraints and required Commonly version: docs/self-hosting/ferretdb.md
-# Needs Docker Compose 2.24+ (the !override / !reset tags below).
+# Needs Docker Compose 2.24.4+ (the !override / !reset tags below).
 #
 # The service names stay `postgres` and `mongo` so the backend's hostnames and
 # depends_on are unchanged: `postgres` becomes Postgres with DocumentDB, and
