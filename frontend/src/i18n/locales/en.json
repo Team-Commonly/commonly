@@ -3254,5 +3254,24 @@
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",
     "answeredWith": "Answered with {{harness}}"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "Once {{name}} joins this pod, an outside-writable connector grant would reach its pods.",
+      "losesWrites": "It would stop writing in:",
+      "targetBlocked": "It couldn't write in this pod either.",
+      "unavailable": "Commonly couldn't check whether joining this pod would limit where {{name}} can write.",
+      "confirm": "Install anyway",
+      "cancel": "Cancel"
+    },
+    "hiddenPods_one": "{{count}} pod you can't see",
+    "hiddenPods_other": "{{count}} pods you can't see",
+    "runtime": {
+      "onePod": "{{name}} can only write in {{pod}}, because an outside-writable grant reaches it.",
+      "oneHiddenPod": "{{name}} can only write in one pod, which you can't see, because an outside-writable grant reaches it.",
+      "noPod_one": "{{name}} can't write in any pod: an outside-writable grant reaches {{count}} of its pods.",
+      "noPod_other": "{{name}} can't write in any pod: outside-writable grants reach {{count}} of its pods.",
+      "unavailable": "Commonly couldn't check whether an outside-writable grant limits where {{name}} can write. Until it can, {{name}}'s writes are refused."
+    }
   }
 }

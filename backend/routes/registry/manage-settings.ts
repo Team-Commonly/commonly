@@ -4,6 +4,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit'
 import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
+import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -150,7 +151,15 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
       hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
     ]);
+    // F164: the owner's readable form of runtime auth's 403
+    // outsider_grant_runtime_narrowed. Same census and rule as the guard.
+    const runtimeNarrowing = visible.length ? await runtimeNarrowingStatus({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      viewerId: userId,
+    }) : null;
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
+      runtimeNarrowing,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
       runtimeSourcePodId: hosted ? null
