@@ -185,8 +185,9 @@ export const confinementReason = (environment, adapter, platform = process.platf
   if (declared.mode === 'none') return 'sandbox_mode_none';
   if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
   // D245: native Windows has no OS jail for any adapter. Claude there runs
-  // only by the user's --unsandboxed (policy without a jail), and Codex runs on
-  // its own profiles with no Commonly sandbox, so neither carries a grant.
+  // only by the user's --unsandboxed (policy without a jail), and a public
+  // Codex seat is refused there outright (host-check.js), so neither carries a
+  // grant.
   if (platform === 'win32') return 'sandbox_mode_unenforceable';
   const mode = resolvePublicSandboxMode(declared, platform);
   if (typeof mode !== 'string' || !ENFORCING_MODES.has(mode)) return 'sandbox_mode_unenforceable';
