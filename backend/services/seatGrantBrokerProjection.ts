@@ -31,7 +31,9 @@
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
-import { GrantBrokerRefusal, grantBrokerRefusal, normalizeAdapter } from './grantBrokerConfinement';
+import {
+  GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon, normalizeAdapter,
+} from './grantBrokerConfinement';
 import { namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { grantBrokerServer, selectLiveGrantsForIdentities } from './grantBrokerProjectionService';
 import {
@@ -55,22 +57,29 @@ export interface GrantProjectionOptions {
   /**
    * Who decides an ABSENT sandbox block. On the daemon path the daemon does: it
    * derives a confining baseline before the seat spawns, so the server must not
-   * refuse, and naming has nothing to lift. On the run path nothing derives a
-   * baseline, and the seat's own `withholdGrantBroker` refuses an absent block
-   * (`sandbox_absent`), so a grant that names the seat must say so on the entry
-   * or the consent the granter gave is dropped client-side. `false` flags a
-   * named entry even when the server itself raised no refusal.
+   * refuse. On the run path nothing derives one, so `false` makes an absent
+   * block a server refusal (`sandbox_absent`, F150 security review): unnamed
+   * grants are withheld HERE, not only by the seat's own guard, and a grant
+   * that names the seat lifts it like any sandbox refusal (F94).
    */
   daemonDecidesAbsentSandbox?: boolean;
 }
 
 /** The server's verdict for one seat, with the caller's declared adapter judged too. */
-const refusalFor = (entry: GrantProjectionEntry, adapter: string | null): GrantBrokerRefusal | null => {
-  if (adapter) {
-    const declared = grantBrokerRefusal(entry.environment, { adapter });
-    if (declared) return declared;
-  }
-  return grantBrokerRefusal(entry.environment, entry.runtime);
+const refusalFor = (
+  entry: GrantProjectionEntry,
+  adapter: string | null,
+  daemonDecidesAbsentSandbox: boolean,
+): GrantBrokerRefusal | null => {
+  const judge = daemonDecidesAbsentSandbox ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
+  const refusals = [
+    adapter ? judge(entry.environment, { adapter }) : null,
+    judge(entry.environment, entry.runtime),
+  ].filter((refusal): refusal is GrantBrokerRefusal => Boolean(refusal));
+  // A refusal naming cannot lift (the row's own adapter cannot confine) wins
+  // over one it can, whichever runtime raised it: returning the first found let
+  // a caller's `claude` sandbox refusal hide the row's `pi`, and naming lifted it.
+  return refusals.find((refusal) => !namingLiftsRefusal(refusal)) || refusals[0] || null;
 };
 
 export const grantServersForIdentities = async (
@@ -113,10 +122,7 @@ export const grantServersForIdentities = async (
         .map((server) => (server as Record<string, unknown>)?.name)
         .filter((name: unknown): name is string => typeof name === 'string'),
     );
-    const refusal = refusalFor(assigned, adapter);
-    // Naming can lift a sandbox refusal; on the run path it also has to travel
-    // with an entry the server did not refuse, for the seat's own guard.
-    const namingCanApply = refusal ? namingLiftsRefusal(refusal) : !daemonDecidesAbsentSandbox;
+    const refusal = refusalFor(assigned, adapter, daemonDecidesAbsentSandbox);
     const servers: Record<string, unknown>[] = [];
     let refused = false;
     for (const grant of grants) {
@@ -125,7 +131,7 @@ export const grantServersForIdentities = async (
       // F94: a grant that names this seat (its owner's own agent, with consent)
       // rides even when the seat cannot confine it.
       // eslint-disable-next-line no-await-in-loop
-      const byoNamed = namingCanApply && await namingLiftsFor(grant, identityId);
+      const byoNamed = namingLiftsRefusal(refusal) && await namingLiftsFor(grant, identityId);
       if (refusal && !byoNamed) {
         // The grant is live and applies to this seat; the seat cannot be held
         // to it, so it is withheld rather than projected unenforced.

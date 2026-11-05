@@ -248,3 +248,31 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
   }
   return null;
 };
+
+/**
+ * F150 (security review, HIGH): an ABSENT sandbox block is left to the daemon
+ * above because the daemon derives a confining baseline before it spawns the
+ * seat. A seat with no daemon — `commonly agent run` with no machine binding,
+ * or a token pasted into a client from the Connect page — has nothing that
+ * derives one, so the same absence confines nothing there. The reason string is
+ * the cli guard's own (`cli/src/lib/grant-broker-guard.js`, `sandbox_absent`),
+ * so one refusal reads the same from either emitter. It is a sandbox refusal,
+ * so a grant that names the seat (F94, `namingLiftsRefusal`) lifts it.
+ */
+export const SANDBOX_ABSENT_REASON = 'sandbox_absent';
+
+export const absentSandboxRefusal = (environment: unknown): GrantBrokerRefusal | null => {
+  const sandbox = (environment as { sandbox?: unknown } | null | undefined)?.sandbox;
+  if (sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)) return null;
+  return refusalFor(
+    SANDBOX_ABSENT_REASON,
+    'this seat runs with no daemon to derive a sandbox, and its saved settings declare no sandbox block,'
+      + " so nothing confines it; declare sandbox.trust 'public', name this agent on the grant,"
+      + ' or drop the grant broker from this seat',
+  );
+};
+
+/** `grantBrokerRefusal` for a seat no daemon spawns: an absent block refuses too. */
+export const grantBrokerRefusalWithoutDaemon = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => (
+  grantBrokerRefusal(environment, runtime) ?? absentSandboxRefusal(environment)
+);

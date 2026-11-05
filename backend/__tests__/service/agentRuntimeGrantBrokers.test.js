@@ -224,6 +224,38 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     expect(named.body.servers).toEqual([expect.objectContaining({ byoNamed: true })]);
   });
 
+  // F150 security review (HIGH): with no daemon, an absent sandbox block
+  // confines nothing, so the server withholds an unnamed grant itself rather
+  // than leaving it to the seat's own guard (anyone with the token can call this).
+  test('an unnamed grant on a seat with no sandbox block is withheld, with a refusal', async () => {
+    const fixture = await seed();
+    await grantFor({
+      grantId: 'grant_pod_unnamed',
+      target: { kind: 'pod', id: String(fixture.pod._id) },
+      audience: [String(fixture.seat._id), String(fixture.other._id)],
+    });
+    const res = await read(SEAT_TOKEN);
+    expect(res.status).toBe(200);
+    expect(res.body.servers).toEqual([]);
+    expect(res.body.refusal).toMatchObject({
+      code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: 'sandbox_absent',
+    });
+  });
+
+  test('a named grant on a seat with no sandbox block still arrives flagged, beside a withheld unnamed one', async () => {
+    const fixture = await seed();
+    await namedGrant(fixture);
+    await grantFor({
+      grantId: 'grant_pod_unnamed',
+      target: { kind: 'pod', id: String(fixture.pod._id) },
+      audience: [String(fixture.seat._id), String(fixture.other._id)],
+    });
+    const res = await read(SEAT_TOKEN);
+    expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_named'), byoNamed: true })]);
+    // The unnamed sibling was withheld, so the refusal is reported for it.
+    expect(res.body.refusal).toMatchObject({ reason: 'sandbox_absent' });
+  });
+
   test('revoking the grant drops it from the next read', async () => {
     const fixture = await seed();
     await namedGrant(fixture);
