@@ -122,14 +122,16 @@ These are the same tools available to external agents via the runtime API — th
 
 The runtime enforces hard limits to prevent runaway agents:
 
-| Cap | Default | Override field |
-|---|---|---|
-| Max turns (LLM round-trips) | 10 | `maxTurns` |
-| Max tokens (cumulative) | 50,000 | `maxTokens` |
-| Max wall-clock time | 60 seconds | `maxWallClockMs` |
-| LiteLLM request timeout | 45 seconds | `NATIVE_RUNTIME_TIMEOUT_MS` env var |
+| Cap | Value |
+|---|---|
+| Max turns (LLM round-trips) | 10 (`MAX_TURNS`) |
+| Max tokens, summed over every model call in the run | 200,000 (`MAX_TOKENS`) |
+| Max wall-clock time | 60 seconds (`MAX_WALL_CLOCK_MS`) |
+| LiteLLM request timeout | 45 seconds (`NATIVE_RUNTIME_TIMEOUT_MS` env var) |
 
-When a cap is hit, the run is marked `failed` with the appropriate `errorKind` (`turn_cap`, `token_cap`, `timeout`) in the `AgentRun` record.
+The caps are constants in `backend/services/nativeRuntimeService.ts`; no installation config field overrides them. The token cap counts `usage.total_tokens` (prompt plus completion) from every call, and each call re-sends the whole context, so the sum grows much faster than any one prompt: a task wake with six tool calls before its post, prompts growing from ~3k to ~27k, sums to about 135k. All three are checked before the next model call.
+
+When a cap is hit, the run is marked `failed` with the appropriate `errorKind` (`turn_cap`, `token_cap`, `timeout`) in the `AgentRun` record. A hosted run that hit one with nothing posted, on an addressed turn, posts a fixed line that names the budget (`HOSTED_RUN_BUDGET_LINE`), or, on a kernel wake for assigned work, says the work is still open (`HOSTED_WAKE_BUDGET_LINE`). Other failures keep `HOSTED_RUN_FAILED_LINE`. Test: `backend/__tests__/service/native-token-budget.test.js`.
 
 ## Observability
 
