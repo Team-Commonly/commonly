@@ -531,3 +531,48 @@ describe('V2AgentBYO — detected OS on the availability request', () => {
       .toBe('/api/hosted/availability?os=other');
   });
 });
+
+// F164: an install that an outside-writable grant would narrow is answered 409
+// first. "Run it here" must stop there (nothing provisioned) and confirm only on
+// "Install anyway".
+describe('V2AgentBYO — Run it here with the outsider-grant narrowing warning', () => {
+  afterEach(() => window.history.pushState({}, '', '/'));
+
+  test('shows the warning, provisions nothing, and confirms on the second press', async () => {
+    mockGet({ configured: true, status: { runtime: { lastPollAt: 1 } } });
+    const narrowing = {
+      code: 'outsider_grant_runtime_narrowed',
+      losesWrites: [{ podId: 'hq', name: 'Team HQ' }],
+      hiddenLosesWritesCount: 0,
+      targetWritable: true,
+    };
+    axios.post.mockImplementation((url, body) => {
+      if (url === '/api/registry/install' && !body.confirmNarrowing) {
+        return Promise.reject({ response: { status: 409, data: { code: 'outsider_grant_narrowing_confirm_required', narrowing } } });
+      }
+      return Promise.resolve({ data: { ok: true, ready: true } });
+    });
+    const url = '/v2/agents/byo?pod=p1&mode=hosted';
+    window.history.pushState({}, '', url);
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={[url]}>
+          <V2AgentBYO />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await screen.findByTestId('byo-hosted-compact');
+    const act = actButton();
+    await waitFor(() => expect(act).toBeEnabled());
+    fireEvent.click(act);
+
+    expect(await screen.findByTestId('byo-narrowing-pods')).toHaveTextContent('Team HQ');
+    expect(axios.post.mock.calls.some(([u]) => u === '/api/hosted/provision')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install anyway' }));
+    await waitFor(() => expect(axios.post.mock.calls.filter(([u]) => u === '/api/registry/install')).toHaveLength(2));
+    expect(axios.post.mock.calls.filter(([u]) => u === '/api/registry/install')[1][1])
+      .toMatchObject({ podId: 'p1', confirmNarrowing: true, config: { runtime: { runtimeType: 'hosted' } } });
+    await waitFor(() => expect(axios.post.mock.calls.some(([u]) => u === '/api/hosted/provision')).toBe(true));
+  });
+});

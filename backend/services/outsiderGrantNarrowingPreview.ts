@@ -205,7 +205,17 @@ export const runtimeNarrowingStatus = async ({
   // One reached pod out of one loses nothing: the seat writes where it lives.
   if (!narrowed.size || (narrowed.size === 1 && podIds.length === 1)) return null;
   const onlyPod = narrowed.size === 1 ? [...narrowed][0] : null;
-  const named = onlyPod ? await namePodsForViewer([onlyPod], viewerId) : { visible: [], hiddenCount: 0 };
+  let named: { visible: NarrowingPodRef[]; hiddenCount: number } = { visible: [], hiddenCount: 0 };
+  if (onlyPod) {
+    try {
+      named = await namePodsForViewer([onlyPod], viewerId);
+    } catch (error) {
+      // The notice must not take the settings page down; without a name, say
+      // only that the pod is one the owner can't see (fails toward privacy).
+      console.error('[agent-settings] narrowing pod name lookup failed:', error);
+      named = { visible: [], hiddenCount: 1 };
+    }
+  }
   return {
     code: RUNTIME_NARROWED_CODE,
     narrowedPodCount: narrowed.size,

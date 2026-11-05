@@ -216,6 +216,51 @@ describe('install-time warning for the outsider-grant narrowing', () => {
     });
   });
 
+  it('reports unavailable, not clear, when the grant lookup fails, since the guard refuses every write then', async () => {
+    // Through the route the join policy reads grants first and fails closed
+    // on the same outage, so the preview's own failure path is checked here.
+    await grantReachingSeatIn(target);
+    const spy = jest.spyOn(model(RoomGrant), 'find').mockImplementation(() => { throw new Error('census down'); });
+    try {
+      const result = await previewInstallNarrowing({
+        agentName: SEAT, instanceId: 'default', targetPodId: String(target._id), viewerId: owner._id, runtimeType: 'webhook',
+      });
+      expect(result).toEqual({ status: 'unavailable' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('still loads the owner\'s settings when the pod-name lookup fails, naming no pod', async () => {
+    await grantReachingSeatIn(target);
+    expect((await install(target._id, { confirmNarrowing: true })).status).toBe(200);
+    // Fail only the narrowing notice's name lookup, not the page's own reads.
+    const realFind = Pod.find.bind(Pod);
+    const spy = jest.spyOn(Pod, 'find').mockImplementation((query, ...rest) => {
+      const q = realFind(query, ...rest);
+      const realSelect = q.select.bind(q);
+      q.select = (fields) => {
+        if (String(fields) === '_id name type members') throw new Error('pod lookup down');
+        return realSelect(fields);
+      };
+      return q;
+    });
+    try {
+      const settings = await request(app)
+        .get(`/api/registry/agents/${SEAT}/manage-settings?instanceId=default`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      expect(settings.status).toBe(200);
+      expect(settings.body.runtimeNarrowing).toEqual({
+        code: 'outsider_grant_runtime_narrowed',
+        narrowedPodCount: 1,
+        writablePod: null,
+        writablePodHidden: true,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   const previewNative = () => previewInstallNarrowing({
     agentName: SEAT,
     instanceId: 'default',

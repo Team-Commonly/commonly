@@ -204,6 +204,37 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-waiting')).toBeInTheDocument();
   });
 
+  // F164: a placement an outside-writable grant would narrow is answered 409
+  // first; no placement request is filed until "Install anyway".
+  test('an install that would narrow its writes warns first and files no placement until confirmed', async () => {
+    mockGet();
+    const narrowing = {
+      code: 'outsider_grant_runtime_narrowed',
+      losesWrites: [{ podId: 'hq', name: 'Team HQ' }],
+      hiddenLosesWritesCount: 0,
+      targetWritable: true,
+    };
+    axios.post.mockImplementation((url, body) => {
+      if (url === '/api/registry/install' && !body.confirmNarrowing) {
+        return Promise.reject({ response: { status: 409, data: { code: 'outsider_grant_narrowing_confirm_required', narrowing } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    expect(await screen.findByTestId('byo-narrowing-pods')).toHaveTextContent('Team HQ');
+    expect(axios.post.mock.calls.some(([u]) => u === '/api/agent-binding/request')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install anyway' }));
+    await waitFor(() => expect(axios.post.mock.calls.some(([u]) => u === '/api/agent-binding/request')).toBe(true));
+    expect(axios.post.mock.calls.filter(([u]) => u === '/api/registry/install')[1][1])
+      .toMatchObject({ agentName: 'sam-local', podId: 'p1', confirmNarrowing: true });
+  });
+
   test('a persona hire onto a machine carries the persona sentence too (#1649)', async () => {
     mockGet();
     axios.post.mockResolvedValue({ data: {} });
