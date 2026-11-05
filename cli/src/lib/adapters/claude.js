@@ -643,14 +643,49 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
 // be admitted through Seatbelt. Linux caps one argv string at 128 KiB, so the
 // total is capped well under it.
 const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
-const publicSkillPromptArgs = async (skillSources) => {
+const publicSkillPromptArgs = async (skillSources, preamble = '') => {
   const included = [];
-  const text = await skillsAsText(skillSources, {
+  const skills = await skillsAsText(skillSources, {
     maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES,
     label: 'claude',
     onIncluded: (source) => included.push(source),
   });
+  const text = [preamble, skills].filter(Boolean).join('\n\n');
   return { args: text ? ['--append-system-prompt', text] : [], included };
+};
+
+// What a confined seat may do on this machine, as prompt text. The CLI logs
+// the same facts to the owner's terminal (workspaceGrantLine in agent.js), but
+// the model never saw them: on 2026-11-05 a read-only workspace seat told its
+// user it could "read and edit files, run shell commands", which is Claude
+// Code's usual kit, not this seat's. Each sentence follows the policy above:
+// a write grant adds Edit, Write and Bash (no Bash on a host with no jail), a
+// web grant adds WebFetch only, and WebSearch is always denied.
+export const seatPermissionsText = ({
+  trust, allow = [], noShell = false, gitTool = false,
+}) => {
+  const write = trust === 'workspace' && allow.includes('write');
+  const web = trust === 'workspace' && allow.includes('web');
+  const lines = ['## What you can do on this machine', ''];
+  if (write) {
+    lines.push(noShell
+      ? 'You can read and edit the files in your working folder. You cannot run shell commands.'
+      : 'You can read and edit the files in your working folder and run shell commands there. '
+        + 'Its .git is read-only, so you cannot commit.');
+  } else {
+    lines.push(`You can read the files in your working folder${
+      gitTool ? ', and read its history through the read-only git tool' : ''}.`);
+    lines.push(web
+      ? 'You cannot edit or create files or run shell commands.'
+      : 'You cannot edit or create files, run shell commands, or use web search or fetch.');
+  }
+  if (web) lines.push('You can fetch web pages. You cannot use web search.');
+  else if (write) lines.push('You cannot use the web search or fetch tools.');
+  // A shell's commands can reach the network (workspaceGrantLine says so too),
+  // so a seat with one is never told it is offline.
+  if (write && !noShell) lines.push('Your shell commands can reach the network.');
+  lines.push('When someone asks what you can do, describe these limits, not Claude Code\'s usual tools.');
+  return lines.join('\n');
 };
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
@@ -1677,7 +1712,12 @@ export default {
         }
       }
       if (publicTrust) {
-        const prompt = await publicSkillPromptArgs(mountedSkills);
+        const prompt = await publicSkillPromptArgs(mountedSkills, seatPermissionsText({
+          trust: ctx.environment?.sandbox?.trust === 'workspace' ? 'workspace' : 'public',
+          allow: workspaceGrants(ctx.environment?.sandbox),
+          noShell: policyOnlyHost(ctx),
+          gitTool: Boolean(ctx.workspaceGit),
+        }));
         publicSkillArgs = prompt.args;
         skillMount = {
           mounted: prompt.included,

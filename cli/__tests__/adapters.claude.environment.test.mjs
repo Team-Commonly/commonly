@@ -26,6 +26,7 @@ await jest.unstable_mockModule('child_process', () => ({
 
 const claudeModule = await import('../src/lib/adapters/claude.js');
 const claude = claudeModule.default;
+const { seatPermissionsText } = claudeModule;
 const { spawnSync } = await import('child_process');
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
@@ -1232,13 +1233,17 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(calls[0].args).not.toContain('--disable-slash-commands');
   });
 
-  test('a public seat that declares no skills gets no appended prompt', async () => {
+  // Since 2026-11-05 every confined seat's appended prompt opens with its
+  // permissions, so "no skills" means no skill text, not no prompt.
+  test('a public seat that declares no skills gets its permissions and no skill text', async () => {
     const { impl, calls } = makeSpawnImpl();
     await publicSpawn(impl, {
       environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'public' } },
     });
 
-    expect(appended(calls[0].args)).toBeNull();
+    const text = appended(calls[0].args);
+    expect(text).toContain('## What you can do on this machine');
+    expect(text).not.toContain('## Skill:');
   });
 
   test('a declared skill with no SKILL.md is skipped, not fatal', async () => {
@@ -1247,7 +1252,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     await publicSpawn(impl);
 
     expect(calls).toHaveLength(1);
-    expect(appended(calls[0].args)).toBeNull();
+    expect(appended(calls[0].args)).not.toContain('## Skill:');
   });
 
   // #2354: every arm above forces darwin, so dropping the bwrap
@@ -1462,6 +1467,65 @@ describe('claude adapter — a workspace seat', () => {
     expect(prompt).toContain('kept notes');
     expect(prompt).not.toContain('commonly_save_my_memory');
     expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(cwd)}"))`);
+  });
+
+  // Growth's 0.1.256 walk (2026-11-05): a read-only workspace seat told its
+  // user it could "read and edit files, run shell commands". The CLI logged the
+  // seat's real permissions to the terminal and never told the model, so it
+  // described Claude Code's usual tools. The seat now gets them as prompt text.
+  const appendedText = (args) => {
+    const at = args.indexOf('--append-system-prompt');
+    return at === -1 ? '' : args[at + 1];
+  };
+
+  test('a read-only workspace seat is told it cannot edit files, run commands or reach the web', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('## What you can do on this machine');
+    expect(text).toContain('You can read the files in your working folder');
+    expect(text).toContain('You cannot edit or create files, run shell commands, or use web search or fetch.');
+    expect(text).toContain('When someone asks what you can do, describe these limits');
+  });
+
+  test('a workspace seat granted write and web is told it can edit, run commands and fetch pages, but not commit', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['write', 'web'] });
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('You can read and edit the files in your working folder and run shell commands there.');
+    expect(text).toContain('You can fetch web pages.');
+    expect(text).toContain('Its .git is read-only, so you cannot commit.');
+    expect(text).toContain('Your shell commands can reach the network.');
+    expect(text).not.toContain('You cannot edit');
+  });
+
+  // #3504 (CodeRabbit): the git clause appears exactly when the tool is mounted.
+  test('a read-only workspace seat hears about the read-only git tool only when it is mounted', () => {
+    const withGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: true });
+    const withoutGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: false });
+    expect(withGit).toContain('You can read the files in your working folder, and read its history through the read-only git tool.');
+    expect(withoutGit).toContain('You can read the files in your working folder.');
+    expect(withoutGit).not.toContain('git');
+  });
+
+  test('a write seat on a host with no jail is told it can edit but has no shell, and never told .git is held', () => {
+    const text = seatPermissionsText({ trust: 'workspace', allow: ['write'], noShell: true, gitTool: true });
+    expect(text).toContain('You can read and edit the files in your working folder. You cannot run shell commands.');
+    expect(text).toContain('You cannot use the web search or fetch tools.');
+    expect(text).not.toContain('.git');
+    expect(text).not.toContain('reach the network');
+  });
+
+  test('a public seat is told it can only read its working folder', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' });
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('You can read the files in your working folder');
+    expect(text).toContain('You cannot edit or create files, run shell commands, or use web search or fetch.');
+    expect(text).not.toContain('read-only git');
   });
 
   test('its skills are copied to the scratch folder, never into the project, and arrive as prompt text', async () => {
