@@ -1373,14 +1373,19 @@ const asGithubConnection = (connection: ToolConnection): GithubToolConnection =>
   return connection;
 };
 
-/** F172 HOLD 1: every non-read call on a Connect connection re-proves the owner's access. */
-const assertConnectWriteProven = async (
+/**
+ * Every call on a Connect connection, read or write, re-proves the owner's
+ * access with their current GitHub user token (F172 HOLD 1, F173). `fresh`
+ * skips the 60s per-row cache: an approved call at execute, and a write that
+ * runs with no parked approval. Tools rows are never re-proved.
+ */
+const assertConnectProven = async (
   definition: ToolDefinition,
   connection: ToolConnection,
   options: { fresh?: boolean } = {},
 ): Promise<void> => {
   if (definition.connectionType !== 'github-app' || connection.type !== 'github-app') return;
-  if (definition.requiredWriteMode === 'read' || connection.app !== 'connect') return;
+  if (connection.app !== 'connect') return;
   await assertConnectStillProven(connection, options);
 };
 
@@ -1699,10 +1704,6 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       assertPinnedArgValues(definition, parsedArgs);
     }
 
-    // F172 HOLD 1: a Connect write runs on the owner's CURRENT access, proved
-    // before it parks or runs. A short per-row cache absorbs bursts.
-    await assertConnectWriteProven(definition, connection);
-
     const irreversible = typeof definition.irreversible === 'function'
       ? definition.irreversible(parsedArgs)
       : definition.irreversible === true;
@@ -1713,6 +1714,14 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     const requiresConfirmation = irreversible
       || definition.requiresApproval === true
       || (grant.writeMode === 'write-with-confirm' && definition.requiredWriteMode !== 'read');
+
+    // F172 HOLD 1 / F173: a Connect call runs on the owner's CURRENT access,
+    // proved before it parks or runs. Reads and parks may use the short
+    // per-row cache; a write that runs now, with no approval to re-prove at
+    // execute, proves fresh.
+    await assertConnectProven(definition, connection, {
+      fresh: !requiresConfirmation && definition.requiredWriteMode !== 'read',
+    });
     if (requiresConfirmation) {
       const callId = `tool_call_${randomUUID()}`;
       // No guard on `prepareApproval`: the helper answers for both members, and
@@ -1977,7 +1986,7 @@ export const executeApprovedToolCall = async (
     if (input.tool === 'github.push_branch') parseSeatPushArgs(executionArgs, input.agentUserId);
     // Proved again at the moment of the write, never from the cache: an
     // approval can land long after the park.
-    await assertConnectWriteProven(definition, connection, { fresh: true });
+    await assertConnectProven(definition, connection, { fresh: true });
     const budgetEntries = await budgetEntriesFor(grant);
     if (input.tool === 'github.push_branch') budgetEntries.push(...seatPushBudgetEntries(input));
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
