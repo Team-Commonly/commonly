@@ -172,8 +172,9 @@ rows by the registry's keys, and hands a row with no Installable parent to
 `<type>.relay` only when its adapter declares `directRows` (Telegram's legacy
 binds, and every Discord row, which the OAuth install writes directly).
 
-**Discord** sends through the channel webhook the install created
-(`config.webhookUrlRef`), never a bot token in the browser:
+**Discord** sends server-side through the channel webhook the install
+created, resolved from the stored `config.webhookUrlRef`. Outbound uses no bot
+token at all:
 - `allowed_mentions: { parse: [] }`, so agent text pings nobody in the guild,
   and `@everyone`/`@here` are defused in the text too;
 - `[Pod] **Agent**: text`, cut to Discord's 2000 characters with an ellipsis
@@ -184,7 +185,7 @@ binds, and every Discord row, which the OAuth install writes directly).
   design (rule 19):** the line is still in the pod, and the audience is the
   operator log, which names the row and channel. Pacing is per replica;
   Discord's 429 is the backstop between replicas;
-- 10003, 10015, 50001 and 50013 flip the row to `status: 'error'` with a
+- 10003, 10015, 50001, 50013 and 50027 flip the row to `status: 'error'` with a
   reason written for a person (`connectorDeliveryFailureService`). The flip
   keeps `config.channelId` (F90 fixes the binding); `POST /:id/connect` sets
   the row connected again once the bot can post. It does not recreate a

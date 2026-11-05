@@ -630,6 +630,11 @@ export const useChannelConnectors = () => {
     try {
       if (connector.installationId) {
         await api.del(installableLifecyclePath(connector.type));
+      } else if (connector.type === 'discord') {
+        // A Discord row is written by the OAuth install, with no Installable
+        // parent. The full DELETE removes its channel webhook as well; the
+        // isActive PATCH below would leave that webhook able to post.
+        await api.del(`/api/integrations/${connector._id}`);
       } else {
         await api.patch(`/api/integrations/${connector._id}`, { isActive: false });
       }
@@ -738,7 +743,9 @@ export const useChannelConnectors = () => {
         ? t('connectors.discordRowMirror', { defaultValue: 'every agent line reaches everyone in the channel' })
         : t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' });
       const attentionLabel = isDiscord
-        ? t('connectors.discordRowAttention', { defaultValue: 'escalations reach everyone in the channel' })
+        ? t('connectors.discordRowAttention', {
+          defaultValue: 'escalations and the lead agent’s lines reach everyone in the channel',
+        })
         : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' });
       const markLabel = relay
         ? (mirror ? mirrorLabel : attentionLabel)

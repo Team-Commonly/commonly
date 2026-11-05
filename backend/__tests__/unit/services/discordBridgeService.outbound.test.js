@@ -133,6 +133,10 @@ describe('who it sends for', () => {
     ['live relay off', discordRow({ liveRelay: false })],
     ['an admin pause', discordRow({ adminPause: { reason: 'x' } })],
     ['an error row', discordRow({}, { status: 'error' })],
+    // CodeRabbit 4475336541: disconnect sets 'disconnected' and leaves isActive
+    // and liveRelay alone, so status itself must be 'connected'.
+    ['a disconnected row', discordRow({}, { status: 'disconnected' })],
+    ['a pending row', discordRow({}, { status: 'pending' })],
     ['no proven installer', discordRow({ discordUserId: undefined })],
     ['live relay switched on by someone other than the creator', discordRow({ linkedUserId: '64b7f0c2a1b2c3d4e5f60799' })],
     ['a row for another pod', discordRow({}, { podId: '64b7f0c2a1b2c3d4e5f60700' })],
@@ -162,8 +166,23 @@ describe('who it sends for', () => {
     expect(axios.post).toHaveBeenCalledTimes(1);
   });
 
-  test('sends nothing when the stored webhook URL is not a Discord webhook', async () => {
-    connectorSecrets.get.mockResolvedValue('https://example.com/collect');
+  test('the fallback lookup selects only a connected row', async () => {
+    Integration.findOne.mockReturnValue({ lean: async () => null });
+    await relayAgentMessageThroughAdapter(discordRelayAdapter, {
+      podId: POD, agentUsername: 'kai', displayName: 'Kai', content: 'x', podMessageId: 'm',
+    });
+    expect(Integration.findOne).toHaveBeenCalledWith(expect.objectContaining({ status: 'connected' }));
+  });
+
+  test.each([
+    ['a foreign host', 'https://example.com/collect'],
+    ['plain http', 'http://discord.com/api/webhooks/1/x'],
+    ['a look-alike host', 'https://discord.com.evil.example/api/webhooks/1/x'],
+    ['userinfo before another host', 'https://discord.com@evil.example/api/webhooks/1/x'],
+    ['a query string', 'https://discord.com/api/webhooks/1/x?foo=bar'],
+    ['a non-numeric webhook id', 'https://discord.com/api/webhooks/abc/x'],
+  ])('sends nothing when the stored webhook URL is %s', async (_label, url) => {
+    connectorSecrets.get.mockResolvedValue(url);
     await relay(discordRow());
     expect(axios.post).not.toHaveBeenCalled();
   });

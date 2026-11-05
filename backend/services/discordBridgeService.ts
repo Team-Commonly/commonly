@@ -273,11 +273,13 @@ const DISCORD_WEBHOOK_URL = new RegExp(
 // account the install proved (`linkedUserId` is stamped from that caller, and
 // liveRelayRefusal admits only the creator holding a `discordUserId`). A row
 // that fails it was turned on some other way and stays silent.
+// `connected` exactly: disconnect writes 'disconnected' and leaves isActive and
+// liveRelay as they were, and a webhook whose delete failed still posts.
 const isRelayableIntegration = (integration: DiscordIntegrationDoc, podId: string): boolean => (
   isGatedPodTarget(integration, podId)
   && integration.type === 'discord'
   && integration.isActive === true
-  && integration.status !== 'error'
+  && integration.status === 'connected'
   && integration.config?.liveRelay === true
   && !integration.config?.adminPause
   && Boolean(integration.config?.serverId)
@@ -291,7 +293,7 @@ const findLiveIntegration = async (podId: string): Promise<DiscordIntegrationDoc
   Integration.findOne({
     type: 'discord',
     isActive: true,
-    status: { $ne: 'error' },
+    status: 'connected',
     podId,
     'config.liveRelay': true,
     'config.channelId': { $exists: true, $ne: null },

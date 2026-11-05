@@ -346,6 +346,32 @@ describe('Discord inbound live relay (F131)', () => {
       expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
     });
 
+    // CodeRabbit nitpick: the pre-filter is only as good as the cache refresh's
+    // projection. This runs the real refresh over a find() that drops every
+    // field the projection does not name.
+    test('the real cache refresh carries discordUserId, so the installer still relays', async () => {
+      discordGatewayService.ensureChannelCache.mockRestore();
+      discordGatewayService.cacheExpiresAt = 0;
+      const stored = row();
+      Integration.find.mockReturnValue({
+        select: (projection) => ({
+          lean: async () => {
+            const fields = String(projection).split(/\s+/);
+            const config = Object.fromEntries(Object.entries(stored.config)
+              .filter(([key]) => fields.includes(`config.${key}`)));
+            return [{ _id: 'integration-1', config }];
+          },
+        }),
+      });
+      try {
+        await discordGatewayService.handleMessageCreate(discordMessage());
+        expect(Integration.findById).toHaveBeenCalledWith('integration-1');
+        expect(writes()).toHaveLength(1);
+      } finally {
+        jest.spyOn(discordGatewayService, 'ensureChannelCache').mockResolvedValue();
+      }
+    });
+
     test('does not read the row when the cache holds no proven installer', async () => {
       discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target({ discordUserId: undefined })]);
 

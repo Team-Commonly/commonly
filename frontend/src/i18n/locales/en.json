@@ -2666,7 +2666,7 @@
     "thisSlackWorkspace": "This Slack workspace",
     "yourSlackUser": "your Slack user",
     "discordRowMirror": "every agent line reaches everyone in the channel",
-    "discordRowAttention": "escalations reach everyone in the channel",
+    "discordRowAttention": "escalations and the lead agent’s lines reach everyone in the channel",
     "discordMirrorHint": "Every agent message is posted in the Discord channel, where everyone in the server can read it.",
     "discordAttentionHint": "Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.",
     "discordInboundNote": "Your own messages in the channel reach the pod as you.",

@@ -398,8 +398,7 @@ const ChannelPanel: React.FC<Props> = ({ m, item: panelItem }) => {
               </div>
             )}
             {connected && userScoped && renderGates(connector)}
-            {/* Discord's removal is its own uninstall path, not this PATCH. */}
-            {!isDiscord && renderRemove(item)}
+            {renderRemove(item)}
           </section>
         )}
       </aside>

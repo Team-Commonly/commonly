@@ -2667,7 +2667,7 @@
       "notion": "你的 Notion 工作空间中的页面、评论和数据库。"
     },
     "discordRowMirror": "智能体的每条消息都会发给频道里的所有人",
-    "discordRowAttention": "升级消息会发给频道里的所有人",
+    "discordRowAttention": "升级消息和主导智能体的消息会发给频道里的所有人",
     "discordMirrorHint": "每条智能体消息都会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordAttentionHint": "只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordInboundNote": "你在频道里发的消息，会以你的身份进入 Pod。",

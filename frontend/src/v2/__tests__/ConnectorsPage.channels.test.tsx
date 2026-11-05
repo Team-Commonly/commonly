@@ -1795,6 +1795,30 @@ describe('Connectors page: Discord live relay (F132)', () => {
     expect(within(drawer).getByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeInTheDocument();
   });
 
+  // CodeRabbit 4475336552: the drawer is the only removal control, so a
+  // connected Discord row must keep Remove. It goes through the full DELETE
+  // route, which deletes the channel webhook too, not the isActive PATCH.
+  it('removes a connected Discord row through DELETE /api/integrations/:id', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true })]);
+    axios.delete.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Really remove — the channel goes quiet' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/i-discord', expect.anything()));
+    expect(axios.patch).not.toHaveBeenCalled();
+  });
+
+  // CodeRabbit (body, minor): attention mode also sends every lead-agent line.
+  // The row mark has no renderer on the v2 page, so the copy is asserted where
+  // it lives, in both locales.
+  it('says the lead agent’s lines reach a Discord channel in attention mode, in en and zh-CN', () => {
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    expect(en.connectors.discordRowAttention).toMatch(/lead agent/);
+    expect(zh.connectors.discordRowAttention).toMatch(/主导智能体/);
+  });
+
   it('renders the shared-channel copy in zh-CN', async () => {
     await i18nReady;
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
