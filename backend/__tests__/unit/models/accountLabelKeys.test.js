@@ -5,11 +5,14 @@
  * These run on the default in-memory Mongo and, with TEST_MONGO_URI pointed at
  * a FerretDB server, on FerretDB: the same answers on both stores.
  */
+const fs = require('fs');
+const nodePath = require('path');
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const {
-  accountLabelClause, labelKey, labelKeysFor, LABEL_KEY_PATHS, TRIMMED_LABEL_FIELDS,
+  accountLabelClause, labelKey, labelKeysFor, LABEL_KEY_PATHS, TRIMMED_LABEL_FIELDS, IGNORABLE_CLASS,
+  withLabelKeyWrites,
 } = require('../../../models/accountLabelKeys');
 const { isFreeUsername } = require('../../../services/derivedUsername');
 const { backfillUserLabelKeys, runBackfillCli } = require('../../../scripts/backfill-user-label-keys');
@@ -266,6 +269,120 @@ describe('account label keys', () => {
       expect(await isFreeUsername('legacy')).toBe(false);
       expect(await isFreeUsername('ELDER')).toBe(false);
       expect(await User.findOne(accountLabelClause('displayName', 'OLD NAME')).lean()).not.toBeNull();
+    });
+  });
+
+  describe('default-ignorable code points are invisible to the checks, as the old collation made them (H1)', () => {
+    // Each one was refused beside its plain label under { locale: 'en', strength: 2 }.
+    const IGNORABLES = [
+      ['U+200B zero-width space', '\u200B'],
+      ['U+00AD soft hyphen', '\u00AD'],
+      ['U+200D zero-width joiner', '\u200D'],
+      ['U+FE0F variation selector-16', '\uFE0F'],
+      ['U+034F combining grapheme joiner', '\u034F'],
+      ['U+2060 word joiner', '\u2060'],
+      ['U+180E Mongolian vowel separator', '\u180E'],
+    ];
+
+    it('IGNORABLE_CLASS is exactly \\p{Default_Ignorable_Code_Point}', () => {
+      const listed = new RegExp(`^${IGNORABLE_CLASS}$`, 'u');
+      const property = /^\p{Default_Ignorable_Code_Point}$/u;
+      const mismatched = [];
+      for (let cp = 0; cp <= 0x10ffff; cp += 1) {
+        if (cp < 0xd800 || cp > 0xdfff) {
+          const ch = String.fromCodePoint(cp);
+          if (listed.test(ch) !== property.test(ch)) mismatched.push(cp.toString(16));
+        }
+      }
+      expect(mismatched).toEqual([]);
+    });
+
+    it.each(IGNORABLES)('%s: keyed users are found across it, both ways', async (_name, ch) => {
+      expect(labelKey(`sam${ch}`)).toBe('sam');
+      expect(labelKey(`Li${ch}ly`)).toBe('lily');
+      await User.create(human({ username: 'sam', displayName: 'Lily', botMetadata: { displayName: `Bo${ch}t` } }));
+      expect(await isFreeUsername(`sam${ch}`)).toBe(false);
+      expect(await User.findOne(accountLabelClause('username', `${ch}SAM`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('displayName', `Lily${ch}`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('displayName', `L${ch}ILY`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('botMetadata.displayName', 'bot')).lean()).not.toBeNull();
+    });
+
+    it.each(IGNORABLES)('%s: the regex fallback finds an unkeyed user across it, both ways', async (_name, ch) => {
+      await User.collection.insertMany([
+        human({ username: 'plain', displayName: 'Lily' }),
+        human({ username: `hid${ch}den`, displayName: `Ro${ch}se${ch}` }),
+      ]);
+      expect(await User.findOne(accountLabelClause('displayName', `Lily${ch}`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('displayName', `L${ch}ILY`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('username', `PLAIN${ch}`)).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('displayName', 'ROSE')).lean()).not.toBeNull();
+      expect(await isFreeUsername('hidden')).toBe(false);
+      expect(await User.findOne(accountLabelClause('displayName', 'Rosa')).lean()).toBeNull();
+    });
+  });
+
+  describe('scripts that write labels through a plugin-less schema write the keys too (M1)', () => {
+    const SCRIPTS = [
+      'dedupe-agent-display-names.ts',
+      'repair-first-party-labels.ts',
+      'strip-opaque-displayname-suffixes.ts',
+      'migrate-guide-to-scout.ts',
+    ];
+
+    it.each(SCRIPTS)('%s keys every User.updateOne it makes', (file) => {
+      const source = fs.readFileSync(nodePath.join(__dirname, '../../../scripts', file), 'utf8');
+      const calls = source.split('User.updateOne(').slice(1);
+      expect(calls.length).toBeGreaterThan(0);
+      calls.forEach((call) => expect(call.slice(0, call.indexOf(');'))).toMatch(/withLabelKeyWrites\(\{ \$set:/));
+    });
+
+    it('a label written that way is found by the check, where a bare $set left it unprotected', async () => {
+      const Raw = mongoose.models.ScriptUser
+        || mongoose.model('ScriptUser', new mongoose.Schema({}, { strict: false }), 'users');
+      const bot = await User.create(human({ username: 'pixel-demo', botMetadata: { displayName: 'Pixel' } }));
+      await Raw.updateOne({ _id: bot._id }, withLabelKeyWrites({ $set: { 'botMetadata.displayName': 'Pixel (Demo)' } }));
+      expect(await User.findOne(accountLabelClause('botMetadata.displayName', 'PIXEL (DEMO)')).lean()).not.toBeNull();
+      await Raw.updateOne({ _id: bot._id }, withLabelKeyWrites({ $set: { username: 'scout-x', 'botMetadata.agentName': 'scout' } }));
+      expect(await isFreeUsername('SCOUT-X')).toBe(false);
+    });
+  });
+
+  describe('an add to previousUsernames on an unkeyed user keeps the older names reserved (M2)', () => {
+    const legacy = async () => (await User.collection.insertOne({
+      ...human({ username: 'bob' }), previousUsernames: ['Elder', 'bobby'],
+    })).insertedId;
+
+    it('a rename as userController does it: $set username, $addToSet the old one', async () => {
+      const id = await legacy();
+      await User.findOneAndUpdate({ _id: id }, { $set: { username: 'bob2' }, $addToSet: { previousUsernames: 'bob' } });
+      expect((await keysOf(id)).previousUsernames).toEqual(['elder', 'bobby', 'bob']);
+      expect(await isFreeUsername('ELDER')).toBe(false);
+      expect(await isFreeUsername('Bobby')).toBe(false);
+      expect(await isFreeUsername('BOB')).toBe(false);
+    });
+
+    it('updateMany and bulkWrite $push key the whole array first too', async () => {
+      const id = await legacy();
+      await User.updateMany({ _id: id }, { $push: { previousUsernames: 'p1' } });
+      expect((await keysOf(id)).previousUsernames).toEqual(['elder', 'bobby', 'p1']);
+      const other = (await User.collection.insertOne({ ...human({ username: 'al' }), previousUsernames: ['Old'] })).insertedId;
+      await User.bulkWrite([{ updateOne: { filter: { _id: other }, update: { $addToSet: { previousUsernames: 'al' } } } }]);
+      expect((await keysOf(other)).previousUsernames).toEqual(['old', 'al']);
+    });
+
+    it('a keyed user is added to as before', async () => {
+      const user = await User.create(human({ username: 'kay', previousUsernames: ['K1'] }));
+      await User.updateOne({ _id: user._id }, { $addToSet: { previousUsernames: 'K2' } });
+      expect((await keysOf(user._id)).previousUsernames).toEqual(['k1', 'k2']);
+    });
+
+    it('a save that sets one element rekeys the array', async () => {
+      const user = await User.create(human({ username: 'el', previousUsernames: ['First', 'Second'] }));
+      const loaded = await User.findById(user._id);
+      loaded.previousUsernames.set(0, 'Replaced');
+      await loaded.save();
+      expect((await keysOf(user._id)).previousUsernames).toEqual(['replaced', 'second']);
     });
   });
 

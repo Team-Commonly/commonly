@@ -31,15 +31,37 @@ import type { Schema } from 'mongoose';
 type Doc = Record<string, any>;
 
 /**
+ * Unicode default-ignorable code points: zero-width space and joiners, soft
+ * hyphen, variation selectors, word joiner and the like. They render as
+ * nothing, and the old collation ignored them, so "sam" and "sam" + U+200B
+ * were one label. Keys drop them.
+ */
+const IGNORABLE = /\p{Default_Ignorable_Code_Point}/gu;
+export const stripIgnorables = (value: string): string => value.replace(IGNORABLE, '');
+
+/**
+ * The same set as a regex character class, written out because the server's
+ * regex engine has no Default_Ignorable_Code_Point property. A test pins it
+ * to the property.
+ */
+export const IGNORABLE_CLASS = `[${[
+  [0xad], [0x34f], [0x61c], [0x115f, 0x1160], [0x17b4, 0x17b5], [0x180b, 0x180f], [0x200b, 0x200f],
+  [0x202a, 0x202e], [0x2060, 0x206f], [0x3164], [0xfe00, 0xfe0f], [0xfeff], [0xffa0], [0xfff0, 0xfff8],
+  [0x1bca0, 0x1bca3], [0x1d173, 0x1d17a], [0xe0000, 0xe0fff],
+].map(([from, to]) => String.fromCodePoint(from) + (to ? `-${String.fromCodePoint(to)}` : '')).join('')}]`;
+
+/**
  * The comparison form of a label: compatibility-normalized (NFKC folds
- * full-width forms, ligatures, and composed vs combining accents), then
- * upper- and lower-cased so every case form lands on one key (Greek final
- * sigma ς and σ both become σ). Absent stays null, so "no label" is written,
- * not missing.
+ * full-width forms, ligatures, and composed vs combining accents), stripped
+ * of default-ignorable code points, then upper- and lower-cased so every case
+ * form lands on one key (Greek final sigma ς and σ both become σ). Absent
+ * stays null, so "no label" is written, not missing.
  */
 export const labelKey = (value: unknown): string | null => {
   if (typeof value === 'number') return labelKey(String(value));
-  return typeof value === 'string' ? value.normalize('NFKC').toUpperCase().toLowerCase() : null;
+  return typeof value === 'string'
+    ? stripIgnorables(value.normalize('NFKC')).toUpperCase().toLowerCase()
+    : null;
 };
 
 /** label field → its key path. */
@@ -63,7 +85,11 @@ export const TRIMMED_LABEL_FIELDS: ReadonlySet<string> = new Set(['displayName']
 const castLabel = (field: string, value: unknown): unknown => (
   typeof value === 'string' && TRIMMED_LABEL_FIELDS.has(field) ? value.trim() : value
 );
-const keyOf = (field: AccountLabelField, value: unknown) => labelKey(castLabel(field, value));
+// Ignorables go before the trim, so a label padded with them keys like the
+// trimmed label (U+200B + " Sam " and "Sam").
+const keyOf = (field: AccountLabelField, value: unknown) => labelKey(
+  castLabel(field, typeof value === 'string' ? stripIgnorables(value) : value),
+);
 const previousKeys = (value: unknown): string[] => (Array.isArray(value) ? value : [])
   .map(labelKey).filter((key: string | null): key is string => key !== null);
 
@@ -86,21 +112,30 @@ const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]
  * but a regex cannot normalize the STORED label, so it is weaker than the key:
  * it misses, for example, a full-width stored label checked with an ASCII value
  * when the stored form is not one of the value's spellings, and the regex `i`
- * flag does not fold ς with σ. The backfill writes every key and closes that
- * gap; the branch is dropped once the backfill verifies.
+ * flag does not fold ς with σ. Default-ignorable code points are stripped from
+ * the value and allowed anywhere in the stored label, so "Lily" + U+200D and
+ * "Lily" find each other both ways; a stored display name whose ignorables sit
+ * outside a space the schema's trim kept (U+200B + " Sam") is still missed. The
+ * backfill writes every key and closes these gaps; the branch is dropped once
+ * the backfill verifies.
  */
 export const accountLabelClause = (field: AccountLabelField, value: string): Doc => {
   const keyPath = LABEL_KEY_PATHS[field];
-  const cast = String(castLabel(field, value));
+  const cast = String(castLabel(field, stripIgnorables(String(value))));
   const spellings = Array.from(new Set(
     (['NFC', 'NFD', 'NFKC', 'NFKD'] as const).map((form) => cast.normalize(form)).concat(cast),
   ));
+  // Each code point escaped, with any run of ignorables allowed around it.
+  const pattern = (spelling: string) => Array.from(spelling).map(escapeRegex).join(`${IGNORABLE_CLASS}*`);
   return {
     $or: [
       { [keyPath]: labelKey(cast) },
       {
         [keyPath]: { $exists: false },
-        [field]: { $regex: `^(?:${spellings.map(escapeRegex).join('|')})$`, $options: 'i' },
+        [field]: {
+          $regex: `^${IGNORABLE_CLASS}*(?:${spellings.map(pattern).join('|')})${IGNORABLE_CLASS}*$`,
+          $options: 'i',
+        },
       },
     ],
   };
@@ -262,6 +297,33 @@ const keyedBulkOp = (op: Doc): Doc => {
   return op;
 };
 
+/** Does the update add to previousUsernames ($push or $addToSet)? */
+const addsPreviousUsernames = (update: any): boolean => Boolean(update) && !Array.isArray(update)
+  && (['$push', '$addToSet'] as const).some((op) => update[op] && typeof update[op] === 'object'
+    && Object.prototype.hasOwnProperty.call(update[op], 'previousUsernames'));
+
+/**
+ * Before an add to previousUsernames, key the whole array of every matched user
+ * that has no previousUsernames key yet (an account from before the plugin).
+ * The add then extends a complete key array. Without this it would create the
+ * array holding only the added names, and the regex fallback, which runs only
+ * while the key is missing, would stop reserving the older ones.
+ *
+ * The write is compare-and-set on the array it was computed from and goes past
+ * Mongoose (it writes nothing but the key); a user whose array changed in
+ * between keeps no key and is keyed by the next add or by the backfill.
+ */
+const keyUnkeyedPreviousUsernames = async (model: any, filter: Doc | undefined, session?: unknown) => {
+  const path = LABEL_KEY_PATHS.previousUsernames;
+  const unkeyed: Doc[] = await model.find({ $and: [filter || {}, { [path]: { $exists: false } }] })
+    .select('previousUsernames').session(session ?? null).lean();
+  await Promise.all(unkeyed.map((doc) => model.collection.updateOne(
+    { _id: doc._id, [path]: { $exists: false }, previousUsernames: doc.previousUsernames ?? null },
+    { $set: { [path]: previousKeys(doc.previousUsernames) } },
+    session ? { session } : {},
+  )));
+};
+
 const UPDATE_OPS = ['updateOne', 'updateMany', 'findOneAndUpdate'] as const;
 const REPLACE_OPS = ['replaceOne', 'findOneAndReplace'] as const;
 
@@ -289,7 +351,10 @@ export function accountLabelKeysPlugin(schema: Schema): void {
       return;
     }
     const direct: string[] = this.directModifiedPaths();
-    const writes = (label: string) => direct.some((path) => path === label || label.startsWith(`${path}.`));
+    // The label itself, a parent of it, or a path under it (previousUsernames.0).
+    const writes = (label: string) => direct.some((path) => (
+      path === label || label.startsWith(`${path}.`) || path.startsWith(`${label}.`)
+    ));
     if (writes('username')) this.set(LABEL_KEY_PATHS.username, keyOf('username', this.get('username')));
     if (writes('displayName')) this.set(LABEL_KEY_PATHS.displayName, keyOf('displayName', this.get('displayName')));
     if (writes('previousUsernames')) {
@@ -309,10 +374,13 @@ export function accountLabelKeysPlugin(schema: Schema): void {
     next();
   });
   UPDATE_OPS.forEach((op) => {
-    schema.pre(op, function addLabelKeyWrites(this: any) {
+    schema.pre(op, async function addLabelKeyWrites(this: any) {
       const update = this.getUpdate();
       if (!update) return;
       this.setUpdate(withLabelKeyWrites(update, this.getFilter(), Boolean(this.getOptions()?.upsert)));
+      if (addsPreviousUsernames(update)) {
+        await keyUnkeyedPreviousUsernames(this.model, this.getFilter(), this.getOptions()?.session);
+      }
     });
   });
   REPLACE_OPS.forEach((op) => {
@@ -323,6 +391,14 @@ export function accountLabelKeysPlugin(schema: Schema): void {
   });
   // Async, so a refused op rejects the returned promise like a query hook does.
   schema.static('bulkWrite', async function bulkWriteWithLabelKeys(this: any, ops: Doc[], options?: Doc) {
-    return (Model as any).bulkWrite.call(this, (ops || []).map(keyedBulkOp), options);
+    const keyed = (ops || []).map(keyedBulkOp);
+    for (const op of ops || []) {
+      const write = op?.updateOne || op?.updateMany;
+      if (write && addsPreviousUsernames(write.update)) {
+        // eslint-disable-next-line no-await-in-loop -- in op order, before the write
+        await keyUnkeyedPreviousUsernames(this, write.filter, options?.session);
+      }
+    }
+    return (Model as any).bulkWrite.call(this, keyed, options);
   });
 }

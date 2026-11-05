@@ -12,7 +12,7 @@ const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
 const { deriveUsernameFromEmail } = require('../services/derivedUsername');
-const { accountLabelClause } = require('../models/accountLabelKeys');
+const { accountLabelClause, stripIgnorables } = require('../models/accountLabelKeys');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
   issueEmailVerificationToken,
@@ -413,7 +413,9 @@ exports.register = async (req: any, res: any) => {
     } = req.body;
 
     const normalizedEmail = normalizeEmail(email);
-    const typedUsername = String(username || '').trim();
+    // Invisible code points (zero-width space, joiners, soft hyphen...) are
+    // dropped, so a typed handle can't pass for another that renders the same.
+    const typedUsername = stripIgnorables(String(username || '')).trim();
     const rawPassword = String(password || '');
 
     if (!normalizedEmail || !rawPassword) {

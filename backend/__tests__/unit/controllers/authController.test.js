@@ -447,6 +447,24 @@ describe('Auth Controller Tests', () => {
       );
     });
 
+    it('drops invisible code points from a typed username before the taken check', async () => {
+      User.findOne = jest.fn().mockResolvedValueOnce({ _id: 'existingUserId', username: 'existinguser', email: 'e@x.test' });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: { username: 'existing\u200Buser\u2060', email: 'new@example.com', password: 'Password123!' },
+      }, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({
+        $or: [
+          { email: 'new@example.com' },
+          accountLabelClause('username', 'existinguser'),
+          accountLabelClause('previousUsernames', 'existinguser'),
+        ],
+      });
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
     it('should block registration when invite-only mode is enabled and code is missing', async () => {
       process.env.REGISTRATION_INVITE_ONLY = '1';
       process.env.REGISTRATION_INVITE_CODES = 'alpha-123';

@@ -18,6 +18,7 @@
  * Run:  node --import tsx backend/scripts/strip-opaque-displayname-suffixes.ts [--dry]
  */
 import mongoose from 'mongoose';
+import { withLabelKeyWrites } from '../models/accountLabelKeys';
 
 const DRY = process.argv.includes('--dry');
 
@@ -70,7 +71,8 @@ async function main() {
     if (!DRY) {
       await User.updateOne(
         { _id: u._id },
-        { $set: { 'botMetadata.displayName': bare } },
+        // This schema has no label-key plugin, so the key is written here.
+        withLabelKeyWrites({ $set: { 'botMetadata.displayName': bare } }),
       );
     }
     repaired += 1;

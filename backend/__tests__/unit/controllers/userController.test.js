@@ -146,6 +146,18 @@ describe('User Controller', () => {
       expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
+    it('rejects a display name made only of invisible code points', async () => {
+      User.findOne = jest.fn();
+      const req = { user: { id: 'u1' }, body: { displayName: ' \u200B\u2060\u00AD ' } };
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+
+      await userController.updateProfile(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(User.findOne).not.toHaveBeenCalled();
+      expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
     it('excludes the current account when checking a display name collision', async () => {
       const lookup = mockDisplayNameLookup(null);
       const updatedUser = mockUserDoc({ _id: 'u1', username: 'lily', displayName: 'Lily' });

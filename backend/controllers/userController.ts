@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const { accountLabelClause } = require('../models/accountLabelKeys');
+const { accountLabelClause, stripIgnorables } = require('../models/accountLabelKeys');
 const Activity = require('../models/Activity');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
@@ -64,8 +64,10 @@ const pick = (source: any, fields: string[]) => Object.fromEntries(
 // (models/accountLabelKeys.ts), internal like the reservations they key.
 const INTERNAL_USER_FIELDS = ['previousUsernames', 'labelKeys', 'accountDeletionRequestedAt'];
 
+// A label made only of invisible code points (zero-width space and the like)
+// would render blank, so it needs something visible besides them.
 const isValidAccountLabel = (value: unknown) => typeof value === 'string'
-  && value.trim().length > 0
+  && stripIgnorables(value).trim().length > 0
   && value.trim().length <= 80;
 
 // The chat author slot renders a single human label. Match its identity rule

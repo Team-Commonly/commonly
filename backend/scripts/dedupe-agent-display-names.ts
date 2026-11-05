@@ -36,6 +36,7 @@
 /* eslint-disable no-console */
 import mongoose from 'mongoose';
 import { isFirstPartyAgentName } from '../constants/firstPartyDisplayNames';
+import { withLabelKeyWrites } from '../models/accountLabelKeys';
 
 interface BotMeta {
   displayName?: string;
@@ -127,7 +128,8 @@ async function main() {
       const newDisplay = `${display} (${formatSuffix(instanceId)})`;
       await User.updateOne(
         { _id: u._id },
-        { $set: { 'botMetadata.displayName': newDisplay } },
+        // This schema has no label-key plugin, so the key is written here.
+        withLabelKeyWrites({ $set: { 'botMetadata.displayName': newDisplay } }),
       );
       console.log(
         `  renamed ${String(u._id).slice(-6)} ${u.username}: "${display}" → "${newDisplay}"`,

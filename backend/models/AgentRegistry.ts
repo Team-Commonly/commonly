@@ -319,9 +319,10 @@ AgentInstallationSchema.index({ podId: 1, status: 1 });
 AgentInstallationSchema.index({ installedBy: 1, status: 1 });
 // The grant-broker seam (TASK-175) judges a calling seat by reading every ACTIVE
 // installation and matching the seat's identity key in JS. It has to do that in
-// JS: `seatEnvironmentKey` normalises BOTH identity parts, because the schema
-// lowercases `agentName` but NOT `instanceId` (services/seatEnvironmentProjection.ts),
-// so a query that filtered on identity would be a NARROWER read than the key
+// JS: `seatEnvironmentKey` normalises BOTH identity parts (services/seatEnvironmentProjection.ts),
+// and the schema lowercased only `agentName` when this was written (`instanceId`
+// too since #3493, but a row stored before then may still hold mixed case), so
+// a query that filtered on identity would be a NARROWER read than the key
 // match — i.e. fail-open on a refusal. What is left is an identity-free read of
 // the whole active set, on the broker hot path (`callTool` and `tools/list`),
 // selecting only these four fields — so give it a COVERED index rather than a

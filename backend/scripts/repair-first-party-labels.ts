@@ -37,6 +37,7 @@
  */
 import mongoose from 'mongoose';
 import { FIRST_PARTY_DISPLAY_NAMES } from '../constants/firstPartyDisplayNames';
+import { withLabelKeyWrites } from '../models/accountLabelKeys';
 
 const APPLY = process.argv.includes('--apply');
 const DEFAULT_SUFFIX = ' (Default)';
@@ -215,7 +216,8 @@ async function main() {
     console.log('  PG_HOST is not set: users.username is not mirrored; the next agent sync writes it.');
   }
   const writeMongo = async (id: string, label: string): Promise<void> => {
-    await User.updateOne({ _id: id }, { $set: { 'botMetadata.displayName': label } });
+    // This schema has no label-key plugin, so the key is written here.
+    await User.updateOne({ _id: id }, withLabelKeyWrites({ $set: { 'botMetadata.displayName': label } }));
   };
   let noPgRow = 0;
   for (const r of writable) {

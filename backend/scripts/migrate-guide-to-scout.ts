@@ -30,6 +30,7 @@
  * Run:  node --import tsx backend/scripts/migrate-guide-to-scout.ts [--dry]
  */
 import mongoose from 'mongoose';
+import { withLabelKeyWrites } from '../models/accountLabelKeys';
 
 const DRY = process.argv.includes('--dry');
 
@@ -74,7 +75,8 @@ async function main() {
     if ((u.botMetadata?.displayName || '') === 'Guide') sets['botMetadata.displayName'] = 'Scout';
     console.log(`${DRY ? '[dry] ' : ''}user ${u.username} → ${newUsername}`);
     if (!DRY) {
-      await User.updateOne({ _id: u._id }, { $set: sets });
+      // This schema has no label-key plugin, so the keys are written here.
+      await User.updateOne({ _id: u._id }, withLabelKeyWrites({ $set: sets }));
     }
     usersRenamed += 1;
   }
