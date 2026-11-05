@@ -75,7 +75,7 @@ import {
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import {
-  delimiter, dirname, isAbsolute, join,
+  basename, delimiter, dirname, isAbsolute, join,
 } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -234,6 +234,32 @@ const statOrNull = async (path) => {
   }
 };
 
+// A subfolder of a seat's state, which the confined child can also write: it
+// must be a real directory (created 0700 if absent), never a link the child
+// left, which the host's chmod and later writes would follow out of the folder.
+const ensurePrivateDir = async (dir) => {
+  const existing = await statOrNull(dir);
+  if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) {
+    throw new Error(`refusing Claude state path that is not a directory: ${dir}`);
+  }
+  if (!existing) await mkdir(dir, { mode: 0o700 });
+  await chmod(dir, 0o700);
+};
+
+// Removes a file the host put in a child-writable folder. The folder is checked
+// first: if the child swapped it for a link (to the person's own ~/.claude, say),
+// removing through it would delete the person's file, so nothing is removed.
+const removePrivateFile = async (dir, name) => {
+  const dirStat = await statOrNull(dir);
+  if (!dirStat) return;
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+    // eslint-disable-next-line no-console
+    console.warn(`[claude] not removing ${name}: ${dir} is no longer a directory`);
+    return;
+  }
+  await rm(join(dir, name), { force: true });
+};
+
 // The non-secret account metadata Claude needs from ~/.claude.json to find its
 // login, and nothing else from that file.
 const claudeAuthMetadata = async () => {
@@ -275,11 +301,12 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
   const stateKeychains = join(stateLibrary, 'Keychains');
   const operatorKeychains = join(homedir(), 'Library', 'Keychains');
 
-  await mkdir(tmpPath, { recursive: true, mode: 0o700 });
-  await mkdir(stateLibrary, { recursive: true, mode: 0o700 });
+  // The jail writes inside this folder, so a subfolder may be a link a prior
+  // turn left: each is checked before the host chmods or links inside it.
+  await mkdir(statePath, { recursive: true, mode: 0o700 });
   await chmod(statePath, 0o700);
-  await chmod(tmpPath, 0o700);
-  await chmod(stateLibrary, 0o700);
+  await ensurePrivateDir(tmpPath);
+  await ensurePrivateDir(stateLibrary);
 
   // `/usr/bin/security` resolves the default login keychain relative to HOME.
   // Keep HOME isolated while pointing that one standard location at the
@@ -302,12 +329,9 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
     await symlink(operatorKeychains, stateKeychains);
   }
 
-  await writeFile(
-    configPath,
-    `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
-  );
-  await chmod(configPath, 0o600);
+  // Staged and renamed, as on bwrap: a link at this name is replaced, never
+  // written through (F153).
+  await replacePrivateFile(statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`);
   return { statePath, tmpPath, configPath };
 };
 
@@ -382,7 +406,7 @@ const releaseLoginTurn = async (marker, loginPath) => {
     else await rm(join(dir, name), { force: true });
   }
   if (!live) {
-    await rm(loginPath, { force: true });
+    await removePrivateFile(dirname(loginPath), basename(loginPath));
     // Only an empty folder goes: a turn registering at this moment keeps it.
     try { await rmdir(dir); } catch { /* not empty, or already gone */ }
   }
@@ -446,7 +470,7 @@ const carryClaudeLogin = async (env, configDir, { accessOnly = false, mustOutlas
     handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (err) {
     if (err?.code === 'ENOENT') {
-      await rm(join(configDir, '.credentials.json'), { force: true });
+      await removePrivateFile(configDir, '.credentials.json');
       return null;
     }
     if (err?.code === 'ELOOP') throw refuse();
@@ -485,20 +509,13 @@ const prepareWorkspaceBwrapClaudeState = async (ctx, { login = 'carry', seat = '
   const configDir = join(statePath, '.claude');
   await mkdir(statePath, { recursive: true, mode: 0o700 });
   await chmod(statePath, 0o700);
-  for (const dir of [tmpPath, configDir]) {
-    const existing = await statOrNull(dir);
-    if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) {
-      throw new Error(`refusing Claude state path that is not a directory: ${dir}`);
-    }
-    if (!existing) await mkdir(dir, { mode: 0o700 });
-    await chmod(dir, 0o700);
-  }
+  for (const dir of [tmpPath, configDir]) await ensurePrivateDir(dir);
 
   const configPath = await replacePrivateFile(
     statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
   );
   if (login === 'none') {
-    await rm(join(configDir, '.credentials.json'), { force: true });
+    await removePrivateFile(configDir, '.credentials.json');
     return { statePath, tmpPath, configPath, loginPath: null };
   }
   const loginPath = await carryClaudeLogin(ctx.env, configDir, login === 'access-only'
@@ -1830,6 +1847,12 @@ export default {
           stats: claudeRunStats(stdout),
         };
       }
+      // F153: a Seatbelt seat with no key signs in only through the keychain.
+      // When that fails, say how to give it a key instead, as bwrap does.
+      if (publicNativeSandbox && !providerProxy && /not logged in/i.test(String(err?.message))) {
+        err.message = `${err.message}. Sign in with \`claude\` in your own terminal on this Mac, `
+          + 'or set ANTHROPIC_API_KEY (in the service env for daemon seats)';
+      }
       throw err;
     } finally {
       if (mcpConfig?.dir) {
@@ -1840,7 +1863,7 @@ export default {
       // turn of the agent to finish removes it.
       if (publicBwrapSandbox && !workspaceBwrapSandbox && publicClaudeState?.loginPath) {
         if (loginTurn) await releaseLoginTurn(loginTurn, publicClaudeState.loginPath);
-        else await rm(publicClaudeState.loginPath, { force: true });
+        else await removePrivateFile(dirname(publicClaudeState.loginPath), basename(publicClaudeState.loginPath));
       }
     }
   },
