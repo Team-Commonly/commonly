@@ -95,7 +95,8 @@ describe('firstContactService', () => {
 
     const { content, messageId, threadRootId } = AgentEventService.enqueue.mock.calls[0][0].payload;
     expect(content).toMatch(/Post it top-level in the pod/);
-    expect(content).toMatch(/do not set threadRootId or reply to any earlier message/);
+    expect(content).toMatch(/do not set threadRootId or replyToMessageId, and do not reply to any earlier message/);
+    // The contract this rests on: the event itself names no message to thread under.
     expect(messageId).toBeUndefined();
     expect(threadRootId).toBeUndefined();
   });
