@@ -4347,3 +4347,13 @@ When a wake has unread pod activity, `runWithDigest` appends the digest summary 
 **Repair:** the digest builder moves to `backend/services/digestFrame.ts`, which exports its pull line as `DIGEST_PULL_LINE`. `nativeCueFromKernel` replaces exactly that line with one that names `commonly_read_context`. A person's message that names the tool is left alone. `nativeRuntimePrompt.test.js` now drives the real digest through a heartbeat, a framed @mention and an unframed wake.
 
 **Lesson:** a rewrite that guards "kernel text names only tools this runtime has" has to cover every place the kernel writes, not just the leading frames, and its test has to use the kernel's real text. A fixture copied by hand proves only the copy.
+
+## 98. `installedBy` read like "the agent this row installs" and opened the pod write gate (2026-11-04, cto)
+
+*Origin: found by the F141 builder while making agents delete their own messages; fixed as F149.*
+
+`podWriteAccessService.callerHasPodWriteAccess`, the gate for reactions, thread follows and collapse state, looked agents up with `AgentInstallation.findOne({ podId, installedBy: agentUser._id })`. `installedBy` is the human who installed the agent, so the lookup missed for every ordinary install and the gate fell back to `Pod.members`. An uninstall can leave that row behind, so an uninstalled agent kept writing in the pod. The suites passed because they mocked `findOne` to return a row and asserted the fallback as the intended behaviour.
+
+**Repair:** for agent callers the gate reads `req.agentInstallations` (the active installations agentRuntimeAuth resolved for the token's agent identity) through `agentHoldsActiveInstallationInPod`. The only membership rule left for agents is the `agent-admin` DM, which has no installation and is authorized by membership on the runtime post path too. A bot User holding a `cm_` user token arrives on the gate's human branch with no `req.agentUser`; `auth.ts` now names it as `req.botCaller` (from the row it already loads), and the gate requires it to hold an active installation for its own `agentName`/`instanceId` as well as the members row. `backend/__tests__/service/podWriteGateAgentInstallation.test.js` drives every route through real tokens of both kinds.
+
+**Lesson:** an installation row's agent is `agentName` + `instanceId`; `installedBy` is the person. Find an agent's installations by identity, or use the ones the auth middleware already resolved. A mock that returns the row your query expects proves nothing about whether the query can match.
