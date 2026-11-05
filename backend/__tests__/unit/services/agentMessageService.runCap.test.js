@@ -64,6 +64,28 @@ describe('countConsecutiveRun', () => {
   });
 });
 
+describe('countConsecutiveRun skips the author\'s own system lines (F180)', () => {
+  const sys = (userId) => ({ ...msg(userId), messageType: 'system' });
+
+  it('an approval receipt written as the seat neither counts nor ends the run', async () => {
+    await withRecent([msg(SOMEONE_ELSE), msg(ME), sys(ME), msg(ME)], async () => {
+      expect(await AgentMessageService.countConsecutiveRun(POD, ME)).toBe(2);
+    });
+  });
+
+  it('a card still counts: agents can post cards themselves', async () => {
+    await withRecent([msg(ME), { ...msg(ME), messageType: 'card' }, msg(ME)], async () => {
+      expect(await AgentMessageService.countConsecutiveRun(POD, ME)).toBe(3);
+    });
+  });
+
+  it('someone else\'s line still ends the run, system or not', async () => {
+    await withRecent([msg(ME), msg(ME), sys(SOMEONE_ELSE), msg(ME)], async () => {
+      expect(await AgentMessageService.countConsecutiveRun(POD, ME)).toBe(1);
+    });
+  });
+});
+
 describe('resolveConsecutiveRunCap', () => {
   const original = process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP;
   afterEach(() => {

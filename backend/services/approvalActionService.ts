@@ -171,6 +171,14 @@ interface ProposeOptions {
 interface ProposeResult {
   ok: boolean;
   error?: string;
+  /**
+   * Why the card was not posted (F180), when it was not: `approval_card_refused`
+   * (the message service declined it; asking again will not help) or
+   * `approval_unavailable` (the message store failed; a retry may work).
+   */
+  code?: 'approval_card_refused' | 'approval_unavailable';
+  /** The message service's own reason for a refused card. */
+  reason?: string;
   approvalId?: string;
   messageId?: string;
 }
@@ -546,12 +554,18 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   // surfaces (v1, digests, notifications) still show something meaningful.
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentMessageService = require('./agentMessageService');
-  const posted = await AgentMessageService.postMessage({
+  let posted: { success?: boolean; message?: { _id?: unknown; id?: unknown }; reason?: string } | null = null;
+  let postThrew = false;
+  try {
+    posted = await AgentMessageService.postMessage({
     agentName,
     instanceId,
     displayName,
     podId: String(podId),
     messageType: 'card',
+    // Server-set (F180): the card is exempt from the duplicate guard and the
+    // consecutive-run cap. Only this call site sets it.
+    approvalCard: true,
     payload: buildCardPayload(row),
     runId: options.runId,
     runPodId: options.runPodId,
@@ -573,7 +587,11 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     // running summary extraction on a card is correct on its own terms and
     // removes the question.
     skipSummaryPersistence: true,
-  });
+    });
+  } catch (error) {
+    postThrew = true;
+    console.warn('[approval] card post failed:', (error as Error).message);
+  }
 
   if (!posted?.success || !posted?.message) {
     // Card without a render is a dead flag — mark it moot rather than leave
@@ -590,7 +608,18 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       row.status = 'moot';
       await row.save();
     }
-    return { ok: false, error: 'card message could not be posted' };
+    // A store failure may clear on retry; a refusal (or a skip) will not, so
+    // it gets its own code and the message service's reason (F180).
+    if (postThrew) {
+      return { ok: false, error: 'card message could not be posted', code: 'approval_unavailable' };
+    }
+    const reason = String(posted?.reason || (posted?.success ? 'not_posted' : 'refused'));
+    return {
+      ok: false,
+      error: `approval card was not posted (${reason})`,
+      code: 'approval_card_refused',
+      reason,
+    };
   }
 
   const messageId = String(posted.message._id || posted.message.id || '');
