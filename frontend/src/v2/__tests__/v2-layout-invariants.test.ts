@@ -3243,6 +3243,9 @@ describe('the landing hero demo (TASK-147)', () => {
     // moved to the top bar. Each needs the hero's answer or a phone loses it.
     const phone = phoneBlock(demo);
     expect(phone).toMatch(/\.v2-demo \.v2-composer \{ margin: 4px 10px 10px; \}/);
+    // The app's phone starts with this sheet closed, and a hero 1,280px tall
+    // pushes the page's first section off the phone.
+    expect(phone).toMatch(/\.v2-demo__inspector \{ display: none; \}/);
     expect(phone).toMatch(/\.v2-demo \.v2-pod-header__meta \{ display: flex; \}/);
   });
 

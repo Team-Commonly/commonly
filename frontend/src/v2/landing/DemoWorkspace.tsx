@@ -256,7 +256,7 @@ const DemoWorkspace: React.FC = () => {
 
   return (
     <div className="v2-demo">
-      <div className="v2-demo__stage">
+      <div className={`v2-demo__stage${folds.board ? ' v2-demo__stage--board-open' : ''}`}>
         {/* rail — decorative chrome, so it stays out of the a11y tree */}
         <div className="v2-demo__rail" {...INERT}>
           <div className="v2-rail">
@@ -571,7 +571,7 @@ const DemoWorkspace: React.FC = () => {
                   <Fold id="board" icon="board" label={boardLabel} open onToggle={toggleFold}>
                     <div className="v2-workspace-inspector__rows">
                       {activePod.board.map((row) => {
-                        const state = row.needsYou && !ruled ? 'needs you' : (ruled && row.ruledState ? row.ruledState : row.state);
+                        const state = row.needsYou && !ruled ? t('landing.hero.demoNeedsYou') : (ruled && row.ruledState ? row.ruledState : row.state);
                         const accent = row.needsYou && !ruled;
                         return (
                           <div className="v2-demo__board-row" key={row.title}>
@@ -631,7 +631,7 @@ const DemoWorkspace: React.FC = () => {
                       <span className="v2-demo__channel-count">{activePod.channelCount}</span>
                     </div>
                   ) : (
-                    <div className="v2-demo__channel v2-demo__channel--none">+ Connect Slack or Telegram</div>
+                    <div className="v2-demo__channel v2-demo__channel--none">{t('landing.hero.demoConnect')}</div>
                   )}
                 </Fold>
               </>

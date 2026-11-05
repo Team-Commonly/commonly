@@ -164,7 +164,7 @@
 
 .v2-root button.v2-demo__chip:focus-visible {
   outline: none;
-  box-shadow: var(--v2-focus-ring);
+  box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring);
 }
 
 /* Visually hidden, in the shape the two other copies in the frontend already use
@@ -194,6 +194,7 @@
 .v2-demo__head-keys { display: inline-flex; gap: 2px; }
 
 .v2-root button.v2-demo__agent { cursor: default; }
+.v2-root button.v2-demo__agent:hover { background: transparent; }
 
 /* One row or the empty line, so ruling doesn't move what sits under the card. */
 .v2-demo__needs-rows { min-height: 32px; }
@@ -252,9 +253,9 @@
 
 /* ---------- Phone (<= 760px) ----------
    The app's phone is three full screens with a tab bar; a hero has one scroll
-   and no tab bar. So the same pieces stack: the pod rows two by two, the thread
-   at a fixed height, then the folds. The thread's height is fixed so a reply
-   lands inside it and the page below never moves while the demo streams. */
+   and no tab bar. So the pod rows sit two by two above the thread, at a fixed
+   height, so a reply lands inside it and the page below never moves while the
+   demo streams. The inspector starts closed, as the app's phone sheet does. */
 @media (max-width: 760px) {
   .v2-demo__stage {
     grid-template-columns: minmax(0, 1fr);
@@ -300,7 +301,27 @@
   /* The app's margin clears its tab bar, which the hero doesn't have. */
   .v2-demo .v2-composer { margin: 4px 10px 10px; }
 
-  .v2-demo .v2-workspace-inspector { height: auto; padding: 0; overflow: visible; }
+  .v2-demo__inspector { display: none; }
+}
 
-  .v2-demo .v2-workspace-inspector__head { padding: 2px 2px 0; }
+/* ---------- Below the inspector's column (<= 960px) ----------
+   The board chip still has to open something, so the inspector comes up as a
+   sheet over the thread, the way the app's phone sheet does. A later rule, so
+   it wins over both `display: none` rules above. */
+@media (max-width: 960px) {
+  .v2-demo__stage { position: relative; }
+
+  .v2-demo__stage--board-open .v2-demo__inspector {
+    display: block;
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    z-index: 5;
+    max-height: 420px;
+    overflow-y: auto;
+    border-radius: 16px;
+    background: var(--v2-bg-subtle);
+    box-shadow: var(--v2-shadow-pop);
+  }
 }
