@@ -224,8 +224,11 @@ missing collection errors. The rest of what Commonly leans on behaves the same: 
 operator) in a partial index filter, and every check for a lost race goes through
 `isDuplicateKeyError`. A known gap: existing refusals that read `keyPattern` (signup, username
 change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The
-FerretDB workflow (#3492, open) runs the suite on both stores on every backend PR and nightly. It
-is not a required check yet; it becomes one once it is green.
+FerretDB workflow (`backend-ferretdb.yml`, #3492) runs the suite on both stores nightly and on
+dispatch. It stays off pull requests while FerretDB is red: a failing job marks every backend PR
+UNSTABLE even under `continue-on-error`, and the press takes only CLEAN PRs. It moves to pull
+requests, as a required check, once it is green. A nightly walk of the self-host path itself, on
+both stores, is #3516.
 
 **Constraints.** The DocumentDB extension needs a superuser and `shared_preload_libraries`
 (`pg_cron`, `documentdb`), so it runs on a Postgres the instance owns, not on a managed one. The
