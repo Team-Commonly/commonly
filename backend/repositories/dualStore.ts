@@ -36,6 +36,8 @@ export interface PgAdapter {
   /** pg mode: deletes the row only if it is still at `version`; true when deleted. */
   removeAt(id: string, version: number): Promise<boolean>;
   get(id: string): Promise<{ row: Row; version: number } | null>;
+  /** Rows after `afterId` in id order (text order), `limit` at a time; verify walks it for rows Mongo lacks. */
+  list?(afterId: string | null, limit: number): Promise<{ row: Row; version: number }[]>;
 }
 
 interface PgQueryable {
@@ -128,6 +130,13 @@ export function pgTableAdapter(
       const { pg_version: version, ...row } = rows[0];
       return { row, version: Number(version) };
     },
+    async list(afterId, limit) {
+      const { rows } = afterId == null
+        ? await pool.query(`SELECT ${all.join(', ')}, pg_version FROM ${t} ORDER BY ${id}::text LIMIT $1`, [limit])
+        : await pool.query(`SELECT ${all.join(', ')}, pg_version FROM ${t} WHERE ${id}::text > $1
+          ORDER BY ${id}::text LIMIT $2`, [afterId, limit]);
+      return rows.map(({ pg_version: version, ...row }) => ({ row, version: Number(version) }));
+    },
   };
 }
 
@@ -184,6 +193,140 @@ const plain = (doc: Doc | null): Doc | null => {
 const FLAG_CACHE_MS = 5000;
 const PG_UPDATE_ATTEMPTS = 5;
 
+/**
+ * The update operators the helper writes in every mode. Wave 1's callers use
+ * these and no others (measured 2026-11-05); an operator outside the set is
+ * refused by name, never dropped, so a new caller finds out in its first test.
+ */
+const OPERATORS = new Set(['$set', '$unset', '$inc', '$max', '$min', '$push', '$setOnInsert']);
+export type UpdateOperators = Partial<Record<'$set' | '$unset' | '$inc' | '$max' | '$min' | '$push' | '$setOnInsert', Doc>>;
+
+const checkOperators = (update: Doc): void => {
+  for (const [op, fields] of Object.entries(update)) {
+    if (!op.startsWith('$')) throw new Error(`dual-store: an update takes operators ($set, $inc, ...), got "${op}"`);
+    if (!OPERATORS.has(op)) throw new Error(`dual-store: ${op} is not supported`);
+    if (op === '$push') {
+      for (const value of Object.values(fields as Doc)) {
+        if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).some((k) => k.startsWith('$'))) {
+          const extra = Object.keys(value).find((k) => k !== '$each');
+          if (extra) throw new Error(`dual-store: $push ${extra} is not supported`);
+        }
+      }
+    }
+  }
+};
+
+const pushedItems = (value: unknown): unknown[] => (
+  value && typeof value === 'object' && !Array.isArray(value) && '$each' in (value as Doc)
+    ? [...((value as Doc).$each as unknown[])]
+    : [value]
+);
+
+/** A deep copy that keeps Dates, ObjectIds and other class instances as they are. */
+const cloneDoc = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(cloneDoc);
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value as Doc).map(([k, v]) => [k, cloneDoc(v)]));
+  }
+  return value;
+};
+const getPath = (doc: Doc, path: string): unknown => path.split('.')
+  .reduce<unknown>((at, key) => (at && typeof at === 'object' ? (at as Doc)[key] : undefined), doc);
+const setPath = (doc: Doc, path: string, value: unknown): void => {
+  const keys = path.split('.');
+  let at = doc;
+  keys.slice(0, -1).forEach((key) => {
+    if (!at[key] || typeof at[key] !== 'object') at[key] = {};
+    at = at[key] as Doc;
+  });
+  at[keys[keys.length - 1]] = value;
+};
+const unsetPath = (doc: Doc, path: string): void => {
+  const keys = path.split('.');
+  const parent = keys.length > 1 ? getPath(doc, keys.slice(0, -1).join('.')) : doc;
+  if (parent && typeof parent === 'object') delete (parent as Doc)[keys[keys.length - 1]];
+};
+
+/**
+ * Applies an update to a plain document in process, the way Mongo would. pg
+ * mode writes this way (read, apply, compare-and-set), so its result has to be
+ * Mongo's; the shared tests hold the two to the same answers.
+ */
+export function applyUpdateOperators(doc: Doc, update: Doc, { inserting = false } = {}): Doc {
+  checkOperators(update);
+  const out = cloneDoc(doc) as Doc;
+  for (const [op, fields] of Object.entries(update)) {
+    for (const [path, value] of Object.entries(fields as Doc)) {
+      const current = getPath(out, path);
+      if (op === '$set') setPath(out, path, cloneDoc(value));
+      else if (op === '$setOnInsert') { if (inserting) setPath(out, path, cloneDoc(value)); }
+      else if (op === '$unset') unsetPath(out, path);
+      else if (op === '$inc') setPath(out, path, Number(current ?? 0) + Number(value));
+      else if (op === '$max') { if (current == null || (value as number) > (current as number)) setPath(out, path, value); }
+      else if (op === '$min') { if (current == null || (value as number) < (current as number)) setPath(out, path, value); }
+      else if (op === '$push') setPath(out, path, [...(Array.isArray(current) ? current : []), ...pushedItems(value)]);
+    }
+  }
+  return out;
+}
+
+/**
+ * The same update as one Mongo pipeline stage list, so the fields, the version
+ * bump and the marker land in one atomic write. `$literal` keeps a value like
+ * "$5 off" from being read as a field path.
+ */
+const toPipeline = (update: Doc, extraSet: Doc): Doc[] => {
+  checkOperators(update);
+  const set: Doc = {};
+  const unset: string[] = [];
+  for (const [op, fields] of Object.entries(update)) {
+    for (const [path, value] of Object.entries(fields as Doc)) {
+      const ref = `$${path}`;
+      if (op === '$set') set[path] = { $literal: value };
+      else if (op === '$unset') unset.push(path);
+      else if (op === '$inc') set[path] = { $add: [{ $ifNull: [ref, 0] }, value] };
+      // The aggregation $max/$min skip a missing or null operand, as the update operators do.
+      else if (op === '$max') set[path] = { $max: [ref, { $literal: value }] };
+      else if (op === '$min') set[path] = { $min: [ref, { $literal: value }] };
+      else if (op === '$push') set[path] = { $concatArrays: [{ $ifNull: [ref, []] }, { $literal: pushedItems(value) }] };
+      // $setOnInsert touches an existing document not at all.
+    }
+  }
+  const pipeline: Doc[] = [{ $set: { ...set, ...extraSet } }];
+  if (unset.length) pipeline.push({ $unset: unset });
+  return pipeline;
+};
+
+/** The equality fields of a filter: what an upsert's new document starts from. */
+const insertBase = (filter: Doc): Doc => Object.fromEntries(Object.entries(filter).filter(([key, value]) => (
+  !key.startsWith('$')
+  && !(value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)
+    && typeof (value as { toHexString?: unknown }).toHexString !== 'function'
+    && Object.keys(value).some((k) => k.startsWith('$')))
+)));
+
+/** A filter-scoped read: the Mongo filter, and the same question as a Postgres query. */
+export interface FilterRead {
+  mongo: Doc;
+  /** Rows (with the id column) answering the same filter; required in pg and pg-read modes. */
+  pg?: () => Promise<Row[]>;
+  sort?: Record<string, 1 | -1>;
+  limit?: number;
+}
+/** pg mode has no Mongo to filter, so a filter write names its Postgres rows. */
+export interface FilterWriteOptions {
+  pg?: () => Promise<Row[]>;
+}
+
+export interface VerifyReport {
+  checked: number;
+  /** Documents still flagged; repair finishes them, and a read cut waits for zero. */
+  pending: number;
+  missing: string[];
+  differs: { id: string; fields: string[] }[];
+  pgOnly: string[];
+}
+
 export interface DualStoreOptions {
   name: string;
   model: Model<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -204,6 +347,17 @@ export interface DualStore {
   remove(id: Id): Promise<boolean>;
   findById(id: Id): Promise<Doc | null>;
   repair(options?: { limit?: number }): Promise<{ scanned: number; copied: number; deleted: number; failed: number }>;
+  find(read: FilterRead): Promise<Doc[]>;
+  findOne(read: FilterRead): Promise<Doc | null>;
+  /** findOneAndUpdate with `new: true`. With `upsert`, inserts from the filter's equality fields. */
+  updateOne(filter: Doc, update: Doc, options?: FilterWriteOptions & { upsert?: boolean }): Promise<Doc | null>;
+  updateMany(filter: Doc, update: Doc, options?: FilterWriteOptions): Promise<{ matched: number }>;
+  deleteOne(filter: Doc, options?: FilterWriteOptions): Promise<{ deleted: number }>;
+  deleteMany(filter: Doc, options?: FilterWriteOptions): Promise<{ deleted: number }>;
+  /** Copies every live Mongo document to Postgres through the marker. The first step after `dual`. */
+  backfill(options?: { batch?: number }): Promise<{ scanned: number; copied: number; failed: number }>;
+  /** The read-cut gate (ADR-034 D3): every mismatch between the stores, named. */
+  verify(options?: { batch?: number; maxIds?: number }): Promise<VerifyReport>;
 }
 
 export function createDualStore(
@@ -312,6 +466,18 @@ export function createDualStore(
       }
       throw new Error(`dual-store: ${name} update lost ${PG_UPDATE_ATTEMPTS} races in a row`);
     },
+    /** An operator update on one row: read, apply in process, compare-and-set. */
+    async apply(id: Id, update: Doc): Promise<Doc | null> {
+      for (let attempt = 0; attempt < PG_UPDATE_ATTEMPTS; attempt += 1) {
+        // eslint-disable-next-line no-await-in-loop -- read-modify-write, retried on a lost race
+        const got = await pg.get(String(id));
+        if (!got) return null;
+        const row = toRow(applyUpdateOperators(fromRow(got.row), update));
+        // eslint-disable-next-line no-await-in-loop
+        if (await pg.replace(row, got.version)) return fromRow(row);
+      }
+      throw new Error(`dual-store: ${name} update lost ${PG_UPDATE_ATTEMPTS} races in a row`);
+    },
     async remove(id: Id): Promise<boolean> {
       for (let attempt = 0; attempt < PG_UPDATE_ATTEMPTS; attempt += 1) {
         // eslint-disable-next-line no-await-in-loop -- read-then-delete, retried on a lost race
@@ -324,7 +490,63 @@ export function createDualStore(
     },
   };
 
-  return {
+  /** A filter, restricted to documents not mid-delete. */
+  const live = (filter: Doc): Doc => ({ $and: [filter, { pgDeleted: { $ne: true } }] });
+
+  const selectPg = async (rows?: () => Promise<Row[]>): Promise<Row[]> => {
+    if (typeof rows !== 'function') {
+      throw new Error(`dual-store: ${name} reads Postgres in this mode, so the call must pass its Postgres query`);
+    }
+    return rows();
+  };
+
+  const find = async ({ mongo: filter, pg: pgRows, sort, limit }: FilterRead): Promise<Doc[]> => {
+    const mode = storeMode(name);
+    if (mode === 'pg' || (mode === 'pg-read' && !await anyFlagged())) {
+      const rows = await selectPg(pgRows);
+      return (limit ? rows.slice(0, limit) : rows).map(fromRow);
+    }
+    let query = Model.find(live(filter));
+    if (sort) query = query.sort(sort);
+    if (limit) query = query.limit(limit);
+    const docs = await query.lean() as Doc[];
+    if (mode !== 'mongo') {
+      for (const doc of docs) {
+        if (doc.pgPending == null && Math.random() < sampleRate) {
+          try {
+            // eslint-disable-next-line no-await-in-loop -- sampled, so few
+            const got = await pg.get(String(doc._id));
+            if (!got) mismatch(name, doc._id, 'missing');
+            else {
+              const fields = differingFields(toRow(doc), got.row);
+              if (fields.length) mismatch(name, doc._id, 'differs', fields);
+            }
+          } catch (error) {
+            console.warn(`[dual-store] compare read failed model=${name}:`, (error as Error).message);
+          }
+        }
+      }
+    }
+    return docs.map((doc) => plain(doc) as Doc);
+  };
+
+  const deleteWhere = async (filter: Doc, { pg: pgRows }: FilterWriteOptions = {}, one = false) => {
+    const mode = storeMode(name);
+    if (mode === 'mongo') {
+      return { deleted: (one ? await Model.deleteOne(filter) : await Model.deleteMany(filter)).deletedCount };
+    }
+    const targets = mode === 'pg'
+      ? (await selectPg(pgRows)).map((row) => fromRow(row)._id)
+      : (await Model.find(live(filter), { _id: 1 }).limit(one ? 1 : 0).lean() as Doc[]).map((d) => d._id);
+    let deleted = 0;
+    for (const id of one ? targets.slice(0, 1) : targets) {
+      // eslint-disable-next-line no-await-in-loop -- each delete is two-phase
+      if (await store.remove(id)) deleted += 1;
+    }
+    return { deleted };
+  };
+
+  const store: DualStore = {
     async create(doc) {
       const mode = storeMode(name);
       if (mode === 'pg') return pgOnly.create(doc);
@@ -415,5 +637,144 @@ export function createDualStore(
       flagged = null;
       return counts;
     },
+
+    find: (read) => find(read),
+    async findOne(read) {
+      return (await find({ ...read, limit: 1 }))[0] ?? null;
+    },
+
+    async updateOne(filter, update, { upsert = false, pg: pgRows } = {}) {
+      const mode = storeMode(name);
+      if (mode === 'mongo') {
+        return plain(await Model.findOneAndUpdate(filter, update, { new: true, upsert }).lean() as Doc | null);
+      }
+      if (mode === 'pg') {
+        const [row] = await selectPg(pgRows);
+        if (row) return pgOnly.apply(fromRow(row)._id, update);
+        return upsert ? pgOnly.create(applyUpdateOperators(insertBase(filter), update, { inserting: true })) : null;
+      }
+      const pipeline = toPipeline(update, bump);
+      for (let attempt = 0; attempt < PG_UPDATE_ATTEMPTS; attempt += 1) {
+        // eslint-disable-next-line no-await-in-loop -- an upsert that lost a race retries as an update
+        const doc = await Model.findOneAndUpdate(live(filter), [...pipeline, markPending], { new: true }).lean() as Doc | null;
+        if (doc) {
+          // eslint-disable-next-line no-await-in-loop
+          await finishCopy(doc._id, doc.pgVersion as number, toRow(doc));
+          return plain(doc);
+        }
+        if (!upsert) return null;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          return await store.create(applyUpdateOperators(insertBase(filter), update, { inserting: true }));
+        } catch (error) {
+          if ((error as { code?: number }).code !== 11000) throw error;
+        }
+      }
+      throw new Error(`dual-store: ${name} upsert lost ${PG_UPDATE_ATTEMPTS} races in a row`);
+    },
+
+    async updateMany(filter, update, { pg: pgRows } = {}) {
+      const mode = storeMode(name);
+      if (mode === 'mongo') return { matched: (await Model.updateMany(filter, update)).matchedCount };
+      if (mode === 'pg') {
+        const rows = await selectPg(pgRows);
+        for (const row of rows) {
+          // eslint-disable-next-line no-await-in-loop -- read-modify-write per row
+          await pgOnly.apply(fromRow(row)._id, update);
+        }
+        return { matched: rows.length };
+      }
+      // The ids are fixed first, so the copies below finish exactly the
+      // documents this write touched (and any a racing write left flagged,
+      // which finishCopy settles by version either way).
+      const targets = (await Model.find(live(filter), { _id: 1 }).lean() as Doc[]).map((d) => d._id);
+      if (!targets.length) return { matched: 0 };
+      const result = await Model.updateMany(
+        { $and: [live(filter), { _id: { $in: targets } }] }, [...toPipeline(update, bump), markPending],
+      );
+      const flaggedDocs = await Model.find({ _id: { $in: targets }, pgPending: { $exists: true } }).lean() as Doc[];
+      for (const doc of flaggedDocs) {
+        // eslint-disable-next-line no-await-in-loop -- one copy at a time keeps the version order
+        await finishCopy(doc._id, doc.pgPending as number, toRow(doc));
+      }
+      return { matched: result.matchedCount };
+    },
+
+    deleteOne: (filter, options) => deleteWhere(filter, options, true),
+    deleteMany: (filter, options) => deleteWhere(filter, options, false),
+
+    async backfill({ batch = 500 } = {}) {
+      const counts = { scanned: 0, copied: 0, failed: 0 };
+      const mode = storeMode(name);
+      if (mode === 'mongo' || mode === 'pg') return counts;
+      let after: Id = null;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- paged by _id
+        const docs = await Model.find({ pgDeleted: { $ne: true }, ...(after != null && { _id: { $gt: after } }) })
+          .sort({ _id: 1 }).limit(batch).lean() as Doc[];
+        if (!docs.length) break;
+        for (const doc of docs) {
+          counts.scanned += 1;
+          // A flagged document is finished at its own version; any other is
+          // marked through the same atomic write a live update uses, so a
+          // backfill racing a write can only copy a version Mongo holds.
+          const marked = doc.pgPending != null ? doc
+            // eslint-disable-next-line no-await-in-loop
+            : await Model.findOneAndUpdate(
+              { _id: doc._id, pgPending: { $exists: false }, pgDeleted: { $ne: true } },
+              [{ $set: bump }, markPending], { new: true },
+            ).lean() as Doc | null;
+          if (!marked) { counts.copied += 1; continue; } // a live write took it and copies it itself
+          // eslint-disable-next-line no-await-in-loop
+          if (await finishCopy(marked._id, marked.pgPending as number, toRow(marked), false)) counts.copied += 1;
+          else counts.failed += 1;
+        }
+        after = docs[docs.length - 1]._id;
+      }
+      flagged = null;
+      return counts;
+    },
+
+    async verify({ batch = 500, maxIds = 50 } = {}) {
+      const report: VerifyReport = {
+        checked: 0, pending: 0, missing: [], differs: [], pgOnly: [],
+      };
+      const note = <T>(list: T[], item: T) => { if (list.length < maxIds) list.push(item); };
+      let after: Id = null;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- paged by _id
+        const docs = await Model.find(after != null ? { _id: { $gt: after } } : {})
+          .sort({ _id: 1 }).limit(batch).lean() as Doc[];
+        if (!docs.length) break;
+        for (const doc of docs) {
+          if (doc.pgPending != null) { report.pending += 1; continue; }
+          report.checked += 1;
+          // eslint-disable-next-line no-await-in-loop
+          const got = await pg.get(String(doc._id));
+          if (!got) note(report.missing, String(doc._id));
+          else {
+            const fields = differingFields(toRow(doc), got.row);
+            if (fields.length) note(report.differs, { id: String(doc._id), fields });
+          }
+        }
+        after = docs[docs.length - 1]._id;
+      }
+      if (!pg.list) throw new Error(`dual-store: ${name}'s Postgres adapter has no list(); verify needs it`);
+      let afterRow: string | null = null;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- paged by id
+        const rows = await pg.list(afterRow, batch);
+        if (!rows.length) break;
+        const rowIds = rows.map(({ row }) => fromRow(row)._id);
+        // eslint-disable-next-line no-await-in-loop
+        const inMongo = new Set((await Model.find({ _id: { $in: rowIds } }, { _id: 1 }).lean() as Doc[])
+          .map((d) => String(d._id)));
+        rowIds.forEach((rowId) => { if (!inMongo.has(String(rowId))) note(report.pgOnly, String(rowId)); });
+        // The id column holds String(_id), so the last id resumes the walk.
+        afterRow = String(rowIds[rowIds.length - 1]);
+      }
+      return report;
+    },
   };
+  return store;
 }

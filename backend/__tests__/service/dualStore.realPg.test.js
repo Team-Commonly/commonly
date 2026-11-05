@@ -77,6 +77,20 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(await adapter.get(ID)).toBeNull();
   });
 
+  it('lists rows in id order, a page at a time, for verify\'s walk', async () => {
+    const ids = ['6a692a1be833c668acdb84d1', ID, '6a692a1be833c668acdb84d0'];
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      await adapter.upsert({ id, title: id.slice(-2), payload: null }, 1);
+    }
+    const first = await adapter.list(null, 2);
+    expect(first.map(({ row }) => row.id)).toEqual([ID, '6a692a1be833c668acdb84d0']);
+    expect(first[0].version).toBe(1);
+    const rest = await adapter.list(first[1].row.id, 2);
+    expect(rest.map(({ row }) => row.id)).toEqual(['6a692a1be833c668acdb84d1']);
+    expect(await adapter.list(rest[0].row.id, 2)).toEqual([]);
+  });
+
   it('rejects an identifier it would have to interpolate unsafely', () => {
     const { pool } = database;
     expect(() => pgTableAdapter({
