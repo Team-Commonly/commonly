@@ -187,6 +187,40 @@ test('a kept process whose environment is unreadable keeps only what kept the se
   assert.deepEqual(found.map((row) => row.pid), [731]);
 });
 
+test('a confined turn keeps nothing: a process set to keep, and what it starts, are found and flagged', () => {
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const fresh = at(since + 5_000);
+  const table = () => [
+    { pid: 740, ppid: 1, started: fresh }, // set to keep, reparented
+    { pid: 741, ppid: 740, started: fresh }, // its child, keep cleared
+    { pid: 742, ppid: 1, started: fresh }, // a plain leftover
+  ];
+  const pair = `${TURN_MARK_ENV}=m-7`;
+  const envs = () => new Map([
+    [740, new Set([pair, `${KEEP_PROCESS_ENV}=1`])],
+    [741, new Set([pair])],
+    [742, new Set([pair])],
+  ]);
+
+  const confined = findTurnProcesses('m-7', since, { table, envs, self: 500 }, { honorKeep: false });
+  assert.deepEqual(confined.map((row) => row.pid).sort(), [740, 741, 742]);
+  assert.deepEqual(confined.filter((row) => row.keepIgnored).map((row) => row.pid), [740]);
+  // Unconfined, the same table keeps 740 and what it started, as before.
+  const open = findTurnProcesses('m-7', since, { table, envs, self: 500 });
+  assert.deepEqual(open.map((row) => row.pid), [742]);
+  assert.ok(open.every((row) => !row.keepIgnored));
+});
+
+test('a confined turn says once that a keep setting was not honoured, and offers no keep setting', () => {
+  const line = describeTurnReap({ termed: [7, 8], keepIgnored: [7], honorKeep: false });
+  assert.match(line, /^stopped 2 processes this turn left running \(pid 7, 8\); COMMONLY_KEEP_PROCESS=1 was set on pid 7 and is not honoured on a confined seat$/);
+  assert.equal(
+    describeTurnReap({ termed: [8], keepIgnored: [], honorKeep: false }),
+    'stopped 1 process this turn left running (pid 8)',
+  );
+  assert.equal(describeTurnReap({ termed: [], keepIgnored: [], honorKeep: false }), null);
+});
+
 test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is never reaped', () => {
   assert.equal(turnReapEnabled({}), POSIX);
   assert.equal(turnReapEnabled({ COMMONLY_TURN_REAP: '0' }), false);
@@ -260,6 +294,33 @@ test('a turn that detaches children leaves none running, except the one it kept'
     assert.ok(isRunning(bystander.pid), 'an unmarked process is untouched');
   } finally {
     for (const pid of [...pids, bystander.pid]) reap(pid);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a confined turn that detaches children leaves none running, the one set to keep included', { skip: !POSIX }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'turn-processes-confined-'));
+  const pidFile = join(dir, 'pids');
+  const readyFile = join(dir, 'ready');
+  const turn = markTurn({ ...process.env }, { enabled: true, graceMs: 500, confined: true });
+  let pids = [];
+  try {
+    const child = spawn(process.execPath, ['-e', TURN, pidFile, readyFile], { env: turn.env, stdio: 'ignore' });
+    await once(child, 'close');
+    pids = await readPids(pidFile, 3);
+    const [leftover, kept, stubborn] = pids;
+    assert.ok(await waitFor(() => pids.every((pid) => readProcess(pid))));
+    assert.ok(await waitFor(() => existsSync(readyFile)), 'the stubborn one has its handler in');
+
+    const result = turn.reap(child);
+
+    assert.deepEqual([...result.termed].sort(), [leftover, kept, stubborn].sort());
+    assert.deepEqual(result.keepIgnored, [kept]);
+    assert.match(describeTurnReap(result), /COMMONLY_KEEP_PROCESS=1 was set on pid \d+ and is not honoured on a confined seat/);
+    await result.done;
+    for (const pid of pids) assert.ok(await waitFor(() => !isRunning(pid)), `pid ${pid} is gone`);
+  } finally {
+    for (const pid of pids) reap(pid);
     rmSync(dir, { recursive: true, force: true });
   }
 });

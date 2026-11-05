@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import {
   PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS,
 } from '../src/lib/public-withheld-tools.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
+import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 
 const childWith = (stdout, code = 0, stderr = '') => {
   const child = new EventEmitter();
@@ -287,3 +288,50 @@ test('a public Goose recipe shows the memory it read and names no save tool', as
     expect(extension.available_tools).toContain('commonly_read_agent_memory');
   }
 });
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'goose-f197-'));
+  const cwd = join(root, 'workspace');
+  const elsewhere = join(root, 'elsewhere');
+  mkdirSync(elsewhere);
+  symlinkSync(elsewhere, cwd);
+  const keyFile = join(root, 'provider-key');
+  writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
+  const home = join(root, 'mcp-home');
+  const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+  mkdirSync(join(pkgDir, 'src'), { recursive: true });
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+  }));
+  writeFileSync(join(pkgDir, 'src', 'index.js'), '');
+  writeFileSync(join(home, 'current'), '0.3.13\n');
+  const prior = process.env.COMMONLY_MCP_HOME;
+  process.env.COMMONLY_MCP_HOME = home;
+  const calls = [];
+  try {
+    const ctx = baseCtx();
+    const error = await goose.spawn('hello', {
+      ...ctx,
+      cwd,
+      environment: { ...ctx.environment,
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _platform: 'darwin',
+      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+      _spawnImpl: (...args) => { calls.push(args); return childWith(reply('ok')); },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(error.message).toContain(cwd);
+    expect(calls).toHaveLength(0);
+  } finally {
+    if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = prior;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+

@@ -90,6 +90,8 @@ export const probeSeatbeltConfinement = async () => {
     const profile = buildSeatbeltProfile({
       workspacePath: workspace,
       workspaceAccess: 'write',
+      // Probes the public-seat profile, which pins its writable workspace.
+      pinWorkspace: true,
       executablePath: process.execPath,
       statePath: state,
       network: 'loopback',
