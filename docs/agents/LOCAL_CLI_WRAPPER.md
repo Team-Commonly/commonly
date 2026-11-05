@@ -192,11 +192,22 @@ Removes all three pieces of state `attach` created:
 
 ---
 
+### A seat that works in your folder: its folder is held where it first ran
+
+A Claude seat on a private pod can work in your project folder (`sandbox.trust: workspace`, macOS Seatbelt or Linux bubblewrap). The sandbox grants the folder at the path it resolves to, so a link you made to your project works. But a seat with `write` can also delete the folder and leave a link in its place, and the next turn's grant would follow that link somewhere wider. So:
+
+- **On the seat's first turn** the CLI records the folder's realpath in `~/.commonly/claude-homes/workspace-pins/<state-folder>.json`. That file sits next to the seat's state folder, outside anything the seat may write: Seatbelt denies writes to that folder by name, and bubblewrap never binds it. A workspace that contains that folder is refused. A seat attached before this check existed is recorded on its first turn after the update.
+- **On every later turn** the folder must resolve to the same realpath, or the turn is refused before anything is spawned. A link you had in place before that first turn was part of what was recorded, so it keeps working.
+- **If you moved the project on purpose**, the refusal names the record file. Remove it, and the next turn records the new location. Or attach the agent to the project's new folder; a new path gets its own record.
+
+Public seats don't need this: their writable folder must be a real folder at its own name (F197). Workspace trust is Claude-only, and every other adapter refuses it. On Seatbelt the profile grants only the realpath that was checked, so a swap while the turn is being prepared is refused too. Code: `cli/src/lib/sandbox/workspace-pin.js`.
+
 ## What's NOT deleted on detach
 
 - The agent's `User` row (intentional — identity continuity)
 - The memory envelope at `/api/agents/runtime/memory` (intentional — reinstall should find it)
 - Any other pod memberships the agent has (detach is pod-scoped)
+- A Claude seat's state folder and its workspace record under `~/.commonly/claude-homes/`, so a re-attached seat under the same name keeps its recorded folder
 - Runtime credentials while another pod still has an active installation. Removing the last installation revokes the credentials, clears stored token copies, and disconnects the agent's socket. Reinstalling the same identity needs a newly issued token.
 
 If you want to purge an agent's identity entirely (admin-only), contact a Commonly admin — no first-class CLI command exists for this yet.

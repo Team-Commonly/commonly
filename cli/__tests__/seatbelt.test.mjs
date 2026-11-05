@@ -199,6 +199,35 @@ describe('macOS Seatbelt profile', () => {
       );
     });
 
+    // F200: a workspace seat's folder is held to the realpath recorded on its
+    // first turn, checked against the same read the grant uses.
+    test('a workspace that still resolves to its expected realpath is granted there', () => {
+      const real = realpathSync(workspace);
+      expect(build({ expectedWorkspaceRealpath: real })).toContain(
+        `(allow file-read* file-test-existence file-write* (subpath "${real}"))`,
+      );
+    });
+
+    test('a workspace that resolves elsewhere than expected is refused, naming both paths', () => {
+      const real = realpathSync(workspace);
+      const target = outside();
+      rmSync(workspace, { recursive: true });
+      symlinkSync(target, workspace);
+      expect(() => build({ expectedWorkspaceRealpath: real })).toThrow(/refusing a workspace turn/);
+      expect(() => build({ expectedWorkspaceRealpath: real })).toThrow(realpathSync(target));
+    });
+
+    test('a folder named in denyWritePaths is denied after the workspace grant, even inside it', () => {
+      const inner = join(workspace, 'record');
+      mkdirSync(inner);
+      const profile = build({ denyWritePaths: [inner] });
+      const deny = `(deny file-write* (subpath "${realpathSync(inner)}"))`;
+      expect(profile).toContain(deny);
+      expect(profile.indexOf(deny)).toBeGreaterThan(
+        profile.indexOf(`file-write* (subpath "${realpathSync(workspace)}"))`),
+      );
+    });
+
     test('a read-only workspace still resolves through a link', () => {
       const target = outside();
       rmSync(workspace, { recursive: true });

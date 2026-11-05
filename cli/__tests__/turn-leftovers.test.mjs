@@ -119,7 +119,9 @@ describe('claude: what a confined turn leaves running', () => {
     environment: { model: 'test-model', sandbox: { mode: 'workspace', trust } },
     agentName: `f197-${trust}`,
     skillMountDir: home,
-    _publicClaudeState: path.join(home, `state-${trust}-${Date.now()}`),
+    // Outside the workspace (home): a workspace seat's folder may not contain
+    // the record of its realpath kept beside the state folder (F200).
+    _publicClaudeState: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-turn-leftovers-state-')), `state-${trust}`),
     _startProviderProxy: async () => ({
       baseURL: 'http://127.0.0.1:41597/', token: 'per-turn-f197', port: 41597, close: async () => {},
     }),

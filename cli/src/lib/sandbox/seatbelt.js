@@ -452,6 +452,13 @@ export const buildSeatbeltProfile = ({
   // Other seats work in a folder the operator chose, which may be a link on
   // purpose, and leave this unset.
   pinWorkspace = false,
+  // The realpath the workspace must still resolve to (F200): a workspace
+  // seat's folder as recorded on its first turn (workspace-pin.js). The grant
+  // is refused, not moved, when the folder now resolves elsewhere.
+  expectedWorkspaceRealpath = null,
+  // Folders no rule here may let the jail write, however a grant above is
+  // shaped: a workspace seat's own record of its folder (F200).
+  denyWritePaths = [],
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -461,6 +468,7 @@ export const buildSeatbeltProfile = ({
     assertAbsolutePath(path, label);
   }
   if (mcpConfigDir) assertAbsolutePath(mcpConfigDir, 'mcpConfigDir');
+  for (const path of denyWritePaths) assertAbsolutePath(path, 'denyWritePaths entry');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
   for (const port of loopbackNetworkPorts) {
@@ -501,6 +509,13 @@ export const buildSeatbeltProfile = ({
   const resolvedWorkspace = workspaceAccess === 'write' && pinWorkspace
     ? pinnedRealpath(workspacePath, 'workspace')
     : realpathOrSelf(workspacePath);
+  if (expectedWorkspaceRealpath && resolvedWorkspace !== expectedWorkspaceRealpath) {
+    throw new Error(
+      `refusing a workspace turn: ${workspacePath} now resolves to ${resolvedWorkspace}, `
+      + `not ${expectedWorkspaceRealpath} as it did when the turn was checked. The folder was `
+      + 'replaced during the turn\'s preparation; run the turn again.',
+    );
+  }
   const resolvedExecutable = realpathOrSelf(executablePath);
   const resolvedState = pinnedRealpath(statePath, 'state folder');
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
@@ -576,6 +591,10 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     readOnlyWorkspaceRules,
+    // After every allow above, so a workspace that contained one of these
+    // folders still could not write it (later rules win).
+    [...new Set(denyWritePaths.flatMap((path) => [path, realpathOrSelf(path)]))]
+      .map((path) => `(deny file-write* ${subpath(path)})`).join('\n'),
     ...claudeRuntimeRules,
     // Later rules win, so this narrows the baseline's same-sandbox allow.
     processInfo === 'self'
