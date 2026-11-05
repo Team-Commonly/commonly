@@ -30,9 +30,8 @@
  * carries it and nothing the server sends can set it.
  *
  * Claude Code only: it is the adapter that applies the public policy without
- * its jail. OpenCode and Qwen stay refused on Windows, and so does a public
- * Codex seat, whose own Windows sandbox can't enforce its profile's read
- * denies (host-check.js windowsCodexMessage). No seat on native Windows
+ * its jail. OpenCode and Qwen stay refused on Windows, and Codex is never
+ * refused there (it confines with its own profiles). No seat on native Windows
  * gets the grant broker (grant-broker-guard.js), and the server refuses grant
  * use for every seat on a machine whose daemon reports the opt-in.
  */

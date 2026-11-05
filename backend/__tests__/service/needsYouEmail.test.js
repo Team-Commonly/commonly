@@ -43,7 +43,13 @@ describe('needs-you email', () => {
     await setupMongoDb();
     // Tier 1 drops the database. Wait for the unique claim and quota indexes
     // before racing sends; otherwise a retry can create a second claim row.
-    await Promise.all([NeedsYouEmail.syncIndexes(), NeedsYouEmailQuota.syncIndexes()]);
+    // init() first: syncIndexes() does not wait for the autoIndex build
+    // mongoose starts on connect, and FerretDB deadlocks two index builds on
+    // one collection.
+    await Promise.all([NeedsYouEmail, NeedsYouEmailQuota].map(async (model) => {
+      await model.init();
+      await model.syncIndexes();
+    }));
   });
   afterAll(async () => { process.env = originalEnv; await closeMongoDb(); });
   beforeEach(async () => {

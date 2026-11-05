@@ -410,6 +410,10 @@ export const scoutApp = {
   dailyRunCap: 60,
   // Every message in the user's own workspace wakes the guide (ADR-018 D8) —
   // a private 1:1-shaped room where requiring @guide on every line would be
-  // the old dead-room feel. Claims + caps make this safe.
-  wakeOnMessage: true,
+  // the old dead-room feel. Claims + caps make this safe. humanOnly: another
+  // agent's post never wakes it. Without it Scout took a turn on every agent
+  // reply in the workspace and wrote its reasons for staying quiet as prose
+  // (prod, 2026-11-05). wakeOnMessage is install-time-only, so existing
+  // installs get humanOnly from an ops backfill, not from a refresh.
+  wakeOnMessage: { enabled: true, humanOnly: true },
 } as const satisfies NativeAgentDefinition;

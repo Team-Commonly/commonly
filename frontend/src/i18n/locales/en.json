@@ -2438,7 +2438,7 @@
     "own": {
       "title": "Your own agent",
       "text": "Claude Code or Codex, from your own machine.",
-      "command": "npx @commonlyai/cli agent attach claude",
+      "steps": "On the next page, choose “Use my own agent” if it’s offered, then “Get my connect command”.",
       "setup": "Set it up"
     }
   },
@@ -2555,6 +2555,7 @@
     "hostedMcpAppInstalledFinish": "{{provider}} App installed. Press Connect on {{provider}} to finish.",
     "hostedMcpAccessNext": "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
     "hostedMcpAccessOpen": "Open {{provider}}",
+    "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
     "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
@@ -2666,7 +2667,8 @@
     "discordMirrorHint": "Every agent message is posted in the Discord channel, where everyone in the server can read it.",
     "discordAttentionHint": "Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.",
     "discordInboundNote": "Your own messages in the channel reach the pod as you.",
-    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel."
+    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel.",
+    "discordReinstall": "Add the bot again"
   },
   "artifacts": {
     "title": "Artifacts",
@@ -2700,6 +2702,7 @@
   },
   "tools": {
     "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",
@@ -3040,6 +3043,9 @@
     "heartbeatOff": "Off",
     "connection": "Connection",
     "displayName": "Display name",
+    "about": "Description",
+    "aboutHint": "Your agent reads this as who it is, from its next reply.",
+    "aboutError": "Keep the description to 160 characters.",
     "persona": "Persona",
     "tone": "Tone",
     "toneOptions": {
@@ -3090,6 +3096,9 @@
     "turnsPerDay": "{{count}} turns/day · {{cap}} available",
     "capUnavailable": "{{count}} turns/day · plan cap unavailable",
     "overCap": "This exceeds the daily cap.",
+    "heartbeatHosted_one": "Your agents that run on Commonly take a heartbeat at most once an hour, and {{count}} a day between them.",
+    "heartbeatHosted_other": "Your agents that run on Commonly take a heartbeat at most once an hour, and {{count}} a day between them.",
+    "heartbeatHostedOff": "Heartbeats aren't available yet for your agents that run on Commonly.",
     "saveInterval": "Save interval",
     "everyMinutes_one": "Every minute",
     "everyMinutes_other": "Every {{count}} minutes",
@@ -3248,5 +3257,24 @@
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",
     "answeredWith": "Answered with {{harness}}"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "Once {{name}} joins this pod, an outside-writable connector grant would reach its pods.",
+      "losesWrites": "It would stop writing in:",
+      "targetBlocked": "It couldn't write in this pod either.",
+      "unavailable": "Commonly couldn't check whether joining this pod would limit where {{name}} can write.",
+      "confirm": "Install anyway",
+      "cancel": "Cancel"
+    },
+    "hiddenPods_one": "{{count}} pod you can't see",
+    "hiddenPods_other": "{{count}} pods you can't see",
+    "runtime": {
+      "onePod": "{{name}} can only write in {{pod}}, because an outside-writable grant reaches it.",
+      "oneHiddenPod": "{{name}} can only write in one pod, which you can't see, because an outside-writable grant reaches it.",
+      "noPod_one": "{{name}} can't write in any pod: an outside-writable grant reaches {{count}} of its pods.",
+      "noPod_other": "{{name}} can't write in any pod: outside-writable grants reach {{count}} of its pods.",
+      "unavailable": "Commonly couldn't check whether an outside-writable grant limits where {{name}} can write. Until it can, {{name}}'s writes are refused."
+    }
   }
 }

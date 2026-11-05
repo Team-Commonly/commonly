@@ -224,6 +224,18 @@ describe('withholding the broker, entry-level', () => {
     expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
     expect(onRefuse.mock.calls[0][0].reason).toBe('adapter_cannot_confine');
   });
+  // F175b wires the broker into codex. The bridge is delivery; this is the
+  // gate: a codex seat with no confinement never receives it to wire.
+  test('an unconfined codex seat gets no broker', () => {
+    const onRefuse = jest.fn();
+    const unconfined = { sandbox: { mode: 'workspace', trust: 'private' }, mcp: [kernel, broker()] };
+    const out = withholdGrantBroker(unconfined, 'codex', { ...opts, onRefuse, platform: 'darwin' });
+    expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+    expect(onRefuse).toHaveBeenCalledWith(expect.objectContaining({ reason: 'sandbox_trust_not_public' }), ['commonly-grant-broker']);
+
+    const noRecord = { mcp: [kernel, broker()] };
+    expect(withholdGrantBroker(noRecord, 'codex', { ...opts, platform: 'darwin' }).mcp.map((s) => s.name)).toEqual(['commonly']);
+  });
 });
 
 describe('F94: a broker the server says names this seat', () => {

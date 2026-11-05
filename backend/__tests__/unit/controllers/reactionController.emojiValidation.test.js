@@ -35,10 +35,14 @@ const buildRes = () => {
 };
 
 const reactAs = async (emoji) => {
-  // loadMessageContext → a pod + author; agent path → active install → access granted.
+  // loadMessageContext → a pod + author; agent path → its active install in pod-1 → access granted.
   pool.query.mockResolvedValueOnce({ rows: [{ pod_id: 'pod-1', user_id: 'author-1' }], rowCount: 1 });
-  AgentInstallation.findOne.mockReturnValue({ lean: () => Promise.resolve({ _id: 'inst-1' }) });
-  const req = { params: { messageId: '9' }, body: { emoji }, agentUser: { _id: 'bot-1' } };
+  const req = {
+    params: { messageId: '9' },
+    body: { emoji },
+    agentUser: { _id: 'bot-1' },
+    agentInstallations: [{ podId: 'pod-1', status: 'active' }],
+  };
   const res = buildRes();
   await reactionController.addReaction(req, res);
   return res;

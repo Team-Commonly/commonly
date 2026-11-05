@@ -11,6 +11,8 @@ declare global {
       userId?: string;
       user?: { id: string; username?: string; email?: string; role?: string };
       authType?: 'jwt' | 'apiToken' | 'deviceToken';
+      // Set by auth.ts when a cm_ user/device token belongs to a bot User (F149).
+      botCaller?: { username?: string; botMetadata?: { agentName?: string; instanceId?: string } };
       deviceTokenHash?: string;
       sessionStartedAt?: number;
       sessionTokenVersion?: number;

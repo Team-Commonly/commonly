@@ -196,6 +196,32 @@ real('grant and broker lines on real PostgreSQL and MongoDB', () => {
     expect(lines.filter((l) => l.kind === 'tool.call')).toHaveLength(2);
   });
 
+  it('F202: a retried expiry hits the derived trail id\'s primary key and leaves one refusal row', async () => {
+    const grant = await mint();
+    const parked = await call(grant, 'github.create_issue', { title: 'lapse twice' }).catch((error) => error);
+    const approvalId = String(parked.details.approvalId);
+    await ApprovalAction.updateOne({ _id: approvalId }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    const now = new Date();
+    expect(await approvals.sweepExpiredToolCallApprovals(now)).toBe(1);
+    // A crash after the trail row but before the marker: the retry inserts the same derived id.
+    await ApprovalAction.updateOne({ _id: approvalId }, { $unset: { expirySideEffectsDoneAt: 1 } });
+    await approvals.sweepExpiredToolCallApprovals(new Date(now.getTime() + approvals.EXPIRY_RETRY_GRACE_MS + 60 * 1000));
+
+    const stored = await ApprovalAction.findById(approvalId).lean();
+    expect(stored).toMatchObject({ expiryRetryCount: 1 });
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    const { rows } = await pool.query(
+      "SELECT call_id FROM tool_calls WHERE approval_id = $1 AND outcome = 'refused' AND reason = 'approval_expired'",
+      [approvalId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].call_id).toBe(stored.toolCallTrailId);
+    // The record dedupes on its own key, so the retry adds no second decision line.
+    const { lines } = await readPod();
+    expect(kinds(lines.filter((l) => l.data.toolCallId === parked.details.callId)))
+      .toEqual(['tool.call', 'permission.requested', 'decided:timed_out', 'tool.update']);
+  });
+
   it('the pod chain keeps the task route\'s gate: outsiders 404, admin non-members 403', async () => {
     await mint();
     await flushAll();

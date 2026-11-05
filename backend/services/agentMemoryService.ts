@@ -577,6 +577,31 @@ export function computeSyncDedupKey(
   return `${day}:${sourceRuntime ?? '-'}:${hash}`;
 }
 
+// Fields the cross-agent shared view may carry, per entry kind (used by
+// filterSectionsByVisibility below).
+const SHARED_SECTION_FIELDS = ['content', 'visibility', 'updatedAt', 'byteSize'] as const;
+const SHARED_SOURCE_FIELDS = ['runtime', 'via', 'writtenAt'] as const;
+const SHARED_DAILY_FIELDS = ['date', 'content', 'visibility', 'updatedAt'] as const;
+const SHARED_RELATIONSHIP_FIELDS = ['otherInstanceId', 'notes', 'visibility', 'updatedAt'] as const;
+
+// Copy only the listed fields that the entry actually has.
+function pickFields<T extends object>(entry: T, fields: readonly string[]): T {
+  const src = entry as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (src[field] !== undefined) out[field] = src[field];
+  }
+  return out as T;
+}
+
+function sharedSectionView(section: IMemorySection): IMemorySection {
+  const view = pickFields(section, SHARED_SECTION_FIELDS);
+  if (section.source && typeof section.source === 'object') {
+    view.source = pickFields(section.source, SHARED_SOURCE_FIELDS);
+  }
+  return view;
+}
+
 // ADR-003 Phase 4: visibility filter for cross-agent memory reads.
 //
 // Pure function: given the owner's stored sections, the requester's authorized
@@ -592,6 +617,12 @@ export function computeSyncDedupKey(
 //   - A section that ends up empty after filtering is OMITTED from the output
 //     (the caller can distinguish "no shared section" from "section exists but
 //     all entries hidden" via the empty array vs missing key).
+//   - The shared view is built from an allowed list of fields per entry kind
+//     (SHARED_*_FIELDS above), never by copying the stored entry. It carries
+//     no version history: `history` holds earlier content and has no
+//     visibility of its own. A field added to the schema later stays out of
+//     the shared view until it is listed here. The owner's GET /memory
+//     returns the full record, history included.
 export function filterSectionsByVisibility(
   sections: IAgentMemorySections | undefined,
   requesterPodIds: string[],
@@ -625,7 +656,7 @@ export function filterSectionsByVisibility(
     const s = sections[key];
     if (!s) return;
     if (allowVisibility(s.visibility)) {
-      out[key] = s;
+      out[key] = sharedSectionView(s);
     }
   };
   assignSingle('soul');
@@ -635,12 +666,16 @@ export function filterSectionsByVisibility(
   assignSingle('runtime_meta');
 
   if (sections.daily) {
-    const filteredDaily = sections.daily.filter((d) => allowVisibility(d.visibility));
+    const filteredDaily = sections.daily
+      .filter((d) => allowVisibility(d.visibility))
+      .map((d) => pickFields(d, SHARED_DAILY_FIELDS));
     if (filteredDaily.length > 0) out.daily = filteredDaily;
   }
 
   if (sections.relationships) {
-    const filteredRel = sections.relationships.filter((r) => allowVisibility(r.visibility));
+    const filteredRel = sections.relationships
+      .filter((r) => allowVisibility(r.visibility))
+      .map((r) => pickFields(r, SHARED_RELATIONSHIP_FIELDS));
     if (filteredRel.length > 0) out.relationships = filteredRel;
   }
 

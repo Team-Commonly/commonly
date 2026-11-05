@@ -70,7 +70,9 @@ import {
   resolve as pathResolve,
   sep,
 } from 'path';
-import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { isOurGrantBroker } from '../grant-broker-guard.js';
+import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from './codex-broker-bridge.mjs';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
@@ -120,7 +122,8 @@ const buildPrompt = buildMemoryPreamble;
 //
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
-//     are skipped rather than half-wired.
+//     are skipped rather than half-wired. The one exception is our grant
+//     broker, which runs behind a stdio bridge (bridgeGrantBroker, F175b).
 //   - Only entries that DECLARE stdio (or name no transport) are emitted, even
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
@@ -154,6 +157,73 @@ const substitutePlaceholders = (value, ctx) => {
 // JSON.stringify doubles as the TOML quoter for command/args/env values.
 const toml = (s) => JSON.stringify(String(s));
 
+const HTTP_TRANSPORTS = new Set(['http', 'streamable-http']);
+// A server name becomes a TOML key path, so it must not hold a dot.
+const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
+// What fetch accepts in a header: Latin-1, no CR, LF or NUL.
+// eslint-disable-next-line no-control-regex
+const HEADER_TEXT = /^[^\r\n\0\u0100-\uffff]*$/;
+
+// F175b: the grant broker is a Streamable HTTP server and codex runs stdio
+// servers here, so the broker is wired as OUR stdio bridge
+// (codex-broker-bridge.mjs) with the broker's url, its headers as templates and
+// this spawn's credential-file path, none of them a secret. The command the
+// entry declares, if any, is never run. Whether this seat may hold the broker
+// at all was decided before the adapter (grant-broker-guard.js), which
+// withholds it from a seat that is not confined.
+const bridgeGrantBroker = (server, ctx) => {
+  const skip = (why) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[codex] grant broker ${server.name}: ${why}, so it is not wired for this spawn.`);
+    return null;
+  };
+  if (!SERVER_NAME.test(server.name)) return skip('its name is not a plain config key');
+  if (!ctx.credentialFile) return skip('there is no seat credential to read');
+  // Resolve the instance placeholders only: the token placeholder stays in the
+  // header template and is filled by the bridge from the file.
+  const resolve = (value) => substitutePlaceholders(value, { instanceUrl: ctx.instanceUrl });
+  const resolvedUrl = resolve(server.url);
+  const headers = Object.fromEntries(Object.entries(server.headers || {})
+    .map(([name, value]) => [String(name), resolve(String(value))]));
+  const carriesToken = (value) => !!ctx.runtimeToken && value.includes(ctx.runtimeToken);
+  if (carriesToken(resolvedUrl)
+    || Object.entries(headers).some(([name, value]) => carriesToken(name) || carriesToken(value))) {
+    return skip('the entry holds the seat token as a literal, which would ride argv');
+  }
+  if (resolvedUrl.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
+  // A header fetch would reject quotes its value in the error, and that value
+  // holds the token once the bridge fills it, so such an entry is not wired.
+  if (Object.entries(headers).some(([name, value]) => !HEADER_TEXT.test(name) || !HEADER_TEXT.test(value))) {
+    return skip('a header holds a control or non-Latin-1 character');
+  }
+  // The url the guard judged (isOurGrantBroker) is normalised: resolved against
+  // the instance, with doubled slashes collapsed. The bridge fetches that same
+  // url, on the instance's own origin, or nothing.
+  let url;
+  try {
+    const instance = new URL(ctx.instanceUrl);
+    const parsed = new URL(resolvedUrl, instance);
+    if (parsed.origin !== instance.origin) return skip('its url is not on this instance');
+    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
+    url = parsed.href;
+  } catch {
+    return skip('its url does not resolve against this instance');
+  }
+  const env = [
+    [BRIDGE_URL_VAR, url],
+    [BRIDGE_HEADERS_VAR, JSON.stringify(headers)],
+    [CREDENTIAL_FILE_VAR, ctx.credentialFile],
+  ];
+  return [
+    '-c', `mcp_servers.${server.name}.command=${toml(process.execPath)}`,
+    // The broker parks every write for the owner's approval itself, so codex
+    // approving the call is the same boundary the stdio servers get below.
+    '-c', `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
+    '-c', `mcp_servers.${server.name}.args=[${toml(BRIDGE_PATH)}]`,
+    '-c', `mcp_servers.${server.name}.env={${env.map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
+  ];
+};
+
 const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
@@ -161,6 +231,17 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const mcpReadDirectories = [];
   for (const server of mcpServers || []) {
     const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (server?.name && HTTP_TRANSPORTS.has(transport)
+      && isOurGrantBroker(server, { instanceUrl: ctx.instanceUrl })) {
+      const bridged = bridgeGrantBroker(server, ctx);
+      if (bridged) {
+        flags.push(...bridged);
+        // A public seat's MCP children run under its permission profile; the
+        // bridge imports node builtins only, so the file is all it reads.
+        if (ctx.publicSeat) mcpReadDirectories.push(BRIDGE_PATH);
+      }
+      continue;
+    }
     if (!server?.name || transport !== 'stdio'
       || !Array.isArray(server.command) || !server.command.length) continue;
     // TASK-174: the command that will EXECUTE — the warmed build from the seat's
@@ -244,6 +325,16 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
         && typeof value === 'string'
         && value.includes(ctx.runtimeToken);
       if (carriesRuntimeToken) {
+        // Codex reads these as its own credential or model route, so a value
+        // forwarded under one of these names would be sent to the model endpoint.
+        // Compared in upper case on every platform: Windows env names are
+        // case-insensitive, and refusing a lower-case spelling elsewhere costs nothing.
+        if (CODEX_OWN_AUTH_ENVS.includes(key.toUpperCase())) {
+          throw new Error(
+            `codex MCP server ${server.name} sets ${key} to the seat token; codex reads ${key} `
+            + 'as its own credential, so declare the token under another name',
+          );
+        }
         if (forwardedEnv[key] !== undefined && forwardedEnv[key] !== value) {
           throw new Error(
             `codex MCP servers declare conflicting token-bearing values for env var ${key}`,
@@ -351,13 +442,15 @@ const realpathOfNearest = async (path) => {
   }
 };
 
+const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
+  || process.env.CODEX_HOME
+  || join(homedir(), '.codex');
+
 // `login: false` is the proxy route (D250): codex authenticates with the
 // per-turn token, so the public home gets no link to the person's Codex login,
 // and a link an earlier turn left is removed.
 const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
-  const operatorHome = ctx.env?.CODEX_HOME
-    || process.env.CODEX_HOME
-    || join(homedir(), '.codex');
+  const operatorHome = operatorCodexHome(ctx);
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
   const homesRoot = publicCodexHomesRoot(ctx);
@@ -549,7 +642,6 @@ const publicPermissionProfileFlags = (
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
-  platform = process.platform,
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -587,13 +679,7 @@ const publicPermissionProfileFlags = (
     '"~/.ssh"="deny"',
     '"~/.aws"="deny"',
     '"~/.config"="deny"',
-    // POSIX only. Codex parses the table on the seat's own platform, and on
-    // Windows `/private/tmp` is not absolute, so it refused the whole profile
-    // and no public Codex seat there ever started (byo-windows run
-    // 41959804055, the first Codex walk on Windows). Past that, codex's
-    // Windows sandbox refuses the read denies themselves, so `agent run` now
-    // stops a public Codex seat there before it polls (sandbox/host-check.js).
-    ...(platform === 'win32' ? [] : ['"/private/tmp"="deny"']),
+    '"/private/tmp"="deny"',
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny","**/.npmrc"="deny","**/.yarnrc*"="deny"}`,
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
@@ -636,24 +722,85 @@ const publicPermissionProfileFlags = (
   ];
 };
 
-// D250: a public seat's route to a provider gateway. `--ignore-user-config`
-// leaves no config.toml provider, and codex-cli 0.162.1 ignores
-// OPENAI_BASE_URL, so before this a public seat could reach only OpenAI. With
+// F188: the host's OpenAI-compatible model route, for a public seat. That seat
+// runs with `--ignore-user-config`, so config.toml's `openai_base_url` never
+// loads, and codex-cli 0.162.1 does not read the OPENAI_BASE_URL env either
+// (Growth's D252 walk, 11-05): a host routed at LiteLLM or another
+// OpenAI-compatible endpoint sent every turn to api.openai.com and got a 401.
+// The env is the declaration, as ANTHROPIC_BASE_URL is for the claude adapter;
+// buildArgs passes it on as `-c openai_base_url=...`, the top-level key the
+// 0.162.1 binary carries. Only a plain http(s) URL: one carrying credentials,
+// a query or a fragment could put a key into argv, so it is refused rather
+// than trimmed, and the refusal does not echo the value. The key itself stays
+// where codex already reads it (auth.json in the public home, or the env).
+export const publicModelRouteBaseUrl = (source = {}) => {
+  const raw = typeof source.OPENAI_BASE_URL === 'string' ? source.OPENAI_BASE_URL.trim() : '';
+  if (!raw) return null;
+  let url = null;
+  try { url = new URL(raw); } catch { /* refused below */ }
+  if (!url || !['http:', 'https:'].includes(url.protocol) || !url.hostname
+    || url.username || url.password || /[?#\s]/.test(raw)) {
+    throw new Error('codex adapter: OPENAI_BASE_URL must be a plain http(s) URL with no credentials, '
+      + 'query or fragment (e.g. https://litellm.example.com/v1); fix or unset it before a public seat runs.');
+  }
+  return raw;
+};
+
+// F188 guard: `openai_base_url` moves wherever the seat's credential goes, a
+// ChatGPT session included (the built-in provider swaps only its default base
+// for a ChatGPT login). So the route is forwarded only to a seat that signs in
+// with an API key, and a ChatGPT session token is never pointed at a URL from
+// the env. The public home links the operator's auth.json, so that file decides:
+// its `auth_mode` alone is read (codex-cli 0.162.1 writes "apikey", "chatgpt",
+// "chatgptAuthTokens", ...), the parsed object is dropped, and nothing else from
+// it is kept or logged. Only "apikey" counts as a key; a file with any other
+// mode, no mode, or that does not parse is treated as a login and fails closed,
+// whatever OPENAI_API_KEY says, since codex prefers its stored login. With no
+// auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
+// CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
+// it counts as a login whatever auth.json says.
+const CODEX_OWN_AUTH_ENVS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'];
+
+const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
+  + 'use an API key for a custom route';
+
+const envSet = (source, name) => typeof source[name] === 'string' && source[name].trim() !== '';
+
+export const codexAuthKind = async (operatorHome, source = {}) => {
+  if (envSet(source, 'CODEX_ACCESS_TOKEN')) return 'login';
+  let text = null;
+  try {
+    text = await readFile(join(operatorHome, 'auth.json'), 'utf8');
+  } catch (err) {
+    if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return 'login';
+  }
+  if (text === null) {
+    return envSet(source, 'OPENAI_API_KEY') || envSet(source, 'CODEX_API_KEY') ? 'apikey' : 'none';
+  }
+  let mode = null;
+  try { mode = JSON.parse(text)?.auth_mode ?? null; } catch { /* unreadable: a login */ }
+  return mode === 'apikey' ? 'apikey' : 'login';
+};
+
+// D250: the F188 route leaves the key in codex's own environment. With
 // CODEX_API_KEY in the seat's environment (codex's own name for an exec key),
 // the key stays on the host behind the per-turn loopback proxy, as a Claude
 // seat's ANTHROPIC_API_KEY does, and codex gets a provider entry naming the
 // proxy plus a per-turn token in an env var of our own. Measured on 0.162.1
 // with `--ignore-user-config`: these two `-c` overrides sent
-// `POST <base_url>/responses` with `Authorization: Bearer $<env_key>`.
-// Without the key the seat keeps the person's Codex login, as before.
+// `POST <base_url>/responses` with `Authorization: Bearer $<env_key>`. The URL
+// passes the same check as F188's. Without this key the seat takes F188's
+// route or the person's Codex login, as before.
 const CODEX_PROXY_PROVIDER = 'commonly_proxy';
 const CODEX_PROVIDER_TOKEN_ENV = 'COMMONLY_CODEX_PROVIDER_TOKEN';
 const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 const publicProviderRoute = (source = {}) => {
-  const key = source.CODEX_API_KEY;
-  if (typeof key !== 'string' || !key) return null;
-  return { baseURL: source.OPENAI_BASE_URL || OPENAI_DEFAULT_BASE_URL, key };
+  if (!envSet(source, 'CODEX_API_KEY')) return null;
+  return {
+    baseURL: publicModelRouteBaseUrl(source) || OPENAI_DEFAULT_BASE_URL,
+    key: source.CODEX_API_KEY,
+  };
 };
 
 const providerRouteFlags = (proxy) => {
@@ -681,8 +828,8 @@ const buildArgs = ({
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
+  modelBaseUrl = null,
   providerProxy = null,
-  platform = process.platform,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -707,7 +854,6 @@ const buildArgs = ({
         commitAttributionEnv,
         mcpReadDirectories,
         codexHelperReadPaths,
-        platform,
       ),
       ...providerRouteFlags(providerProxy),
     ]
@@ -716,6 +862,10 @@ const buildArgs = ({
     '--json',
     '--skip-git-repo-check',
     ...executionPolicy,
+    // F188: only a public seat drops config.toml; a private one keeps its own
+    // route there. In `common`, so it lands after `exec` / `exec resume <id>`,
+    // the only position codex parses it from.
+    ...(publicSandbox && modelBaseUrl ? ['-c', `openai_base_url=${toml(modelBaseUrl)}`] : []),
     ...(model ? ['--model', String(model)] : []),
     ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
     ...mcpFlags,
@@ -790,7 +940,7 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
   args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  turnReap = turnReapEnabled(), commandResolution = {},
+  turnReap = turnReapEnabled(), commandResolution = {}, confined = false,
 }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
@@ -799,7 +949,8 @@ const runCodex = ({
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
   // What the turn leaves running is stopped once it has closed (see claude.js).
-  const turn = markTurn(env ?? process.env, { enabled: turnReap });
+  // A confined turn's leftovers are stopped whatever the keep setting says.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap, confined });
   // On Windows `npm i -g @openai/codex` leaves a `codex.cmd`; it is read and
   // its target spawned directly, never through cmd.exe, because the prompt is
   // the last argv element and is pod content (#2141). Identity elsewhere.
@@ -946,29 +1097,32 @@ export default {
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
+      // Checked before the public home is prepared, so a refused route changes nothing.
+      // Only a seat that will forward the URL validates it: a ChatGPT host with an
+      // OPENAI_BASE_URL set for some other tool keeps running, as it did before.
+      const routeEnv = ctx.env || process.env;
+      const route = publicSandboxMode !== null ? publicProviderRoute(routeEnv) : null;
+      let modelBaseUrl = null;
+      if (!route && publicSandboxMode !== null && String(routeEnv.OPENAI_BASE_URL || '').trim()) {
+        const authKind = await codexAuthKind(operatorCodexHome(ctx), routeEnv);
+        if (authKind === 'apikey') modelBaseUrl = publicModelRouteBaseUrl(routeEnv);
+        else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
+      }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
-      const source = ctx.env || process.env;
-      const route = publicSandboxMode !== null ? publicProviderRoute(source) : null;
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv, { login: !route })
         : null;
-      if (publicSandboxMode !== null) {
-        if (route) {
-          providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
-            provider: { baseURL: route.baseURL },
-            keyMaterial: route.key,
-            wire: 'openai-responses',
-            adapterLabel: 'Codex',
-          });
-          // codex talks to the proxy alone, so no provider key of any name
-          // stays in its environment; it gets the per-turn token instead.
-          for (const name of CODEX_PROVIDER_KEY_ENVS) delete childEnv[name];
-          childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
-        } else if (source.OPENAI_BASE_URL) {
-          // eslint-disable-next-line no-console
-          console.warn('[codex] OPENAI_BASE_URL is set, but a public Codex seat routes through it only with '
-            + 'CODEX_API_KEY beside it; this turn uses your Codex login.');
-        }
+      if (route) {
+        providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+          provider: { baseURL: route.baseURL },
+          keyMaterial: route.key,
+          wire: 'openai-responses',
+          adapterLabel: 'Codex',
+        });
+        // codex talks to the proxy alone, so no credential of any name stays in
+        // its environment; it gets the per-turn token instead.
+        for (const name of [...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]) delete childEnv[name];
+        childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
       }
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
@@ -981,8 +1135,8 @@ export default {
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
+        modelBaseUrl,
         providerProxy,
-        platform: ctx._platform || process.platform,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
@@ -1023,6 +1177,10 @@ export default {
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
+        // A public seat keeps nothing a turn leaves running, whatever the turn
+        // set (F201, as claude.js does for F197). `publicSandboxMode` is set
+        // exactly when trust is `public`; workspace trust is refused above.
+        confined: publicSandboxMode !== null,
         commandResolution: ctx._commandResolution, // test seam only
       });
 

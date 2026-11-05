@@ -112,7 +112,8 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     // A grant was decided against the key connected then, and a pasted key
     // cannot prove it is the same account, so a re-paste ends them, as the OAuth
     // callback does for a subject it cannot compare (hostedMcpConnect.ts).
-    await revokeConnectionGrants({ connection: row, revokedBy: userId });
+    // The owner is here re-pasting, so the agents get no removal cue (F181).
+    await revokeConnectionGrants({ connection: row, revokedBy: userId, cue: false });
     forgetHostedMcpDrift(String(row._id));
   }
   const writeGeneration = secretWriteGeneration(generation, 0);

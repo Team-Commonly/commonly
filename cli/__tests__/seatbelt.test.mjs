@@ -118,6 +118,97 @@ describe('macOS Seatbelt profile', () => {
     expect(profile).toContain(`(deny file-write* (subpath "${realpathSync(target)}"))`);
   });
 
+  describe('a folder the profile lets the jail write resolves to its own name', () => {
+    const build = (overrides = {}) => buildSeatbeltProfile({
+      workspacePath: workspace,
+      workspaceAccess: 'write',
+      executablePath: '/usr/bin/true',
+      statePath: state,
+      ...overrides,
+    });
+    const outside = () => {
+      const dir = join(root, 'outside');
+      mkdirSync(dir);
+      return dir;
+    };
+
+    test('a real state folder and workspace are granted at their resolved paths', () => {
+      const profile = build();
+      expect(profile).toContain(
+        `(allow file-read* file-test-existence file-write* (subpath "${realpathSync(state)}"))`,
+      );
+      expect(profile).toContain(
+        `(allow file-read* file-test-existence file-write* (subpath "${realpathSync(workspace)}"))`,
+      );
+    });
+
+    test('a state folder whose parent is reached through a link is still granted', () => {
+      const viaLink = join(root, 'via');
+      symlinkSync(root, viaLink);
+      const profile = build({ statePath: join(viaLink, 'state') });
+      expect(profile).toContain(`file-write* (subpath "${realpathSync(state)}"))`);
+    });
+
+    test('a state folder that does not exist yet is granted by name', () => {
+      const missing = join(root, 'not-yet');
+      expect(build({ statePath: missing })).toContain(`file-write* (subpath "${missing}"))`);
+    });
+
+    test('a state folder that is a link is refused, and the error names it', () => {
+      const target = outside();
+      rmSync(state, { recursive: true });
+      symlinkSync(target, state);
+      expect(() => build()).toThrow(state);
+      expect(() => build()).toThrow(/refusing a confined turn: its writable state folder/);
+    });
+
+    test('a link named with a trailing slash is refused too', () => {
+      const target = outside();
+      rmSync(state, { recursive: true });
+      symlinkSync(target, state);
+      expect(() => build({ statePath: `${state}/` })).toThrow(/writable state folder/);
+    });
+
+    test('a link named with a trailing dot is refused too', () => {
+      const target = outside();
+      rmSync(state, { recursive: true });
+      symlinkSync(target, state);
+      expect(() => build({ statePath: `${state}/.` })).toThrow(/writable state folder/);
+    });
+
+    test('a dangling link at the state folder is refused', () => {
+      rmSync(state, { recursive: true });
+      symlinkSync(join(root, 'nowhere'), state);
+      expect(() => build()).toThrow(/writable state folder/);
+    });
+
+    test('a pinned writable workspace that is a link is refused, and the error names it', () => {
+      const target = outside();
+      rmSync(workspace, { recursive: true });
+      symlinkSync(target, workspace);
+      expect(() => build({ pinWorkspace: true })).toThrow(workspace);
+      expect(() => build({ pinWorkspace: true })).toThrow(/writable workspace/);
+    });
+
+    test('an unpinned writable workspace that is a link is granted at its target', () => {
+      const target = outside();
+      rmSync(workspace, { recursive: true });
+      symlinkSync(target, workspace);
+      expect(build()).toContain(
+        `(allow file-read* file-test-existence file-write* (subpath "${realpathSync(target)}"))`,
+      );
+    });
+
+    test('a read-only workspace still resolves through a link', () => {
+      const target = outside();
+      rmSync(workspace, { recursive: true });
+      symlinkSync(target, workspace);
+      const profile = build({ workspaceAccess: 'read' });
+      expect(profile).toContain(`(allow file-read* file-test-existence (subpath "${realpathSync(target)}"))`);
+      expect(profile).not.toContain(`file-write* (subpath "${realpathSync(target)}"))`);
+    });
+  });
+
   test.each(['', '.', '..', 'a/b', '../x', 7])('rejects %p as a read-only workspace entry', (entry) => {
     expect(() => buildSeatbeltProfile({
       workspacePath: workspace,

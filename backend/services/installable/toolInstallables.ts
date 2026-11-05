@@ -11,6 +11,7 @@
  */
 import type { ToolDefinition } from '../toolBrokerService';
 import { RoomGrantError } from '../roomGrantService';
+import { GRANT_BROKER_ID } from './grantBrokerId';
 import {
   HOSTED_MCP_ENTRIES,
   assertHostedMcpEntries,
@@ -35,8 +36,7 @@ const toolDefinitions = (): ToolDefinition[] => {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Installable = require('../../models/Installable');
 
-/** The MCP server name `routes/mcpGrants.ts` announces; one URL per grant. */
-export const GRANT_BROKER_ID = 'commonly-grant-broker';
+export { GRANT_BROKER_ID } from './grantBrokerId';
 export const GRANT_BROKER_URL = '${COMMONLY_API_URL}/api/mcp/grants/${COMMONLY_GRANT_ID}';
 
 export type ToolReadiness = { available: true } | { available: false; reason: 'not_configured' };

@@ -27,7 +27,31 @@ take up to an hour to show in every guild.
   need the caller's Discord id (`member.user.id`) to equal the row's
   `config.discordUserId`, the installer the OAuth callback proved. Everyone else
   gets an ephemeral refusal naming that person. Reads are open to anyone in the
-  bound channel.
+  bound channel. The legacy `/discord-enable` and `/discord-disable` take the
+  same rule (F161).
+- **Connection state (F161).** `/tldr` and `/summary` act only on a row whose
+  `status` is `connected`, the relay's own rule. A settings write on a row that
+  isn't connected says so and writes nothing; `/status` still reads it.
+- **Cost (F161).** `/summary` is an LLM run, so each row runs it at most once a
+  minute (per backend process); a second call inside that minute gets an
+  ephemeral "try again shortly".
+- **Durations (F161).** `/mute` takes nothing (60 minutes), a bare number
+  (minutes), `30m` or `2h`. Anything else, such as `90s` or `1.5h`, gets usage
+  and mutes nothing, on Discord, Telegram and Slack alike. Telegram and Slack
+  read the whole argument, so `/mute 2 hours` is 120 minutes.
+- **Per-guild registration (F161).** `POST /api/discord/register-commands/:id`
+  and `npm run discord:register` now register an empty per-guild set, which
+  clears the duplicate legacy copies older guild registrations left. They first
+  read the global set and keep the guild's commands if any global command is
+  missing (a boot deploy that failed).
+- **Boot deploy (F161).** Each PUT attempt has a 15 s wall-clock deadline
+  (`AbortController`) over request and response; axios's own `timeout` stops
+  counting once headers arrive. `discord:verify` exits 1 when a command is
+  missing or registered with different `contexts` or options.
+- **Reconnect (F161).** "Add the bot again" on a dropped row is a fresh install.
+  When it binds the same pod, guild and channel, the caller's rows there in
+  `error` or `disconnected` are retired as Remove would (grants revoked, webhook
+  deleted, platform record gone) and kept inactive.
 - **Binding.** A command acts only on rows whose `serverId` and `channelId` are
   the ones it was typed in. Unlike the legacy commands, it has no guild-wide fallback.
 - **Scope.** The install link asks for `applications.commands` already. A guild

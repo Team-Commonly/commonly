@@ -253,7 +253,8 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     Integration.findOneAndUpdate.mockResolvedValue(existing);
     const res = await submit();
     expect(res.status).toBe(201);
-    expect(revokeConnectionGrants).toHaveBeenCalledWith({ connection: existing, revokedBy: OWNER });
+    // F181: the owner is re-pasting, so no removal cue is written.
+    expect(revokeConnectionGrants).toHaveBeenCalledWith({ connection: existing, revokedBy: OWNER, cue: false });
     expect(forgetHostedMcpDrift).toHaveBeenCalledWith(ROW_ID);
     expect(revokeConnectionGrants.mock.invocationCallOrder[0])
       .toBeLessThan(connectorSecrets.put.mock.invocationCallOrder[0]);

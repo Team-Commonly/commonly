@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentPodWakePatch } from './useAgentSettings';
+import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 
 interface InstallationSettings {
   podId: string;
@@ -13,6 +14,8 @@ interface InstallationSettings {
   boardWake: boolean;
   heartbeatEnabled: boolean;
   heartbeatMinutes: number;
+  /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
+  hostedHeartbeat?: HostedHeartbeat | null;
 }
 
 // Message wake is one choice of three, shown together: the human-only
@@ -24,6 +27,13 @@ const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings
   human: { wakeOnMessage: true, humanOnly: true },
   all: { wakeOnMessage: true, humanOnly: false },
 };
+const HEARTBEAT_INTERVALS = [15, 30, 60, 120, 360, 720, 1440];
+
+interface HostedHeartbeat {
+  minMinutes: number;
+  runsPerDay: number;
+}
+
 const messageWakeChoice = (entry: InstallationSettings): MessageWakeChoice => {
   if (!entry.wakeOnMessage) return 'mentions';
   return entry.humanOnly ? 'human' : 'all';
@@ -43,6 +53,11 @@ const V2AgentWakePods: React.FC<{
   const [activePodCount, setActivePodCount] = useState(0);
   const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
+  // F164: where runtime auth's outsider-grant narrowing leaves this agent able to write.
+  const [runtimeNarrowing, setRuntimeNarrowing] = useState<RuntimeNarrowingStatus | null>(null);
+  // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
+  // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
+  const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -62,6 +77,8 @@ const V2AgentWakePods: React.FC<{
     let active = true;
     setLoading(true);
     setInstallations([]);
+    setRuntimeNarrowing(null);
+    setHostedHeartbeat(null);
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
@@ -73,6 +90,7 @@ const V2AgentWakePods: React.FC<{
       try {
         const settingsResult = await axios.get<{
           installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
+          runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
         }>(`${base}?${query}`);
         if (!active) return;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
@@ -82,6 +100,8 @@ const V2AgentWakePods: React.FC<{
         setPodCount(settingsResult.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
+        setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
+        setHostedHeartbeat(settingsResult.data.hostedHeartbeat ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
@@ -179,11 +199,20 @@ const V2AgentWakePods: React.FC<{
   };
 
   // Sum of the draft heartbeat turns, so the header previews the cap as the select changes.
-  const turnsUsed = installations.reduce((total, entry) => {
-    const off = draftOff[entry.podId] ?? !entry.heartbeatEnabled;
-    const minutes = draftMinutes[entry.podId] ?? entry.heartbeatMinutes;
-    return off ? total : total + Math.ceil(1440 / minutes);
-  }, 0);
+  // A hosted install runs no faster than its floor, and the hosted rows
+  // together no more than the daily cap; any other row counts as it is set.
+  const floorFor = (entry: InstallationSettings) => entry.hostedHeartbeat?.minMinutes ?? 0;
+  const turns = { hosted: 0, other: 0 };
+  let hostedCap = Infinity;
+  installations.forEach((entry) => {
+    if (entry.hostedHeartbeat) hostedCap = Math.min(hostedCap, entry.hostedHeartbeat.runsPerDay);
+    if (draftOff[entry.podId] ?? !entry.heartbeatEnabled) return;
+    const minutes = Math.max(floorFor(entry), draftMinutes[entry.podId] ?? entry.heartbeatMinutes);
+    turns[entry.hostedHeartbeat ? 'hosted' : 'other'] += Math.ceil(1440 / minutes);
+  });
+  const turnsUsed = Math.min(turns.hosted, hostedCap) + turns.other;
+  const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
+    .filter((value) => value >= floorFor(entry));
   const overCap = turnCap !== null && turnsUsed > turnCap;
 
   if (loading || loadedIdentity !== identity) {
@@ -207,6 +236,12 @@ const V2AgentWakePods: React.FC<{
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
+      {hostedHeartbeat && <p className="v2-agent-wake-pods__hint">
+        {hostedHeartbeat.runsPerDay > 0
+          ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
+          : t('agentSettings.heartbeatHostedOff')}
+      </p>}
+      {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
         {installations.length ? (
           <table className="wt">
@@ -269,7 +304,7 @@ const V2AgentWakePods: React.FC<{
                                 if (value !== 'off') setDraftMinutes((current) => ({ ...current, [entry.podId]: Number(value) }));
                               }}>
                               <option value="off">{t('agentSettings.heartbeatOff')}</option>
-                              {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
+                              {[...new Set([...intervalsFor(entry), entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
                                   <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
                                 ))}

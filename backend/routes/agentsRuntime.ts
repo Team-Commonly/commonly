@@ -3502,6 +3502,9 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
+        // F183: best-effort PG mirror write; never fails the join.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
         await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section

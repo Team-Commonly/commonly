@@ -688,6 +688,8 @@ export default {
           executablePaths: nodePath ? [nodePath] : [],
           statePath: home,
           loopbackNetworkPorts: [proxy.port],
+          // Public seat: the CLI made this workspace, so it is pinned (F197).
+          pinWorkspace: true,
           readOnlyDirectories: [packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories],
           // The jailed pi holds the seat token in memory (the bridge reads it),
           // so nothing it starts may inspect it.

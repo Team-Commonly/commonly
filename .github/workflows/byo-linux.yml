@@ -1,7 +1,10 @@
 name: Bring your own on Linux
 
-# The Bring your own page's Linux lines for Claude Code, walked on a real
-# Linux host. Claude Code runs in the CLI's bubblewrap jail (F96).
+# The Bring your own page's Linux lines for Claude Code or Codex (the
+# dispatch's `adapter`), walked on a real Linux host. Both run in the CLI's
+# bubblewrap jail (F96). Codex takes the gateway as a person would, on
+# CODEX_API_KEY beside OPENAI_BASE_URL: the CLI keeps the key on the host behind
+# its per-turn proxy (D250).
 #
 # On a pull request it only reads the page's Linux lines and checks they have
 # the shape the walk pastes: no secrets, no network.
@@ -17,13 +20,9 @@ name: Bring your own on Linux
 # model must be one the gateway key allows, and at least one of its pods must be
 # open to join or publicly readable: when every pod is private and invite-only,
 # the CLI runs it on a copied login, not the key. The two secrets reach only
-# the walk step. See cli/scripts/linux-byo-prod.mjs.
-#
-# D250: `harness` picks the lines walked. codex walks the page's Codex lines
-# on the same gateway key, given as CODEX_API_KEY beside OPENAI_BASE_URL: the
-# CLI keeps it behind its proxy on the Responses wire, and codex runs under
-# its own permission profile. The pull-request check reads both harnesses'
-# lines.
+# the walk step. Codex takes the same gateway key, on the gateway's Responses
+# route, so its agent's saved model must be one the gateway serves there. See
+# cli/scripts/linux-byo-prod.mjs.
 
 on:
   pull_request:
@@ -35,11 +34,6 @@ on:
       - '.github/workflows/byo-linux.yml'
   workflow_dispatch:
     inputs:
-      harness:
-        description: 'the lines to walk: claude (Claude Code) or codex (Codex)'
-        type: choice
-        options: [claude, codex]
-        default: claude
       agent_name:
         description: 'the agent the token belongs to'
         type: string
@@ -52,6 +46,11 @@ on:
         description: 'the pod the @mention is posted in'
         type: string
         required: true
+      adapter:
+        description: 'the CLI the page line runs'
+        type: choice
+        options: [claude, codex]
+        default: claude
 
 permissions:
   contents: read
@@ -72,18 +71,19 @@ jobs:
       - name: Check the page's Linux lines
         if: github.event_name != 'workflow_dispatch'
         run: node cli/scripts/linux-byo-prod.mjs --check
-      # What the page tells a Linux user to have: bubblewrap and the harness
-      # (the Claude Code the other real-Claude smokes pin, or the Codex whose
-      # provider route the CLI was measured on).
-      - name: Install bubblewrap and the harness
+      # What the page tells a Linux user to have: bubblewrap and the CLI the
+      # line runs (Claude Code at the version the other real-Claude smokes
+      # pin; Codex at the version the adapter's Linux sandbox was measured on).
+      - name: Install bubblewrap and the adapter's CLI
         if: github.event_name == 'workflow_dispatch'
         env:
-          HARNESS: ${{ inputs.harness }}
+          ADAPTER: ${{ inputs.adapter }}
         run: |
+          set -o pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
-          if [ "$HARNESS" = codex ]; then
-            npm i -g @openai/codex@0.162.1
+          if [ "$ADAPTER" = codex ]; then
+            npm i -g @openai/codex@0.164.0
           else
             npm i -g @anthropic-ai/claude-code@2.1.318
           fi
@@ -94,7 +94,7 @@ jobs:
           COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
           COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
           COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
-          COMMONLY_BYO_HARNESS: ${{ inputs.harness }}
+          COMMONLY_BYO_PROD_ADAPTER: ${{ inputs.adapter }}
           COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ secrets.BYO_LINUX_PROD_AGENT_TOKEN }}
           COMMONLY_BYO_PROD_LLM_KEY: ${{ secrets.BYO_LINUX_PROD_LLM_KEY }}
         run: |

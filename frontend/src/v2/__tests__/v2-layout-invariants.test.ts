@@ -279,6 +279,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(value).not.toContain('grid-row');
     expect(value).toContain('justify-content: flex-end');
   });
+  test('a hosted description box is name-width, reads left to right, and puts its hint underneath (TASK-780)', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__about textarea')).toContain('text-align: left');
+    const hint = ruleBody(surface, '.v2-agent-settings-page__abouthint');
+    expect(hint).toContain('flex-basis: 100%');
+    expect(hint).toContain('text-align: left');
+    expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
@@ -1794,11 +1802,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(yourTeamPage).toContain('className="v2p-b v2p-b-s v2p-b-sm v2-team__byo"');
     expect(teamCss).not.toMatch(/\.v2-team__hire, \.v2-team \.v2-team-card__answer \{/);
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__status')).toContain('var(--v2-font-mono)');
-    // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
-    // the mark is 600, and the title stacks over its meta on a phone.
+    // ux-lead 66246: the ask wraps, the name is display-18, the mark is 600,
+    // and the title stacks over its meta on a phone. (The own-agent card's
+    // command box is gone: the card names the setup steps instead.)
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__status--needsYou')).toContain('white-space: normal');
-    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('white-space: pre-wrap');
-    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('14px/20px');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark')).toContain('font: 600 12px/1');
     const teamAvatar = ruleBody(teamCss, '.v2-team .v2-team-card__mark .v2-avatar');

@@ -2426,7 +2426,7 @@
     "own": {
       "title": "你自己的智能体",
       "text": "你自己电脑上的 Claude Code 或 Codex。",
-      "command": "npx @commonlyai/cli agent attach claude",
+      "steps": "在下一页，如果看到“用我自己的智能体”就先选它，再点“获取接入命令”。",
       "setup": "开始设置"
     }
   },
@@ -2543,6 +2543,7 @@
     "hostedMcpAppInstalledFinish": "{{provider}} App 已安装。在 {{provider}} 卡片上点「连接」完成设置。",
     "hostedMcpAccessNext": "选择“Only select repositories”，限定 {{provider}} 可以读取哪些私有仓库。公开仓库始终可以读取。",
     "hostedMcpAccessOpen": "打开 {{provider}}",
+    "hostedMcpReachNone": "{{provider}} 已连接，但这个账号看不到任何项目，所以搜索结果为空。请在 {{provider}} 里添加项目，或者连接一个有项目的账号。",
     "hostedMcpManualRevoke": "你之前的 {{provider}} 账号可能仍保留对 Commonly 的授权。请在 {{provider}} 切换到那个账号，再在那里移除 Commonly。",
     "hostedMcpManualRevoke_linear": "你之前的 Linear 账号可能仍连着一个 MCP 授权。请在 Linear 切换到那个账号，再在其已连接应用中撤销该 MCP 授权。",
     "hostedMcpManualRevoke_sentry": "你之前的 Sentry 账号可能仍连着 Sentry 的 MCP 服务器应用。请在 Sentry 切换到那个账号，再在那里撤销该应用。撤销后，此账号下该服务器的所有客户端都会断开，不只是 Commonly。",
@@ -2667,7 +2668,8 @@
     "discordMirrorHint": "每条智能体消息都会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordAttentionHint": "只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordInboundNote": "你在频道里发的消息，会以你的身份进入 Pod。",
-    "discordNeedsProof": "从 Commonly 重新添加一次机器人，就能为这个频道开启中继。"
+    "discordNeedsProof": "从 Commonly 重新添加一次机器人，就能为这个频道开启中继。",
+    "discordReinstall": "重新添加机器人"
   },
   "artifacts": {
     "title": "产物",
@@ -2701,6 +2703,7 @@
   },
   "tools": {
     "linearWriteReconnect": "如果你是在支持写入之前连接的 Linear，需要先断开再重新连接，才能写入。每次写入都需要你批准。",
+    "reachNone": "连接时，这个 {{label}} 账号还看不到任何项目，所以搜索结果为空。添加项目后请重新连接。",
     "granted": "已授权",
     "beta": "测试版",
     "adminOnce": "需管理员安装一次",
@@ -3041,6 +3044,9 @@
     "heartbeatOff": "关闭",
     "connection": "连接",
     "displayName": "显示名称",
+    "about": "简介",
+    "aboutHint": "智能体会按这段话理解自己是谁，从下一条回复起生效。",
+    "aboutError": "简介不能超过160个字符。",
     "persona": "角色设定",
     "tone": "语气",
     "toneOptions": {
@@ -3091,6 +3097,9 @@
     "turnsPerDay": "每天{{count}}次 · 上限{{cap}}次",
     "capUnavailable": "每天{{count}}次 · 套餐上限暂不可用",
     "overCap": "已超过每日上限。",
+    "heartbeatHosted_one": "你在 Commonly 上运行的智能体各自每小时最多心跳一次，每天合计最多{{count}}次。",
+    "heartbeatHosted_other": "你在 Commonly 上运行的智能体各自每小时最多心跳一次，每天合计最多{{count}}次。",
+    "heartbeatHostedOff": "你在 Commonly 上运行的智能体暂未开放心跳功能。",
     "saveInterval": "保存间隔",
     "everyMinutes_one": "每分钟",
     "everyMinutes_other": "每{{count}}分钟",
@@ -3244,5 +3253,24 @@
     "otherPlaceholder": "完整的模型 ID",
     "answeredIn": "用 {{harness}} 回复，耗时{{seconds}}秒",
     "answeredWith": "用 {{harness}} 回复"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "{{name}} 加入这个 Pod 后，外部可写的连接器授权会覆盖它所在的 Pod。",
+      "losesWrites": "它将无法再写入：",
+      "targetBlocked": "它在这个 Pod 里也无法写入。",
+      "unavailable": "暂时无法确认加入这个 Pod 是否会限制 {{name}} 的写入范围。",
+      "confirm": "仍然安装",
+      "cancel": "取消"
+    },
+    "hiddenPods_one": "{{count}}个你看不到的 Pod",
+    "hiddenPods_other": "{{count}}个你看不到的 Pod",
+    "runtime": {
+      "onePod": "外部可写的授权覆盖了 {{pod}}，{{name}} 现在只能在这个 Pod 里写入。",
+      "oneHiddenPod": "外部可写的授权覆盖了 {{name}} 所在的一个 Pod，{{name}} 现在只能在那里写入，但你看不到这个 Pod。",
+      "noPod_one": "{{name}} 现在无法在任何 Pod 里写入：它有{{count}}个 Pod 被外部可写的授权覆盖。",
+      "noPod_other": "{{name}} 现在无法在任何 Pod 里写入：它有{{count}}个 Pod 被外部可写的授权覆盖。",
+      "unavailable": "暂时无法确认外部可写的授权是否限制了 {{name}} 的写入范围。确认之前，{{name}} 的写入都会被拒绝。"
+    }
   }
 }

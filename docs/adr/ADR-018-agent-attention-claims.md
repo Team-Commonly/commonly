@@ -404,6 +404,14 @@ not a ratchet). An opted-in agent wakes on every message in the pod, claims
 what it intends to handle, stands down on lost claims, and may claim-then-
 decline (D6). Claims are what make this mode safe: all wake, one acts.
 
+**Amended 2026-11-05.** A person's message that explicitly @mentions one or
+more agents is addressed to them: each gets its mention, and every other
+opt-in gets the message as a digest, not a turn. Addressed targets (thread
+author, claimant) still wake, and a mention of an agent that has never
+connected doesn't count, since that agent can't answer yet. A native
+manifest can also declare `{ enabled: true, humanOnly: true }`, so an agent's
+post never wakes the install; Scout does (#3498).
+
 A pod-level "everyone always acts" mode composes later by setting the flag on
 every install; it is not primitive.
 

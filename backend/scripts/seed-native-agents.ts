@@ -84,6 +84,12 @@ export function buildInstallationConfig(
   // Same manifest-is-the-choice rule as heartbeat: a declared wake-on-message
   // opt-in projects onto the flag the producer actually reads (ADR-018 D8).
   if (app.wakeOnMessage === true) configObj.wakeOnMessage = { enabled: true };
+  else if (app.wakeOnMessage && typeof app.wakeOnMessage === 'object' && app.wakeOnMessage.enabled === true) {
+    configObj.wakeOnMessage = {
+      enabled: true,
+      ...(app.wakeOnMessage.humanOnly === true ? { humanOnly: true } : {}),
+    };
+  }
   if (typeof app.dailyRunCap === 'number') configObj.dailyRunCap = app.dailyRunCap;
   if (typeof app.recentMessages === 'number' && app.recentMessages > 0) configObj.recentMessages = app.recentMessages;
   return configObj;

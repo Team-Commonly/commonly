@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
   listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
-const { UNSANDBOXED_FLAG, hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
+const { hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
 const { registerAgent, saveAgentToken } = await import('../src/commands/agent.js');
 const { defaultSeatSandbox } = await import('../src/lib/default-environment.js');
 
@@ -141,34 +141,8 @@ describe('hostSandboxRefusal', () => {
     expect(message).not.toContain('claude mcp add');
   });
 
-  // D250: the first Codex walk on Windows (byo-windows run 41960954496) found
-  // codex-cli 0.162.1 refusing every public turn there: its unelevated sandbox
-  // "cannot enforce split filesystem read restrictions directly; refusing to
-  // run unsandboxed". So the run refuses once, up front, instead.
-  test('a public Codex seat on native Windows is refused up front and pointed at WSL 2, never at --unsandboxed', () => {
-    const message = hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32' });
-    expect(message).toMatch(/Codex's own Windows sandbox can't enforce/);
-    expect(message).toContain('cannot listen for @mentions from native Windows');
-    expect(message).toContain('WSL 2 (Ubuntu)');
-    expect(message).not.toContain(UNSANDBOXED_FLAG);
-    expect(message).not.toContain('claude mcp add');
-    // The opt-in that admits Claude Code changes nothing for Codex.
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32', hostUnconfined: true }))
-      .toBe(message);
-    // A legacy `internal` trust reads as public here, as it does in the adapter.
-    expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'win32' }))
-      .toBe(message);
-  });
-
-  test('Codex confines itself off Windows, and a private Codex seat on Windows runs as it did', () => {
-    for (const platform of ['darwin', 'linux']) {
-      expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform })).toBeNull();
-    }
-    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'win32' })).toBeNull();
-    expect(hostSandboxRefusal({ environment: { sandbox: { mode: 'none' } }, adapterName: 'codex', platform: 'win32' })).toBeNull();
-  });
-
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: null, adapterName: 'claude', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { mode: 'none' } }, adapterName: 'claude', platform: 'win32' })).toBeNull();
@@ -234,45 +208,6 @@ describe('agent run on a host that cannot confine the seat', () => {
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(stderr).toContain('[byo-win] Commonly runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet');
     expect(stderr).toContain('PowerShell `claude mcp add` command');
-  });
-
-  // D250: the page's Codex lines on Windows, `agent run <name> --adapter codex`,
-  // reach the same stop. Before, they polled and every turn failed in codex.
-  test('the page\'s Codex lines on native Windows stop before saving a token or polling, with the WSL 2 line', async () => {
-    const oldToken = process.env.COMMONLY_AGENT_TOKEN;
-    const oldApiUrl = process.env.COMMONLY_API_URL;
-    process.env.COMMONLY_AGENT_TOKEN = 'cm_agent_test';
-    process.env.COMMONLY_API_URL = 'https://api.commonly.me';
-    createClientMock
-      .mockReturnValueOnce({
-        get: jest.fn().mockResolvedValue({
-          agentName: 'byo-win',
-          instanceId: 'connect-page',
-          installations: [{
-            type: 'installation', podId: 'pod-1', instanceId: 'connect-page', status: 'active', runtimeAdapter: null,
-          }],
-        }),
-      })
-      .mockImplementation(() => { throw new Error('agent run went past the host check'); });
-
-    try {
-      const program = new Command();
-      program.exitOverride();
-      registerAgent(program);
-      await expect(program.parseAsync(['agent', 'run', 'byo-win', '--adapter', 'codex'], { from: 'user' }))
-        .rejects.toBe(exitSentinel);
-    } finally {
-      if (oldToken === undefined) delete process.env.COMMONLY_AGENT_TOKEN; else process.env.COMMONLY_AGENT_TOKEN = oldToken;
-      if (oldApiUrl === undefined) delete process.env.COMMONLY_API_URL; else process.env.COMMONLY_API_URL = oldApiUrl;
-    }
-
-    expect(exitSentinel.code).toBe(1);
-    expect(createClientMock).toHaveBeenCalledTimes(1);
-    expect(fs.existsSync(tokenPath)).toBe(false);
-    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(stderr).toContain("[byo-win] Codex's own Windows sandbox can't enforce");
-    expect(stderr).toContain('install Node and Codex inside WSL');
-    expect(stderr).not.toContain(UNSANDBOXED_FLAG);
   });
 
   // An npm-installed Claude Code is a .cmd shim Node cannot spawn, so on

@@ -5,10 +5,9 @@
 // a package npm cannot install must fail the PR, not warn.
 
 import {
-  CODEX_WINDOWS_DIRECTIONS, CODEX_WINDOWS_REFUSAL, codexRouteEnv, describeCause, expectsWindowsRefusal, INSTALL_GUARD, installExitFrom, parseRecorderLog,
-  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, walkHarness, windowsProdRefusal, windowsRefusalProblems,
+  describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
+  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact,
 } from '../scripts/windows-byo-verdict.mjs';
-import { windowsCodexMessage } from '../src/lib/sandbox/host-check.js';
 
 const PAGE = [
   'npm i -g @commonlyai/cli@latest',
@@ -317,63 +316,3 @@ describe('the prod verdict names whose failure it was', () => {
 });
 
 // D250: each walk runs one harness, named by the dispatch.
-describe('the walk\'s harness', () => {
-  test('comes from the dispatch, Claude Code by default, and nothing else is walked', () => {
-    expect(walkHarness({})).toBe('claude');
-    expect(walkHarness({ COMMONLY_BYO_HARNESS: '' })).toBe('claude');
-    expect(walkHarness({ COMMONLY_BYO_HARNESS: 'codex' })).toBe('codex');
-    expect(() => walkHarness({ COMMONLY_BYO_HARNESS: 'goose' })).toThrow(/harness must be claude or codex/);
-  });
-
-  test('Codex reaches the gateway on CODEX_API_KEY and OPENAI_BASE_URL, at its /v1 path', () => {
-    expect(codexRouteEnv('https://litellm.commonly.me', 'sk-k'))
-      .toEqual({ CODEX_API_KEY: 'sk-k', OPENAI_BASE_URL: 'https://litellm.commonly.me/v1' });
-    expect(codexRouteEnv('http://127.0.0.1:9/', 'sk-k').OPENAI_BASE_URL).toBe('http://127.0.0.1:9/v1');
-  });
-});
-
-// D250: a public Codex seat cannot run on native Windows (host-check.js), so
-// the Windows walk's Codex lines pass when the run stops at once with the WSL 2
-// directions, and fail if it polls as if it could answer.
-describe('the Windows walk of the page\'s Codex lines', () => {
-  const refusalOut = `2026-11-05T04:00:00.000Z [win-byo] ${windowsCodexMessage()}\n`;
-
-  test('expects the refusal for Codex only', () => {
-    expect(expectsWindowsRefusal('codex')).toBe(true);
-    expect(expectsWindowsRefusal('claude')).toBe(false);
-  });
-
-  test('the markers it looks for are in the CLI\'s own refusal', () => {
-    expect(windowsCodexMessage()).toContain(CODEX_WINDOWS_REFUSAL);
-    expect(windowsCodexMessage()).toContain(CODEX_WINDOWS_DIRECTIONS);
-  });
-
-  test('fails when the refusal is printed without the WSL 2 directions', () => {
-    expect(windowsRefusalProblems({ out: `${CODEX_WINDOWS_REFUSAL} the file-read limits\n`, exited: 1, polled: false, seconds: 3 }))
-      .toEqual(['the run stopped without the WSL 2 directions']);
-  });
-
-  test('passes when the run stops non-zero with the directions and never polls', () => {
-    expect(windowsRefusalProblems({ out: refusalOut, exited: 1, polled: false, seconds: 4 })).toEqual([]);
-  });
-
-  test('fails when the run polls for @mentions instead, whatever it printed', () => {
-    expect(windowsRefusalProblems({ out: '', exited: null, polled: true, seconds: 40 }))
-      .toEqual(['Codex polled for @mentions on native Windows instead of stopping with the WSL 2 directions']);
-  });
-
-  test('fails when the run is still going, stops without the directions, or exits 0', () => {
-    expect(windowsRefusalProblems({ out: '', exited: null, polled: false, seconds: 180 }))
-      .toEqual(['the run was still going after 180 s and never printed the WSL 2 directions']);
-    expect(windowsRefusalProblems({ out: 'Error: something else\n', exited: 1, polled: false, seconds: 3 }))
-      .toEqual(['the run stopped without the WSL 2 directions']);
-    expect(windowsRefusalProblems({ out: refusalOut, exited: 0, polled: false, seconds: 3 }))
-      .toEqual(['the run printed the directions but exited 0, which a script reads as success']);
-  });
-
-  test('a prod dispatch of Codex on Windows is refused, because there is no reply to wait for', () => {
-    expect(windowsProdRefusal('codex')).toMatch(/Codex on native Windows stops with the WSL 2 directions/);
-    expect(windowsProdRefusal('codex')).toMatch(/target=stub/);
-    expect(windowsProdRefusal('claude')).toBeNull();
-  });
-});

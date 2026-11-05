@@ -17,7 +17,7 @@
  *      alphabetically first agentName, then _id. Deterministic across re-runs.
  *   3. For every other user in the group, rewrite displayName to
  *      `<originalDisplayName> (<instanceId>)`. instanceId is humanized:
- *      `pixel-demo` → "Pixel-demo", `inst-315667` → "inst-315667".
+ *      `pixel-demo` → "Pixel-Demo", `inst-315667` → "inst-315667".
  *   4. Skip users whose displayName already contains a parenthetical
  *      suffix — the script is idempotent.
  *
@@ -25,6 +25,10 @@
  *   - `botMetadata.agentName` / `instanceId` — these are stable identity
  *     keys; only displayName (the human-facing label) is rewritten.
  *   - `username` — DB-unique already; collisions there are impossible.
+ *
+ * What it also writes (F183): each renamed bot's PG `users` row, through
+ * AgentIdentityService.syncUserToPostgreSQL. PG `users.username` holds the
+ * chat label (chatUsernameFor), i.e. this displayName for a bot.
  *
  * Run with: `cd backend && node dist/scripts/dedupe-agent-display-names.js`
  * (from backend/, so the compiled script and mongoose resolve from backend/node_modules).
@@ -88,14 +92,27 @@ export const pickCanonical = (users: BotUser[]): BotUser => [...users].sort((a, 
     || String(a._id).localeCompare(String(b._id));
 })[0];
 
-async function main() {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    console.error('MONGO_URI is required');
-    process.exit(2);
-  }
-  await mongoose.connect(uri);
-  const User = mongoose.model<BotUser>('User', new mongoose.Schema<BotUser>({}, { strict: false }), 'users');
+interface DedupeDeps {
+  // The real mongoose User model in production; a stand-in in tests.
+  User: {
+    find: (q: unknown) => { select: (f: string) => { lean: <T>() => Promise<T> } };
+    updateOne: (q: unknown, u: unknown) => Promise<unknown>;
+    findById: (id: unknown) => Promise<unknown>;
+  };
+  /** AgentIdentityService.syncUserToPostgreSQL: true when the PG row was written. */
+  syncUser: (user: unknown) => Promise<boolean>;
+  log?: (line: string) => void;
+}
+
+export interface DedupeResult {
+  renamed: number;
+  skippedAlreadyClean: number;
+  pgSyncFailed: number;
+}
+
+export async function dedupeAgentDisplayNames(deps: DedupeDeps): Promise<DedupeResult> {
+  const { User, syncUser } = deps;
+  const log = deps.log || ((line: string) => console.log(line));
 
   const bots = await User.find({ 'botMetadata.displayName': { $exists: true, $ne: '' } })
     .select('username botMetadata')
@@ -111,8 +128,7 @@ async function main() {
     groups.get(display)!.push(u);
   }
 
-  let renamed = 0;
-  let skippedAlreadyClean = 0;
+  const result: DedupeResult = { renamed: 0, skippedAlreadyClean: 0, pgSyncFailed: 0 };
   for (const [display, users] of groups) {
     if (users.length < 2) continue;
     const canonical = pickCanonical(users);
@@ -121,7 +137,7 @@ async function main() {
       const instanceId = (u.botMetadata?.instanceId || '').trim();
       if (!instanceId) continue;
       if (looksAlreadyDisambiguated(display)) {
-        skippedAlreadyClean += 1;
+        result.skippedAlreadyClean += 1;
         continue;
       }
       const newDisplay = `${display} (${formatSuffix(instanceId)})`;
@@ -129,13 +145,41 @@ async function main() {
         { _id: u._id },
         { $set: { 'botMetadata.displayName': newDisplay } },
       );
-      console.log(
-        `  renamed ${String(u._id).slice(-6)} ${u.username}: "${display}" → "${newDisplay}"`,
-      );
-      renamed += 1;
+      log(`  renamed ${String(u._id).slice(-6)} ${u.username}: "${display}" → "${newDisplay}"`);
+      result.renamed += 1;
+      // F183: PG `users.username` holds this label (chatUsernameFor), so the
+      // mirror is re-synced from the saved user. A failed sync is counted and
+      // logged; the Mongo rename stands and the nightly repair converges PG.
+      const saved = await User.findById(u._id);
+      const ok = saved ? await syncUser(saved) : false;
+      if (!ok) {
+        result.pgSyncFailed += 1;
+        log(`  PG users sync failed for ${String(u._id)}; the nightly mirror repair will converge it`);
+      }
     }
   }
-  console.log(`\nDone — ${renamed} users renamed, ${skippedAlreadyClean} already-clean entries skipped.`);
+  return result;
+}
+
+async function main() {
+  const uri = process.env.MONGO_URI;
+  if (!uri) {
+    console.error('MONGO_URI is required');
+    process.exit(2);
+  }
+  await mongoose.connect(uri);
+  // The real model and the real sync, so the PG row is written exactly as every
+  // other user write path writes it.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentIdentityService = require('../services/agentIdentityService');
+  const r = await dedupeAgentDisplayNames({
+    User,
+    syncUser: (user) => AgentIdentityService.syncUserToPostgreSQL(user),
+  });
+  console.log(`\nDone — ${r.renamed} users renamed, ${r.skippedAlreadyClean} already-clean entries skipped, `
+    + `${r.pgSyncFailed} PG users syncs failed.`);
   await mongoose.disconnect();
 }
 

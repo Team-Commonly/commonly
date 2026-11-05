@@ -1,7 +1,7 @@
 /**
  * mcp-first-run.test.mjs
  *
- * A public seat's first spawn on a fresh machine found no host-prepared MCP
+ * A confined (public or workspace) seat's first spawn on a fresh machine found no host-prepared MCP
  * build, started one, and refused the turn; the person's first @mention then
  * waited out the kernel's requeue. `agent run` now prepares the build before
  * its first poll, and only when the seat would otherwise hit that refusal.
@@ -51,6 +51,24 @@ describe('prepareMcpBeforeFirstPoll', () => {
     expect(await prepareMcpBeforeFirstPoll({ environment: { sandbox: defaultSeatSandbox() }, plan: emptyHome, warm })).toBeNull();
     expect(await prepareMcpBeforeFirstPoll({ environment: null, plan: emptyHome, warm })).toBeNull();
     expect(warm).not.toHaveBeenCalled();
+  });
+
+  // Prod walk, 2026-11-05: a Connect-page Claude Code seat whose pods are all
+  // private gets `trust: 'workspace'`. Its spawn needs a host-prepared build
+  // exactly as a public one does (claude.js isConfinedTrust), but the warm was
+  // gated on 'public' alone, so the person's first @mention was refused.
+  test('a workspace seat warms before polling too: its spawn needs the same host-prepared build', async () => {
+    const warm = jest.fn().mockResolvedValue(WARM_RESULTS.ADVANCED);
+    const lines = [];
+    const result = await prepareMcpBeforeFirstPoll({
+      environment: { mcp: [commonlyMcpServer()], sandbox: { trust: 'workspace' } },
+      plan: emptyHome,
+      warm,
+      log: (line) => lines.push(line),
+    });
+    expect(result).toBe(WARM_RESULTS.ADVANCED);
+    expect(warm).toHaveBeenCalledTimes(1);
+    expect(lines[0]).toBe("preparing Commonly's tools on this machine (first run only)...");
   });
 
   test('a legacy internal trust reads as public', async () => {

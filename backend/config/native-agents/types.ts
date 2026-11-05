@@ -83,7 +83,9 @@ export interface NativeAgentDefinition {
   // DEFAULT_NATIVE_DAILY_RUN_CAP (60); an explicit 0 = uncapped (F64).
   dailyRunCap?: number;
   // ADR-018 D8: opt the installation into wake-on-message at install time.
-  wakeOnMessage?: boolean;
+  // The object form also sets humanOnly: an agent's post never wakes it
+  // (agentMentionService), as wakeDefaultService does for person-brought agents.
+  wakeOnMessage?: boolean | { enabled: true; humanOnly?: boolean };
   // Inline the pod's last N messages (oldest first, the answered one excluded)
   // into every turn, so follow-ups arrive with their question. Absent = none;
   // the runtime caps N at RECENT_MESSAGES_MAX.

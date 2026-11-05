@@ -1,6 +1,23 @@
 const axios = require("axios");
 const DISCORD_APPLICATION_COMMANDS = require("../config/discordApplicationCommands.json");
 
+// Each registration attempt, request and response together, ends by this.
+const ATTEMPT_DEADLINE_MS = 15_000;
+
+// The parts of a command that change what Discord shows: where it is offered
+// (`contexts`) and its options. Fields Discord adds itself (id, version,
+// dm_permission, integration_types, ...) are not compared.
+const optionShape = (options) => (options || []).map((o) => ({
+  name: o.name,
+  type: o.type,
+  required: Boolean(o.required),
+  choices: (o.choices || []).map((c) => c.value),
+}));
+const commandShape = (cmd) => JSON.stringify({
+  contexts: cmd.contexts || null,
+  options: optionShape(cmd.options),
+});
+
 /**
  * Discord Command Deployment Script
  * Registers global slash commands with Discord API
@@ -117,12 +134,25 @@ class DiscordCommandDeployment {
     try {
       const url = `https://discord.com/api/v10/applications/${clientId}/commands`;
 
-      const response = await axios.put(url, commands, {
-        headers: {
-          Authorization: `Bot ${botToken}`,
-          "Content-Type": "application/json",
-        },
-      });
+      // Bounded: this runs at boot (start.sh). axios's `timeout` covers the
+      // wait for headers only, so a body that trickles forever would still
+      // hold the server's start; the abort is a wall-clock deadline over the
+      // whole request and response.
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), ATTEMPT_DEADLINE_MS);
+      let response;
+      try {
+        response = await axios.put(url, commands, {
+          headers: {
+            Authorization: `Bot ${botToken}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 10_000,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(deadline);
+      }
 
       if (response.status === 200 || response.status === 201) {
         console.log(`✅ Discord API returned status ${response.status}`);
@@ -208,17 +238,26 @@ class DiscordCommandDeployment {
         const missingCommands = expectedCommands.filter(
           (cmd) => !foundCommands.includes(cmd),
         );
+        // Present but registered from an older file: a deploy is still due.
+        const staleCommands = DISCORD_APPLICATION_COMMANDS
+          .filter((cmd) => {
+            const found = registeredCommands.find((r) => r.name === cmd.name);
+            return found && commandShape(found) !== commandShape(cmd);
+          })
+          .map((cmd) => cmd.name);
 
-        if (missingCommands.length === 0) {
+        if (missingCommands.length === 0 && staleCommands.length === 0) {
           console.log(
             `✅ All ${expectedCommands.length} commands verified globally`,
           );
           return { success: true, registeredCommands: foundCommands };
         }
-        console.log(`❌ Missing commands: ${missingCommands.join(", ")}`);
+        if (missingCommands.length) console.log(`❌ Missing commands: ${missingCommands.join(", ")}`);
+        if (staleCommands.length) console.log(`❌ Stale commands (contexts or options differ): ${staleCommands.join(", ")}`);
         return {
           success: false,
           missingCommands,
+          staleCommands,
           registeredCommands: foundCommands,
         };
       }
@@ -233,18 +272,23 @@ class DiscordCommandDeployment {
 /**
  * CLI interface
  */
-async function main() {
-  const args = process.argv.slice(2);
+async function main(args = process.argv.slice(2)) {
   const command = args[0];
 
   const deployment = new DiscordCommandDeployment();
 
+  // A failure is an exit code, so start.sh can say so. start.sh does not
+  // stop the boot on it.
+  const failIf = (result) => {
+    if (!result || !result.success) process.exitCode = 1;
+  };
+
   switch (command) {
     case "deploy":
-      await deployment.deploy();
+      failIf(await deployment.deploy());
       break;
     case "verify":
-      await deployment.verifyDeployment();
+      failIf(await deployment.verifyDeployment());
       break;
     case "help":
       console.log("Discord Command Deployment Script");
@@ -267,13 +311,17 @@ async function main() {
       break;
     default:
       // Default: deploy
-      await deployment.deploy();
+      failIf(await deployment.deploy());
   }
 }
 
 // Run if called directly
 if (require.main === module) {
-  main().catch(console.error);
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = DiscordCommandDeployment;
+module.exports.main = main;

@@ -44,7 +44,6 @@
 .v2-team .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
 .v2-team .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
 .v2-team .v2-team-card__meter-text { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
-.v2-team .v2-team-card__command { display: block; padding: 10px 12px; border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 500 14px/20px var(--v2-font-mono); color: var(--v2-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .v2-team .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 @media (max-width: 760px) {
   .v2-team .v2-team__body { gap: 14px; }

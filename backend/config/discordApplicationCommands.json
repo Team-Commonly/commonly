@@ -3,6 +3,7 @@
     "name": "mode",
     "description": "Show this channel's relay mode, or switch it",
     "type": 1,
+    "contexts": [0],
     "options": [
       {
         "name": "mode",
@@ -19,12 +20,14 @@
   {
     "name": "status",
     "description": "The pod, relay mode and mute state for this channel",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "mute",
     "description": "Pause relay to this channel (default 60 minutes, at most 24 hours)",
     "type": 1,
+    "contexts": [0],
     "options": [
       {
         "name": "duration",
@@ -37,22 +40,26 @@
   {
     "name": "unmute",
     "description": "Resume relay to this channel",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "tldr",
     "description": "Post the pod's latest summary here",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "summary",
     "description": "Summarize this channel's recent chat into the pod",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "help",
     "description": "List the Commonly commands for this channel",
-    "type": 1
+    "type": 1,
+    "contexts": [0]
   },
   {
     "name": "commonly-summary",

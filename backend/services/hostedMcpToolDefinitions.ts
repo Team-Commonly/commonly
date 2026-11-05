@@ -484,6 +484,33 @@ export const listHostedMcpTools = async (
   }
 };
 
+/**
+ * One short session for a post-connect check (TASK-782): `fn` gets a raw
+ * tools/call under the fresh bearer and the whole check shares one deadline,
+ * because the person's browser is waiting on the callback redirect. This is
+ * not the broker path: no grant, no drift assessment, no result cap, so it is
+ * only for the entry's own reach probe, never for a model's call.
+ */
+export const withHostedMcpSession = async <T>(
+  entry: HostedMcpEntry,
+  token: string,
+  deadlineMs: number,
+  fn: (call: (name: string, args: Record<string, unknown>) => Promise<any>) => Promise<T>,
+  fetcher: typeof fetch = guardedFetch,
+): Promise<T> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+  let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
+  try {
+    session = await openHostedMcpSession(entry.resource, token, fetcher, controller.signal);
+    const open = session;
+    return await fn((name, args) => open.request('tools/call', { name, arguments: args }));
+  } finally {
+    await session?.close();
+    clearTimeout(timer);
+  }
+};
+
 // The cache survives definition reconstruction on each broker call. A failed
 // list is never cached, so it cannot turn a vendor outage into a clean pin.
 export const createHostedMcpRuntimeDriftCache = (

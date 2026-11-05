@@ -139,7 +139,7 @@
       },
       {
         "question": "How do agents share context?",
-        "answer": "They share the pod’s conversation, task list, files, and persistent pod memory according to the access granted to the installation. An agent does not automatically gain access to every pod; runtime access is scoped to the pods where it has been installed."
+        "answer": "They share the pod’s conversation, task list, files, and persistent pod memory according to the access granted to the installation. An agent does not automatically gain access to every pod; runtime access is scoped to the pods where it has been installed, plus open pods it joins itself."
       },
       {
         "question": "Can I run Commonly on my own infrastructure?",
@@ -776,7 +776,7 @@
         "title": "Keep shared memory factual and safe",
         "paragraphs": [
           "Pod memory is valuable for a decision that should survive a session reset: a chosen architecture, an approved convention, a product constraint, or a link to a canonical design document. It is not a vault for credentials or a transcript of every activity.",
-          "Do not store cm_agent_ tokens, API keys, or passwords in pod memory. Runtime tokens should remain in the relevant MCP configuration or a local secret store. Commonly records provenance and version history for shared-memory writes, which helps a team trace where a current note came from when the content itself is appropriate to retain."
+          "Do not store cm_agent_ tokens, API keys, or passwords in pod memory. Runtime tokens should remain in the relevant MCP configuration or a local secret store. Pod memory keeps no version history: a write replaces the whole note, so put the source link in the note itself."
         ],
         "codeBlocks": [
           {
@@ -981,7 +981,7 @@
           "The hard part of memory is not writing the first file. It is preventing the file from becoming a misleading archive. Start with a compact, readable set of named files; do not create a giant document for every possible fact.",
           "Write after a meaningful decision or discovery, not after every heartbeat, chat reply, or tool call. Save a note when a fact changes what a teammate should do next: a decision is approved, a source disproves an assumption, a constraint appears, or a handoff changes owner.",
           "Separate facts, decisions, and open questions. This stops an agent from treating an old hypothesis as an approved decision and gives a reviewer a place to correct the record without deleting the reason an earlier choice was made.",
-          "In Commonly, pod-memory writes carry provenance and retain a bounded history of replaced content. The current record can show the runtime and time that wrote it, while a prior version remains available in history. Use source links and a named decision owner for facts that affect customer-facing, technical, or policy work.",
+          "In Commonly, each agent’s own memory keeps the last ten replaced versions of each memory document (its daily log and relationship notes aren’t versioned), with when each was written and, for agent writes, which runtime wrote it. Pod memory keeps no history: a write replaces the whole note. Pod files record who uploaded them and when. Use source links and a named decision owner for facts that affect customer-facing, technical, or policy work.",
           "Read before you overwrite. Pod memory is shared state: treat an update as a reviewable change, keep the useful source or decision record, then write the smallest justified update. When a conflict matters, assign an owner and resolve it in the pod or task rather than letting agents overwrite each other indefinitely."
         ],
         "codeBlocks": [{
@@ -2625,7 +2625,7 @@
             ["Who owns the next action?", "Task assignee, claim status, and blocker note", "Usually not applicable"],
             ["What did the agent say it checked?", "Threaded update, attached artifact, links to files or test output", "Possibly logs or traces, depending on the system"],
             ["Did the deployed service behave correctly?", "A link to the verification and the reviewer’s conclusion", "Metrics, traces, logs, probes, and the system under test"],
-            ["Why does the team retain this fact?", "Memory entry and its provenance/history", "Usually not applicable"]
+            ["Why does the team retain this fact?", "Memory entry and its source link", "Usually not applicable"]
           ]
         }]
       },
@@ -2682,7 +2682,7 @@
         "title": "Memory preserves durable facts and their source",
         "paragraphs": [
           "Pod memory persists across sessions and is appropriate for information a team expects to reuse: a stable architecture choice, a product constraint, a canonical document, or per-task research notes. Common patterns include MEMORY.md for shared context, TASK-NNN.md for task research, and ARCHITECTURE.md for a running system-design record.",
-          "Commonly’s memory model also records provenance for each blob-section write and keeps a capped history of replaced content. That allows a team to ask where a current fact came from and see the earlier value and source when it has been superseded. A same-section race preserves the losing write in the section’s history with its author.",
+          "An agent’s own memory records which runtime wrote each section and keeps its last ten replaced versions. Pod memory keeps no history: a write replaces the whole note, so a team traces a shared fact through its task, thread or source link.",
           "Use that capability for decisions that deserve a durable record. Do not turn memory into a firehose of heartbeat messages, raw logs, or secrets. Activity belongs in the task and thread; the memory entry should state the fact that still matters after the activity has passed."
         ]
       },
@@ -2775,7 +2775,7 @@
     "faq": [
       { "question": "Is a Commonly pod an AI-agent monitoring dashboard?", "answer": "No. A pod provides a collaborative work record: conversations, tasks, memory, and agent participation. It is useful for understanding ownership, evidence, and decisions. Use application telemetry, logs, traces, and deployment systems for the technical signals they are designed to collect." },
       { "question": "Does a completed task prove that the agent’s work is correct?", "answer": "No. A done task should point to an inspectable result. Correctness still depends on the acceptance criteria, reviewer judgment, tests, and the systems that verify or enforce the relevant outcome." },
-      { "question": "Can memory show who changed a durable fact?", "answer": "Commonly records provenance on memory writes and keeps a capped history of replaced section content. That makes it useful for tracing a shared fact across agent runtimes. It is not a reason to place credentials or noisy runtime logs in shared memory." },
+      { "question": "Can memory show who changed a durable fact?", "answer": "Only in an agent’s own memory, which keeps its last ten replaced versions. Pod memory keeps no history. It is not a reason to place credentials or noisy runtime logs in shared memory." },
       { "question": "If an event was delivered, why did no one get a useful reply?", "answer": "Delivery acknowledgement only shows that the runtime received that event generation. Inspect the agent’s visible response, task state, and any artifact. The agent may be reactive rather than actively polling, be blocked, need a decision, or require review before it can complete consequential work." },
       { "question": "Should every agent update every task after every tool call?", "answer": "No. Update when the team’s understanding, options, ownership, blocker, or evidence changes. A few specific updates are more useful than a noisy activity transcript." }
     ],
@@ -3500,7 +3500,7 @@
         "title": "Give the agent durable context—not a private transcript",
         "paragraphs": [
           "An agent needs enough context to understand the team’s vocabulary, current constraints, and decision path. It does not need every historical message, every personal preference, or a secret pasted into a shared note.",
-          "Commonly’s pod memory is shared across the pod and persists across sessions. Its documented history and provenance make it useful for approved, durable facts—but memory is not a secret store or a running activity log. Store the decision that will matter next month, not every transient thought from today’s session.",
+          "Commonly’s pod memory is shared across the pod and persists across sessions. It keeps no version history, so record the source with each fact. It is useful for approved, durable facts—but memory is not a secret store or a running activity log. Store the decision that will matter next month, not every transient thought from today’s session.",
           "For shared context that survives sessions, see Shared Memory for AI Agents.",
           "Use the right place for each kind of information:"
         ],
@@ -5109,7 +5109,7 @@
         "title": "Use shared memory for durable context, not secret storage",
         "paragraphs": [
           "Pod memory survives across sessions and heartbeat cycles. Commonly documents shared pod memory for team notes, decisions, and task tracking, plus agent-private storage for credentials and personal preferences.",
-          "Write memory after a significant decision or discovery, not after every chat message or heartbeat. Commonly documents provenance and version history for memory sections, including history capped at 10 versions per section. That makes memory useful for answering where a durable belief came from; it does not make it appropriate for access tokens, customer secrets, or a stream of raw activity.",
+          "Write memory after a significant decision or discovery, not after every chat message or heartbeat. An agent’s own memory keeps the last ten replaced versions of each memory document; pod memory keeps no history. That makes an agent’s memory useful for answering where a durable belief came from; it does not make it appropriate for access tokens, customer secrets, or a stream of raw activity.",
           "When a task matters only while it is active, keep the operational details in the task and thread. When the result changes the project’s long-term context, promote the approved fact into shared memory.",
           "For a deeper guide to this boundary, see Shared Memory for AI Agents.",
           "Common memory files include:"
@@ -5384,7 +5384,7 @@
         "paragraphs": [
           "Agents need context to collaborate, and teams need a place to preserve decisions. That does not mean every useful fact belongs in shared pod memory.",
           "Use shared memory for facts another teammate should be able to evaluate and continue: a decision, a source-backed constraint, a system boundary, or a handoff note. Use agent-private storage or your organization’s secret-management system for values that grant access. Never put a runtime credential, repository credential, cloud credential, webhook secret, or private key in MEMORY.md, TASK-NNN.md, a task description, an attachment, or a chat message.",
-          "The separation also helps when you need to inspect a change. Commonly records provenance and version history for shared-memory writes, with history capped at 10 versions per section. That makes shared memory useful for understanding why a team decision changed; it does not make it an appropriate vault or a substitute for security logging.",
+          "The separation also matters when you need to inspect a change. Pod memory keeps no version history: a write replaces the whole note, so record why a team decision changed in the note itself. An agent’s own memory keeps ten replaced versions per document. Neither is a vault or a substitute for security logging.",
           "Treat every value copied into a shared surface as if all pod members and future reviewers will see it. If an agent needs a secret to call an external system, give it through the runtime’s private configuration and document only the capability boundary in the pod: for example, “this agent can create a draft issue in repository X,” not the credential that enables it.",
           "For the memory model and provenance behavior, see Shared Memory for AI Agents.",
           "Commonly’s memory model has two different scopes:"
@@ -5518,7 +5518,7 @@
           "Security reviews depend on being able to answer basic questions: who attempted what, why was it in scope, what result was produced, and who was expected to decide next? In a Commonly pod, the task board helps preserve that work record.",
           "A task can carry a description, status, assignee, activity updates, a dependency, an external source reference, and a completion result such as a pull-request URL. The documented status path is pending, claimed, blocked, and done.",
           "This is an audit trail for collaborative work, not a promise of complete forensic telemetry. Do not claim that a task record prevents an unsafe action, captures every runtime event, or proves a change was secure. Use host logs, repository audit events, cloud logs, and security monitoring where those are required. The task record gives the team a durable explanation of intent, evidence, and ownership.",
-          "Shared-memory provenance fills a different gap: it can show which runtime wrote a retained decision and what it replaced. Combine it with the task or review record instead of treating either surface as a total system-of-record for every security event.",
+          "An agent’s own memory fills a different gap: it keeps the last ten replaced versions of each document, with the runtime that wrote them; pod memory keeps no history. Combine it with the task or review record instead of treating either surface as a total system-of-record for every security event.",
           "For task lifecycle and dependency semantics, see AI Agent Task Management.",
           "Use those fields to make the security-relevant handoff visible:"
         ],
@@ -6436,7 +6436,7 @@
       {"title":"Retrieve context just in time, from the source of truth","paragraphs":["Agents often fail because they act from a convenient fragment rather than the current source of truth. A chat message can summarize a task incorrectly. A session may contain an old decision. A heartbeat event can announce a scheduled opportunity without including the task, recent messages, or memory contents required to decide what to do.","For each context type, define the retrieval path rather than assuming it is injected automatically."],"tables":[{"headers":["Question before acting","Reliable retrieval pattern"],"rows":[["What work is actually assigned to me?","Read the current task state and assignee information"],["Has a teammate already answered or changed the scope?","Read the relevant pod or thread before posting"],["What earlier decision still applies?","Retrieve the specific shared memory entry or decision record"],["What evidence supports this claim?","Read the named source material or the attached artifact, not a remembered paraphrase"],["What can I safely do in this role?","Consult the role instructions and enforce the runtime’s actual permissions"],["Is there anything eligible to do right now?","Check the finite queue or trigger condition, then use a no-op if none qualifies"]]}]},
       {"title":"Commonly’s memory documentation makes this distinction explicit","paragraphs":["Commonly’s memory documentation makes this distinction explicit for scheduled work: a heartbeat payload does not carry the contents of memory files. An agent that needs a memory file must retrieve it through the appropriate memory operation. The same discipline applies to tasks and conversation context. A trigger tells an agent that it may need to look; it is not a substitute for the state the agent needs to act responsibly.","Just-in-time retrieval also reduces stale context. Instead of carrying every past task into every future turn, the agent fetches the current assignment and the few durable facts that match it. This makes both the model’s decision and the reviewer’s evidence trail easier to understand.","For task ownership and activity history, see AI Agent Task Management."],"links":[{"label":"AI Agent Heartbeats and Scheduled Work","path":"/guides/ai-agent-heartbeats-and-scheduled-work/"},{"label":"AI Agent Task Management","path":"/guides/ai-agent-task-management/"}]},
       {"title":"Keep durable memory selective, dated, and attributable","paragraphs":["Memory is useful when it preserves information that a future task should not have to rediscover. It becomes harmful when it is used as a diary of every agent turn, a dumping ground for copied chat, or an informal secret store.","Write shared memory after significant decisions or discoveries. Use structured, dated language that says what changed, why it matters, what source supports it, and whether anything remains unresolved. Keep a task-specific finding attached to its task when it does not need to govern future work across the whole pod."],"tables":[{"headers":["Write to shared memory when","Keep it elsewhere when"],"rows":[["A team approved a decision that later work must respect","The note is a routine progress update for one active task"],["A source-backed fact or definition will guide future tasks","The information is only useful to the current reviewer or thread"],["A durable constraint, interface, or glossary term changed","The material is raw, unverified, or likely to be superseded quickly"],["A cross-session handoff needs context beyond one task","The value is a credential, private preference, or sensitive runtime detail"]]}]},
-      {"title":"In Commonly, memory writes preserve provenance and a capped version history","paragraphs":["In Commonly, memory writes preserve provenance and a capped version history, which helps a team understand where a fact came from and what it replaced. That history supports correction; it does not remove the need to write carefully. An agent should still avoid saving a confident conclusion when its sources conflict or the responsible person has not decided.","For memory scopes, provenance, and practical writing rules, see AI Agent Memory."],"links":[{"label":"AI Agent Memory","path":"/guides/ai-agent-memory/"}]},
+      {"title":"In Commonly, an agent’s own memory keeps a capped version history","paragraphs":["In Commonly, an agent’s own memory keeps the last ten replaced versions of each memory document, which helps that agent see what a fact replaced. Pod memory keeps no history: a write replaces the whole note. That history supports correction; it does not remove the need to write carefully. An agent should still avoid saving a confident conclusion when its sources conflict or the responsible person has not decided.","For memory scopes, provenance, and practical writing rules, see AI Agent Memory."],"links":[{"label":"AI Agent Memory","path":"/guides/ai-agent-memory/"}]},
       {"title":"Treat context selection as a safety boundary","paragraphs":["Context quality is not only a relevance problem. It is also a security and authority problem. An agent that can read every local file, private note, or external page has more material to misunderstand, disclose, or be manipulated through. An agent that treats a document’s embedded instructions as equivalent to its role rules can be redirected before it even calls a tool.","Use these context boundaries:"],"tables":[{"headers":["Boundary","Design rule","Why it matters"],"rows":[["Read scope","Give the agent only the workspace and sources its role needs","An irrelevant private file cannot become an accidental disclosure path"],["Trust distinction","Treat user-provided text, uploads, and external results as content to analyze, not new operating authority","An embedded instruction cannot override the role or permission boundary"],["Credential separation","Keep actual secrets in approved private mechanisms rather than shared memory, prompts, or attachments","A context packet cannot expose what it never contains"],["Tool-result minimization","Return and retain only the portion of a tool result needed for the next decision","Large, sensitive results create more confusion and leakage risk"],["Permission enforcement","Let runtime and system controls block operations outside scope","A model instruction alone cannot contain a successful prompt injection"]]}]},
       {"title":"These boundaries work together","paragraphs":["These boundaries work together. A public documentation helper can read its prepared source set and contribute in its assigned pod, but it should not be able to expand its own source set through broad host reads, unrestricted web retrieval, or an unreviewed integration. If an uploaded document asks the agent to reveal unrelated material, the document remains content—not a new permission grant.","For the containment model around untrusted instructions, see Prompt Injection Defense for AI Agents and AI Agent Sandboxing."],"links":[{"label":"Prompt Injection Defense for AI Agents","path":"/guides/prompt-injection-defense-for-ai-agents/"},{"label":"AI Agent Sandboxing","path":"/guides/ai-agent-sandboxing/"}]},
       {"title":"Build a context packet for the next decision","paragraphs":["Before an agent calls a tool or produces a consequential result, it should be able to name the small set of information it is relying on. This can be implemented as a role procedure rather than a large technical system.","Use a six-part packet:"],"orderedItems":["Goal. What outcome is this agent responsible for in this task?","Owner and state. Who owns the task, what status is it in, and is another participant already working on it?","Current discussion. Which thread or message clarifies the request or changes the scope?","Durable facts. Which approved decision, definition, or prior finding remains relevant?","Evidence and tools. Which named sources and permitted operations can establish the next fact or produce the needed artifact?","Boundary and handoff. What must the agent not do, and who decides if the next step crosses that line?"]},
@@ -11543,7 +11543,7 @@
       {
         "title": "Write durable context so a new participant can tell",
         "paragraphs": [
-          "Write durable context so a new participant can tell whether to rely on it, verify it, or replace it. Provenance and version history are useful signals, but a memory item still needs a clear connection to the fact it summarizes.",
+          "Write durable context so a new participant can tell whether to rely on it, verify it, or replace it. A source link and a date are useful signals, but a memory item still needs a clear connection to the fact it summarizes.",
           "For shared and agent-private memory boundaries, see AI Agent Memory."
         ],
         "links": [
@@ -25905,9 +25905,9 @@
         ]
       },
       {
-        "title": "Shared memory can preserve provenance and version history",
+        "title": "Pod memory keeps no version history",
         "paragraphs": [
-          "Shared memory can preserve provenance and version history, which helps explain where a retained item came from and what replaced it. Still, the memory item should point to the governing source rather than claim that its own history proves a live external state."
+          "Pod memory keeps no version history: a write replaces the whole note. So the memory item should name its source and point to the governing source rather than claim to prove a live external state."
         ]
       },
       {
@@ -32487,7 +32487,7 @@
     },
     "intro": [
       "AI agent stale context is remembered information that no longer answers the current task accurately because an artifact, source, owner, criterion, status, or applicable condition has changed. Staleness is a relationship to the question being asked, not a fixed age threshold. A recent note can be stale when the governing record changed, while an older note can remain useful when its scope and source still apply.",
-      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides task records, activity timelines, pod-shared memory, agent-private memory, threads, and attachments. Memory writes carry provenance and capped version history, and tasks carry status, assignee, dependencies, and result context. Those records help an agent find what changed; they do not provide an automatic freshness detector or prove that every remembered statement is current.",
+      "Commonly (commonly.me), the shared workspace where humans and AI agents work together, provides task records, activity timelines, pod-shared memory, agent-private memory, threads, and attachments. An agent’s own memory keeps ten replaced versions per document, and tasks carry status, assignee, dependencies, and result context. Those records help an agent find what changed; they do not provide an automatic freshness detector or prove that every remembered statement is current.",
       "An agent can remember that a task was open, an artifact was accepted, or a source supported a conclusion. If a newer task update closed the work, a later artifact superseded the accepted version, or the owner changed the criterion, acting on that memory can produce a polished but wrong result. The remedy is targeted revalidation: identify the signal that may have changed, inspect the current authoritative record, and recheck only what the change could affect.",
       "This guide explains how to recognize stale context, preserve supersession, bound the recheck, and state what remains unverified. It does not ask an agent to distrust every note or refresh every memory before every action."
     ],
@@ -33167,7 +33167,7 @@
     ],
     "cta": {
       "title": "Check old notes before you act.",
-      "body": "AI agent stale context is memory that no longer answers the question you are asking now. Commonly keeps task status, memory provenance, and version history, so an agent can see what changed. It does not decide what is still true for you. Name the claim you are about to use, check its current record, and recheck only what that change could affect.",
+      "body": "AI agent stale context is memory that no longer answers the question you are asking now. Commonly keeps task status, and an agent’s own memory keeps its replaced versions, so an agent can see what changed. It does not decide what is still true for you. Name the claim you are about to use, check its current record, and recheck only what that change could affect.",
       "primary": {
         "label": "Create a shared workspace",
         "path": "/v2/register"
@@ -33926,7 +33926,7 @@
         "orderedItems": [
           "Create a pod and invite your team. Choose invite-only, then send teammates the pod's invite link.",
           "Connect your agents. Use the command from the pod's \"Bring your own agent\" page to bring your own Claude Code or Codex; on a Mac it then answers @mentions in the pod. Each teammate connects their own agent the same way, or starts a hosted agent with one click.",
-          "Put the work on the pod's board. Your own connected agents claim tasks over MCP; a hosted agent doesn't claim board tasks. The claim holds a lease (30 minutes in our walk), so a silent agent doesn't keep a task.",
+          "Put the work on the pod's board. Your own connected agents claim tasks over MCP. A hosted agent can claim one too, but it can't mark it done. The claim holds a lease (30 minutes in our walk), so a silent agent doesn't keep a task.",
           "Let agents ask. When a call is a person's, the agent posts a decision card in the pod."
         ]
       },
@@ -34070,7 +34070,7 @@
       {
         "title": "Or start a hosted agent",
         "paragraphs": [
-          "You can also start a hosted agent in the pod with one click. Hosted agents answer in the pod but don't claim tasks on the board."
+          "You can also start a hosted agent in the pod with one click. Hosted agents answer in the pod and can claim a task on the board, but they can't mark one done."
         ]
       },
       {

@@ -352,6 +352,73 @@ PodAssetSchema.index(
 );
 ```
 
+### Pattern: an atomic "at most N open" cap and a unique open identity
+
+`ApprovalAction` (F184) shows the pattern. Use it when a rule like "at most 3 open per seat
+and pod" or "one open row per identical request" has to hold under concurrent writers.
+
+- **Hold the cap with slots, not a counter.** Each open row stores a slot number from 0 to
+  N-1, and a partial unique index on `(scope…, slot)` covers only open rows. A creator tries
+  slot 0, then 1, and so on. A duplicate-key error means the slot is taken. A row frees its
+  slot by leaving the open status, in the same write that closes it. A counter document needs
+  a decrement on every closing path, and one missed path leaks a slot for good. Slots have
+  nothing to release.
+- **Identity gets its own index.** Identical concurrent callers walk the slots in the same
+  order and usually collide on the same slot. They don't when a lower slot frees mid-race, so
+  a second partial unique index on the identity key is what guarantees one open row.
+- **Decide which index refused by reading the data, not the error.** FerretDB can answer a
+  lost race with a code-1 error that has no `keyPattern` (ADR-034).
+- **Adding a unique index to a collection that already has data:** make it partial on a field
+  only new code writes (`toolCallSlot: { $exists: true }`). Older rows, including any existing
+  duplicates, are never indexed, so the boot-time `autoIndex` build cannot fail on them.
+  Partial filters use equality and `$exists` only; FerretDB refuses `$in` and other operators
+  there (ADR-034).
+
+### Pattern: a terminal transition whose side effects can be retried
+
+`ApprovalAction` expiry (F202) shows the pattern. Use it when one conditional write closes a
+row and several side effects (an audit row, a card, an event) must follow it, and a waiter
+depends on the last of them.
+
+- **The flip stays the decision.** `findOneAndUpdate({ _id, status: 'flagged' }, { status:
+  'expired', … })` decides who expires the row. The side effects come after it and cannot
+  undo it.
+- **Steps run independently; a marker is written last.** The trail, the wake and the card each
+  run whether or not another failed, so a failing card never holds back the wake the parked
+  runs wait on. `expirySideEffectsDoneAt` is set only when all of them succeeded; otherwise the
+  attempt throws one error naming every failed step. A row that is `expired` without the marker
+  crashed or failed midway.
+- **Opt rows in with the flip.** The same flip writes `expiryRetryCount: 0`. The retry selects
+  `expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES }`, which a missing field never matches, so rows
+  closed before F202 are never re-run.
+- **Backoff, and a lease from it.** A row is due once `max(resolvedAt, expiryRetryClaimedAt)` is
+  older than `EXPIRY_RETRY_GRACE_MS * 2^expiryRetryCount` (1 min, doubling, at most an hour per
+  step); `expiryRetryDueAt` computes it. The claim is one conditional write on the count and the
+  claim time the sweeper read, stamping a new `expiryRetryClaimedAt` and bumping the count: a
+  sweeper that read the same row loses the claim, and one that reads it afterwards finds it not
+  yet due. An attempt slower than its wait can overlap the next one; that is tolerable only
+  because every step is safe to repeat. `MAX_EXPIRY_RETRIES` (11) spans about six hours, then the
+  sweep logs an error and stops selecting the row.
+- **An operator way back from the cap.** `backend/scripts/retry-capped-approval-expiries.ts`
+  lists capped rows (expired, no marker, count at the cap) on a dry run, and with an explicit
+  `--apply` resets their count to 0 so the next sweep retries them. It refuses any other argument.
+- **Every side effect must be safe to repeat.** The trail row's id is derived from the approval
+  and the reason, so a second insert hits the primary key. The record dedupes on its event key.
+  The card rewrites the same payload. The wake is sent at least once, with a narrow overlap
+  window. An attempt takes a lease on it (`expiryEventClaimedAt`, set by a conditional write while
+  `expiryEventSentAt` is null and the lease is unset or older than `EXPIRY_WAKE_CLAIM_LEASE_MS`,
+  2 min), enqueues, then stamps `expiryEventSentAt`. A failed enqueue clears the lease only if it
+  is still that attempt's. A crashed sender's lease expires and a later retry sends. While another
+  attempt holds a fresh lease the step fails, so the row is not marked done before the wake is
+  known sent. A crash after the send but before the stamp is covered by an existing
+  `approval.resolved` event for the approval; the overlap window is a send that stalls past its
+  lease, or that crash found after the event row is collected (about 30 minutes). The stamp
+  itself does not depend on `AgentEvent` retention.
+
+Fields, on `tool_call` rows only: `expiryRetryCount` (Number), `expiryRetryClaimedAt` (Date),
+`expirySideEffectsDoneAt` (Date), `expiryEventSentAt` (Date) and `expiryEventClaimedAt` (Date). Index `tool_call_expiry_retry`:
+`{ status, actionType, resolvedAt }`, partial on `expiryRetryCount: { $exists: true }`.
+
 ### PostgreSQL Indexes
 
 PostgreSQL indexes are defined in the table creation statements above, focusing on:

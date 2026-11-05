@@ -175,6 +175,26 @@ describe('installable catalog service', () => {
     expect(Integration.find).not.toHaveBeenCalled();
   });
 
+  it('per-repository GitHub rows (F172) are offered by their row id, never by the installation they share', async () => {
+    process.env.GITHUB_APP_ID = 'app-1';
+    process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
+    mockInstallables([], [githubTool()]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      { _id: 'row-widget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Widget' } },
+      { _id: 'row-gadget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' } },
+    ]));
+    const tool = (await catalogFor(userId)).installables.find((entry) => entry.list === 'tools');
+    expect(tool.connections).toEqual([
+      { connectionId: 'row-widget', owner: 'Outside-Team', repo: 'Widget' },
+      { connectionId: 'row-gadget', owner: 'Outside-Team', repo: 'Gadget' },
+    ]);
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+  });
+
   it('the catalogue returns the GitHub tool Installable with its tools, broker and the caller\'s connections, on the tools list', async () => {
     process.env.GITHUB_APP_ID = 'app-1';
     process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
@@ -309,6 +329,34 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: { $in: ['hosted-mcp'] }, createdBy: userId, status: 'connected', revokedAt: null,
     }));
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
+
+// TASK-782: the grant step reads this to say a connection can see nothing.
+it('a hosted connection whose probe found no projects says reach none; an unknown or positive one says nothing', async () => {
+  const shipped = HOSTED_MCP_ENTRIES.slice();
+  const linearEntry = shipped.find((entry) => entry.id === 'linear');
+  try {
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    const row = (id, reach) => ({
+      _id: id, type: 'hosted-mcp', status: 'connected', createdBy: userId,
+      createdAt: new Date('2026-11-05T10:00:00Z'),
+      config: { entryId: 'linear', intake: 'oauth', credentialRef: `ref-${id}`, ...(reach === undefined ? {} : { reach }) },
+    });
+    Integration.find.mockReturnValue(lean([
+      row('conn-empty', { projects: 0, checkedAt: new Date() }),
+      row('conn-busy', { projects: 3, checkedAt: new Date() }),
+      row('conn-unknown', null),
+      row('conn-old'),
+    ]));
+    const catalog = await catalogFor(userId);
+    const linear = catalog.installables.find((entry) => entry.list === 'tools' && entry.installableId === 'linear');
+    expect(linear.connections.map((c) => [c.connectionId, c.reach])).toEqual([
+      ['conn-empty', 'none'], ['conn-busy', undefined], ['conn-unknown', undefined], ['conn-old', undefined],
+    ]);
   } finally {
     HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }

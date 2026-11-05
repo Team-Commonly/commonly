@@ -871,6 +871,7 @@ router.patch('/:id/name', podAdminRateLimit, auth, async (req: AuthReq, res: Res
       _id: { toString: () => string };
       type?: string;
       name?: string;
+      description?: string;
       createdBy?: { toString: () => string };
       save: () => Promise<unknown>;
     } | null;
@@ -890,6 +891,10 @@ router.patch('/:id/name', podAdminRateLimit, auth, async (req: AuthReq, res: Res
     pod.name = name;
     await pod.save();
     if (previous !== name) {
+      // F183: PG `pods.name` is a mirror the PG listings read. Best-effort and
+      // after the Mongo save; a failure is logged and never fails the rename.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('../services/pgMirrorWrite').mirrorPodRenamed(pod._id.toString(), name, pod.description || '');
       try {
         await AuditLog.create({
           action: 'pod.renamed',

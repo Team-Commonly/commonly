@@ -114,6 +114,16 @@ hostedMcp:
     # can reach. Empty: no install link is offered.
     appSlug: ""
 
+# Commonly Connect as a SIGNING App (F172): the broker mints installation
+# tokens for outside teams' Connect installations with this App's own id and
+# private key, never the commonly-tools key. Enable only after both remote keys
+# (`<prefix>github-connect-app-id`, `<prefix>github-connect-app-private-key`)
+# exist with an enabled version: a missing remoteRef stalls api-keys. Disabled,
+# the backend refs stay optional and Connect connections refuse
+# `github_app_not_configured`. The App needs Contents RW and Pull requests RW.
+githubConnectApp:
+  enabled: false
+
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:
   enabled: true

@@ -69,9 +69,8 @@ Rules the code enforces:
   read the seat's token from its environment. A foreground `--unsandboxed` run doesn't report to the
   server (only the daemon's check-in does), so this local rule and the win32 broker withhold are what
   hold for it.
-- **Claude Code only.** OpenCode and Qwen stay refused with the flag. A public Codex seat is refused
-  too, with or without the flag, since TASK-786: Codex's own Windows sandbox can't enforce its profile's
-  read denies ([byo-support-matrix.md](byo-support-matrix.md)).
+- **Claude Code only.** OpenCode and Qwen stay refused with the flag; Codex is never refused (its own
+  profiles confine it) and needs no flag.
 - **No seat on native Windows gets connector grants**, opted in or not: `confinementReason` returns
   `sandbox_mode_unenforceable` on win32 for every adapter.
 - **The server refuses too.** A Windows check-in carries `sandbox: 'native-windows'`, or
@@ -145,6 +144,4 @@ token in its env.
   docs say Claude Code works on Windows with CLI 0.1.243 or newer.
 - **Not proven:** a turn on a signed-in Claude Code account (the stub walk's model is a stub, and the
   prod walk reaches its model with a gateway key), a tool call from the model through the commonly
-  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. A public Codex seat is refused there
-  since TASK-786, because Codex's own Windows sandbox can't enforce its read denies ([byo-support-matrix.md](byo-support-matrix.md));
-  the PR walk checks that refusal. The BYO page still says Codex is untested on Windows.
+  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. The BYO page says Codex is untested on Windows.

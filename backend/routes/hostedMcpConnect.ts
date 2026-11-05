@@ -96,8 +96,11 @@ const callbackRedirect = (
     manualRevoke?: { entryId: string; revokeAt: string };
     /** A catalogue entry the page may name in its notice; never vendor text. */
     entryId?: string;
-    /** D248: the page sends the person on to the entry's access page. */
-    next?: 'access';
+    /**
+     * D248 `access`: the page sends the person on to the entry's access page.
+     * TASK-782 `reach`: the page says the connection can see nothing yet.
+     */
+    next?: 'access' | 'reach';
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
@@ -690,7 +693,8 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // vendor page to decide whether an older authorization still needs removing.
   const accountChanged = hasPreviousCredential && (!subjectsComparable || subjectChanged);
   if (accountChanged) {
-    await revokeConnectionGrants({ connection: consumed, revokedBy: owner });
+    // The owner is here reconnecting, so the agents get no removal cue (F181).
+    await revokeConnectionGrants({ connection: consumed, revokedBy: owner, cue: false });
   }
 
   let manualRevokeAt: string | undefined;
@@ -858,6 +862,8 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         // account that held the row in between. Cleared, the comparison is two
         // unknowns and revokes, which is the safe reading.
         'config.providerSubject': providerSubject || null,
+        // Cleared with every new pair; the probe below writes its own answer.
+        'config.reach': null,
         // Released with the write it guarded, so the first refresh of the new
         // pair is not turned away by this callback's own lease. Released to
         // the lease the retire write displaced, if any: a refresh of the old
@@ -898,6 +904,32 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       accessNext = false;
     }
   }
+  // TASK-782: connected, but the account can see nothing to search (Sentry
+  // with no projects). Stored on the row so the grant step can say it too,
+  // and named on the return so the connect step says it now.
+  let reachNone = false;
+  if (!accessNext && typeof entry.reachProbe === 'function') {
+    let reach: { projects: number } | null = null;
+    try {
+      reach = await entry.reachProbe(tokens.access_token);
+    } catch {
+      reach = null;
+    }
+    if (reach && Number.isInteger(reach.projects) && reach.projects >= 0) {
+      try {
+        // A refresh or a newer connect in the probe's window moves the ref, so
+        // this write misses and the page says nothing the row doesn't hold.
+        const written = await Integration.updateOne(
+          { _id: published._id, 'config.credentialRef': credentialRef },
+          { $set: { 'config.reach': { projects: reach.projects, checkedAt: new Date() } } },
+        );
+        reachNone = written?.matchedCount === 1 && reach.projects === 0;
+      } catch {
+        reachNone = false;
+      }
+    }
+  }
+  const next = accessNext ? 'access' as const : reachNone ? 'reach' as const : undefined;
   // A reconnect that left the old grant for the person to withdraw still gets
   // the access step: the page shows both on one return.
   if (manualRevokeAt) {
@@ -906,11 +938,11 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         entryId: entry.id,
         revokeAt: manualRevokeAt,
       },
-      ...(accessNext ? { next: 'access' as const } : {}),
+      ...(next ? { next } : {}),
     });
   }
   return callbackRedirect(res, 'connected', undefined,
-    accessNext ? { entryId: entry.id, next: 'access' } : undefined);
+    next ? { entryId: entry.id, next } : undefined);
 };
 
 router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {

@@ -127,7 +127,7 @@ export interface SlackAuthorizeResponse {
 
 export type ConnectorAction =
   | 'manage' | 'show-code' | 'new-code' | 'authorize' | 'confirm'
-  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod';
+  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod' | 'reinstall';
 
 export interface ConnectorRow {
   action: ConnectorAction | null;

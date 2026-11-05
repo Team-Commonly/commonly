@@ -2,11 +2,12 @@
  * adapters.codex.provider-route.test.mjs — D250 / TASK-786
  *
  * A public Codex seat starts with `--ignore-user-config`, so no config.toml
- * provider applies, and codex-cli 0.162.1 ignores OPENAI_BASE_URL: before this
- * change the seat could reach only OpenAI. With CODEX_API_KEY in the seat's
- * environment, the key now stays on the host behind the per-turn loopback
- * proxy (the Claude seat's route, on the Responses wire), and codex is handed
- * only a `-c model_providers.*` entry naming the proxy and a per-turn token.
+ * provider applies. F188 forwards OPENAI_BASE_URL with `-c openai_base_url`,
+ * but the key then stays in codex's own environment. With CODEX_API_KEY in the
+ * seat's environment, the key now stays on the host behind the per-turn
+ * loopback proxy (the Claude seat's route, on the Responses wire), and codex
+ * is handed only a `-c model_providers.*` entry naming the proxy and a
+ * per-turn token.
  *
  * Measured before writing this (codex-cli 0.162.1, a stub upstream, dummy
  * token): with `--ignore-user-config`, `-c model_provider="<id>"` plus
@@ -161,20 +162,73 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     expect(started).toHaveLength(1);
   });
 
-  test('with no CODEX_API_KEY a public seat keeps the Codex login and starts no proxy', async () => {
+  test('with no key a public seat keeps the Codex login and starts no proxy', async () => {
     const started = [];
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, calls } = makeSpawnImpl();
+    await codex.spawn('hello', await publicSeat({ OPENAI_BASE_URL: 'https://gateway.example/v1' },
+      { _startProviderProxy: fakeProxy(started), _spawnImpl: impl }));
+    expect(started).toEqual([]);
+    expect(providerEntry(calls[0].args)).toBeUndefined();
+    expect(cFlags(calls[0].args).some((flag) => flag.startsWith('model_provider='))).toBe(false);
+  });
+
+  test('OPENAI_API_KEY alone keeps the F188 route: the URL is forwarded and no proxy starts', async () => {
+    const started = [];
+    const { impl, calls } = makeSpawnImpl();
+    await codex.spawn('hello', await publicSeat({
+      OPENAI_API_KEY: REAL_KEY,
+      OPENAI_BASE_URL: 'https://gateway.example/v1',
+    }, { _startProviderProxy: fakeProxy(started), _spawnImpl: impl }));
+    expect(started).toEqual([]);
+    expect(cFlags(calls[0].args)).toContain('openai_base_url="https://gateway.example/v1"');
+    expect(providerEntry(calls[0].args)).toBeUndefined();
+  });
+
+  test('the proxy route replaces the F188 flag, so the gateway URL never reaches codex', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await codex.spawn('hello', await publicSeat({
+      CODEX_API_KEY: REAL_KEY,
+      OPENAI_BASE_URL: 'https://gateway.example/v1',
+    }, { _startProviderProxy: fakeProxy([]), _spawnImpl: impl }));
+    expect(cFlags(calls[0].args).some((flag) => flag.startsWith('openai_base_url='))).toBe(false);
+  });
+
+  test('a host signed in with ChatGPT and holding CODEX_API_KEY sends the key to the gateway, never the session', async () => {
+    const started = [];
+    const seen = [];
+    const { impl } = makeSpawnImpl({
+      during: async (args, opts) => {
+        seen.push(await lstat(join(opts.env.CODEX_HOME, 'auth.json')).catch((err) => err.code));
+      },
+    });
+    const ctx = await publicSeat({
+      CODEX_API_KEY: REAL_KEY,
+      OPENAI_BASE_URL: 'https://gateway.example/v1',
+    }, { _startProviderProxy: fakeProxy(started), _spawnImpl: impl });
+    await writeFile(join(ctx.env.CODEX_HOME, 'auth.json'), JSON.stringify({ auth_mode: 'chatgpt' }));
+    const stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const { impl, calls } = makeSpawnImpl();
-      await codex.spawn('hello', await publicSeat({ OPENAI_BASE_URL: 'https://gateway.example/v1' },
-        { _startProviderProxy: fakeProxy(started), _spawnImpl: impl }));
-      expect(started).toEqual([]);
-      expect(providerEntry(calls[0].args)).toBeUndefined();
-      expect(cFlags(calls[0].args).some((flag) => flag.startsWith('model_provider='))).toBe(false);
-      // A URL that would otherwise be ignored silently is named.
-      expect(warn.mock.calls.flat().join('\n')).toMatch(/OPENAI_BASE_URL.*CODEX_API_KEY/s);
+      await codex.spawn('hello', ctx);
+      expect(started).toHaveLength(1);
+      expect(seen).toEqual(['ENOENT']);
+      // F188's "ignored" line would be false here: the URL is in use.
+      expect(stderr.mock.calls.flat().join('\n')).not.toContain('OPENAI_BASE_URL is ignored');
     } finally {
-      warn.mockRestore();
+      stderr.mockRestore();
+    }
+  });
+
+  test('no credential of any name stays in codex\'s environment on the proxy route', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await codex.spawn('hello', await publicSeat({
+      CODEX_API_KEY: REAL_KEY,
+      CODEX_ACCESS_TOKEN: 'access-token-0123456789abcdef',
+      OPENAI_API_KEY: 'sk-openai-other-0123456789abcdef',
+      LITELLM_API_KEY: 'sk-litellm-0123456789abcdef',
+      OPENAI_BASE_URL: 'https://gateway.example/v1',
+    }, { _startProviderProxy: fakeProxy([]), _spawnImpl: impl }));
+    for (const name of ['CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_API_KEY', 'LITELLM_API_KEY', 'OPENAI_BASE_URL']) {
+      expect(calls[0].opts.env).not.toHaveProperty(name);
     }
   });
 
@@ -209,12 +263,16 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     expect(closed).toEqual([true]);
   });
 
-  test('a gateway URL the proxy refuses fails the turn before codex runs', async () => {
+  test('a gateway URL carrying credentials is refused before the proxy or codex starts, and is not echoed', async () => {
+    const started = [];
     const { impl, calls } = makeSpawnImpl();
-    await expect(codex.spawn('hello', await publicSeat({
+    const err = await codex.spawn('hello', await publicSeat({
       CODEX_API_KEY: REAL_KEY,
       OPENAI_BASE_URL: 'https://user:pass@gateway.example/v1',
-    }, { _spawnImpl: impl }))).rejects.toThrow(/Codex provider\.baseURL must be an http\(s\) URL without embedded credentials/);
+    }, { _startProviderProxy: fakeProxy(started), _spawnImpl: impl })).catch((e) => e);
+    expect(err.message).toMatch(/OPENAI_BASE_URL must be a plain http\(s\) URL/);
+    expect(err.message).not.toContain('user:pass');
+    expect(started).toEqual([]);
     expect(calls).toEqual([]);
   });
 
@@ -279,29 +337,3 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     await expect(lstat(join(ctx._publicCodexHome, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
-
-// The public profile is parsed by codex on the seat's own platform. On Windows
-// a POSIX path is not absolute, and codex refused the whole profile, so no
-// public Codex seat on Windows ever started: "filesystem path `/private/tmp`
-// must be absolute, use `~/...`, or start with `:`" (byo-windows, run
-// 41959804055, the first Codex walk on Windows).
-describe('codex adapter — the public profile on Windows', () => {
-  const filesystemOf = (args) => cFlags(args).find((flag) => flag.startsWith('permissions.commonly_public.filesystem='));
-
-  test('names no POSIX-only path on win32, and keeps the deny elsewhere', async () => {
-    const run = async (platform) => {
-      const { impl, calls } = makeSpawnImpl();
-      await codex.spawn('hello', await publicSeat({}, { _platform: platform, _spawnImpl: impl }));
-      return filesystemOf(calls[0].args);
-    };
-    const windows = await run('win32');
-    expect(windows).not.toContain('"/private/tmp"');
-    // Every path codex reads from the table is home-relative or a special root.
-    const keys = [...windows.matchAll(/"((?:[^"\\]|\\.)*)"="(?:read|write|deny)"/g)].map((m) => m[1]);
-    expect(keys.length).toBeGreaterThan(0);
-    for (const key of keys) expect(key).toMatch(/^(~\/|:|\.|\*)/);
-    expect(await run('darwin')).toContain('"/private/tmp"="deny"');
-    expect(await run('linux')).toContain('"/private/tmp"="deny"');
-  });
-});
-

@@ -28,6 +28,62 @@
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 
+// TASK-782: the callback waits on this, so it gets one short deadline.
+const REACH_DEADLINE_MS = 6000;
+// More orgs than this and the probe stops without an answer, never with a 0.
+const REACH_MAX_ORGS = 5;
+
+type ToolCall = (name: string, args: Record<string, unknown>) => Promise<any>;
+
+// The array a tool's structured result names, or null when the reply is not
+// one this probe can read (an error, no structured content, a wrong shape).
+const listIn = (result: any, key: string): { items: any[]; hasMore: boolean } | null => {
+  if (!result || result.isError) return null;
+  const structured = result.structuredContent;
+  if (!structured || !Array.isArray(structured[key])) return null;
+  return { items: structured[key], hasMore: structured.hasMore === true };
+};
+
+/**
+ * How many projects a fresh Sentry token can see (TASK-782). On 11-04 Triage's
+ * connection was in an org with no projects while the DSNs pointed at another
+ * org, so every search returned empty and nothing said why. `{ projects: 0 }`
+ * means every org the account is in was read and none has a project; any
+ * doubt (an error, more orgs than were read, an unreadable reply) is null, so
+ * the page never warns on a guess. Stops at the first org with a project.
+ */
+export const sentryReachProbe = async (
+  accessToken: string,
+  { call }: { call?: ToolCall } = {},
+): Promise<{ projects: number } | null> => {
+  if (!accessToken) return null;
+  const probe = async (callTool: ToolCall): Promise<{ projects: number } | null> => {
+    const orgs = listIn(await callTool('find_organizations', {}), 'organizations');
+    if (!orgs || orgs.hasMore || orgs.items.length > REACH_MAX_ORGS) return null;
+    for (const org of orgs.items) {
+      if (typeof org?.slug !== 'string' || !org.slug) return null;
+      // eslint-disable-next-line no-await-in-loop
+      const found = listIn(await callTool('find_projects', {
+        organizationSlug: org.slug,
+        ...(typeof org.regionUrl === 'string' && org.regionUrl ? { regionUrl: org.regionUrl } : {}),
+      }), 'projects');
+      if (!found) return null;
+      if (found.items.length > 0) return { projects: found.items.length };
+      if (found.hasMore) return null;
+    }
+    return { projects: 0 };
+  };
+  try {
+    if (call) return await probe(call);
+    // Lazy: the frontend's catalogue test imports this entry without the SDK.
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { withHostedMcpSession } = require('../../services/hostedMcpToolDefinitions');
+    return await withHostedMcpSession(SENTRY_ENTRY, accessToken, REACH_DEADLINE_MS, probe);
+  } catch {
+    return null;
+  }
+};
+
 export const SENTRY_ENTRY: HostedMcpEntry = {
   id: 'sentry',
   title: 'Sentry',
@@ -36,6 +92,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
   issuer: 'https://mcp.sentry.dev',
   client: 'cimd',
   scopes: ['org:read', 'project:write', 'team:write', 'event:write', 'alerts:write'],
+  reachProbe: (accessToken: string) => sentryReachProbe(accessToken),
   revoke: {
     page: 'https://sentry.io/settings/account/authorizations/',
     endpoint: 'https://mcp.sentry.dev/oauth/token',

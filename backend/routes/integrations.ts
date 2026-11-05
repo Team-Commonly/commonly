@@ -49,9 +49,12 @@ const {
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 // eslint-disable-next-line global-require
-const { revokeConnectionGrants } = require('../services/roomGrantService');
+const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
+import { isGithubAppConfigured } from '../services/githubAppNames';
+import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, proveConnectRepository } from '../services/githubConnectProof';
+import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 import { Types } from 'mongoose';
 import {
   DISCORD_BINDING_ID_FIELDS, invalidDiscordIdError, isDiscordSnowflake, isSupplied,
@@ -290,41 +293,210 @@ router.get('/catalog', listIntegrationsRateLimit, auth, async (req: AuthReq, res
   }
 });
 
-// GitHub App installations are administrator-owned user-scope connections.
-// They intentionally do not pass through the pod-member connector route: a
-// member must never be able to bind the broker to Commonly's App credential.
+// ─── GitHub App connections (one row per App, installation and repository) ──
+//
+// F172. A `github-app` row is one repository on one installation of one App:
+// `tools` (the private commonly-tools App, admin route only) or `connect` (the
+// public Commonly Connect App, self-serve with proof). An installation covers
+// many repositories, so a row written here keeps its installation in `config`
+// and leaves the top-level `installationId` unset: that field is unique per
+// installation and still holds the rows written before F172. Grants on these
+// rows name the row `_id`.
+const GITHUB_SLUG = /^[A-Za-z0-9_.-]{1,100}$/;
+const GITHUB_INSTALLATION_ID = /^\d{1,20}$/;
+
+type GithubAppRowShape = {
+  _id?: unknown;
+  createdBy?: unknown;
+  status?: unknown;
+  revokedAt?: unknown;
+  installationId?: unknown;
+  config?: { app?: unknown; installationId?: unknown; owner?: unknown; repo?: unknown };
+};
+
+/** The row already holding (app, installation, repository), legacy rows included. */
+const findGithubAppRepositoryRow = async (
+  app: 'tools' | 'connect', installationId: string, repoKey: string,
+): Promise<GithubAppRowShape | null> => {
+  const rows = await Integration.find({
+    type: 'github-app',
+    $or: [{ installationId }, { 'config.installationId': installationId }],
+  }).lean() as GithubAppRowShape[];
+  return rows.find((row) => {
+    const rowApp = row.config?.app === undefined || row.config?.app === null ? 'tools' : row.config.app;
+    const rowKey = `${String(row.config?.owner || '')}/${String(row.config?.repo || '')}`.toLowerCase();
+    return rowApp === app && rowKey === repoKey;
+  }) || null;
+};
+
+const isDuplicateKeyError = (error: unknown): boolean => (error as { code?: unknown })?.code === 11000;
+
+// The admin route binds a tools-App installation (our own org). It must never
+// pass through the pod-member connector route: a member must never be able to
+// bind the broker to Commonly's private App credential.
 router.post('/github-app', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
   try {
-    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
+    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown; ownerUserId?: unknown; app?: unknown };
     const installationId = String(body.installationId || '').trim();
     const owner = String(body.owner || '').trim();
     const repo = String(body.repo || '').trim();
     if (!installationId || !owner || !repo) {
       return res.status(400).json({ message: 'installationId, owner, and repo are required' });
     }
-    const existing = await Integration.findOne({ type: 'github-app', installationId });
+    if (!GITHUB_INSTALLATION_ID.test(installationId) || !GITHUB_SLUG.test(owner) || !GITHUB_SLUG.test(repo)) {
+      return res.status(400).json({ message: 'installationId must be numeric, and owner and repo valid GitHub names' });
+    }
+    // A Connect row is created only with the person's own proof, on the
+    // self-serve route; this route cannot write one.
+    if (body.app !== undefined && body.app !== 'tools') {
+      return res.status(400).json({ message: 'the administrator route binds commonly-tools installations only' });
+    }
+    // The connection owner is the granter of every grant on it. Default the
+    // admin; a named owner must be a usable human account (never a bot).
+    let ownerUserId = String(req.user?.id || '');
+    if (body.ownerUserId !== undefined) {
+      const named = String(body.ownerUserId || '').trim();
+      const refusal = Types.ObjectId.isValid(named) && /^[a-f\d]{24}$/i.test(named)
+        ? sessionRefusal(await loadSessionAccount(named))
+        : 'missing';
+      if (refusal) return res.status(400).json({ error: 'invalid_owner', message: 'ownerUserId must name an existing human account' });
+      ownerUserId = named;
+    }
+    const repoKey = `${owner}/${repo}`.toLowerCase();
+    const existing = await findGithubAppRepositoryRow('tools', installationId, repoKey);
     if (existing) {
-      const current = existing.config || {};
-      if (String(current.owner || '') !== owner || String(current.repo || '') !== repo) {
-        return res.status(409).json({ message: 'installationId is already bound to a different repository' });
-      }
-      // Connection rows are immutable in this cut. In particular, do not
-      // reassign createdBy or revive/retarget grants on a repeated POST.
-      return res.json({ integration: existing });
+      // Rows are immutable here: never reassign createdBy or retarget grants.
+      return res.status(409).json({ error: 'connection_exists', message: 'that repository is already connected on this installation', integrationId: String(existing._id) });
     }
     const integration = new Integration({
-      installationId,
       type: 'github-app',
       scope: 'user',
       status: 'connected',
-      config: { installationId, owner, repo },
-      createdBy: req.user?.id,
+      config: { app: 'tools', installationId, owner, repo, repoKey },
+      createdBy: ownerUserId,
       isActive: true,
     });
-    await integration.save();
+    try {
+      await integration.save();
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return res.status(409).json({ error: 'connection_exists', message: 'that repository is already connected on this installation' });
+      throw error;
+    }
     return res.status(201).json({ integration });
   } catch (error) {
     console.error('Error creating GitHub App integration:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Self-serve (F172): a signed-in person connects one repository of a Commonly
+// Connect installation. The installation and repository are proven from the
+// person's own GitHub App user token (services/githubConnectProof), never
+// taken from the body, and the person becomes the owner. Remove it with
+// DELETE /api/integrations/:id, which admits the row's creator.
+router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    const body = (req.body || {}) as { installationId?: unknown; owner?: unknown; repo?: unknown };
+    const installationId = typeof body.installationId === 'number' || typeof body.installationId === 'string'
+      ? String(body.installationId).trim() : '';
+    const owner = typeof body.owner === 'string' ? body.owner.trim() : '';
+    const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
+    if (!GITHUB_INSTALLATION_ID.test(installationId) || !GITHUB_SLUG.test(owner) || !GITHUB_SLUG.test(repo)) {
+      return res.status(400).json({ error: 'invalid_repository', message: 'installationId, owner and repo are required' });
+    }
+    // A row the broker could never sign for is not created.
+    if (!isGithubAppConfigured('connect')) {
+      return res.status(503).json({ error: 'github_app_not_configured', message: 'Commonly Connect is not configured on this instance' });
+    }
+    let proven;
+    try {
+      proven = await proveConnectRepository({ userId, installationId, owner, repo });
+    } catch (error) {
+      if (error instanceof GithubConnectProofError) {
+        return res.status(error.statusCode).json({
+          error: error.code,
+          message: error.message,
+          ...(error.code === 'github_connect_required'
+            ? { connect: `/api/integrations/connect/hosted-mcp/${GITHUB_MCP_ENTRY_ID}/start` } : {}),
+        });
+      }
+      throw error;
+    }
+    const repoKey = `${proven.owner}/${proven.repo}`.toLowerCase();
+    const existing = await findGithubAppRepositoryRow('connect', proven.installationId, repoKey);
+    if (existing) {
+      // Only its owner learns which row it is.
+      const own = String(existing.createdBy || '') === userId;
+      // A row nobody can use (disconnected when its owner's GitHub connection
+      // was removed, or revoked) does not hold the repository. A fresh proof
+      // takes it: its owner revives it, or another person replaces the owner
+      // (F173). Every grant on the row ends first, so none survives the change
+      // of owner; the old owner's identity and memory are untouched. A
+      // connected row is never taken.
+      const stale = existing.status !== 'connected' || Boolean(existing.revokedAt);
+      if (stale) {
+        // Win the row first, conditionally on it still being dead and still
+        // held by the owner this request read (F174). A request that read a
+        // row its owner has since revived loses here and revokes nothing.
+        // Grants minted before the takeover then end, as the system: the
+        // broker already refuses them, because a Connect grant runs only for
+        // the row's current owner (connection_owner_changed).
+        const takenAt = new Date();
+        const taken = await Integration.findOneAndUpdate(
+          {
+            _id: existing._id,
+            createdBy: existing.createdBy,
+            $or: [{ status: { $ne: 'connected' } }, { revokedAt: { $ne: null } }],
+          },
+          {
+            $set: {
+              createdBy: userId,
+              status: 'connected',
+              'config.owner': proven.owner,
+              'config.repo': proven.repo,
+              'config.repositoryId': proven.repositoryId,
+            },
+            $unset: { revokedAt: 1 },
+          },
+          { new: true },
+        );
+        if (taken) {
+          await revokeConnectionGrants({ connection: taken, revokedBy: SYSTEM_REVOKER, createdBefore: takenAt });
+          return res.json({ integration: taken });
+        }
+      }
+      return res.status(409).json({
+        error: 'connection_exists',
+        message: own ? 'you already connected this repository' : 'this repository is already connected by someone else',
+        ...(own ? { integrationId: String(existing._id) } : {}),
+      });
+    }
+    const integration = new Integration({
+      type: 'github-app',
+      scope: 'user',
+      status: 'connected',
+      config: {
+        app: 'connect',
+        installationId: proven.installationId,
+        owner: proven.owner,
+        repo: proven.repo,
+        repoKey,
+        repositoryId: proven.repositoryId,
+      },
+      createdBy: userId,
+      isActive: true,
+    });
+    try {
+      await integration.save();
+    } catch (error) {
+      if (isDuplicateKeyError(error)) return res.status(409).json({ error: 'connection_exists', message: 'this repository is already connected' });
+      throw error;
+    }
+    return res.status(201).json({ integration });
+  } catch (error) {
+    console.error('Error creating Commonly Connect repository connection:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -352,7 +524,7 @@ router.put('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, adminAut
     return res.status(403).json({ message: 'Only pod members can bind GitHub activity' });
   }
   const binding = await GithubGigBinding.findOneAndUpdate(
-    { installationId: String(integration.installationId), owner, repo },
+    { installationId: String(integration.installationId || integration.config?.installationId || ''), owner, repo },
     { $set: { podId: new Types.ObjectId(podId) }, $setOnInsert: { createdBy: new Types.ObjectId(String(req.user?.id)) } },
     { new: true, upsert: true },
   );
@@ -367,7 +539,7 @@ router.delete('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, admin
   const owner = String(req.body?.owner || integration.config?.owner || '').toLowerCase();
   const repo = String(req.body?.repo || integration.config?.repo || '').toLowerCase();
   if (!/^[A-Za-z0-9_.-]{1,100}$/.test(owner) || !/^[A-Za-z0-9_.-]{1,100}$/.test(repo)) return res.status(400).json({ message: 'Valid owner and repo required' });
-  await GithubGigBinding.deleteOne({ installationId: String(integration.installationId), owner, repo });
+  await GithubGigBinding.deleteOne({ installationId: String(integration.installationId || integration.config?.installationId || ''), owner, repo });
   return res.status(204).json({});
 });
 
@@ -492,6 +664,50 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// F161: "Add the bot again" on a Discord row that dropped starts a fresh
+// install, and the bind below writes a new row. The caller's own dropped rows
+// on the same pod, guild and channel are then retired the way Remove retires a
+// row: grants revoked, webhook deleted, platform record gone. The row itself is
+// kept, inactive, rather than deleted. Best effort: a failure here leaves a
+// stale row, never a failed bind.
+const retireDroppedDiscordRows = async (
+  keepId: unknown, podId: unknown, userId: string, serverId: string, channelId: string,
+): Promise<void> => {
+  // Every value comes from the request path: pin each to the shape it must
+  // have, so the filter can only ever hold plain strings.
+  const guild = String(serverId);
+  const channel = String(channelId);
+  const pod = String(podId);
+  if (!/^\d{17,20}$/.test(guild) || !/^\d{17,20}$/.test(channel) || !/^[a-f0-9]{24}$/i.test(pod)) return;
+  let dropped: Array<{ _id: unknown }> = [];
+  try {
+    dropped = await Integration.find({
+      _id: { $ne: String(keepId) },
+      type: 'discord',
+      isActive: true,
+      podId: pod,
+      createdBy: String(userId),
+      'config.serverId': guild,
+      'config.channelId': channel,
+      status: { $in: ['error', 'disconnected'] },
+    }) as Array<{ _id: unknown }>;
+  } catch (error) {
+    console.warn(`Discord rebind: could not look up dropped rows: ${(error as Error).message}`);
+    return;
+  }
+  await Promise.all(dropped.map(async (row) => {
+    try {
+      await revokeConnectionGrants({ connection: row, revokedBy: userId });
+      const service = new DiscordService(row._id);
+      if (await service.initialize()) await service.disconnect();
+      await DiscordIntegration.findOneAndDelete({ integrationId: row._id });
+      await Integration.findByIdAndUpdate(row._id, { $set: { isActive: false, status: 'disconnected' } });
+    } catch (error) {
+      console.warn(`Discord rebind: could not retire integration ${String(row._id)}: ${(error as Error).message}`);
+    }
+  }));
+};
 
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
@@ -654,6 +870,9 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
       if (!initialized) return res.status(500).json({ message: 'Failed to initialize integration' });
       const connected = await service.connect();
       if (!connected) console.warn('Integration initialized but failed to connect');
+      await retireDroppedDiscordRows(
+        integration._id, podId, String(req.user?.id), String(config.serverId), String(config.channelId),
+      );
     }
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
@@ -1090,6 +1309,19 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     // reads the owner bound on each grant at mint, not the row, so the order no
     // longer decides who may revoke. It still matters: removal ends these grants
     // here, while the row they were minted against is still present (TASK-145).
+    //
+    // A per-repository GitHub App row can change owner (F174 takeover). The
+    // delete is scoped to the owner read above, so a row taken over since is
+    // left alone, and so are the grants its new owner minted.
+    const perRepositoryGithubRow = integration.type === 'github-app' && !integration.installationId;
+    const readOwner = integration.createdBy ? String(integration.createdBy) : '';
+    if (perRepositoryGithubRow) {
+      if (!readOwner) return res.status(404).json({ message: 'Integration not found' });
+      await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy, ownerId: readOwner });
+      const deleted = await Integration.findOneAndDelete({ _id: id, createdBy: readOwner });
+      if (!deleted) return res.status(404).json({ message: 'Integration not found' });
+      return res.json({ message: 'Integration deleted successfully' });
+    }
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }

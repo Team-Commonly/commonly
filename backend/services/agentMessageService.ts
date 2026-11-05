@@ -203,6 +203,13 @@ interface PostMessageOptions {
   // hosted turn posts when it failed with nothing posted. Each one answers its
   // own ask, so the shared-pod duplicate guard does not apply to it.
   failureNotice?: boolean;
+  // Server-set, never model-set and never read from metadata (F180): the
+  // approval card proposeAction posts for a parked action. A consent surface
+  // must never be crowded out, so neither the duplicate guard (a second card
+  // for the same tool repeats the first's text) nor the consecutive-run cap
+  // (the card is posted as the seat) applies to it. The HTTP routes never
+  // forward it; `metadata.source: 'approval-card'` alone exempts nothing.
+  approvalCard?: boolean;
   // D245: the optional message contract, as the agent sent it. Normalized by
   // services/messageContract.ts here, warn-only; never read for @mentions.
   summary?: unknown;
@@ -857,6 +864,13 @@ class AgentMessageService {
       const messageUserId = String(message?.userId?._id || message?.user_id || '');
       if (!messageUserId) break;
       if (messageUserId !== userIdString) break;
+      // The author's own `system` lines are not the author speaking (F180):
+      // the receipt an owner's approval writes under the seat's identity
+      // ("<owner> approved <seat>'s <tool> · ran") must not count toward the
+      // seat's run. Agents can only post `text` or `card`
+      // (uiCardValidation), so no agent can mark its own post this way. A
+      // system line skips; it neither counts nor ends the run.
+      if (String((message as { messageType?: string })?.messageType || '').toLowerCase() === 'system') continue;
       run += 1;
     }
     return run;
@@ -1039,6 +1053,7 @@ class AgentMessageService {
       answeringMessageId,
       authorKind = null,
       failureNotice = false,
+      approvalCard = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1529,7 +1544,10 @@ class AgentMessageService {
       // got silence. Only the native runtime sets `failureNotice`; the HTTP
       // routes never forward it.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
-      const duplicate = (isOneToOne || failureNotice === true)
+      // An approval card (F180) is exempt for a sharper reason: a second card
+      // for the same tool repeats the first's text by construction, and a
+      // dropped card fails the parked call.
+      const duplicate = (isOneToOne || failureNotice === true || approvalCard === true)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
@@ -1591,7 +1609,9 @@ class AgentMessageService {
       // the duplicate rows become a storage cost. `agent-admin` is also excluded from
       // DM_POD_TYPES_GUARD (ADR-001 §3.10) because it is N:1, a separate fact.
       // `isOneToOne` is the const read once above, shared with the duplicate check.
-      const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
+      // An approval card is not the seat holding the floor: it is the server
+      // asking the owner to decide (F180), so the run cap does not apply.
+      const runCap = (isOneToOne || approvalCard === true) ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
         if (run >= runCap) {

@@ -283,6 +283,9 @@ router.post('/invites/:token/redeem', inviteWriteRateLimit, auth, async (req: an
       pod.members.push(userId);
       pod.updatedAt = new Date();
       await pod.save();
+      // F183: best-effort PG mirror write; never fails the redemption.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      await require('../services/pgMirrorWrite').mirrorMemberAdded(String(pod._id), String(userId));
       // A token use by its author, an existing member, a bot or an internal
       // account is not the outside team's second-person conversion.
       if (String(invite.createdBy) !== String(userId)) {

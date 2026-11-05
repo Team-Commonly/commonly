@@ -442,6 +442,14 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       : null
   );
 
+  // TASK-782: a connection whose account saw nothing to search at connect.
+  // A warning, never a block: the person may add a project afterwards.
+  const renderReachNote = (entry: ToolCatalogEntry, connections: ToolConnection[]) => (
+    connections.some((connection) => connection.reach === 'none')
+      ? <p className="v2-cx-note" role="note">{t('tools.reachNone', { label: entry.label })}</p>
+      : null
+  );
+
   // The one line under an entry's name that says what is left to do before it
   // works: connect your own account, ask an admin, or the modes it grants.
   const renderEntryNote = (entry: ToolCatalogEntry) => {
@@ -468,6 +476,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           </p>
         )}
         {renderLinearWriteNote(entry)}
+        {renderReachNote(entry, entry.connections)}
         {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
         {renderManualRevokeNotice(entry)}
@@ -613,6 +622,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 </select>
               </label>
             )}
+            {renderReachNote(draftEntry, draftEntry.connections.filter((connection) => connection.connectionId === draft.connectionId))}
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>

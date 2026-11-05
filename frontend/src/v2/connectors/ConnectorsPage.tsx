@@ -541,7 +541,9 @@ const ConnectorsPage: React.FC = () => {
     <>
       {callbackNotice && (
         <p className="v2-cx-note" role="status">
-          {callbackNotice.kind === 'installed'
+          {callbackNotice.kind === 'reach'
+            ? t('connectors.hostedMcpReachNone', { provider: callbackNotice.provider })
+            : callbackNotice.kind === 'installed'
             ? (callbackNotice.connected
               ? t('connectors.hostedMcpAppInstalledConnected', {
                 defaultValue: '{{provider}} App installed. {{provider}} is connected.',

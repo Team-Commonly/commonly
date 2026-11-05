@@ -16,7 +16,7 @@
  *        the same fallback as `dmService.getOrCreateAgentDmRoom`:
  *          botMetadata.displayName → instanceId (if != 'default') → username.
  *     3. If the desired name differs from the stored name, update Mongo.
- *        Best-effort sync the PG `pods` row's name too (optional cosmetic).
+ *        Best-effort sync the PG `pods` row's name and description (F183).
  *
  * Idempotent. Run with `--dry` to preview.
  *
@@ -30,13 +30,8 @@ import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
 
-let dbPg: { pool: { query: (sql: string, params?: unknown[]) => Promise<unknown> } } | null = null;
-try {
-  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  dbPg = require('../config/db-pg');
-} catch {
-  dbPg = null;
-}
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { mirrorPodRenamed } = require('../services/pgMirrorWrite');
 
 interface Plan {
   podId: string;
@@ -151,23 +146,11 @@ export async function renameAgentDmPods(
     await pod.save();
     result.applied += 1;
 
-    // PG cosmetic sync — `pods.name` is a display copy, not load-bearing
-    // for routing. Best-effort; failures don't roll back Mongo.
-    // PG `pods.id` stores the Mongo `_id.toString()` (single source of
-    // truth for cross-DB routing); there is no `_id` column.
-    if (dbPg && process.env.PG_HOST) {
-      try {
-        await dbPg.pool.query(
-          'UPDATE pods SET name = $1 WHERE id = $2',
-          [desiredName, String(pod._id)],
-        );
-        result.pgSynced += 1;
-      } catch (pgErr) {
-        console.warn(
-          `[rename-agent-dm] PG name update failed for pod=${pod._id}:`,
-          (pgErr as Error).message,
-        );
-      }
+    // F183: mirror name AND description into PG `pods` through PGPod.update
+    // (pgMirrorWrite.mirrorPodRenamed). Best-effort; a failure is logged there
+    // and never rolls back Mongo. The nightly mirror repair converges any miss.
+    if (process.env.PG_HOST && await mirrorPodRenamed(String(pod._id), desiredName, String(pod.description || ''))) {
+      result.pgSynced += 1;
     }
   }
 

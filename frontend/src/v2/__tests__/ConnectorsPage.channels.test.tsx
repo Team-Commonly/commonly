@@ -1809,6 +1809,39 @@ describe('Connectors page: Discord live relay (F132)', () => {
     expect(axios.patch).not.toHaveBeenCalled();
   });
 
+  // F161 item 10: a Discord row in error said "reconnect to resume" with nothing
+  // to press. Reconnecting a Discord channel is adding the bot again, through
+  // the same install link the Connect flow uses.
+  it('offers a Discord row in error the install link again, and the button leaves for it', async () => {
+    const realLocation = window.location;
+    const assign = jest.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, assign } });
+    try {
+      const INSTALL_URL = 'https://discord.com/api/oauth2/authorize?client_id=1&response_type=code';
+      mockApi({
+        connectors: [discordRow({}, { status: 'error' })],
+        route: (url: string) => (url === '/api/discord/install-link/p2'
+          ? Promise.resolve({ data: { installUrl: INSTALL_URL, podId: 'p2', status: 'ready' } })
+          : undefined),
+      });
+      renderPage();
+      const drawer = await openDrawer('Discord');
+      expect(within(drawer).getByText('The connection dropped.')).toBeInTheDocument();
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Add the bot again' }));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(INSTALL_URL));
+      expect(axios.get).toHaveBeenCalledWith('/api/discord/install-link/p2', expect.anything());
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+    }
+  });
+
+  it('has the reconnect label in en and zh-CN', () => {
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    expect(en.connectors.discordReinstall).toBe('Add the bot again');
+    expect(zh.connectors.discordReinstall).toBe('重新添加机器人');
+  });
+
   // CodeRabbit (body, minor): attention mode also sends every lead-agent line.
   // The row mark has no renderer on the v2 page, so the copy is asserted where
   // it lives, in both locales.

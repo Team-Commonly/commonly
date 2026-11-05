@@ -77,6 +77,19 @@ const setupMongoDb = async () => {
       return;
     }
 
+    // JEST_EXTERNAL_MONGO_URI runs the unit tier against another server, for the
+    // FerretDB CI leg (self-host stores Mongo data in Postgres through
+    // FerretDB). Each suite gets its own database and drops it on close. The
+    // name is new on purpose: the compose files already set TEST_MONGO_URI,
+    // and `./dev.sh test` must stay in-memory.
+    if (process.env.JEST_EXTERNAL_MONGO_URI) {
+      /* eslint-disable global-require */
+      const { withDatabase } = require('./externalMongoMemoryServer');
+      const db = `t${require('crypto').randomBytes(6).toString('hex')}`;
+      /* eslint-enable global-require */
+      await mongoose.connect(withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, db));
+      return;
+    }
     mongoServer = await createMongoServer();
 
     await mongoose.connect(mongoServer.getUri());
@@ -90,12 +103,16 @@ const setupMongoDb = async () => {
 
 const closeMongoDb = async () => {
   try {
+    if (process.env.JEST_EXTERNAL_MONGO_URI && !useRealServices() && mongoose.connection.db) {
+      await mongoose.connection.dropDatabase().catch(() => {});
+    }
     await mongoose.disconnect();
     if (mongoServer) {
       await mongoServer.stop({ doCleanup: true, force: true });
       mongoServer = undefined;
     }
-    console.log(useRealServices() ? 'Real MongoDB disconnected' : 'In-memory MongoDB stopped');
+    console.log(useRealServices() || process.env.JEST_EXTERNAL_MONGO_URI
+      ? 'External MongoDB disconnected' : 'In-memory MongoDB stopped');
   } catch (error) {
     console.error('Error stopping MongoDB:', error);
     throw error;

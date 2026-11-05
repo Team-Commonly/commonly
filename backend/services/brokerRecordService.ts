@@ -160,7 +160,8 @@ export const recordGrantsRevoked = (
     if (!podId || !grantId) continue;
     byPod.set(podId, [...(byPod.get(podId) || []), String(grantId)]);
   }
-  const actor = humanActor(revokedBy);
+  // The system revoker (roomGrantService.SYSTEM_REVOKER) is the server actor.
+  const actor = String(revokedBy ?? '') === SERVER_ACTOR.id ? SERVER_ACTOR : humanActor(revokedBy);
   for (const [podId, ids] of byPod) {
     const grantIds = [rootGrantId, ...ids.filter((id) => id !== rootGrantId)];
     const reason = grantIds.length === 1 ? 'manual' : 'cascade';

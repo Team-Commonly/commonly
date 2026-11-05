@@ -6,8 +6,9 @@ import { join } from 'path';
 import { promisify } from 'util';
 import type { GithubToolConnection } from './toolBrokerService';
 
+// Typed, so tsc refuses a call that names an installation without its App (F172).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const GitHubAppService = require('./githubAppService');
+const GitHubAppService: typeof import('./githubAppService').default = require('./githubAppService');
 
 const runFile = promisify(execFile);
 const OID = /^[0-9a-f]{40}$/;
@@ -58,7 +59,7 @@ export const PROVIDER_GIT_MAX_BUFFER = 64 * 1024;
 // refuses an ordinary push as provider_git_failed.
 const PROTECTED_PATHSPEC = ['--', ':(icase).github', ':(icase,glob)**/CODEOWNERS'];
 
-const PROTECTED_PATH = (name: string) => {
+export const PROTECTED_PATH = (name: string): boolean => {
   const file = name.replace(/^\n+/, '');
   return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
     || /(?:^|\/)CODEOWNERS$/i.test(file);
@@ -199,13 +200,20 @@ export const pushSeatBranch = async (
   const bundlePath = join(directory, 'input.bundle');
   const url = `https://github.com/${connection.owner}/${connection.repo}.git`;
   try {
-    const { token } = await GitHubAppService.getInstallationToken(connection.installationId);
-    const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
+    // A push runs several remote git commands and validates the bundle in
+    // between, so it never starts on a cached token: it mints its own, and a
+    // fresh one again before the write (pushWithLease) below.
+    const authHeader = async () => {
+      const { token } = await GitHubAppService.getInstallationToken(
+        connection.installationId, connection.app, connection.repositoryId, { fresh: true },
+      );
+      return `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+    };
     const env = {
       PATH: '/usr/bin:/bin', HOME: directory, GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: '/dev/null', GIT_NO_REPLACE_OBJECTS: '1', GIT_TERMINAL_PROMPT: '0',
       GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
-      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+      GIT_CONFIG_VALUE_0: await authHeader(),
       GIT_CONFIG_KEY_1: 'http.followRedirects', GIT_CONFIG_VALUE_1: 'false',
     };
     const git = async (args: string[], cwd = repo, failure?: SeatPushError) => {
@@ -232,6 +240,7 @@ export const pushSeatBranch = async (
     await validateSeatBundle({ git, repo, bundlePath, baseOid, newOid, oldOid, defaultTip });
     // The server, not the child, chooses the compare-and-swap lease. A ref
     // move between ls-remote and this push causes a refusal upstream.
+    env.GIT_CONFIG_VALUE_0 = await authHeader();
     await pushWithLease({ git, repo, url, ref, oldOid, newOid });
     return { ref, oldOid, newOid };
   } finally {

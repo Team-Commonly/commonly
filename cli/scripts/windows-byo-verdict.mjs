@@ -43,60 +43,6 @@ export const publishedOutcome = ({ problems = [], installExit = null, delivered 
   return { fail: all, warn: [] };
 };
 
-// ── the harness (D250) ────────────────────────────────────────────────────
-// Each run walks one harness, named by the dispatch's `harness` input.
-export const HARNESS_LABELS = Object.freeze({ claude: 'Claude Code', codex: 'Codex' });
-
-export const walkHarness = (env = {}) => {
-  const harness = String(env.COMMONLY_BYO_HARNESS || 'claude');
-  if (!Object.prototype.hasOwnProperty.call(HARNESS_LABELS, harness)) {
-    throw new Error(`harness must be claude or codex, got ${JSON.stringify(harness)}`);
-  }
-  return harness;
-};
-
-/**
- * How a public Codex seat reaches a gateway: CODEX_API_KEY beside
- * OPENAI_BASE_URL in the CLI's environment. The CLI keeps the key on the host
- * behind its per-turn proxy, and codex calls `<base>/responses` through it.
- */
-export const codexRouteEnv = (gateway, key) => ({
-  CODEX_API_KEY: key,
-  OPENAI_BASE_URL: `${String(gateway).replace(/\/+$/, '')}/v1`,
-});
-
-// ── Codex on native Windows (D250) ────────────────────────────────────────
-// A public Codex seat cannot run there: codex-cli 0.162.1's Windows sandbox
-// refuses the read denies that keep it out of ~/.commonly and ~/.ssh
-// (byo-windows run 41960954496), so `agent run` stops before it saves a token
-// or polls and points at WSL 2 (cli/src/lib/sandbox/host-check.js). The
-// Windows walk of the page's Codex lines checks that stop instead of a reply.
-
-/** Two phrases of the CLI's refusal (windowsCodexMessage): why, and what to do instead. */
-export const CODEX_WINDOWS_REFUSAL = "Codex's own Windows sandbox can't enforce";
-export const CODEX_WINDOWS_DIRECTIONS = 'WSL 2 (Ubuntu): install Node and Codex inside WSL';
-
-/** Whether the Windows walk of this harness's lines expects the refusal. */
-export const expectsWindowsRefusal = (harness) => harness === 'codex';
-
-/** What is wrong with a Windows leg that should have stopped with the WSL 2 directions. */
-export const windowsRefusalProblems = ({ out = '', exited = null, polled = false, seconds = 0 } = {}) => {
-  if (polled) return ['Codex polled for @mentions on native Windows instead of stopping with the WSL 2 directions'];
-  if (exited === null) return [`the run was still going after ${seconds} s and never printed the WSL 2 directions`];
-  const text = String(out);
-  if (!text.includes(CODEX_WINDOWS_REFUSAL) || !text.includes(CODEX_WINDOWS_DIRECTIONS)) {
-    return ['the run stopped without the WSL 2 directions'];
-  }
-  if (exited === 0) return ['the run printed the directions but exited 0, which a script reads as success'];
-  return [];
-};
-
-/** Why a prod dispatch of this harness on Windows has nothing to walk, or null. */
-export const windowsProdRefusal = (harness) => (expectsWindowsRefusal(harness)
-  ? 'Codex on native Windows stops with the WSL 2 directions before it listens, so a prod walk would wait for a reply'
-    + ' that cannot come. Dispatch target=stub to walk that stop, or walk Codex on Linux (byo-linux.yml).'
-  : null);
-
 // ── the prod walk (target=prod) ───────────────────────────────────────────
 // The page's lines against the live API with a real model. A person in the
 // pod posts the @mention; the walk reads the pod with the agent's own token

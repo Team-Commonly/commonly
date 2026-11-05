@@ -183,6 +183,61 @@ describe('per-installation agent settings', () => {
     expect(response.body.runtimeSavedControls.effort).toBe('max');
   });
 
+  // The hosted engine floors a heartbeat to hourly per install and caps an
+  // owner's hosted heartbeats a day (hostedEngine.ts, D244). The wake panel
+  // reads both from here, so it neither offers nor previews more than runs.
+  it('tells the wake panel a hosted agent\'s heartbeat floor and daily cap', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' },
+        'config.hosted': { engine: 'native', provisionedAt: new Date() } },
+    });
+    const get = () => request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    let response = await get();
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    // Each row carries its own bounds: runtimeType is per installation, so a
+    // row of the same identity that isn't hosted keeps every interval.
+    const rows = Object.fromEntries(response.body.installations.map((row) => [row.podId, row.hostedHeartbeat]));
+    expect(rows[String(podA._id)]).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    Object.entries(rows).filter(([podId]) => podId !== String(podA._id))
+      .forEach(([, bounds]) => expect(bounds).toBeNull());
+
+    process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '0';
+    try {
+      response = await get();
+      expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 0 });
+    } finally {
+      delete process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY;
+    }
+  });
+
+  // The Durable Object answers mentions and first contact only, and a
+  // deprovisioned native row runs nothing, so neither runs a heartbeat.
+  it.each([
+    ['on the Durable Object', {}],
+    ['deprovisioned on the native engine', { engine: 'native', provisionedAt: null }],
+  ])('a hosted agent %s is told it runs no heartbeat', async (_label, hosted) => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'hosted' }, 'config.hosted': hosted },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 0 });
+  });
+
+  it('gives no hosted heartbeat bounds to an agent that is not hosted', async () => {
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.hostedHeartbeat).toBeNull();
+    expect(response.body.installations.length).toBeGreaterThan(0);
+    response.body.installations.forEach((row) => expect(row.hostedHeartbeat).toBeNull());
+  });
+
   it('shows the installation owner’s quota when an admin opens settings', async () => {
     await User.updateOne({ _id: owner._id }, { $set: { 'entitlements.pro': true } });
     const response = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')

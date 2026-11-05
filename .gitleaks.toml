@@ -44,6 +44,11 @@ regexes = [
   # A made-up Discord application id an intermediate #3469 commit carried in
   # discord.relayCommands.test.js (the scan reads every commit in a PR).
   '''^123456789012345678$''',
+  # A test-only JWT secret an earlier #3477 commit carried in
+  # install-outsider-grant-narrowing.test.js (the scan reads every commit).
+  '''^test-jwt-secret-f164-narrowing$''',
+  # A fake per-turn proxy token in cli/__tests__/adapters.claude.state-symlinks.test.mjs.
+  '''^per-turn-f153-bw$''',
 ]
 
 paths = [

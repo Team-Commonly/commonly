@@ -1871,3 +1871,40 @@ test('an own key stays in the confined parent proxy, never argv, config, tool en
     expect(spawn.calls).toHaveLength(1);
   });
 });
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'opencode-f197-'));
+  try {
+    const workspace = join(root, 'workspace');
+    const elsewhere = join(root, 'elsewhere');
+    await mkdir(elsewhere);
+    await symlink(elsewhere, workspace);
+    const keyFile = join(root, 'provider-key');
+    await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
+    const spawn = makeSpawnImpl();
+    const error = await opencode.spawn('turn', {
+      cwd: workspace,
+      env: { PATH: process.env.PATH },
+      environment: {
+        model: 'gpt-5.4',
+        sandbox: { trust: 'public', mode: 'workspace' },
+        provider: { id: 'local', baseURL: 'https://llm.example.test/v1', keyFile },
+      },
+      agentName: 'public-agent',
+      _opencodeHomeRoot: join(root, 'opencode-state'),
+      _binaryPath: '/usr/local/bin/opencode',
+      _platform: 'darwin',
+      _spawnImpl: spawn.impl,
+      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(error.message).toContain(workspace);
+    expect(spawn.calls).toHaveLength(0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+

@@ -94,14 +94,17 @@ const ensureGlobalPodPostgresSync = async ({ pod, userId }: { pod: any; userId: 
   try {
     const existing = await PGPod.findById(podId);
     if (!existing) {
+      // F183: the PG owner is the pod's Mongo `createdBy`, never the admin who
+      // happened to trigger this backfill. Naming the requester here is how PG
+      // `pods.created_by` went stale (39 rows on 2026-11-05, all minted by
+      // requester-attributed backfills).
       await PGPod.create(
         pod.name || 'Global Social Feed',
         pod.description || "Commonly's curated social media feeds",
         pod.type || 'chat',
-        userId,
+        pod.createdBy ? String(pod.createdBy) : String(userId),
         podId,
       );
-      return;
     }
     await PGPod.addMember(podId, userId);
   } catch (error: unknown) {
@@ -849,5 +852,6 @@ router.post('/instagram/test', auth, adminAuth, async (req: any, res: any) => {
 });
 
 module.exports = router;
+module.exports.ensureGlobalPodPostgresSync = ensureGlobalPodPostgresSync;
 
 export {};

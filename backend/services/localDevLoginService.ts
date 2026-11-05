@@ -76,6 +76,9 @@ const ensureLocalDevLogin = async () => {
   });
 
   await user.save();
+  // F183: mirror into PG `users`, as every other User creation does. Best-effort.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  await require('./pgMirrorWrite').mirrorUser(user);
   console.log(`[local-dev-login] Ready: ${email}`);
   return user;
 };
