@@ -736,6 +736,16 @@ const PROMPT_EVENT_TYPES = new Set([
 // is the only one worth holding back.
 const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
 
+// How long a fresh seat's greeting waits for a person before it runs alone.
+// One poll lost the race on the 0.1.257 walk (2026-11-05): the mention landed
+// just after the hold, the greeting took the next turn alone, and the answer
+// came 50.5 s after the mention instead of 25.7 s. A person who has just
+// connected an agent usually mentions it within its first minute, and the
+// kernel posts the seat's own join line at once, so a quiet connect loses
+// nothing by greeting a minute later. Counted in polls (at least one), so a
+// shorter --interval holds for more polls, not for less time.
+const GREETING_HOLD_MS = 60_000;
+
 // Inside one batch the person's item leads the prompt; the greeting follows it.
 const PERSON_WAITING_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
@@ -2988,6 +2998,9 @@ export const performRun = ({
   // Spent at most once per run. (CTO review 5623358693.)
   let heldGreeting = [];
   let greetingHoldSpent = false;
+  // Polls the connect-time greeting has been carried, against the window.
+  let greetingHeldPolls = 0;
+  const greetingHoldPolls = Math.max(1, Math.ceil(GREETING_HOLD_MS / Math.max(1, Number(intervalMs) || 1)));
 
   // The same is true of a batch whose turn FAILED: its events are claimed, so
   // scheduling a later poll retries nothing — the next poll cannot return
@@ -3529,15 +3542,21 @@ export const performRun = ({
         }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
           // Nothing in this batch but the seat introducing itself: leave it
-          // unacked for one interval so a person who mentions the agent in that
-          // window is answered in the same turn instead of behind a greeting.
-          // Spent once per run, so a quiet connect still greets on the next tick.
-          if (!greetingHoldSpent && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
-            greetingHoldSpent = true;
+          // unacked for up to GREETING_HOLD_MS, so a person who mentions the
+          // agent in that window is answered first, in the same turn, instead
+          // of behind a greeting. Only the connect-time greeting is held: once
+          // a turn has carried one, later greetings run as they arrive.
+          if (!greetingHoldSpent && greetingHeldPolls < greetingHoldPolls
+            && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
+            if (greetingHeldPolls === 0) {
+              log(`[inbox.batch] carrying ${group.length} greeting event(s) for up to `
+                + `${Math.round(GREETING_HOLD_MS / 1000)} s, so a person who mentions this agent is answered first`);
+            }
+            greetingHeldPolls += 1;
             heldGreeting = group;
-            log(`[inbox.batch] carrying ${group.length} greeting event(s) to the next poll in case someone is mid-sentence`);
             continue;
           }
+          if (group.some((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) greetingHoldSpent = true;
           // One failure report for a batch whose items stay unacked, whether
           // the composite turn threw or an isolated item did after a refusal.
           // The unacked items are carried to the retry, not left to the

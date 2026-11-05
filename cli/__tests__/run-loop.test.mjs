@@ -872,10 +872,11 @@ describe('performRun', () => {
     const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
 
     // TASK-289: a batch holding nothing but `first_contact` is left unacked for
-    // one interval, so a person who mentions the seat in that window is
-    // answered in the same turn rather than behind the greeting. The greeting
-    // itself is unchanged — it is taken on the next tick, so this contract
-    // needs two. inbox-join-priority.test.mjs pins the hold and the ordering.
+    // a window (GREETING_HOLD_MS), so a person who mentions the seat in that
+    // window is answered in the same turn rather than behind the greeting. The
+    // greeting itself is unchanged. A 60 s interval makes the window one poll,
+    // so this contract needs two ticks; inbox-join-priority.test.mjs pins the
+    // window and the ordering.
     let firedOnce = false;
     const oneMoreTick = (fn) => {
       if (!firedOnce) {
@@ -890,6 +891,7 @@ describe('performRun', () => {
       token: 'cm_agent_test',
       adapter,
       agentName: 'my-stub',
+      intervalMs: 60_000,
       setTimeoutImpl: oneMoreTick,
     });
     await drainMicrotasks();

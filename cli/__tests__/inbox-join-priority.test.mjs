@@ -178,13 +178,46 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     expect(acked.sort()).toEqual(['evt-join', 'evt-mention']);
   });
 
-  test('a quiet connect greets on the next tick, with no redelivery to rely on', async () => {
+  // Answer first (2026-11-05, the 0.1.257 walk): a one-poll carry lost the
+  // race. The mention landed 1.1 s after "polling", the greeting ran alone on
+  // the next tick, and the answer waited behind it: +50.5 s, against +25.7 s on
+  // a walk where the two shared a turn. The greeting is now carried for a
+  // window (GREETING_HOLD_MS, 60 s: 12 polls at the default 5 s), so a person
+  // who mentions a fresh seat any time in its first minute is answered first.
+  const HOLD_POLLS = 60_000 / INTERVAL;
+
+  test('a mention that lands several polls after the greeting still leads the one turn', async () => {
+    const spawn = jest.fn(async () => ({ text: 'on it' }));
+    const arrivals = [[joinEvent], [], [], [mentionEvent]];
+    const { acked } = await runTicks({ arrivals, ticks: 4, spawn });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain('Event 1/2: chat.mention');
+    expect(prompt).toContain('Event 2/2: first_contact');
+    expect(acked.sort()).toEqual(['evt-join', 'evt-mention']);
+  });
+
+  test('a quiet connect does not greet inside the window, and never spins while it waits', async () => {
+    const spawn = jest.fn(async () => ({ text: 'hello' }));
+    const { acked, delays } = await runTicks({
+      arrivals: [[joinEvent]],
+      ticks: HOLD_POLLS,
+      spawn,
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(acked).toEqual([]);
+    expect(new Set(delays)).toEqual(new Set([INTERVAL]));
+  });
+
+  test('a quiet connect greets once the window ends, with no redelivery to rely on', async () => {
     const spawn = jest.fn(async () => ({ text: 'hello' }));
     const { acked } = await runTicks({
       // Nothing arrives after the greeting, and the kernel never hands it back:
       // the only way it reaches the adapter is the in-memory carry.
-      arrivals: [[joinEvent], []],
-      ticks: 2,
+      arrivals: [[joinEvent]],
+      ticks: HOLD_POLLS + 1,
       spawn,
     });
 
@@ -192,4 +225,16 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     expect(spawn.mock.calls[0][0]).toContain('first_contact');
     expect(acked).toEqual(['evt-join']);
   });
+
+  test('only the connect-time greeting is held: once it has run, a later one is not carried', async () => {
+    const spawn = jest.fn(async () => ({ text: 'hi' }));
+    const later = { ...joinEvent, _id: 'evt-join-2' };
+    const arrivals = [[joinEvent], [mentionEvent], [later]];
+    const { acked } = await runTicks({ arrivals, ticks: 3, spawn });
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0]).toContain('first_contact');
+    expect(acked.sort()).toEqual(['evt-join', 'evt-join-2', 'evt-mention']);
+  });
+
 });
