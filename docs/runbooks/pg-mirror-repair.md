@@ -43,10 +43,13 @@ elsewhere in that function vouches for it, and two such callbacks vouch for each
 other. Every other callback stands alone, including `router.post(`,
 `adminRouter.get(`, `cron.schedule(`, `.on(`, `wrap(` and `setInterval(`: a write
 there needs its mirror in the same callback. If a real site needs another shape,
-add it to `INLINE_METHODS` or `INLINE_FUNCTIONS` only when it runs before the
-function around it moves on. Comments are stripped before matching (a mirror
-call in a comment does not count), and patterns match across lines, so a
+add it to `INLINE_METHODS` or `INLINE_FUNCTIONS` only when the callback isn't
+left registered to fire on later events. Comments are stripped before matching (a
+mirror call in a comment does not count), and patterns match across lines, so a
 `$pull: {` whose `members` sits on the next line is caught.
+The scan is an approximation. It checks that a mirror is there, not its order,
+condition or arguments, and it matches names in text, so a mirror name in a
+string vouches for a site, and so does a mirror before the write on the same line.
 Fixture tests in the same file pin each shape the detector must catch and each
 it must pass. A new site fails it until it mirrors, or until it is added to
 `ALLOWED` with the reason the mirror may lag.
