@@ -53,6 +53,7 @@ const {
   setSession,
   clearSessions,
   wasEventHandled,
+  recordHandledEvent,
 } = await import('../src/lib/session-store.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
@@ -1455,6 +1456,58 @@ describe('performRun', () => {
     const prompt = await firstPromptFor([makeEvent(overrides)]);
     expect(prompt).toContain('[Inbox batch: 1 new event in this pod.');
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
+  // top-level message, and the seat answered through commonly_post_message with
+  // threadRootId set to that message, so the answer sat in a collapsed thread.
+  // The wrapper names, per item, where a top-level mention's answer goes. The
+  // kernel also sends chat-thread mentions and 1:1 DMs as chat.mention, so the
+  // payload decides, not the type (gate review of this change).
+  const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
+    + "Never set threadRootId to this message's id; a long answer may continue under your own top-level post.]";
+
+  test('a top-level mention is answered top-level, never threaded under it', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-mention-channel', payload: { content: '@seat what folder are you in?', messageId: '129285' },
+    })]);
+    expect(prompt).toContain(ANSWER_IN_CHANNEL);
+  });
+
+  // CodeRabbit on #3499: a duplicate delivery (already handled here) stays in
+  // the batch prompt beside a new item, and must not be told to post an answer.
+  test('a duplicate delivery beside a new mention gets no top-level line; the new one does', async () => {
+    recordHandledEvent('my-stub', 'evt-already-answered');
+    const prompt = await firstPromptFor([
+      makeEvent({ _id: 'evt-already-answered', payload: { content: '@seat old question', messageId: '300' } }),
+      makeEvent({ _id: 'evt-new-question', payload: { content: '@seat new question', messageId: '301' } }),
+    ]);
+    const [oldItem, newItem] = prompt.split('Event 2/2');
+    expect(oldItem).toContain('message 300');
+    expect(oldItem).not.toContain(ANSWER_IN_CHANNEL);
+    expect(newItem).toContain('message 301');
+    expect(newItem).toContain(ANSWER_IN_CHANNEL);
+  });
+
+  test.each([
+    ['a mention inside a chat thread', {
+      _id: 'evt-mention-thread', payload: { content: '@seat in here', messageId: '200', threadRootId: '41' },
+    }],
+    ['a 1:1 DM, which the kernel also sends as chat.mention', {
+      _id: 'evt-mention-dm', payload: { content: 'hi', messageId: '201', source: 'dm', dmKind: 'agent-room' },
+    }],
+    ['a chat.mention wake that names no message', {
+      _id: 'evt-mention-nomsg', payload: { content: 'You have open work.' },
+    }],
+    ['an ambient message', {
+      _id: 'evt-ambient-channel', type: 'message.posted', payload: { content: 'chatter', threadRootId: '41' },
+    }],
+    ['a heartbeat', {
+      _id: 'evt-hb-channel', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' },
+    }],
+  ])('%s gets no top-level line', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).not.toContain(ANSWER_IN_CHANNEL);
   });
 
   test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
