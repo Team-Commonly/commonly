@@ -57,6 +57,9 @@ const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGua
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const {
+  previewInstallNarrowing, installNarrowingMessage, NARROWING_CONFIRM_CODE,
+} = require('../../services/outsiderGrantNarrowingPreview');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -607,6 +610,27 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         return res.status(403).json({ code: joinError.code, message: joinError.message });
       }
       throw joinError;
+    }
+    // F164: joining this pod can confine the seat's writes everywhere else
+    // (agentRuntimeAuth's outsider-grant narrowing). Say so, naming the pods
+    // the installer can see, before anything is written; the installer
+    // confirms with `confirmNarrowing: true`. The guard itself is unchanged.
+    if (req.body.confirmNarrowing !== true) {
+      const narrowing = await previewInstallNarrowing({
+        agentName: safeAgentName,
+        instanceId: normalizedInstanceId,
+        targetPodId: String(podId),
+        viewerId: userId,
+        runtimeType: effectiveRuntimeType,
+        hostedEngine: newHostedEngine,
+      });
+      if (narrowing.status !== 'clear') {
+        return res.status(409).json({
+          code: NARROWING_CONFIRM_CODE,
+          message: installNarrowingMessage(safeAgentName, narrowing),
+          narrowing: narrowing.status === 'warn' ? narrowing.preview : { unavailable: true },
+        });
+      }
     }
     if (AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,

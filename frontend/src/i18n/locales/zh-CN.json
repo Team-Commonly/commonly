@@ -3245,5 +3245,24 @@
     "otherPlaceholder": "完整的模型 ID",
     "answeredIn": "用 {{harness}} 回复，耗时{{seconds}}秒",
     "answeredWith": "用 {{harness}} 回复"
+  },
+  "outsiderNarrowing": {
+    "install": {
+      "lead": "{{name}} 加入这个 Pod 后，一个外部可写的连接器授权会覆盖它所在的 Pod。",
+      "losesWrites": "它将无法再写入：",
+      "targetBlocked": "它在这个 Pod 里也无法写入。",
+      "unavailable": "暂时无法确认加入这个 Pod 是否会限制 {{name}} 的写入范围。",
+      "confirm": "仍然安装",
+      "cancel": "取消"
+    },
+    "hiddenPods_one": "另有{{count}}个你看不到的 Pod",
+    "hiddenPods_other": "另有{{count}}个你看不到的 Pod",
+    "runtime": {
+      "onePod": "{{name}} 只能在 {{pod}} 里写入，因为有外部可写的授权覆盖了这个 Pod。",
+      "oneHiddenPod": "{{name}} 只能在一个你看不到的 Pod 里写入，因为有外部可写的授权覆盖了它。",
+      "noPod_one": "{{name}} 现在无法在任何 Pod 里写入：它有{{count}}个 Pod 被外部可写的授权覆盖。",
+      "noPod_other": "{{name}} 现在无法在任何 Pod 里写入：它有{{count}}个 Pod 被外部可写的授权覆盖。",
+      "unavailable": "暂时无法确认外部可写的授权是否限制了 {{name}} 的写入范围。确认之前，{{name}} 的写入都会被拒绝。"
+    }
   }
 }

@@ -40,6 +40,7 @@ import {
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
+import { InstallNarrowing, V2InstallNarrowingNotice, installNarrowingFromError } from './V2OutsiderGrantNarrowing';
 import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
@@ -283,6 +284,10 @@ const V2AgentBYO: React.FC = () => {
   const [nameLookupError, setNameLookupError] = useState(false);
   const [nameLookupRetry, setNameLookupRetry] = useState(0);
   const [pendingReplacement, setPendingReplacement] = useState<{ agentName: string; podId: string } | null>(null);
+  // F164: the install route asks for a confirm when joining this pod would
+  // confine the agent's writes elsewhere. A confirm only ever applies to the
+  // name, pod and mode it was shown for.
+  const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
     connection: AgentConnection; runtimeType: string; installedBy?: string;
   } | null>(null);
@@ -429,6 +434,7 @@ const V2AgentBYO: React.FC = () => {
   const [effort, setEffort] = useState<string>('');
   // A model or effort belongs to the harness it was picked for.
   useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
+  useEffect(() => { setPendingNarrowing(null); }, [name, podId, mode]);
   const machineInventory = selectedMachine?.runtimeInventory || [];
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
@@ -735,7 +741,7 @@ const V2AgentBYO: React.FC = () => {
   // Hosted path: install with runtimeType 'hosted' (the kernel's cap gate
   // answers 403 hosted_cap_reached), then ask the kernel to provision. No
   // token round-trips through the browser.
-  const submitHosted = async (cleanName: string) => {
+  const submitHosted = async (cleanName: string, confirmNarrowing = false) => {
     setSubmitting(true);
     try {
       try {
@@ -747,8 +753,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return false;
+        }
         const data = (installErr as { response?: { data?: { error?: string; code?: string; cap?: number; holders?: Array<{ agentName?: string }> } } })
           ?.response?.data;
         if (data?.code === 'hosted_cap_reached') {
@@ -805,7 +817,7 @@ const V2AgentBYO: React.FC = () => {
   // + persona, then file the placement request. The daemon on that machine
   // adopts (D3 CAS), mints the credential server-side (nothing secret renders
   // here either), and starts the agent — the page watches it come up.
-  const submitMachine = async (cleanName: string) => {
+  const submitMachine = async (cleanName: string, confirmNarrowing = false) => {
     if (!machineId) {
       setErrorField('machine');
       setError(t('agentByo.errors.machineRequired'));
@@ -831,8 +843,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         // Same identity-continuity tolerance as the BYO path below.
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
@@ -876,10 +894,11 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  const submit = async () => {
+  const submit = async (confirmNarrowing = false) => {
     setError(null);
     setErrorField(null);
     setPendingReplacement(null);
+    setPendingNarrowing(null);
     const cleanName = sanitizeAgentName(name);
     if (!cleanName) {
       setErrorField('name');
@@ -893,11 +912,11 @@ const V2AgentBYO: React.FC = () => {
     }
     if (!mode) return;
     if (mode === 'hosted') {
-      await submitHosted(cleanName);
+      await submitHosted(cleanName, confirmNarrowing);
       return;
     }
     if (mode === 'machine') {
-      await submitMachine(cleanName);
+      await submitMachine(cleanName, confirmNarrowing);
       return;
     }
     setSubmitting(true);
@@ -922,8 +941,14 @@ const V2AgentBYO: React.FC = () => {
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
+          ...(confirmNarrowing ? { confirmNarrowing: true } : {}),
         });
       } catch (installErr) {
+        const narrowing = installNarrowingFromError(installErr);
+        if (narrowing) {
+          setPendingNarrowing({ agentName: cleanName, narrowing });
+          return;
+        }
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
@@ -1678,7 +1703,7 @@ const V2AgentBYO: React.FC = () => {
               // Keep the focused field's hint visible through the press. If blur
               // hides it on mousedown, this button can move before mouseup.
               onMouseDown={(event) => event.preventDefault()}
-              onClick={submit}
+              onClick={() => { void submit(); }}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId || machineBlocked}
               className="v2-byo__submit"
             >
@@ -1718,6 +1743,16 @@ const V2AgentBYO: React.FC = () => {
           </p>
           </details>
         </div>
+      )}
+
+      {pendingNarrowing && !issued && (
+        <V2InstallNarrowingNotice
+          agentName={pendingNarrowing.agentName}
+          narrowing={pendingNarrowing.narrowing}
+          busy={submitting}
+          onConfirm={() => { void submit(true); }}
+          onCancel={() => setPendingNarrowing(null)}
+        />
       )}
 
       {pendingReplacement && !issued && (

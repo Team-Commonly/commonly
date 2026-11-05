@@ -24,13 +24,26 @@ const objectId = (value: unknown): string | null => {
 export const podHasOutsiderWritableGrant = async (podId: string): Promise<boolean> =>
   (await podsWithOutsiderWritableGrants([podId])).has(objectId(podId) || '');
 
-/** Read all of an identity's installation pods in one pass, without a cache. */
-export const podsWithOutsiderWritableGrants = async (podIds: string[]): Promise<Set<string>> => {
+/**
+ * Read all of an identity's installation pods in one pass, without a cache.
+ *
+ * `addMember` reads the pods as they would be once that user joins that pod.
+ * The install preview uses it: a grant whose audience or seat target names the
+ * joining agent reaches the pod only after the join. Runtime auth never passes
+ * it, and without it the census reads current membership only.
+ */
+export const podsWithOutsiderWritableGrants = async (
+  podIds: string[],
+  options: { addMember?: { podId: string; userId: string } } = {},
+): Promise<Set<string>> => {
   const ids = [...new Set(podIds.map(objectId).filter((id): id is string => Boolean(id)))];
   if (!ids.length) return new Set();
   const pods = await Pod.find({ _id: { $in: ids } }).select('_id members').lean() as
     Array<{ _id: unknown; members?: unknown[] }>;
   const memberSets = new Map(pods.map((pod) => [String(pod._id), new Set((pod.members || []).map(String))]));
+  const joinPodId = objectId(options.addMember?.podId);
+  const joinUserId = String(options.addMember?.userId || '');
+  if (joinPodId && joinUserId) memberSets.get(joinPodId)?.add(joinUserId);
   const allMembers = [...new Set([...memberSets.values()].flatMap((members) => [...members]))];
   if (!allMembers.length) return new Set();
 

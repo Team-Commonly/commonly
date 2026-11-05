@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentPodWakePatch } from './useAgentSettings';
+import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 
 interface InstallationSettings {
   podId: string;
@@ -43,6 +44,8 @@ const V2AgentWakePods: React.FC<{
   const [activePodCount, setActivePodCount] = useState(0);
   const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
+  // F164: where runtime auth's outsider-grant narrowing leaves this agent able to write.
+  const [runtimeNarrowing, setRuntimeNarrowing] = useState<RuntimeNarrowingStatus | null>(null);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -62,6 +65,7 @@ const V2AgentWakePods: React.FC<{
     let active = true;
     setLoading(true);
     setInstallations([]);
+    setRuntimeNarrowing(null);
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
@@ -73,6 +77,7 @@ const V2AgentWakePods: React.FC<{
       try {
         const settingsResult = await axios.get<{
           installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
+          runtimeNarrowing?: RuntimeNarrowingStatus | null;
         }>(`${base}?${query}`);
         if (!active) return;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
@@ -82,6 +87,7 @@ const V2AgentWakePods: React.FC<{
         setPodCount(settingsResult.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
+        setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
@@ -207,6 +213,7 @@ const V2AgentWakePods: React.FC<{
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
+      {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
         {installations.length ? (
           <table className="wt">
