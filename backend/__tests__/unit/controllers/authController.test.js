@@ -420,7 +420,14 @@ describe('Auth Controller Tests', () => {
       };
 
       // Mock findOne to return the existing user
-      User.findOne = jest.fn().mockResolvedValueOnce(existingUser);
+      // Keyed on the duplicate-account query: a previous test's onboarding tail
+      // still running in the background (it looks up the Scout user) must not
+      // consume this answer, which on slow CI turned the 400 into a 201.
+      let answered = false;
+      User.findOne = jest.fn((query) => {
+        if (!answered && query && query.$or) { answered = true; return Promise.resolve(existingUser); }
+        return Promise.resolve(undefined);
+      });
 
       const req = {
         body: {
@@ -453,7 +460,14 @@ describe('Auth Controller Tests', () => {
         password: 'hashedPassword',
       };
 
-      User.findOne = jest.fn().mockResolvedValueOnce(existingUser);
+      // Keyed on the duplicate-account query: a previous test's onboarding tail
+      // still running in the background (it looks up the Scout user) must not
+      // consume this answer, which on slow CI turned the 400 into a 201.
+      let answered = false;
+      User.findOne = jest.fn((query) => {
+        if (!answered && query && query.$or) { answered = true; return Promise.resolve(existingUser); }
+        return Promise.resolve(undefined);
+      });
 
       const req = {
         body: {
