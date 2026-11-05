@@ -20,6 +20,8 @@ const { resolveDiscordWebhookUrl, hasDiscordWebhookUrl } = require('../utils/dis
 const connectorSecrets = require('./connectorSecrets');
 // eslint-disable-next-line global-require
 const { DISCORD_WEBHOOK_URL } = require('./connectorSecretKinds');
+// eslint-disable-next-line global-require
+const DISCORD_APPLICATION_COMMANDS = require('../config/discordApplicationCommands.json') as Array<{ name: string }>;
 
 interface FetchMessagesOptions {
   channelId?: string;
@@ -127,6 +129,8 @@ interface VerifyCommandResult {
   success: boolean;
   registeredCommands?: string[];
   missingCommands?: string[];
+  /** Commands the guild holds that nothing expects there (F161). */
+  unexpectedCommands?: string[];
   totalExpected?: number;
   totalFound?: number;
   error?: string;
@@ -156,6 +160,8 @@ class DiscordService {
   clientReady: boolean;
   commandService: unknown;
   integration: IntegrationDoc | null;
+  /** Why the last registerSlashCommands returned false, for the route to show. */
+  lastRegistrationError: string | null = null;
 
   static async fetchMessages(options: FetchMessagesOptions = {}): Promise<FetchedMessage[]> {
     const {
@@ -894,6 +900,23 @@ class DiscordService {
       // registrations left behind.
       const commands: Array<{ name: string }> = [];
 
+      // Clearing the guild's copies is safe only while the global set is in
+      // place; after a boot deploy that failed, the copies are all the guild
+      // has. A read that fails counts as not in place.
+      const globalResponse = await axios.get(
+        `https://discord.com/api/v10/applications/${config.clientId}/commands`,
+        { headers: { Authorization: `Bot ${config.botToken}` }, timeout: 10_000 },
+      ) as { status?: number; data?: Array<{ name?: string }> } | undefined;
+      const globalNames = new Set((globalResponse?.status === 200 && Array.isArray(globalResponse.data)
+        ? globalResponse.data : []).map((cmd) => cmd?.name));
+      const missingGlobal = DISCORD_APPLICATION_COMMANDS
+        .map((cmd) => cmd.name)
+        .filter((name) => !globalNames.has(name));
+      if (missingGlobal.length) {
+        throw new Error(`The global commands are not all registered (missing: ${missingGlobal.join(', ')}), `
+          + "so this guild's commands were kept. Run npm run discord:deploy first.");
+      }
+
       const url = `https://discord.com/api/v10/applications/${config.clientId}/guilds/${targetGuildId}/commands`;
 
       const response = await axios.put(url, commands, {
@@ -922,6 +945,7 @@ class DiscordService {
     } catch (error) {
       const err = error as { message?: string };
       console.error('❌ Failed to register commands:', err.message);
+      this.lastRegistrationError = err.message || 'Failed to register slash commands';
 
       if (this.integration) {
         await Integration.findByIdAndUpdate(this.integrationId, {
@@ -1067,9 +1091,12 @@ class DiscordService {
         const missingCommands = expectedCommands.filter(
           (cmd) => !foundCommands.includes(cmd),
         );
+        // With nothing expected, a guild that still holds copies is the failure.
+        const unexpectedCommands = foundCommands.filter((cmd) => !expectedCommands.includes(cmd));
 
         return {
-          success: missingCommands.length === 0,
+          success: missingCommands.length === 0 && unexpectedCommands.length === 0,
+          unexpectedCommands,
           registeredCommands: foundCommands,
           missingCommands,
           totalExpected: expectedCommands.length,

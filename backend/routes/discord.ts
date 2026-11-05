@@ -335,7 +335,9 @@ router.post('/register-commands/:integrationId', auth, async (req: AuthReq, res:
     // Every command is global (F161), so a guild registration clears the
     // guild's duplicate copies and adds none.
     if (success) res.json({ message: 'Guild command copies cleared; every command is registered globally', commands: [] });
-    else res.status(500).json({ error: 'Failed to register slash commands' });
+    // The service's reason, e.g. the global set is not in place so the guild's
+    // commands were kept (F161). Its text names no credential.
+    else res.status(500).json({ error: discordService.lastRegistrationError || 'Failed to register slash commands' });
   } catch (error) {
     console.error('Error registering slash commands:', error);
     res.status(500).json({ error: 'Failed to register slash commands' });

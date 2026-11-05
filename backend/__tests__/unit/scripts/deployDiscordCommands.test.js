@@ -85,3 +85,93 @@ describe('deploy at boot', () => {
     expect(process.exitCode).toBeUndefined();
   });
 });
+
+// F161 (CodeRabbit 4475816306): axios's `timeout` stops counting once headers
+// arrive, so a body that trickles forever would still hold boot. Each attempt
+// has a wall-clock deadline over the whole request and response.
+describe('the per-attempt deadline', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(DiscordCommandDeployment.prototype, 'sleep').mockResolvedValue();
+    jest.useFakeTimers();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  // A request that never settles unless its signal aborts it.
+  const hangUntilAborted = (_url, _body, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('canceled'), { code: 'ERR_CANCELED' })));
+  });
+
+  test('a hanging response is aborted at 15 s, and three of them fail the deploy', async () => {
+    axios.put.mockImplementation(hangUntilAborted);
+    const done = new DiscordCommandDeployment().deploy();
+    await jest.advanceTimersByTimeAsync(14_999);
+    expect(axios.put).toHaveBeenCalledTimes(1);
+    expect(axios.put.mock.calls[0][2].signal.aborted).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(axios.put.mock.calls[0][2].signal.aborted).toBe(true);
+    await jest.advanceTimersByTimeAsync(30_000);
+    const result = await done;
+    expect(axios.put).toHaveBeenCalledTimes(3);
+    expect(result.success).toBe(false);
+  });
+
+  test('a settled attempt leaves no deadline timer behind', async () => {
+    axios.put.mockResolvedValue({ status: 200 });
+    await new DiscordCommandDeployment().deploy();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+});
+
+// F161 items 6 and 7: verify's exit status, and a registered command whose
+// shape has gone stale (contexts or options) counts as a failure.
+describe('verify', () => {
+  const commands = require('../../../config/discordApplicationCommands.json');
+  const live = () => JSON.parse(JSON.stringify(commands)).map((c) => ({ id: `id-${c.name}`, application_id: 'app-1', version: '1', ...c }));
+
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  test('a matching set exits 0', async () => {
+    axios.get.mockResolvedValue({ status: 200, data: live() });
+    await DiscordCommandDeployment.main(['verify']);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  test('a missing command exits 1', async () => {
+    axios.get.mockResolvedValue({ status: 200, data: live().filter((c) => c.name !== 'tldr') });
+    await DiscordCommandDeployment.main(['verify']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test('an API error exits 1', async () => {
+    axios.get.mockRejectedValue(new Error('503'));
+    await DiscordCommandDeployment.main(['verify']);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test('a command registered without its guild-only context is stale', async () => {
+    const data = live().map((c) => (c.name === 'mute' ? { ...c, contexts: null } : c));
+    axios.get.mockResolvedValue({ status: 200, data });
+    const result = await new DiscordCommandDeployment().verifyDeployment();
+    expect(result.success).toBe(false);
+    expect(result.staleCommands).toEqual(['mute']);
+  });
+
+  test('a command whose choices changed is stale', async () => {
+    const data = live().map((c) => (c.name === 'mode'
+      ? { ...c, options: [{ ...c.options[0], choices: [{ name: 'mirror', value: 'mirror' }] }] }
+      : c));
+    axios.get.mockResolvedValue({ status: 200, data });
+    const result = await new DiscordCommandDeployment().verifyDeployment();
+    expect(result.staleCommands).toEqual(['mode']);
+  });
+
+  test('fields Discord adds on its own are not a difference', async () => {
+    const data = live().map((c) => ({ ...c, dm_permission: true, nsfw: false, integration_types: [0] }));
+    axios.get.mockResolvedValue({ status: 200, data });
+    const result = await new DiscordCommandDeployment().verifyDeployment();
+    expect(result.success).toBe(true);
+  });
+});

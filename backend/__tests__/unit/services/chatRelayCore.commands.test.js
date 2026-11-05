@@ -25,10 +25,21 @@ describe('parseRelayCommand', () => {
 
 test.each([
   ['30m', 30], ['30 min', 30], ['2h', 120], ['1 hour', 60], ['48h', 1440], ['45', 45], ['0m', 60],
-  [' 2h ', 120], ['0' + '\t'.repeat(50000) + 'x', 60],
+  [' 2h ', 120],
 ])('mute %p is %i minutes', (arg, minutes) => {
   const outcome = applyRelayCommand({ name: 'mute', arg }, integration, NOW);
   expect(outcome).toMatchObject({ kind: 'mute', minutes, until: new Date(NOW.getTime() + minutes * MIN) });
+});
+
+// ReDoS guard (#3469): a long run of whitespace before an unreadable unit must
+// stay linear. Since F161 an unreadable duration is usage, not the default.
+test('a 50,000-tab duration is usage, answered quickly', () => {
+  const arg = '0' + '\t'.repeat(50000) + 'x';
+  const started = process.hrtime.bigint();
+  const outcome = applyRelayCommand({ name: 'mute', arg }, integration, NOW);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  expect(outcome).toEqual({ kind: 'mute-usage' });
+  expect(elapsedMs).toBeLessThan(50);
 });
 
 describe('the authority gate', () => {

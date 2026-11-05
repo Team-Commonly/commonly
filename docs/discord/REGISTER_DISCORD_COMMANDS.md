@@ -41,7 +41,17 @@ take up to an hour to show in every guild.
   read the whole argument, so `/mute 2 hours` is 120 minutes.
 - **Per-guild registration (F161).** `POST /api/discord/register-commands/:id`
   and `npm run discord:register` now register an empty per-guild set, which
-  clears the duplicate legacy copies older guild registrations left.
+  clears the duplicate legacy copies older guild registrations left. They first
+  read the global set and keep the guild's commands if any global command is
+  missing (a boot deploy that failed).
+- **Boot deploy (F161).** Each PUT attempt has a 15 s wall-clock deadline
+  (`AbortController`) over request and response; axios's own `timeout` stops
+  counting once headers arrive. `discord:verify` exits 1 when a command is
+  missing or registered with different `contexts` or options.
+- **Reconnect (F161).** "Add the bot again" on a dropped row is a fresh install.
+  When it binds the same pod, guild and channel, the caller's rows there in
+  `error` or `disconnected` are retired as Remove would (grants revoked, webhook
+  deleted, platform record gone) and kept inactive.
 - **Binding.** A command acts only on rows whose `serverId` and `channelId` are
   the ones it was typed in. Unlike the legacy commands, it has no guild-wide fallback.
 - **Scope.** The install link asks for `applications.commands` already. A guild

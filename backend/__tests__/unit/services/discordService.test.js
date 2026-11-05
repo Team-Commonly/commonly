@@ -143,6 +143,23 @@ describe('DiscordService', () => {
     });
   });
 
+  // F161 item 4: nothing is expected per guild, so a guild that still holds
+  // commands is not verified.
+  describe('verifyCommandRegistration', () => {
+    it('passes for a guild with no commands', async () => {
+      axios.get.mockResolvedValue({ status: 200, data: [] });
+      const result = await discordService.verifyCommandRegistration('guild123');
+      expect(result.success).toBe(true);
+    });
+
+    it('fails for a guild that still holds copies', async () => {
+      axios.get.mockResolvedValue({ status: 200, data: [{ name: 'discord-enable' }] });
+      const result = await discordService.verifyCommandRegistration('guild123');
+      expect(result.success).toBe(false);
+      expect(result.unexpectedCommands).toEqual(['discord-enable']);
+    });
+  });
+
   describe('initialization', () => {
     it('should initialize successfully with valid integration', async () => {
       const result = await discordService.initialize();
@@ -463,6 +480,30 @@ describe('DiscordService', () => {
   });
 
   describe('registerSlashCommands', () => {
+    const GLOBAL_SET = require('../../../config/discordApplicationCommands.json');
+    const GLOBAL_URL = 'https://discord.com/api/v10/applications/test-client-id/commands';
+    beforeEach(() => {
+      axios.get.mockImplementation(async (url) => (url === GLOBAL_URL ? { status: 200, data: GLOBAL_SET } : { status: 404 }));
+    });
+
+    // F161 item 5: clearing a guild's copies while the global set is missing
+    // (a boot deploy that failed) would leave that guild with no commands.
+    it('keeps the guild set when the global commands are not registered', async () => {
+      axios.get.mockResolvedValue({ status: 200, data: GLOBAL_SET.filter((c) => c.name !== 'mute') });
+      const result = await discordService.registerSlashCommands('guild123');
+      expect(result).toBe(false);
+      expect(axios.put).not.toHaveBeenCalled();
+      expect(discordService.lastRegistrationError).toMatch(/global commands are not all registered/i);
+      expect(discordService.lastRegistrationError).toContain('mute');
+    });
+
+    it('keeps the guild set when the global list cannot be read', async () => {
+      axios.get.mockRejectedValue(new Error('503'));
+      const result = await discordService.registerSlashCommands('guild123');
+      expect(result).toBe(false);
+      expect(axios.put).not.toHaveBeenCalled();
+    });
+
     // F161 item 2: every command is global (config/discordApplicationCommands.json),
     // so a guild registration carries none of them. The PUT is a bulk overwrite,
     // so an empty one also clears the duplicates older guild registrations left.
