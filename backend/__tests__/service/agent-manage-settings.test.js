@@ -197,6 +197,12 @@ describe('per-installation agent settings', () => {
     let response = await get();
     expect(response.status).toBe(200);
     expect(response.body.hostedHeartbeat).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    // Each row carries its own bounds: runtimeType is per installation, so a
+    // row of the same identity that isn't hosted keeps every interval.
+    const rows = Object.fromEntries(response.body.installations.map((row) => [row.podId, row.hostedHeartbeat]));
+    expect(rows[String(podA._id)]).toEqual({ minMinutes: 60, runsPerDay: 6 });
+    Object.entries(rows).filter(([podId]) => podId !== String(podA._id))
+      .forEach(([, bounds]) => expect(bounds).toBeNull());
 
     process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY = '0';
     try {
@@ -228,6 +234,8 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.hostedHeartbeat).toBeNull();
+    expect(response.body.installations.length).toBeGreaterThan(0);
+    response.body.installations.forEach((row) => expect(row.hostedHeartbeat).toBeNull());
   });
 
   it('shows the installation owner’s quota when an admin opens settings', async () => {

@@ -233,11 +233,23 @@ describe('per-agent Wake and Pods settings', () => {
       hostedHeartbeat: { minMinutes: 60, runsPerDay },
       installations: rows.map((row, index) => ({
         podId: `pod-${index}`, podName: `Pod ${index}`, status: 'active', wakeOnMessage: false, humanOnly: false,
-        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60, ...row,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
+        hostedHeartbeat: { minMinutes: 60, runsPerDay }, ...row,
       })),
     } });
     const optionValues = () => Array.from((screen.getByLabelText('Heartbeat') as HTMLSelectElement).options)
       .map((option) => option.value);
+
+    // runtimeType is per installation, so one identity's rows need not agree.
+    it('applies the floor and cap to hosted rows only when an agent has both kinds', async () => {
+      client.get.mockResolvedValue(hostedRows([{}, { hostedHeartbeat: null, heartbeatMinutes: 30 }]));
+      renderSettings();
+      // min(24 hosted, cap 6) + 48 from the row that isn't hosted.
+      expect(await screen.findByText('54 / 30 turns a day')).toBeInTheDocument();
+      const [hosted, other] = screen.getAllByLabelText('Heartbeat') as HTMLSelectElement[];
+      expect(Array.from(hosted.options).map((option) => option.value)).not.toContain('15');
+      expect(Array.from(other.options).map((option) => option.value)).toContain('15');
+    });
 
     it('offers no interval below the hourly floor', async () => {
       client.get.mockResolvedValue(hostedRows([{}]));

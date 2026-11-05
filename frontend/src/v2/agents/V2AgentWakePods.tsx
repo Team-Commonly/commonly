@@ -14,6 +14,8 @@ interface InstallationSettings {
   boardWake: boolean;
   heartbeatEnabled: boolean;
   heartbeatMinutes: number;
+  /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
+  hostedHeartbeat?: HostedHeartbeat | null;
 }
 
 // Message wake is one choice of three, shown together: the human-only
@@ -197,15 +199,20 @@ const V2AgentWakePods: React.FC<{
   };
 
   // Sum of the draft heartbeat turns, so the header previews the cap as the select changes.
-  // A hosted agent runs no faster than its floor and no more than its daily cap.
-  const floorMinutes = hostedHeartbeat?.minMinutes ?? 0;
-  const heartbeatTurns = installations.reduce((total, entry) => {
-    const off = draftOff[entry.podId] ?? !entry.heartbeatEnabled;
-    const minutes = Math.max(floorMinutes, draftMinutes[entry.podId] ?? entry.heartbeatMinutes);
-    return off ? total : total + Math.ceil(1440 / minutes);
-  }, 0);
-  const turnsUsed = hostedHeartbeat ? Math.min(heartbeatTurns, hostedHeartbeat.runsPerDay) : heartbeatTurns;
-  const intervals = HEARTBEAT_INTERVALS.filter((value) => value >= floorMinutes);
+  // A hosted install runs no faster than its floor, and the hosted rows
+  // together no more than the daily cap; any other row counts as it is set.
+  const floorFor = (entry: InstallationSettings) => entry.hostedHeartbeat?.minMinutes ?? 0;
+  const turns = { hosted: 0, other: 0 };
+  let hostedCap = Infinity;
+  installations.forEach((entry) => {
+    if (entry.hostedHeartbeat) hostedCap = Math.min(hostedCap, entry.hostedHeartbeat.runsPerDay);
+    if (draftOff[entry.podId] ?? !entry.heartbeatEnabled) return;
+    const minutes = Math.max(floorFor(entry), draftMinutes[entry.podId] ?? entry.heartbeatMinutes);
+    turns[entry.hostedHeartbeat ? 'hosted' : 'other'] += Math.ceil(1440 / minutes);
+  });
+  const turnsUsed = Math.min(turns.hosted, hostedCap) + turns.other;
+  const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
+    .filter((value) => value >= floorFor(entry));
   const overCap = turnCap !== null && turnsUsed > turnCap;
 
   if (loading || loadedIdentity !== identity) {
@@ -297,7 +304,7 @@ const V2AgentWakePods: React.FC<{
                                 if (value !== 'off') setDraftMinutes((current) => ({ ...current, [entry.podId]: Number(value) }));
                               }}>
                               <option value="off">{t('agentSettings.heartbeatOff')}</option>
-                              {[...new Set([...intervals, entry.heartbeatMinutes])]
+                              {[...new Set([...intervalsFor(entry), entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
                                   <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
                                 ))}
