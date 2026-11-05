@@ -508,7 +508,17 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       }
       if (message.user_id.toString() !== userId.toString()) {
         const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
-        if (!pod || pod.createdBy?.toString() !== userId.toString()) {
+        // The creator override is for people. A bot User can hold a cm_ user
+        // API token (auth.ts admits it on this branch, without req.agentUser)
+        // and creates pods as itself through agentsRuntime, so without the
+        // isBot check it would get the override F141 denies its runtime token
+        // (F149). One read, only on this not-the-author path.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        const User = require('../models/User');
+        const caller = pod && pod.createdBy?.toString() === userId.toString()
+          ? await User.findById(userId).select('isBot').lean() as { isBot?: boolean } | null
+          : null;
+        if (!caller || caller.isBot) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });
           return;
         }

@@ -51,6 +51,11 @@ const pgRowCount = async (userId) => {
   return r.rows.length;
 };
 
+const agentReq = (id, podIds) => ({
+  agentUser: { _id: id },
+  agentInstallations: podIds.map((p) => ({ podId: p, status: 'active' })),
+});
+
 const installationFound = (found) => {
   AgentInstallation.findOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(found ? { _id: 'i1' } : null) });
 };
@@ -100,12 +105,41 @@ describe('pod write access reads Mongo membership, never the PG mirror (TASK-162
     await expect(pgRowCount(memberId)).resolves.toBe(0);
   });
 
-  test('admits an agent caller through its active installation, before any membership read', async () => {
-    installationFound(true);
+  test('admits an agent caller through its own active installation, before any membership read', async () => {
     mongoPod({ members: [] });
 
-    await expect(callerHasPodWriteAccess(podId, departedId, { agentUser: { _id: departedId } })).resolves.toBe(true);
+    await expect(callerHasPodWriteAccess(podId, departedId, agentReq(departedId, [podId]))).resolves.toBe(true);
     expect(Pod.findById).not.toHaveBeenCalled();
+  });
+
+  test('F149: refuses an agent still listed in members whose installation is elsewhere', async () => {
+    // The old lookup was `installedBy: agentUser._id` — the HUMAN installer's
+    // field — so it missed and fell back to members. A row the human installed
+    // must not admit the agent, and neither must the left-behind members row.
+    installationFound(true);
+    mongoPod({ type: 'chat', members: [departedId] });
+
+    await expect(callerHasPodWriteAccess(podId, departedId, agentReq(departedId, ['other-pod']))).resolves.toBe(false);
+    expect(AgentInstallation.findOne).not.toHaveBeenCalled();
+  });
+
+  test('F149: an inactive installation in the pod does not count', async () => {
+    mongoPod({ type: 'chat', members: [departedId] });
+    const req = { agentUser: { _id: departedId }, agentInstallations: [{ podId, status: 'uninstalled' }] };
+
+    await expect(callerHasPodWriteAccess(podId, departedId, req)).resolves.toBe(false);
+  });
+
+  test('F149: an agent-admin pod still admits a listed member agent (the runtime post rule)', async () => {
+    mongoPod({ type: 'agent-admin', members: [departedId] });
+
+    await expect(callerHasPodWriteAccess(podId, departedId, agentReq(departedId, ['other-pod']))).resolves.toBe(true);
+  });
+
+  test('F149: an agent-admin pod refuses an agent it does not list', async () => {
+    mongoPod({ type: 'agent-admin', members: [memberId] });
+
+    await expect(callerHasPodWriteAccess(podId, departedId, agentReq(departedId, ['other-pod']))).resolves.toBe(false);
   });
 
   test('refuses an agent caller with no installation and no Mongo membership', async () => {

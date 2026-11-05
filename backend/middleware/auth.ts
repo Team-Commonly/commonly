@@ -66,7 +66,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
               revokedAt: { $in: [null] },
             },
           },
-        }).select('_id username email role isBot verified banned accountDeletionRequestedAt');
+        }).select('_id username email role isBot botMetadata verified banned accountDeletionRequestedAt');
         isDeviceToken = Boolean(user);
       }
 
@@ -93,6 +93,14 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
         email: user.email,
         role: user.role,
       };
+      // A bot row holding a cm_ user token rides the human branch of every
+      // route, with no req.agentUser. Name it, from the row already loaded, so
+      // the pod write gate can hold it to the agent rule (F149). Kept off
+      // req.user on purpose: tasksApi reads req.user.isBot/botMetadata as
+      // "a seat is calling", and changing that is not this fix.
+      if (user.isBot) {
+        req.botCaller = { username: user.username, botMetadata: user.botMetadata || {} };
+      }
       req.authType = isDeviceToken ? 'deviceToken' : 'apiToken';
       if (isDeviceToken) req.deviceTokenHash = deviceTokenHash;
       req.apiTokenScopes = user.apiTokenScopes || [];
