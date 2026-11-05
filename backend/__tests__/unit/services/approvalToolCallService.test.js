@@ -32,6 +32,8 @@ jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 const mockEnqueue = jest.fn().mockResolvedValue({});
 jest.mock('../../../services/agentEventService', () => ({ enqueue: (...args) => mockEnqueue(...args) }));
 jest.mock('../../../models/Message', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
+// F202: the expiry wake is skipped when this approval's event already exists.
+jest.mock('../../../models/AgentEvent', () => ({ exists: jest.fn().mockResolvedValue(null) }));
 const mockRecordApprovalOutcome = jest.fn();
 jest.mock('../../../services/brokerRecordService', () => ({
   recordApprovalOutcome: (...args) => mockRecordApprovalOutcome(...args),
@@ -60,6 +62,13 @@ const row = (overrides = {}) => ({
   toolCall: { ...toolCall }, summary: 'Add a comment (approval required)', status: 'flagged',
   expiresAt: new Date(Date.now() + 60_000), save: jest.fn().mockResolvedValue(undefined), ...overrides,
 });
+
+// The sweep reads lapsed `flagged` rows, then (F202) `expired` rows whose side
+// effects never finished; these tests have none of the latter.
+const sweepFinds = (lapsed) => mockApproval.find.mockImplementation((query) => (
+  query.status === 'expired'
+    ? { select: () => ({ limit: () => ({ lean: async () => [] }) }) }
+    : Promise.resolve(lapsed)));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -348,7 +357,7 @@ test('a late decide before any sweep answers 409 and leaves no args', async () =
 
 test('the sweep expires tool_call rows past expiresAt and scrubs their args', async () => {
   const pending = row({ expiresAt: new Date(Date.now() - 1) });
-  mockApproval.find.mockResolvedValue([pending]);
+  sweepFinds([pending]);
   mockApproval.findOneAndUpdate.mockResolvedValue(row({ status: 'expired', toolCall: { ...toolCall, canonicalArgs: undefined } }));
   await expect(service.sweepExpiredToolCallApprovals()).resolves.toBe(1);
   expect(mockApproval.findOneAndUpdate).toHaveBeenCalledWith(
@@ -363,7 +372,7 @@ test('the sweep expires tool_call rows past expiresAt and scrubs their args', as
 });
 
 test('a sweep losing the decision race emits no second event or trail', async () => {
-  mockApproval.find.mockResolvedValue([row({ expiresAt: new Date(Date.now() - 1) })]);
+  sweepFinds([row({ expiresAt: new Date(Date.now() - 1) })]);
   mockApproval.findOneAndUpdate.mockResolvedValue(null);
   await expect(service.sweepExpiredToolCallApprovals()).resolves.toBe(0);
   expect(mockEnqueue).not.toHaveBeenCalled();
@@ -425,13 +434,13 @@ describe('record wiring', () => {
     await service.resolveApproval({ approvalId: 'approval-1', callerUserId: OWNER, decision: 'approved' });
     expect(outcomeCall()[2]).toEqual({ kind: 'expired' });
     mockRecordApprovalOutcome.mockClear();
-    mockApproval.find.mockResolvedValue([row({ expiresAt: new Date(Date.now() - 1) })]);
+    sweepFinds([row({ expiresAt: new Date(Date.now() - 1) })]);
     await service.sweepExpiredToolCallApprovals();
     expect(outcomeCall()[2]).toEqual({ kind: 'expired' });
   });
 
   test('a lost race and a refused decider write nothing', async () => {
-    mockApproval.find.mockResolvedValue([row({ expiresAt: new Date(Date.now() - 1) })]);
+    sweepFinds([row({ expiresAt: new Date(Date.now() - 1) })]);
     mockApproval.findOneAndUpdate.mockResolvedValue(null);
     await service.sweepExpiredToolCallApprovals();
     mockApproval.findById.mockResolvedValue(row());

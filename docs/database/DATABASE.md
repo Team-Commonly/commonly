@@ -374,6 +374,36 @@ and pod" or "one open row per identical request" has to hold under concurrent wr
   Partial filters use equality and `$exists` only; FerretDB refuses `$in` and other operators
   there (ADR-034).
 
+### Pattern: a terminal transition whose side effects can be retried
+
+`ApprovalAction` expiry (F202) shows the pattern. Use it when one conditional write closes a
+row and several side effects (an audit row, a card, an event) must follow it, and a waiter
+depends on the last of them.
+
+- **The flip stays the decision.** `findOneAndUpdate({ _id, status: 'flagged' }, { status:
+  'expired', … })` decides who expires the row. The side effects come after it and cannot
+  undo it.
+- **A marker, written last.** `expirySideEffectsDoneAt` is set only after every side effect
+  succeeds. A row that is `expired` without the marker crashed or failed midway.
+- **Opt rows in with the flip.** The same flip writes `expiryRetryCount: 0`. The retry selects
+  `expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES }`, which a missing field never matches, so rows
+  closed before F202 are never re-run.
+- **A grace before retrying.** The retry takes only rows whose `resolvedAt` is more than
+  `EXPIRY_RETRY_GRACE_MS` (1 min) old, so it never doubles an expiry still in progress.
+- **Claim each attempt by compare-and-set.** `$inc: { expiryRetryCount: 1 }` filtered on the
+  count just read: two sweepers cannot retry one row at once, and the count caps the retries.
+  The sweep logs an error and stops selecting a row after the last one.
+- **Every side effect must be safe to repeat.** The trail row's id is derived from the approval
+  and the reason, so a second insert hits the primary key. The record dedupes on its event key.
+  The card rewrites the same payload. The wake is stamped on the row (`expiryEventSentAt`) right
+  after it is enqueued and skipped once stamped. The stamp lives on the approval because
+  `AgentEvent` rows are collected after about 30 minutes, inside the retry window; an existing
+  `approval.resolved` event for the approval is a second guard.
+
+Fields: `expiryRetryCount` (Number), `expirySideEffectsDoneAt` (Date) and `expiryEventSentAt`
+(Date), on `tool_call` rows only. Index `tool_call_expiry_retry`: `{ status, actionType, resolvedAt }`, partial on
+`expiryRetryCount: { $exists: true }`.
+
 ### PostgreSQL Indexes
 
 PostgreSQL indexes are defined in the table creation statements above, focusing on:
