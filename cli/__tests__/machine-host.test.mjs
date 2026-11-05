@@ -24,10 +24,14 @@ describe('the machine host report', () => {
   test('carries exactly the four metadata fields, and nothing that names the machine or the person', () => {
     const report = machineHostReport({ platform: 'win32', release: '10.0.22631', arch: 'x64', cliVersion: '0.1.245' });
     expect(report).toEqual({ platform: 'win32', osMajor: 10, arch: 'x64', cliVersion: '0.1.245' });
-    const text = JSON.stringify(machineHostReport());
-    expect(text).not.toContain(os.hostname());
-    expect(text).not.toContain(os.homedir());
-    expect(text).not.toContain(os.userInfo().username);
+    // The fields and their values, not the serialized text: a user named `li`
+    // is a substring of the key `cliVersion`, and the report still names no one.
+    const live = machineHostReport();
+    expect(Object.keys(live).sort()).toEqual(['arch', 'cliVersion', 'osMajor', 'platform']);
+    const values = Object.values(live).map(String);
+    for (const identifying of [os.hostname(), os.homedir(), os.userInfo().username]) {
+      expect(values).not.toContain(identifying);
+    }
   });
 
   test('by default reports this process and the CLI version it shipped with', () => {
