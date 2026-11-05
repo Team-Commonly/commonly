@@ -1,5 +1,5 @@
 /**
- * Stands in for `mongodb-memory-server` when TEST_MONGO_URI is set (the
+ * Stands in for `mongodb-memory-server` when JEST_EXTERNAL_MONGO_URI is set (the
  * FerretDB CI leg, .github/workflows/backend-ferretdb.yml). jest.config.js maps
  * the package here only then, so a suite that starts its own server with
  * `MongoMemoryServer.create()` runs against the store under test instead of an
@@ -25,11 +25,13 @@ const withDatabase = (base, db) => {
 class ExternalMongoServer {
   constructor() {
     this.db = `m${crypto.randomBytes(6).toString('hex')}`;
-    this.uri = withDatabase(process.env.TEST_MONGO_URI, this.db);
+    this.uri = withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, this.db);
   }
 
   getUri(dbName) {
-    return dbName ? withDatabase(process.env.TEST_MONGO_URI, dbName) : this.uri;
+    // The real getUri(true) generates a fresh database name.
+    if (dbName === true) return withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, `m${crypto.randomBytes(6).toString('hex')}`);
+    return dbName ? withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, dbName) : this.uri;
   }
 
   async start() {

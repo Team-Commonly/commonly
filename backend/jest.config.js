@@ -11,7 +11,7 @@ module.exports = {
   ...(process.env.CI ? {} : { maxWorkers: 2 }),
   // The FerretDB leg points every suite at one server: suites that start their
   // own MongoMemoryServer get a database on it instead (externalMongoMemoryServer).
-  ...(process.env.TEST_MONGO_URI ? {
+  ...(process.env.JEST_EXTERNAL_MONGO_URI ? {
     moduleNameMapper: { '^mongodb-memory-server$': '<rootDir>/__tests__/utils/externalMongoMemoryServer.js' },
   } : {}),
   testPathIgnorePatterns: [

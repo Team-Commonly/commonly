@@ -26,10 +26,12 @@ jest.setTimeout(30 * 60 * 1000);
 
 (process.env.BENCH_URI ? it : it.skip)('auth hot path', async () => {
   const db = `bench${Math.random().toString(16).slice(2, 10)}`;
-  await mongoose.connect(`${process.env.BENCH_URI}/${db}`);
-  // The indexes these reads use, built by hand: Model.init() would also build
-  // main's collation index on username, which collides with the unique one on
-  // MongoDB and is refused by FerretDB.
+  // autoIndex off, so Model.init() builds nothing in the background: it would
+  // build main's collation index too, which collides with the unique one on
+  // MongoDB and is refused by FerretDB, leaving the two stores on different
+  // index sets. These are the indexes the timed reads use, built by hand, and
+  // the set is printed with the numbers so the two runs compare like with like.
+  await mongoose.connect(`${process.env.BENCH_URI}/${db}`, { autoIndex: false });
   await User.collection.createIndex({ username: 1 }, { unique: true });
   await User.collection.createIndex({ email: 1 }, { unique: true });
   await Pod.collection.createIndex({ members: 1 });
@@ -78,11 +80,17 @@ jest.setTimeout(30 * 60 * 1000);
     await time('user by username (login)', (i) => User.findOne({ username: `bench${(i * 31) % USERS}` }).lean()),
   ];
 
+  const indexes = {
+    users: (await User.collection.indexes()).map((ix) => ix.name).sort(),
+    pods: (await Pod.collection.indexes()).map((ix) => ix.name).sort(),
+  };
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
 
   const label = process.env.BENCH_LABEL || 'store';
-  const table = [`### Auth hot path on ${label} (ms, ${RUNS} runs, ${USERS} users)`, '', '| | p50 | p95 | p99 |', '|---|---|---|---|',
+  process.stderr.write(`BENCH-INDEXES ${label} ${JSON.stringify(indexes)}\n`);
+  // At this size every row is in cache, so these measure the round trip, not a cold read.
+  const table = [`### Auth hot path on ${label} (ms, ${RUNS} runs, ${USERS} users, all in cache)`, '', '| | p50 | p95 | p99 |', '|---|---|---|---|',
     ...rows.map((r) => `| ${r.label} | ${r.p50} | ${r.p95} | ${r.p99} |`), ''].join('\n');
   // stderr, not console: __tests__/setup.js silences console in every worker.
   process.stderr.write(`BENCH ${label} ${JSON.stringify(rows)}\n`);

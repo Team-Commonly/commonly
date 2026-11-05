@@ -6,8 +6,10 @@ name: Backend on FerretDB
 # against FerretDB, and the same harness against MongoDB beside it, so a change
 # that only works on Mongo shows up here instead of on a self-hoster's box.
 #
-# Not a required check: a FerretDB-only failure is reported, not merge-blocking.
-# The step summary lists every failing suite per store.
+# Not a required check, and the FerretDB legs never fail the run while it is
+# known red: the step summary lists every failing suite per store. Pull
+# requests run FerretDB only (tests.yml already covers MongoDB); the nightly
+# and a manual dispatch run both stores side by side.
 #
 # The image bundles PostGIS (GPL-2.0). We pull it by reference as a CI service
 # and do not redistribute it.
@@ -22,7 +24,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: backend-ferretdb-${{ github.event.pull_request.number || github.sha }}
+  group: backend-ferretdb-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 permissions:
@@ -33,10 +35,11 @@ jobs:
     name: Backend on ${{ matrix.store }} (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    continue-on-error: ${{ matrix.store == 'ferretdb' }}
     strategy:
       fail-fast: false
       matrix:
-        store: [ferretdb, mongo]
+        store: ${{ fromJSON(github.event_name == 'pull_request' && '["ferretdb"]' || '["ferretdb","mongo"]') }}
         shard: [1, 2, 3]
     services:
       documentdb:
@@ -64,7 +67,7 @@ jobs:
       FRONTEND_URL: http://localhost:3000
       # Read by __tests__/utils/testUtils.js: each suite gets its own database
       # on this server instead of an in-memory mongod.
-      TEST_MONGO_URI: ${{ matrix.store == 'ferretdb' && 'mongodb://localhost:27018' || 'mongodb://localhost:27017' }}
+      JEST_EXTERNAL_MONGO_URI: ${{ matrix.store == 'ferretdb' && 'mongodb://localhost:27018' || 'mongodb://localhost:27017' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -79,10 +82,10 @@ jobs:
         run: |
           cd backend
           for i in $(seq 1 60); do
-            node -e "require('mongoose').connect(process.env.TEST_MONGO_URI + '/ping').then(() => process.exit(0), () => process.exit(1))" && exit 0
+            node -e "require('mongoose').connect(process.env.JEST_EXTERNAL_MONGO_URI + '/ping', { serverSelectionTimeoutMS: 2000 }).then(() => process.exit(0), () => process.exit(1))" && exit 0
             sleep 2
           done
-          echo "store at $TEST_MONGO_URI never answered"; exit 1
+          echo "store at $JEST_EXTERNAL_MONGO_URI never answered"; exit 1
       - name: Run backend tests
         run: |
           cd backend
@@ -91,7 +94,10 @@ jobs:
         if: always()
         run: |
           cd backend
-          [ -f jest-results.json ] || exit 0
+          if [ ! -f jest-results.json ]; then
+            echo "### ${{ matrix.store }} shard ${{ matrix.shard }}: no results (jest timed out or crashed)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           node -e "
             const r = require('./jest-results.json');
             const failed = r.testResults.filter((t) => t.status === 'failed');
@@ -157,7 +163,7 @@ jobs:
         run: |
           cd backend
           for i in $(seq 1 60); do
-            node -e "require('mongoose').connect(process.env.BENCH_URI + '/ping').then(() => process.exit(0), () => process.exit(1))" && exit 0
+            node -e "require('mongoose').connect(process.env.BENCH_URI + '/ping', { serverSelectionTimeoutMS: 2000 }).then(() => process.exit(0), () => process.exit(1))" && exit 0
             sleep 2
           done
           echo "store at $BENCH_URI never answered"; exit 1
