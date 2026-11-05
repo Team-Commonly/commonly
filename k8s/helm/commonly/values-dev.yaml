@@ -83,6 +83,10 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
+    # F183: nightly PG mirror repair at 03:30 UTC, report-only. Read the first
+    # night's pg_mirror_repair_runs row, then set pgMirrorRepairApply: "1"
+    # (docs/runbooks/pg-mirror-repair.md).
+    pgMirrorRepair: "true"
     # D244 pilot 2 (Walker): the agent computer. Only an installation whose
     # config.tools lists the computer_* tools can reach it (agentComputer.ts),
     # and only Walker's will. It stays inert until the waker token exists AND
