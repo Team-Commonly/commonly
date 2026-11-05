@@ -272,7 +272,38 @@ export const absentSandboxRefusal = (environment: unknown): GrantBrokerRefusal |
   );
 };
 
-/** `grantBrokerRefusal` for a seat no daemon spawns: an absent block refuses too. */
+/**
+ * Runtimes Commonly itself runs: `CLOUD_RUNTIME_TYPES` (agentIdentityService)
+ * plus `KERNEL_RUN_RUNTIME_TYPES` (configWriteGuard, which adds `hosted`).
+ * Mirrored, not imported, so this module stays a leaf; the suite asserts the
+ * mirror. A seat on one of these is not a BYO seat, so "no daemon derives its
+ * sandbox" is not a fact about it, and `sandbox_absent` never applies.
+ */
+export const COMMONLY_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set([
+  'moltbot', 'internal', 'native', 'managed-agents', 'hosted',
+]);
+
+/**
+ * Does Commonly run this seat? The order of `isCloudRuntime`: a type above wins
+ * whatever `host` says; otherwise `host: 'byo'` is the person's own compute;
+ * a bare `codex` row is the LiteLLM-proxied cloud seat. Everything else
+ * (webhook, claude-code, an adapter-shaped or adapter-keyed row, nothing at
+ * all) runs on someone's own machine.
+ */
+export const runsOnCommonly = (runtime: unknown): boolean => {
+  const row = runtime as { runtimeType?: unknown; host?: unknown } | null | undefined;
+  const runtimeType = normalizeAdapter(row?.runtimeType);
+  if (runtimeType && COMMONLY_RUN_RUNTIME_TYPES.has(runtimeType)) return true;
+  if (normalizeAdapter(row?.host) === 'byo') return false;
+  return runtimeType === 'codex';
+};
+
+/**
+ * `grantBrokerRefusal` for a seat no daemon spawns: an absent block refuses
+ * too, but only for a seat that runs on someone's own machine. `runtime` is the
+ * seat's ROW runtime; a runtime Commonly runs keeps the daemon-path reading.
+ */
 export const grantBrokerRefusalWithoutDaemon = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => (
-  grantBrokerRefusal(environment, runtime) ?? absentSandboxRefusal(environment)
+  grantBrokerRefusal(environment, runtime)
+    ?? (runsOnCommonly(runtime) ? null : absentSandboxRefusal(environment))
 );

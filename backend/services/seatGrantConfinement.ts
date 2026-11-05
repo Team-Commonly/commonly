@@ -172,8 +172,9 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
 
   // F150 (security review): a seat bound to no machine has no daemon to derive
   // a sandbox baseline, so an absent sandbox block on its row confines nothing
-  // and is refused (`sandbox_absent`, which naming lifts). A daemon seat keeps
-  // the daemon-decided reading.
+  // and is refused (`sandbox_absent`, which naming lifts). A daemon seat, and a
+  // runtime Commonly runs (`runsOnCommonly`, read inside the predicate from the
+  // row), keep the old reading.
   const judge = seat?.botMetadata?.machineId ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
   let judged = false;
   for (const entry of entries.values()) {

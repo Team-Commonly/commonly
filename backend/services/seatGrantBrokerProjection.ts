@@ -32,7 +32,7 @@ import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
 import {
-  GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon, normalizeAdapter,
+  GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon, normalizeAdapter, runsOnCommonly,
 } from './grantBrokerConfinement';
 import { namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { grantBrokerServer, selectLiveGrantsForIdentities } from './grantBrokerProjectionService';
@@ -71,7 +71,10 @@ const refusalFor = (
   adapter: string | null,
   daemonDecidesAbsentSandbox: boolean,
 ): GrantBrokerRefusal | null => {
-  const judge = daemonDecidesAbsentSandbox ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
+  // Whether the seat runs on someone's own machine is a fact about the ROW, so a
+  // caller's declared adapter cannot turn a runtime Commonly runs into a BYO seat.
+  const judge = daemonDecidesAbsentSandbox || runsOnCommonly(entry.runtime)
+    ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
   const refusals = [
     adapter ? judge(entry.environment, { adapter }) : null,
     judge(entry.environment, entry.runtime),
@@ -129,9 +132,15 @@ export const grantServersForIdentities = async (
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
       if (!grantId) continue;
       // F94: a grant that names this seat (its owner's own agent, with consent)
-      // rides even when the seat cannot confine it.
+      // rides even when the seat cannot confine it. On the run path the naming
+      // is read whether or not the server refused: the row can declare a
+      // sandbox the standalone CLI's local record lacks, and that seat's own
+      // guard drops an unflagged entry (CodeRabbit, #3458). The daemon path
+      // keeps flagging only a lifted refusal, because the daemon derives the
+      // seat's sandbox itself. Delivery only: the per-call check decides.
       // eslint-disable-next-line no-await-in-loop
-      const byoNamed = namingLiftsRefusal(refusal) && await namingLiftsFor(grant, identityId);
+      const named = (refusal || !daemonDecidesAbsentSandbox) && await namingLiftsFor(grant, identityId);
+      const byoNamed = Boolean(named) && (!refusal || namingLiftsRefusal(refusal));
       if (refusal && !byoNamed) {
         // The grant is live and applies to this seat; the seat cannot be held
         // to it, so it is withheld rather than projected unenforced.

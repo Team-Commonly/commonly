@@ -256,6 +256,30 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     expect(res.body.refusal).toMatchObject({ reason: 'sandbox_absent' });
   });
 
+  test('a runtime Commonly runs keeps the old reading: an unnamed grant with no sandbox block arrives', async () => {
+    const fixture = await seed({ runtime: { runtimeType: 'native' } });
+    await grantFor({
+      grantId: 'grant_pod_native',
+      target: { kind: 'pod', id: String(fixture.pod._id) },
+      audience: [String(fixture.seat._id)],
+    });
+    const res = await read(SEAT_TOKEN);
+    expect(res.body.refusal).toBeNull();
+    expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_pod_native') })]);
+  });
+
+  // CodeRabbit (#3458): the row declares a confining sandbox, so the server
+  // raises no refusal, but the standalone CLI's local record may declare none
+  // and its own guard would then drop the entry. A grant that names the seat
+  // must say so on the entry whether or not the server refused.
+  test('a named grant on a row the server judges confinable still arrives flagged', async () => {
+    const fixture = await seed({ seatEnvironment: { sandbox: { mode: 'workspace', trust: 'public' } } });
+    await namedGrant(fixture);
+    const res = await read(SEAT_TOKEN);
+    expect(res.body.refusal).toBeNull();
+    expect(res.body.servers).toEqual([expect.objectContaining({ url: brokerUrl('grant_named'), byoNamed: true })]);
+  });
+
   test('revoking the grant drops it from the next read', async () => {
     const fixture = await seed();
     await namedGrant(fixture);

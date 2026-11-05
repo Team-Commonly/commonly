@@ -486,6 +486,21 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
     });
   });
 
+  test.each([
+    [{ runtimeType: 'native' }],
+    [{ runtimeType: 'moltbot' }],
+  ])('a runtime Commonly runs (%j) keeps the old reading: no refusal', async (runtime) => {
+    await unboundSeat();
+    await installRow({ runtime });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('an adapter-shaped BYO row with no sandbox block is refused too', async () => {
+    await unboundSeat();
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' } });
+    expect((await judge()).refusal?.reason).toBe('sandbox_absent');
+  });
+
   test('a declared confining sandbox still judges the seat confinable', async () => {
     await unboundSeat();
     await installRow({
