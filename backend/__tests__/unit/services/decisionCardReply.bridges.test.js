@@ -53,7 +53,9 @@ let messages;
 let slackSend;
 let choose;
 
-beforeAll(async () => { await setupMongoDb(); await Verdict.syncIndexes(); });
+// init() first: syncIndexes() does not wait for the autoIndex build mongoose
+// starts on connect, and FerretDB deadlocks two index builds on one collection.
+beforeAll(async () => { await setupMongoDb(); await Verdict.init(); await Verdict.syncIndexes(); });
 afterAll(() => closeMongoDb());
 beforeEach(() => {
   jest.clearAllMocks();
