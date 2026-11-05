@@ -59,11 +59,36 @@ token with that App's id and key only:
   before any provider step. A retry after a failed revoke still reaches rows
   the first attempt already disconnected. The rows are kept.
 - **A disconnected or revoked Connect row holds nothing.** Posting the same
-  repository with a fresh proof takes the row: its own owner reconnects it, or
-  another person becomes its owner (F173). Either way every grant on the row
-  is revoked first and stays revoked, and the row records the new proof
-  (owner, repository id). People's accounts, agents and memory are untouched.
-  A connected row owned by someone else still answers `409 connection_exists`.
+  repository with a fresh push proof takes the row: its own owner reconnects
+  it, or another person becomes its owner (F173). The takeover first wins the
+  row with a conditional update (still dead, still the owner it read), so a
+  request that read a row its owner has since revived gets 409 and revokes
+  nothing. It then revokes every grant minted on the row before the takeover,
+  recorded as the system (`revokedBy: commonly`), not as the taker. The row
+  records the new proof, including GitHub's current repository id, so a dead
+  row can be re-bound to a repository that was deleted and recreated under
+  the same name, but only after its old grants are revoked and the new owner
+  proves push. People's accounts, agents and memory are untouched. A connected
+  row owned by someone else still answers `409 connection_exists`.
+- **A Connect grant runs only for the row's current owner** (F174). If the
+  row's owner is not the grant's owner, every call, read or write, at park or
+  at execute, refuses `connection_owner_changed`, so takeover safety never
+  depends on when the old grants are revoked.
+- **Removals act only on the row as it is now** (F174). Removing the owner's
+  GitHub connection disconnects only rows they still own and revokes only
+  grants they minted. `DELETE /api/integrations/:id` on a per-repository row
+  deletes it only while the requester's read owner still owns it (otherwise
+  404), and revokes only that owner's grants.
+- **Commonly Connect cannot write issues** (F174, by decision: the App holds
+  `issues: read` only). On a Connect row, `github.create_issue`,
+  `github.close_issue` and `github.comment_on_issue` refuse
+  `connection_cannot_write_issues` before anything parks: "This GitHub
+  connection can read issues but can't create, close or comment on them.
+  Nothing was changed on GitHub." (`details.retryable: false`). The grant's
+  tool list leaves them out on a Connect row. Tools rows are unchanged.
+  `github.comment_on_pull_request` is not refused, though it posts through
+  GitHub's issue-comments endpoint (`/issues/{n}/comments`); whether that
+  endpoint accepts Connect's permissions is not yet verified.
 - **Connect tokens are narrowed** to the connection's repository
   (`repository_ids` on the token request). A Connect token request with no
   valid repository id (absent, not plain digits, zero, or past the safe-integer

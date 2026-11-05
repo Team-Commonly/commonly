@@ -51,6 +51,8 @@ jest.mock('../../services/githubAppService', () => ({
   getPullRequest: jest.fn(async () => ({ number: 5, title: 'PR', state: 'open', html_url: 'https://github.com/o/r/pull/5' })),
   listPullRequestFiles: jest.fn(async () => []),
   closeIssue: jest.fn(async () => ({ number: 12, state: 'closed', html_url: 'https://github.com/o/r/issues/12' })),
+  createIssue: jest.fn(async () => ({ number: 13, html_url: 'https://github.com/o/r/issues/13' })),
+  addIssueComment: jest.fn(async () => ({ id: 1, html_url: 'https://github.com/o/r/issues/12#c1' })),
 }));
 // A seat's own sandbox, as the server judges it. Hosted turns never ask.
 const mockJudge = jest.fn();
@@ -537,6 +539,13 @@ describe('F173: Connect reads re-prove the owner', () => {
 describe('F173: a write that runs without a parked approval proves fresh', () => {
   // A hosted turn only gets reads and the PR writes, which always park; a
   // reversible write on a full-write grant runs unattended from a seat.
+  // close_issue was the one such write, and F174 refuses issue writes on
+  // Connect rows outright, so no built-in tool reaches this path on Connect
+  // today. These tests lift that refusal for close_issue alone, to keep the
+  // fresh-proof rule covered for the next unparked write that does.
+  const { CONNECT_UNSUPPORTED_TOOLS } = require('../../services/toolBrokerService');
+  beforeEach(() => { CONNECT_UNSUPPORTED_TOOLS.delete('github.close_issue'); });
+  afterEach(() => { CONNECT_UNSUPPORTED_TOOLS.add('github.close_issue'); });
   const closeDirect = (grant) => require('../../services/toolBrokerService').callTool({
     grantId: grant.grantId, agentUserId: String(seat._id), agentName: 'helper', instanceId: 'default',
     tool: 'github.close_issue', args: { issueNumber: 12 },
@@ -557,5 +566,133 @@ describe('F173: a write that runs without a parked approval proves fresh', () =>
     mockView.push = false;
     await expect(closeDirect(grant)).rejects.toMatchObject({ code: 'connection_unproven' });
     expect(github.closeIssue).not.toHaveBeenCalled();
+  });
+});
+
+// ─── F174 ───────────────────────────────────────────────────────────────────
+
+const broker = () => require('../../services/toolBrokerService');
+const grantTools = async (row, tools, writeMode = 'write-with-confirm') => {
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
+  return mintGrant({
+    connectionId: String(row._id), connectionRowId: String(row._id), installationId: '7001',
+    target: { kind: 'pod', id: String(pod._id) }, tools, writeMode,
+    audience: [String(seat._id)], expiresAt: new Date(Date.now() + 7 * 86400000),
+    brokerId: GRANT_BROKER_ID, ownerId: String(owner._id),
+  });
+};
+const seatCall = (grant, tool, args) => broker().callTool({
+  grantId: grant.grantId, agentUserId: String(seat._id), agentName: 'helper', instanceId: 'default', tool, args,
+});
+
+describe('F174 item 1: a grant runs only for the row owner who minted it', () => {
+  // The new owner can prove the repository too, so only the owner check refuses.
+  beforeEach(() => Integration.create({
+    type: 'hosted-mcp', scope: 'user', status: 'connected', createdBy: member._id, isActive: true,
+    config: { entryId: 'github-mcp', credentialRef: 'owner-user-token', intake: 'oauth' },
+  }));
+
+  test('a Connect row whose owner changed refuses the old owner\'s grant at park, before GitHub', async () => {
+    const row = await connectRow('connect');
+    const grant = await grantTools(row, ['github.get_issue']);
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: member._id } });
+    await expect(seatCall(grant, 'github.get_issue', { issueNumber: 12 }))
+      .rejects.toMatchObject({ code: 'connection_owner_changed' });
+    expect(github.getIssue).not.toHaveBeenCalled();
+  });
+
+  test('an owner change between park and approval refuses the approved call', async () => {
+    const row = await connectRow('connect');
+    await grantOn(row);
+    const approvalId = await parkPr();
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: member._id } });
+    await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+    expect(github.createPullRequest).not.toHaveBeenCalled();
+  });
+
+  test('a tools row is unchanged: an owner change does not refuse its grant', async () => {
+    const row = await connectRow(undefined);
+    const grant = await grantTools(row, ['github.get_issue']);
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: member._id } });
+    await seatCall(grant, 'github.get_issue', { issueNumber: 12 });
+    expect(github.getIssue).toHaveBeenCalled();
+  });
+});
+
+describe('F174 item 6: Commonly Connect cannot write issues', () => {
+  const ISSUE_WRITES = [
+    ['github.create_issue', { title: 'A bug', body: 'details' }, 'createIssue'],
+    ['github.close_issue', { issueNumber: 12 }, 'closeIssue'],
+    ['github.comment_on_issue', { issueNumber: 12, body: 'hello' }, 'addIssueComment'],
+  ];
+  const MESSAGE = 'This GitHub connection can read issues but can\'t create, close or comment on them. Nothing was changed on GitHub.';
+
+  test.each(ISSUE_WRITES)('%s on a Connect row refuses before parking, plainly, not retryable', async (tool, args, method) => {
+    const grant = await grantTools(await connectRow('connect'), [tool]);
+    const error = await seatCall(grant, tool, args).then(() => null, (e) => e);
+    expect(error).toMatchObject({
+      code: 'connection_cannot_write_issues',
+      message: MESSAGE,
+      statusCode: 403,
+      details: expect.objectContaining({ retryable: false }),
+    });
+    expect(await ApprovalAction.countDocuments({})).toBe(0);
+    expect(github[method]).not.toHaveBeenCalled();
+    expect(mockView.calls).toBe(0);
+  });
+
+  test.each(ISSUE_WRITES)('%s on a full write grant also refuses (no unparked path)', async (tool, args, method) => {
+    const grant = await grantTools(await connectRow('connect'), [tool], 'write');
+    await expect(seatCall(grant, tool, args)).rejects.toMatchObject({ code: 'connection_cannot_write_issues' });
+    expect(github[method]).not.toHaveBeenCalled();
+  });
+
+  test('the refusal text reaches the agent intact through the MCP error payload', async () => {
+    const grant = await grantTools(await connectRow('connect'), ['github.create_issue']);
+    const error = await seatCall(grant, 'github.create_issue', { title: 'A bug' }).then(() => null, (e) => e);
+    const { errorPayload } = require('../../routes/mcpGrants');
+    expect(errorPayload(error)).toMatchObject({ error: 'connection_cannot_write_issues', message: MESSAGE });
+  });
+
+  test('a tools row still parks an issue write for approval', async () => {
+    const grant = await grantTools(await connectRow(undefined), ['github.create_issue']);
+    await expect(seatCall(grant, 'github.create_issue', { title: 'A bug' }))
+      .rejects.toMatchObject({ code: 'approval_required' });
+  });
+
+  test('the grant tool list leaves issue writes off a Connect row, and keeps them on a tools row', async () => {
+    const tools = ['github.get_issue', 'github.create_issue', 'github.close_issue', 'github.comment_on_issue',
+      'github.comment_on_pull_request'];
+    const listFor = async (row) => (await broker().listToolsForGrant({
+      grantId: (await grantTools(row, tools)).grantId, agentUserId: String(seat._id), agentName: 'helper', instanceId: 'default',
+    })).map((d) => d.name).sort();
+    expect(await listFor(await connectRow('connect'))).toEqual(['github.comment_on_pull_request', 'github.get_issue']);
+    await Integration.deleteMany({ type: 'github-app' });
+    expect(await listFor(await connectRow(undefined))).toEqual([...tools].sort());
+  });
+});
+
+describe('F174 item 2: the old owner\'s retire never touches a taken-over row', () => {
+  test('a stale read of a row Bob now owns: the row stays connected and Bob\'s grant lives', async () => {
+    const row = await connectRow('connect');
+    // The row has since been taken over by `member`, who minted a grant on it.
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: member._id } });
+    const takersGrant = await mintGrant({
+      connectionId: String(row._id), connectionRowId: String(row._id), installationId: '7001',
+      target: { kind: 'pod', id: String(pod._id) }, tools: ['github.get_issue'], writeMode: 'read',
+      audience: [String(seat._id)], expiresAt: new Date(Date.now() + 86400000),
+      brokerId: GRANT_BROKER_ID, ownerId: String(member._id),
+    });
+    const stale = { ...(await Integration.findById(row._id).lean()), createdBy: owner._id };
+    const find = jest.spyOn(Integration, 'find').mockReturnValueOnce({ lean: async () => [stale] });
+    const { defaultDeps } = require('../../services/connectionRemovalService');
+    const { revokeConnectionGrants } = require('../../services/roomGrantService');
+    try {
+      await defaultDeps().retireConnectRepositories({
+        ownerUserId: String(owner._id), revokedBy: String(owner._id), revokeGrants: revokeConnectionGrants,
+      });
+    } finally { find.mockRestore(); }
+    expect((await Integration.findById(row._id).lean()).status).toBe('connected');
+    expect((await RoomGrant.findOne({ grantId: takersGrant.grantId }).lean()).revokedAt).toBeFalsy();
   });
 });

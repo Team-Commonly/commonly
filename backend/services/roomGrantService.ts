@@ -11,7 +11,7 @@ import RoomGrant, {
   RoomGrantTaskBinding,
   RoomGrantWriteMode,
 } from '../models/RoomGrant';
-import { BOARD_ACTOR, emitRecord, type RecordActor } from './recordService';
+import { BOARD_ACTOR, emitRecord, SERVER_ACTOR, type RecordActor } from './recordService';
 
 export interface RoomGrantCreateInput {
   grantId?: string;
@@ -645,6 +645,13 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   });
 };
 
+/**
+ * The `revokedBy` of a revocation no person asked for (F174: a takeover ending
+ * the previous owner's grants). It is the record format's server actor id, so
+ * the grant.revoked line names the system rather than a user.
+ */
+export const SYSTEM_REVOKER = SERVER_ACTOR.id;
+
 export const revokeGrant = async (grantId: string, revokedBy: string): Promise<number> => {
   const id = asId(grantId, 'grantId');
   const actor = asId(revokedBy, 'revokedBy');
@@ -732,6 +739,10 @@ export const revokeConnectionGrants = async (options: {
     config?: { installationId?: unknown };
   } | null;
   revokedBy: string;
+  /** Only grants this person minted (F174: an old owner's sweep never reaches a new owner's grants). */
+  ownerId?: string;
+  /** Only grants minted before this moment (F174: a takeover never sweeps the new owner's grants). */
+  createdBefore?: Date;
 }): Promise<number> => {
   const connection = options.connection;
   const rowId = connection?._id ? String(connection._id) : '';
@@ -767,6 +778,8 @@ export const revokeConnectionGrants = async (options: {
   }
   const grants = await RoomGrant.find({
     $or: clauses,
+    ...(options.ownerId ? { ownerId: options.ownerId } : {}),
+    ...(options.createdBefore ? { createdAt: { $lt: options.createdBefore } } : {}),
   }).select('grantId').lean() as Array<{ grantId?: string }>;
 
   let revoked = 0;
