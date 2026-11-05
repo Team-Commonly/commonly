@@ -688,6 +688,22 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
         expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
       });
 
+      test('a heartbeat on an install whose tool list leaves out commonly_post_message keeps the fallback', async () => {
+        // Its text is its only way into the pod; dropping it would silence the agent.
+        axios.post.mockResolvedValueOnce(finalText('Weekly digest: three PRs merged.'));
+        const result = await runAgent({
+          podId: POD,
+          agentName: 'digest-bot',
+          instanceId: 'default',
+          displayName: 'Digest Bot',
+          config: { runtime: { runtimeType: 'native' }, tools: ['commonly_read_context'] },
+        }, heartbeat);
+        expect(result.status).toBe('succeeded');
+        expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+          content: 'Weekly digest: three PRs merged.',
+        }));
+      });
+
       test('a heartbeat that calls commonly_post_message posts exactly that, once', async () => {
         axios.post
           .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Standup moved to 3pm.' })))

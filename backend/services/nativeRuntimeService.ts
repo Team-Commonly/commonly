@@ -1531,8 +1531,12 @@ export const wasDirectlyAddressed = (trigger: NativeRunTrigger): boolean => (
  * trigger, never by the text: the same prose on a mention posts verbatim.
  * Other unaddressed turns keep the fallback on purpose: first_contact is told
  * to post a greeting, and an ambient wake's NO_REPLY contract already covers it.
+ * An install whose declared tool list leaves out commonly_post_message keeps
+ * the fallback on heartbeats too: dropping its text would silence it entirely.
  */
-export const finalTextReachesPod = (trigger: NativeRunTrigger): boolean => String(trigger.type) !== 'heartbeat';
+export const finalTextReachesPod = (trigger: NativeRunTrigger, postToolOffered = true): boolean => (
+  String(trigger.type) !== 'heartbeat' || !postToolOffered
+);
 
 /**
  * Whether the agent holding a message's claim was itself addressed by it: it
@@ -2878,8 +2882,9 @@ export async function runAgent(
       // The fallback post is a post like any other: after an external result,
       // re-read the bridge before letting it through. A silent reply (NO_REPLY)
       // is a decline, not a held-back answer: it would post nothing anyway.
+      const postToolOffered = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_post_message');
       // A heartbeat's final text is never posted (F190), so there is nothing to hold back.
-      const fallbackBlocked = Boolean(textOut && !postedViaTool && finalTextReachesPod(trigger)
+      const fallbackBlocked = Boolean(textOut && !postedViaTool && finalTextReachesPod(trigger, postToolOffered)
         && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow()
         && require('./agentMessageService').sanitizeAgentContent(textOut));
       // Held back, the reply never reached the person: the run failed, so it
@@ -2889,7 +2894,7 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
-      if (textOut && !postedViaTool && !fallbackBlocked && !finalTextReachesPod(trigger)) {
+      if (textOut && !postedViaTool && !fallbackBlocked && !finalTextReachesPod(trigger, postToolOffered)) {
         // F190: a heartbeat's closing prose is not a reply. Logged by length
         // only, so the narration's content stays out of the logs.
         console.log(

@@ -210,6 +210,10 @@ describe('finalTextReachesPod', () => {
     expect(finalTextReachesPod({ type: 'heartbeat', payload: {} })).toBe(false);
   });
 
+  it('a heartbeat on an install with no commonly_post_message keeps the fallback', () => {
+    expect(finalTextReachesPod({ type: 'heartbeat', payload: {} }, false)).toBe(true);
+  });
+
   it.each(['chat.mention', 'thread.mention', 'dm.message', 'mention', 'chat.message', 'message.posted', 'first_contact', 'task.assigned', 'pod.join'])(
     'a %s turn keeps posting its final text',
     (type) => {

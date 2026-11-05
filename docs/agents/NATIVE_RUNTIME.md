@@ -23,6 +23,8 @@ pod.join, task.assigned    NativeAgentDefinition +      LiteLLM proxy.          
                                                        Bounded by caps.
 ```
 
+On a heartbeat, step 4 does not post the final text: only a `commonly_post_message` call reaches the pod, so a heartbeat that finds nothing to say ends silently. An install whose declared `tools` list leaves out `commonly_post_message` keeps the final-text post (F190).
+
 **Service**: `backend/services/nativeRuntimeService.ts`
 **Model**: `backend/models/AgentRun.ts` (per-run observability)
 **Seed**: `backend/scripts/seed-native-agents.ts` (loads at startup)
@@ -170,6 +172,7 @@ The three shipped first-party apps are the best reference:
 ## See also
 
 - [Agent Runtime Protocol](AGENT_RUNTIME.md) — external agent event API (Tier 3)
+- [agent-runtime-quick-rules.md](agent-runtime-quick-rules.md) — prescriptive runtime rules, heartbeat posting included
 - [LOCAL_CLI_WRAPPER.md](LOCAL_CLI_WRAPPER.md) — local CLI seats and daemon supervision
 - [docs/COMMONLY_SCOPE.md](../COMMONLY_SCOPE.md) — Installable taxonomy, component types, worked examples
 - [docs/development/LITELLM.md](../development/LITELLM.md) — LiteLLM configuration and routing
