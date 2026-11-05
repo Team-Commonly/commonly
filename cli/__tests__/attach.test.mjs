@@ -620,9 +620,16 @@ describe('performAttach', () => {
     }
   });
 
-  test('on win32, a public Codex --env refuses with the Codex line and WSL, before anything is published', async () => {
+  // CTO review of #3501: a Codex env file naming workspace or read-only took
+  // the Codex-profile branch, which checked only the Codex version, and the
+  // agent was published before `agent run` refused it.
+  test.each([
+    ['no mode', undefined],
+    ['workspace', 'workspace'],
+    ['read-only', 'read-only'],
+  ])('on win32, a public Codex --env with %s refuses with the Codex line and WSL, before anything is published', async (_label, mode) => {
     const { error, client } = await attachConfined({
-      adapterName: 'codex', mode: undefined, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+      adapterName: 'codex', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
     });
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toContain("Public Codex agents need a sandbox, which Codex can't enforce on Windows without its elevated setup");

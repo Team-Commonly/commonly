@@ -10,7 +10,7 @@
  *
  * Only the adapters that run inside these mechanisms are checked. Codex
  * confines with its own permission profiles (mode.js), except on native
- * Windows: there a public Codex seat is refused (codexWindowsRefusal below). pi confines an
+ * Windows: there a public Codex seat is refused (CODEX_WINDOWS_MESSAGE below). pi confines an
  * explicitly public seat with Seatbelt and refuses one it cannot confine at
  * attach (validateEnvironment) and at spawn (adapters/pi.js); a Connect-page pi
  * seat declares no sandbox and is not checked here.

@@ -1291,6 +1291,14 @@ export const performAttach = async ({
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
     const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter, platform });
+    // A public Codex seat on native Windows refuses whatever mode it names
+    // (CTO ruling 2026-11-05, host-check.js). Checked once, before any mode
+    // branch, so the Codex-profile branch below can't publish an agent that
+    // `agent run` would only refuse (CTO review of #3501).
+    if (adapterName === 'codex') {
+      const codexRefusal = hostSandboxRefusal({ environment, adapterName, platform });
+      if (codexRefusal) throw new Error(codexRefusal);
+    }
     // D245: native Windows has neither sandbox, so its refusal names Windows
     // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
     // refuses there, as before; only the words differ.
