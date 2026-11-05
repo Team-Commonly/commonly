@@ -6,28 +6,40 @@
  * The live-target unique index moved from a `status: {$in: [...]}` partial
  * filter (which FerretDB refuses) to `live: true`
  * (`installable_live_target_unique_v2`). The model's hooks derive `live` on
- * every write from now on; rows written before that deploy carry no flag, so
- * the v2 index does not yet cover them. This script closes that gap.
+ * every write from the deploy on; rows written before it carry no flag, so the
+ * v2 index does not yet cover them. This script closes that gap.
  *
- *   npm run backfill:installation-live              # dry run: counts only
- *   npm run backfill:installation-live -- --apply   # write
- *   npm run backfill:installation-live -- --verify  # count rows where live disagrees with status
+ *   npm run backfill:installation-live                       # dry run: counts only
+ *   npm run backfill:installation-live -- --apply            # write
+ *   npm run backfill:installation-live -- --verify           # check only
+ *   npm run backfill:installation-live -- --apply --verify   # write, then check
  *
- * --verify exits non-zero unless the count is 0. It must report 0 on prod
- * before the legacy `installable_live_target_unique` index is removed.
+ * WHEN TO RUN --apply: only after the rollout has FULLY finished, with no
+ * pre-deploy pod left serving. A new pod being up is not enough. Until the
+ * last old pod is gone, an old pod can still write `status: 'uninstalled'`
+ * without touching `live`, leaving a row the hooks stamped `live: true` while
+ * its status is no longer live. A reinstall on that target then hits the v2
+ * index's E11000, finds no live winner by status, and returns 500. The
+ * SHOULD_NOT_BE_LIVE pass below repairs exactly those rows, which is why the
+ * apply has to come after the last old writer is gone. If in doubt, re-run
+ * --apply --verify; it is idempotent.
+ *
+ * --verify is the gate for removing the legacy `installable_live_target_unique`
+ * index, so it proves both halves: (1) no row's `live` disagrees with its
+ * status, and (2) the replacement index exists, unique, with
+ * `partialFilterExpression: { live: true }`. It exits 0 only when both hold.
  *
  * Idempotent: each write targets only rows whose flag disagrees with their
- * status, so a re-run writes nothing. Uses plain $set updates (no pipeline),
- * which every supported server accepts. The legacy index already guarantees
- * at most one live row per target, so setting `live: true` cannot collide on
- * the v2 index.
+ * status, so a re-run writes nothing. Plain $set updates (no pipeline), which
+ * every supported server accepts. The legacy index already guarantees at most
+ * one live row per target, so setting `live: true` cannot collide on v2.
  */
 
 import mongoose from 'mongoose';
 import InstallableInstallation, { LIVE_INSTALLATION_STATUSES } from '../models/InstallableInstallation';
 
-// No index builds on connect: a backfill run must not change the index set.
-mongoose.set('autoIndex', false);
+export const V2_INDEX_NAME = 'installable_live_target_unique_v2';
+const V2_INDEX_KEY = { installableId: 1, targetType: 1, targetId: 1 };
 
 const LIVE = [...LIVE_INSTALLATION_STATUSES];
 
@@ -48,6 +60,12 @@ export interface LiveBackfillResult extends LiveBackfillCounts {
   setNotLive: number;
 }
 
+export interface LiveVerifyResult extends LiveBackfillCounts {
+  mismatched: number;
+  v2Index: 'ok' | 'missing' | 'wrong-shape';
+  ok: boolean;
+}
+
 export const countLiveMismatches = async (): Promise<LiveBackfillCounts> => {
   const [scanned, wrongShouldBeLive, wrongShouldNotBeLive] = await Promise.all([
     InstallableInstallation.countDocuments({}),
@@ -55,6 +73,32 @@ export const countLiveMismatches = async (): Promise<LiveBackfillCounts> => {
     InstallableInstallation.countDocuments(SHOULD_NOT_BE_LIVE),
   ]);
   return { scanned, wrongShouldBeLive, wrongShouldNotBeLive };
+};
+
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+export const checkV2Index = async (): Promise<LiveVerifyResult['v2Index']> => {
+  let indexes: Array<{ name?: string; unique?: boolean; key?: unknown; partialFilterExpression?: unknown }>;
+  try {
+    indexes = await InstallableInstallation.collection.indexes();
+  } catch (error) {
+    // No collection yet means no index.
+    if ((error as { codeName?: string; code?: number }).codeName === 'NamespaceNotFound'
+      || (error as { code?: number }).code === 26) return 'missing';
+    throw error;
+  }
+  const v2 = indexes.find((index) => index.name === V2_INDEX_NAME);
+  if (!v2) return 'missing';
+  const shapeOk = v2.unique === true
+    && sameJson(v2.key, V2_INDEX_KEY)
+    && sameJson(v2.partialFilterExpression, { live: true });
+  return shapeOk ? 'ok' : 'wrong-shape';
+};
+
+export const verifyInstallationLive = async (): Promise<LiveVerifyResult> => {
+  const [counts, v2Index] = await Promise.all([countLiveMismatches(), checkV2Index()]);
+  const mismatched = counts.wrongShouldBeLive + counts.wrongShouldNotBeLive;
+  return { ...counts, mismatched, v2Index, ok: mismatched === 0 && v2Index === 'ok' };
 };
 
 export const backfillInstallationLive = async (
@@ -74,26 +118,32 @@ export const backfillInstallationLive = async (
   };
 };
 
-export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+const printVerify = (result: LiveVerifyResult): void => {
+  console.log(`installations scanned:        ${result.scanned}`);
+  console.log(`live disagrees with status:   ${result.mismatched}`);
+  console.log(`  live status, live != true:   ${result.wrongShouldBeLive}`);
+  console.log(`  other status, live != false: ${result.wrongShouldNotBeLive}`);
+  console.log(`${V2_INDEX_NAME}: ${result.v2Index}`);
+  if (result.ok) {
+    console.log('VERIFY OK');
+    return;
+  }
+  const reasons = [
+    result.mismatched > 0 ? 'rows disagree (run --apply)' : '',
+    result.v2Index !== 'ok' ? `v2 index ${result.v2Index} (boot the new code or syncIndexes first)` : '',
+  ].filter(Boolean);
+  console.log(`VERIFY FAILED: ${reasons.join('; ')}`);
+};
+
+/**
+ * The work on an already-open connection. Returns the exit code: 0 on
+ * success, 2 when --verify fails. With both flags, the apply runs first and
+ * the verify then checks its result; neither flag is ignored.
+ */
+export async function run(argv: string[]): Promise<number> {
   const apply = argv.includes('--apply');
   const verify = argv.includes('--verify');
-  const mongoUri = process.env.MONGO_URI;
-  if (!mongoUri) {
-    console.error('MONGO_URI is required');
-    return 1;
-  }
-  await mongoose.connect(mongoUri);
-  try {
-    if (verify) {
-      const counts = await countLiveMismatches();
-      const mismatched = counts.wrongShouldBeLive + counts.wrongShouldNotBeLive;
-      console.log(`installations scanned:        ${counts.scanned}`);
-      console.log(`live disagrees with status:   ${mismatched}`);
-      console.log(`  live status, live != true:   ${counts.wrongShouldBeLive}`);
-      console.log(`  other status, live != false: ${counts.wrongShouldNotBeLive}`);
-      console.log(mismatched === 0 ? 'VERIFY OK' : 'VERIFY FAILED: run with --apply');
-      return mismatched === 0 ? 0 : 2;
-    }
+  if (apply || !verify) {
     const result = await backfillInstallationLive({ apply });
     console.log(`installations scanned:        ${result.scanned}`);
     console.log(`to set live: true:            ${result.wrongShouldBeLive}`);
@@ -104,7 +154,25 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     } else {
       console.log('DRY RUN — pass --apply to write, then --verify.');
     }
-    return 0;
+  }
+  if (!verify) return 0;
+  const result = await verifyInstallationLive();
+  printVerify(result);
+  return result.ok ? 0 : 2;
+}
+
+export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
+  const mongoUri = process.env.MONGO_URI;
+  if (!mongoUri) {
+    console.error('MONGO_URI is required');
+    return 1;
+  }
+  // No index builds on connect: a backfill or verify run must not change the
+  // index set, or --verify would find a v2 index this run just made.
+  mongoose.set('autoIndex', false);
+  await mongoose.connect(mongoUri);
+  try {
+    return await run(argv);
   } finally {
     await mongoose.disconnect();
   }

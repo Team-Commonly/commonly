@@ -7,11 +7,18 @@
 
 const mongoose = require('mongoose');
 
+const fs = require('fs');
+const path = require('path');
 const InstallableInstallation = require('../../../models/InstallableInstallation');
+
+const Installable = require('../../../models/Installable');
 const {
   backfillInstallationLive,
   countLiveMismatches,
+  run: runBackfill,
 } = require('../../../scripts/backfill-installation-live');
+const { install, uninstall } = require('../../../services/installable/installableInstallationService');
+const { TELEGRAM_CONNECTOR } = require('../../../scripts/seed-builtin-connectors');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 
 const { LIVE_INSTALLATION_STATUSES } = InstallableInstallation;
@@ -238,6 +245,44 @@ describe('InstallableInstallation.live', () => {
       expect(row).toMatchObject({ status: 'uninstalled', live: false });
     });
 
+    // Measured, not assumed: with an operator status condition, Mongoose's
+    // setDefaultsOnInsert writes $setOnInsert.status 'active', which wins over
+    // anything Mongo seeds from the filter. So these rows are live.
+    it.each([
+      [{ $eq: 'uninstalled' }],
+      [{ $in: ['uninstalled', 'stale'] }],
+      [{ $ne: 'active' }],
+    ])('upsert with an operator status filter %j inserts the default, live', async (condition) => {
+      const targetId = new mongoose.Types.ObjectId();
+      await InstallableInstallation.updateOne(
+        {
+          installableId: 'slack', targetType: 'user', targetId, status: condition,
+        },
+        upsertSet(),
+        { upsert: true },
+      );
+      const row = await InstallableInstallation.collection.findOne({ targetId });
+      expect(row).toMatchObject({ status: 'active', live: true });
+    });
+
+    it.each([
+      [{ $eq: 'uninstalled' }, 'uninstalled'],
+      [{ $eq: 'paused' }, 'paused'],
+      [{ $in: ['uninstalled', 'stale'] }, undefined],
+    ])('upsert with setDefaultsOnInsert off and filter %j inserts status %s', async (condition, expected) => {
+      const targetId = new mongoose.Types.ObjectId();
+      await InstallableInstallation.updateOne(
+        {
+          installableId: 'slack', targetType: 'user', targetId, status: condition,
+        },
+        upsertSet(),
+        { upsert: true, setDefaultsOnInsert: false },
+      );
+      const row = await InstallableInstallation.collection.findOne({ targetId });
+      expect(row.status).toBe(expected);
+      expect(row.live).toBe(LIVE_INSTALLATION_STATUSES.includes(expected));
+    });
+
     // The install claim in installableInstallationService.claimInstallation:
     // a pipeline findOneAndUpdate, upsert, whose status is a $cond on the old one.
     const claimPipeline = (targetId) => [{
@@ -387,5 +432,187 @@ describe('InstallableInstallation.live', () => {
       const rows = await InstallableInstallation.collection.find({}).toArray();
       rows.forEach((row) => expect(row.live).toBe(LIVE_INSTALLATION_STATUSES.includes(row.status)));
     });
+
+    describe('run() exit codes (the gate for dropping the legacy index)', () => {
+      let log;
+      beforeEach(() => { log = jest.spyOn(console, 'log').mockImplementation(() => {}); });
+      afterEach(() => log.mockRestore());
+
+      it('--verify is 0 when every row agrees and v2 exists', async () => {
+        await InstallableInstallation.create(baseDoc({ status: 'active' }));
+        await InstallableInstallation.create(baseDoc({ status: 'uninstalled' }));
+        expect(await runBackfill(['--verify'])).toBe(0);
+      });
+
+      it('--verify is non-zero when a flag disagrees with status', async () => {
+        await InstallableInstallation.collection.insertOne({ ...baseDoc(), status: 'active' });
+        expect(await runBackfill(['--verify'])).toBe(2);
+      });
+
+      it('--verify is non-zero when the v2 index is missing, even with clean rows', async () => {
+        await InstallableInstallation.create(baseDoc({ status: 'active' }));
+        await InstallableInstallation.collection.dropIndex('installable_live_target_unique_v2');
+        try {
+          expect(await runBackfill(['--verify'])).toBe(2);
+        } finally {
+          await InstallableInstallation.syncIndexes();
+        }
+        expect(await runBackfill(['--verify'])).toBe(0);
+      });
+
+      it('--apply --verify applies first, then verifies the result', async () => {
+        await InstallableInstallation.collection.insertOne({ ...baseDoc(), status: 'active' });
+        expect(await runBackfill(['--verify', '--apply'])).toBe(0);
+        expect(await countLiveMismatches()).toMatchObject({ wrongShouldBeLive: 0, wrongShouldNotBeLive: 0 });
+      });
+
+      it('a dry run writes nothing', async () => {
+        await InstallableInstallation.collection.insertOne({ ...baseDoc(), status: 'active' });
+        expect(await runBackfill([])).toBe(0);
+        expect(await countLiveMismatches()).toMatchObject({ wrongShouldBeLive: 1 });
+      });
+    });
+  });
+
+  // Through the real installableInstallationService, not a copied pipeline.
+  describe('service install path', () => {
+    const originalKeys = process.env.CONNECTOR_SECRET_KEYS;
+    const originalActiveKey = process.env.CONNECTOR_SECRET_ACTIVE_KEY;
+    const ids = () => ({
+      userId: new mongoose.Types.ObjectId().toString(),
+      podId: new mongoose.Types.ObjectId().toString(),
+    });
+
+    beforeEach(async () => {
+      await Installable.create({
+        ...TELEGRAM_CONNECTOR,
+        stats: { totalInstalls: 0, activeInstalls: 0, forkCount: 0 },
+      });
+      process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
+      process.env.CONNECTOR_SECRET_ACTIVE_KEY = 'k1';
+    });
+
+    afterAll(() => {
+      process.env.CONNECTOR_SECRET_KEYS = originalKeys;
+      process.env.CONNECTOR_SECRET_ACTIVE_KEY = originalActiveKey;
+    });
+
+    it('install stamps live: true and uninstall flips it to false, read from the raw collection', async () => {
+      const { userId, podId } = ids();
+      const result = await install({ installableId: 'telegram', installedBy: userId, podId });
+      expect(result.httpStatus).toBe(200);
+      expect(await rawLive(result.installation._id)).toEqual({ status: 'active', live: true });
+
+      await uninstall({ installableId: 'telegram', installedBy: userId });
+      expect(await rawLive(result.installation._id)).toEqual({ status: 'uninstalled', live: false });
+    });
+
+    it('a pre-backfill live row (no flag): the legacy index refuses the claim duplicate', async () => {
+      const { userId, podId } = ids();
+      const first = await install({ installableId: 'telegram', installedBy: userId, podId });
+      // As written before the deploy: live status, no `live` field.
+      await InstallableInstallation.collection.updateOne({ _id: first.installation._id }, { $unset: { live: 1 } });
+      expect(await rawLive(first.installation._id)).toEqual({ status: 'active', live: undefined });
+
+      // The claim upsert misses the active row (its filter admits error/stale
+      // transients only), inserts, and the v2 index cannot see the unflagged
+      // row. The legacy index refuses it; the loser path returns the winner.
+      const again = await install({ installableId: 'telegram', installedBy: userId, podId });
+      expect(again.httpStatus).toBe(200);
+      expect(String(again.installation._id)).toBe(String(first.installation._id));
+      expect(await InstallableInstallation.countDocuments({ installableId: 'telegram' })).toBe(1);
+
+      // Control: without the legacy index the same call duplicates, which is
+      // why the backfill must verify before that index is dropped.
+      await InstallableInstallation.collection.dropIndex('installable_live_target_unique');
+      try {
+        // Projection may fail downstream on the second parent; the duplicate
+        // parent row is the point, and it is inserted before projection.
+        await install({ installableId: 'telegram', installedBy: userId, podId }).catch(() => {});
+        expect(await InstallableInstallation.countDocuments({ installableId: 'telegram' })).toBe(2);
+      } finally {
+        await InstallableInstallation.deleteMany({});
+        await InstallableInstallation.syncIndexes();
+      }
+    });
+
+    it('an old pod\'s uninstall (live left true) breaks reinstall until the backfill repairs it', async () => {
+      const { userId, podId } = ids();
+      const first = await install({ installableId: 'telegram', installedBy: userId, podId });
+      await uninstall({ installableId: 'telegram', installedBy: userId });
+      // What a pre-deploy pod leaves behind: uninstalled, flag still true.
+      await InstallableInstallation.collection.updateOne({ _id: first.installation._id }, { $set: { live: true } });
+
+      await expect(install({ installableId: 'telegram', installedBy: userId, podId }))
+        .rejects.toMatchObject({ code: 11000 });
+
+      expect(await backfillInstallationLive({ apply: true })).toMatchObject({ setNotLive: 1 });
+      const again = await install({ installableId: 'telegram', installedBy: userId, podId });
+      expect(again.httpStatus).toBe(200);
+      expect(String(again.installation._id)).not.toBe(String(first.installation._id));
+    });
+  });
+});
+
+// ABSENCE TEST. The hooks cover every Mongoose write path; Model.bulkWrite and
+// raw Model.collection writes run no middleware. This asserts no such write on
+// InstallableInstallation exists in backend source outside the backfill
+// script, so a new one fails here instead of silently writing a stale `live`.
+// The positive controls prove the detector actually fires.
+describe('absence: no middleware-bypassing InstallableInstallation writes', () => {
+  const BACKEND = path.resolve(__dirname, '../../..');
+  const ALLOWED = new Set([path.join(BACKEND, 'scripts/backfill-installation-live.ts')]);
+  const SKIP_DIRS = new Set(['node_modules', '__tests__', 'dist', 'coverage', 'build']);
+  const WRITE_OPS = '(?:insertOne|insertMany|updateOne|updateMany|replaceOne|deleteOne|deleteMany'
+    + '|findOneAndUpdate|findOneAndReplace|findOneAndDelete|bulkWrite)';
+
+  // Names a file binds the model to: `import X from '…/InstallableInstallation'`
+  // or `const X = require('…/InstallableInstallation')`.
+  const boundNames = (source) => {
+    const names = new Set();
+    const importRe = /import\s+(\w+)[^;]*?from\s+['"][^'"]*\/InstallableInstallation['"]/g;
+    const requireRe = /(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*['"][^'"]*\/InstallableInstallation['"]\s*\)/g;
+    [importRe, requireRe].forEach((re) => {
+      let m = re.exec(source);
+      while (m) { names.add(m[1]); m = re.exec(source); }
+    });
+    return names;
+  };
+
+  const bypassingWrites = (source) => {
+    const hits = [];
+    boundNames(source).forEach((name) => {
+      const re = new RegExp(`\\b${name}\\s*\\.\\s*(?:bulkWrite\\b|collection\\s*\\.\\s*${WRITE_OPS}\\b)`, 'g');
+      const found = source.match(re);
+      if (found) hits.push(...found);
+    });
+    return hits;
+  };
+
+  const sourceFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) return SKIP_DIRS.has(entry.name) ? [] : sourceFiles(path.join(dir, entry.name));
+    return /\.(ts|js)$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [path.join(dir, entry.name)] : [];
+  });
+
+  it('positive control: the detector flags the backfill script\'s raw updateMany', () => {
+    const backfill = fs.readFileSync(path.join(BACKEND, 'scripts/backfill-installation-live.ts'), 'utf8');
+    expect(bypassingWrites(backfill).length).toBeGreaterThan(0);
+  });
+
+  it('positive control: the detector flags a synthetic bulkWrite under an alias', () => {
+    const synthetic = "const II = require('../models/InstallableInstallation');\nII.bulkWrite([]);";
+    expect(bypassingWrites(synthetic)).toEqual(['II.bulkWrite']);
+    expect(bypassingWrites("const II = require('../models/InstallableInstallation');\nII.collection.indexes();"))
+      .toEqual([]);
+  });
+
+  it('no backend source outside the backfill script writes around the hooks', () => {
+    const files = sourceFiles(BACKEND);
+    expect(files.length).toBeGreaterThan(100);
+    const offenders = files
+      .filter((file) => !ALLOWED.has(file))
+      .map((file) => ({ file: path.relative(BACKEND, file), hits: bypassingWrites(fs.readFileSync(file, 'utf8')) }))
+      .filter((entry) => entry.hits.length > 0);
+    expect(offenders).toEqual([]);
   });
 });

@@ -311,9 +311,16 @@ const has = (obj: unknown, key: string): boolean => (
 );
 
 /**
- * The status an upsert inserts when the update never names one: Mongo seeds a
- * plain-equality filter value into the new doc; otherwise Mongoose's
- * setDefaultsOnInsert writes the schema default (unless it is turned off).
+ * The status an upsert inserts when the update never names one. Measured on
+ * mongo:7 and FerretDB 2.7 through this model:
+ *   - plain equality (`status: 'x'`): Mongo seeds x, and Mongoose adds no
+ *     default for a path the filter pins → x;
+ *   - any operator condition (`$eq`, `$in`, `$ne`, `$exists`, …): Mongoose's
+ *     setDefaultsOnInsert writes `$setOnInsert.status: 'active'`, which wins
+ *     over anything Mongo seeds from the filter → 'active'. Treating these as
+ *     "not live" would leave an active row outside the unique index;
+ *   - with setDefaultsOnInsert off, only an equality (`x` or `{$eq: x}`) is
+ *     seeded; any other condition inserts no status → not live.
  */
 const insertedStatusFromFilter = (
   filter: Record<string, unknown> | null,
@@ -321,8 +328,11 @@ const insertedStatusFromFilter = (
 ): unknown => {
   const condition = filter?.status;
   if (typeof condition === 'string') return condition;
-  if (options.setDefaultsOnInsert === false) return undefined;
-  return STATUS_DEFAULT;
+  if (options.setDefaultsOnInsert !== false) return STATUS_DEFAULT;
+  if (condition && typeof condition === 'object' && has(condition, '$eq')) {
+    return (condition as { $eq: unknown }).$eq;
+  }
+  return undefined;
 };
 
 // Query writes. Each derives `live` from whatever the update does to `status`,
@@ -348,7 +358,14 @@ function deriveLiveOnQuery(this: mongoose.Query<unknown, unknown>): void {
     return;
   }
 
-  const options = this.getOptions() as { upsert?: boolean; setDefaultsOnInsert?: boolean };
+  // `setDefaultsOnInsert` is moved out of getOptions() into the query's
+  // mongooseOptions(); unset there, the global mongoose option decides, as in
+  // Mongoose's own helpers/setDefaultsOnInsert.
+  const perQuery = (this.mongooseOptions() as { setDefaultsOnInsert?: boolean }).setDefaultsOnInsert;
+  const options = {
+    upsert: (this.getOptions() as { upsert?: boolean }).upsert,
+    setDefaultsOnInsert: perQuery ?? (mongoose.get('setDefaultsOnInsert') as boolean | undefined),
+  };
   let touched = false;
   if (has(update, 'status')) {
     update.live = isLiveInstallationStatus(update.status);
