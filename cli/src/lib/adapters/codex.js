@@ -70,7 +70,9 @@ import {
   resolve as pathResolve,
   sep,
 } from 'path';
-import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { isOurGrantBroker } from '../grant-broker-guard.js';
+import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from './codex-broker-bridge.mjs';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
@@ -119,7 +121,8 @@ const buildPrompt = buildMemoryPreamble;
 //
 // Codex-specific constraints:
 //   - stdio/command servers only (no url transport here); url-only entries
-//     are skipped rather than half-wired.
+//     are skipped rather than half-wired. The one exception is our grant
+//     broker, which runs behind a stdio bridge (bridgeGrantBroker, F175b).
 //   - Only entries that DECLARE stdio (or name no transport) are emitted, even
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
@@ -153,6 +156,48 @@ const substitutePlaceholders = (value, ctx) => {
 // JSON.stringify doubles as the TOML quoter for command/args/env values.
 const toml = (s) => JSON.stringify(String(s));
 
+const HTTP_TRANSPORTS = new Set(['http', 'streamable-http']);
+
+// F175b: the grant broker is a Streamable HTTP server and codex runs stdio
+// servers here, so the broker is wired as OUR stdio bridge
+// (codex-broker-bridge.mjs) with the broker's url, its headers as templates and
+// this spawn's credential-file path, none of them a secret. The command the
+// entry declares, if any, is never run. Whether this seat may hold the broker
+// at all was decided before the adapter (grant-broker-guard.js), which
+// withholds it from a seat that is not confined.
+const bridgeGrantBroker = (server, ctx) => {
+  const skip = (why) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[codex] grant broker ${server.name}: ${why}, so it is not wired for this spawn.`);
+    return null;
+  };
+  if (!ctx.credentialFile) return skip('there is no seat credential to read');
+  // Resolve the instance placeholders only: the token placeholder stays in the
+  // header template and is filled by the bridge from the file.
+  const resolve = (value) => substitutePlaceholders(value, { instanceUrl: ctx.instanceUrl });
+  const url = resolve(server.url);
+  const headers = Object.fromEntries(Object.entries(server.headers || {})
+    .map(([name, value]) => [name, resolve(String(value))]));
+  const carriesToken = (value) => !!ctx.runtimeToken && value.includes(ctx.runtimeToken);
+  if (carriesToken(url) || Object.values(headers).some(carriesToken)) {
+    return skip('the entry holds the seat token as a literal, which would ride argv');
+  }
+  if (url.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
+  const env = [
+    [BRIDGE_URL_VAR, url],
+    [BRIDGE_HEADERS_VAR, JSON.stringify(headers)],
+    [CREDENTIAL_FILE_VAR, ctx.credentialFile],
+  ];
+  return [
+    '-c', `mcp_servers.${server.name}.command=${toml(process.execPath)}`,
+    // The broker parks every write for the owner's approval itself, so codex
+    // approving the call is the same boundary the stdio servers get below.
+    '-c', `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
+    '-c', `mcp_servers.${server.name}.args=[${toml(BRIDGE_PATH)}]`,
+    '-c', `mcp_servers.${server.name}.env={${env.map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
+  ];
+};
+
 const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const flags = [];
   const forwardedEnv = {};
@@ -160,6 +205,17 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
   const mcpReadDirectories = [];
   for (const server of mcpServers || []) {
     const transport = typeof server?.transport === 'string' ? server.transport.trim().toLowerCase() : 'stdio';
+    if (server?.name && HTTP_TRANSPORTS.has(transport)
+      && isOurGrantBroker(server, { instanceUrl: ctx.instanceUrl })) {
+      const bridged = bridgeGrantBroker(server, ctx);
+      if (bridged) {
+        flags.push(...bridged);
+        // A public seat's MCP children run under its permission profile; the
+        // bridge imports node builtins only, so the file is all it reads.
+        if (ctx.publicSeat) mcpReadDirectories.push(BRIDGE_PATH);
+      }
+      continue;
+    }
     if (!server?.name || transport !== 'stdio'
       || !Array.isArray(server.command) || !server.command.length) continue;
     // TASK-174: the command that will EXECUTE — the warmed build from the seat's
