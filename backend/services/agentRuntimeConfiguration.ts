@@ -1,16 +1,40 @@
 import { Request, Response } from 'express';
 import { AgentInstallation } from '../models/AgentRegistry';
+import AgentCredential from '../models/AgentCredential';
 import { ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import { isSpawnCredential } from './spawnCredentialService';
 import { KERNEL_RUN_RUNTIME_TYPES, storedRuntimeType } from './configWriteGuard';
+import { runtimeControlRefusal } from './runtimeControlValidation';
 
-// A page-issued root key may change only its own BYO model controls. It never
-// becomes human auth, nor authority over MCP, sandbox, adapter or machine config.
+const SETTINGS_POINTER = "Change the model in the agent's Settings, then Model.";
+
+// F178: the seat key a daemon minted for a machine-bound agent. Auth has already
+// checked that the key is live, that its issuer is live and that the machine is
+// still its owner's. Here: the key is a seat root (not a per-turn spawn child),
+// it was issued by THIS machine's daemon for THIS owner, and the identity it
+// authenticates is bound to the same machine.
+const isMachineSeatKey = async (req: Request): Promise<boolean> => {
+  const credential = req.agentCredential;
+  const machineId = credential?.machineId;
+  if (!machineId || !credential?.parentId || req.agentUser?.botMetadata?.machineId !== machineId) return false;
+  return Boolean(await AgentCredential.exists({ _id: credential.parentId, kind: 'daemon', status: 'active',
+    machineId, ownerUserId: credential.ownerUserId }));
+};
+
+// A seat's own root key may change only that seat's BYO model controls: the
+// page-issued key of a listener, or (F178) the daemon-minted key of a
+// machine-bound seat. Either way it never becomes human auth, nor authority over
+// MCP, sandbox, adapter or machine config. Changing its own model on its owner's
+// provider is no more than the owner's Settings page already lets them do, and
+// the same machine-inventory check applies.
 export const patchAgentRuntimeConfiguration = async (req: Request, res: Response): Promise<Response> => {
   const credential = req.agentCredential;
-  if (!credential?.ownerUserId || credential.parentId || credential.machineId
-    || isSpawnCredential(credential) || req.agentUser?.botMetadata?.machineId) {
-    return res.status(403).json({ message: 'A page-issued BYO root key is required' });
+  if (!credential?.ownerUserId || isSpawnCredential(credential)) {
+    return res.status(403).json({ message: `This key can't change the agent's model. ${SETTINGS_POINTER}` });
+  }
+  const machineSeat = Boolean(credential.machineId || credential.parentId || req.agentUser?.botMetadata?.machineId);
+  if (machineSeat && !(await isMachineSeatKey(req))) {
+    return res.status(403).json({ message: `This key can't change the agent's model. ${SETTINGS_POINTER}` });
   }
   const body = req.body;
   if (!body || typeof body !== 'object' || Array.isArray(body)
@@ -37,6 +61,12 @@ export const patchAgentRuntimeConfiguration = async (req: Request, res: Response
   if (!rows.length) return res.status(403).json({ message: 'No owned BYO installation found' });
   if (rows.some((row) => KERNEL_RUN_RUNTIME_TYPES.has(storedRuntimeType(row.config)))) {
     return res.status(403).json({ message: 'Hosted model controls require an owner login' });
+  }
+  if (machineSeat) {
+    const refusal = await runtimeControlRefusal({ agentName, instanceId, ownerUserId: String(credential.ownerUserId),
+      config: { environment: { model: body.model, effort: body.effort } },
+      effectiveHarness: (rows[0].config as { runtime?: { adapter?: string } } | undefined)?.runtime?.adapter });
+    if (refusal) return res.status(422).json({ code: 'unsupported_runtime_control', message: refusal });
   }
   const updates: Record<string, string> = {};
   for (const key of ['model', 'effort']) {

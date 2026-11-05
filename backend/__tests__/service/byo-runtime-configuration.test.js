@@ -10,6 +10,7 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentCredential = require('../../models/AgentCredential');
+const Machine = require('../../models/Machine');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const tokenRoutes = require('../../routes/registry/agent-tokens');
 const runtimeRoutes = require('../../routes/agentsRuntime');
@@ -123,9 +124,95 @@ describe('page-issued key model configuration', () => {
     await AgentInstallation.updateOne({ _id: ownInstall._id }, { $set: { 'config.runtime.runtimeType': runtimeType } });
     expect((await patch({ model: 'new-model' })).status).toBe(403);
   });
-  it('refuses machine-managed identities', async () => {
+  it('refuses a page key once a machine manages the identity, pointing at Settings', async () => {
     await User.updateOne({ 'agentRuntimeTokens.tokenHash': hash(key) }, { $set: { 'botMetadata.machineId': 'machine-config' } });
-    expect((await patch({ model: 'new-model' })).status).toBe(403);
+    const response = await patch({ model: 'new-model' });
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/Settings, then Model/);
+    expect((await stored(ownInstall)).environment.model).toBe('old-model');
+  });
+
+  // F178: the daemon-minted key of a machine-bound seat may set that seat's own
+  // model, on its owner's machine, exactly as a page key may for a listener.
+  describe('machine-bound seat key', () => {
+    let daemon;
+    const bindKey = async ({ machineId = 'machine-config', botMachineId = machineId, parentId } = {}) => {
+      await AgentCredential.updateOne({ tokenHash: hash(key) },
+        { $set: { machineId, parentId: parentId === undefined ? daemon._id : parentId } });
+      await User.updateOne({ 'agentRuntimeTokens.tokenHash': hash(key) },
+        { $set: { 'botMetadata.machineId': botMachineId } });
+    };
+    beforeEach(async () => {
+      await Machine.deleteMany({});
+      await Machine.create({ ownerUserId: owner._id, machineId: 'machine-config', name: 'laptop',
+        registeredByDeviceTokenHash: null });
+      await Machine.create({ ownerUserId: other._id, machineId: 'machine-other', name: 'theirs',
+        registeredByDeviceTokenHash: null });
+      daemon = await AgentCredential.create({ tokenHash: hash('cm_daemon_config_test'), kind: 'daemon',
+        ownerUserId: owner._id, machineId: 'machine-config', scopes: [] });
+    });
+
+    it('sets its own seat model, through the actual CLI', async () => {
+      await bindKey();
+      const result = await command();
+      expect(result.stdout).toContain('Updated byo-config');
+      expect(await stored(ownInstall)).toMatchObject({ environment: { model: 'new-model', effort: 'high' },
+        runtime: { model: 'new-model', effort: 'high', host: 'byo' } });
+      expect((await stored(foreignInstall)).environment.model).toBe('foreign-model');
+    });
+
+    it('refuses another seat', async () => {
+      await bindKey();
+      const response = await request(base).patch('/api/agents/runtime/configuration')
+        .set('Authorization', `Bearer ${key}`).send({ agentName: 'foreign-config', instanceId: 'default', model: 'new-model' });
+      expect(response.status).toBe(403);
+      expect((await stored(foreignInstall)).environment.model).toBe('foreign-model');
+    });
+
+    it('refuses a key for a seat bound to a different machine', async () => {
+      await bindKey({ botMachineId: 'machine-elsewhere' });
+      expect((await patch({ model: 'new-model' })).status).toBe(403);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    });
+
+    it('refuses a machine key whose issuer is not that machine\'s daemon', async () => {
+      const runtimeParent = await AgentCredential.create({ tokenHash: hash('cm_agent_not_a_daemon'), kind: 'runtime',
+        ownerUserId: owner._id, machineId: 'machine-config', scopes: [] });
+      await bindKey({ parentId: runtimeParent._id });
+      expect((await patch({ model: 'new-model' })).status).toBe(403);
+      await bindKey({ parentId: null });
+      expect((await patch({ model: 'new-model' })).status).toBe(403);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    });
+
+    it('refuses a daemon issuer from another machine', async () => {
+      const foreignDaemon = await AgentCredential.create({ tokenHash: hash('cm_daemon_foreign'), kind: 'daemon',
+        ownerUserId: owner._id, machineId: 'machine-elsewhere', scopes: [] });
+      await bindKey({ parentId: foreignDaemon._id });
+      expect((await patch({ model: 'new-model' })).status).toBe(403);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    });
+
+    it('refuses a spawn child of the machine key', async () => {
+      await bindKey();
+      const root = await AgentCredential.findOne({ tokenHash: hash(key) });
+      const childKey = 'cm_agent_machine_child';
+      await AgentCredential.create({ tokenHash: hash(childKey), kind: 'runtime', ownerUserId: owner._id,
+        agentUserId: root.agentUserId, parentId: root._id, machineId: 'machine-config', scopes: ['spawn'] });
+      expect((await patch({ model: 'new-model' }, childKey)).status).toBe(403);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    });
+
+    it('checks the model against what the machine reports, as Settings does', async () => {
+      await bindKey();
+      await AgentInstallation.updateOne({ _id: ownInstall._id }, { $set: { 'config.runtime.adapter': 'claude' } });
+      await Machine.updateOne({ machineId: 'machine-config' }, { $set: { inventoryAt: new Date(),
+        runtimeInventory: [{ harness: 'claude', installed: true, models: ['claude-haiku-5-5'], efforts: ['low'] }] } });
+      expect((await patch({ model: 'claude-opus-5-5' })).status).toBe(422);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+      expect((await patch({ model: 'claude-haiku-5-5' })).status).toBe(200);
+      expect((await stored(ownInstall)).environment.model).toBe('claude-haiku-5-5');
+    });
   });
   it('requires owner login for adapter edits', async () => {
     await expect(command('byo-config', ['--adapter', 'claude'])).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('Not logged in') });
