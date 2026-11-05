@@ -38,7 +38,7 @@ const PERMANENT_SLACK_ERRORS: { [error: string]: string } = {
 };
 
 // Discord's webhook send (F132) reports failure as an HTTP status carrying a
-// JSON error `code`. These four mean the channel cannot be posted to until a
+// JSON error `code`. These codes mean the channel cannot be posted to until a
 // person acts; everything else (429, 5xx, a 400 on content) is transient or
 // content and says nothing about the binding.
 const DISCORD_CHANNEL_GONE_REASON = 'Discord stopped delivering: this channel no longer exists.';
@@ -49,6 +49,7 @@ const DISCORD_NO_PERMISSION_REASON = 'Discord stopped delivering: the bot is not
 const PERMANENT_DISCORD_CODES: { [code: number]: string } = {
   10003: DISCORD_CHANNEL_GONE_REASON, // Unknown Channel
   10015: DISCORD_WEBHOOK_GONE_REASON, // Unknown Webhook
+  50027: DISCORD_WEBHOOK_GONE_REASON, // Invalid Webhook Token (401): the webhook's token was revoked
   50001: DISCORD_NO_ACCESS_REASON, // Missing Access
   50013: DISCORD_NO_PERMISSION_REASON, // Missing Permissions
 };

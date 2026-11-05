@@ -20,7 +20,7 @@ const Integration = require('../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const axios = require('axios');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { isGatedPodTarget } = require('./connectorRelayPolicy');
+const { isGatedPodTarget, isListedPodMember } = require('./connectorRelayPolicy');
 import { resolveDiscordWebhookUrl } from '../utils/discordWebhookUrl';
 import {
   claimInboundMessage,
@@ -117,6 +117,8 @@ const isInboundRelayableIntegration = (
 
 const LIVE_RELAY_NEEDS_PROOF = 'Live relay on a Discord channel needs the Discord account of the person who '
   + 'added the bot, which the install proves. Add the bot again from Commonly to link it.';
+const LIVE_RELAY_MEMBERS_ONLY = 'Live relay on a Discord channel needs the person who added the bot to still be '
+  + 'a member of this pod: the channel is theirs, and the pod\'s agent messages would go to it.';
 const LIVE_RELAY_INSTALLER_ONLY = 'Only the person who added the bot can turn on live relay for this channel: '
   + 'it posts their own Discord messages into the pod as them, and the pod\'s agent messages into the channel.';
 
@@ -136,10 +138,13 @@ export const discordInboundAdapter: InboundRelayAdapter<DiscordIntegrationDoc, D
       && String(linkedUserId) === idOf(integration.createdBy);
   },
   // `linkedUserId` is stamped from whoever turns live relay on, so that person
-  // must be the one whose Discord id the row holds.
+  // must be the one whose Discord id the row holds — and, since the channel is
+  // theirs and shared, still a listed member of the pod whose agent lines it
+  // would carry (F132 review). A caller that hands no pod is refused: fail closed.
   liveRelayRefusal: (row: LiveRelayRow, requesterId: string) => {
     if (!row.config?.discordUserId) return LIVE_RELAY_NEEDS_PROOF;
     if (!requesterId || idOf(row.createdBy) !== String(requesterId)) return LIVE_RELAY_INSTALLER_ONLY;
+    if (!row.pod || !isListedPodMember(row.pod, requesterId)) return LIVE_RELAY_MEMBERS_ONLY;
     return null;
   },
 };
@@ -295,8 +300,9 @@ const findLiveIntegration = async (podId: string): Promise<DiscordIntegrationDoc
 );
 
 // Bold and the other inline marks would let a display or pod name restyle the
-// prefix; a backslash makes each one literal.
-const escapeDiscordMarkdown = (value: string): string => value.replace(/([\\*_~`|>])/g, '\\$1');
+// prefix, and brackets and parentheses would let `x](https://evil) [y` close
+// the tag and open a masked link; a backslash makes each one literal.
+const escapeDiscordMarkdown = (value: string): string => value.replace(/([\\*_~`|>[\]()])/g, '\\$1');
 
 // `allowed_mentions` already stops every ping. This also keeps the words from
 // reading as one: a zero-width space after the @ renders the same and is no
@@ -312,21 +318,24 @@ const fitWithin = (value: string, limit: number): string => {
   return `${cut}…`;
 };
 
-const podNameForTag = async (podId: string): Promise<string> => {
+// The pod read the send needs twice: its name for the tag, and its listed
+// members, because the installer must still be one (F132 review). A failed
+// read returns null and the send fails closed — the line stays in the pod.
+const podForSend = async (podId: string): Promise<{ name?: string; members?: unknown[] } | null> => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const Pod = require('../models/Pod');
-    const pod = await Pod.findById(podId).select('name').lean();
-    return String(pod?.name || podId);
+    return await Pod.findById(podId).select('name members').lean();
   } catch (error) {
-    console.warn(`${LOG} pod name lookup failed, tagging with the id:`, (error as Error).message);
-    return podId;
+    console.warn(`${LOG} pod lookup failed, line not sent:`, (error as Error).message);
+    return null;
   }
 };
 
 /** `[Pod] **Agent**: text`, the shape the Slack and Telegram lines take, in 2000 characters. */
 export const renderDiscordAgentLine = (opts: { podName: string; name: string; content: string }): string => {
-  const prefix = `[${escapeDiscordMarkdown(opts.podName)}] **${escapeDiscordMarkdown(opts.name)}**: `;
+  const tag = defuseMassMentions(escapeDiscordMarkdown(opts.podName));
+  const prefix = `[${tag}] **${defuseMassMentions(escapeDiscordMarkdown(opts.name))}**: `;
   return fitWithin(prefix + defuseMassMentions(String(opts.content || '')), DISCORD_CONTENT_LIMIT);
 };
 
@@ -363,8 +372,9 @@ export interface DiscordDeliveryResult {
   code?: number;
   messageId?: string;
   retryAfterMs?: number;
-  /** Not sent: the webhook's lane is still cooling down from a 429. */
+  /** Not sent: the webhook's lane is still cooling down from a 429, or its queue is full. */
   rateLimited?: boolean;
+  queueFull?: boolean;
 }
 
 /**
@@ -376,10 +386,13 @@ export interface DiscordDeliveryResult {
  * Per process: each backend replica paces its own sends, and Discord's 429 is
  * the backstop between them.
  */
-interface WebhookLane { tail: Promise<unknown>; nextAt: number; coolUntil: number }
+interface WebhookLane { tail: Promise<unknown>; nextAt: number; coolUntil: number; depth: number }
 export const discordWebhookPacing = {
   minIntervalMs: 400,
   maxRetryWaitMs: 5_000,
+  // Lines waiting on one webhook, the one in flight included. A burst beyond
+  // this is dropped and logged rather than queued without bound.
+  maxQueueDepth: 20,
   defaultRetryAfterMs: 1_000,
   now: (): number => Date.now(),
   sleep: (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); }),
@@ -423,10 +436,16 @@ const sendThroughLane = (
   const pacing = discordWebhookPacing;
   let lane = pacing.lanes.get(laneKey);
   if (!lane) {
-    lane = { tail: Promise.resolve(), nextAt: 0, coolUntil: 0 };
+    lane = { tail: Promise.resolve(), nextAt: 0, coolUntil: 0, depth: 0 };
     pacing.lanes.set(laneKey, lane);
   }
   const current = lane;
+  if (current.depth >= pacing.maxQueueDepth) {
+    return Promise.resolve({
+      provider: 'discord', delivered: false, httpStatus: 429, rateLimited: true, queueFull: true,
+    });
+  }
+  current.depth += 1;
   const run = async (): Promise<DiscordDeliveryResult> => {
     if (pacing.now() < current.coolUntil) {
       return {
@@ -451,7 +470,7 @@ const sendThroughLane = (
     }
     return result;
   };
-  const next = current.tail.then(run);
+  const next = current.tail.then(run).finally(() => { current.depth -= 1; });
   current.tail = next.catch(() => undefined);
   return next;
 };
@@ -497,10 +516,18 @@ export const discordRelayAdapter: ChatRelayAdapter<DiscordIntegrationDoc> = {
       console.warn(`${LOG} outbound skipped integration=${String(integration._id)}: no Discord webhook on the row`);
       return null;
     }
+    const pod = await podForSend(podId);
+    if (!pod) return null;
+    // The channel is the installer's and shared with their guild: once they
+    // leave the pod, its agent lines stop going there (F132 review).
+    if (!isListedPodMember(pod, integration.createdBy)) {
+      console.warn(`${LOG} outbound skipped integration=${String(integration._id)}: the installer left the pod`);
+      return null;
+    }
     const name = displayName || agentUsername;
     const text = card
       ? renderDiscordDecisionCard({ card, name, link })
-      : renderDiscordAgentLine({ podName: await podNameForTag(podId), name, content });
+      : renderDiscordAgentLine({ podName: String(pod.name || podId), name, content });
     const result = await sendThroughLane(String(integration._id), withWait(webhookUrl), {
       content: text,
       // Agent text goes to everyone in the guild: no @everyone, @here, role or
@@ -512,7 +539,8 @@ export const discordRelayAdapter: ChatRelayAdapter<DiscordIntegrationDoc> = {
   deliveryFailureError: (result) => {
     const r = (result || {}) as DiscordDeliveryResult;
     if (r.rateLimited) {
-      return new Error(`webhook lane cooling down after a 429 (${r.retryAfterMs}ms left); line dropped`);
+      const why = r.queueFull ? 'queue full' : `cooling down after a 429, ${r.retryAfterMs}ms left`;
+      return new Error(`webhook lane rate-limited (${why}); line dropped`);
     }
     const code = r.code !== undefined ? ` code ${r.code}` : '';
     return new Error(`webhook send failed: HTTP ${String(r.httpStatus)}${code}`);

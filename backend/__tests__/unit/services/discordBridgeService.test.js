@@ -388,9 +388,22 @@ describe('Discord inbound live relay (F131)', () => {
     });
 
     test('refuses anyone but the installer, whose id linkedUserId would be stamped from', () => {
-      const proven = { config: { discordUserId: INSTALLER_DISCORD }, createdBy: { toString: () => INSTALLER } };
+      const proven = {
+        config: { discordUserId: INSTALLER_DISCORD },
+        createdBy: { toString: () => INSTALLER },
+        pod: { members: [INSTALLER, 'pod-creator'] },
+      };
       expect(discordInboundAdapter.liveRelayRefusal(proven, 'pod-creator')).toMatch(/Only the person who added the bot/);
       expect(discordInboundAdapter.liveRelayRefusal(proven, INSTALLER)).toBeNull();
+    });
+
+    test('refuses an installer who is no longer a listed member of the pod', () => {
+      const left = {
+        config: { discordUserId: INSTALLER_DISCORD },
+        createdBy: { toString: () => INSTALLER },
+        pod: { members: ['someone-else'] },
+      };
+      expect(discordInboundAdapter.liveRelayRefusal(left, INSTALLER)).toMatch(/member of this pod/);
     });
   });
 });

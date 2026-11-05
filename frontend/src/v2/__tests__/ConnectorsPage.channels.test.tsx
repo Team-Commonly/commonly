@@ -11,7 +11,7 @@ import en from '../../i18n/locales/en.json';
 import i18n, { i18nReady } from '../../i18n';
 import {
   axios, authValue, mockApi, renderPage, renderWithRoutes, pageReady, tileNode, findTile, clickTile,
-  openDrawer, openPopover, findDrawer, expandOff,
+  openDrawer, openPopover, findDrawer, expandOff, adminAuth,
 } from '../__testkit__/connectorsKit';
 
 jest.mock('axios', () => require('../__testkit__/axiosMock').axiosFactory());
@@ -1715,7 +1715,7 @@ const ConnectorsPageForRoutes = () => {
 // the server stamps `discordUserId` on the creator's row and withholds it from
 // everyone else's view. The copy says who reads the channel.
 describe('Connectors page: Discord live relay (F132)', () => {
-  const discordRow = (config = {}) => ({
+  const discordRow = (config = {}, over = {}) => ({
     _id: 'i-discord',
     type: 'discord',
     status: 'connected',
@@ -1723,11 +1723,34 @@ describe('Connectors page: Discord live relay (F132)', () => {
     updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
     config: { serverId: '111111111111111111', channelId: '222222222222222222', ...config },
     podId: { _id: 'p2', name: 'Ops' },
+    createdBy: 'u1',
+    ...over,
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
     window.history.replaceState({}, '', '/v2/connectors');
+  });
+
+  // Review finding 2: the server withholds `discordUserId` from everyone but the
+  // creator, so its absence on someone else's row says nothing about proof.
+  it('shows a viewer who is not the creator neither the switch nor the add-the-bot-again note', async () => {
+    mockGets([discordRow({ liveRelay: true, relayAllAgentMessages: true }, { createdBy: 'u2' })]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
+  });
+
+  it('shows an admin who is not the creator no switch, even though the row reaches them whole', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false }, { createdBy: { _id: 'u2' } })]);
+    renderPage({ auth: adminAuth() });
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
   });
 
   afterEach(() => jest.restoreAllMocks());

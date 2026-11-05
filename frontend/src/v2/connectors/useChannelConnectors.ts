@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod } from '../hooks/useV2Pods';
 import type { MarkName } from '../icons/glyphs';
@@ -47,6 +48,8 @@ import type {
 export const useChannelConnectors = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [hostedCatalog, setHostedCatalog] = useState<CatalogEntry[] | null>(null);
@@ -741,7 +744,7 @@ export const useChannelConnectors = () => {
         ? (mirror ? mirrorLabel : attentionLabel)
         : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
-        action: (isTelegram || isSlack || discordRelayReady(connector)) ? 'manage' : null,
+        action: (isTelegram || isSlack || discordRelayReady(connector, viewerId)) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
         detail: '',
         mark: {
@@ -1072,6 +1075,7 @@ export const useChannelConnectors = () => {
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
   return {
+    viewerId,
     connectors,
     setConnectors,
     catalog,

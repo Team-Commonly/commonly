@@ -278,6 +278,11 @@ describe('Discord classification (F132)', () => {
       .toBe(deliveryFailures.DISCORD_NO_PERMISSION_REASON);
   });
 
+  it('reads a revoked webhook token (401, 50027) as the webhook being gone', () => {
+    expect(deliveryFailures.classifyDiscordDeliveryFailure(discordFailure(401, 50027)))
+      .toBe(deliveryFailures.DISCORD_WEBHOOK_GONE_REASON);
+  });
+
   it('never flips for a rate limit, a server error, content, or a success', () => {
     [
       discordFailure(429, 0, { retryAfterMs: 1200 }),

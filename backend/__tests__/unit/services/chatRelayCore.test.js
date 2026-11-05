@@ -376,9 +376,15 @@ describe('inbound: only a proven sender reaches the write (F131)', () => {
   });
 
   test('Discord’s rule is its own declaration: a proven installer, not a chat type', () => {
-    expect(liveRelayRefusalFor('discord', { config: {}, createdBy: 'u' }, 'u')).toMatch(/Discord account/);
-    expect(liveRelayRefusalFor('discord', { config: { discordUserId: '345678901234567890' }, createdBy: 'u' }, 'u')).toBeNull();
-    expect(liveRelayRefusalFor('discord', { config: { discordUserId: '345678901234567890' }, createdBy: 'u' }, 'v')).toMatch(/Only the person/);
+    const pod = { members: ['u', 'v'] };
+    const proven = { discordUserId: '345678901234567890' };
+    expect(liveRelayRefusalFor('discord', { config: {}, createdBy: 'u', pod }, 'u')).toMatch(/Discord account/);
+    expect(liveRelayRefusalFor('discord', { config: proven, createdBy: 'u', pod }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('discord', { config: proven, createdBy: 'u', pod }, 'v')).toMatch(/Only the person/);
+    // Review finding 1: the installer must still be a listed member of the pod.
+    expect(liveRelayRefusalFor('discord', { config: proven, createdBy: 'u', pod: { members: ['v'] } }, 'u'))
+      .toMatch(/member of this pod/);
+    expect(liveRelayRefusalFor('discord', { config: proven, createdBy: 'u' }, 'u')).toMatch(/member of this pod/);
   });
 
   test('an inherited property name is not a platform', () => {

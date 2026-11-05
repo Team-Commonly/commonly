@@ -87,7 +87,7 @@ beforeEach(() => {
   discordWebhookPacing.reset();
   sleeps = [];
   discordWebhookPacing.sleep = jest.fn(async (ms) => { sleeps.push(ms); });
-  Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ name: 'Launch' }) }) });
+  Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ name: 'Launch', members: [CREATOR] }) }) });
   connectorSecrets.get.mockResolvedValue(WEBHOOK_URL);
   axios.post.mockResolvedValue(ok());
   Integration.findByIdAndUpdate.mockResolvedValue({});
@@ -141,6 +141,27 @@ describe('who it sends for', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
+  // Review finding 1: the channel is shared and the installer controls it, so
+  // an installer who left the pod stops receiving the pod's agent lines there.
+  test('sends nothing once the installer is no longer a listed pod member', async () => {
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: async () => ({ name: 'Launch', members: ['64b7f0c2a1b2c3d4e5f60799'] }) }),
+    });
+    await relay(discordRow());
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('sends nothing when the pod cannot be read (fails closed)', async () => {
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => { throw new Error('mongo down'); } }) });
+    await relay(discordRow());
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('a current member installer is unchanged', async () => {
+    await relay(discordRow());
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
   test('sends nothing when the stored webhook URL is not a Discord webhook', async () => {
     connectorSecrets.get.mockResolvedValue('https://example.com/collect');
     await relay(discordRow());
@@ -178,6 +199,19 @@ describe('content', () => {
   test('the display name is markdown-escaped so an agent cannot restyle the prefix', async () => {
     await relay(discordRow(), { displayName: '**Boss**' });
     expect(sentBody().content.startsWith('[Launch] **\\*\\*Boss\\*\\***: ')).toBe(true);
+  });
+
+  // Review finding 4: a pod name is user-chosen; it must not become a masked
+  // link or a mass mention in the prefix.
+  test('the pod name cannot forge a link or a mass mention in the prefix', async () => {
+    Pod.findById.mockReturnValue({
+      select: () => ({ lean: async () => ({ name: 'x](https://evil) [y @everyone', members: [CREATOR] }) }),
+    });
+    await relay(discordRow());
+    const { content } = sentBody();
+    expect(content.startsWith('[x\\]\\(https://evil\\) \\[y @\u200beveryone] **Kai**: ')).toBe(true);
+    expect(content).not.toMatch(/(^|[^\\])\]\(https:\/\/evil/);
+    expect(content).not.toMatch(/@everyone/);
   });
 
   test('a decision card renders inside the limit and links back to the pod', async () => {
@@ -233,6 +267,28 @@ describe('failures', () => {
     await relay(row, { content: 'second line' });
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  // Review finding 5: a burst cannot grow the lane's queue without bound.
+  test('a lane holds at most maxQueueDepth lines; the rest are dropped and logged', async () => {
+    let release;
+    axios.post.mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(ok()); }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const row = discordRow();
+      const depth = discordWebhookPacing.maxQueueDepth;
+      const sends = Array.from({ length: depth + 5 }, (_unused, index) => relay(row, { content: `line ${index}` }));
+      await new Promise((resolve) => { setImmediate(resolve); });
+      while (!release) await new Promise((resolve) => { setImmediate(resolve); }); // eslint-disable-line no-await-in-loop
+      release();
+      await Promise.all(sends);
+      expect(axios.post).toHaveBeenCalledTimes(depth);
+      const dropped = warn.mock.calls.filter(([line]) => /line dropped/.test(String(line)));
+      expect(dropped).toHaveLength(5);
+      expect(String(dropped[0][0])).toMatch(/rate-limited/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('back-to-back lines to one webhook are paced at about 5 per 2 seconds', async () => {

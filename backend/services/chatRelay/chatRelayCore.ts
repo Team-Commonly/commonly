@@ -324,6 +324,8 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
 export interface LiveRelayRow {
   config?: Record<string, unknown> | null;
   createdBy?: unknown;
+  /** The pod the row serves, for a platform whose rule reads its members (Discord). */
+  pod?: { members?: unknown[] } | null;
 }
 
 /**
