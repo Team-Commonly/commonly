@@ -29,6 +29,8 @@
  * agent-config routes) applies it too, admins exempt.
  */
 
+import { installationIdentityFilter } from './agentInstallationIdentity';
+
 export type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
 
 export type OwnershipCheck =
@@ -66,7 +68,9 @@ const identityRows = async (agentName: string, instanceId: string, reading: Reco
   const { AgentInstallation } = require('../models/AgentRegistry');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Pod = require('../models/Pod');
-  const installations: RuntimeInstallation[] = await AgentInstallation.find({ agentName, instanceId, ...reading })
+  const installations: RuntimeInstallation[] = await AgentInstallation.find({
+    ...installationIdentityFilter(agentName, instanceId), ...reading,
+  })
     .collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
   const dmPods = await Pod.find({
     _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) },
@@ -125,7 +129,9 @@ export const identityHoldsRuntimeToken = async (agentName: string, instanceId: s
     $or: [{ 'agentRuntimeTokens.0': { $exists: true } }, { apiTokenHash: { $type: 'string' } }],
   });
   if (botHolds) return true;
-  const sibling = await AgentInstallation.findOne({ agentName, instanceId, 'runtimeTokens.0': { $exists: true } })
+  const sibling = await AgentInstallation.findOne({
+    ...installationIdentityFilter(agentName, instanceId), 'runtimeTokens.0': { $exists: true },
+  })
     .collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   return Boolean(sibling);
 };
@@ -138,9 +144,36 @@ export const RUNTIME_TOKEN_HELD = {
 } as const;
 
 /**
+ * RUNTIME_TOKEN_HELD for a row that already exists, where a different name is
+ * no answer. It names what this caller can do: the revoke route if they pass
+ * its rule (DELETE .../tokens, routes/registry/agent-tokens.ts), who can if not.
+ */
+export const heldTokenOnRowRefusal = ({ podId, agentName, instanceId, mayRevoke }: {
+  podId: string; agentName: string; instanceId: string; mayRevoke: boolean;
+}) => {
+  const held = 'This agent holds a token, so it can\'t run on Commonly as well.';
+  if (!mayRevoke) {
+    return {
+      code: RUNTIME_TOKEN_HELD.code,
+      error: `${held} Only its sole installer or an instance admin can revoke that token.`,
+    };
+  }
+  return {
+    code: RUNTIME_TOKEN_HELD.code,
+    error: `${held} Revoke its tokens, which disconnects anything using them, then set it active again.`,
+    revoke: {
+      method: 'DELETE',
+      path: `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}`
+        + `/tokens?instanceId=${encodeURIComponent(instanceId)}`,
+    },
+  };
+};
+
+/**
  * Nothing active and something uninstalled: the install paths revoke what such
- * an identity left behind (revokeRuntimeTokensAfterLastUninstall), and no token
- * route can reach it first, because each one needs an active row.
+ * an identity left behind (revokeRuntimeTokensAfterLastUninstall). The per-token
+ * routes can't reach it first, since each needs an active row; the whole-identity
+ * revoke can, on a paused one, which only does the same thing sooner.
  */
 export const identityIsDormant = async (agentName: string, instanceId: string): Promise<boolean> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -151,7 +184,9 @@ export const identityIsDormant = async (agentName: string, instanceId: string): 
   return Boolean(await statusRow('uninstalled')) && !(await statusRow('active'));
 };
 
-const RESTORED_FIELDS = ['status', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite', 'installedBy'];
+const RESTORED_FIELDS = [
+  'status', 'staleSince', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite', 'installedBy',
+];
 
 /**
  * Undo an installation write, as the issuer takes a token back after its own

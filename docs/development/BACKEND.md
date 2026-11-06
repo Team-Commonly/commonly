@@ -221,6 +221,7 @@ Agent registry endpoints (pod-native installs):
 | GET    | /api/registry/pods/:podId/agents/:name/user-token      | Get designated bot user token metadata |
 | POST   | /api/registry/pods/:podId/agents/:name/user-token      | Issue designated bot user token |
 | DELETE | /api/registry/pods/:podId/agents/:name/user-token      | Revoke designated bot user token |
+| DELETE | /api/registry/pods/:podId/agents/:name/tokens          | Revoke every token the identity holds; works on a paused, stale or error row (sole installer, paused rows counted, or admin). `runtime_token_held` from PATCH points here |
 | POST   | /api/registry/pods/:podId/agents/:name/provision       | Provision local runtime config |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-status  | Docker runtime status |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-start   | Start docker runtime |

@@ -196,17 +196,12 @@ const revokeAgentUserToken = async (agentUserId: unknown): Promise<void> => {
   });
 };
 
-/** A portable identity keeps its User and memory, but no bearer after its last uninstall. */
-export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, instanceId: string): Promise<void> => {
-  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-  const { AgentInstallation } = require('../../models/AgentRegistry');
-  const resolvedType = AgentIdentityService.resolveAgentType(agentName);
-  const names = Array.from(new Set([agentName.toLowerCase(), resolvedType]));
-  const activeCount = await AgentInstallation.countDocuments({
-    agentName: { $in: names }, instanceId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION);
-  if (activeCount) return;
+const identityNames = (agentName: string): string[] => AgentIdentityService.identityNames(agentName);
 
+/** Every bearer an identity holds. Its User, memory and installations stay. */
+export const revokeEveryIdentityToken = async (agentName: string, instanceId: string): Promise<void> => {
+  const resolvedType = AgentIdentityService.resolveAgentType(agentName);
+  const names = identityNames(agentName);
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../../models/User');
   const username = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
@@ -218,6 +213,17 @@ export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, i
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const agentWebSocketService = require('../../services/agentWebSocketService');
   names.forEach((name) => agentWebSocketService.disconnectIdentity(name, instanceId));
+};
+
+/** A portable identity keeps its User and memory, but no bearer after its last uninstall. */
+export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, instanceId: string): Promise<void> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { AgentInstallation } = require('../../models/AgentRegistry');
+  const activeCount = await AgentInstallation.countDocuments({
+    agentName: { $in: identityNames(agentName) }, instanceId, status: 'active',
+  }).collation(RUNTIME_INSTALLATION_COLLATION);
+  if (activeCount) return;
+  await revokeEveryIdentityToken(agentName, instanceId);
 };
 
 /**
@@ -273,7 +279,7 @@ const runsInProcess = async (agentUser: any, installation: any): Promise<boolean
   // Every row that isn't uninstalled.
   return Boolean(await AgentInstallation.exists({
     status: { $ne: 'uninstalled' },
-    $and: [{ $or: pairs }, IN_PROCESS_RUNTIME],
+    $and: [{ $or: pairs.map(({ agentName, instanceId }) => installationIdentityFilter(agentName, instanceId)) }, IN_PROCESS_RUNTIME],
   }, { collation: RUNTIME_INSTALLATION_COLLATION }));
 };
 
@@ -515,6 +521,7 @@ module.exports = {
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   revokeRuntimeTokensAfterLastUninstall,
+  revokeEveryIdentityToken,
   revokeAgentUserToken,
   issueRuntimeTokenForAgent,
   InProcessAgentTokenRefused,

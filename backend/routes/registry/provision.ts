@@ -493,6 +493,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       agentUsername: agentUser.username,
     });
   } catch (error: unknown) {
+    if ((error as { code?: string })?.code === 'in_process_agent_no_token') {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: (error as Error).message });
+    }
     console.error('Error provisioning agent runtime:', error);
     if ((error as any).status) {
       return res.status((error as any).status).json({ error: (error as Error).message });
