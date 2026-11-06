@@ -40,6 +40,8 @@ const SKIPPED = {
   // away from, so they are never a target.
   'chat-trace-before': 'before shot, not a target',
   'run-trace-before': 'before shot, not a target',
+  // Real-account cards the team frame doesn't draw. No target settles these, so the team frame stays the score.
+  'team-states': 'states of the team frame, not a target',
 };
 // Surfaces with a route in prod() below. byo-handoff can't be captured on prod: reaching it issues
 // a real key. The first-run dialog is a latch-gated overlay, and the Scout welcome only exists in a
