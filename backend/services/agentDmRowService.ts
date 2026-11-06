@@ -32,7 +32,7 @@ export const retireDmRowsWithAgent = async (
     const rows: any[] = await AgentInstallation.find({
       ...installationIdentityFilter(lower, String(instanceId || 'default').toLowerCase()),
       agentName: { $in: [...new Set([lower, type])] },
-      status: 'active',
+      status: { $in: ['active', 'paused'] },
     }).collation(IDENTITY_COLLATION).select('podId config.runtime').lean();
     if (!rows.length || rows.some((row) => isHostedInstallation(row))) return 0;
 

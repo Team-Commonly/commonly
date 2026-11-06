@@ -5,6 +5,7 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import {
   AGENT_ROOM_AUTO_JOIN_SOURCE, isHostedInstallation, resolveHostedOwner,
 } from './hostedRuntimeService';
+import { identityIsPaused } from './runtimeIdentityOwnership';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
@@ -20,10 +21,11 @@ export const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
 export const resolveInstallInheritance = async (
   agentName: string,
   instanceId: string,
+  status: 'active' | 'paused' = 'active',
 ): Promise<Record<string, unknown> | null> => {
   try {
     const sibling = await AgentInstallation.findOne({
-      agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $exists: true },
+      agentName, instanceId, status, 'config.runtime.runtimeType': { $exists: true },
     }).sort({ createdAt: -1 }).lean() as { config?: unknown } | null;
     const raw = sibling?.config as { toObject?: () => Record<string, unknown> } | Record<string, unknown> | Map<string, unknown> | undefined;
     if (!raw) return null;
@@ -363,7 +365,10 @@ class DMService {
         // hosted Scout DM went silent this way (2026-08-28 .. 09-02: two
         // strangers, one smoke). Copy runtime from the agent's existing
         // active install; the room is a projection of the same agent.
-        const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default');
+        // While the agent is paused the room starts paused too, and takes a
+        // paused row's runtime so resuming it doesn't leave it silent.
+        const paused = await identityIsPaused(agentName.toLowerCase(), instanceId || 'default');
+        const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default', paused ? 'paused' : 'active');
         // The person in a DM with a hosted agent is a guest unless they own
         // it. `installedBy` is what makes someone an owner, for the cap, for
         // starting and stopping it and for the line its turns draw on, so this
@@ -391,6 +396,12 @@ class DMService {
           // the pod name above. NOT `${agentName} (${instanceId})`.
           displayName: label,
         });
+        if (paused) {
+          await AgentInstallation.updateOne(
+            { agentName: agentName.toLowerCase(), podId: roomPod._id, instanceId: instanceId || 'default' },
+            { $set: { status: 'paused' } },
+          );
+        }
       } catch (installErr) {
         console.error(
           `[dm-service] AgentInstallation.install failed for agent-room pod=${roomPod._id}:`,

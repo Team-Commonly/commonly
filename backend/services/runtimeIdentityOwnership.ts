@@ -324,6 +324,63 @@ export const relabelIdentityDmRows = async (
   return dmRows.map((row) => row.podId);
 };
 
+/**
+ * Pause or resume an identity's DM rows, whoever opened them, and say which pods
+ * those are. The status write only reaches rows its caller installed, and a
+ * paused agent should go quiet in a guest's DM as well. Only a running or paused
+ * row moves. A resume applies what a row of its own would meet: it doesn't start
+ * an in-process row beside a token, or one a grant now keeps out of its pod.
+ * The pods come from the rows now at `status`, so a retry after a failed profile
+ * write catches up, and a row retired meanwhile stays out.
+ */
+export const setIdentityDmRowsStatus = async (
+  agentName: string, instanceId: string, status: 'active' | 'paused',
+): Promise<unknown[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { configRunsInProcess, hostedEngineInEffect } = require('./hostedEngine');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { assertAgentRuntimeMayJoinPod, runtimeTypeFromConfig } = require('./outsiderGrantAgentJoinPolicy');
+  const { installations, dmPodTypes } = await identityRows(agentName, instanceId, KEPT_ROWS);
+  const rowIds = installations.filter((installation) => dmPodTypes.has(String(installation.podId))).map((row) => row._id);
+  const from = status === 'paused' ? 'active' : 'paused';
+  const moving: Array<{ _id: unknown; podId: unknown; config?: unknown }> = await AgentInstallation.find({
+    _id: { $in: rowIds }, status: from,
+  }).select('podId config').lean();
+  const tokenHeld = status === 'active' && moving.length
+    ? await identityHoldsRuntimeToken(agentName, instanceId)
+    : false;
+  const mayResume = async (row: { podId: unknown; config?: unknown }): Promise<boolean> => {
+    if (tokenHeld && configRunsInProcess(row.config)) return false;
+    try {
+      await assertAgentRuntimeMayJoinPod(row.podId, runtimeTypeFromConfig(row.config), hostedEngineInEffect({ config: row.config }));
+      return true;
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'outsider_grant_non_native_agent_join') return false;
+      throw error;
+    }
+  };
+  const allowed = status === 'active' ? await Promise.all(moving.map(mayResume)) : moving.map(() => true);
+  const dmRows = moving.filter((_row, index) => allowed[index]);
+  if (dmRows.length) {
+    await AgentInstallation.updateMany({ _id: { $in: dmRows.map((row) => row._id) }, status: from }, { $set: { status } });
+  }
+  const settled: Array<{ podId: unknown }> = await AgentInstallation.find({ _id: { $in: rowIds }, status: { $eq: status } })
+    .select('podId').lean();
+  return settled.map((row) => row.podId);
+};
+
+/** Paused and nothing running: a DM opened now shouldn't be what wakes the agent. */
+export const identityIsPaused = async (agentName: string, instanceId: string): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const statusRow = (status: string) => AgentInstallation.exists(
+    { ...installationIdentityFilter(agentName, instanceId), status }, { collation: RUNTIME_INSTALLATION_COLLATION },
+  );
+  return Boolean(await statusRow('paused')) && !(await statusRow('active'));
+};
+
 /** Whoever installed the identity in a pod that isn't a DM, for recording a key an admin finds. */
 export const standingInstaller = async (agentName: string, instanceId: string): Promise<unknown> => {
   const { installations, dmPodTypes } = await identityRows(agentName, instanceId, PLACED_ROWS);

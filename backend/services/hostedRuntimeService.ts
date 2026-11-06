@@ -262,7 +262,7 @@ export const retireHostedRoomRows = async (
 ): Promise<number> => {
   try {
     if (!ownerId) return 0;
-    const rows = await identityRows(agentName, instanceId, { installedBy: ownerId, status: 'active' })
+    const rows = await identityRows(agentName, instanceId, { installedBy: ownerId, status: { $in: ['active', 'paused'] } })
       .select('config.runtime config.autoJoinSource').lean();
     const hosted = (Array.isArray(rows) ? rows : []).filter((row: any) => isHostedInstallation(row));
     const inRoomsOnly = hosted.every((row: any) => row.config?.autoJoinSource === AGENT_ROOM_AUTO_JOIN_SOURCE);

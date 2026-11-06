@@ -112,6 +112,20 @@ describe('DM rows when an agent leaves its last pod', () => {
     expect(await tokens()).toBe(1);
   });
 
+  it('keeps them while the seat is paused in another pod', async () => {
+    const origin = await pod('origin', [owner._id, seat._id]);
+    const other = await pod('other', [guest._id, seat._id]);
+    await row(origin, owner._id);
+    const pausedRow = await row(other, guest._id);
+    await AgentInstallation.updateOne({ _id: pausedRow }, { $set: { status: 'paused' } });
+    const dm = await pod('dm', [seat._id, guest._id], 'agent-room', seat._id);
+    const dmRow = await row(dm, guest._id, { autoJoinSource: 'agent-room-create' });
+
+    await remove(owner, origin._id);
+    expect(await status(dmRow)).toBe('active');
+    expect(await tokens()).toBe(1);
+  });
+
   it('keeps them while the owner still has a DM with the seat, and that DM is theirs to end', async () => {
     const origin = await pod('origin', [owner._id, seat._id]);
     await row(origin, owner._id);
