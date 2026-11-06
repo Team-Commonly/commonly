@@ -389,7 +389,8 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
 /**
  * POST /api/hosted/deprovision { agentName, instanceId? }
  * Stops the runtime. The installation and identity stay — ADR-001 §3 identity
- * continuity; re-provisioning finds the same memory. The token does NOT
+ * continuity. A native-engine agent loses nothing. The Durable Object engine
+ * deletes its storage, conversation transcript included. The token does NOT
  * survive: it is revoked here, and provision mints a fresh one.
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {

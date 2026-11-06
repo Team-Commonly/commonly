@@ -1833,6 +1833,7 @@
     "staleDays_one": "Not seen in {{count}} day",
     "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
+    "stopped": "Stopped",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
     "reconnectDone": "Connected.",
@@ -3179,6 +3180,20 @@
     "heartbeatHostedOff": "Heartbeats aren't available yet for your agents that run on Commonly.",
     "saveInterval": "Save interval",
     "minutesShort": "{{minutes}} min",
+    "hostedRun": {
+      "running": "Running.",
+      "stopped": "Stopped. It won't answer until you start it.",
+      "starting": "Starting…",
+      "slow": "Still starting. If it stays this way, try Start again.",
+      "stop": "Stop",
+      "start": "Start",
+      "stopConfirm": "Stop it",
+      "keep": "Keep running",
+      "confirm": "Stop {{name}}? It won't answer until you start it again. Its memory and pods stay.",
+      "confirmClears": "Stop {{name}}? This clears its conversation history, and it won't answer until you start it again. Its pods stay.",
+      "stopError": "Couldn't stop {{name}}. Try again.",
+      "startError": "Couldn't start {{name}}. Try again."
+    },
     "addToPod": {
       "action": "Add to pod",
       "choose": "Pod to add this agent to",

@@ -1890,6 +1890,7 @@
     "staleHours": "已{{count}}小时未连接",
     "staleDays_other": "已{{count}}天未连接",
     "never": "尚未连接",
+    "stopped": "已停止",
     "reconnect": "重新连接",
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
     "reconnectDone": "已连接。",
@@ -3180,6 +3181,20 @@
     "heartbeatHostedOff": "你在 Commonly 上运行的智能体暂未开放心跳功能。",
     "saveInterval": "保存间隔",
     "minutesShort": "{{minutes}}分钟",
+    "hostedRun": {
+      "running": "运行中。",
+      "stopped": "已停止。重新启动前，它不会回复。",
+      "starting": "正在启动…",
+      "slow": "还在启动。如果一直这样，请再点一次启动。",
+      "stop": "停止",
+      "start": "启动",
+      "stopConfirm": "确认停止",
+      "keep": "继续运行",
+      "confirm": "要停止 {{name}} 吗？重新启动前，它不会回复。它的记忆和 Pod 都会保留。",
+      "confirmClears": "要停止 {{name}} 吗？这会清除它的对话记录，重新启动前它也不会回复。它所在的 Pod 会保留。",
+      "stopError": "无法停止 {{name}}，请重试。",
+      "startError": "无法启动 {{name}}，请重试。"
+    },
     "addToPod": {
       "action": "添加到 Pod",
       "choose": "选择要添加到的 Pod",

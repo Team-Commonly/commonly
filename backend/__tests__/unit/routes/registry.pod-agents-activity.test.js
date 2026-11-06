@@ -300,6 +300,27 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection).toEqual({ state: 'available', lastSeenAt: null });
   });
 
+  it.each([['native', { engine: 'native' }], ['durable object', {}]])('says a hosted seat its owner stopped is stopped (%s engine)', async (_label, engine) => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      config: new Map([
+        ['runtime', { runtimeType: 'hosted' }],
+        ['hosted', { ...engine, provisionedAt: null, deprovisionedAt: new Date() }],
+      ]),
+    })]);
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toEqual({ state: 'stopped', lastSeenAt: null });
+  });
+
+  it('leaves a hosted seat that was never started without a connection', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'native', provisionedAt: null }]]),
+    })]);
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection).toBeUndefined();
+  });
+
   it('shows a provisioned native-engine hosted seat as available without a runtime token', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
       config: new Map([

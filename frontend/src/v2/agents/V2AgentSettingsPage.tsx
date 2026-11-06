@@ -15,6 +15,7 @@ import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
+import V2AgentHostedRun from './V2AgentHostedRun';
 import V2AgentWakePods from './V2AgentWakePods';
 import V2AgentPolicy from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
@@ -493,6 +494,10 @@ const V2AgentSettingsPage: React.FC = () => {
                   <V2AgentSettingsIcon name="chev" className="chev" />
                 </summary>
                 <div className="dbody v2-agent-settings-page__runsbody">
+                  {installation?.runtime?.runtimeType === 'hosted' && (
+                    <V2AgentHostedRun agentName={agentName} displayName={displayName} instanceId={instanceId}
+                      onChanged={() => setConnectionRefreshNonce((nonce) => nonce + 1)} />
+                  )}
                   <V2AgentRuntimeBody
                     key={`runtime:${agentName}:${instanceId}`}
                     name={agentName}

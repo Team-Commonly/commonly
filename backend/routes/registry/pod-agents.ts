@@ -8,7 +8,7 @@ const AgentTemplate = require('../../models/AgentTemplate');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
-const { hostedRunsNative } = require('../../services/hostedEngine');
+const { hostedRunsNative, readHostedConfig } = require('../../services/hostedEngine');
 const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const { retireDmRowsWithAgent } = require('../../services/agentDmRowService');
 const Pod = require('../../models/Pod');
@@ -455,6 +455,11 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // runtime is available by construction, without a credential ledger.
         if (runtimeType === 'native' || hostedRunsNative(i)) {
           return { ...payload, connection: { state: 'available', lastSeenAt: null } };
+        }
+        // Its owner stopped it, which is an answer, not a missing status.
+        const hostedRecord = readHostedConfig(i);
+        if (runtimeType === 'hosted' && hostedRecord.deprovisionedAt && !hostedRecord.provisionedAt) {
+          return { ...payload, connection: { state: 'stopped', lastSeenAt: null } };
         }
         // Legacy local-cli installs are normalized to their harness name
         // (codex/claude-code) in the public payload. Host, not that label,
