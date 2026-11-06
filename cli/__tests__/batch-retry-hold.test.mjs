@@ -342,3 +342,76 @@ describe('performRun — a failed turn is retried from the carry', () => {
     } finally { run.handle.stop(); }
   });
 });
+
+describe('performRun — a failure only a person can fix tells the pod', () => {
+  const expired = () => new Error('codex exited with code 1: 401 Authentication Error, Expired Key sk-walk-abc');
+  const noticesIn = (post) => turnPostsIn(post).filter(([, body]) => /I can’t answer right now/.test(body.content));
+
+  test('an expired key posts one plain line, once, however many retries fail', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+
+    expect(noticesIn(server.post)).toHaveLength(1);
+    expect(noticesIn(server.post)[0][1].content).not.toContain('sk-walk');
+    expect(server.acks).toEqual([]);
+
+    await run.fireNext();
+    expect(spawn.mock.calls.length).toBeGreaterThan(1);
+    expect(noticesIn(server.post)).toHaveLength(1);
+    run.handle.stop();
+  });
+
+  test('a turn that works clears it, so a later failure says so again', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'first')], [], [makeEvent('evt-b', 'second')]] });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(expired())
+      .mockResolvedValueOnce({ text: 'back' })
+      .mockRejectedValueOnce(expired());
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(1);
+
+    await run.fireNext();
+    await run.fireNext();
+    expect(noticesIn(server.post)).toHaveLength(2);
+    run.handle.stop();
+  });
+
+  test('a rate limit tells no one: the retry can clear it', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(new Error('unexpected status 429 Too Many Requests'));
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(0);
+    run.handle.stop();
+  });
+
+  test('a heartbeat nobody sent tells no one', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'tick', { type: 'heartbeat' })]] });
+    const spawn = jest.fn().mockRejectedValue(expired());
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(0);
+    run.handle.stop();
+  });
+
+  test('a notice that fails to post is tried again at the next failure, and the retry still runs', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const original = server.post.getMockImplementation();
+    let refused = false;
+    server.post.mockImplementation(async (route, body) => {
+      if (String(route).endsWith('/messages') && !refused) { refused = true; throw new Error('502'); }
+      return original(route, body);
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(retryReports(run.errors).length).toBeGreaterThan(0);
+
+    await run.fireNext();
+    expect(noticesIn(server.post).length).toBeGreaterThanOrEqual(2);
+    run.handle.stop();
+  });
+});

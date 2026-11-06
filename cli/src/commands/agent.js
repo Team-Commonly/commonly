@@ -130,6 +130,7 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
+import { cantAnswerNotice } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   CASCADE_DEFAULTS,
@@ -3363,6 +3364,36 @@ export const performRun = ({
     heldRenewTimer?.unref?.();
   };
 
+  // A failure only a person can fix leaves the mention unanswered for as long as
+  // it lasts, so the pod is told once per pod until a turn runs again
+  // (lib/turn-failure-notice.js). A notice that fails to post is logged and
+  // tried at the next failure; the retry goes ahead either way.
+  const cantAnswerNoticed = new Set();
+  const noticeCantAnswer = async (err, failedEvents, eventPodId) => {
+    const text = cantAnswerNotice(err);
+    if (!text || cantAnswerNoticed.has(String(eventPodId))) return;
+    if (!failedEvents.some((event) => ADDRESSED_EVENT_TYPES.has(event.type))) return;
+    try {
+      const delivery = await deliverChatReply({
+        client,
+        podId: eventPodId,
+        text,
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        uploadName: `${agentName}-cant-answer.md`,
+        log: (line) => log(`[inbox.batch] ${line}`),
+      });
+      if (delivery.skipped || delivery.refused) {
+        log('[inbox.batch] the pod was not told why this agent can\'t answer: the notice was not posted');
+        return;
+      }
+      cantAnswerNoticed.add(String(eventPodId));
+      log('[inbox.batch] told the pod why this agent can\'t answer');
+    } catch (noticeErr) {
+      log(`[inbox.batch] the pod was not told why this agent can't answer: ${noticeErr.message}`);
+    }
+  };
+
   // What the retry will actually do, for the failure report.
   const describeHold = ({ held, released, handedBack = [] }, retry) => {
     const parts = [];
@@ -3932,6 +3963,7 @@ export const performRun = ({
             );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
+            await noticeCantAnswer(err, failedEvents, event.podId || podId);
             const wrapped = new Error(
               `inbox batch processing failed (${retry.failureClass}; ${consecutiveSpawnFailures} consecutive) `
               + `— ${describeHold(hold, retry)}: ${err.message}`,
@@ -3978,6 +4010,7 @@ export const performRun = ({
           ));
           if (batchSpawned) {
             consecutiveSpawnFailures = 0;
+            cantAnswerNoticed.clear();
             // Notices arriving mid-turn get one bounded collection window.
             // Idle polls and batches with no model turn keep their cadence.
             completedModelTurn = true;
@@ -4057,6 +4090,8 @@ export const performRun = ({
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
+              // eslint-disable-next-line no-await-in-loop
+              await noticeCantAnswer(err, [event], event.podId || podId);
               const wrapped = new Error(
                 `${event.type} processing failed (${retry.failureClass}; `
                 + `${consecutiveSpawnFailures} consecutive) — event ${event._id} unacked; `
@@ -4112,7 +4147,10 @@ export const performRun = ({
           // and neither may an enforcement stand-down (cascade cap, lost
           // claim), which returns before any spawn happens.
           const stoodDown = result?.reason === 'cascade-cap' || result?.reason === 'claim-held';
-          if (eventWillSpawn && !stoodDown) consecutiveSpawnFailures = 0;
+          if (eventWillSpawn && !stoodDown) {
+            consecutiveSpawnFailures = 0;
+            cantAnswerNoticed.clear();
+          }
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.
