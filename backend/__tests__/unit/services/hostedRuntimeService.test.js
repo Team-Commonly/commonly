@@ -72,33 +72,49 @@ describe('hostedRuntimeService', () => {
   });
 
   describe('caps', () => {
-    it('counts active hosted installs by the path the install route writes', async () => {
-      mockInstallationCount.mockResolvedValue(2);
-      await expect(hosted.countHostedAgentsForUser('user-1')).resolves.toBe(2);
-      expect(mockInstallationCount).toHaveBeenCalledWith({
+    it('counts agents, not rooms, by the path the install route writes, without loading config', async () => {
+      const lean = jest.fn().mockResolvedValue([
+        { agentName: 'scout', instanceId: 'default' },
+        { agentName: 'scout', instanceId: 'Default' },
+        { agentName: 'scout' },
+        { agentName: 'scout', instanceId: 'demo' },
+        { agentName: 'other', instanceId: 'default' },
+      ]);
+      const select = jest.fn().mockReturnValue({ lean });
+      mockInstallationFind.mockReturnValue({ select });
+      await expect(hosted.countHostedAgentsForUser('user-1')).resolves.toBe(3);
+      expect(mockInstallationFind).toHaveBeenCalledWith({
         installedBy: 'user-1',
         status: 'active',
         'config.runtime.runtimeType': 'hosted',
       });
+      expect(select).toHaveBeenCalledWith('agentName instanceId');
     });
 
-    it('lists only owner-safe identity fields for active hosted installs', async () => {
+    it('lists each hosted agent once, with only owner-safe identity fields', async () => {
       const lean = jest.fn().mockResolvedValue([
-        { agentName: 'scout', instanceId: 'default', podId: 'pod-1', config: { secret: 'nope' } },
+        { agentName: 'scout', instanceId: 'default', podId: 'pod-1', displayName: 'Scout', config: { secret: 'nope' } },
+        { agentName: 'scout', instanceId: 'default', podId: 'pod-3', displayName: 'Scout' },
         { agentName: '', instanceId: 'bad', podId: 'pod-2' },
       ]);
-      const select = jest.fn().mockReturnValue({ lean });
+      const select = jest.fn().mockReturnValue({ sort: jest.fn().mockReturnValue({ lean }) });
       mockInstallationFind.mockReturnValue({ select });
 
       await expect(hosted.listHostedInstallationsForUser('user-1')).resolves.toEqual([
-        { agentName: 'scout', instanceId: 'default', podId: 'pod-1' },
+        { agentName: 'scout', instanceId: 'default', podId: 'pod-1', displayName: 'Scout' },
       ]);
       expect(mockInstallationFind).toHaveBeenCalledWith({
         installedBy: 'user-1',
         status: 'active',
         'config.runtime.runtimeType': 'hosted',
       });
-      expect(select).toHaveBeenCalledWith('agentName instanceId podId');
+      expect(select).toHaveBeenCalledWith('agentName instanceId podId displayName');
+    });
+
+    it("meters one owner's runs when given one, as the turn cap enforces", async () => {
+      mockRunCount.mockResolvedValue(1);
+      await hosted.meterAllowsTurn('Scout', 'default', 2, { countRuns: true, ownerId: 'user-1' });
+      expect(mockRunCount.mock.calls[0][0]).toMatchObject({ agentName: 'scout', userId: 'user-1' });
     });
 
     // QA walk 4: an addressed turn that stood down to a peer's claim was acked

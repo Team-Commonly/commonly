@@ -8,7 +8,9 @@
  * metering; the two caps below are that floor — not billing, the thing that
  * makes an unmetered public runtime safe to expose:
  *
- *   HOSTED_AGENTS_PER_USER  active hosted installations per owner (default 1)
+ *   HOSTED_AGENTS_PER_USER  hosted agents per owner (default 1). An agent is
+ *                           one (agentName, instanceId): it has an active row
+ *                           per room, and more rooms are not more agents.
  *   HOSTED_TURNS_PER_DAY    acked events per hosted agent per UTC day (30;
  *                           HOSTED_TURNS_PER_DAY_PRO, 200, on Pro)
  *
@@ -120,32 +122,76 @@ const hostedInstallationFilter = (userId: any) => ({
   'config.runtime.runtimeType': HOSTED_RUNTIME_TYPE,
 });
 
-/** Active hosted installations owned by a user. Same path the install route writes. */
-export const countHostedAgentsForUser = async (userId: any): Promise<number> => (
-  AgentInstallation.countDocuments(hostedInstallationFilter(userId))
+// The identity an installation belongs to. The schema lowercases agentName but
+// not instanceId, and a row written before it may have neither, so both fold
+// here as the runtime-identity collation does (services/runtimeIdentityOwnership).
+const hostedIdentityKey = (agentName: unknown, instanceId: unknown): string => (
+  `${String(agentName || '').toLowerCase()}:${String(instanceId || 'default').toLowerCase()}`
 );
+
+/**
+ * Hosted agents owned by a user. Same path the install route writes. A find,
+ * not an aggregate: Mongoose casts the string id the routes pass in a find, and
+ * a $match on it would match nothing, which fails the cap open.
+ */
+export const countHostedAgentsForUser = async (userId: any): Promise<number> => {
+  const rows = await AgentInstallation.find(hostedInstallationFilter(userId))
+    .select('agentName instanceId')
+    .lean();
+  return new Set((Array.isArray(rows) ? rows : [])
+    .map((row: any) => hostedIdentityKey(row.agentName, row.instanceId))).size;
+};
 
 export interface HostedInstallationSummary {
   agentName: string;
   instanceId: string;
   podId: string;
+  displayName?: string;
 }
 
 /**
- * Return only the owner-safe identity needed to recover from a cap error.
- * Failed provisioning leaves the active installation in place, so a count
- * alone strands the user with no way to tell which seat must be removed.
- * Never return config or runtime tokens from this helper.
+ * The agents a user hosts, each once, at the room it joined first. Only the
+ * owner-safe identity needed to recover from a cap error: failed provisioning
+ * leaves the active installation in place, so a count alone strands the user
+ * with no way to tell which seat must be removed. Callers count this list as
+ * agents (Scout's offer does), so it stays one entry per agent. Never return
+ * config or runtime tokens from this helper.
  */
 export const listHostedInstallationsForUser = async (userId: any): Promise<HostedInstallationSummary[]> => {
   const rows = await AgentInstallation.find(hostedInstallationFilter(userId))
-    .select('agentName instanceId podId')
+    .select('agentName instanceId podId displayName')
+    .sort({ _id: 1 })
     .lean();
-  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
-    agentName: String(row.agentName || ''),
-    instanceId: String(row.instanceId || 'default'),
-    podId: String(row.podId || ''),
-  })).filter((row) => row.agentName && row.podId);
+  const agents = new Map<string, HostedInstallationSummary>();
+  (Array.isArray(rows) ? rows : []).forEach((row: any) => {
+    const key = hostedIdentityKey(row.agentName, row.instanceId);
+    if (!row.agentName || !row.podId || agents.has(key)) return;
+    agents.set(key, {
+      agentName: String(row.agentName),
+      instanceId: String(row.instanceId || 'default'),
+      podId: String(row.podId),
+      ...(row.displayName ? { displayName: String(row.displayName) } : {}),
+    });
+  });
+  return [...agents.values()];
+};
+
+/**
+ * This person's own first active hosted row of this identity, or null. Holding
+ * it is what makes an install "the same agent in another room", so someone
+ * else's row of the name never counts. Carries `config.hosted`, for the install
+ * route to keep the agent on its engine; it stays server-side.
+ */
+export const findHeldHostedInstallation = async (
+  userId: any, agentName: string, instanceId: string,
+): Promise<Record<string, any> | null> => {
+  const rows = await AgentInstallation.find(hostedInstallationFilter(userId))
+    .select('agentName instanceId podId config.hosted')
+    .sort({ _id: 1 })
+    .lean();
+  const wanted = hostedIdentityKey(agentName, instanceId);
+  return (Array.isArray(rows) ? rows : [])
+    .find((row: any) => hostedIdentityKey(row.agentName, row.instanceId) === wanted) || null;
 };
 
 const utcDayStart = (now = new Date()): Date => new Date(Date.UTC(
@@ -170,7 +216,9 @@ export const turnsToday = async (agentName: string, instanceId: string): Promise
 // peer's claim (QA walk 4, 2026-10-16: the ask got no answer and still showed
 // as a used turn). The greeting is left out here too, and so is a run that
 // failed and posted nothing (`metered: false`): the person got no answer.
-export const nativeTurnsToday = async (agentName: string, instanceId: string): Promise<number> => {
+// `ownerId` narrows it to one owner's plan line: a published agent can be hosted
+// by several people under one identity, and each has their own.
+export const nativeTurnsToday = async (agentName: string, instanceId: string, ownerId?: string): Promise<number> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentRun = require('../models/AgentRun');
   return AgentRun.countDocuments({
@@ -179,6 +227,7 @@ export const nativeTurnsToday = async (agentName: string, instanceId: string): P
     startedAt: { $gte: utcDayStart() },
     trigger: { $ne: 'first_contact' },
     metered: { $ne: false },
+    ...(ownerId ? { userId: ownerId } : {}),
   });
 };
 
@@ -194,9 +243,11 @@ export const meterAllowsTurn = async (
   instanceId: string,
   turnsPerDay: number = hostedCaps().turnsPerDay,
   // True for a native-engine install, whose turns are runs, not acked events.
-  { countRuns = false }: { countRuns?: boolean } = {},
+  { countRuns = false, ownerId }: { countRuns?: boolean; ownerId?: string } = {},
 ): Promise<MeterResult> => {
-  const used = countRuns ? await nativeTurnsToday(agentName, instanceId) : await turnsToday(agentName, instanceId);
+  const used = countRuns
+    ? await nativeTurnsToday(agentName, instanceId, ownerId)
+    : await turnsToday(agentName, instanceId);
   const tomorrow = new Date(utcDayStart().getTime() + 24 * 60 * 60 * 1000);
   return {
     allowed: used < turnsPerDay,
@@ -297,6 +348,7 @@ module.exports = {
   isHostedInstallation,
   countHostedAgentsForUser,
   listHostedInstallationsForUser,
+  findHeldHostedInstallation,
   turnsToday,
   nativeTurnsToday,
   meterAllowsTurn,

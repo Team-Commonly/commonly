@@ -43,11 +43,11 @@ const authValue = {
 
 const pods = [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }];
 
-const mockGet = ({ configured, status }) => {
+const mockGet = ({ configured, status, held = null }) => {
   axios.get.mockImplementation((url) => {
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
-      return Promise.resolve({ data: { configured, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
+      return Promise.resolve({ data: { configured, caps: { agentsPerUser: 1, turnsPerDay: 200 }, held } });
     }
     if (url.startsWith('/api/hosted/status')) return Promise.resolve({ data: status || { runtime: {} } });
     if (url === '/api/pods') return Promise.resolve({ data: pods });
@@ -184,6 +184,13 @@ test.each(['timer', 'exit'])('records offer shown once via %s despite later time
   // A new page view counts its own first-paint exposure; the fallback does not repeat.
   view.unmount(); await issue(); await tick(30000);
   expect(offerEvents()).toEqual([{ step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }, { step: 'hosted-offer-shown' }]);
+});
+test('a held slot records no offer when the timer fires, because none renders', async () => {
+  mockGet({ configured: true, held: { agentName: 'maya-agent', instanceId: 'default', podId: 'p9', displayName: 'Maya' } });
+  renderPage(); await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: /get my connect command/i })); await screen.findByText(/your connect command for/i);
+  await tick(30000); fireEvent.mouseLeave(document.documentElement, { clientY: 0 });
+  expect(offerEvents()).toEqual([]);
 });
 test('records accepted offer activation once while hosted lookup is pending', async () => {
   await issue(); await tick(30000);

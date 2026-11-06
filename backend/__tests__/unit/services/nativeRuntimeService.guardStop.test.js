@@ -776,9 +776,10 @@ describe('a hosted turn the guard stops, or that fails', () => {
     await runAgent(hostedInstall(), mention);
 
     const queries = AgentRun.countDocuments.mock.calls.map(([query]) => query);
-    const planLine = queries.find((query) => query.podId);
-    const ceiling = queries.find((query) => query.userId);
+    const planLine = queries.find((query) => query.agentName);
+    const ceiling = queries.find((query) => query.userId && !query.agentName);
     expect(planLine.metered).toEqual({ $ne: false });
+    expect(planLine).not.toHaveProperty('podId');
     expect(ceiling).toBeDefined();
     expect(ceiling).not.toHaveProperty('metered');
   });

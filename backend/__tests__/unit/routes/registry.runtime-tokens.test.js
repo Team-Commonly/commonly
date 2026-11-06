@@ -318,7 +318,7 @@ describe('agent runtime tokens', () => {
       { $set: expect.objectContaining({ status: 'revoked', revokedAt: expect.any(Date) }) },
     );
     expect(AgentInstallation.updateMany).toHaveBeenCalledWith(
-      { agentName: 'commonly-bot', instanceId: 'default' },
+      { agentName: 'commonly-bot', $or: [{ instanceId: 'default' }, { instanceId: null }] },
       { $set: { runtimeTokens: [] } },
     );
   });

@@ -58,6 +58,7 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 200 }),
   countHostedAgentsForUser: (...args) => mockCountHosted(...args),
   listHostedInstallationsForUser: (...args) => mockListHosted(...args),
+  findHeldHostedInstallation: jest.fn().mockResolvedValue(null),
   readRuntimeConfig: (installation) => installation?.config?.runtime || {},
   isHostedInstallation: (installation) => (
     String(installation?.config?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'

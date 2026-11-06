@@ -195,6 +195,7 @@ AgentRunSchema.pre('validate', function capTrace() {
 
 AgentRunSchema.index({ podId: 1, agentName: 1, instanceId: 1, startedAt: -1 });
 // The per-user ceiling's count (D5) — sparse: only stamped rows carry userId.
+// The hosted plan line reads it too (nativeRuntimeService).
 AgentRunSchema.index({ userId: 1, startedAt: -1 }, { sparse: true });
 AgentRunSchema.index({ status: 1, startedAt: -1 });
 
