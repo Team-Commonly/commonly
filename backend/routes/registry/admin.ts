@@ -11,6 +11,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentEventService = require('../../services/agentEventService');
 const { restartAgentRuntime } = require('../../services/agentProvisionerService');
 const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
+const { retireDmRowsWithAgent } = require('../../services/agentDmRowService');
 const { hash, randomSecret } = require('../../utils/secret');
 const {
   escapeRegExp,
@@ -291,6 +292,7 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
     const instanceId = installation.instanceId;
 
     await retireHostedRoomRows(agentName, instanceId, installation.installedBy);
+    await retireDmRowsWithAgent(agentName, instanceId, podId);
     await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
 
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(agentName, instanceId), podId });
@@ -397,6 +399,7 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
       },
       { upsert: true, new: true },
     );
+    await AgentInstallation.reviveDmRows('claude-code', instanceId);
 
     // Always issue a fresh token for this session (never reuse — each session is independent)
     const expiresInSeconds = Number(expiresIn) || 86400; // default 24h
