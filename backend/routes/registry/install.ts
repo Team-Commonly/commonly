@@ -52,7 +52,7 @@ const {
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
-const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { identityHoldsRuntimeToken, willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
@@ -610,6 +610,20 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         return res.status(403).json({ code: joinError.code, message: joinError.message });
       }
       throw joinError;
+    }
+    // An in-process install promises the agent has no channel outside the
+    // backend, and pod eligibility reads it that way. The issuer refuses a
+    // token to such an identity; this refuses the same pair in the other order.
+    if ((effectiveRuntimeType === 'native' || newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE)
+      && await identityHoldsRuntimeToken(
+        safeAgentName,
+        normalizedInstanceId,
+        AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(safeAgentName), normalizedInstanceId),
+      )) {
+      return res.status(409).json({
+        code: 'runtime_token_held',
+        error: 'This agent already holds a runtime token, so it can\'t run on Commonly as well. Revoke the token first, or use a different name.',
+      });
     }
     if (AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,

@@ -47,6 +47,28 @@ const ownershipInstallations = async (agentName: string, instanceId: string): Pr
   return installations.filter((installation) => !dmPodIds.has(String(installation.podId)));
 };
 
+/**
+ * Whether an identity holds a runtime token, on its bot user or on any of its
+ * installations. The issuer (routes/registry/tokens.ts) refuses an identity with
+ * an in-process installation; the install route asks this to refuse the same
+ * pair in the other order, so no identity is ever both. Every status counts,
+ * as it does for the issuer: a key on a stopped row is still a key.
+ */
+export const identityHoldsRuntimeToken = async (
+  agentName: string,
+  instanceId: string,
+  botUsername: string,
+): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  if (await User.exists({ username: botUsername, isBot: true, 'agentRuntimeTokens.0': { $exists: true } })) return true;
+  const sibling = await AgentInstallation.findOne({ agentName, instanceId, 'runtimeTokens.0': { $exists: true } })
+    .collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
+  return Boolean(sibling);
+};
+
 /** Explain a genuine second installer to the first installer in Settings. */
 export type RuntimeIdentityBlocker = { podName: string; installerName: string };
 export const describeRuntimeIdentityBlockers = async (
