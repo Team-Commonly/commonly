@@ -1525,7 +1525,14 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // threadRootId set to that message, so the answer sat in a collapsed thread
 // under it. The kernel's mention cue teaches threadRootId as a verb but never
 // says which messages it is for, so each top-level mention says where its
-// answer goes, beside the message it answers.
+// answer goes, beside the message it answers. replyToMessageId alone threads
+// too, because the kernel derives the root from the reply edge, so the line
+// names both. This is advice: the guarantee is the kernel's answerStaysTopLevel.
+//
+// Only for a person's message. The line sends a plain post, which the kernel
+// cannot thread back, so on a peer's mention it would put an agent exchange in
+// the channel at every hop. A missing `senderIsHuman` means no line: the kernel
+// still keeps the answer top-level for a person.
 //
 // `chat.mention` alone is not "top-level": the kernel sends a chat-thread
 // mention as chat.mention with `payload.threadRootId`, a 1:1 DM as chat.mention
@@ -1551,6 +1558,7 @@ export const answersInChannel = (entry) => {
   return entry?.event?.type === 'chat.mention' && !entry.readOnly
     && entry.result?.reason !== 'duplicate-delivery'
     && Boolean(payload.messageId)
+    && payload.senderIsHuman === true
     && (payload.threadRootId === undefined || payload.threadRootId === null || payload.threadRootId === '')
     && payload.source !== 'dm' && !payload.dmKind;
 };

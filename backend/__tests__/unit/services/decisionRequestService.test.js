@@ -93,6 +93,7 @@ describe('DecisionRequestService', () => {
 
     expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
       agentName: 'release-agent', instanceId: 'seat-1', podId: 'pod-1', threadRootId: '612',
+      threadIsDeliberate: true,
       metadata: { source: 'decision-request' },
       relayCard: {
         title: 'Choose the release train',

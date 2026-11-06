@@ -1473,7 +1473,8 @@ describe('performRun', () => {
 
   test('a top-level mention is answered top-level, never threaded under it', async () => {
     const prompt = await firstPromptFor([makeEvent({
-      _id: 'evt-mention-channel', payload: { content: '@seat what folder are you in?', messageId: '129285' },
+      _id: 'evt-mention-channel',
+      payload: { content: '@seat what folder are you in?', messageId: '129285', senderIsHuman: true },
     })]);
     expect(prompt).toContain(ANSWER_IN_CHANNEL);
   });
@@ -1643,13 +1644,32 @@ describe('performRun', () => {
     expect(prompt).not.toContain('otherwise return NO_REPLY');
   });
 
+  // The line sends a plain post, which the kernel cannot thread back, so it is
+  // only for a person. Between agents the reply keeps its thread.
+  test.each([
+    ['a peer agent\'s mention', { senderIsHuman: false }],
+    ['a payload that does not say who sent it', {}],
+  ])('%s gets no top-level line', async (_name, sender) => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-mention-peer', payload: { content: '@seat please check', messageId: '129286', ...sender },
+    })]);
+    expect(prompt).not.toContain(ANSWER_IN_CHANNEL);
+    expect(prompt).not.toContain('post your answer top-level');
+  });
+
   // CodeRabbit on #3499: a duplicate delivery (already handled here) stays in
   // the batch prompt beside a new item, and must not be told to post an answer.
   test('a duplicate delivery beside a new mention gets no top-level line; the new one does', async () => {
     recordHandledEvent('my-stub', 'evt-already-answered');
     const prompt = await firstPromptFor([
-      makeEvent({ _id: 'evt-already-answered', payload: { content: '@seat old question', messageId: '300' } }),
-      makeEvent({ _id: 'evt-new-question', payload: { content: '@seat new question', messageId: '301' } }),
+      makeEvent({
+        _id: 'evt-already-answered',
+        payload: { content: '@seat old question', messageId: '300', senderIsHuman: true },
+      }),
+      makeEvent({
+        _id: 'evt-new-question',
+        payload: { content: '@seat new question', messageId: '301', senderIsHuman: true },
+      }),
     ]);
     const [oldItem, newItem] = prompt.split('Event 2/2');
     expect(oldItem).toContain('message 300');

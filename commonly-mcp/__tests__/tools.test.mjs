@@ -78,6 +78,14 @@ const okResponse = (body) => ({
 afterEach(() => { delete global.fetch; });
 
 describe('commonly_post_message', () => {
+  it('says a reply joins a thread, and where an answer to a top-level mention lands (F212)', () => {
+    const { description } = byName.commonly_post_message;
+    expect(description).toContain('quotes a specific message and joins its thread, but wakes no one');
+    expect(description).toContain("Answer a person's top-level message that mentions you");
+    expect(description).toContain('thread_root_dropped');
+    expect(description).toContain('In a personal pod (a DM or agent room) a threaded answer stays threaded');
+  });
+
   it('forwards UI card payload and explicit type alongside the text fallback', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'card1' }));
     const payload = { catalogId: 'commonly.ui', catalogRev: 1, catalogHash: 'sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57', kind: 'ui', v: 1, lang: 'openui@1', source: 'root = Text("hello")' };

@@ -129,6 +129,9 @@ class Message {
     // written only when a value is present, so a post without them runs the
     // same INSERT as before.
     contract: { summary?: string | null; kind?: string | null; receipt?: unknown } | null = null,
+    // F212: this reply stays top-level. agentAnswerService decides; here it
+    // skips the derivation below and marks the row for reRootOrphanedChains.
+    topLevelAnswer = false,
   ): Promise<MessageRow> {
     if (replyToMessageId != null && replyToMessageId !== '') {
       const resolvedReply = await Message.resolveId(replyToMessageId);
@@ -178,22 +181,24 @@ class Message {
     if (contract?.summary) { contractColumns.push('summary'); contractValues.push(contract.summary); }
     if (contract?.kind) { contractColumns.push('kind'); contractValues.push(contract.kind); }
     if (contract?.receipt) { contractColumns.push('receipt'); contractValues.push(JSON.stringify(contract.receipt)); }
-    const extraColumns = contractColumns.map((column) => `, ${column}`).join('');
+    const extraColumns = contractColumns.map((column) => `, ${column}`).join('')
+      + (topLevelAnswer ? ', top_level_answer' : '');
     // JSONB needs its cast: in an INSERT … SELECT list an untyped parameter
     // is text to pg-mem, which then refuses it for a jsonb column.
     const extraParams = contractColumns
-      .map((column, index) => `, $${9 + index}${column === 'receipt' ? '::jsonb' : ''}`).join('');
+      .map((column, index) => `, $${9 + index}${column === 'receipt' ? '::jsonb' : ''}`).join('')
+      + (topLevelAnswer ? ', TRUE' : '');
     const query = `
       INSERT INTO messages (
         pod_id, user_id, content, message_type, author_kind, reply_to_message_id, payload, thread_root_id${extraColumns}
       )
       SELECT $1, $2, $3, $4, $5, $6::int, $7,
-             COALESCE(
+             ${topLevelAnswer ? 'NULL' : `COALESCE(
                $8::int,
                (SELECT COALESCE(parent.thread_root_id, parent.id)
                   FROM messages parent
                  WHERE parent.id = $6::int)
-             )::int${extraParams}
+             )`}::int${extraParams}
        WHERE ($6::int IS NULL
               OR $1::varchar IN (SELECT target.pod_id FROM messages target WHERE target.id = $6::int))
          AND ($8::int IS NULL
@@ -572,6 +577,9 @@ class Message {
    * to tier 1. This form is plain SQL, so the repair and its regression test
    * run at the unit tier — which is where a retention bug should be provable,
    * since reproducing it needs a DELETE and not a fixture.
+   *
+   * A row marked `top_level_answer` (F212) has the same shape as an orphan: a
+   * live parent, no root. It is top-level on purpose, so this skips it.
    */
   static async reRootOrphanedChains(maxPasses = 32): Promise<{ reRooted: number; passes: number }> {
     let reRooted = 0;
@@ -593,6 +601,7 @@ class Message {
            FROM messages m
            JOIN messages p ON m.reply_to_message_id = p.id
           WHERE m.thread_root_id IS NULL
+            AND m.top_level_answer IS NOT TRUE
             AND (p.reply_to_message_id IS NULL OR p.thread_root_id IS NOT NULL)`,
       );
       for (const r of rows as Array<{ id: number; root: number }>) {

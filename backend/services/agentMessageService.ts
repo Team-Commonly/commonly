@@ -195,6 +195,9 @@ interface PostMessageOptions {
   // the native runtime's trigger. Read by the answer rule (agentAnswerService)
   // only. Never stored and never a reply edge, so an answer is not threaded.
   answeringMessageId?: string | null;
+  // The caller files this post in a thread itself, whatever the post answers:
+  // a decision card goes where commonly_request_decision was told to put it.
+  threadIsDeliberate?: boolean;
   // Server-set, never model-set: only install intros and stalled-connect
   // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
@@ -236,6 +239,9 @@ interface PostTargetOptions {
   skipSummaryPersistence?: boolean;
   noOutboundRelay?: boolean;
   answeringMessageId?: string | null;
+  // The caller files this post in a thread itself, whatever the post answers:
+  // a decision card goes where commonly_request_decision was told to put it.
+  threadIsDeliberate?: boolean;
   authorKind?: 'kernel' | null;
   // D245: already normalized; stored beside the content.
   contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
@@ -314,6 +320,14 @@ interface DuplicateResult {
   createdAt: unknown;
   dedupeWindowMinutes: number;
 }
+
+// F212: returned on the post, so a model that threaded its answer learns where
+// it went. The post has already landed; this is never a refusal.
+const THREAD_ROOT_DROPPED = {
+  code: 'thread_root_dropped',
+  message: 'This answers a top-level message, so it was posted to the channel, not in a thread. '
+    + 'Any quote was kept. To continue, thread under your own post.',
+};
 
 class AgentMessageService {
   static normalizeInstallationConfig(config: unknown): Record<string, unknown> {
@@ -1054,6 +1068,7 @@ class AgentMessageService {
       authorKind = null,
       failureNotice = false,
       approvalCard = false,
+      threadIsDeliberate = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1666,6 +1681,7 @@ class AgentMessageService {
       threadRootId,
       noOutboundRelay,
       answeringMessageId,
+      threadIsDeliberate,
       authorKind,
       contract: contract.summary || contract.kind || receipt
         ? { summary: contract.summary, kind: contract.kind, ...(receipt ? { receipt } : {}) }
@@ -1681,10 +1697,11 @@ class AgentMessageService {
       agentLabel: displayName || agentName, content: sanitizedContent,
     });
 
+    const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
     return {
       success: true,
       message: posted.message,
-      ...(postWarnings.length ? { warnings: postWarnings } : {}),
+      ...(allWarnings.length ? { warnings: allWarnings } : {}),
       summary: posted.summary
         ? {
           id: (posted.summary as { _id?: unknown })._id?.toString?.() || (posted.summary as { _id?: unknown })._id,
@@ -1735,7 +1752,9 @@ class AgentMessageService {
     return { routedToDM: true, dmPodId: dmPod._id };
   }
 
-  static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
+  static async _postToTarget(options: PostTargetOptions): Promise<{
+    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean;
+  }> {
     const {
       agentName,
       instanceId = 'default',
@@ -1753,6 +1772,7 @@ class AgentMessageService {
       skipSummaryPersistence = false,
       noOutboundRelay = false,
       answeringMessageId,
+      threadIsDeliberate = false,
       authorKind = null,
       contract = null,
     } = options;
@@ -1793,6 +1813,24 @@ class AgentMessageService {
       }
     }
 
+    // F212: the answer to a person's main-channel mention stays in the channel. Asked
+    // after the validation above, so a bad target is still refused. A reply
+    // edge is kept (the quote), which is why the write needs telling: left
+    // alone, it derives the root back from that edge.
+    let topLevelAnswer = false;
+    let threadRootDropped = false;
+    if (PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { answerStaysTopLevel } = require('./agentAnswerService');
+      threadRootDropped = await answerStaysTopLevel({
+        podId, agentName, instanceId, agentUserId: agentUser._id, replyToMessageId, threadRootId, kind: contract?.kind,
+      });
+      if (threadRootDropped) {
+        resolvedThreadRootId = null;
+        topLevelAnswer = Boolean(replyToMessageId);
+      }
+    }
+
     if (PGMessage && process.env.PG_HOST) {
       try {
         await AgentIdentityService.syncUserToPostgreSQL(agentUser);
@@ -1824,9 +1862,15 @@ class AgentMessageService {
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
             authorKind?: 'kernel' | null,
             contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null,
+            topLevelAnswer?: boolean,
           ): Promise<Record<string, unknown>>;
         };
-        const newMessage = contract
+        const newMessage = topLevelAnswer
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, null, answeringMessageId, authorKind, contract, true,
+          )
+          : contract
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
@@ -1881,8 +1925,8 @@ class AgentMessageService {
           createdAt: newMessage.created_at as Date,
           metadata,
           ...(payload != null ? { payload: newMessage.payload ?? payload } : {}),
-          // Threading: the INSERT already derived this (or NULL for a
-          // non-reply); dropping it here was one of the two closed literals
+          // Threading: the INSERT already set this (NULL for a non-reply or a
+          // top-level answer); dropping it here was one of the two closed literals
           // that made agent replies arrive over the socket root-less.
           thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
@@ -2039,7 +2083,11 @@ class AgentMessageService {
       console.warn('[tg-bridge] outbound hook failed:', (bridgeError as Error).message);
     }
 
-    return { message: message as MessageNormalized, summary: persistedSummary };
+    return {
+      message: message as MessageNormalized,
+      summary: persistedSummary,
+      ...(threadRootDropped ? { threadRootDropped } : {}),
+    };
   }
 
   // ADR-012 §4: fire-and-forget hook for agent-dm-conclusion. Lives here so
