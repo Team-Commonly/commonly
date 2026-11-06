@@ -15,8 +15,8 @@ import { PROJECTION_OWN_KEYS } from './dmService';
  */
 const POD_OWN_CONFIG_KEYS = new Set(['wakeOnMessage', 'boardWake', 'welcomeWake', 'digestWake', 'hosted']);
 
-export const inheritablePodConfig = (config: Record<string, unknown> = {}): Record<string, unknown> => (
-  Object.fromEntries(Object.entries(config)
+export const inheritablePodConfig = (config?: Record<string, unknown> | null): Record<string, unknown> => (
+  Object.fromEntries(Object.entries(config || {})
     .filter(([key]) => !PROJECTION_OWN_KEYS.has(key) && !POD_OWN_CONFIG_KEYS.has(key)))
 );
 
@@ -25,7 +25,7 @@ type SourceRow = {
   status: string;
   version?: string;
   scopes?: string[];
-  config?: { autoJoinSource?: unknown; runtime?: { runtimeType?: unknown } } & Record<string, unknown>;
+  config?: ({ autoJoinSource?: unknown; runtime?: { runtimeType?: unknown } } & Record<string, unknown>) | null;
 };
 export type AdditionSource =
   | { source: SourceRow; fromProjection: boolean; refusal?: undefined }
@@ -81,4 +81,40 @@ export const resolveAdditionSource = async (
   return { source, fromProjection: true };
 };
 
-export default { inheritablePodConfig, resolveAdditionSource };
+/**
+ * A source can name an owner and still have no runtime, because its agent runs
+ * from a projection. The new row needs that runtime: routing takes the newest
+ * row with the key set, so a null copied here would hide the working one.
+ */
+export const withRoutedRuntime = async (
+  config: Record<string, unknown>, agentName: string, instanceId: string,
+): Promise<Record<string, unknown>> => {
+  if ((config.runtime as { runtimeType?: unknown } | undefined)?.runtimeType) return config;
+  const sibling = await AgentInstallation.findOne({
+    agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $nin: [null, ''] },
+  }).sort({ createdAt: -1 }).select('config.runtime').lean() as { config?: { runtime?: unknown } } | null;
+  return sibling?.config?.runtime ? { ...config, runtime: sibling.config.runtime } : config;
+};
+
+/**
+ * Whether someone else owns a row of this name. A DM's row and a row a mention
+ * pulled in name a guest or a typist, not an owner (resolveAdditionSource).
+ */
+export const hasForeignOwner = async (
+  agentName: string, instanceId: string, userId: unknown,
+): Promise<boolean> => {
+  const rows = await AgentInstallation.find({
+    agentName, instanceId, installedBy: { $ne: userId },
+  }).select('podId config.autoJoinSource').lean() as unknown as SourceRow[];
+  const candidates = rows.filter((row) => !row.config?.autoJoinSource);
+  if (!candidates.length) return false;
+  const dmPods = await Pod.find({
+    _id: { $in: candidates.map((row) => row.podId) }, type: { $in: [...DM_POD_TYPES_GUARD] },
+  }).select('_id').lean();
+  const inDm = new Set(dmPods.map((pod: { _id: unknown }) => String(pod._id)));
+  return candidates.some((row) => !inDm.has(String(row.podId)));
+};
+
+export default {
+  inheritablePodConfig, resolveAdditionSource, withRoutedRuntime, hasForeignOwner,
+};

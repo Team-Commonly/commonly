@@ -35,7 +35,9 @@ const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
-const { inheritablePodConfig, resolveAdditionSource } = require('../../services/agentPodAddition');
+const {
+  hasForeignOwner, inheritablePodConfig, resolveAdditionSource, withRoutedRuntime,
+} = require('../../services/agentPodAddition');
 const {
   getUserId,
   resolveUsername,
@@ -475,7 +477,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         instanceId: normalizedInstanceId,
         installedBy: { $ne: userId },
       });
-      if (foreignInstall) {
+      if (foreignInstall && (!addition || await hasForeignOwner(safeAgentName, normalizedInstanceId, userId))) {
         return res.status(409).json({
           code: 'agent_name_taken',
           error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
@@ -1203,6 +1205,13 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         .filter((i: any) => i.podId.toString() !== podId)
         .map((i: any) => i.podId)
       : [];
+    // An agent's rows reach pods the caller isn't in, and an add has no reason to
+    // name them.
+    const visibleOtherPodIds = addition && otherPodIds.length
+      ? (await Pod.find({
+        _id: { $in: otherPodIds }, $or: [{ members: userId }, { createdBy: userId }],
+      }).select('_id').lean()).map((pod: { _id: unknown }) => pod._id)
+      : otherPodIds;
 
     res.json({
       success: true,
@@ -1218,7 +1227,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       },
       memoryCopy,
       sharedIdentity: isReusingExistingAgent,
-      otherPods: otherPodIds,
+      otherPods: visibleOtherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
@@ -1307,7 +1316,7 @@ installRouter.post('/agents/:name/pods/:podId', logAgentInstallRefusal('/api/reg
     const { source, fromProjection } = resolved;
     req.body = {
       ...req.body,
-      config: inheritablePodConfig(source.config),
+      config: await withRoutedRuntime(inheritablePodConfig(source.config), agentName, instanceId),
       scopes: source.scopes || [],
       // A DM row's version is a literal, not one the agent runs.
       ...(fromProjection ? {} : { version: source.version }),

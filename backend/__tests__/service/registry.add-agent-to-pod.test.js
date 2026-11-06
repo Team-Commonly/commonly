@@ -259,6 +259,60 @@ describe('adding an existing agent to another pod', () => {
       expect(added.config.autoJoinSource).toBeUndefined();
     });
 
+    it('adds from a row whose config is null', async () => {
+      await installByo();
+      await AgentInstallation.collection.updateOne({ agentName: NAME, podId: home._id }, { $set: { config: null } });
+
+      expect((await add(owner, target._id)).status).toBe(200);
+    });
+
+    it('gives the new row the runtime routing uses when the source has none', async () => {
+      await installByo();
+      await AgentInstallation.collection.updateOne({ agentName: NAME, podId: home._id }, { $set: { 'config.runtime': { runtimeType: null } } });
+      const room = await pod('Room', [stranger._id], { type: 'agent-room' });
+      await seedRow(stranger._id, room._id, { config: { runtime: { runtimeType: 'webhook', host: 'byo' }, autoJoinSource: 'agent-room-create' } });
+
+      expect((await add(owner, target._id)).status).toBe(200);
+      expect((await row(target._id)).config.runtime.runtimeType).toBe('webhook');
+    });
+
+    it('lets the owner add an agent a guest has a DM with', async () => {
+      await installByo();
+      const room = await pod('Room', [stranger._id], { type: 'agent-room' });
+      await seedRow(stranger._id, room._id, { config: {} });
+
+      expect((await add(owner, target._id)).status).toBe(200);
+    });
+
+    it('lets the owner add an agent someone mentioned into their pod', async () => {
+      await installByo();
+      const theirs = await pod('Theirs', [stranger._id]);
+      await seedRow(stranger._id, theirs._id, { config: { autoJoinSource: 'mention' } });
+
+      expect((await add(owner, target._id)).status).toBe(200);
+    });
+
+    it('still refuses when someone else really owns a row of that name', async () => {
+      await installByo();
+      const theirs = await pod('Theirs', [stranger._id]);
+      await seedRow(stranger._id, theirs._id);
+
+      const res = await add(owner, target._id);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('agent_name_taken');
+    });
+
+    it('lists only the other pods the caller can see', async () => {
+      await installByo();
+      await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
+      const theirs = await pod('Theirs', [stranger._id]);
+      await seedRow(stranger._id, theirs._id);
+
+      const res = await add(owner, target._id);
+      expect(res.status).toBe(200);
+      expect(res.body.otherPods.map(String)).toEqual([String(home._id)]);
+    });
+
     it('refuses a DM-only source with no runtime to copy', async () => {
       await installByo();
       const room = await pod('Room', [owner._id], { type: 'agent-dm' });
