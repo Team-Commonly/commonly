@@ -4378,3 +4378,13 @@ A person granted their agent GitHub through the grant broker, then revoked the g
 
 **Lesson:** a prohibition that names one field reads as permission for its sibling. When two fields reach the same storage effect, name the effect, and name every field that causes it.
 
+
+## 101. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
+
+*Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
+
+Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. The frame around its event carries two of them (`Event 1/1: first_contact`, the checkpoint instructions). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
+
+**Repair:** the line every wrapper-posted turn already carries, `FINAL_TEXT_IS_POSTED`, now says to describe a failure in plain words and not to name runtime terms unless the person asked. It reaches every adapter because they all read the same frame. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
+
+**Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.

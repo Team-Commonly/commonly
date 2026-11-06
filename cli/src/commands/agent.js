@@ -1509,7 +1509,13 @@ export const runMemoryImport = async ({
 // is. Every prompt whose final text the wrapper posts to the pod carries it.
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
+  // D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod
+  // about checkpoints, first_contact and re-serving. The model wrote that, not
+  // the wrapper, so the fix is an instruction here and not a filter on its text:
+  // a filter would also eat a pod that is discussing these words.
+  + 'If something failed, say in plain words what didn\'t work and what the person can do next. '
+  + 'Do not name event types, checkpoints, deliveries, retries or other runtime terms unless the person asked about them.';
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with

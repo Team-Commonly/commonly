@@ -1430,7 +1430,9 @@ describe('performRun', () => {
   // every prompt whose final text reaches the pod says so. Pinned as a literal
   // rather than imported, so rewording the line is a deliberate test change.
   const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+    + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
+    + 'If something failed, say in plain words what didn\'t work and what the person can do next. '
+    + 'Do not name event types, checkpoints, deliveries, retries or other runtime terms unless the person asked about them.';
 
   const firstPromptFor = async (events) => {
     createClient.mockReturnValue({
