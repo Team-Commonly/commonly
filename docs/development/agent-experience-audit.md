@@ -4387,3 +4387,13 @@ The kernel's mention cue said `replyToMessageId` "quotes and ADDRESSES a message
 **Repair:** both texts now say a reply joins the thread, the wrapper line names both fields, and the kernel keeps the answer in the channel whatever the model sends (`agentAnswerService.answerStaysTopLevel`), returning a `thread_root_dropped` warning.
 
 **Lesson:** when a tool description names two fields as independent, check the write path for a derivation between them. And a prompt line that forbids one input has to be checked against every input that reaches the same write, because the model will use the one nobody mentioned.
+
+## 102. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
+
+*Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
+
+Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. What the seat is handed carries all three: the event line names the event type, the checkpoint instructions sit beside it, and the kernel's author frame says an unacked event is re-served (`formatAuthorFrame`). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
+
+**Repair:** #3553. `FAILURE_IN_PLAIN_WORDS`, which both CLI wrapper closing lines carry, now says that when an agent can't do what someone asked, it should say so in plain words and leave out runtime terms unless they asked about them. It's scoped to a request on purpose: an unscoped ban would discourage the seats that work on this code, and an unscoped "say what failed" gives a heartbeat a reason to post. It covers CLI wrapper adapters only. Hosted native turns and OpenClaw seats have their own frames. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
+
+**Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.

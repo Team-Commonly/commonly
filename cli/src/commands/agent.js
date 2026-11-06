@@ -1553,6 +1553,16 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
+// D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod about
+// checkpoints, first_contact and re-serving. The model wrote that, not the
+// wrapper, so the fix is an instruction and not a filter on its text: a filter
+// would also eat a pod that is discussing these words. It speaks only to a
+// request it can't meet, so it gives a heartbeat no reason to post. Every closing
+// line carries it, and it says where the note goes once the agent has posted.
+const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
+  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+  + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
+
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
 // exact match (`silentReply` in runTurn), so a seat that checkpointed and then
@@ -1562,7 +1572,8 @@ export const runMemoryImport = async ({
 // is. Every prompt whose final text the wrapper posts to the pod carries it.
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
+  + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
+  + FAILURE_IN_PLAIN_WORDS;
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with
@@ -1619,7 +1630,8 @@ export const answersInChannel = (entry) => {
 const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
   + 'is short, is that you can\'t help, or repeats what another agent said. Do not leave them without a reply.]';
 const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-  + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
+  + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
+  + FAILURE_IN_PLAIN_WORDS;
 
 export const answersAPerson = (entry) => (
   entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame
