@@ -3601,9 +3601,10 @@ export const performRun = ({
         const { messages = [], otherAgentsInPod, peopleInPod } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
-        if (typeof otherAgentsInPod === 'boolean') podAttendance = { otherAgentsInPod, peopleInPod };
+        podAttendance = typeof otherAgentsInPod === 'boolean' ? { otherAgentsInPod, peopleInPod } : null;
         return messages;
       } catch {
+        podAttendance = null;
         return null;
       }
     };
