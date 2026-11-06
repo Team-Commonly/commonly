@@ -113,6 +113,12 @@ const V2AgentSettingsPage: React.FC = () => {
     return response.data || [];
   }, [agentName, instanceId]);
 
+  // Keyed on the agent, not on the settings read: a refresh leaves the agent's
+  // connection as it was, and the header shouldn't drop it while it's re-read.
+  useEffect(() => {
+    setConnection(null);
+  }, [identityKey]);
+
   useEffect(() => {
     let active = true;
     setKeys([]);
@@ -122,7 +128,6 @@ const V2AgentSettingsPage: React.FC = () => {
     setOneTimeKey(null);
     setPendingAction(null);
     setBusy(false);
-    setConnection(null);
     setKeyOpen(false);
     setSkillsOpen(false);
     setSkillCount(undefined);

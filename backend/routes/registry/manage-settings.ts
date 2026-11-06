@@ -61,12 +61,13 @@ const hostedHeartbeatFor = (installation: any) => (isHostedInstallation(installa
   runsPerDay: hostedRunsNative(installation) ? hostedHeartbeatRunsPerDay() : 0,
 } : null);
 
-const settings = (installation: any, podName: string) => {
+const settings = (installation: any, podName: string, podType?: string) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
   return {
     podId: String(installation.podId),
     podName,
+    podType,
     status: installation.status,
     wakeOnMessage,
     humanOnly: config.wakeOnMessage?.humanOnly === true,
@@ -99,8 +100,9 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     }).sort({ createdAt: 1, _id: 1 }).lean();
     const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
-      .select('name').lean();
+      .select('name type').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
+    const types = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.type)]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
     const quotaOwner = fallback?.installedBy || userId;
@@ -197,7 +199,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeEditable: !hosted && Boolean(writable) && (!seat?.sourcePodId || Boolean(source)),
       harnessCatalog: HARNESS_CATALOG,
       installations: visible
-      .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
+      .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)))) });
   } catch (error) {
     console.error('Error loading agent settings:', error);
     return res.status(500).json({ error: 'Failed to load agent settings' });
