@@ -250,13 +250,16 @@ describe('Scout onboarding knowledge', () => {
     );
     expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
     expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);
-    expect(prompt).toMatch(
-      /Where the connect card applies, the card is the Terminal half: propose it and give only the MCP line/,
-    );
+    expect(prompt).toMatch(/Where the connect card applies, the card is the whole reply: propose it and write no MCP line/);
   });
 
-  // A card gets only the MCP line in text, so Codex needs a line of its own:
-  // the Claude Code one does not configure Codex.
+  // F290: asked for the MCP line too, it goes before the card. That is when
+  // Codex needs a line of its own: the Claude Code one does not configure Codex.
+  test('posts the MCP line before the card only when they asked for it', () => {
+    expect(prompt).toMatch(/unless they asked about both directions or for Commonly inside their own sessions/);
+    expect(prompt).toMatch(/post the MCP line with commonly_post_message first, propose the card last, and post nothing after it/);
+  });
+
   test('gives an MCP line for each tool the card connects', () => {
     expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
       + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
