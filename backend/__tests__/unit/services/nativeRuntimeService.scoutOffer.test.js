@@ -10,6 +10,7 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: false }) }) })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
 jest.mock('../../../services/agentMessageService', () => ({
@@ -36,6 +37,7 @@ jest.mock('../../../models/Task', () => mockTask);
 
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
+const User = require('../../../models/User');
 const AgentMessageService = require('../../../services/agentMessageService');
 const { runAgent } = require('../../../services/nativeRuntimeService');
 const { SCOUT_OFFER_COPY } = require('../../../config/native-agents/scout');
@@ -73,6 +75,29 @@ const says = (content) => ({
 const { en, 'zh-CN': zh } = SCOUT_OFFER_COPY;
 const offer = (args) => { axios.post.mockResolvedValueOnce(callsTool('commonly_offer_own_agent', args)); };
 const posted = () => AgentMessageService.postMessage.mock.calls.map(([call]) => call);
+const senderIsBot = (isBot) => User.findById.mockReturnValue({
+  select: () => ({ lean: () => Promise.resolve({ isBot }) }),
+});
+// The message service suppresses a bare NO_REPLY: a skip, and no row.
+const modelStaysSilent = () => {
+  axios.post.mockResolvedValueOnce(says('NO_REPLY'));
+  AgentMessageService.postMessage.mockImplementation(async ({ content }) => (
+    content === 'NO_REPLY' ? { skipped: true } : { success: true }
+  ));
+};
+const landed = () => posted().filter(({ content }) => content !== 'NO_REPLY');
+const connectStart = { id: 'connect-agent', label: 'Connect an agent I already use' };
+const press = {
+  type: 'message.posted',
+  eventId: '507f1f77bcf86cd799439013',
+  payload: {
+    content: '[Pod context]\n\nStart a pod for a project',
+    rawContent: 'Start a pod for a project',
+    messageId: '130343',
+    userId: OWNER,
+    senderIsHuman: true,
+  },
+};
 
 describe('commonly_offer_own_agent', () => {
   const savedEnv = { ...process.env };
@@ -85,6 +110,7 @@ describe('commonly_offer_own_agent', () => {
     AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) }));
     AgentMessageService.postMessage.mockResolvedValue({ success: true });
     mockListHosted.mockResolvedValue([]);
+    senderIsBot(false);
     mockTask.exists.mockResolvedValue(null);
     mockTask.countDocuments.mockResolvedValue(3);
     mockTask.create.mockImplementation(async (doc) => doc);
@@ -105,7 +131,7 @@ describe('commonly_offer_own_agent', () => {
     expect(posted()[0].content).toBe(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`);
     expect(posted()[0].payload).toEqual({
       kind: 'starts',
-      starts: [{ id: 'run-hosted', label: 'Run it here', href: `/v2/agents/byo?pod=${POD}&mode=hosted` }],
+      starts: [connectStart, { id: 'run-hosted', label: 'Run it here', href: `/v2/agents/byo?pod=${POD}&mode=hosted` }],
     });
   });
 
@@ -152,7 +178,7 @@ describe('commonly_offer_own_agent', () => {
     warn.mockRestore();
 
     expect(posted()[0].content).toBe(en.withoutHosted);
-    expect(posted()[0].payload).toBeUndefined();
+    expect(posted()[0].payload).toEqual({ kind: 'starts', starts: [connectStart] });
   });
 
   test('an "I can\'t" adds no task and keeps the lead in front', async () => {
@@ -162,7 +188,9 @@ describe('commonly_offer_own_agent', () => {
     await runAgent(scoutInstall, ask);
 
     expect(mockTask.create).not.toHaveBeenCalled();
-    expect(posted()[0].content).toBe(`I can't run commands on your computer. ${en.withHosted}`);
+    expect(posted()[0].content).toBe(
+      `I can't run commands on your computer. ${en.withHosted.replace(en.cantOpen, en.afterLead)}`,
+    );
   });
 
   test('a long lead is cut to one short line', async () => {
@@ -171,7 +199,7 @@ describe('commonly_offer_own_agent', () => {
 
     await runAgent(scoutInstall, ask);
 
-    expect(posted()[0].content).toBe(`I can't ${'x'.repeat(152)} ${en.withHosted}`);
+    expect(posted()[0].content).toBe(`I can't ${'x'.repeat(152)} ${en.withHosted.replace(en.cantOpen, en.afterLead)}`);
   });
 
   test('a lead that is a sentinel cannot silence the offer', async () => {
@@ -193,6 +221,67 @@ describe('commonly_offer_own_agent', () => {
     await runAgent(scoutInstall, ask);
 
     expect(posted().map((call) => call.content)).toContain('I can\'t post that right now.');
+  });
+
+  test.each([
+    ['en', en, "I can't open your repo."],
+    ['zh-CN', zh, '我打不开你的仓库。'],
+  ])('a lead keeps the fixed line from saying "can\'t" a second time (%s)', async (locale, copy, lead) => {
+    offer({ locale, lead });
+    axios.post.mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted()[0].content.startsWith(`${lead} ${copy.afterLead}`)).toBe(true);
+    expect(posted()[0].content).not.toContain(copy.cantOpen);
+  });
+
+  test('a silent model on the Start a pod press still gets the offer and the task', async () => {
+    modelStaysSilent();
+
+    await runAgent(scoutInstall, press);
+
+    expect(mockTask.create).toHaveBeenCalledTimes(1);
+    expect(landed()).toHaveLength(1);
+    expect(landed()[0].content).toBe(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`);
+  });
+
+  test('a repeat press is sent as a person waiting, so it is not dropped as a duplicate', async () => {
+    modelStaysSilent();
+
+    await runAgent(scoutInstall, press);
+
+    expect(landed()[0].personWaiting).toBe(true);
+  });
+
+  test('the floor stays out when the model answered the press', async () => {
+    offer({ locale: 'en', addFirstTask: true });
+    axios.post.mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, press);
+
+    expect(posted()).toHaveLength(1);
+    expect(mockTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['another message', { ...press, payload: { ...press.payload, rawContent: 'just thinking out loud' } }],
+    ['an agent posting the label', { ...press, payload: { ...press.payload, senderIsHuman: false } }],
+  ])('silence on %s stays silence', async (_name, trigger) => {
+    modelStaysSilent();
+    senderIsBot(trigger.payload.senderIsHuman === false);
+
+    await runAgent(scoutInstall, trigger);
+
+    expect(landed()).toHaveLength(0);
+  });
+
+  test('an install without the tool gets no floor', async () => {
+    modelStaysSilent();
+
+    await runAgent({ ...scoutInstall, config: { ...scoutInstall.config, tools: ['commonly_post_message'] } }, press);
+
+    expect(landed()).toHaveLength(0);
   });
 
   test('reads in zh-CN, with the task title in Chinese', async () => {

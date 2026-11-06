@@ -34,7 +34,7 @@ export const SCOUT_STARTS = [
   { id: 'start-pod', label: 'Start a pod for a project' },
 ] as const;
 
-const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
+export const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
   SCOUT_STARTS.find((start) => start.id === id)?.label ?? id
 );
 
@@ -62,6 +62,8 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here'
 export const SCOUT_OFFER_COPY = {
   en: {
     firstTask: 'Read your repo and say what to do first',
+    cantOpen: "I can't open repos, but your own agent can:",
+    afterLead: 'Your own agent can:',
     taskOnBoard: (title: string): string => `"${title}" is on your board.`,
     taskFailed: "I couldn't add a task to your board.",
     withHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't reach your computer or clone a repo, or tell me the project and I'll set up its pod.",
@@ -69,6 +71,8 @@ export const SCOUT_OFFER_COPY = {
   },
   'zh-CN': {
     firstTask: '读一读你的仓库，说说先做什么',
+    cantOpen: '我打不开仓库，但你自己的智能体可以：',
+    afterLead: '你自己的智能体可以：',
     taskOnBoard: (title: string): string => `“${title}”已经在你的任务板上了。`,
     taskFailed: '我没能把任务加到你的任务板上。',
     withHosted: '我打不开仓库，但你自己的智能体可以：接入 Claude Code 或 Codex 就行。也可以在这里运行一个，不过它连不上你的电脑，也拉不了仓库。或者告诉我是什么项目，我来建 Pod。',
@@ -131,6 +135,8 @@ export const scoutApp = {
     + '"Run it here" chosen. Either way it sends you nothing. The others send the start as '
     + 'the person\'s own message: '
     + `"${startLabel('ask-scout')}", "${startLabel('connect-agent')}" and "${startLabel('start-pod')}". `
+    + 'Each one is the person pressing your button, so it is addressed to you '
+    + 'even with others in the pod: never stay silent on one. '
     + `For "${startLabel('ask-scout')}", answer in two or three short sentences: `
     + 'name the one thing most useful to them here, not a list, then offer to do '
     + 'it right now in this pod, such as putting their first task on the board. '

@@ -26,7 +26,7 @@
    @typescript-eslint/no-require-imports */
 
 import { Types } from 'mongoose';
-import { SCOUT_OFFER_COPY, normalizeScoutLocale } from '../config/native-agents/scout';
+import { SCOUT_OFFER_COPY, normalizeScoutLocale, startLabel } from '../config/native-agents/scout';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
@@ -1256,16 +1256,23 @@ export async function dispatchTool(
           }
         }
         const href = `/v2/agents/byo?pod=${encodeURIComponent(String(ctx.podId))}&mode=hosted`;
+        const offerLine = hosted ? copy.withHosted : copy.withoutHosted;
+        // A lead has already said what Scout can't do.
+        const body = lead ? offerLine.replace(copy.cantOpen, copy.afterLead) : offerLine;
+        const starts = [
+          { id: 'connect-agent', label: startLabel('connect-agent') },
+          ...(hosted ? [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] : []),
+        ];
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
           podId: ctx.podId,
-          content: [lead, taskLine, hosted ? copy.withHosted : copy.withoutHosted].filter(Boolean).join(' '),
+          content: [lead, taskLine, body].filter(Boolean).join(' '),
           messageType: 'text',
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
-          ...(hosted ? { payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] } } : {}),
+          payload: { kind: 'starts', starts },
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
@@ -1883,6 +1890,23 @@ export const connectIntentFloor = async (input: {
     noOutboundRelay: input.noOutboundRelay,
   });
   return Boolean(result.ok);
+};
+
+// A button press must not rest on the model choosing to answer: on prod, Haiku
+// stayed silent on the first of two presses in a pod with other participants.
+// The click sends the English label whatever the language, and no language is
+// stored for the person, so the floor's reply reads in English.
+export const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
+  if (ctx.agentName !== 'scout') return false;
+  // payload.content carries the wake frames; rawContent is the person's words.
+  const pressed = (trigger.payload as { rawContent?: unknown } | null | undefined)?.rawContent;
+  if (String(pressed ?? '').trim() !== startLabel('start-pod')) return false;
+  if (!(await triggerTextIsHumanWritten(trigger))) return false;
+  // A press is addressed to Scout, so a repeat isn't dropped as a duplicate.
+  ctx.personWaiting = true;
+  const result = await dispatchTool('commonly_offer_own_agent', { addFirstTask: true, locale: 'en' }, ctx);
+  if (result.error) console.warn('[native-runtime] start-pod floor not posted:', result.error);
+  return Boolean(ctx.ownAgentOfferPosted);
 };
 
 export function buildUserMessage(
@@ -3330,11 +3354,12 @@ export async function runAgent(
       const podBridged = mayLookUp || dispatchCtx.brokerCallSeen
         ? await podBridgedNow() : false;
       const postingRefused = podBridged && Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen);
-      const proposeOffered = !webSetAside && !postingRefused && toolsForConfig(cfg, inPodOnly, {
+      const floorTools = !webSetAside && !postingRefused ? toolsForConfig(cfg, inPodOnly, {
         webTainted: Boolean(dispatchCtx.webTainted),
         computerReadSeen: Boolean(dispatchCtx.computerReadSeen),
         podBridged,
-      }).some((tool) => tool.function.name === 'commonly_propose_action');
+      }).map((tool) => tool.function.name) : [];
+      const proposeOffered = floorTools.includes('commonly_propose_action');
       if (proposeOffered && await connectIntentFloor({
         trigger,
         podId,
@@ -3348,9 +3373,11 @@ export async function runAgent(
         // A card posted here is the turn's reply, so the claim is completed,
         // not released as declined.
         postedViaTool = true;
+      } else if (floorTools.includes('commonly_offer_own_agent') && await startPodFloor(trigger, dispatchCtx)) {
+        postedViaTool = true;
       }
     } catch (floorErr) {
-      console.warn('[native-runtime] connect-intent floor not posted:', (floorErr as Error).message);
+      console.warn('[native-runtime] floor not posted:', (floorErr as Error).message);
     }
   }
 
