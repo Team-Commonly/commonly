@@ -160,6 +160,16 @@ with `prWrite: true`.
 The grant form in the app does not offer `prWrite` yet. Until it does, a grant
 is minted with `POST /api/grants` under the owner's session.
 
+The form offers `read` and nothing else for now, on every connector type
+(`FORM_OFFERS_WRITES` in `frontend/src/v2/connectors/toolModel.ts`). No grant it
+could mint gave an agent a write: `hostedBrokerToolsForRun` offers a hosted run
+read tools, plus the PR tools on a `prWrite` grant; `checkByoNaming` refuses a
+write on a named seat without `prWrite`; `outsiderGrantPodRefusal` refuses any
+other outside agent in the pod, and refuses `write` on every pod, with no admin
+or GitHub App exception. A stored write grant keeps its mode in the list and the
+detail, but **Change access** reopens it on `read`, and that mint carries no
+`prWrite`, so re-mint a `prWrite` grant through the API instead.
+
 ## What the agent does
 
 1. Reads the issue (`github.get_issue`).

@@ -2722,7 +2722,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
-    "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "linearWriteReconnect": "Agents can read Linear from here, but they can't write to it.",
     "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
@@ -2740,7 +2740,7 @@
     "agents": "agents",
     "agentsAllowed": "agents allowed",
     "ask": "Ask",
-    "asksEveryWrite": "every write asks first",
+    "asksEveryWrite": "a write would ask first",
     "asksFirst": "asks a person first",
     "asksList": "{{tools}} ask first",
     "asksNothing": "nothing asks first",

@@ -433,9 +433,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  // A Linear connection made before write access lacks the write scope, so the
-  // server refuses to grant it write mode until it is connected again. The page
-  // cannot see a connection's scope, so the note is conditional and always shown.
+  // F213: the form offers Linear no write, so the line says that. When write
+  // mode returns, a connection made before write access needs reconnecting: the
+  // server refuses it the mode, and the page cannot see a connection's scope.
   const renderLinearWriteNote = (entry: ToolCatalogEntry) => (
     entry.connectionType === 'hosted-mcp' && entry.entryId === 'linear' && entry.connections.length > 0
       ? <p className="v2-cx-note" role="note">{t('tools.linearWriteReconnect')}</p>
@@ -574,7 +574,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     const asks = draft.writeMode === 'read'
       ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
       : draft.writeMode === 'write-with-confirm'
-        ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
+        ? t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' })
         : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>

@@ -184,6 +184,11 @@ export const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
+// F213 stopgap: no grant this form can mint gives an agent a write. Hosted runs
+// are offered read tools only, a named agent's grant must be read, any other
+// outside agent in the pod refuses the mint, and `write` refuses on every pod.
+// F214 and F215 restore the modes; turning this on brings the choice back.
+export const FORM_OFFERS_WRITES: boolean = false;
 
 /**
  * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through

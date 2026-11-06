@@ -2723,7 +2723,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
-    "linearWriteReconnect": "如果你是在支持写入之前连接的 Linear，需要先断开再重新连接，才能写入。每次写入都需要你批准。",
+    "linearWriteReconnect": "智能体可以在这里读取 Linear，但不能写入。",
     "reachNone": "连接时，这个 {{label}} 账号还看不到任何项目，所以搜索结果为空。添加项目后请重新连接。",
     "granted": "已授权",
     "beta": "测试版",
@@ -2741,7 +2741,7 @@
     "agents": "智能体",
     "agentsAllowed": "可使用的智能体",
     "ask": "申请",
-    "asksEveryWrite": "每次写入前都需确认",
+    "asksEveryWrite": "如有写入，需先确认",
     "asksFirst": "调用前需人工确认",
     "asksList": "{{tools}} 调用前需确认",
     "asksNothing": "无需确认",
