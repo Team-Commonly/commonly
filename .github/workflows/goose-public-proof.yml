@@ -4,14 +4,26 @@ on:
   pull_request:
     paths:
       - 'cli/src/lib/adapters/goose.js'
+      - 'cli/src/lib/adapters/broker-bridge-entry.js'
+      - 'cli/src/lib/adapters/codex-broker-bridge.mjs'
+      - 'cli/src/lib/adapters/pi-mcp-client.mjs'
+      - 'cli/src/lib/adapters/seat-model.js'
+      - 'cli/src/lib/adapters/tested-version.js'
+      - 'cli/test-support/**'
       - 'cli/src/lib/default-environment.js'
+      - 'cli/src/lib/grant-broker-guard.js'
+      - 'cli/src/lib/declared-mcp-guard.js'
       - 'cli/src/lib/sandbox/**'
       - 'cli/src/lib/provider-proxy.js'
+      - 'cli/src/lib/upstream-refusal.js'
       - 'cli/src/lib/mcp*.js'
+      - 'cli/src/lib/mcp-warm-child.mjs'
       - 'cli/src/lib/credential-file.js'
       - 'cli/src/lib/environment.js'
       - 'cli/src/lib/public-withheld-tools.js'
       - 'cli/src/lib/memory-bridge.js'
+      - 'cli/src/lib/resolve-on-path.js'
+      - 'cli/src/lib/skill-prompt.js'
       - 'packages/seats/**'
       - 'cli/__tests__/*goose*'
       - 'commonly-mcp/**'
@@ -48,7 +60,7 @@ jobs:
         run: |
           export COMMONLY_GOOSE_SMOKE_BINARY="$PWD/.dev/goose/goose"
           cd cli
-          node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs --runInBand
+          node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs __tests__/goose.grant-broker.public-smoke.test.mjs --runInBand
   linux:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -74,5 +86,5 @@ jobs:
               echo "bf01cb6359f7a2b1acb54ca4827e1d059b18aabb3d2b75202e21066cfd3a3396  /work/tools/cli.tar.bz2" | sha256sum -c -
               tar -xjf /work/tools/cli.tar.bz2 -C /work/tools
               chown -R node:node /work
-              su node -s /bin/bash -c "cd /work/cli && COMMONLY_GOOSE_SMOKE_BINARY=/work/tools/goose node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs --runInBand"
+              su node -s /bin/bash -c "cd /work/cli && COMMONLY_GOOSE_SMOKE_BINARY=/work/tools/goose node --experimental-vm-modules node_modules/.bin/jest __tests__/goose.public-smoke.test.mjs __tests__/goose.grant-broker.public-smoke.test.mjs --runInBand"
             '

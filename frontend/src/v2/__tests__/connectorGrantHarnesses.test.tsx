@@ -13,14 +13,14 @@ describe('the harnesses a connector grant can reach', () => {
   beforeAll(async () => { await i18nReady; });
   afterEach(async () => { await act(async () => { await i18n.changeLanguage('en'); }); });
 
-  test('mirrors the server\'s confining adapters: Claude Code, Codex, OpenCode and pi', () => {
-    expect([...GRANT_HARNESS_IDS]).toEqual(['claude', 'codex', 'opencode', 'pi']);
+  test('mirrors the server\'s confining adapters', () => {
+    expect([...GRANT_HARNESS_IDS]).toEqual(['claude', 'codex', 'opencode', 'pi', 'qwen', 'goose']);
     for (const id of GRANT_HARNESS_IDS) expect(KNOWN_HARNESS_IDS).toContain(id);
   });
 
-  // F175c: pi holds a grant only as a public agent, which needs no naming, so
-  // the naming lines keep the three harnesses naming can reach.
-  test('the naming lines leave pi out', () => {
+  // F175c, F175d: pi, Qwen and Goose hold a grant only as a public agent, which
+  // needs no naming, so the naming lines keep the three harnesses naming can reach.
+  test('the naming lines leave the public-only harnesses out', () => {
     expect([...NAMEABLE_HARNESS_IDS]).toEqual(['claude', 'codex', 'opencode']);
   });
 
@@ -38,11 +38,12 @@ describe('the harnesses a connector grant can reach', () => {
       .toBe('授权中只能指定 Claude Code、Codex 或 OpenCode 智能体。');
   });
 
-  // Honest states: no sandbox at all (dsh, Hermes), not on the grant list yet
-  // (Goose, Qwen), or pi, which has a sandbox only on macOS (F175c).
+  // Honest states: no sandbox at all (dsh, Hermes), not on the grant list yet (a
+  // harness none of the lists has heard of), public only (Goose, Qwen, F175d), or
+  // pi, which has a sandbox only on macOS (F175c).
   test.each([
-    ['dsh', 'never'], ['hermes', 'never'],
-    ['goose', 'notYet'], ['qwen', 'notYet'],
+    ['dsh', 'never'], ['hermes', 'never'], ['some-new-harness', 'notYet'],
+    ['goose', 'publicOnly'], ['qwen', 'publicOnly'],
     ['claude', null], ['codex', null], ['opencode', null], ['', null],
   ])('%s: %s', (id, expected) => {
     expect(connectorGrantBlock(id)).toBe(expected);
@@ -59,18 +60,24 @@ describe('the harnesses a connector grant can reach', () => {
     expect(connectorGrantBlock('pi', os)).toBe(expected);
   });
 
+  test.each([[null], ['mac'], ['linux']])('Goose and Qwen on %s: public only, on both hosts', (os) => {
+    expect(connectorGrantBlock('goose', os)).toBe('publicOnly');
+    expect(connectorGrantBlock('qwen', os)).toBe('publicOnly');
+  });
+
   // The CLI withholds grant brokers from every seat on native Windows, so a
   // harness on the grant list says so there; the others keep their own line.
   test.each([
     ['claude', 'windows'], ['codex', 'windows'], ['opencode', 'windows'], ['pi', 'windows'],
-    ['dsh', 'never'], ['goose', 'notYet'], ['', null],
+    ['goose', 'windows'], ['qwen', 'windows'],
+    ['dsh', 'never'], ['', null],
   ])('%s on Windows: %s', (id, expected) => {
     expect(connectorGrantBlock(id, 'windows')).toBe(expected);
   });
 
   test('a harness on the grant list never gets a line on a Mac, whatever else it is', () => {
     for (const id of KNOWN_HARNESS_IDS) {
-      expect(connectorGrantBlock(id, 'mac') === null).toBe(GRANT_HARNESS_IDS.includes(id) && id !== 'pi');
+      expect(connectorGrantBlock(id, 'mac') === null).toBe(NAMEABLE_HARNESS_IDS.includes(id));
     }
   });
 
@@ -81,6 +88,10 @@ describe('the harnesses a connector grant can reach', () => {
       .toBe('Connectors need a sandboxed harness. pi runs without a sandbox, so it can’t use connectors.');
     expect(t('harness.connectorsMacPublicOnly', { tool: 'pi' }))
       .toBe('pi can use connectors only as a public agent on a Mac.');
+    expect(t('harness.connectorsPublicOnly', { tool: 'Goose' }))
+      .toBe('Goose can use connectors only as a public agent.');
+    expect(t('harness.connectorsPublicOnlyVersion', { tool: 'Qwen Code', version: '0.26.2' }))
+      .toBe('Qwen Code can use connectors only as a public agent, on version 0.26.2.');
   });
 
   test('zh-CN calls a harness 运行器, as agentManage.controls.harness does', async () => {
@@ -91,7 +102,10 @@ describe('the harnesses a connector grant can reach', () => {
     expect(t('harness.noConnectorsYet', { tool: 'Goose' })).toBe('Goose 暂时还用不了连接器。');
     expect(t('harness.noConnectorsWindows')).toBe('Windows 上暂时还用不了连接器。');
     expect(t('harness.connectorsMacPublicOnly', { tool: 'pi' })).toBe('pi 只有作为 Mac 上的公开智能体时才能用连接器。');
-    for (const key of ['harness.noConnectors', 'harness.noConnectorsYet', 'harness.noConnectorsWindows', 'harness.connectorsMacPublicOnly']) {
+    expect(t('harness.connectorsPublicOnly', { tool: 'Goose' })).toBe('Goose 只有作为公开智能体时才能用连接器。');
+    expect(t('harness.connectorsPublicOnlyVersion', { tool: 'Qwen Code', version: '0.26.2' }))
+      .toBe('Qwen Code 只有作为公开智能体、且版本为 0.26.2 时才能用连接器。');
+    for (const key of ['harness.noConnectors', 'harness.noConnectorsYet', 'harness.noConnectorsWindows', 'harness.connectorsMacPublicOnly', 'harness.connectorsPublicOnly']) {
       expect(t(key, { tool: 'X' })).not.toContain('运行环境');
     }
   });

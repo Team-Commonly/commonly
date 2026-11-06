@@ -1,3 +1,5 @@
+const fs = require('fs');
+const nodePath = require('path');
 // TASK-063: the server-side confinement predicate for a grant broker. The
 // table is the point of this file — each row is a declaration the server may
 // see, and the two rows that must NOT refuse are the ones that keep the fix
@@ -15,7 +17,9 @@ const {
   effectiveSandboxTrust,
   normalizeAdapter,
   grantBrokerRefusal,
+  grantBrokerRefusalWithoutDaemon,
 } = require('../../../services/grantBrokerConfinement');
+const { namingLiftsRefusal } = require('../../../services/byoGrantNaming');
 
 describe('grant broker confinement predicate', () => {
   // The cli owns this table (cli/src/lib/environment.js LEGACY_SANDBOX_TRUST);
@@ -36,7 +40,7 @@ describe('grant broker confinement predicate', () => {
   it('pins the host-independent sets to what the adapters implement', () => {
     // 2026-10-09: the denylist became an allowlist of adapters that prove they confine,
     // keyed to the modes each enforces. An adapter is refused because it is absent, not listed.
-    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'pi', 'qwen']);
     expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
     // F175a: OpenCode enforces Seatbelt workspace/read-only on macOS and bwrap
@@ -44,9 +48,13 @@ describe('grant broker confinement predicate', () => {
     expect([...CONFINING_ADAPTERS.get('opencode')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     // F175c: pi confines only a public seat, in macOS Seatbelt (no bwrap path).
     expect([...CONFINING_ADAPTERS.get('pi')].sort()).toEqual(['read-only', 'workspace']);
-    expect([...PUBLIC_ONLY_GRANT_ADAPTERS]).toEqual(['pi']);
+    // F175d: Qwen and Goose confine only a public seat, on either host's jail.
+    for (const adapter of ['qwen', 'goose']) {
+      expect([...CONFINING_ADAPTERS.get(adapter)].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
+    }
+    expect([...PUBLIC_ONLY_GRANT_ADAPTERS].sort()).toEqual(['goose', 'pi', 'qwen']);
     expect(PUBLIC_ONLY_REASON).toBe('adapter_confines_public_only');
-    for (const unconfined of ['dsh', 'hermes', 'goose', 'qwen']) expect(CONFINING_ADAPTERS.has(unconfined)).toBe(false);
+    for (const unconfined of ['dsh', 'hermes']) expect(CONFINING_ADAPTERS.has(unconfined)).toBe(false);
     // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what install paths write;
     // runtimeType values outside this set are adapter-shaped and judged.
     expect([...RUNTIME_KINDS].sort()).toEqual([
@@ -137,7 +145,26 @@ describe('grant broker confinement predicate', () => {
     ['a public pi workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, null],
     ['a public pi read-only seat', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'pi' }, null],
     ['a legacy internal trust on pi', { sandbox: { trust: 'internal' } }, { adapter: 'pi' }, null],
-    ['a goose seat, which is not on the grant list', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'goose' }, 'adapter_cannot_confine'],
+    // F175d: Goose is never defaulted into a sandbox, so it reads as pi does.
+    ['a goose seat with no sandbox block', undefined, { adapter: 'goose' }, 'adapter_confines_public_only'],
+    ['a private goose seat', { sandbox: { trust: 'private' } }, { adapter: 'goose' }, 'adapter_confines_public_only'],
+    ['a workspace-trust goose seat', { sandbox: { trust: 'workspace' } }, { adapter: 'goose' }, 'adapter_confines_public_only'],
+    ['a goose seat with mode none', { sandbox: { mode: 'none', trust: 'public' } }, { adapter: 'goose' }, 'adapter_confines_public_only'],
+    ['a goose seat on a mode no adapter implements', { sandbox: { mode: 'firejail', trust: 'public' } }, { adapter: 'goose' }, 'adapter_confines_public_only'],
+    ['a public goose seat with no mode', { sandbox: { trust: 'public' } }, { adapter: 'goose' }, null],
+    ['a public goose workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'goose' }, null],
+    ['a public goose bwrap seat', { sandbox: { mode: 'bwrap', trust: 'public' } }, { adapter: 'goose' }, null],
+    ['a goose seat tagged only by runtimeType', { sandbox: { trust: 'public' } }, { runtimeType: 'goose', host: 'byo' }, null],
+    // F175d: Qwen takes the daemon's default sandbox, so an absent block is the
+    // daemon's to judge as it is for Claude. Everything else reads as pi does.
+    ['a qwen seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'qwen' }, null],
+    ['a private qwen seat', { sandbox: { trust: 'private' } }, { adapter: 'qwen' }, 'adapter_confines_public_only'],
+    ['an empty qwen sandbox block', { sandbox: {} }, { adapter: 'qwen' }, 'adapter_confines_public_only'],
+    ['a qwen seat with mode none', { sandbox: { mode: 'none', trust: 'public' } }, { adapter: 'qwen' }, 'adapter_confines_public_only'],
+    ['a sandbox that is not an object on qwen', { sandbox: [] }, { adapter: 'qwen' }, 'adapter_confines_public_only'],
+    ['a public qwen seat with no mode', { sandbox: { trust: 'public' } }, { adapter: 'qwen' }, null],
+    ['a public qwen read-only seat', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'qwen' }, null],
+    ['a public qwen bwrap seat', { sandbox: { mode: 'bwrap', trust: 'public' } }, { adapter: 'qwen' }, null],
     // F175a: OpenCode is admitted on its three modes and nowhere else.
     ['an OpenCode seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'opencode' }, null],
     ['an OpenCode workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'opencode' }, null],
@@ -234,6 +261,55 @@ describe('grant broker confinement predicate', () => {
     expect(normalizeAdapter(42)).toBeNull();
     expect(normalizeAdapter(null)).toBeNull();
     expect(normalizeAdapter(undefined)).toBeNull();
+  });
+});
+
+// F175d: with no daemon nothing derives Qwen's default, and an absent block must
+// read as the reason naming doesn't lift. `sandbox_absent` would let a grant
+// that names a seat nothing confines through the broker's per-call check.
+describe('grantBrokerRefusalWithoutDaemon — a public-only adapter', () => {
+  it.each(['qwen', 'goose', 'pi'])('an absent block on %s is the reason naming does not lift', (adapter) => {
+    const refusal = grantBrokerRefusalWithoutDaemon(undefined, { adapter, host: 'byo' });
+    expect(refusal?.reason).toBe(PUBLIC_ONLY_REASON);
+    expect(namingLiftsRefusal(refusal)).toBe(false);
+  });
+
+  it.each(['qwen', 'goose'])('the remedy for %s names the sandbox, not a Mac', (adapter) => {
+    const refusal = grantBrokerRefusal({ sandbox: { trust: 'private' } }, { adapter });
+    expect(refusal.detail).toContain("sandbox.trust 'public'");
+    expect(refusal.detail).not.toMatch(/\bMac\b|macOS/);
+  });
+
+  it('pi keeps its Mac wording', () => {
+    const refusal = grantBrokerRefusal({ sandbox: { trust: 'private' } }, { adapter: 'pi' });
+    expect(refusal.detail).toMatch(/run it on a Mac/);
+  });
+});
+
+// The three lists are mirrors in three packages that can't import each other,
+// so the mirror is read from the source. A seat one list admits and another
+// doesn't is a grant the UI promises and the daemon withholds, or the reverse.
+describe('the grant lists agree across cli, server and frontend', () => {
+  const read = (path) => fs.readFileSync(nodePath.join(__dirname, '../../../..', path), 'utf8');
+  const quoted = (text) => [...text.matchAll(/'([a-z]+)'/g)].map((match) => match[1]).sort();
+
+  it('the cli broker list is the server list', () => {
+    const source = read('cli/src/lib/default-environment.js');
+    const list = source.match(/ADAPTERS_WITH_GRANT_BROKER = new Set\(\[([^\]]*)\]/)[1];
+    expect(quoted(list)).toEqual([...CONFINING_ADAPTERS.keys()].sort());
+  });
+
+  it('the cli public-only rule is the server rule', () => {
+    const source = read('cli/src/lib/default-environment.js');
+    const block = source.match(/ADAPTERS_WITH_PUBLIC_ONLY_GRANT = new Map\(\[([\s\S]*?)\n\]\);/)[1];
+    const names = [...block.matchAll(/\['([a-z]+)',/g)].map((match) => match[1]).sort();
+    expect(names).toEqual([...PUBLIC_ONLY_GRANT_ADAPTERS].sort());
+  });
+
+  it('the frontend list is the server list', () => {
+    const source = read('frontend/src/v2/utils/harnessCatalog.ts');
+    const list = source.match(/GRANT_HARNESS_IDS: readonly string\[\] = Object\.freeze\(\[([^\]]*)\]/)[1];
+    expect(quoted(list)).toEqual([...CONFINING_ADAPTERS.keys()].sort());
   });
 });
 

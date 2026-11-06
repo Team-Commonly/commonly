@@ -27,13 +27,18 @@ type Translate = (key: string, values?: Record<string, string>) => string;
 
 // F175a: the harnesses a connector grant can reach. Mirrors the server's
 // CONFINING_ADAPTERS (backend/services/grantBrokerConfinement.ts) and the CLI's
-// ADAPTERS_WITH_GRANT_BROKER. F175c added pi, which holds a grant only as a
-// public agent on a Mac (PUBLIC_ONLY_GRANT_HARNESSES).
-export const GRANT_HARNESS_IDS: readonly string[] = Object.freeze(['claude', 'codex', 'opencode', 'pi']);
+// ADAPTERS_WITH_GRANT_BROKER. F175c added pi, and F175d Qwen and Goose, which
+// hold a grant only as a public agent (PUBLIC_ONLY_GRANT_HARNESSES).
+export const GRANT_HARNESS_IDS: readonly string[] = Object.freeze(['claude', 'codex', 'opencode', 'pi', 'qwen', 'goose']);
 
-// Harnesses on the grant list that hold a grant only when public, in the macOS
+// Harnesses on the grant list that hold a grant only when public, in their
 // sandbox. Mirrors the server's PUBLIC_ONLY_GRANT_ADAPTERS.
-const PUBLIC_ONLY_GRANT_HARNESSES = new Set(['pi']);
+const PUBLIC_ONLY_GRANT_HARNESSES = new Set(['pi', 'qwen', 'goose']);
+// The one Qwen version that holds a connector; cli's GRANT_TESTED_QWEN_VERSIONS is the rule.
+export const GRANT_TESTED_QWEN_VERSION = '0.26.2';
+
+// Of those, the ones with no sandbox off macOS.
+const MAC_SANDBOX_ONLY_HARNESSES = new Set(['pi']);
 
 // The harnesses an agent can be NAMED on a grant from (F94). A public-only
 // harness needs no naming and naming lifts nothing for it, so the naming lines
@@ -54,22 +59,23 @@ export const grantHarnessNames = (t: Translate, catalog: HarnessCatalogEntry[] =
 // harness added to that list stops showing its line by itself.
 const NO_SANDBOX_HARNESSES = new Set(['dsh', 'hermes']);
 
-export type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly';
+export type ConnectorGrantBlock = 'never' | 'notYet' | 'windows' | 'macPublicOnly' | 'publicOnly';
 
 /**
  * Why `id` can't use connectors, or null. `os` is the computer's platform where
  * the page knows it: on native Windows the CLI gives no seat a grant broker,
- * so even a harness on the grant list can't use one there. A public-only
- * harness (pi) has no sandbox off macOS, so on Linux it reads like dsh; on a
- * Mac, or where the page doesn't know, it says when it can.
+ * so even a harness on the grant list can't use one there. pi has no sandbox off
+ * macOS, so on Linux it reads like dsh; on a Mac, or where the page doesn't
+ * know, it says when it can. Qwen and Goose have one on both hosts.
  */
 export const connectorGrantBlock = (id: string, os: 'mac' | 'linux' | 'windows' | null = null): ConnectorGrantBlock | null => {
   if (!id) return null;
   if (NO_SANDBOX_HARNESSES.has(id)) return 'never';
   if (!GRANT_HARNESS_IDS.includes(id)) return 'notYet';
   if (os === 'windows') return 'windows';
-  if (PUBLIC_ONLY_GRANT_HARNESSES.has(id)) return os === 'linux' ? 'never' : 'macPublicOnly';
-  return null;
+  if (!PUBLIC_ONLY_GRANT_HARNESSES.has(id)) return null;
+  if (!MAC_SANDBOX_ONLY_HARNESSES.has(id)) return 'publicOnly';
+  return os === 'linux' ? 'never' : 'macPublicOnly';
 };
 
 /**

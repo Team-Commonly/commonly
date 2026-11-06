@@ -71,9 +71,10 @@ import {
   join,
   resolve as pathResolve,
 } from 'path';
-import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
+import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
-import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from './codex-broker-bridge.mjs';
+import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
+import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
@@ -159,69 +160,25 @@ const substitutePlaceholders = (value, ctx) => {
 const toml = (s) => JSON.stringify(String(s));
 
 const HTTP_TRANSPORTS = new Set(['http', 'streamable-http']);
-// A server name becomes a TOML key path, so it must not hold a dot.
-const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
-// What fetch accepts in a header: Latin-1, no CR, LF or NUL.
-// eslint-disable-next-line no-control-regex
-const HEADER_TEXT = /^[^\r\n\0\u0100-\uffff]*$/;
 
 // F175b: the grant broker is a Streamable HTTP server and codex runs stdio
 // servers here, so the broker is wired as OUR stdio bridge
-// (codex-broker-bridge.mjs) with the broker's url, its headers as templates and
-// this spawn's credential-file path, none of them a secret. The command the
-// entry declares, if any, is never run. Whether this seat may hold the broker
-// at all was decided before the adapter (grant-broker-guard.js), which
-// withholds it from a seat that is not confined.
+// (broker-bridge-entry.js). Whether this seat may hold the broker at all was
+// decided before the adapter (grant-broker-guard.js).
 const bridgeGrantBroker = (server, ctx) => {
-  const skip = (why) => {
+  const entry = brokerBridgeEntry(server, ctx);
+  if (entry.skip) {
     // eslint-disable-next-line no-console
-    console.warn(`[codex] grant broker ${server.name}: ${why}, so it is not wired for this spawn.`);
+    console.warn(`[codex] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
     return null;
-  };
-  if (!SERVER_NAME.test(server.name)) return skip('its name is not a plain config key');
-  if (!ctx.credentialFile) return skip('there is no seat credential to read');
-  // Resolve the instance placeholders only: the token placeholder stays in the
-  // header template and is filled by the bridge from the file.
-  const resolve = (value) => substitutePlaceholders(value, { instanceUrl: ctx.instanceUrl });
-  const resolvedUrl = resolve(server.url);
-  const headers = Object.fromEntries(Object.entries(server.headers || {})
-    .map(([name, value]) => [String(name), resolve(String(value))]));
-  const carriesToken = (value) => !!ctx.runtimeToken && value.includes(ctx.runtimeToken);
-  if (carriesToken(resolvedUrl)
-    || Object.entries(headers).some(([name, value]) => carriesToken(name) || carriesToken(value))) {
-    return skip('the entry holds the seat token as a literal, which would ride argv');
   }
-  if (resolvedUrl.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
-  // A header fetch would reject quotes its value in the error, and that value
-  // holds the token once the bridge fills it, so such an entry is not wired.
-  if (Object.entries(headers).some(([name, value]) => !HEADER_TEXT.test(name) || !HEADER_TEXT.test(value))) {
-    return skip('a header holds a control or non-Latin-1 character');
-  }
-  // The url the guard judged (isOurGrantBroker) is normalised: resolved against
-  // the instance, with doubled slashes collapsed. The bridge fetches that same
-  // url, on the instance's own origin, or nothing.
-  let url;
-  try {
-    const instance = new URL(ctx.instanceUrl);
-    const parsed = new URL(resolvedUrl, instance);
-    if (parsed.origin !== instance.origin) return skip('its url is not on this instance');
-    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
-    url = parsed.href;
-  } catch {
-    return skip('its url does not resolve against this instance');
-  }
-  const env = [
-    [BRIDGE_URL_VAR, url],
-    [BRIDGE_HEADERS_VAR, JSON.stringify(headers)],
-    [CREDENTIAL_FILE_VAR, ctx.credentialFile],
-  ];
   return [
-    '-c', `mcp_servers.${server.name}.command=${toml(process.execPath)}`,
+    '-c', `mcp_servers.${server.name}.command=${toml(entry.command)}`,
     // The broker parks every write for the owner's approval itself, so codex
     // approving the call is the same boundary the stdio servers get below.
     '-c', `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
-    '-c', `mcp_servers.${server.name}.args=[${toml(BRIDGE_PATH)}]`,
-    '-c', `mcp_servers.${server.name}.env={${env.map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
+    '-c', `mcp_servers.${server.name}.args=[${entry.args.map(toml).join(', ')}]`,
+    '-c', `mcp_servers.${server.name}.env={${Object.entries(entry.env).map(([key, value]) => `${key} = ${toml(value)}`).join(', ')}}`,
   ];
 };
 

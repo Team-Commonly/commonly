@@ -18,6 +18,9 @@ import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { isOurGrantBroker } from '../grant-broker-guard.js';
+import { brokerBridgeEntry } from './broker-bridge-entry.js';
+import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 
 // A version enters this list only after a real headless turn with that binary.
 export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
@@ -95,13 +98,37 @@ const substitute = (value, ctx) => String(value).replace(PLACEHOLDER_RE, (whole,
   COMMONLY_INSTANCE_URL: ctx.instanceUrl,
 }[name] || whole));
 
+/**
+ * F175d: the grant broker as a recipe extension running our stdio bridge, or
+ * null when this entry can't be wired. Goose fills an HTTP header from its own
+ * environment or a literal in the recipe, and neither keeps the token to the
+ * credential file. No `available_tools`: the broker lists only what the grant
+ * holds, and re-checks the grant and this seat on every call.
+ */
+export const bridgedGooseExtension = (server, ctx) => {
+  const entry = brokerBridgeEntry(server, ctx);
+  if (entry.skip) {
+    // eslint-disable-next-line no-console
+    console.warn(`[goose] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
+    return null;
+  }
+  return { type: 'stdio', name: server.name, cmd: entry.command, args: entry.args, envs: entry.env };
+};
+
 /** The flag contains paths and URLs only. Literal MCP secrets cannot ride argv. */
 export const extensionArgs = (servers, ctx) => {
   const args = [];
-  if (ctx.publicSeat && (!Array.isArray(servers) || servers.length !== 1)) {
+  // A broker is the one extra a public seat may hold. A private seat has no
+  // jail, so the guard withholds its broker, and an entry that reaches here
+  // anyway meets the HTTP refusal below.
+  const declared = Array.isArray(servers) ? servers : [];
+  const brokers = ctx.publicSeat
+    ? declared.filter((server) => isOurGrantBroker(server, { instanceUrl: ctx.instanceUrl })) : [];
+  const others = declared.filter((server) => !brokers.includes(server));
+  if (ctx.publicSeat && others.length !== 1) {
     throw new Error('goose adapter: public seats require only the Commonly MCP extension');
   }
-  for (const server of servers || []) {
+  for (const server of others) {
     if (ctx.publicSeat && (server.name !== 'commonly' || (server.transport || 'stdio') !== 'stdio'
       || !describeMcpCommand(server.command)?.isCommonly)) {
       throw new Error('goose adapter: public seats require only the Commonly stdio MCP extension');
@@ -164,6 +191,14 @@ export const extensionArgs = (servers, ctx) => {
       args.push('--with-extension', `${server.name}:${[...env, ...commandWords].join(' ')}`);
     }
   }
+  for (const server of brokers) {
+    const extension = bridgedGooseExtension(server, ctx);
+    if (extension) {
+      ctx.publicExtensions.push(extension);
+      ctx.brokerExtensions?.add(extension.name);
+      ctx.mcpReadDirectories?.push(BRIDGE_PATH);
+    }
+  }
   return args;
 };
 
@@ -186,7 +221,9 @@ export const readGooseStream = (stdout) => {
   return { text, error, complete };
 };
 
-const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+const runGoose = ({
+  binary, args, cwd, env, timeoutMs, credentials, optionalExtensions = new Set(), spawnImpl = childSpawn,
+}) => new Promise((resolve, reject) => {
   const child = spawnImpl(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   const stdoutDecoder = new StringDecoder('utf8');
@@ -221,7 +258,10 @@ const runGoose = ({ binary, args, cwd, env, timeoutMs, credentials, spawnImpl = 
   });
   child.stderr?.on('data', (chunk) => {
     const received = chunk.toString();
-    extensionFailure ||= (stderr + received).match(/Failed to start extension '[^']+'[^\n]*/)?.[0] || null;
+    // A broker that won't start (a grant refused at the door, the instance
+    // down) costs that grant, not the turn: the seat still answers the pod.
+    extensionFailure ||= [...(stderr + received).matchAll(/Failed to start extension '([^']+)'[^\n]*/g)]
+      .find((failure) => !optionalExtensions.has(failure[1]))?.[0] || null;
     stderr = (stderr + received).slice(-8192);
   });
   child.on('error', (error) => finish(error));
@@ -309,6 +349,7 @@ export default {
       });
       const mcpReadDirectories = [];
       const publicExtensions = [];
+      const brokerExtensions = new Set();
       // Node's compiled-in OpenSSL config can sit outside the permitted tree
       // (including hostedtoolcache on CI). Use our empty config, retaining
       // Node's bundled TLS roots, instead of granting host configuration reads.
@@ -325,7 +366,7 @@ export default {
         ...extensionArgs(ctx.environment?.mcp, {
           credentialFile: credential?.path || '', instanceUrl: ctx.instanceUrl || '',
           runtimeToken: ctx.runtimeToken || '',
-          publicSeat: isPublic, mcpReadDirectories, publicExtensions,
+          publicSeat: isPublic, mcpReadDirectories, publicExtensions, brokerExtensions,
         }),
         ...(!isPublic ? ['-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true })] : []),
       ];
@@ -387,6 +428,7 @@ export default {
       const text = await runGoose({
         binary: executable, args: spawnArgs, cwd: ctx.cwd, env, timeoutMs,
         credentials: [...spawnCredentials(ctx, [DEFAULT_PROVIDER_KEY]), key, env.OPENAI_API_KEY],
+        optionalExtensions: brokerExtensions,
         spawnImpl: ctx._spawnImpl,
       });
       return { text, newSessionId: null };

@@ -188,7 +188,7 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
   test('a caller declaring an adapter that cannot confine gets a refusal and no broker, named or not', async () => {
     const fixture = await seed();
     await namedGrant(fixture);
-    const responses = await Promise.all(['goose', 'qwen', 'dsh', 'hermes'].map((adapter) => read(SEAT_TOKEN, adapter)));
+    const responses = await Promise.all(['dsh', 'hermes', 'mystery'].map((adapter) => read(SEAT_TOKEN, adapter)));
     responses.forEach((res) => {
       expect(res.status).toBe(200);
       expect(res.body.servers).toEqual([]);
@@ -238,8 +238,35 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     expect(admitted.body.servers).toHaveLength(1);
   });
 
+  // F175d: Qwen and Goose read as pi does on this path: no daemon derives Qwen's
+  // default, so an absent block refuses too, with the reason naming doesn't lift.
+  test.each(['qwen', 'goose'])('a %s caller on an unconfined seat is refused even when named; on a public seat it gets its grant', async (adapter) => {
+    const fixture = await seed();
+    await namedGrant(fixture);
+    const refused = await read(SEAT_TOKEN, adapter);
+    expect(refused.body.servers).toEqual([]);
+    expect(refused.body.refusal).toMatchObject({
+      code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: 'adapter_confines_public_only',
+    });
+
+    await AgentInstallation.updateOne({ agentName: 'quill' }, {
+      $set: { 'config.environment': { sandbox: { trust: 'public' } } },
+    });
+    const admitted = await read(SEAT_TOKEN, adapter);
+    expect(admitted.body.refusal).toBeNull();
+    expect(admitted.body.servers).toHaveLength(1);
+  });
+
+  test.each(['qwen', 'goose'])('the installation\'s own %s binding refuses a named grant when the caller claims claude', async (adapter) => {
+    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter } });
+    await namedGrant(fixture);
+    const res = await read(SEAT_TOKEN, 'claude');
+    expect(res.body.servers).toEqual([]);
+    expect(res.body.refusal).toMatchObject({ reason: 'adapter_confines_public_only' });
+  });
+
   test('the installation\'s own unproven adapter still refuses when the caller claims claude', async () => {
-    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter: 'goose' } });
+    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter: 'dsh' } });
     await namedGrant(fixture);
     const res = await read(SEAT_TOKEN, 'claude');
     expect(res.body.servers).toEqual([]);

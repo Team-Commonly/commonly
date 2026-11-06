@@ -21,15 +21,15 @@ describe('adapter registry and grant-broker admission stay explicit', () => {
     const eligible = new Set([...ADAPTERS_WITH_GRANT_BROKER, 'stub']);
     const withheld = names.filter((name) => !eligible.has(name));
 
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
-    expect(withheld.sort()).toEqual(['dsh', 'goose', 'hermes', 'qwen']);
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'pi', 'qwen']);
+    expect(withheld.sort()).toEqual(['dsh', 'hermes']);
   });
 
-  // F175c: pi holds a grant only on a public macOS seat; naming never lifts
-  // that. Pinned so a second adapter cannot slip onto the narrower rule, or off
+  // F175c, F175d: these hold a grant only on a public seat; naming never lifts
+  // that. Pinned so another adapter cannot slip onto the narrower rule, or off
   // it, without a test saying so.
-  test('pi is the one adapter that carries a grant only when public', () => {
-    expect([...ADAPTERS_WITH_PUBLIC_ONLY_GRANT.keys()]).toEqual(['pi']);
+  test('pi, Qwen and Goose are the adapters that carry a grant only when public', () => {
+    expect([...ADAPTERS_WITH_PUBLIC_ONLY_GRANT.keys()].sort()).toEqual(['goose', 'pi', 'qwen']);
     for (const name of ADAPTERS_WITH_PUBLIC_ONLY_GRANT.keys()) expect(ADAPTERS_WITH_GRANT_BROKER.has(name)).toBe(true);
   });
 });

@@ -28,8 +28,9 @@ import { harnessCatalogEntry } from '../config/harnessCatalog';
 /**
  * "Claude Code, Codex or OpenCode": the harnesses an agent can be NAMED on a
  * grant from, by their catalogue names, from the one list the confinement
- * check reads. pi is left out (F175c): it holds a grant only on a public seat,
- * which needs no naming, and naming lifts nothing for it.
+ * check reads. pi, Qwen and Goose are left out (F175c, F175d): each holds a
+ * grant only on a public seat, which needs no naming, and naming lifts nothing
+ * for it.
  */
 export const grantHarnessNames = (): string => {
   const names = [...CONFINING_ADAPTERS.keys()]
@@ -124,7 +125,7 @@ export const namingLiftsFor = async (grant: object | NamingFields, agentUserId: 
 /**
  * Naming lifts a refusal about the seat's sandbox. It never lifts an adapter
  * that is not approved for the broker, nor one approved only on a public seat
- * (pi, F175c: `adapter_confines_public_only`; the daemon applies the same rule), nor
+ * (pi, Qwen, Goose: `adapter_confines_public_only`; the daemon applies the same rule), nor
  * a machine with no enforceable sandbox (`hostUnconfined`, checked by callers).
  */
 export const namingLiftsRefusal = (refusal: { reason?: unknown } | null | undefined): boolean => (
