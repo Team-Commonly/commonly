@@ -120,6 +120,21 @@ describe('syntheticAccountPurgeService', () => {
       .resolves.toMatchObject({ examined: 0 });
   });
 
+  it('stops before any write when record_openings is missing, so the lock is released', async () => {
+    const { human } = await syntheticAccount();
+    const Lock = require('../../../models/AdminUserMutationLock');
+    const pool = fakePool();
+    const query = pool.query;
+    pool.query = async (sql, params) => {
+      if (/record_openings/.test(sql)) throw new Error('relation "record_openings" does not exist');
+      return query(sql, params);
+    };
+    await expect(purgeSyntheticAccounts({ apply: true, now: NOW, pool })).rejects.toThrow('record_openings');
+    expect(await Lock.countDocuments()).toBe(0);
+    expect(pool.statements.filter((statement) => /^DELETE/.test(statement.sql))).toEqual([]);
+    expect(await User.exists({ _id: human._id })).toBeTruthy();
+  });
+
   it('retains the applying lock after its first cleanup write rejects', async () => {
     await syntheticAccount();
     const Lock = require('../../../models/AdminUserMutationLock');

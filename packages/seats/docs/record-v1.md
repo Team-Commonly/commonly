@@ -35,6 +35,7 @@ Each line is one JSON object, followed by `\n` (UTF-8):
 | `runId` | string | The run, `[A-Za-z0-9_-]{6,64}`. The same on every line of a file. |
 | `taskId` | string, optional | The board's task id, verbatim (e.g. `"TASK-490"`). The same on every line when present. |
 | `podId` | string; **required when `taskId` is set** | The pod the run belongs to. Task ids restart in each pod, so `taskId` is unique only together with `podId`. The same on every line when present. |
+| `salt` | string, optional | 32 lowercase hex characters of randomness. It makes the line's hash a commitment (section 8). |
 | `seq` | integer | 1 on the first line, then +1 per line, with no gaps. |
 | `ts` | string | RFC 3339 timestamp in UTC: `YYYY-MM-DDTHH:MM:SS(.fraction)Z`. |
 | `kind` | string | What happened (section 2). |
@@ -513,6 +514,15 @@ What's new or changed in `EVENT_TYPES`:
    A later revision, also at `v: 1`, added the kind `harness.switched` and the
    failure kinds `not_authenticated`, `quota`, `provider_unsupported` and
    `capacity`. Lines without them are unchanged.
+
+   A later revision, also at `v: 1`, added the optional `salt` and the
+   `redaction` marker that a redacted view carries (section 8). Lines without
+   them are unchanged, and lines already written are never rewritten.
+
+   A later revision, also at `v: 1`, lets any id position hold a commitment
+   and adds the `openings` map (section 9). A commitment is a valid id token
+   and a stored line's bytes follow every rule above, so a stored file verifies
+   under an older verifier. A line served with `openings` needs this one.
 4. **One writer per file.** A single process appends lines in `seq` order.
 
 ## 4. What the hash chain proves, and what it doesn't
@@ -672,3 +682,86 @@ files drift from what the code writes.
   read grant bound to the task. The board then marks the task done, which
   revokes that grant in the same run.
 - `TASK-101.otlp.json`: both runs exported as one trace.
+
+## 8. Redacted views
+
+A server may show a reader a line with some ids held back. An id can't simply
+be replaced in the stored line: `prev` covers exact bytes, so the next line
+would fail to link.
+
+Replacing the line and keeping its hash isn't enough either. The chain is an
+unsalted hash, so every `prev` and head commits to every line before it. Ids
+are few and known (a pod's member list), and the rest of a line can be read off
+its neighbours. A reader holding any later hash can try each id until one
+matches. So on an unsalted line the hash gives the id away.
+
+**`salt`** closes this for lines written with it. A line with 128 random bits
+that the reader isn't shown has a hash nobody can guess at. The salt is never
+shown on a redacted line.
+
+**A view line** carries `redaction: {fields, hash}` in place of the stored line:
+- `fields` names what was replaced, as paths such as `data.decidedBy`. A held
+  back id reads as the id token `redacted`.
+- `hash` is the SHA-256 of the stored line, or `null` when it can't be shown.
+- `prev` is the stored `prev`, or `null` when the line before gave no hash.
+
+A server builds a view in seq order. It may show a hash only for a line that
+is salted, or for one served verbatim while every hash before it is shown.
+Everything else takes `hash: null`, so the lines after an unsalted redacted
+line are served with a marker too, even with nothing held back, until the next
+salted line picks the chain up. `salt` is removed from every redacted line and
+kept on a line served verbatim, whose bytes the next `prev` hashes. A view line
+is written with `canonicalLine`, as any line is.
+
+**What a reader's check means.** `verifyRecord` passes on a view by what it can
+check, and adds `partial: true`, `redacted` and `unlinked`:
+
+| line | what the check proves |
+|---|---|
+| served verbatim | what section 4 says |
+| in `redacted`, with a hash | a line with that hash sat here, and an edit to the stored line shows at the next line. The shown content is **not** covered |
+| in `unlinked` | nothing. The line is the server's word |
+
+A verifier treats `ok: true` with `partial: true` as "nothing wrong in what I
+could check", never as "every line checked". The marker comes from the server,
+so a view doesn't show that the server held back honestly. It is a read of a
+record, not a record: don't store one in place of the file.
+
+The last line's hash, like any other, is withheld when the rules above say so.
+
+## 9. Ids that can be forgotten
+
+A hash covers the bytes of a line, so an id in those bytes can never be removed
+without breaking the chain. A writer that may have to forget an id doesn't put
+it there. It writes a commitment in the id's place and keeps the id elsewhere:
+
+```text
+c1:<lowercase hex SHA-256 of "seats.record/commitment/v1\n" + salt + "\n" + id>
+```
+
+- `salt` is 32 lowercase hex characters of fresh randomness, one per
+  occurrence, so one person's two appearances can't be matched to each other.
+- A commitment fits any id position: `actor.id`, `actor.owner`, `decidedBy`.
+  Writers and readers treat it as an opaque id token.
+- The id and its salt are stored beside the record, outside anything hashed.
+
+**Reading.** A line with no opening is the stored bytes, so the full chain check
+applies. A reader entitled to an id gets the line with `openings`:
+
+```json
+"openings": {"c1:<hex>": {"id": "<id>", "salt": "<salt>"}}
+```
+
+`verifyRecord` removes `openings`, hashes the canonical bytes that remain (which
+are the stored line), and reports `bad_opening` if an id and salt don't produce
+their commitment, and `stray_opening` if a commitment isn't on the line.
+`readRecord` puts opened ids in place.
+
+**Forgetting.** Delete the id and salt. The line doesn't change, so the chain
+still verifies, and with the salt gone a guess at the id can't be tested. An
+unopened commitment looks the same whether the id was deleted or withheld, so a
+reader must never treat one as tampering.
+
+**What this doesn't cover.** Lines written with a plain id keep it. Text fields
+aren't covered: a writer must not put an id in free text. Copies of the store
+(a backup, a downloaded file with openings) keep what they held.

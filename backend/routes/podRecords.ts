@@ -4,8 +4,9 @@ import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { MAX_PAGE_LINES } from '../repositories/recordChainRepository';
 import {
-  isRecordEnabled, isRecordReader, readRecordExport, RecordStoreUnavailableError, toOtlp, type ChainPage,
+  isRecordEnabled, isRecordReader, readRecordExport, readRecordView, RecordStoreUnavailableError, toOtlp, type ChainPage,
 } from '../services/recordService';
+import { isOpenPod, seesAllIds } from '../services/recordRedaction';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 const auth = require('../middleware/dualAuth');
@@ -52,9 +53,15 @@ const readPage = (query: express.Request['query']): ChainPage | null => {
  * Access follows today's pod access (canViewPod), checked before any record
  * byte is loaded, and fails as not-found so the route never confirms a pod or
  * task. Lines then go to actual members only: they carry approver and
- * credential-owner ids verbatim, and a hash-chained line can't be redacted
- * without breaking verification. That is the same set runTraces shows those
- * ids to, so admins and agent-DM observers who pass canViewPod get a 403.
+ * credential-owner ids. That is the same set runTraces shows those ids to, so
+ * admins and agent-DM observers who pass canViewPod get a 403.
+ *
+ * On a pod anyone can join, a member reads a view instead: each of those ids
+ * goes only to the person it names and the pod's creator, who reads what a
+ * member of a private pod reads (recordRedaction). The view still passes
+ * verifyRecord, which reports what it could not check (record-v1 §8, §9).
+ * `X-Record-View` says it is one, and the head header is left out when it would
+ * cover a line whose id could be guessed from it.
  *
  * One read returns at most MAX_PAGE_LINES lines after `?after=<seq>`. While
  * more remain, `X-Record-Next-After` names the cursor for the next page; the
@@ -68,18 +75,23 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     if (!page) return res.status(400).json({ error: 'record_bad_cursor' });
     if (!isRecordEnabled(podId)) return notFound(res);
     const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const pod = await Pod.findById(podId).select('members type').lean();
+    const pod = await Pod.findById(podId).select('members type joinPolicy publicRead communityListed createdBy').lean();
     if (!pod || !await DMService.canViewPod(userId, pod)) return notFound(res);
     if (!isRecordReader(pod.members, userId)) return res.status(403).json({ error: 'record_requires_membership' });
     if (taskId !== null && !await Task.findOne({ podId: pod._id, taskId }).select('_id').lean()) return notFound(res);
 
     let record;
+    let view: Awaited<ReturnType<typeof readRecordView>> | undefined;
     try {
       const ref = { podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) };
-      record = await readRecordExport(ref, undefined, page);
+      if (isOpenPod(pod) && !seesAllIds(pod, userId)) {
+        const wholeTrace = req.query.format === 'otlp' && page.after === undefined && page.limit === undefined;
+        view = await readRecordView(ref, String(userId), undefined, wholeTrace ? { limit: Infinity } : page);
+      }
+      record = view || await readRecordExport(ref, undefined, page);
       // OTLP has no paging of its own: an export of one page would be a
       // silently short trace. An OTLP read with no cursor covers the chain.
-      if (req.query.format === 'otlp' && page.after === undefined && page.limit === undefined) {
+      if (!view && req.query.format === 'otlp' && page.after === undefined && page.limit === undefined) {
         const lines = [record.jsonl];
         for (let next = record.nextAfter; next !== null;) {
           const more = await readRecordExport(ref, undefined, { after: next });
@@ -100,6 +112,12 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     res.set('X-Record-Entries', String(record.entries));
     // The spec's outside record of the head (§4): it covers the last line.
     if (record.head) res.set('X-Record-Head', record.head);
+    if (view?.redacted || view?.unopened) {
+      res.set('X-Record-View', 'redacted');
+      res.set('X-Record-Redacted', String(view.redacted));
+      res.set('X-Record-Unlinked', String(view.unlinked));
+      res.set('X-Record-Unopened', String(view.unopened));
+    }
     if (record.runId) res.set('X-Record-Run-Id', record.runId);
     if (record.nextAfter !== null) res.set('X-Record-Next-After', String(record.nextAfter));
     if (req.query.format === 'otlp') return res.json(toOtlp(record.jsonl));

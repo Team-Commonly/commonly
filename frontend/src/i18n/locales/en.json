@@ -58,7 +58,10 @@
   "taskRecord": {
     "title": "Task record",
     "back": "Back to board",
-    "intro": "What happened on this task, in order. Each entry carries the hash of the one before it, so a changed entry breaks the chain.",
+    "intro": "Who claimed this task, who finished it, and what access was granted for it, in order. Members of this pod can read it. Each entry carries the hash of the one before it, so a changed entry breaks the chain.",
+    "hiddenNote": "Some names here are hidden. In a pod anyone can join, who approved or gave access shows only to that person and the pod's creator, and a name can also be hidden because the person deleted their account. A hidden name doesn't mean an entry changed.",
+    "unlinkedNote": "Some older entries here can't be linked to the entry after them, because of how they were stored. That doesn't mean they changed.",
+    "hiddenPerson": "Hidden",
     "loading": "Loading record…",
     "access": "The pod may not keep records, or you no longer have access.",
     "members": "Only members of this pod can read its record.",

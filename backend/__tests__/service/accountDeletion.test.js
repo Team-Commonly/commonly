@@ -45,6 +45,17 @@ const addFile = async (owner, name, legacy = false) => {
 
 describe('Self-serve account deletion', () => {
   let app;
+  const chain = () => mockPg.query(
+    "INSERT INTO record_chains (id, pod_id, run_id) VALUES (1, 'pod', 'run') ON CONFLICT (id) DO NOTHING",
+  );
+  const opening = async (subject) => {
+    await chain();
+    return mockPg.query(
+      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, 'data.decidedBy', $2, $3, $4)",
+      [`c1:${'a'.repeat(64)}`, subject, subject, 'b'.repeat(32)],
+    );
+  };
+  const openingsOf = async (subject) => (await mockPg.query('SELECT 1 FROM record_openings WHERE subject = $1', [subject])).rows.length;
   beforeAll(async () => {
     process.env.JWT_SECRET = 'account-deletion-service-test';
     await setupMongoDb();
@@ -67,8 +78,101 @@ describe('Self-serve account deletion', () => {
     // of allocating a fresh ephemeral port for every supertest request.
     app = app.listen(0);
   });
-  afterEach(async () => { await clearMongoDb(); await clearPgDb(); await mockPg.query('DELETE FROM users'); });
+  afterEach(async () => {
+    await clearMongoDb(); await clearPgDb();
+    await mockPg.query('DELETE FROM record_openings');
+    await mockPg.query("DELETE FROM record_chains WHERE run_id = 'run'");
+    await mockPg.query('DELETE FROM users');
+  });
   afterAll(async () => { await new Promise((resolve) => app.close(resolve)); await closeMongoDb(); await closePgDb(); });
+
+  it('takes the person\'s ids off record lines on both delete paths, and nobody else\'s (F265)', async () => {
+    const user = await makeUser();
+    const other = await makeUser();
+    await opening(String(user._id));
+    await mockPg.query(
+      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 2, $1, 'data.doneBy', $2, $3, $4)",
+      [`c1:${'c'.repeat(64)}`, String(other._id), String(other._id), 'd'.repeat(32)],
+    );
+    const self = await deletion(app, issueSessionToken(user));
+    expect(self.status).toBe(204);
+    expect(await openingsOf(String(user._id))).toBe(0);
+    expect(await openingsOf(String(other._id))).toBe(1);
+    const admin = await makeUser({ role: 'admin' });
+    const byAdmin = await request(app).delete(`/api/admin/users/${other._id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(byAdmin.status).toBe(200);
+    expect(await openingsOf(String(other._id))).toBe(0);
+  });
+
+  it.each(['self-serve', 'admin'])('after a %s delete an agent keeps its owner, and the sweep clears the late line it writes (F265)', async (path) => {
+    const { agentActor } = require('../../services/recordService');
+    const { commitRecordLine } = require('../../services/recordCommitments');
+    const owner = await makeUser();
+    const admin = await makeUser({ role: 'admin' });
+    const bot = await makeUser({ isBot: true, botMetadata: { agentName: 'kept', ownerUserId: String(owner._id) } });
+    if (path === 'admin') {
+      await request(app).delete(`/api/admin/users/${owner._id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`).expect(200);
+    } else {
+      await deletion(app, issueSessionToken(owner)).expect(204);
+    }
+    // The owner stays: without it, the next caller is stamped as the agent's owner.
+    const actor = agentActor(await User.findById(bot._id).lean());
+    expect(actor.owner).toBe(String(owner._id));
+    expect(await AccountDeletion.exists({ _id: owner._id })).toBeTruthy();
+    const [row] = commitRecordLine({ kind: 'tool.call', actor, data: {} }).openings;
+    expect(row).toMatchObject({ subject: String(owner._id), field: 'actor.owner' });
+    await chain();
+    await mockPg.query(
+      'INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, $2, $3, $4, $5)',
+      [row.commitment, row.field, row.subject, row.value, row.salt],
+    );
+    await sweepAccountDeletions();
+    expect(await openingsOf(String(owner._id))).toBe(0);
+  });
+
+  it('an admin delete a pending self-deletion refuses takes none of the person\'s ids, and if billing then fails they keep them (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    await opening(String(user._id));
+    await User.updateOne({ _id: user._id }, { $set: { accountDeletionRequestedAt: new Date() } });
+    const refused = await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ACCOUNT_CHANGED');
+    expect(await openingsOf(String(user._id))).toBe(1);
+    expect(await AccountDeletion.exists({ _id: user.id })).toBeNull();
+    await sweepAccountDeletions();
+    expect(await openingsOf(String(user._id))).toBe(1);
+  });
+
+  it('an admin delete that crashes after the row goes still leaves the sweep a receipt (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    await opening(String(user._id));
+    const find = jest.spyOn(User, 'findOneAndDelete').mockImplementationOnce(async function deleteThenDie(filter) {
+      expect(await AccountDeletion.exists({ _id: user._id })).toBeTruthy();
+      find.mockRestore();
+      await User.findOneAndDelete(filter);
+      throw new Error('process died here');
+    });
+    await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(await User.findById(user.id)).toBeNull();
+    await sweepAccountDeletions();
+    expect(await openingsOf(String(user._id))).toBe(0);
+  });
+
+  it('an admin delete leaves a receipt, and the sweep then removes the person\'s files (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    const other = await makeUser();
+    await addFile(user, 'admin-swept.png', true);
+    await addFile(other, 'admin-kept.png', true);
+    await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`).expect(200);
+    expect(await AccountDeletion.exists({ _id: user.id })).toBeTruthy();
+    expect(await File.countDocuments({ uploadedBy: user._id })).toBe(1);
+    await sweepAccountDeletions();
+    expect(await File.countDocuments({ uploadedBy: user._id })).toBe(0);
+    expect(await File.countDocuments({ uploadedBy: other._id })).toBe(1);
+  });
 
   it('deletes own bytes and legacy uploads, revokes credentials, preserves agents and other users', async () => {
     const deviceToken = 'cm_delete-device';
@@ -543,7 +647,8 @@ describe('Self-serve account deletion', () => {
     expect(adminResult.status).toBe(200);
     expect(await User.findById(user.id)).toBeNull();
     expect(mockStripe.subscriptions.cancel).not.toHaveBeenCalled();
-    expect(await AccountDeletion.countDocuments()).toBe(0);
+    // The one receipt is the admin delete's: the refused claim wrote none.
+    expect(await AccountDeletion.countDocuments()).toBe(1);
   });
 
   it('refuses an admin role change after deletion has marked the account', async () => {

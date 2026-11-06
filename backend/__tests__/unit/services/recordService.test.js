@@ -11,22 +11,25 @@ jest.mock('../../../repositories/recordChainRepository', () => {
       if (!mockChains.has(key(ref))) mockChains.set(key(ref), { runId, lines: [], keys: new Set(), head: null });
       const chain = mockChains.get(key(ref));
       if (chain.keys.has(eventKey)) return { appended: 0, duplicate: true };
-      const { lines, headHash } = build(chain.lines[chain.lines.length - 1] || null, chain.runId);
-      chain.lines.push(...lines);
+      const { lines, headHash, openings } = build(chain.lines[chain.lines.length - 1] || null, chain.runId);
+      lines.forEach((line, index) => {
+        chain.lines.push(line);
+        chain.openings = [...(chain.openings || []), ...openings[index].map((row) => ({ ...row, seq: chain.lines.length }))];
+      });
       chain.keys.add(eventKey);
       chain.head = headHash;
       return { appended: lines.length, duplicate: false };
     }),
     readChain: jest.fn(async (ref) => {
       const chain = mockChains.get(key(ref));
-      return chain ? { runId: chain.runId, headSeq: chain.lines.length, headHash: chain.head, lines: [...chain.lines] } : null;
+      return chain ? { runId: chain.runId, headSeq: chain.lines.length, headHash: chain.head, lines: [...chain.lines], openings: chain.openings || [] } : null;
     }),
   };
 });
 
 const repository = require('../../../repositories/recordChainRepository');
 const record = require('../../../services/recordService');
-const { verifyRecord, hashLine } = require('../../../vendor/seats/src/record/format');
+const { verifyRecord, hashLine, readRecord } = require('../../../vendor/seats/src/record/format');
 
 const POD = '6a692a1be833c668acdb84cf';
 const AGENT = { _id: '6a920d43b08dee6c42a81c9e', isBot: true, botMetadata: { ownerUserId: '6a47891ee025ce2e0ca1d30b' } };
@@ -42,6 +45,29 @@ describe('recordService', () => {
     else process.env.RECORD_V1_PODS = env;
   });
 
+  it.each([[1.9, 2], [-3, 1], [Number.NaN, 1]])('matches a page\'s openings to its lines at the cursor readChain used: after %s starts at seq %s', async (after, firstSeq) => {
+    const ref = { podId: POD };
+    const human = { type: 'human', id: 'b'.repeat(24) };
+    await record.appendRecord(ref, 'e1', [{ kind: 'grant.revoked', actor: human, data: { grantIds: ['g-1'], reason: 'manual' } }]);
+    await record.appendRecord(ref, 'e2', [{ kind: 'grant.revoked', actor: human, data: { grantIds: ['g-2'], reason: 'manual' } }]);
+    const chain = await repository.readChain(ref);
+    repository.readChain.mockImplementationOnce(async () => ({ ...chain, lines: chain.lines.slice(firstSeq - 1), nextAfter: null }));
+    const { jsonl } = await record.readRecordExport(ref, undefined, { after });
+    readRecord(jsonl).forEach((entry) => expect(entry.actor.id).toBe(human.id));
+  });
+
+  it('salts every server line with its own 128 random bits, so a hash can stand in for a held-back line (F265)', async () => {
+    const ref = { podId: POD };
+    await record.appendRecord(ref, 'e1', [
+      { kind: 'task.claimed', actor: record.agentActor(AGENT) },
+      { kind: 'task.released', actor: record.agentActor(AGENT) },
+    ]);
+    const salts = (await record.readRecordExport(ref)).jsonl.trimEnd().split('\n').map((line) => JSON.parse(line).salt);
+    expect(salts).toHaveLength(2);
+    salts.forEach((salt) => expect(salt).toMatch(/^[0-9a-f]{32}$/));
+    expect(salts[0]).not.toBe(salts[1]);
+  });
+
   it('writes a chain that verifies under the shared reference verifier, and matches the stored head', async () => {
     const ref = { podId: POD, taskId: 'TASK-1' };
     await record.appendRecord(ref, 'e1', [{ kind: 'task.claimed', actor: record.agentActor(AGENT) }]);
@@ -50,14 +76,15 @@ describe('recordService', () => {
     const result = verifyRecord(out.jsonl);
     expect(result).toMatchObject({ ok: true, entries: 2, settled: false });
     expect(out.head).toBe(result.head);
-    const lines = out.jsonl.trimEnd().split('\n').map((line) => JSON.parse(line));
+    const lines = readRecord(out.jsonl);
     expect(lines.map((l) => [l.seq, l.kind, l.podId, l.taskId, l.runId])).toEqual([
       [1, 'task.claimed', POD, 'TASK-1', record.serverRunId(ref)],
       [2, 'task.done', POD, 'TASK-1', record.serverRunId(ref)],
     ]);
     expect(lines[0].actor).toEqual({ type: 'agent', id: AGENT._id, owner: AGENT.botMetadata.ownerUserId });
     expect(lines[1].actor).toEqual({ type: 'system', id: 'board' });
-    expect(lines[1].prev).toBe(hashLine(out.jsonl.split('\n')[0]));
+    // The chain is over the stored bytes, which never hold the opening served beside them.
+    expect(lines[1].prev).toBe(hashLine([...mockChains.values()][0].lines[0]));
   });
 
   it('a redelivered event key appends nothing', async () => {

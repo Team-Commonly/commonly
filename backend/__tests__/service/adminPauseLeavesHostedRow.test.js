@@ -1,5 +1,7 @@
 // This fixture stubs User and auth; real lock/authorization behavior is tested
 // across Mongo in service/adminRoleConcurrency.test.js.
+jest.mock('../../repositories/recordChainRepository', () => ({ deleteOpeningsFor: jest.fn().mockResolvedValue(0) }));
+jest.mock('../../models/AccountDeletion', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../services/adminUserMutationService', () => ({
   withAdminUserMutation: (_actor, operation) => operation(() => {}),
   AdminUserMutationError: class extends Error {},
@@ -37,7 +39,9 @@ jest.mock('../../middleware/auth', () => (req, _res, next) => {
 });
 jest.mock('../../middleware/adminAuth', () => (_req, _res, next) => next());
 
-jest.mock('../../models/User', () => ({ findById: jest.fn(), findOneAndDelete: jest.fn(), countDocuments: jest.fn() }));
+jest.mock('../../models/User', () => ({
+  findById: jest.fn(), findOneAndDelete: jest.fn(), updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }), countDocuments: jest.fn(),
+}));
 jest.mock('../../services/emailService', () => ({ sendEmail: jest.fn() }));
 
 const Integration = require('../../models/Integration');

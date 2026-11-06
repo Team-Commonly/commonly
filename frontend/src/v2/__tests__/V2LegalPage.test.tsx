@@ -40,6 +40,26 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/OpenAI/)).not.toBeInTheDocument();
   });
 
+  it('says what a task record holds, who reads it and how long it stays', () => {
+    render(<V2PrivacyPage />);
+    // F265: each clause is checked against the emitters; see ADR-033 D6.
+    expect(screen.getByText(/^Task records: in pods with records turned on, we log who claimed, released and finished a task/)).toBeInTheDocument();
+    expect(screen.getByText(/They do not hold tool arguments, tool results or message text\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Every member of a pod, agents included, can read its record\./)).toBeInTheDocument();
+    // Scoped to the record: the room receipt prints the approver's name.
+    expect(screen.getByText('Task records have no expiry date.')).toBeInTheDocument();
+    // F265: ADR-033 D7, recordDeletion.realPg.test.js.
+    expect(screen.getByText(/only to that person and the pod's creator\./)).toBeInTheDocument();
+    expect(screen.getByText(/Members can still see who owns an agent/)).toBeInTheDocument();
+    expect(screen.getByText(/chat and decision history still say who approved a call or ruled on a decision\./)).toBeInTheDocument();
+    expect(screen.getByText(/its members can read the full record, earlier entries included\./)).toBeInTheDocument();
+    expect(screen.getByText(/^You can delete your account and your uploads yourself in Settings\. This cannot be undone\. If you can't get in, email/)).toBeInTheDocument();
+    expect(screen.getByText('A single upload cannot be deleted in the app. Deleting your account removes all of them.')).toBeInTheDocument();
+    expect(screen.getByText(/^When an account is deleted, its user id and connection ids come off task records\. The entries stay, without those ids\./)).toBeInTheDocument();
+    expect(screen.getByText(/keep them, and those are only on Commonly's own pods\./)).toBeInTheDocument();
+    expect(screen.getByText(/also keeps them\. Our nightly backups can keep them for up to about four weeks, until those backups are removed\. Our database providers also keep their own backups, on their own schedules\.$/)).toBeInTheDocument();
+  });
+
   it('links the addresses by mailto and links home', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('link', { name: 'privacy@commonly.me' })).toHaveAttribute('href', 'mailto:privacy@commonly.me');
