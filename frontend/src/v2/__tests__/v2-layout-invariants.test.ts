@@ -1816,6 +1816,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
     const teamPhone = teamPhoneBlock(teamCss);
     expect(ruleBody(teamCss, '.v2-team .v2-team__head > .v2-page-head__identity', { within: teamPhone })).toContain('flex-flow: row wrap');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__head .v2-team__meta', { within: teamPhone })).toContain('flex-basis: 100%');
     expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
     for (const css of [v2, teamCss]) {
@@ -2708,7 +2709,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
     // (ToolPanels) lost "install the GitHub App first" /
-    // "read, or read and write" and a stranger saw a "not granted" kicker with
+    // "Read, or read and write" and a stranger saw a "not granted" kicker with
     // nothing under it. The two reason strings are already render-asserted in
     // ConnectorsPage.tools.test.tsx — this is the half jsdom cannot see.
     // If one row ever needs the detail hidden on phones, add that selector to the
@@ -5894,10 +5895,10 @@ describe('Your team lifted from the d215 frame (R06)', () => {
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('height: 44px');
   });
 
-  // Deviation from the frame: the two text links (Have an invitation code?,
-  // 20px; Connected agents, 16px) are not drawn. On a phone an invisible ring
-  // 14px above and below makes each hit area at least 44px.
-  test('on a phone, the text links gain a 44px hit ring', () => {
+  // Deviation from the frame: the Connected agents text link (16px) is not
+  // drawn. On a phone an invisible ring 14px above and below makes its hit
+  // area at least 44px.
+  test('on a phone, the text link gains a 44px hit ring', () => {
     expect(ruleBody(teamCss, '.v2-team button.v2-team__link')).toContain('position: relative');
     const phone = mediaBlockContaining(teamCss, '.v2-team button.v2-team__link::after');
     const ring = ruleBody(teamCss, '.v2-team button.v2-team__link::after', { within: phone });

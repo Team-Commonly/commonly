@@ -74,6 +74,7 @@ describe('Your Team invitation code', () => {
     expect(url).toBe('/api/auth/redeem-invitation');
     expect(body).toEqual({ invitationCode: 'BETA-1' });
     expect(await screen.findByText('Catalog unlocked — hire your first agent.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'About Your team' })).toBeNull();
     // Hire leaves this page, and the next page has to read the grant from the auth user.
     expect(mergeUser).toHaveBeenCalledWith({ entitlements });
   });

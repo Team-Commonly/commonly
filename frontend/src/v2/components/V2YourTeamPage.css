@@ -53,9 +53,8 @@
   .v2-team .v2-team__grid { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 10px; }
   .v2-team .v2-team-card__mark { width: 44px; height: 44px; border-radius: 11px; }
   .v2-team .v2-team-card__actions > button { flex: 1 1 0; }
-  /* Not in the frame: the text links (Have an invitation code? at 20px,
-     Connected agents at 16px) get an invisible ring 14px above and below, so
-     each hit area is at least 44px tall. */
+  /* Not in the frame: the Connected agents text link (16px) gets an invisible
+     ring 14px above and below, so its hit area is at least 44px tall. */
   .v2-team button.v2-team__link::after { content: ""; position: absolute; inset: -14px 0; }
 }
 

@@ -1073,7 +1073,7 @@ describe('Connectors page: tools', () => {
 
     const popover = await openToolPopover('Linear');
     expect(popover).toHaveTextContent('read');
-    expect(popover).not.toHaveTextContent('read, or read and write');
+    expect(popover).not.toHaveTextContent('Read, or read and write');
 
     fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
     const form = await screen.findByRole('complementary', { name: 'Add Linear' });
@@ -1609,7 +1609,7 @@ describe('the form offers read, and a stored write grant stays what it is', () =
     mockTools({ entries: [entry], grants: [] });
     renderPage();
     const popover = await openToolPopover(label);
-    expect(within(popover).queryByText('read, or read and write')).toBeNull();
+    expect(within(popover).queryByText('Read, or read and write')).toBeNull();
     fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
     const form = await screen.findByRole('complementary', { name: `Add ${label}` });
     expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read']);
