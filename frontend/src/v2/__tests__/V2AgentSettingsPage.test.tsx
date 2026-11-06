@@ -517,7 +517,7 @@ test('runtime editor writes environment controls through the shared settings hoo
   // D215 artboard: Wake, then ONE Identity & access list in the frame's row order. This roster
   // read carries no connection signal, so the Connection row stays to say so.
   expect(sections.filter((text) => !text.startsWith('Wake'))).toEqual([
-    'Identity & access', 'Name', 'Runtime key', 'Connection', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
+    'Identity & access', 'Name', 'Runtime key', 'Connection', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
   ]);
   expect(sections[0].startsWith('Wake')).toBe(true);
   // None of the old section headings remain.
@@ -1051,11 +1051,27 @@ describe('one Identity & access list (d215 frame)', () => {
       const tabs = screen.getByRole('navigation', { name: 'Agent tabs' });
       expect(tabs.closest('.mtop')).toBeNull();
       expect(tabs).toHaveClass('seg--full');
-      for (const label of ['Name', 'Runtime key', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
+      for (const label of ['Name', 'Runtime key', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
         expect(screen.getByText(label, { selector: '.lb' })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Your team' }));
       expect(await screen.findByText('your team')).toBeInTheDocument();
     });
+
+    test.each([['connected', false], ['available', false], ['revoked', true], ['stale', true], ['never', true]])(
+      'the status line for a %s agent: shown is %s',
+      async (state, shown) => {
+        axios.get.mockImplementation(fleet({ state }));
+        render(
+          <AuthContext.Provider value={authValue}>
+            <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+              <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+            </MemoryRouter>
+          </AuthContext.Provider>,
+        );
+        await screen.findByRole('button', { name: 'Key actions' });
+        await waitFor(() => expect(document.querySelector('.v2-agent-settings-page__phonestatus') !== null).toBe(shown));
+      },
+    );
   });
 });

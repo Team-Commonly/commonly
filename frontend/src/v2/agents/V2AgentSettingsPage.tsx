@@ -365,7 +365,9 @@ const V2AgentSettingsPage: React.FC = () => {
       )}
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
-          {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
+          {/* On a phone the line only reports trouble: a healthy agent's state and pods are in the rows below. */}
+          {phone && <>{tabs}{(connection?.state === 'revoked' || connection?.state === 'stale' || connection?.state === 'never')
+            && <div className="v2-agent-settings-page__phonestatus">{status}</div>}</>}
           {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
@@ -435,7 +437,7 @@ const V2AgentSettingsPage: React.FC = () => {
                   </>
                 )}
               </div>}
-              <AgentControlLoader agentName={agentName} instanceId={instanceId} hideWhenConnected
+              <AgentControlLoader agentName={agentName} instanceId={instanceId} actionsOnly
                 refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
               <V2AgentListingRow key={`listing:${agentName}:${instanceId}`} agentName={installation?.name || agentName} instanceId={installation?.instanceId || instanceId} />
               <V2AgentConnectorsRow key={`grants:${agentName}:${instanceId}`} name={agentName} instanceId={instanceId} />
@@ -458,7 +460,7 @@ const V2AgentSettingsPage: React.FC = () => {
                 <span className="vl">
                   {typeof skillCount === 'number' && (skillCount > 0
                     ? t('agentSettings.skillCount', { count: skillCount })
-                    : <span className="mu">{t('agentSettings.none')}</span>)}
+                    : <span className="mu v2-agent-settings-page__none">{t('agentSettings.none')}</span>)}
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}

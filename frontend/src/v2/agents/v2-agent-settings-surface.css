@@ -198,6 +198,10 @@
 /* The select fills its box so the whole box is the hit area. An unset select pins its text to the top,
    so a line-height of the box's own height (--box-h) centres the value. */
 .v2-agent-settings-page .field select, .v2-agent-settings-page .sel select { cursor: pointer; height: var(--box-h); line-height: var(--box-h); }
+/* The wake table's small select, as drawn: it fits its value, and the chevron lets clicks through to the select. */
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval { position: relative; padding: 0; }
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval select { padding: 0 26px 0 10px; field-sizing: content; }
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i { position: absolute; right: 8px; pointer-events: none; }
 .v2-agent-settings-page .field input:focus-visible, .v2-agent-settings-page .field select:focus-visible, .v2-agent-settings-page .field textarea:focus-visible,
 .v2-agent-settings-page .sel input:focus-visible, .v2-agent-settings-page .sel select:focus-visible { box-shadow: none; outline: none; }
 .v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within { box-shadow: inset 0 0 0 1px var(--b), var(--v2-focus-ring); }
@@ -341,6 +345,7 @@
 .v2-agent-settings-page .mtop .b.ib { width: 44px; height: 44px; }
 .v2-agent-settings-page .seg.seg--full { display: flex; width: 100%; box-sizing: border-box; }
 .v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button { flex: 1; justify-content: center; height: 44px; }
+@media (max-width: 600px) { .v2-agent-settings-page .v2-agent-settings-page__none { display: none; } }
 .v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 10px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--mu); }
 @media (max-width: 760px) {
   .v2-agent-settings.v2-agent-settings-page { padding: 0; }

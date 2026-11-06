@@ -129,14 +129,19 @@ it('uses unavailable only when the roster has no connection signal', async () =>
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
 });
 
-describe('hideWhenConnected (Settings reports a healthy connection in its header)', () => {
-  const showHidden = (state: 'revoked' | 'connected', runtimeType = 'webhook') => render(
+describe('actionsOnly (Settings reports the connection in its head)', () => {
+  const showHidden = (state: 'revoked' | 'connected' | 'available' | 'never', runtimeType = 'webhook') => render(
     <MemoryRouter><V2AgentControlSection agentName="local" instanceId="default" podId="pod-1" runtimeType={runtimeType}
-      hideWhenConnected connection={{ state, lastSeenAt: null }} /></MemoryRouter>,
+      actionsOnly connection={{ state, lastSeenAt: null }} /></MemoryRouter>,
   );
 
   it('renders nothing for a connected webhook agent', () => {
     showHidden('connected');
+    expect(screen.queryByTestId('agent-control-section')).toBeNull();
+  });
+
+  it.each(['available', 'never'] as const)('renders nothing for %s, which has no action', (state) => {
+    showHidden(state, 'internal');
     expect(screen.queryByTestId('agent-control-section')).toBeNull();
   });
 
@@ -146,18 +151,18 @@ describe('hideWhenConnected (Settings reports a healthy connection in its header
     expect(screen.getByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
   });
 
-  it('keeps a connected wrapper row, whose machine-key regeneration lives only there', () => {
+  it('keeps a connected wrapper row, whose machine-key regeneration lives there', () => {
     showHidden('connected', 'wrapper');
     expect(screen.getByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
   });
 
   it('shows nothing while the first read is in flight, and the unavailable alert after a failure', async () => {
     api.get.mockImplementation(() => new Promise(() => {}));
-    const view = render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    const view = render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" actionsOnly /></MemoryRouter>);
     expect(screen.queryByTestId('agent-control-section')).toBeNull();
     view.unmount();
     api.get.mockImplementation(() => Promise.reject(new Error('offline')));
-    render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" actionsOnly /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
   });
 });

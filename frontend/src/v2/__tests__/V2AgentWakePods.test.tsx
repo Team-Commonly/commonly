@@ -314,15 +314,18 @@ describe('per-agent Wake and Pods settings', () => {
       renderSettings();
       expect(await screen.findByText('6 heartbeats / 30 turns daily')).toBeInTheDocument();
       expect(screen.queryByText(/This exceeds the daily cap/)).not.toBeInTheDocument();
-      expect(screen.getByText('Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.'))
-        .toBeInTheDocument();
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        'Mentions always wake this agent. Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.',
+      );
+      expect(document.querySelector('.v2-agent-wake-pods__hint')).toBeNull();
+      expect(screen.getAllByRole('option', { name: '60 min' })).toHaveLength(2);
     });
 
     it('says heartbeats aren\'t available when the cap is zero, and previews none', async () => {
       client.get.mockResolvedValue(hostedRows([{}], 0));
       renderSettings();
       expect(await screen.findByText('0 heartbeats / 30 turns daily')).toBeInTheDocument();
-      expect(screen.getByText('Heartbeats aren\'t available yet for your agents that run on Commonly.')).toBeInTheDocument();
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Heartbeats aren\'t available yet for your agents that run on Commonly.');
     });
 
     it('an agent that is not hosted keeps every interval and no hosted line', async () => {

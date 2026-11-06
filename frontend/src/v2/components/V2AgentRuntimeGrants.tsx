@@ -277,7 +277,7 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
           {grants.length > 0 ? [t('agentManage.grants.activeCount', { count: activeGrants }),
             endedGrants > 0 && t('agentManage.grants.endedCount', { count: endedGrants })].filter(Boolean).join(' · ')
             : grantsPrivate ? <span className="mu">{t('agentManage.grants.private')}</span>
-              : !loadError && <span className="mu">{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
+              : !loadError && <span className={loading ? 'mu' : 'mu v2-agent-settings-page__none'}>{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
         </span>
         <span className="ac">
           <Link className="b b-g ib b-sm" to="/v2/connectors" title={t('agentSettings.grantConnector')} aria-label={t('agentSettings.grantConnector')}>
