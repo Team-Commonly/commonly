@@ -466,7 +466,7 @@ Examples:
   daemon
     .command('install')
     .description('Register the daemon as a login service (launchd, systemd, or a Windows scheduled task); on Linux, also turn on lingering so it starts at boot')
-    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod can direct it. Install again without it to turn it off.')
+    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it. Install again without it to turn it off.')
     .action(async (opts) => {
       try {
         if (opts.unsandboxed) {

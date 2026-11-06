@@ -4893,7 +4893,7 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
-    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants.')
+    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
     .action(async (name, opts) => {
       if (opts.unsandboxed) {
         const flagRefusal = unsandboxedFlagRefusal();
