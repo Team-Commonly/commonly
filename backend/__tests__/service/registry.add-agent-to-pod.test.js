@@ -603,8 +603,6 @@ describe('adding an existing agent to another pod', () => {
       await AgentInstallation.updateOne({ podId: home._id }, {
         $set: { 'config.hosted.provisionedAt': null, 'config.hosted.deprovisionedAt': stoppedAt },
       });
-      // Two members, so the intro would post for any agent that can answer it.
-      await Pod.updateOne({ _id: target._id }, { $addToSet: { members: home._id } });
       const post = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
       try {
         expect((await add(owner, target._id)).status).toBe(200);
