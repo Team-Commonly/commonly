@@ -11,6 +11,7 @@ const Integration = require('../models/Integration');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
 const { retireHostedRoomRows } = require('./hostedRuntimeService');
+const { retireDmRowsWithAgent } = require('./agentDmRowService');
 
 // Same gate as podController: the PG mirror exists only when PG is configured.
 let PGPod: any;
@@ -36,6 +37,7 @@ export const deletePodCascade = async (podId: string): Promise<void> => {
     const instanceId = row.instanceId || 'default';
     identities.set(`${row.agentName}:${instanceId}`, { agentName: row.agentName, instanceId });
     await retireHostedRoomRows(row.agentName, instanceId, row.installedBy);
+    await retireDmRowsWithAgent(row.agentName, instanceId, podId);
   }
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');

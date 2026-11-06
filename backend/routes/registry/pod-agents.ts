@@ -10,6 +10,7 @@ const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
 const { hostedRunsNative } = require('../../services/hostedEngine');
 const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
+const { retireDmRowsWithAgent } = require('../../services/agentDmRowService');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -118,6 +119,9 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       }
 
       await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
+      // Removed from this DM on purpose, so an agent reinstalled later doesn't come back to it.
+      await AgentInstallation.updateMany({ agentName: { $in: installationNames }, podId, instanceId },
+        { $unset: { retiredWithAgentAt: 1 } }).collation({ locale: 'en', strength: 2 });
       if (agentUser) {
         // Older uninstall paths could leave a bearer on an orphaned User row.
         await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
@@ -139,6 +143,7 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
 
     await AgentInstallation.uninstall(name, podId, instanceId);
     await retireHostedRoomRows(name, instanceId, installation.installedBy);
+    await retireDmRowsWithAgent(name, instanceId, podId);
     await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 
