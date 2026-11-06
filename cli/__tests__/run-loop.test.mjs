@@ -1353,12 +1353,15 @@ describe('performRun', () => {
   // these name the comment route and the pod route separately.
   describe('a comment @ (thread.mention)', () => {
     const COMMENT_ROUTE = '/api/agents/runtime/threads/post-1/comments';
+    const FAILURE_LINE = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
+      + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+      + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
     const FINAL_TEXT_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
       + 'Do not also post it to pod chat. If you have nothing to add, or already replied with '
-      + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary.';
+      + `commonly_post_thread_comment, end with NO_REPLY alone, with no summary. ${FAILURE_LINE}`;
     const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
       + 'Do not also post it to pod chat. '
-      + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary.';
+      + `Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary. ${FAILURE_LINE}`;
 
     const commentEvent = (overrides = {}) => makeEvent({
       _id: 'evt-comment',

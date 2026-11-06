@@ -1600,10 +1600,12 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // A person who @'d the seat is not offered silence, only the tool's exit.
 const FINAL_TEXT_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. If you have nothing to add, or already replied with '
-  + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary.';
+  + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary. '
+  + FAILURE_IN_PLAIN_WORDS;
 const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. '
-  + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary.';
+  + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary. '
+  + FAILURE_IN_PLAIN_WORDS;
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with
