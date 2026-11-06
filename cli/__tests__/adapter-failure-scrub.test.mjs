@@ -248,3 +248,35 @@ describe('claude adapter — the tail goes through the reader', () => {
     expect(classifySpawnFailure(err)).not.toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
 });
+
+// F178: the provider's own error code survives the keep-list as a dedicated
+// field, so a caller can match on it instead of on prose.
+describe('adapterFailure keeps the provider code', () => {
+  test.each([
+    ['a structured body', '404: {"error":{"message":"gone","code":"model_not_found"}}', 'model_not_found'],
+    ['a top-level code', '400: {"code":"model_not_found","message":"gone"}', 'model_not_found'],
+    ['a body embedded after a prose prefix', 'unexpected status 404 Not Found: {"error":{"message":"gone","code":"model_not_found"}}', 'model_not_found'],
+  ])('from %s', (_label, text, code) => {
+    expect(adapterFailure('codex', text).providerCode).toBe(code);
+  });
+
+  test.each([
+    ['prose that quotes a code', 'HTTP 500: saw model_not_found in the log'],
+    ['a numeric code', '429: {"error":{"message":"slow down","code":429}}'],
+    ['a code outside the identifier charset', '400: {"error":{"message":"x","code":"a b <c>"}}'],
+  ])('not from %s', (_label, text) => {
+    expect(adapterFailure('codex', text)).not.toHaveProperty('providerCode');
+  });
+
+  test('drops a code that echoes a credential this spawn was handed', () => {
+    const secret = 'sk-test-0123456789abcdef';
+    expect(adapterFailure('codex', `400: {"error":{"message":"x","code":"${secret}"}}`, { credentials: [secret] }))
+      .not.toHaveProperty('providerCode');
+  });
+
+  test('leaves the message, status and detail as before', () => {
+    const error = adapterFailure('codex', '404: {"error":{"message":"gone","code":"model_not_found"}}', { exitCode: 1 });
+    expect(error.message).toBe('codex exited with code 1 (upstream 404): gone');
+    expect(error.status).toBe(404);
+  });
+});

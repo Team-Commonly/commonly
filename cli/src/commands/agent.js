@@ -45,7 +45,14 @@ import {
   clearSessions,
   wasEventHandled,
   recordHandledEvent,
+  noticeDue,
+  recordNotice,
 } from '../lib/session-store.js';
+import {
+  MODEL_UNAVAILABLE_HINT_WINDOW_MS,
+  modelUnavailableFailure,
+  modelUnavailableHint,
+} from '../lib/model-unavailable.js';
 import {
   buildRecycleBriefing,
   idleMinutesSince,
@@ -2268,6 +2275,35 @@ export const performRun = ({
     }
   };
 
+  // F178: a provider that will not run this seat's model fails every turn the
+  // same way, and until now only the seat log said so. Post one plain line in
+  // the pod naming the model and where to change it, at most once per model
+  // per seat per hour (persisted, so a restart does not re-post). The failure
+  // itself is rethrown by the caller unchanged, so retry and ack behave as
+  // before. A notice that fails to post is logged and tried on a later turn.
+  const postModelUnavailableHint = async (error, hintPodId, configuredModel) => {
+    const failure = modelUnavailableFailure(error, { fallbackModel: configuredModel });
+    if (!failure || !hintPodId) return;
+    const key = `model-unavailable:${failure.model || 'unknown'}`;
+    try {
+      if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
+      const delivery = await deliverChatReply({
+        client,
+        podId: hintPodId,
+        text: modelUnavailableHint(failure.model),
+        limit: chatCharLimit,
+        maxChunks: maxChatChunks,
+        log,
+      });
+      if (!delivery.skipped && !delivery.refused) {
+        recordNotice(agentName, key);
+        log(`model unavailable hint posted (${failure.model || 'model not named'})`);
+      }
+    } catch (noticeError) {
+      log(`model unavailable hint could not be posted: ${noticeError.message}`);
+    }
+  };
+
   const runTurnBody = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
   }) => {
@@ -2544,7 +2580,12 @@ export const performRun = ({
       // Supervised or plain, a failure is thrown exactly as the adapter's own
       // would be, so the run loop's classification and retry apply unchanged.
       const spawnStartedAt = Date.now();
-      result = await turn.run(adapter, spawnPrompt, spawnCtx);
+      try {
+        result = await turn.run(adapter, spawnPrompt, spawnCtx);
+      } catch (spawnError) {
+        await postModelUnavailableHint(spawnError, eventPodId, seatEnvironment?.model);
+        throw spawnError;
+      }
       spawnDurationMs = Date.now() - spawnStartedAt;
       spawnCompleted = true;
     } finally {
