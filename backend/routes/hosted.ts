@@ -9,8 +9,9 @@
  * terminal step a stranger would otherwise hit simply is not there.
  *
  * Ownership is the sole-installer predicate: the caller must be the
- * `installedBy` of an active installation for that identity. Admins get no
- * bypass here; provisioning someone else's agent is not an ops action.
+ * `installedBy` of an active installation for that identity. A DM's row names
+ * the agent's owner, so a person DMing someone else's agent is a guest here.
+ * Admins get no bypass; provisioning someone else's agent is not an ops action.
  */
 import express from 'express';
 import rateLimit from 'express-rate-limit';

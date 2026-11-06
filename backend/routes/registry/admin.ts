@@ -10,6 +10,7 @@ const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentEventService = require('../../services/agentEventService');
 const { restartAgentRuntime } = require('../../services/agentProvisionerService');
+const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const { hash, randomSecret } = require('../../utils/secret');
 const {
   escapeRegExp,
@@ -289,6 +290,7 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
     const agentName = installation.agentName;
     const instanceId = installation.instanceId;
 
+    await retireHostedRoomRows(agentName, instanceId, installation.installedBy);
     await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
 
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(agentName, instanceId), podId });

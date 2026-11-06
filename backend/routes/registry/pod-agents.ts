@@ -9,6 +9,7 @@ const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
 const { hostedRunsNative } = require('../../services/hostedEngine');
+const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -68,7 +69,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       return memberId && memberId === userId.toString();
     });
 
-    if (!membership && !isCreator && !isGlobalAdmin) {
+    // A DM's row names the agent's owner, who is not in the room when the
+    // person talking to it is a guest. Either of them can end it.
+    const isRoom = pod.type === 'agent-room';
+    const ownsRoomRow = isRoom && installation?.installedBy?.toString?.() === userId.toString();
+
+    if (!membership && !isCreator && !isGlobalAdmin && !ownsRoomRow) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -127,11 +133,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
 
     const isInstaller = installation.installedBy?.toString?.() === userId.toString();
 
-    if (!isCreator && !isInstaller && !isGlobalAdmin) {
+    if (!isCreator && !isInstaller && !isGlobalAdmin && !(isRoom && membership)) {
       return res.status(403).json({ error: 'Only pod admins or installers can remove agents' });
     }
 
     await AgentInstallation.uninstall(name, podId, instanceId);
+    await retireHostedRoomRows(name, instanceId, installation.installedBy);
     await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 

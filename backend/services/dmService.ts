@@ -2,6 +2,9 @@ import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
+import {
+  AGENT_ROOM_AUTO_JOIN_SOURCE, isHostedInstallation, resolveHostedOwner,
+} from './hostedRuntimeService';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
@@ -361,15 +364,28 @@ class DMService {
         // strangers, one smoke). Copy runtime from the agent's existing
         // active install; the room is a projection of the same agent.
         const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default');
+        // The person in a DM with a hosted agent is a guest unless they own
+        // it. `installedBy` is what makes someone an owner, for the cap, for
+        // starting and stopping it and for the line its turns draw on, so this
+        // row names the agent's owner, and a stop reaches it with their others.
+        // With no owner to name there is no row: the agent can't answer here.
+        const hosted = isHostedInstallation({ config: inherited });
+        const hostedOwner = hosted
+          ? await resolveHostedOwner(agentName, instanceId || 'default', requestingUserId)
+          : null;
+        if (hosted && !hostedOwner?.live) {
+          console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
+          return roomPod;
+        }
         await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
           version: '1.0.0',
           config: {
             ...(inherited || {}),
             heartbeat: { enabled: false },
-            autoJoinSource: 'agent-room-create',
+            autoJoinSource: AGENT_ROOM_AUTO_JOIN_SOURCE,
           } as unknown as Map<string, unknown>,
           scopes: ['context:read', 'summaries:read', 'messages:write'],
-          installedBy: requestingUserId as unknown as import('mongoose').Types.ObjectId,
+          installedBy: (hostedOwner?.ownerId || requestingUserId) as unknown as import('mongoose').Types.ObjectId,
           instanceId: instanceId || 'default',
           // Curated label for the inspector / chat surfaces — same source as
           // the pod name above. NOT `${agentName} (${instanceId})`.
