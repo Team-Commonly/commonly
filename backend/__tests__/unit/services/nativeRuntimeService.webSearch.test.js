@@ -417,7 +417,9 @@ describe('native turn with commonly_web_search', () => {
         .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
         .mockResolvedValueOnce({ status: 502, headers: {}, data: { error: 'upstream unavailable' } });
 
-      const result = await runAgent(hostedInstall, mention);
+      // The line goes to a person, so the trigger names one.
+      const asked = { ...mention, payload: { ...mention.payload, userId: '507f1f77bcf86cd799439055', messageId: 'msg-1' } };
+      const result = await runAgent(hostedInstall, asked);
 
       expect(result.status).toBe('failed');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({

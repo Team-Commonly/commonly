@@ -46,13 +46,13 @@ import { nativeCueFromKernel } from './nativeKernelCue';
 import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
-import { carriesOtherAuthors } from './mentionCoalesce';
+import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
-  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline,
+  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, HOSTED_NATIVE_EVENT_TYPES, hostedNativeDecline,
   HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES, hostedHeartbeatRunsPerDay, hostedNativeRunConfig, hostedRunsNative,
 } from './hostedEngine';
 import {
@@ -215,19 +215,58 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // the set-aside page again).
 const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn. Reply with commonly_post_message from '
   + 'what you have, and tell the person which page or search you could not use.';
-// What a hosted agent posts when a turn someone was waiting on ends on a guard
-// stop or an error with nothing posted. Fixed text, so it carries nothing the
-// turn read.
+// What an agent posts when a turn someone was waiting on ends on a guard stop or
+// an error with nothing posted: any hosted failure, and a failed ceiling count
+// on any agent. Fixed text, so it carries nothing the turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
 
-// What a hosted agent posts when a person addressed it and no turns are left.
+// What an agent posts when a person addressed it and no turns are left: a
+// hosted agent past its daily line, or any agent past the per-user ceiling.
 // Before F234 the turn just ended, and the person read that as a broken agent.
-// Fixed text. It names no owner: the per-user ceiling is the owner's, across all
-// their agents, so the agent may have used none of them and the asker may not
-// be the owner.
+// Fixed text. It names no owner and no count: the per-user ceiling is the
+// owner's, across all their agents, so the agent may have used none of them and
+// the asker may not be the owner. On a hosted agent the two stops read the same,
+// so the line can't say which was hit; an agent that isn't hosted has its own
+// line for its room count, below.
 export const HOSTED_TURNS_USED_LINE = 'There are no turns left today, so I can\'t answer this one. '
   + 'They reset at midnight UTC.';
+
+// The same stop for an agent that isn't hosted: its count is per room, so the
+// agent may still answer in another one (F255), and "today" alone would say
+// otherwise.
+export const ROOM_TURNS_USED_LINE = 'There are no turns left in this room today, so I can\'t answer this one. '
+  + 'They reset at midnight UTC.';
+
+// What an agent posts when a person addressed it and no turn can run at all:
+// no model is reachable, or hosted turns are switched off. The person can't fix
+// either, and this text doesn't say which it was.
+export const TURN_UNAVAILABLE_LINE = 'I can\'t answer right now, and it isn\'t anything you did. '
+  + 'Please try again later.';
+
+// A stop that lasts reads the same on every ask, so one person's burst in one
+// place gets one line, and a retry after the window gets another. Other people
+// and other threads get their own, because they haven't read this one. Kept in
+// this process: a restart or a second replica costs one extra line, and a line
+// is the safe way to be wrong. Fixed-text failures of one ask don't use this.
+const STOP_LINE_WINDOW_MS = 10 * 60 * 1000;
+const STOP_LINE_MEMORY = 5000;
+const stopLinesSaid = new Map<string, number>();
+
+/** Whether this line was said here recently; if not, records that it is being said. */
+export const stopLineAlreadySaid = (key: string, memory: number = STOP_LINE_MEMORY): boolean => {
+  const now = Date.now();
+  const saidAt = stopLinesSaid.get(key);
+  if (saidAt !== undefined && now - saidAt < STOP_LINE_WINDOW_MS) return true;
+  if (stopLinesSaid.size >= memory) {
+    stopLinesSaid.forEach((at, seen) => { if (now - at >= STOP_LINE_WINDOW_MS) stopLinesSaid.delete(seen); });
+    if (stopLinesSaid.size >= memory) stopLinesSaid.clear();
+  }
+  stopLinesSaid.set(key, now);
+  return false;
+};
+
+export const forgetStopLines = (): void => stopLinesSaid.clear();
 
 // --- helpers ---------------------------------------------------------------
 
@@ -1640,16 +1679,52 @@ export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(te
 // F56: since this process started. AgentRun.emptyCompletion is the durable count.
 let emptyCompletionCount = 0;
 
+// Whether this sender is a person, as noteUnansweredMention reads it: a row with
+// no isBot field is one. triggerTextIsHumanWritten is stricter on purpose, since
+// it opens web addresses. A failed lookup reads as a person: a line an agent
+// didn't need costs less than a person left unanswered (review-checklist rule 19).
+const senderIsAPerson = async (userId: unknown): Promise<boolean> => {
+  const senderId = String(userId ?? '').trim();
+  if (!senderId) return false;
+  try {
+    const User = require('../models/User');
+    const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: unknown } | null;
+    return Boolean(sender) && sender?.isBot !== true;
+  } catch {
+    return true;
+  }
+};
+
+// Whether this row holds something a person is waiting on. asksThisAgent, plus
+// two it can't see. An adjacent message is the pod's one person carrying on with
+// the agent that just spoke to them: the wrapper keeps NO_REPLY open for it, but
+// silence is still what that person would get. And a row is more than its lead:
+// the same person's later @ can join a row that asked nothing, read the way
+// personAskStillOpen reads it. The sender check keeps out their own agent, which
+// can join their row too.
+const rowAsksThisAgent = (payload: Record<string, unknown>): boolean => {
+  if (asksThisAgent(payload) || payload.adjacentReply === true) return true;
+  const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as Array<Record<string, unknown>>;
+  return joined.some((entry) => !entry.notAnAsk && String(entry.userId) === String(payload.userId));
+};
+
 /**
- * F56 and F234: a person's own words addressed this turn, so someone is waiting
- * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
+ * F56 and F234: a person's own words asked this agent something, so someone is
+ * waiting on this turn. Kernel wakes arrive as chat.mention too, and nobody is
+ * waiting on those, nor on a reply under the agent's message that @'d someone
+ * else (rowAsksThisAgent). A chat row names its message. A post comment names
+ * none on purpose, so it is known by `thread`, and one on a post with no pod has
+ * no room to be told in: its podId is just some pod of the commenter's.
  */
 const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boolean> => {
   if (!wasDirectlyAddressed(trigger)) return false;
   const payload = (trigger.payload || {}) as Record<string, unknown>;
   if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
     || payload.boardWake === true || payload.welcomeWake === true) return false;
-  return triggerTextIsHumanWritten(trigger);
+  if (!rowAsksThisAgent(payload)) return false;
+  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  if (comment ? !comment.postPodId : !payload.messageId) return false;
+  return senderIsAPerson(payload.userId);
 };
 
 // Any reply this run, not just a card, answers the connect request.
@@ -2043,13 +2118,6 @@ export async function runAgent(
   trigger: NativeRunTrigger,
 ): Promise<NativeRunResult> {
   // Preconditions — never throw; callers fire-and-forget.
-  if (!isNativeRuntimeAvailable()) {
-    return failedResult(
-      '',
-      'config',
-      'LiteLLM is not configured (LITELLM_BASE_URL + LITELLM_MASTER_KEY/LITELLM_API_KEY required)',
-    );
-  }
   if (!installation || !installation.podId || !installation.agentName) {
     return failedResult('', 'config', 'installation missing podId or agentName');
   }
@@ -2071,19 +2139,6 @@ export async function runAgent(
       `runtimeType is '${runtimeType || 'unset'}', expected 'native'`,
     );
   }
-  if (hostedNative) {
-    const decline = hostedNativeDecline(String(trigger?.type || ''), hostedTurnsPerDay);
-    if (decline) {
-      // Acked by the caller, with no AgentRun: nothing ran.
-      return {
-        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
-      };
-    }
-  }
-  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
-    const heldHeartbeat = await hostedHeartbeatHold(installation);
-    if (heldHeartbeat) return heldHeartbeat;
-  }
   const cfg = hostedNative
     ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {
       searches: MAX_WEB_SEARCHES_PER_TURN, pages: MAX_WEB_FETCHES_PER_TURN,
@@ -2097,14 +2152,18 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
-  // F234: a hosted turn stopped before it ran still owes a waiting person a word.
+  // F234: a turn stopped before it ran still owes a waiting person a word.
   // Kernel wakes arrive as chat.mention too, and nobody is waiting on those; the
   // sweep would repeat the line all day. An agent's @ gets nothing, as it did
   // before: that is the loop the cap exists to end. No answeringMessageId: this
   // line isn't an answer, and that field would close the first-task card on it.
-  // A failed post doesn't change the stop.
-  const tellAddressedPerson = async (content: string): Promise<void> => {
-    if (!hostedNative || !await personAddressedThisTurn(trigger)) return;
+  // A failed post doesn't change the stop, and doesn't stand for the next ask.
+  const tellAddressedPerson = async (content: string, opts: { lasting?: boolean } = {}): Promise<void> => {
+    if (!await personAddressedThisTurn(trigger)) return;
+    const threadRootId = threadRootOfTrigger(trigger.payload) ?? null;
+    const asker = String((trigger.payload as { userId?: unknown } | null)?.userId || '');
+    const saidKey = [agentName, instanceId, podId, threadRootId ?? 'root', asker, content].join(':');
+    if (opts.lasting && stopLineAlreadySaid(saidKey)) return;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentMessageService = require('./agentMessageService');
@@ -2120,12 +2179,40 @@ export async function runAgent(
         failureNotice: true,
         personWaiting: true,
         kind: 'error',
-        threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
+        threadRootId,
       });
     } catch (postErr) {
+      if (opts.lasting) stopLinesSaid.delete(saidKey);
       console.warn('[native-runtime] stopped-turn line not posted:', (postErr as Error).message);
     }
   };
+
+  if (hostedNative) {
+    const triggerType = String(trigger?.type || '');
+    if (hostedNativeDecline(triggerType, hostedTurnsPerDay)) {
+      // An event type hosted agents never take gets no line: it isn't an ask
+      // this agent could answer later. Only the switched-off case is a stop.
+      if (HOSTED_NATIVE_EVENT_TYPES.has(triggerType)) {
+        await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
+      }
+      // Acked by the caller, with no AgentRun: nothing ran.
+      return {
+        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+      };
+    }
+  }
+  if (!isNativeRuntimeAvailable()) {
+    await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
+    return failedResult(
+      '',
+      'config',
+      'LiteLLM is not configured (LITELLM_BASE_URL + LITELLM_MASTER_KEY/LITELLM_API_KEY required)',
+    );
+  }
+  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
+    const heldHeartbeat = await hostedHeartbeatHold(installation);
+    if (heldHeartbeat) return heldHeartbeat;
+  }
 
   // A first-contact greeting is not one of the person's turns: it fires once
   // per person and agent (AgentFirstContact), before they have asked anything,
@@ -2172,7 +2259,7 @@ export async function runAgent(
           `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
           + `in pod ${podId} — declining until UTC midnight`,
         );
-        await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
+        await tellAddressedPerson(hostedNative ? HOSTED_TURNS_USED_LINE : ROOM_TURNS_USED_LINE, { lasting: true });
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
@@ -2218,7 +2305,7 @@ export async function runAgent(
             `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
             + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
           );
-          await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
+          await tellAddressedPerson(HOSTED_TURNS_USED_LINE, { lasting: true });
           return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
         }
       } catch (err) {
@@ -2432,7 +2519,7 @@ export async function runAgent(
     run.completedAt = new Date();
     await run.save();
     emitStop();
-    await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
+    await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
     return failedResult(runId, 'config', run.errorMessage);
   }
 
@@ -3064,7 +3151,7 @@ export async function runAgent(
     // A native agent's line carries the provider's reason, so a tainted turn
     // can't post it in a bridged pod. A hosted line is our own fixed text, and
     // noOutboundRelay keeps it in Commonly (F56).
-    if (wasDirectlyAddressed(trigger)
+    if (personAsked
       && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');

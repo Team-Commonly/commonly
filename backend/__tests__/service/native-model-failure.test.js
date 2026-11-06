@@ -14,7 +14,7 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentRun = require('../../models/AgentRun');
 const Message = require('../../models/Message');
-const { runAgent } = require('../../services/nativeRuntimeService');
+const { runAgent, forgetStopLines, ROOM_TURNS_USED_LINE } = require('../../services/nativeRuntimeService');
 const AgentMessageService = require('../../services/agentMessageService');
 
 let server;
@@ -67,6 +67,7 @@ beforeEach(async () => {
   pod = await Pod.create({ name: 'Model failure test', type: 'team', createdBy: owner._id,
     members: [owner._id, seat._id], publicRead: false, joinPolicy: 'invite-only' });
   requests = [];
+  forgetStopLines();
   jest.spyOn(AgentMessageService, 'postMessage');
   mockEmit.mockClear();
   mockTo.mockClear();
@@ -76,7 +77,7 @@ afterEach(() => { process.env = previousEnv; });
 const run = (runtimeType = 'hosted') => runAgent({ podId: pod._id, agentName: 'model-agent', instanceId: 'default',
   installedBy: owner._id, config: { model, runtime: { runtimeType },
     ...(runtimeType === 'hosted' ? { hosted: { engine: 'native', provisionedAt: new Date() } } : {}) },
-}, { type: 'chat.mention', payload: { content: 'Please answer.', userId: String(owner._id) } });
+}, { type: 'chat.mention', payload: { content: 'Please answer.', userId: String(owner._id), messageId: 'msg-1' } });
 
 test.each(['hosted', 'native'])('a %s 503 persists failure and posts the model without substitution or private payload', async (runtimeType) => {
   upstreamStatus = 503;
@@ -122,4 +123,60 @@ test('a healthy default posts its answer and persists a successful turn', async 
   expect(saved.turns[0].model).toBe(model);
   expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'A model answer.' }));
   expect(requests).toHaveLength(1);
+});
+
+describe('F234: a person a stopped turn owes a word, through the real message pipeline', () => {
+  const nativeInstall = (config = {}) => ({
+    podId: pod._id, agentName: 'model-agent', instanceId: 'default', installedBy: owner._id,
+    config: { model, runtime: { runtimeType: 'native' }, tools: [], ...config },
+  });
+  const ask = { type: 'chat.mention', payload: { content: 'Please answer.', messageId: 'msg-1' } };
+  const asked = () => ({ ...ask, payload: { ...ask.payload, userId: String(owner._id) } });
+  const pastRoomCap = async () => {
+    await AgentRun.create({
+      podId: pod._id, agentName: 'model-agent', instanceId: 'default', trigger: 'mention', status: 'succeeded',
+    });
+  };
+  const inPod = () => Message.find({ podId: pod._id, userId: seat._id }).lean();
+
+  test('the line lands in the pod once for a burst', async () => {
+    await pastRoomCap();
+    await runAgent(nativeInstall({ dailyRunCap: 1 }), asked());
+    await runAgent(nativeInstall({ dailyRunCap: 1 }), asked());
+    expect((await inPod()).map((row) => row.content)).toEqual([ROOM_TURNS_USED_LINE]);
+    expect(requests).toHaveLength(0);
+  });
+
+  test('a person whose row has no isBot field is told', async () => {
+    await User.collection.updateOne({ _id: owner._id }, { $unset: { isBot: '' } });
+    await pastRoomCap();
+    await runAgent(nativeInstall({ dailyRunCap: 1 }), asked());
+    expect((await inPod()).map((row) => row.content)).toEqual([ROOM_TURNS_USED_LINE]);
+  });
+
+  test('a post comment from a person, with no messageId, is told when the model fails', async () => {
+    upstreamStatus = 503;
+    await runAgent(nativeInstall(), {
+      type: 'thread.mention',
+      payload: {
+        content: 'Please answer.',
+        userId: String(owner._id),
+        thread: { postId: 'post-1', postPodId: String(pod._id), commentId: 'c-1' },
+      },
+    });
+    expect(await inPod()).toHaveLength(1);
+  });
+
+  test('a comment on a post with no pod posts into no pod', async () => {
+    upstreamStatus = 503;
+    await runAgent(nativeInstall(), {
+      type: 'thread.mention',
+      payload: {
+        content: 'Please answer.',
+        userId: String(owner._id),
+        thread: { postId: 'post-1', postPodId: null, commentId: 'c-1' },
+      },
+    });
+    expect(await inPod()).toHaveLength(0);
+  });
 });
