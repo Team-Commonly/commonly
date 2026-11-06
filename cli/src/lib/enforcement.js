@@ -91,6 +91,20 @@ export const classifyTrigger = (event, recentMessages) => {
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
 
+/**
+ * A person @-mentioned this seat in a pod (ADR-018 D9.2): the one wake that
+ * carries unread message bodies. `trigger` is classifyTrigger's verdict, so an
+ * agent's mention, a kernel wake and an author the snapshot can't name are all
+ * out. A DM wake is not a mention, whichever type it rides, and neither is a
+ * broadcast. Nor are three `chat.mention` wakes where nobody typed the seat's
+ * name: a welcome, an adjacent reply and a reply to the seat's own message.
+ */
+export const isPersonMention = (event, trigger) => {
+  const payload = event?.payload || {};
+  return trigger === 'human' && event?.type === 'chat.mention' && !payload.dmKind
+    && !payload.welcomeWake && !payload.adjacentReply && !payload.implicitReply;
+};
+
 // These are the two event types the kernel's bot-to-bot mention dampener
 // bounds as one shared budget. Keep the wrapper out of that same loop's
 // admission path: named seats need to respond even when broadcasts have

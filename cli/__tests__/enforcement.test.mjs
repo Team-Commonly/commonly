@@ -22,6 +22,7 @@ import {
   DECISION_FORK_FRAME,
   MENTION_EVENT_TYPES,
   classifyTrigger,
+  isPersonMention,
   createCascadeGovernor,
   createClaimHandicap,
   createClaimKeeper,
@@ -47,6 +48,25 @@ describe('decision-fork prompt rule', () => {
     expect(prompt).toContain('include @human when a specific person should rule');
     expect(prompt).toContain('do not duplicate the card with a prose @ask');
     expect(prompt).toContain(proseAsk);
+  });
+});
+
+describe('isPersonMention', () => {
+  test('is a person naming the seat in a pod, and nothing else', () => {
+    expect(isPersonMention({ type: 'chat.mention', payload: {} }, 'human')).toBe(true);
+    for (const trigger of ['agent', 'kernel', 'unknown']) {
+      expect(isPersonMention({ type: 'chat.mention', payload: {} }, trigger)).toBe(false);
+    }
+    expect(isPersonMention({ type: 'chat.mention', payload: { dmKind: 'user-agent' } }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'dm.message', payload: {} }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'message.posted', payload: { addressed: true } }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'heartbeat', payload: {} }, 'human')).toBe(false);
+    // No turn carries this type: it isn't a prompt event.
+    expect(isPersonMention({ type: 'thread.mention', payload: {} }, 'human')).toBe(false);
+  });
+
+  test.each(['welcomeWake', 'adjacentReply', 'implicitReply'])('%s is a person, but not a mention', (flag) => {
+    expect(isPersonMention({ type: 'chat.mention', payload: { [flag]: true } }, 'human')).toBe(false);
   });
 });
 

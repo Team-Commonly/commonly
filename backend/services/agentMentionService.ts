@@ -1645,7 +1645,7 @@ const enqueueWakeOnMessage = async ({
       && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);
     try {
       const built = deliveryMode === 'digest'
-        ? String(rawContent || '').replace(/\s+/g, ' ').slice(0, 200)
+        ? String(rawContent || '').replace(/\s+/g, ' ').slice(0, 500)
         : buildContentForTarget(
           podId,
           rawContent,
@@ -1667,7 +1667,7 @@ const enqueueWakeOnMessage = async ({
           // wrapper's claim decision; the model reads the content.
           content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,
           // F109: the author's words with no frames (digest content is a
-          // whitespace-collapsed 200-char preview; this is the full text).
+          // whitespace-collapsed 500-char preview; this is the full text).
           rawContent,
           userId,
           username,

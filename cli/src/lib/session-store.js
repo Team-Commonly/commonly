@@ -123,6 +123,15 @@ export const setSession = (agentName, podId, sessionId, { binding = null, contex
   writeAgent(agentName, state);
 };
 
+// One pod's session, for a thread that can't be resumed any more.
+export const clearSession = (agentName, podId) => {
+  if (!agentName || !podId) return;
+  const state = readAgent(agentName);
+  if (!(podId in state)) return;
+  delete state[podId];
+  writeAgent(agentName, state);
+};
+
 export const wasEventHandled = (agentName, eventId) => {
   if (!agentName || !eventId) return false;
   return getHandledEvents(agentName).set.has(String(eventId));

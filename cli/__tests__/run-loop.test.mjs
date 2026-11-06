@@ -446,7 +446,9 @@ describe('performRun', () => {
     expect(ackPosts(post)).toHaveLength(2);
   });
 
-  test('digest notices group unread threads, dedupe one source, and batch the next read for three seconds', async () => {
+  // This wake's author is unknown, so ADR-018 D9.2 keeps it counts-only. What a
+  // person's mention sees instead is in unread-frame-run-loop.test.mjs.
+  test('digest notices on a wake with no known author group unread threads, dedupe one source, show no text, and batch the next read for three seconds', async () => {
     const events = [
       makeEvent({ _id: 'wake', type: 'chat.mention', payload: { content: 'review this' } }),
       makeEvent({ _id: 'ambient-a', type: 'message.posted', deliveryMode: 'digest',
