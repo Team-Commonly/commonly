@@ -168,7 +168,7 @@ describe('hostSandboxRefusal', () => {
       const message = hostSandboxRefusal({ environment, adapterName: 'codex', platform: 'win32' });
       expect(message).toContain('--unsandboxed');
       expect(message).toContain('invite-only');
-      expect(message).toContain('anyone in the pod can direct it');
+      expect(message).toContain('anyone in the pod, people you invite later included, can direct it');
       expect(message).toContain('no connector grants');
       expect(message).toContain('WSL 2');
       expect(message).toContain('Run it here');
@@ -361,7 +361,7 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
     await run(['--unsandboxed'], 'reached the poll loop');
     const warned = printed(warnSpy);
     expect(warned).toContain('nothing confines this agent');
-    expect(warned).toContain('anyone in its pods can direct it');
+    expect(warned).toContain('anyone in its pods, people invited later included, can direct it');
     expect(warned).toContain('no connector grants');
     expect(fs.readFileSync(recordPath).equals(before)).toBe(true);
   });

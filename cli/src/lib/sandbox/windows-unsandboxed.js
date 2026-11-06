@@ -140,7 +140,7 @@ export const hostSandboxReport = ({ platform = process.platform, load = () => lo
 export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, gets no shell even with --allow write, and gets no connector grants.';
 
 /** Codex has no restricted tool settings to keep, so its line says what it costs instead. */
-export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
+export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
 
 export default {
   CODEX_UNSANDBOXED_NOTICE,

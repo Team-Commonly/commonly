@@ -458,7 +458,7 @@ describe('BYO listener snippet', () => {
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
       const note = screen.getByTestId('byo-listen-windows');
       expect(note).toHaveTextContent(/nothing confines/);
-      expect(note).toHaveTextContent(/anyone in this pod can direct it/);
+      expect(note).toHaveTextContent(/anyone in this pod, people you invite later included, can direct it/);
       expect(note).toHaveTextContent(/no connector grants/);
       expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();

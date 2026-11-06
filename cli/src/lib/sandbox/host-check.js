@@ -51,8 +51,8 @@ const CODEX_WINDOWS_MESSAGE = [
   'so by default this agent cannot listen for @mentions from native Windows. You can:',
   `  - In invite-only pods, run it without a sandbox: add ${UNSANDBOXED_FLAG}`
     + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
-    + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod can direct it,'
-    + ' and it gets no connector grants.',
+    + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod,'
+    + ' people you invite later included, can direct it, and it gets no connector grants.',
   CODEX_WSL_LINE,
   HOSTED_LINE,
 ].join('\n');
