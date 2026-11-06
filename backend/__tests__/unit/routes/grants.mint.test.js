@@ -490,6 +490,21 @@ describe('record wiring', () => {
     expect(child).toMatchObject({ grantId: res.body.grantId, parentGrantId: parent.body.grantId });
     expect(issuer).toEqual({ type: 'agent', id: SEAT, owner: OWNER });
   });
+
+  test('an agent attenuating gets the named fields back, not the stored row', async () => {
+    const parent = await mint({});
+    const res = await request(app).post(`/api/grants/${parent.body.grantId}/attenuate`)
+      .set('x-test-agent', SEAT).set('x-test-agent-owner', OWNER)
+      .send({ tools: ['github.list_issues'], expiresAt: new Date(Date.now() + 86400000).toISOString() });
+    expect(res.status).toBe(201);
+    expect(Object.keys(res.body).sort()).toEqual(['expiresAt', 'grantId', 'parentGrantId', 'target', 'tools',
+      'writeMode', ...['binding', 'budget', 'prWrite'].filter((key) => key in res.body)].sort());
+    expect(JSON.stringify(res.body)).not.toContain(OWNER);
+    for (const field of ['audience', 'ownerId', 'issuedBy', 'byoConsent', 'connectionId', 'installationId']) {
+      expect(res.body).not.toHaveProperty(field);
+    }
+    expect(res.body.tools).toEqual(['github.list_issues']);
+  });
 });
 
 describe('task-bound mint', () => {

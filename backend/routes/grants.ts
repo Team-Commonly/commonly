@@ -325,6 +325,19 @@ const ensureTargetAccess = async (target: { kind: 'pod' | 'seat'; id: string }, 
   return members;
 };
 
+// What an agent needs of the grant it just narrowed, not the stored row.
+const attenuatedGrantReply = (grant: Record<string, any>): Record<string, unknown> => ({
+  grantId: grant.grantId,
+  parentGrantId: grant.parentGrantId,
+  target: grant.target,
+  binding: grant.binding,
+  tools: grant.tools,
+  writeMode: grant.writeMode,
+  budget: grant.budget,
+  prWrite: grant.prWrite,
+  expiresAt: grant.expiresAt,
+});
+
 const handleError = (res: express.Response, error: unknown): express.Response => {
   if (error instanceof RoomGrantError) {
     return res.status(error.statusCode).json({ error: error.code, message: error.message, details: error.details });
@@ -619,7 +632,7 @@ router.post(
     });
     // An agent attenuated its own grant: the agent is the issuer.
     recordUnboundIssuance(child, agentActor(req.agentUser as Parameters<typeof agentActor>[0]));
-    return res.status(201).json(child);
+    return res.status(201).json(attenuatedGrantReply(child));
   } catch (error) {
     return handleError(res, error);
   }

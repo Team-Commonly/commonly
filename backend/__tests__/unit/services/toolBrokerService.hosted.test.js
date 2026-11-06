@@ -55,11 +55,12 @@ jest.mock('../../../services/dmService', () => mockDmService);
 jest.mock('../../../services/approvalActionService', () => ({ proposeAction: (...a) => mockProposeAction(...a) }));
 jest.mock('../../../services/roomGrantService', () => {
   class MockRoomGrantError extends Error {
-    constructor(code, message, statusCode = 400, details = undefined) {
+    constructor(code, message, statusCode = 400, details = undefined, credentialOwnerId = undefined) {
       super(message);
       this.code = code;
       this.statusCode = statusCode;
       this.details = details;
+      this.credentialOwnerId = credentialOwnerId;
     }
   }
   return {
@@ -1079,9 +1080,16 @@ describe('a hosted-MCP grant through the broker', () => {
       ownedRow(OWNER);
       mockUser.findById.mockReturnValue(ownerRow({ banned: true, isBot: false }));
 
-      await expect(callTool({
+      const refusal = await callTool({
         grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
-      })).rejects.toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+      }).catch((error) => error);
+      expect(refusal).toMatchObject({ code: 'connection_owner_banned', statusCode: 403 });
+      // The trail keeps whose connection it was; the calling agent isn't told.
+      expect(JSON.stringify(refusal.details ?? {})).not.toContain(OWNER);
+
+      const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' }).catch((error) => error);
+      expect(listed).toMatchObject({ code: 'connection_owner_banned' });
+      expect(JSON.stringify(listed.details ?? {})).not.toContain(OWNER);
       expect(global.fetch).not.toHaveBeenCalled();
       expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
       expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
