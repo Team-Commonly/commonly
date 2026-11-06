@@ -12,6 +12,7 @@ jest.mock('../../../services/agentEventService', () => ({
   list: jest.fn(),
   listInboxPage: jest.fn(),
   renewDelivery: jest.fn(),
+  releaseDelivery: jest.fn(),
   holdsEvent: jest.fn(),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
@@ -235,5 +236,49 @@ describe('inbox delivery renewal route', () => {
     await getRouteHandler('/events/renew', 'post')({ body: { events }, agentInstallation: { agentName: 'wren' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(AgentEventService.renewDelivery).not.toHaveBeenCalled();
+  });
+});
+
+describe('inbox delivery release route (F189)', () => {
+  const eventId = '0123456789abcdef01234567';
+  const otherId = '0123456789abcdef01234568';
+  const response = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
+  test('releases under the authenticated seat/instance and names only what it released', async () => {
+    AgentEventService.releaseDelivery.mockReset();
+    AgentEventService.releaseDelivery.mockImplementation(async (id) => (id === eventId ? 'released' : 'not_held'));
+    const res = response();
+    await getRouteHandler('/events/release', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      body: {
+        agentName: 'victim',
+        events: [{ eventId, deliveryId: 'nonce' }, { eventId: otherId, deliveryId: 'stale' }],
+      },
+    }, res);
+    expect(AgentEventService.releaseDelivery).toHaveBeenCalledWith(eventId, 'wren', 'writer-instance', 'nonce');
+    expect(AgentEventService.releaseDelivery).toHaveBeenCalledWith(otherId, 'wren', 'writer-instance', 'stale');
+    expect(res.json).toHaveBeenCalledWith({ released: [eventId], atCeiling: [] });
+  });
+  test('names the events refused at the redelivery ceiling, so the runner can say why', async () => {
+    AgentEventService.releaseDelivery.mockReset();
+    AgentEventService.releaseDelivery.mockImplementation(async (id) => (id === eventId ? 'at_ceiling' : 'released'));
+    const res = response();
+    await getRouteHandler('/events/release', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'default' },
+      body: { events: [{ eventId, deliveryId: 'nonce' }, { eventId: otherId, deliveryId: 'n2' }] },
+    }, res);
+    expect(res.json).toHaveBeenCalledWith({ released: [otherId], atCeiling: [eventId] });
+  });
+  test.each([
+    ['no events', {}],
+    ['a missing deliveryId', { events: [{ eventId }] }],
+    ['a malformed id', { events: [{ eventId: 'nope', deliveryId: 'n' }] }],
+  ])('refuses %s with 400', async (_label, body) => {
+    AgentEventService.releaseDelivery.mockReset();
+    const res = response();
+    await getRouteHandler('/events/release', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'default' }, body,
+    }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(AgentEventService.releaseDelivery).not.toHaveBeenCalled();
   });
 });

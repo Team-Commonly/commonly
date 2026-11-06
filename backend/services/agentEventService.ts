@@ -103,6 +103,10 @@ const ABANDONED_RUN_MINUTES = 30;
 // an hour as 'failed' with a reason: a reply that late is no longer an answer,
 // and a closed event says so where a pending one says nothing.
 const STRANDED_PENDING_MIN_AGE_MS = 60 * 1000;
+// F189: the most deliveries a hand-back (POST /events/release) may return to
+// pending. Twice the requeue cap, read from the same env var as
+// garbageCollect, so the two bounds move together.
+const releaseCeiling = (): number => 2 * Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
 const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
@@ -2565,6 +2569,39 @@ class AgentEventService {
       deliveryNonce: deliveryId,
     }, { $set: { deliveredAt: new Date() } });
     return result.modifiedCount === 1;
+  }
+
+  // F189/F182: a stopping runner hands back the deliveries it holds but will
+  // never run (a circuit-open carry, a carried greeting, a page it claimed as
+  // the stop arrived), so its replacement claims them on the next poll rather
+  // than after the 10–20 minute requeue sweep. Nonce-bound like renew: only
+  // the runner whose delivery it is can release it, never a replacement's.
+  // `attempts` is untouched: it counts deliveries, and a hand-back is not one.
+  // A pending row is outside the requeue cap, so a release must carry its own
+  // bound or a poison event loops forever across restarts (and a turn could
+  // loop itself by POSTing its own deliveryId). The ceiling is twice the
+  // requeue cap, on `attempts`: every lap through a release is a fresh claim,
+  // and every claim raises attempts, so this bounds restarts and repeated
+  // releases from one process alike. At the ceiling the row stays `delivered`,
+  // and the sweep retires it with its visible line.
+  static async releaseDelivery(
+    eventId: string, agentName: string, instanceId: string, deliveryId: string,
+  ): Promise<'released' | 'at_ceiling' | 'not_held'> {
+    if (!eventId || !deliveryId) return 'not_held';
+    const ceiling = releaseCeiling();
+    const held = {
+      _id: eventId,
+      agentName: String(agentName).toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: 'delivered',
+      deliveryNonce: deliveryId,
+    };
+    const result = await AgentEvent.updateOne(
+      { ...held, $or: [{ attempts: { $lt: ceiling } }, { attempts: { $exists: false } }] },
+      { $set: { status: 'pending', deliveredAt: null, deliveryNonce: null } },
+    );
+    if (result.modifiedCount === 1) return 'released';
+    return await AgentEvent.exists({ ...held, attempts: { $gte: ceiling } }) ? 'at_ceiling' : 'not_held';
   }
 
   // True when the event is this agent's own and is mid-flight or already

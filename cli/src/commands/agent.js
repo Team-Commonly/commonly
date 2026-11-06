@@ -1702,6 +1702,7 @@ export const performRun = ({
   log = () => {},
   onError,
   setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
   // The host's bubblewrap probe, for a turn placed public; tests pin it.
@@ -3089,6 +3090,12 @@ export const performRun = ({
   // 2026-10-25): a scheduled retry either fires, re-running the held events,
   // or releases them; it never leaves a live process idle on unacked work.
   let heldRetry = [];
+  // Claimed events the latest tick neither acked nor carried: a digest left
+  // unread, or a later group a failure or a stale ack skipped. A running seat
+  // leaves these to the requeue as it always has. A stop hands them back on
+  // every planned exit from the tick; an unexpected throw leaves the page to
+  // the requeue. One list, so a new exit has one thing to add to (F189).
+  let tickUnsettled = [];
   // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
   const heldRetryFailures = new Map();
   let heldRenewTimer = null;
@@ -3142,7 +3149,9 @@ export const performRun = ({
       if (!seen.has(id)) {
         seen.add(id);
         const failures = (heldRetryFailures.get(id) || 0) + 1;
-        if (failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
+        // A stop wins over the local limit: the sweep would make this event
+        // wait 10–20 minutes, and the server's ceiling bounds a hand-back.
+        if (running && failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
         else {
           heldRetryFailures.set(id, failures);
           carry.push(event);
@@ -3158,9 +3167,18 @@ export const performRun = ({
     }
     // A stopping run carries nothing and renews nothing: extending the lease
     // of a process on its way out only delays the replacement's redelivery.
-    const confirmed = running && carry.length ? await renewHeldDeliveries(carry) : null;
-    const held = running ? carry.filter((event) => stillHeld(event, confirmed)) : [];
-    const dropped = running ? carry.filter((event) => !stillHeld(event, confirmed)) : [];
+    // Its carry is handed back to the server when the tick ends instead
+    // (F189), so the next run answers it on its first poll.
+    if (!running) {
+      heldRetry = [...heldRetry, ...carry];
+      heldRetryFailures.clear();
+      return { held: [], released, handedBack: carry };
+    }
+    const confirmed = carry.length ? await renewHeldDeliveries(carry) : null;
+    // The stop landed during that renewal, after the limit was applied.
+    if (!running) tickUnsettled.push(...released);
+    const held = carry.filter((event) => stillHeld(event, confirmed));
+    const dropped = carry.filter((event) => !stillHeld(event, confirmed));
     const heldIds = new Set(held.map((event) => String(event._id)));
     for (const id of [...heldRetryFailures.keys()]) {
       if (!heldIds.has(id)) heldRetryFailures.delete(id);
@@ -3172,7 +3190,65 @@ export const performRun = ({
         + '(checkpointed, requeued or retired) — not retried',
       );
     }
-    return { held, released };
+    return { held, released, handedBack: [] };
+  };
+
+  // F189/F182: hand claimed events this run will never run back to the
+  // server as pending, so the next run claims them on its first poll. Without
+  // this they stay `delivered` to a dead process until the requeue sweep
+  // (10–20 min, one attempt spent per lap): a walk on 2026-11-05 restarted a
+  // circuit-open seat five times and each restart's mention waited on that
+  // sweep. Nonce-bound on the server, so nothing a replacement holds can be
+  // released, and an event this run released can no longer be acked by it.
+  // The server refuses an event at its redelivery ceiling (`atCeiling`); it
+  // stays delivered and the requeue retires it, which bounds a poison event.
+  // Best effort: an older server without the route, or a failed request,
+  // leaves them to the requeue as before, and says so.
+  const handBackDeliveries = async (events, why) => {
+    const seen = new Set();
+    const deliveries = [];
+    for (const event of events) {
+      const id = String(event._id);
+      if (deliveryIdOf(event) && !seen.has(id)) {
+        seen.add(id);
+        deliveries.push({ eventId: id, deliveryId: deliveryIdOf(event) });
+      }
+    }
+    if (deliveries.length === 0) return [];
+    const released = [];
+    const atCeiling = [];
+    try {
+      for (let offset = 0; offset < deliveries.length; offset += 50) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await client.post('/api/agents/runtime/events/release', {
+          events: deliveries.slice(offset, offset + 50),
+        });
+        if (Array.isArray(response?.released)) released.push(...response.released.map(String));
+        if (Array.isArray(response?.atCeiling)) atCeiling.push(...response.atCeiling.map(String));
+      }
+    } catch (error) {
+      log(
+        `[inbox.batch] could not hand back ${countEvents(deliveries.length - released.length)} on ${why} `
+        + `(${error.message}) — the server's requeue redelivers them in ~10–20 min`,
+      );
+      return released;
+    }
+    log(`[inbox.batch] handed back ${countEvents(released.length)} held on ${why}, for the next run to answer`);
+    if (atCeiling.length) {
+      log(`[inbox.batch] ${countEvents(atCeiling.length)} left to the requeue (at the redelivery ceiling)`);
+    }
+    return released;
+  };
+  // Everything a stopped run still carries. Taken once: the arrays are emptied
+  // before the request, so a second caller finds nothing to send.
+  const handBackCarryOnStop = () => {
+    const carry = [...heldRetry, ...heldGreeting, ...tickUnsettled];
+    heldRetry = [];
+    heldGreeting = [];
+    tickUnsettled = [];
+    heldRetryFailures.clear();
+    clearHeldRenewal();
+    return carry.length ? handBackDeliveries(carry, 'stop') : Promise.resolve([]);
   };
 
   // Keep a long wait's leases alive. A wait shorter than one renewal interval
@@ -3202,9 +3278,13 @@ export const performRun = ({
   };
 
   // What the retry will actually do, for the failure report.
-  const describeHold = ({ held, released }, retry) => {
+  const describeHold = ({ held, released, handedBack = [] }, retry) => {
     const parts = [];
     if (retry.circuitOpen) parts.push('circuit open');
+    if (handedBack.length) {
+      return [...parts, `stopping: handing ${countEvents(handedBack.length)} back to the server for the next run`]
+        .join('; ');
+    }
     if (released.length) {
       parts.push(
         `releasing ${countEvents(released.length)} after ${HELD_RETRY_MAX_FAILURES} failed attempts `
@@ -3537,8 +3617,29 @@ export const performRun = ({
     try { return await turn(); } finally { pollLiveness.arm(); }
   };
 
+  // The scheduled next tick, so stop() can cancel it: a stopped run idling in
+  // a 15-minute circuit wait otherwise stays alive until the timer fires,
+  // which is why a walk on 2026-11-05 needed repeated signals to end it.
+  let tickTimer = null;
+  let tickInFlight = false;
+  // stop() returns this: it resolves once the hand-back has answered, whether
+  // the idle stop or the in-flight tick's end performs it.
+  let stopped = null;
+  let resolveStopped = () => {};
   const tick = async () => {
+    tickTimer = null;
     if (!running) return;
+    tickInFlight = true;
+    try { await runTick(); } finally {
+      tickInFlight = false;
+      if (!running) {
+        try { await handBackCarryOnStop(); } finally { resolveStopped(); }
+      }
+    }
+  };
+
+  const runTick = async () => {
+    tickUnsettled = [];
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
     let retryScheduled = false;
@@ -3567,8 +3668,9 @@ export const performRun = ({
       });
       pollLiveness.arm();
       // A stall fired while this request hung: the loop has already given up on
-      // it. A plain stop() falls through instead, to the group loop's own
-      // `running` check, which leaves the page's rows to requeue as it always has.
+      // it, and `agent run` exits in onStall, so its page is left to the requeue.
+      // A plain stop() falls through instead, to the group loop's own `running`
+      // check, which hands the page back.
       if (pollStalled) return;
       const { events = [], inboxCount } = page;
       consecutiveAuthErrors = 0;
@@ -3626,18 +3728,30 @@ export const performRun = ({
       // The greeting window is counted once per poll, however many pods'
       // greetings this page carries (gate review of #3511).
       let greetingCarriedThisPoll = false;
-      // The claimed events a failure at `groupIndex` stops before they run.
-      // A digest-only group was never claimed, so it is not carried.
+      // The events a failure at `groupIndex` stops before they run. A later
+      // digest-only group never starts a turn of its own, so a retry does not
+      // carry it.
       const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
         .filter((later) => !later.every((event) => event.deliveryMode === 'digest'))
         .flat();
+      // Every later group a stop must hand back. The server claims a digest
+      // alongside a wake on the same page, and a private wake groups apart
+      // from it, so a digest-only group here can be `delivered` to this run.
+      const claimedAfter = (groupIndex) => groups.slice(groupIndex + 1).flat();
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
         const group = groups[groupIndex];
-        if (!running) break;
+        if (!running) {
+          // Claimed by this tick's poll (or carried into it) and never run:
+          // a stop that arrived mid-poll or mid-page (F182). Handed back when
+          // the tick ends.
+          heldRetry = [...heldRetry, ...group, ...claimedAfter(groupIndex)];
+          break;
+        }
         // A current kernel never claims a digest-only page. Guard a mixed
         // version rollout too: an ambient batch must not start a model turn.
         if (group.every((event) => event.deliveryMode === 'digest')) {
           log(`[inbox.batch] digest-only page (${group.length}) — no spawn or ack`);
+          tickUnsettled.push(...group);
           continue;
         }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
@@ -3685,6 +3799,7 @@ export const performRun = ({
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
+            tickUnsettled.push(...claimedAfter(groupIndex));
             const hold = await holdForRetry(failedEvents, untriedAfter(groupIndex));
             keepHeldLeases(retry.delayMs);
             const event = group[0];
@@ -3769,6 +3884,9 @@ export const performRun = ({
             );
             break;
           }
+          // Items a stop cut off before they ran (refusal isolation checks
+          // `running`), and any digest this batch left unread.
+          tickUnsettled.push(...batch.entries.filter((entry) => !entry.result).map((entry) => entry.event));
           continue;
         }
         const [event] = group;
@@ -3802,6 +3920,7 @@ export const performRun = ({
               retryScheduled = true;
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
+              tickUnsettled.push(...claimedAfter(groupIndex));
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
@@ -3877,6 +3996,7 @@ export const performRun = ({
           if (terminalError) {
             running = false;
             onError?.(terminalError);
+            tickUnsettled.push(...claimedAfter(groupIndex));
             return;
           }
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
@@ -3929,15 +4049,26 @@ export const performRun = ({
     // names it, and a sibling's completed turn must not shorten the backoff.
     // A wait the loop schedules itself always ends, so it is not a stall.
     pollLiveness.pause();
-    if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
+    if (running) tickTimer = setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
   tick();
   return {
+    // Resolves once anything held has been handed back. A tick in flight hands
+    // back its own carry when it ends; an idle run does it here. A second
+    // stop() returns the same promise.
     stop: () => {
+      if (stopped) return stopped;
+      stopped = new Promise((resolve) => { resolveStopped = resolve; });
       running = false;
       pollLiveness.stop();
       clearHeldRenewal();
+      if (tickTimer !== null) {
+        clearTimeoutImpl(tickTimer);
+        tickTimer = null;
+      }
+      if (!tickInFlight) handBackCarryOnStop().finally(() => resolveStopped());
+      return stopped;
     },
   };
 };

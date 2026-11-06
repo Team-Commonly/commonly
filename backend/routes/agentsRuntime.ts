@@ -1443,13 +1443,18 @@ router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(
   }
 });
 
+// The body of /events/renew and /events/release: 1–50 { eventId, deliveryId }.
+const isDeliveryPairList = (events: unknown): events is Array<{ eventId: string; deliveryId: string }> => (
+  Array.isArray(events) && events.length >= 1 && events.length <= 50
+  && events.every((entry: any) => entry && typeof entry.eventId === 'string'
+    && /^[a-fA-F0-9]{24}$/.test(entry.eventId) && typeof entry.deliveryId === 'string' && entry.deliveryId)
+);
+
 // A live inbox turn may outlast the stale-delivery GC interval. Renew only
 // the token owner's current nonce; this never marks work handled.
 router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   const events = req.body?.events;
-  if (!Array.isArray(events) || events.length < 1 || events.length > 50
-    || events.some((entry: any) => !entry || typeof entry.eventId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(entry.eventId)
-      || typeof entry.deliveryId !== 'string' || !entry.deliveryId)) {
+  if (!isDeliveryPairList(events)) {
     return res.status(400).json({ message: 'events requires 1–50 eventId/deliveryId pairs' });
   }
   const agentName = req.agentInstallation?.agentName
@@ -1476,6 +1481,37 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);
     return res.status(500).json({ message: 'Could not renew inbox deliveries' });
+  }
+});
+
+// F189/F182: a stopping runner hands back the deliveries it holds but will not
+// run, so its replacement gets them on its first poll instead of after the
+// requeue sweep. Same shape and nonce binding as /events/renew; never an ack.
+// Bounded: past the redelivery ceiling a release is refused (atCeiling).
+router.post('/events/release', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const events = req.body?.events;
+  if (!isDeliveryPairList(events)) {
+    return res.status(400).json({ message: 'events requires 1–50 eventId/deliveryId pairs' });
+  }
+  const agentName = req.agentInstallation?.agentName
+    || req.agentUser?.botMetadata?.agentName
+    || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
+  const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
+  if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  try {
+    const results = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => ({
+      eventId: entry.eventId,
+      outcome: await AgentEventService.releaseDelivery(entry.eventId, agentName, instanceId, entry.deliveryId),
+    })));
+    // atCeiling: refused because the event reached the redelivery ceiling; it
+    // stays delivered and the requeue sweep retires it.
+    return res.json({
+      released: results.filter((r) => r.outcome === 'released').map((r) => r.eventId),
+      atCeiling: results.filter((r) => r.outcome === 'at_ceiling').map((r) => r.eventId),
+    });
+  } catch (error: any) {
+    console.error('Error releasing inbox deliveries:', error.message);
+    return res.status(500).json({ message: 'Could not release inbox deliveries' });
   }
 });
 
