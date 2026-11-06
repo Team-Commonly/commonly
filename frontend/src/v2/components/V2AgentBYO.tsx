@@ -1326,18 +1326,19 @@ const V2AgentBYO: React.FC = () => {
     return t('agentByo.refused.public', values);
   };
   // F175a: a harness that can't take a connector says so rather than leaving it
-  // unmentioned: no sandbox (dsh, Hermes), not on the grant list yet (pi, Goose,
-  // Qwen), or a grant harness on native Windows, where the CLI withholds the
-  // broker. `os` is null where the page doesn't know the computer's platform.
+  // unmentioned: no sandbox (dsh, Hermes, and pi off macOS), not on the grant
+  // list yet (Goose, Qwen), pi's public-on-a-Mac rule (F175c), or a grant
+  // harness on native Windows, where the CLI withholds the broker. `os` is null where the page doesn't know the computer's platform.
   const connectorLine = (harness: string, os: SetupOs | null) => {
     const block = connectorGrantBlock(harness, os);
     if (!block) return null;
     const tool = harnessLabel(harnessCatalog, harness);
-    const text = block === 'never'
-      ? t('harness.noConnectors', { tool })
-      : block === 'windows'
-        ? t('harness.noConnectorsWindows')
-        : t('harness.noConnectorsYet', { tool });
+    const text = {
+      never: () => t('harness.noConnectors', { tool }),
+      windows: () => t('harness.noConnectorsWindows'),
+      macPublicOnly: () => t('harness.connectorsMacPublicOnly', { tool }),
+      notYet: () => t('harness.noConnectorsYet', { tool }),
+    }[block]();
     return <p className="v2-byo__hint" data-testid="byo-no-connectors">{text}</p>;
   };
   const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;

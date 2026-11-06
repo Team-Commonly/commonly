@@ -27,18 +27,22 @@
  * The server also refuses a named adapter absent from CONFINING_ADAPTERS,
  * even when the adapter has a local sandbox (Goose, Qwen Code). OpenCode was
  * admitted in F175a, once its public seat was shown to keep the per-spawn
- * credential out of its own tools' reach (cli adapters/opencode.js).
+ * credential out of its own tools' reach (cli adapters/opencode.js). pi was
+ * admitted in F175c on a narrower rule (PUBLIC_ONLY_GRANT_ADAPTERS below).
  *
  * Two further cases ARE host-independent, so they are decided here as well
  * (Vera 69810):
  *
- *  - An adapter that confines on NO host. `pi` is the one that exists — its
- *    `assertNoSandboxDeclared` (`cli/src/lib/adapters/pi.js`) throws only when
- *    a sandbox is DECLARED, so a pi seat that declares nothing spawns
- *    unconfined and nothing ever derives one. The adapter is then the deciding
- *    fact, not the declaration. The name is normalised the way the daemon
- *    normalises it before spawning (`trim().toLowerCase()`, see
- *    `normalizeAdapter`), because `'PI'` reaches the pi adapter too.
+ *  - An adapter that confines only a public seat. `pi` is the one that exists:
+ *    it confines a public turn in macOS Seatbelt (`assertSandboxSupported`,
+ *    `cli/src/lib/adapters/pi.js`) and is never handed a default sandbox, so a
+ *    pi seat that declares nothing, or declares a non-public trust, spawns
+ *    unconfined and nothing ever derives one. For pi an absent block is
+ *    therefore a refusal, not a daemon-decided case, and every pi refusal is
+ *    `adapter_confines_public_only`, which naming (F94) does not lift. The
+ *    name is normalised the way the daemon normalises it before spawning
+ *    (`trim().toLowerCase()`, see `normalizeAdapter`), because `'PI'` reaches
+ *    the pi adapter too.
  *  - A declared public mode that no adapter implements. The write-time schema
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
@@ -77,7 +81,21 @@ export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new 
   // F175a: Seatbelt workspace/read-only on macOS, bwrap on Linux; a public
   // OpenCode seat on any other mode refuses to spawn (adapters/opencode.js).
   ['opencode', new Set(['workspace', 'read-only', 'bwrap'])],
+  // F175c: Seatbelt workspace/read-only on macOS only, and only on a public
+  // seat (PUBLIC_ONLY_GRANT_ADAPTERS). A public pi turn has no built-in tool,
+  // so the model cannot open the per-spawn credential file, and the file is
+  // deleted once pi has loaded its extensions (adapters/pi.js).
+  ['pi', new Set(['workspace', 'read-only'])],
 ]);
+
+/**
+ * F175c: confining adapters that hold a grant ONLY on a declared public seat.
+ * Mirrors the cli's `ADAPTERS_WITH_PUBLIC_ONLY_GRANT`
+ * (`cli/src/lib/default-environment.js`); the reason string is the cli guard's
+ * own, so one refusal reads the same from either emitter.
+ */
+export const PUBLIC_ONLY_GRANT_ADAPTERS: ReadonlySet<string> = new Set(['pi']);
+export const PUBLIC_ONLY_REASON = 'adapter_confines_public_only';
 
 export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
 
@@ -180,6 +198,35 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
 });
 
 /**
+ * A public-only adapter (pi) is confined by exactly one declaration: a public
+ * trust, no `none` mode, and a mode it enforces or none at all (the host
+ * resolves it; off macOS the daemon refuses). Anything short of that runs
+ * unconfined on every host, an absent block included, since nothing derives a
+ * baseline for it.
+ */
+const publicOnlyRefusal = (
+  adapter: string,
+  environment: unknown,
+  modes: ReadonlySet<string>,
+): GrantBrokerRefusal | null => {
+  const sandbox = (environment as { sandbox?: unknown } | null | undefined)?.sandbox;
+  const declared = sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+    ? sandbox as { mode?: unknown; trust?: unknown }
+    : null;
+  const mode = declared?.mode;
+  const confined = Boolean(declared)
+    && effectiveSandboxTrust(declared?.trust) === 'public'
+    && (mode === undefined || mode === null || (typeof mode === 'string' && modes.has(mode)));
+  if (confined) return null;
+  return refusalFor(
+    PUBLIC_ONLY_REASON,
+    `the seat runs the '${adapter}' adapter, which holds a grant only on a public seat confined by the macOS sandbox;`
+      + " declare sandbox.trust 'public' and run it on a Mac, or drop the grant broker from this seat."
+      + ' Naming the agent on the grant does not lift this',
+  );
+};
+
+/**
  * The adapter is `runtime.adapter`, or `runtime.runtimeType` when no adapter is
  * declared. A declared adapter wins, as it does in the daemon
  * (`cli/src/commands/daemon.js:142`). This is load-bearing, not tidiness: a
@@ -215,6 +262,9 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
   // Modes are judged against the declared adapter's own set; a seat that names
   // no adapter is daemon-decided (claude or codex), so the union applies there.
   const enforceableModes = adapter ? CONFINING_ADAPTERS.get(adapter) as ReadonlySet<string> : PUBLIC_HOST_MODES;
+  if (adapter && PUBLIC_ONLY_GRANT_ADAPTERS.has(adapter)) {
+    return publicOnlyRefusal(adapter, environment, enforceableModes);
+  }
 
   const source = environment as { sandbox?: unknown } | null | undefined;
   const sandbox = source?.sandbox;

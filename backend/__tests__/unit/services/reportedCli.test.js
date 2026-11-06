@@ -117,11 +117,11 @@ describe('recording the reported CLI', () => {
 });
 
 describe('no binding reads reportedCli', () => {
-  test('a pi seat reporting claude is still refused confinement', () => {
+  test('a qwen seat reporting claude is still refused confinement', () => {
     const refusal = grantBrokerRefusal({ sandbox: { mode: 'workspace', trust: 'public' } },
-      { runtimeType: 'pi', host: 'byo', reportedCli: 'claude' });
+      { runtimeType: 'qwen', host: 'byo', reportedCli: 'claude' });
     expect(refusal).toEqual(expect.objectContaining({ reason: 'adapter_cannot_confine' }));
-    expect(refusal.detail).toMatch(/'pi' adapter/);
+    expect(refusal.detail).toMatch(/'qwen' adapter/);
   });
 
   test('the binding the installations route projects ignores it', () => {

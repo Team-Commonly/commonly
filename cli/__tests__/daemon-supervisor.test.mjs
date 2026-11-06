@@ -849,7 +849,9 @@ describe('tick', () => {
       environment: expect.objectContaining({ mcp: [kernelEntry] }),
     }));
     expect(children).toHaveLength(1);
-    expect(logs.join('\n')).toContain('grant_broker_unconfined (adapter_cannot_confine)');
+    // F175c: pi is on the grant list, but this row declares no sandbox and pi
+    // is never defaulted into one, so the reason is pi's own.
+    expect(logs.join('\n')).toContain('grant_broker_unconfined (adapter_confines_public_only)');
   });
 
   test('a row without a model never strips a hand-set environment', async () => {

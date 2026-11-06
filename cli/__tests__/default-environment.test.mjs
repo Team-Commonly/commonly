@@ -44,9 +44,11 @@ describe('defaultMcpServers', () => {
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
   });
 
-  test('the grant broker reaches exactly the adapters that confine its credential (F175a)', () => {
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode']);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('pi')).toBe(false);
+  test('the grant broker reaches exactly the adapters that confine its credential (F175a, F175c)', () => {
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    // pi is on the list, but never defaulted into a sandbox: a pi seat that
+    // declares none runs unconfined and the guard withholds its grant.
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 });
 

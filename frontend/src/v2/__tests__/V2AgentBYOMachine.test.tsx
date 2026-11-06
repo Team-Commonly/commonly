@@ -325,8 +325,8 @@ describe('BYO on-my-computer mode', () => {
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'hermes' } });
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Hermes runs without a sandbox');
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'pi' } });
-    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work with pi yet.');
-    expect(screen.getByTestId('byo-no-connectors')).not.toHaveTextContent(/Mac/);
+    // F175c: a machine reports no OS here, so pi's line says where it works.
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('pi can use connectors only as a public agent on a Mac.');
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'goose' } });
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work with Goose yet.');
     for (const id of ['claude', 'codex', 'opencode', '']) {

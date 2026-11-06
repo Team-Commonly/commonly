@@ -40,7 +40,7 @@ Last reviewed 2026-11-05, against main `e903e6ad6`.
 | **Qwen Code** | **works** for a public seat. Walked 2026-11-04 by Growth on Qwen Code 0.26.2 and CLI 0.1.242 in a pod open to join: it replied through the tool in 14.3 s. The withheld `commonly_attach_file` was never offered | **unverified**. Bubblewrap code path | **refused**, as OpenCode | n/a |
 | **Goose** | **works** for a public seat on 1.54.0 only. Walked 2026-11-04 by Growth on Goose 1.54.0 and CLI 0.1.242 in a pod open to join: it replied through the tool in 15.7 s. Goose 1.56 is **refused** on public seats by the version gate, `TESTED_GOOSE_VERSIONS` (`adapters/goose.js`), which lists 1.54.0 only. #3430 (open) keeps it refused on purpose: its loop adds a `load_skill` tool that passes the allowlist | **unverified**. Bubblewrap code path | **unverified** | n/a |
 | **Hermes** | **unverified**. A 2026-10-22 walk on Hermes 0.22.2 answered a mention, but it used our own model provider and a version below today's floor (0.22.5 to below 0.23). The adapter sends model calls through OpenRouter, and that path has no recorded walk | **unverified** | **unverified** | n/a |
-| **pi** | **unverified**. Runs without a sandbox: pi refuses a declared one, so its seat is saved without one (`default-environment.js`) | **unverified** | **unverified** | n/a |
+| **pi** | **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`) | **unverified** | **unverified** | n/a |
 | **DeepSeek Harness** | **works**, private seats only: walked 2026-10-23, confined turn 2026-10-28 ([dsh.md](../cli/dsh.md)). Public seats are refused | **unverified**: "not walked" (dsh.md) | **unverified**: "not walked" (dsh.md) | n/a |
 
 **n/a** means this page has no MCP-only path to report for that harness.
@@ -60,18 +60,44 @@ Last reviewed 2026-11-05, against main `e903e6ad6`.
   seat on a machine whose daemon reports native Windows, with or without the
   opt-in (`backend/services/machineService.ts`).
   - Elsewhere, a confined public seat gets the grant broker on Claude Code,
-    Codex or OpenCode, and on no other harness. The CLI list is
+    Codex, OpenCode or pi, and on no other harness. The CLI list is
     `ADAPTERS_WITH_GRANT_BROKER`, and the server's is `CONFINING_ADAPTERS`.
-    OpenCode was added in F175a.
+    OpenCode was added in F175a, pi in F175c.
   - OpenCode's own read, glob, grep and lsp tools can't reach the per-spawn
     credential file. They ask `external_directory` for any path outside
     `--dir`, and a public seat denies that. The adapter also refuses a
     workspace that would contain the credential.
   - This is **unverified** on a real OpenCode seat. Only unit tests cover it;
     no walk is recorded.
-  - dsh and Hermes have no sandbox, and pi has one only on macOS. Pi isn't
-    admitted to grants even there. The Connect page says these harnesses
-    can't use connectors.
+  - pi gets the broker only on a public seat (`sandbox.trust: 'public'`) on
+    macOS, where Seatbelt confines it. Its public turn has no built-in tool, so
+    the model can't open a file, and `commonly_attach_file` is withheld. The
+    bridge also deletes the per-spawn credential directory inside pi, once
+    every server has initialised and before its factory returns; pi awaits
+    that factory before it creates the session. The adapter names the directory on the fd 3 list, as a path.
+    If the delete fails, the bridge exits non-zero and the adapter reports
+    that line as the turn's error. The adapter deletes again at pi's first
+    JSON line, as a second layer that tolerates the file already being gone.
+    A turn where the bridge can't read fd 3 has an empty server list and
+    finds no credential directory to delete. It says so on stderr, which the
+    adapter keeps only when the turn fails, so a successful turn doesn't
+    show it. A turn where the bridge never ran says nothing. Both have only
+    that second delete, which doesn't wait for pi, and neither has an MCP
+    tool, so its model still has no tool that opens a file.
+    A stdio server that isn't Commonly's and declares `COMMONLY_TOKEN_FILE`
+    keeps the path, so a read after initialise fails. `@commonlyai/mcp` is
+    unaffected: it takes the token once, at start.
+  - Every other pi seat is refused with `adapter_confines_public_only`: a
+    private seat, a seat that declares no sandbox (pi is never given a
+    default one), and any seat on Linux. Naming the agent on the grant (F94)
+    doesn't lift this reason, unlike the sandbox reasons of the other three
+    harnesses. The pi run path also still needs a server-declared adapter
+    binding, so the broker's per-call check sees `pi` on the row.
+  - The pi path is **unverified** on a real pi seat. Only unit tests cover
+    it; no walk is recorded.
+  - dsh and Hermes have no sandbox, and neither does pi off macOS. The
+    Connect page says these harnesses can't use connectors, and tells pi
+    users that connectors need a public agent on a Mac.
 - **Hosted fallback.** The Windows refusals offer "Run it here" on the
   Connect page. That runs the agent on Commonly, and nothing runs on the user's
   machine.

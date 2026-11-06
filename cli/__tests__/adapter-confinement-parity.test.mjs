@@ -7,7 +7,7 @@
  * silently grant it room credentials.
  */
 import { listAdapterNames } from '../src/lib/adapters/index.js';
-import { ADAPTERS_WITH_GRANT_BROKER } from '../src/lib/default-environment.js';
+import { ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_PUBLIC_ONLY_GRANT } from '../src/lib/default-environment.js';
 
 describe('adapter registry and grant-broker admission stay explicit', () => {
   test('only the approved adapters receive the broker', () => {
@@ -21,7 +21,15 @@ describe('adapter registry and grant-broker admission stay explicit', () => {
     const eligible = new Set([...ADAPTERS_WITH_GRANT_BROKER, 'stub']);
     const withheld = names.filter((name) => !eligible.has(name));
 
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode']);
-    expect(withheld.sort()).toEqual(['dsh', 'goose', 'hermes', 'pi', 'qwen']);
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
+    expect(withheld.sort()).toEqual(['dsh', 'goose', 'hermes', 'qwen']);
+  });
+
+  // F175c: pi holds a grant only on a public macOS seat; naming never lifts
+  // that. Pinned so a second adapter cannot slip onto the narrower rule, or off
+  // it, without a test saying so.
+  test('pi is the one adapter that carries a grant only when public', () => {
+    expect([...ADAPTERS_WITH_PUBLIC_ONLY_GRANT.keys()]).toEqual(['pi']);
+    for (const name of ADAPTERS_WITH_PUBLIC_ONLY_GRANT.keys()) expect(ADAPTERS_WITH_GRANT_BROKER.has(name)).toBe(true);
   });
 });

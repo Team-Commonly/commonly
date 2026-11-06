@@ -81,6 +81,7 @@ import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
+  ADAPTERS_WITH_PUBLIC_ONLY_GRANT,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
   ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
   defaultMcpServers,
@@ -232,10 +233,18 @@ export const runtimeAdapterForInstallation = ({ installations, podId, instanceId
   return adapter || null;
 };
 
-/** Non-broker adapters need a server-resolved binding on env-token seats. */
+/**
+ * Non-broker adapters need a server-resolved binding on env-token seats. So do
+ * the broker adapters that hold a grant only when public (pi, F175c): the
+ * broker's per-call check judges the seat by its ROW, and a row that names no
+ * adapter reads as daemon-decided there, where naming (F94) lifts a sandbox
+ * refusal that pi must never have lifted. The binding is what puts `pi` on the
+ * row.
+ */
 export const adapterRequiresServerBinding = (adapterName) => {
   const adapter = String(adapterName || '').trim().toLowerCase();
-  return Boolean(adapter) && adapter !== 'stub' && !ADAPTERS_WITH_GRANT_BROKER.has(adapter);
+  return Boolean(adapter) && adapter !== 'stub'
+    && (!ADAPTERS_WITH_GRANT_BROKER.has(adapter) || ADAPTERS_WITH_PUBLIC_ONLY_GRANT.has(adapter));
 };
 
 const serverRuntimeAdapterProjectionState = (installations) => {

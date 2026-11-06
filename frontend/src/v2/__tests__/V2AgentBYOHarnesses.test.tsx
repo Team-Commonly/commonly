@@ -146,10 +146,22 @@ describe('the connector line for a harness with no sandbox', () => {
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(line);
   });
 
-  test.each([MAC, LINUX])('pi, Goose and Qwen say connectors don\'t work with them yet, on any computer (%s)', async (ua) => {
+  // F175c: pi holds a grant as a public agent on a Mac, and has no sandbox on
+  // Linux, so its line follows the computer.
+  test.each([
+    [MAC, 'pi can use connectors only as a public agent on a Mac.'],
+    [LINUX, 'Connectors need a sandboxed harness. pi runs without a sandbox, so it can’t use connectors.'],
+  ])('pi says when it can use connectors (%s)', async (ua, line) => {
     asBrowser(ua);
     await renderPage();
-    for (const [runner, name] of [['pi', 'pi'], ['goose', 'Goose'], ['qwen', 'Qwen Code']]) {
+    fireEvent.click(screen.getByTestId('byo-runner-pi'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(line);
+  });
+
+  test.each([MAC, LINUX])('Goose and Qwen say connectors don\'t work with them yet, on any computer (%s)', async (ua) => {
+    asBrowser(ua);
+    await renderPage();
+    for (const [runner, name] of [['goose', 'Goose'], ['qwen', 'Qwen Code']]) {
       fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
       expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(`Connectors don’t work with ${name} yet.`);
     }
@@ -185,6 +197,8 @@ describe('the connector line for a harness with no sandbox', () => {
     fireEvent.click(screen.getByTestId('byo-runner-hermes'));
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('连接器需要带沙箱的运行器。Hermes 运行时没有沙箱，所以用不了连接器。');
     fireEvent.click(screen.getByTestId('byo-runner-pi'));
-    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('pi 暂时还用不了连接器。');
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('连接器需要带沙箱的运行器。pi 运行时没有沙箱，所以用不了连接器。');
+    fireEvent.click(screen.getByTestId('byo-runner-goose'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Goose 暂时还用不了连接器。');
   });
 });

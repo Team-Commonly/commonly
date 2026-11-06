@@ -145,13 +145,15 @@ describe('agent run without the daemon (F150)', () => {
     expect(run.spawnedMcp(0)).toEqual(['commonly-grant-broker']);
   });
 
-  test('a pi seat still has the broker withheld, even when the server sent one', async () => {
+  // F175c: a pi seat that declares no sandbox is not confined, and naming
+  // (the server's byoNamed flag) does not lift pi's reason.
+  test('a pi seat with no sandbox still has the broker withheld, even when the server sent a named one', async () => {
     const run = setup({ adapterName: 'pi', grantReads: [{ servers: [namedBroker()], refusal: null }] });
     await drainMicrotasks();
     run.handle.stop();
     expect(run.spawn).toHaveBeenCalledTimes(1);
     expect(run.spawnedMcp(0)).toEqual([]);
-    expect(run.logs.join('\n')).toContain('adapter_cannot_confine');
+    expect(run.logs.join('\n')).toContain('adapter_confines_public_only');
   });
 
   test('an unnamed broker on a seat with no sandbox is withheld by the seat\'s own guard', async () => {

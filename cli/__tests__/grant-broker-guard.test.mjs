@@ -138,7 +138,6 @@ describe('grant-broker admission for this adapter', () => {
     ['an OpenCode name in another case is the same adapter only once normalised', 'OpenCode', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['dsh, which runs no sandbox', 'dsh', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['hermes, which runs no sandbox', 'hermes', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
-    ['pi, which refuses a declared sandbox and derives none', 'pi', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['an adapter this daemon cannot confine', 'mystery', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['no adapter at all', null, { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     // The daemon-only reason: the SERVER must allow an absent block (a
@@ -165,6 +164,25 @@ describe('grant-broker admission for this adapter', () => {
     expect(confinementReason({ sandbox: { mode: 'bwrap', trust: 'public' } }, 'codex', 'linux')).toBeNull();
   });
 
+  // F175c: pi confines only a public seat, and only in the macOS Seatbelt
+  // jail. Every pi declaration that leaves it unconfined gets the one reason
+  // naming (F94) does not lift.
+  test.each([
+    ['a public pi seat on macOS', { sandbox: { trust: 'public' } }, 'darwin', null],
+    ['a public pi seat, workspace mode', { sandbox: { mode: 'workspace', trust: 'public' } }, 'darwin', null],
+    ['a public pi seat, read-only mode', { sandbox: { mode: 'read-only', trust: 'public' } }, 'darwin', null],
+    ['a legacy internal trust on pi', { sandbox: { trust: 'internal' } }, 'darwin', null],
+    ['a pi seat with no sandbox block (the private fleet shape)', {}, 'darwin', 'adapter_confines_public_only'],
+    ['a private pi seat', { sandbox: { trust: 'private' } }, 'darwin', 'adapter_confines_public_only'],
+    ['a pi seat with mode none', { sandbox: { mode: 'none', trust: 'public' } }, 'darwin', 'adapter_confines_public_only'],
+    ['a public pi seat on Linux (pi has no bwrap path)', { sandbox: { trust: 'public' } }, 'linux', 'adapter_confines_public_only'],
+    ['a public pi seat declaring workspace on Linux (Seatbelt is macOS-only)', { sandbox: { mode: 'workspace', trust: 'public' } }, 'linux', 'adapter_confines_public_only'],
+    ['a pi seat declaring bwrap', { sandbox: { mode: 'bwrap', trust: 'public' } }, 'darwin', 'adapter_confines_public_only'],
+    ['a public pi seat on native Windows', { sandbox: { trust: 'public' } }, 'win32', 'sandbox_mode_unenforceable'],
+  ])('%s', (_label, environment, platform, expected) => {
+    expect(confinementReason(environment, 'pi', platform)).toBe(expected);
+  });
+
   test('OpenCode is confined on macOS and Linux, and on no host on native Windows', () => {
     for (const platform of ['darwin', 'linux']) {
       expect(confinementReason({ sandbox: { trust: 'public' } }, 'opencode', platform)).toBeNull();
@@ -180,7 +198,7 @@ describe('withholding the broker, entry-level', () => {
   const environment = { model: 'claude-opus-5', mcp: [kernel, broker()] };
 
   test('keeps every other entry and returns a new object', () => {
-    const out = withholdGrantBroker(environment, 'pi', opts);
+    const out = withholdGrantBroker(environment, 'dsh', opts);
     expect(out.mcp.map((s) => s.name)).toEqual(['commonly']);
     expect(out.model).toBe('claude-opus-5');
     expect(out).not.toBe(environment);
@@ -191,7 +209,7 @@ describe('withholding the broker, entry-level', () => {
 
   test('reports the same typed code the server emits, and which layer decided', () => {
     const onRefuse = jest.fn();
-    withholdGrantBroker(environment, 'pi', { ...opts, onRefuse });
+    withholdGrantBroker(environment, 'dsh', { ...opts, onRefuse });
     expect(onRefuse).toHaveBeenCalledTimes(1);
     const [refusal, names] = onRefuse.mock.calls[0];
     expect(refusal.code).toBe(GRANT_BROKER_REFUSAL_CODE);
@@ -199,7 +217,7 @@ describe('withholding the broker, entry-level', () => {
     expect(refusal.decidedBy).toBe('daemon');
     expect(refusal.reason).toBe('adapter_cannot_confine');
     // The remedy names every adapter that can hold the broker, from the set.
-    expect(refusal.detail).toContain('claude, codex or opencode');
+    expect(refusal.detail).toContain('claude, codex, opencode or pi');
     expect(names).toEqual(['commonly-grant-broker']);
   });
 
@@ -296,9 +314,29 @@ describe('F94: a broker the server says names this seat', () => {
 
   test('never rides an adapter that is not approved for the broker', () => {
     const environment = { sandbox: { trust: 'public' }, mcp: [kernel, named] };
-    for (const adapter of ['pi', 'dsh', 'hermes']) {
+    for (const adapter of ['dsh', 'hermes', 'goose']) {
       const out = withholdGrantBroker(environment, adapter, { ...opts, platform: 'darwin' });
       expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
     }
+  });
+
+  // F175c: pi carries a grant only confined, so naming lifts nothing for it.
+  test('never rides an unconfined pi seat; a public pi seat on macOS keeps it', () => {
+    for (const [environment, platform] of [
+      [{ ...unconfined, mcp: [kernel, named] }, 'darwin'],
+      [{ mcp: [kernel, named] }, 'darwin'],
+      [{ sandbox: { trust: 'public' }, mcp: [kernel, named] }, 'linux'],
+    ]) {
+      const onRefuse = jest.fn();
+      const out = withholdGrantBroker(environment, 'pi', { ...opts, onRefuse, platform });
+      expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+      const [refusal] = onRefuse.mock.calls[0];
+      expect(refusal.reason).toBe('adapter_confines_public_only');
+      expect(refusal.detail).toMatch(/public seat/);
+      expect(refusal.detail).toMatch(/macOS/);
+      expect(refusal.detail).toMatch(/naming .* does not lift/);
+    }
+    const confined = { sandbox: { trust: 'public' }, mcp: [kernel, named, broker()] };
+    expect(withholdGrantBroker(confined, 'pi', { ...opts, platform: 'darwin' })).toBe(confined);
   });
 });
