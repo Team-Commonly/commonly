@@ -275,11 +275,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i')).toContain('pointer-events: none');
   });
 
-  test('Agent settings: an empty value folds away on a phone, where the row\'s action says it', () => {
-    const surface = read('../agents/v2-agent-settings-surface.css');
-    expect(surface).toMatch(/@media \(max-width: 600px\) \{ \.v2-agent-settings-page \.v2-agent-settings-page__none \{ display: none; \} \}/);
-  });
-
   test('agent Settings phone rows keep the value cell visible, beside the label on one line', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));

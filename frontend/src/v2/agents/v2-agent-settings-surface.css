@@ -179,7 +179,7 @@
 .v2-agent-settings-page details.disc > summary:focus-visible { outline: none; border-radius: 12px; box-shadow: var(--v2-focus-ring); }
 .v2-agent-settings-page details.disc > summary .lb { font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; }
 .v2-agent-settings-page details.disc > summary .vl { font-size: 13.5px; color: var(--ink2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.v2-agent-settings-page details.disc > summary .vl .mo { font-size: 12px; color: var(--mu); }
+.v2-agent-settings-page details.disc > summary .vl .mo { font-size: 12px; color: var(--ink2); }
 /* --mu, not the frame's --ph: the chevron is the only mark of open/closed, so it keeps 3:1. */
 .v2-agent-settings-page details.disc > summary .chev { width: 18px; height: 18px; color: var(--mu); transition: transform 160ms; }
 .v2-agent-settings-page details.disc[open] > summary .chev { transform: rotate(180deg); }
@@ -345,7 +345,6 @@
 .v2-agent-settings-page .mtop .b.ib { width: 44px; height: 44px; }
 .v2-agent-settings-page .seg.seg--full { display: flex; width: 100%; box-sizing: border-box; }
 .v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button { flex: 1; justify-content: center; height: 44px; }
-@media (max-width: 600px) { .v2-agent-settings-page .v2-agent-settings-page__none { display: none; } }
 .v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 10px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--mu); }
 @media (max-width: 760px) {
   .v2-agent-settings.v2-agent-settings-page { padding: 0; }

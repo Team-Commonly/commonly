@@ -460,7 +460,7 @@ const V2AgentSettingsPage: React.FC = () => {
                 <span className="vl">
                   {typeof skillCount === 'number' && (skillCount > 0
                     ? t('agentSettings.skillCount', { count: skillCount })
-                    : <span className="mu v2-agent-settings-page__none">{t('agentSettings.none')}</span>)}
+                    : <span className="mu">{t('agentSettings.none')}</span>)}
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}
