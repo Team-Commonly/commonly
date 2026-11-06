@@ -1507,7 +1507,8 @@ export const runMemoryImport = async ({
 // request it can't meet, so it gives a heartbeat no reason to post. Any closing
 // line for a turn someone asked for carries it.
 const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
-  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them.';
+  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+  + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
 
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
@@ -1568,7 +1569,8 @@ export const answersInChannel = (entry) => {
 const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
   + 'is short, is that you can\'t help, or repeats what another agent said. Do not leave them without a reply.]';
 const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-  + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
+  + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
+  + FAILURE_IN_PLAIN_WORDS;
 
 export const answersAPerson = (entry) => (
   entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame

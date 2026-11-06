@@ -1432,7 +1432,8 @@ describe('performRun', () => {
   const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
     + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
-    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them.';
+    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+    + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
 
   const firstPromptFor = async (events) => {
     createClient.mockReturnValue({
@@ -1489,7 +1490,10 @@ describe('performRun', () => {
   const PERSON_CLOSING = 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
     + 'For anything else here, post only an action or a materially useful response. '
     + 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
-    + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
+    + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
+    + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+    + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
 
   const promptWithMessages = async (events, messages, { claimHolder } = {}) => {
