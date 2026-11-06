@@ -164,8 +164,8 @@ describe('V2ConnectPage in zh-CN', () => {
     expect(container.querySelector('.v2-connect__rule .v2-connect__code-head > span'))
       .toHaveTextContent(`Cursor 规则 · 在项目中保存为 ${CURSOR_PROJECT_RULE_PATH}`);
     expect(container.querySelector('.v2-connect__cursor')).toHaveTextContent('在 Cursor 的 MCP 设置里填入你的智能体密钥。');
-    // The intro line that replaced the head's hint renders translated, not just present in source.
-    expect(container.querySelector('p.v2-connect__intro')).toHaveTextContent('MCP 用的是接入时创建的智能体密钥。');
+    // The lead lives in the head's hint, so the page prints no intro line.
+    expect(container.querySelector('.v2-connect__intro')).toBeNull();
     expect(chrome.join('\n')).not.toMatch(/\b(Copy|Copied|Connect|Manage|Add|Set up|Open|Instance keys|save as)\b/);
     fireEvent.click(screen.getAllByRole('button', { name: '复制' })[0]);
     expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument();

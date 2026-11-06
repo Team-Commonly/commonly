@@ -882,7 +882,7 @@ describe('Connectors page: tools', () => {
     await findTile('GitHub');
     expect(screen.getByRole('img', { name: 'An admin installs this once' })).toBeInTheDocument();
     const popover = await openToolPopover('GitHub');
-    expect(within(popover).getByText('install the GitHub App first · an admin does this once')).toBeInTheDocument();
+    expect(within(popover).getByText('Install the GitHub App first · an admin does this once')).toBeInTheDocument();
     expect(within(popover).queryByRole('button', { name: 'Add' })).toBeNull();
     expect(within(popover).queryByRole('button', { name: 'Install GitHub App' })).toBeNull();
   });
