@@ -146,6 +146,7 @@ describe('GET /api/grants?connectionOwner=me', () => {
     const row = (grantId) => res.body.grants.find((item) => item.grantId === grantId);
     expect(row(withPr.grantId).prWrite).toBe(true);
     expect(row(plain.grantId)).not.toHaveProperty('prWrite');
+    expect(row(withPr.grantId).connectionId).toBe(withPr.connectionId);
   });
 
   test('includes grants backed by both an external installation id and a hosted connection row id', async () => {

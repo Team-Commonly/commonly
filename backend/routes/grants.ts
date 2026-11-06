@@ -814,12 +814,17 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
     }
     return res.json({ grants: grants
       .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
-      .map((grant) => projectGrant(
-        grant,
-        grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
-        userId,
-        confinements.get(grant.grantId),
-      )) });
+      .map((grant) => ({
+        ...projectGrant(
+          grant,
+          grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+          userId,
+          confinements.get(grant.grantId),
+        ),
+        // The owner's own read only, the key the catalogue already gives this
+        // person: Change access has to reopen on the grant's own repository.
+        connectionId: grant.connectionId,
+      })) });
   } catch (error) {
     return handleError(res, error);
   }

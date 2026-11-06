@@ -407,6 +407,15 @@ export const useToolConnectors = (
         connectionId = seated.connectionId;
       }
     }
+    // Change access stays on the grant's own repository. Pull-request access goes
+    // with it only from a live root grant on a connection still offered, and only
+    // with the PR tools that grant named. Anything else ends it, and the form says so.
+    const sameConnection = from?.connectionId && !keyGone
+      ? entry.connections.find((connection) => connection.connectionId === from.connectionId)
+      : undefined;
+    if (sameConnection) connectionId = sameConnection.connectionId;
+    const liveWithPr = Boolean(from?.prWrite) && !isDead(from as ToolGrant);
+    const keepsPr = liveWithPr && Boolean(sameConnection) && !from?.parentGrantId && entryOffersPrWrite(entry);
     const modes = entryGrantModes(entry);
     const agentIds = seatIdsIn(podId);
     setDraft({
@@ -414,8 +423,9 @@ export const useToolConnectors = (
       podId,
       connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      // Change access keeps it. An ended grant opens without it: that is a new choice.
-      prWrite: Boolean(from?.prWrite) && !isDead(from as ToolGrant) && entryOffersPrWrite(entry),
+      prWrite: keepsPr,
+      prTools: keepsPr ? (from as ToolGrant).tools : null,
+      losesPrWrite: liveWithPr && !keepsPr,
       audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
         ? agentIds.filter((id) => from.effectiveAudience.includes(id))
         : startingAudience(entry, connectionId, podId)),
@@ -443,10 +453,11 @@ export const useToolConnectors = (
     : null;
   // A `prWrite` grant holds no write but the PR tools (pr_write_other_writes), and
   // a grant without it can't call them, so the two sets never mix.
-  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode, prWrite = false): string[] => (entry?.tools || [])
-    .filter((tool) => (prWrite
-      ? tool.prWrite || tool.requiredWriteMode === 'read'
-      : !tool.prWrite && MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]))
+  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode, prWrite = false, prTools?: string[] | null): string[] => (entry?.tools || [])
+    .filter((tool) => {
+      if (!prWrite) return !tool.prWrite && MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode];
+      return tool.prWrite ? !prTools || prTools.includes(tool.name) : tool.requiredWriteMode === 'read';
+    })
     .map((tool) => tool.name);
   const draftPrWrite = Boolean(draft?.prWrite && draftEntry && entryOffersPrWrite(draftEntry));
 
@@ -470,7 +481,8 @@ export const useToolConnectors = (
   // consented for exactly these.
   const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && selectedAgentIds.includes(agent.userId));
   // Pull-request access changes what the person consents to, so it is part of the key.
-  const draftByoKey = `${draftByoNamed.map((agent) => agent.userId).sort().join(',')}${draftPrWrite ? ':pr' : ''}`;
+  // So is the repository it names.
+  const draftByoKey = `${draftByoNamed.map((agent) => agent.userId).sort().join(',')}${draftPrWrite ? `:pr:${draft?.connectionId}` : ''}`;
   const draftByoConsented = draftByoNamed.length > 0 && draft?.byoConsentFor === draftByoKey;
   // Naming one is read-only (byo_read_only), so a write mode drops back to
   // read while one is checked, and an agent no grant can name is unchecked.
@@ -497,7 +509,7 @@ export const useToolConnectors = (
       const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
-        tools: draftTools(draftEntry, draft.writeMode, draftPrWrite),
+        tools: draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools),
         writeMode: draftPrWrite ? 'write-with-confirm' : draft.writeMode,
         ...(draftPrWrite ? { prWrite: true } : {}),
         audience: selectedAgentIds,

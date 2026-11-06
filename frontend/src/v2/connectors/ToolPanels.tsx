@@ -329,7 +329,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               )}
             </strong>
             <span className="v2-connector-row__detail">
-              {!dead && <span className="v2-tools__mode" title={grantModeLabel(grant)} role="img" aria-label={grantModeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
+              {!dead && <span className="v2-tools__mode" title={grantModeLabel(grant)} role="img" aria-label={grantModeLabel(grant)}><ModeGlyph mode={grant.writeMode} /></span>}
               {line2}
             </span>
           </span>
@@ -572,7 +572,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     // A key grant whose key was removed opens with no key chosen (openDraft):
     // the picker shows even for one remaining key, and the seats wait for a key.
     const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
-    const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite);
+    const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools);
     const irreversible = irreversibleTools(draftEntry, tools);
     const asks = draftPrWrite
       ? t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' })
@@ -643,6 +643,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                   <span>{t('tools.prWriteChoice', { defaultValue: 'Agents can also open pull requests from their own branch. You approve each commit, push and pull request.' })}</span>
                 </label>
               )}
+              {draft.losesPrWrite && !draftPrWrite && (
+                <span className="v2-tools__hint" role="status">{t('tools.prWriteEnds', { defaultValue: 'This change ends pull-request access on this grant.' })}</span>
+              )}
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
@@ -693,7 +696,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {naming && (
               <label className="v2-connector-aside__relay">
                 <input type="checkbox" checked={draftByoConsented} onChange={(event) => setDraft({ ...draft, byoConsentFor: event.target.checked ? draftByoKey : null })} />
-                <span>{[...draftByoNamed.map((agent) => byoConsentLine(agent)), ...(draftPrWrite ? [t('tools.byo.prWriteConsent')] : [])].join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
+                <span>{[...draftByoNamed.map((agent) => byoConsentLine(agent)), ...(draftPrWrite ? [t('tools.byo.prWriteConsent', { agents: joinList(draftByoNamed.map(byoAgentLabel)) })] : [])].join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
               </label>
             )}
           </div>

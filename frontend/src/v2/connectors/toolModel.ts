@@ -13,6 +13,8 @@ export interface ToolGrant {
   writeMode: GrantWriteMode;
   /** F214: the grant holds pull-request access. Its PR tools park every call for the connection owner. */
   prWrite?: boolean;
+  /** On the owner's own read only: the catalogue's key for the connection this grant was minted on. */
+  connectionId?: string;
   budget: { calls?: number; windowMs?: number } | null;
   effectiveAudience: string[];
   expiresAt: string;
@@ -31,7 +33,7 @@ export interface ToolGrant {
   connector?: { id: string; label: string } | null;
   /**
    * F94: the granter's own agents that run outside Commonly, named on this
-   * read-only grant, and the consent that named them with each one's sandbox
+   * grant, and the consent that named them with each one's sandbox
    * state as it was recorded then.
    */
   byoAgents?: string[];
@@ -166,6 +168,10 @@ export interface DraftGrant {
   writeMode: GrantWriteMode;
   /** F214: add pull-request access. The mint then goes out as write-with-confirm with `prWrite`. */
   prWrite: boolean;
+  /** Change access: the PR tools the old grant named, so the change never adds one. */
+  prTools?: string[] | null;
+  /** Change access: this mint would not keep the old grant's pull-request access. */
+  losesPrWrite?: boolean;
   audience: string[];
   expiryDays: 7 | 30 | 90;
   /** Change access: the grant this one replaces (revoked after the mint). */
@@ -202,9 +208,13 @@ export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'wri
 // restores the modes; turning this on brings the choice back.
 export const FORM_OFFERS_WRITES: boolean = false;
 
-/** Pull-request access is offered on a GitHub App connection only (prWriteMintRefusal). */
+/**
+ * Offered on a GitHub App connection whose tools include opening the pull
+ * request, the one the mint requires (prWriteMintRefusal).
+ */
 export const entryOffersPrWrite = (entry: ToolCatalogEntry): boolean => (
-  entry.connectionType === 'github-app' && entry.tools.some((tool) => tool.prWrite)
+  entry.connectionType === 'github-app'
+  && entry.tools.some((tool) => tool.prWrite && tool.name === 'github.create_pull_request')
 );
 
 /**

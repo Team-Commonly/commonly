@@ -1729,6 +1729,106 @@ describe('F214: pull-request access in the grant form', () => {
       await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant_pr/revoke', undefined, expect.anything()));
       expect(mintBody()).toMatchObject({ writeMode: 'write-with-confirm', prWrite: true });
     });
+
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const openChange = async (grant, entry = twoRepos) => {
+      mockTools({ entries: [entry], grants: [grant], seats: { p1: [scout], p2: [] }, trails: { [grant.grantId]: { ...trail, grantId: grant.grantId } } });
+      axios.post.mockResolvedValue({ data: { grantId: 'grant_new', revoked: 1 } });
+      renderPage();
+      const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
+      return { aside, form: await screen.findByRole('complementary', { name: 'Change access' }) };
+    };
+    const ENDS = 'This change ends pull-request access on this grant.';
+
+    it('names it on the list row too', async () => {
+      await openChange({ ...held, connectionId: 'conn-b' });
+      expect(document.querySelector('.v2-tools__mode[aria-label="read, plus pull requests you approve"]')).not.toBeNull();
+    });
+
+    it('Change access stays on the grant\'s own repository', async () => {
+      const { form } = await openChange({ ...held, connectionId: 'conn-b' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).toBeChecked();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ connectionId: 'conn-b', prWrite: true });
+    });
+
+    it('Change access never adds a PR tool the grant did not name', async () => {
+      const narrow = { ...held, connectionId: 'conn-b', tools: ['github.create_pull_request', 'github.commit_files'] };
+      const { form } = await openChange(narrow);
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody().tools).toEqual(['github.list_issues', 'github.create_pull_request', 'github.commit_files']);
+    });
+
+    it.each([
+      ['its connection is no longer offered', { connectionId: 'conn-gone' }],
+      ['it is a child grant', { connectionId: 'conn-b', parentGrantId: 'grant_root', rootGrantId: 'grant_root' }],
+    ])('says Change access ends it when %s, and mints a read grant', async (_, over) => {
+      const { form } = await openChange({ ...held, ...over });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).getByText(ENDS)).toBeInTheDocument();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+      expect(mintBody()).not.toHaveProperty('prWrite');
+    });
+
+    it('an ended grant opens without it and says nothing is ending', async () => {
+      const ended = { ...held, connectionId: 'conn-b', revokedAt: iso(-1000), revokedBy: 'u1' };
+      mockTools({ entries: [twoRepos], grants: [ended], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      const drawer = await openTool('GitHub');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
+      const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).queryByText(ENDS)).toBeNull();
+    });
+  });
+
+  it('is not offered when the catalogue does not hold the tool that opens the pull request', async () => {
+    const form = await openAdd([{ ...appEntry, tools: appEntry.tools.filter((tool) => tool.name !== 'github.create_pull_request') }]);
+    expect(within(form).queryByRole('checkbox', { name: CHOICE })).toBeNull();
+  });
+
+  it('unticking it sends no PR tool and no prWrite', async () => {
+    const form = await openAdd();
+    const box = within(form).getByRole('checkbox', { name: CHOICE });
+    fireEvent.click(box);
+    fireEvent.click(box);
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+    expect(mintBody()).not.toHaveProperty('prWrite');
+  });
+
+  it('a consent for one repository does not carry to another', async () => {
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+    const agents = [{ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined' }];
+    const route = (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+    const form = await openAdd([twoRepos], { p1: [scout, claude], p2: [] }, route);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    fireEvent.click(within(form).getByRole('checkbox', { name: /runs on your computer/ }));
+    expect(grant).toBeEnabled();
+    fireEvent.change(within(form).getByLabelText('connection'), { target: { value: 'conn-b' } });
+    expect(grant).toBeDisabled();
   });
 });
 
