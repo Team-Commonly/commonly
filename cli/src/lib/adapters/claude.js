@@ -788,28 +788,28 @@ const parseEvent = (line) => {
   }
 };
 
-// The reply is the `result` event's text. A turn that reaches no result event
-// (killed mid-stream, exit 0) gets the text of its assistant events, never the
-// raw NDJSON. Output with no JSON lines at all is plain text and returned as it
-// arrived. A result flagged `is_error` is a failed turn, whatever its exit code,
-// so it is raised here, outside the parse guard, and never returned as a reply.
+const STOPPED_TURN = 'the turn stopped before it finished';
+
+// The reply is the `result` event's text. A turn with no result event stopped
+// before it finished: SIGINT exits 0 without printing one (claude 2.1.318), with
+// or without assistant text, and before startup it prints nothing at all. That
+// text isn't an answer, since each assistant event may be an interim message on
+// the way to a tool, and empty text would read as a turn with nothing to say.
+// Other output with no JSON lines is plain text and returned as it arrived. A
+// result flagged `is_error` is a failed turn, whatever its exit code, so it is
+// raised here, outside the parse guard, and never returned as a reply.
 export const claudeResultText = (stdout, { credentials = [] } = {}) => {
   const text = String(stdout || '');
   const events = text.split('\n').map(parseEvent);
-  if (!events.some(Boolean)) return text.trim();
+  if (text.trim() && !events.some(Boolean)) return text.trim();
   for (let i = events.length - 1; i >= 0; i -= 1) {
     if (events[i]?.type !== 'result') continue;
     const reply = String(events[i].result ?? '').trim();
-    if (events[i].is_error === true) throw adapterFailure('claude', reply, { credentials });
+    // An interrupted request reports error_during_execution with empty text.
+    if (events[i].is_error === true) throw adapterFailure('claude', reply || STOPPED_TURN, { credentials });
     return reply;
   }
-  return events
-    .filter((event) => event?.type === 'assistant')
-    .flatMap((event) => event.message?.content || [])
-    .filter((block) => block?.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim();
+  throw adapterFailure('claude', STOPPED_TURN, { credentials });
 };
 
 // TASK-256: what a public seat's own stream says about its Commonly MCP server.

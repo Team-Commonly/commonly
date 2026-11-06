@@ -685,18 +685,35 @@ describe('claudeResultText', () => {
     expect(() => claudeResultText(stdout)).toThrow(/API Error: 500/);
   });
 
+  test('an interrupted request with an empty error result still names what happened', () => {
+    const stdout = '{"type":"result","subtype":"error_during_execution","is_error":true}';
+    expect(() => claudeResultText(stdout)).toThrow(/stopped before it finished/);
+  });
+
   test('returns plain text output as it arrived when there is no JSON at all', () => {
     expect(claudeResultText('  done quietly \n')).toBe('done quietly');
   });
 
-  test('a turn with no result event returns its assistant text, never the raw NDJSON', () => {
+  // SIGINT on claude 2.1.318 exits 0 and prints no result event, so through the
+  // exit code a stopped turn looks finished. Assistant text can't stand in for
+  // the result: each one is an interim message until the turn ends.
+  test('a turn with no result event throws, whatever assistant text it printed', () => {
     const stdout = [
       '{"type":"system","subtype":"init"}',
       '{"type":"assistant","message":{"content":[{"type":"text","text":"half "}]}}',
       '{"type":"assistant","message":{"content":[{"type":"text","text":"an answer"}]}}',
     ].join('\n');
-    expect(claudeResultText(stdout)).toBe('half an answer');
-    expect(claudeResultText('{"type":"system","subtype":"init"}')).toBe('');
+    expect(() => claudeResultText(stdout)).toThrow(/stopped before it finished/);
+    expect(() => claudeResultText('{"type":"system","subtype":"init"}')).toThrow(/stopped before it finished/);
+  });
+
+  test('no output at all throws too: stream-json prints something for any turn that ran', () => {
+    expect(() => claudeResultText('')).toThrow(/stopped before it finished/);
+    expect(() => claudeResultText(' \n')).toThrow(/stopped before it finished/);
+  });
+
+  test('a finished turn with an empty result stays silent', () => {
+    expect(claudeResultText('{"type":"result","subtype":"success","result":"","is_error":false}')).toBe('');
   });
 });
 
