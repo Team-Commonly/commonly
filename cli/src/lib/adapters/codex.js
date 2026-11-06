@@ -1145,6 +1145,16 @@ export default {
         else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
       }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // codex talks to the proxy alone, so none of the names it or its gateway
+      // read stays in its environment, on the turn or on the version probe; the
+      // turn gets the per-turn token instead. In upper case, as above: Windows
+      // env names are case-insensitive, and this is a plain copy of them.
+      if (route) {
+        const routeNames = new Set([...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]);
+        for (const name of Object.keys(childEnv)) {
+          if (routeNames.has(name.toUpperCase())) delete childEnv[name];
+        }
+      }
       // Before the public home is prepared, so a refused seat changes nothing.
       if (publicSandboxMode !== null) {
         const codexVersion = await readCodexVersion(ctx, childEnv);
@@ -1162,14 +1172,6 @@ export default {
           wire: 'openai-responses',
           adapterLabel: 'Codex',
         });
-        // codex talks to the proxy alone, so none of the names it or its gateway
-        // read stays in its environment; it gets the per-turn token instead. In
-        // upper case, as above: Windows env names are case-insensitive, and this
-        // is a plain copy of them.
-        const routeNames = new Set([...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]);
-        for (const name of Object.keys(childEnv)) {
-          if (routeNames.has(name.toUpperCase())) delete childEnv[name];
-        }
         childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
       }
       const args = buildArgs({

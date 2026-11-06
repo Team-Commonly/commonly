@@ -87,6 +87,7 @@ const publicSeat = async (env, extra = {}) => {
     agentName: 'gateway-test-agent',
     timeoutMs: 20_000,
     _publicCodexHome: publicHome,
+    _codexVersion: '0.162.1',
     ...extra,
   };
 };
@@ -102,6 +103,31 @@ const fakeProxy = (started, closed = []) => async (opts) => {
 };
 
 describe('codex adapter — a public seat on a provider gateway (D250)', () => {
+  test('the version probe runs without the key, like the turn it comes before', async () => {
+    const probed = [];
+    const { impl } = makeSpawnImpl();
+    const ctx = await publicSeat({
+      CODEX_API_KEY: REAL_KEY,
+      OPENAI_BASE_URL: 'https://gateway.example/v1',
+      OPENAI_API_KEY: 'sk-openai-other-0123456789abcdef',
+    }, {
+      _codexVersion: undefined,
+      _startProviderProxy: fakeProxy([]),
+      _spawnImpl: impl,
+      _versionProbe: {
+        cache: new Map(),
+        execFileImpl: (_file, _args, options, done) => { probed.push({ ...options.env }); done(null, 'codex-cli 0.162.1\n'); },
+      },
+    });
+
+    await codex.spawn('hello', ctx);
+
+    expect(probed).toHaveLength(1);
+    expect(Object.keys(probed[0])).not.toEqual(expect.arrayContaining(['CODEX_API_KEY']));
+    expect(Object.keys(probed[0])).not.toEqual(expect.arrayContaining(['OPENAI_API_KEY']));
+    expect(JSON.stringify(probed[0])).not.toContain(REAL_KEY);
+  });
+
   test('CODEX_API_KEY and OPENAI_BASE_URL start the Responses proxy, and codex gets only its address and token', async () => {
     const started = [];
     const closed = [];
