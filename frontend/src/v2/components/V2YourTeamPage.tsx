@@ -418,7 +418,10 @@ const V2YourTeamPage: React.FC = () => {
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
     // An ask still waits on a seat that dropped off, so its card keeps the ring.
     const visualState = state !== 'needsYou' && a.connection && a.connection.state !== 'connected' ? 'idle' : state;
-    const statusText = a.connection && a.connection.state !== 'connected'
+    const offline = Boolean(a.connection && a.connection.state !== 'connected');
+    // The ask stays the line's content, so the connection gets a quiet line of its own.
+    const askOffline = offline && state === 'needsYou';
+    const statusText = offline && !askOffline
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
@@ -444,10 +447,11 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
             <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
+              {(!offline || askOffline) && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {(!offline || askOffline) && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
+            {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{connectionLabel(a.connection!, t)}</div>}
             {a.connection?.state === 'never' && a.fixCommand && (
               <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
             )}
