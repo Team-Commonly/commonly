@@ -632,7 +632,7 @@ describe('performAttach', () => {
       adapterName: 'codex', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
     });
     expect(error).toBeInstanceOf(Error);
-    expect(error.message).toContain("Public Codex agents need a sandbox, which Codex can't enforce on Windows without its elevated setup");
+    expect(error.message).toContain("A public agent needs a sandbox, which Codex can't enforce on Windows without its elevated setup");
     expect(error.message).toContain('WSL 2');
     expect(error.message).not.toContain('--unsandboxed');
     expect(client.post).not.toHaveBeenCalled();

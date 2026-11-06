@@ -24,8 +24,8 @@ describe('the Windows prod walk', () => {
     const codex = snippet({ os: 'windows', ...sample, adapter: 'codex' }).split('\n');
     expect(windowsLineProblems(claude, { agentName: 'win-walk', adapter: 'claude' })).toEqual([]);
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'codex' })).toEqual([]);
-    // Codex runs in its own Windows sandbox; Claude Code runs unsandboxed.
-    expect(codex[3]).toBe('commonly agent run win-walk --adapter codex');
+    // Both run unsandboxed on Windows, by the flag the page's line carries.
+    expect(codex[3]).toBe('commonly agent run win-walk --adapter codex --unsandboxed');
     expect(windowsLineProblems(codex, { agentName: 'win-walk', adapter: 'claude' }))
       .toEqual([expect.stringMatching(/line 4/)]);
     expect(windowsLineProblems(claude.slice(0, 3), { agentName: 'win-walk', adapter: 'claude' }))

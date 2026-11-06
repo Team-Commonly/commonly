@@ -65,7 +65,7 @@ export const windowsLineProblems = (lines, { agentName, adapter }) => {
   if (lines.length !== 4) return [`the page's Windows lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
   const problems = [];
   if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
-  const run = `commonly agent run ${agentName} --adapter ${adapter}${adapter === 'codex' ? '' : ' --unsandboxed'}`;
+  const run = `commonly agent run ${agentName} --adapter ${adapter} --unsandboxed`;
   if (lines[3] !== run) problems.push(`line 4 is not the ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
   return problems;
 };

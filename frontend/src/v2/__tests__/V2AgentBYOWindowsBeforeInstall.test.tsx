@@ -49,7 +49,7 @@ beforeEach(() => {
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: hostingConfigured, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
     }
-    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } }] });
+    if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'invite-only', publicRead: false, communityListed: false, createdBy: { _id: 'u1' } }] });
     if (url === '/api/machines') return Promise.resolve({ data: { machines: [], offlineAfterMs: 90000 } });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     return Promise.resolve({ data: {} });
@@ -164,8 +164,9 @@ describe('V2AgentBYO on Windows', () => {
     renderPage();
     await issue();
     const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Codex 还没在 Windows 上测试过。/);
+    expect(note).toHaveTextContent(/^Codex 在这里用不了 Windows 沙箱/);
+    expect(note).toHaveTextContent('这个 Pod 里的任何人都能指挥它');
     expect(note).toHaveTextContent('连接器授权');
-    expect(note).not.toHaveTextContent('--unsandboxed');
+    expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
   });
 });

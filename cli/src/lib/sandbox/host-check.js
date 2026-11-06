@@ -10,7 +10,8 @@
  *
  * Only the adapters that run inside these mechanisms are checked. Codex
  * confines with its own permission profiles (mode.js), except on native
- * Windows: there a public Codex seat is refused (CODEX_WINDOWS_MESSAGE below). pi confines an
+ * Windows: there a public Codex seat is refused, and any other runs only by the
+ * person's own opt-in (CODEX_WINDOWS_MESSAGE below). pi confines an
  * explicitly public seat with Seatbelt and refuses one it cannot confine at
  * attach (validateEnvironment) and at spawn (adapters/pi.js); a Connect-page pi
  * seat declares no sandbox and is not checked here.
@@ -32,21 +33,37 @@ const ADAPTER_LABELS = { claude: 'Claude Code', opencode: 'OpenCode', qwen: 'Qwe
 
 const HOSTED_LINE = '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.';
 
+const CODEX_WSL_LINE = '  - WSL 2 (Ubuntu): install Node and Codex inside WSL, run `sudo apt install bubblewrap`,'
+  + ' then run these same commands there.';
+
 /**
- * CTO ruling, 2026-11-05: Codex's unelevated Windows sandbox cannot enforce
- * the split read denies a public seat's profile carries ("refusing to run
- * unsandboxed"), and Codex has no tool policy beneath that profile, so an
- * "unsandboxed Codex" would be a full shell driven by pod content. That is
- * not what D245 opts into (it drops only Claude Code's OS jail and keeps its
- * no-shell policy), so a public Codex seat on native Windows always refuses
- * and there is no --unsandboxed for it. Codex's elevated Windows sandbox is
- * the hardened path; Commonly doesn't drive it yet.
+ * Codex's unelevated Windows sandbox cannot enforce the split read denies a
+ * public seat's profile carries ("refusing to run unsandboxed"), and Codex has
+ * no tool policy beneath that profile, so an unconfined Codex is a full shell
+ * driven by pod content. That is why a public Codex seat on native Windows
+ * always refuses, and why even the opt-in reaches only a seat whose every pod
+ * is confirmed private (windows-unsandboxed.js), re-read before every turn.
+ * Codex's elevated Windows sandbox is the hardened path; Commonly doesn't drive
+ * it yet.
  */
 const CODEX_WINDOWS_MESSAGE = [
-  "Public Codex agents need a sandbox, which Codex can't enforce on Windows without its elevated setup,",
-  'so this agent cannot listen for @mentions from native Windows. You can:',
-  '  - WSL 2 (Ubuntu): install Node and Codex inside WSL, run `sudo apt install bubblewrap`,'
-    + ' then run these same commands there.',
+  "Codex can't enforce a sandbox on Windows without its elevated setup,",
+  'so by default this agent cannot listen for @mentions from native Windows. You can:',
+  `  - In invite-only pods, run it without a sandbox: add ${UNSANDBOXED_FLAG}`
+    + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
+    + ' Nothing confines it: it runs with your own access to files and commands, anyone in the pod can direct it,'
+    + ' and it gets no connector grants.',
+  CODEX_WSL_LINE,
+  HOSTED_LINE,
+].join('\n');
+
+// The seat can't take the flag: its pods rule it out, or it declares itself
+// public. Naming the flag would only send the person round in a circle.
+const CODEX_WINDOWS_PUBLIC_MESSAGE = [
+  'This agent is public: its settings say so, or a pod it answers in is publicly readable or open to join,',
+  "or did not report whether it is. A public agent needs a sandbox, which Codex can't enforce on Windows"
+    + ' without its elevated setup. You can:',
+  CODEX_WSL_LINE,
   HOSTED_LINE,
 ].join('\n');
 
@@ -82,17 +99,25 @@ export const hostSandboxRefusal = ({
   // D245: the user's own opt-in for this run (windows-unsandboxed.js
   // hostUnconfinedForRun). Never derived from the environment.
   hostUnconfined = false,
+  // The person asked for the opt-in, whether or not the seat qualified. Only
+  // chooses Codex's words: it never lets a seat through.
+  optedIn = false,
   detectBwrap = defaultDetectBwrap,
   detectSeatbelt = defaultDetectSeatbelt,
 } = {}) => {
   if (adapterName === 'codex') {
-    // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of
-    // its own. The D245 opt-in never applies (see CODEX_WINDOWS_MESSAGE).
-    // Public only (a legacy `internal` normalizes to it): Codex refuses
-    // workspace trust on every platform, at attach and at spawn, in its own
-    // words, so WSL advice would only send that seat to a second refusal.
+    if (platform !== 'win32') return null;
+    // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of its
+    // own, and a legacy `internal` normalizes to public. Workspace trust is
+    // left to Codex's own refusal, at attach and at spawn on every platform,
+    // so WSL advice would only send that seat to a second refusal.
     const trust = normalizeSandboxTrust(environment?.sandbox)?.trust;
-    return platform === 'win32' && trust === 'public' ? CODEX_WINDOWS_MESSAGE : null;
+    if (trust === 'workspace') return null;
+    if (trust === 'public') return optedIn === true ? CODEX_WINDOWS_PUBLIC_MESSAGE : CODEX_WINDOWS_MESSAGE;
+    // No public trust: `agent run` removed the block for this run after
+    // confirming every pod private, or the seat never had one. Either way it
+    // would run unconfined, which only the person's own opt-in allows.
+    return hostUnconfined === true ? null : CODEX_WINDOWS_MESSAGE;
   }
   if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);

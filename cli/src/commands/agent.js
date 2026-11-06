@@ -77,7 +77,9 @@ import {
   providerRefusal,
   WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
-import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
+import {
+  firstRunWorkspace, podIsConfirmedPrivate, unconfinedTurnPlacement, workspaceTurnPlacement,
+} from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -102,7 +104,8 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
-  UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
+  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostUnconfinedForRun, runOptedInUnsandboxed,
+  unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
@@ -1296,7 +1299,12 @@ export const performAttach = async ({
     // branch, so the Codex-profile branch below can't publish an agent that
     // `agent run` would only refuse (CTO review of #3501).
     if (adapterName === 'codex') {
-      const codexRefusal = hostSandboxRefusal({ environment, adapterName, platform });
+      // Attach starts nothing, so only a public seat stops here, in the words
+      // that don't offer the flag. A seat with no sandbox block still needs the
+      // person's opt-in at `agent run`.
+      const codexRefusal = hostSandboxRefusal({
+        environment, adapterName, platform, hostUnconfined: true, optedIn: true,
+      });
       if (codexRefusal) throw new Error(codexRefusal);
     }
     // D245: native Windows has neither sandbox, so its refusal names Windows
@@ -1778,6 +1786,9 @@ export const performRun = ({
   // D245: the user's own Windows opt-in for this run; reaches the adapter's
   // spawn context only (never the environment).
   hostUnconfined = false,
+  // F187: this Windows Codex run was opted in with every pod confirmed private.
+  // Each turn is placed by unconfinedTurnPlacement, which re-reads them.
+  codexUnconfined = false,
   workspacePath = null,
   intervalMs = 5000,
   log = () => {},
@@ -2086,7 +2097,7 @@ export const performRun = ({
   };
   const placeTurn = async () => {
     await refreshSeatEnvironment();
-    if (seatEnvironment?.sandbox?.trust !== 'workspace') {
+    if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
       return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
     let installations = null;
@@ -2100,17 +2111,22 @@ export const performRun = ({
       installations = null;
       readError = err;
     }
-    const placement = workspaceTurnPlacement({
-      environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
-    });
+    const placement = codexUnconfined
+      ? unconfinedTurnPlacement({ environment: seatEnvironment, installations, cwd: agentCwd })
+      : workspaceTurnPlacement({
+        environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
+      });
     if (placement.reason !== lastPlacementReason) {
-      log(placement.reason
-        ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
-        : `every pod is confirmed private again; turns read ${agentCwd}`);
+      // An unconfined Codex turn has no public fallback: the refusal below says what happened.
+      if (!codexUnconfined || !placement.reason) {
+        log(placement.reason
+          ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
+          : `every pod is confirmed private again; turns ${codexUnconfined ? 'run' : `read ${agentCwd}`}`);
+      }
       lastPlacementReason = placement.reason;
     }
     if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
-    const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
+    const where = `${placement.environment.sandbox?.trust || 'unconfined'}:${placement.cwd}`;
     return { ...placement, readError, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
@@ -4929,16 +4945,50 @@ Docs:
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
       // keeps its trust and tool policy, and only the OS jail is skipped.
+      const optedIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
       const hostUnconfined = hostUnconfinedForRun({
-        optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
+        optedIn,
         adapterName: record.adapter,
         environment: record.environment,
       });
       if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
 
+      // Codex has no policy to fall back on, so its opt-in reaches only a seat
+      // whose every pod is confirmed private, and this run's environment, never
+      // the saved record, loses its sandbox block. A read that fails stays
+      // refused: nothing here may assume a pod is private.
+      let codexUnconfined = false;
+      if (optedIn && record.adapter === 'codex' && process.platform === 'win32') {
+        let installations = null;
+        try {
+          const identity = await createClient({
+            instance: record.instanceUrl,
+            token: record.runtimeToken,
+          }).get('/api/agents/runtime/installations');
+          installations = identity?.installations;
+        } catch (err) {
+          console.error(`${stamp()} [${name}] could not read whether this agent's pods are private, so it did not start: ${err.message}`);
+          process.exit(1);
+        }
+        codexUnconfined = codexUnconfinedForRun({
+          optedIn, adapterName: record.adapter, environment: record.environment, installations,
+        });
+      }
+      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${CODEX_UNSANDBOXED_NOTICE}`);
+      let runEnvironment = record.environment;
+      if (codexUnconfined && runEnvironment) {
+        const { sandbox: _sandbox, ...unsandboxed } = runEnvironment;
+        runEnvironment = unsandboxed;
+      }
+
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter, hostUnconfined });
+      const hostRefusal = hostSandboxRefusal({
+        environment: runEnvironment,
+        adapterName: record.adapter,
+        hostUnconfined: hostUnconfined || codexUnconfined,
+        optedIn,
+      });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -5005,7 +5055,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       await prepareMcpBeforeFirstPoll({
-        environment: record.environment,
+        environment: runEnvironment,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
 
@@ -5026,8 +5076,9 @@ Docs:
         displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
-        environment: record.environment || null,
+        environment: runEnvironment || null,
         hostUnconfined,
+        codexUnconfined,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),

@@ -29,13 +29,15 @@
  * set only by `agent run`, so the environment, stored or derived, never
  * carries it and nothing the server sends can set it.
  *
- * Claude Code only: it is the adapter that applies the public policy without
- * its jail. OpenCode, Qwen and a public Codex seat stay refused on Windows.
- * Codex has no policy beneath its permission profile, which its unelevated
- * Windows sandbox cannot enforce, so for it "unsandboxed" would mean a full
- * shell driven by pod content (host-check.js, CTO ruling 2026-11-05). No seat on native Windows
- * gets the grant broker (grant-broker-guard.js), and the server refuses grant
- * use for every seat on a machine whose daemon reports the opt-in.
+ * Claude Code keeps its public policy without the jail. OpenCode and Qwen stay
+ * refused on Windows. Codex has no policy beneath its permission profile, which
+ * its unelevated Windows sandbox cannot enforce, so an unconfined Codex is a
+ * full shell. It therefore gets a narrower opt-in (codexUnconfinedForRun): only
+ * a seat whose every pod is confirmed private, re-read before every turn
+ * (unconfinedTurnPlacement), and a public one always refuses (host-check.js).
+ * No seat on native Windows gets the grant broker (grant-broker-guard.js), and
+ * the server refuses grant use for every seat on a machine whose daemon reports
+ * the opt-in.
  */
 
 import { existsSync, readFileSync, rmSync } from 'fs';
@@ -44,6 +46,7 @@ import { join } from 'path';
 
 import { writeServiceFile } from '../daemon-service.js';
 import { effectiveSandboxTrust } from '../environment.js';
+import { allPodsConfirmedPrivate } from '../workspace-trust.js';
 import { UNSANDBOXED_FLAG } from './host-check.js';
 
 export { UNSANDBOXED_FLAG };
@@ -111,6 +114,20 @@ export const hostUnconfinedForRun = ({
 };
 
 /**
+ * Does this Codex run go unconfined? Only on win32, only by the user's own
+ * opt-in, and only when every pod the seat answers in is confirmed private:
+ * `installations` is the server's read of them, and an empty or failed read is
+ * a no. Workspace trust stays with Codex's own refusal. The caller removes the
+ * sandbox block for this run only, so the saved record keeps its public trust
+ * and a later run without the flag refuses as before.
+ */
+export const codexUnconfinedForRun = ({
+  optedIn, adapterName, environment, installations, platform = process.platform,
+}) => platform === 'win32' && optedIn === true && adapterName === 'codex'
+  && effectiveSandboxTrust(environment?.sandbox?.trust) !== 'workspace'
+  && allPodsConfirmedPrivate(installations);
+
+/**
  * What the daemon's check-in says about this host. The server refuses grant
  * use for every seat on a machine that reports either Windows value.
  */
@@ -122,9 +139,14 @@ export const hostSandboxReport = ({ platform = process.platform, load = () => lo
 /** One plain line for the run log and `daemon status`. */
 export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, gets no shell even with --allow write, and gets no connector grants.';
 
+/** Codex has no restricted tool settings to keep, so its line says what it costs instead. */
+export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
+
 export default {
+  CODEX_UNSANDBOXED_NOTICE,
   UNSANDBOXED_FLAG,
   UNSANDBOXED_NOTICE,
+  codexUnconfinedForRun,
   clearUnsandboxedOptIn,
   loadUnsandboxedOptIn,
   runOptedInUnsandboxed,
