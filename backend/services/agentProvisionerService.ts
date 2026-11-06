@@ -1140,6 +1140,13 @@ const provisionCommonlyBotAccount = ({
   };
 };
 
+// The runtimes a provision hands a token to, here and in the K8s provisioner.
+// Any other seat runs outside Commonly and keeps the token it was given.
+const RUNTIMES_RECEIVING_TOKENS = new Set(['moltbot', 'internal']);
+const runtimeReceivesToken = (runtimeType: any) => (
+  RUNTIMES_RECEIVING_TOKENS.has(String(runtimeType || '').trim().toLowerCase())
+);
+
 const provisionAgentRuntime = async ({
   runtimeType,
   agentName,
@@ -1731,6 +1738,7 @@ const installOpenClawPlugin = async ({ spec, link = false, ...options }: any = {
 module.exports = {
   // Core provisioning (works in both modes)
   provisionAgentRuntime,
+  runtimeReceivesToken,
   getOpenClawConfigPath,
   getCommonlyBotConfigPath,
 

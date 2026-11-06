@@ -279,6 +279,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(value).not.toContain('grid-row');
     expect(value).toContain('justify-content: flex-end');
   });
+  test('a hosted description box is name-width, reads left to right, and puts its hint underneath (TASK-780)', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__about textarea')).toContain('text-align: left');
+    const hint = ruleBody(surface, '.v2-agent-settings-page__abouthint');
+    expect(hint).toContain('flex-basis: 100%');
+    expect(hint).toContain('text-align: left');
+    expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
@@ -1794,11 +1802,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(yourTeamPage).toContain('className="v2p-b v2p-b-s v2p-b-sm v2-team__byo"');
     expect(teamCss).not.toMatch(/\.v2-team__hire, \.v2-team \.v2-team-card__answer \{/);
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__status')).toContain('var(--v2-font-mono)');
-    // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
-    // the mark is 600, and the title stacks over its meta on a phone.
+    // ux-lead 66246: the ask wraps, the name is display-18, the mark is 600,
+    // and the title stacks over its meta on a phone. (The own-agent card's
+    // command box is gone: the card names the setup steps instead.)
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__status--needsYou')).toContain('white-space: normal');
-    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('white-space: pre-wrap');
-    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('14px/20px');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark')).toContain('font: 600 12px/1');
     const teamAvatar = ruleBody(teamCss, '.v2-team .v2-team-card__mark .v2-avatar');
@@ -1935,7 +1942,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
     // area drawn as a pseudo-element so the 28px meta row does not grow.
     expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -6px');
-    expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 24px)');
+    // "My Workspace" reads in full on a 390 phone (measured at 375 too): the "i"
+    // draws small, and the pencil is clipped until the hint opens. Clipped, not
+    // display: none, or a keyboard can't reach the only rename control there is.
+    expect(ruleBody(v2, '.v2-pod-header .v2-thread__title-line')).toContain('gap: 4px');
+    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger')).toContain('width: 20px');
+    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger::after')).toContain('inset: -13px -4px');
+    const clipped = 'button.v2-pod-header__rename-open:not(:focus) {\n    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;';
+    expect(mediaAt(v2, '@media (max-width: 760px) and (hover: none) {')).toContain(`.v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:has(.v2-hint--open)) ${clipped}`);
+    expect(mediaAt(v2, '@media (max-width: 760px) and (hover: hover) {')).toContain(`.v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) ${clipped}`);
+    expect(v2).toContain('.v2-thread__title-line:has(.v2-hint--open) button.v2-pod-header__rename-open { opacity: 1; }');
+    expect(v2).not.toContain('rename-open:not(:focus) { display: none; }');
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact')).toContain('padding: 0 5px');
     expect(v2).not.toContain('.v2-thread__working');
   });
 
@@ -3215,11 +3234,33 @@ describe('the landing hero demo (TASK-147)', () => {
 
   test('the demo is the workspace at its own canvas, not a smaller invention', () => {
     expect(ruleBody(demo, '.v2-demo')).toContain('max-width: 1312px');
-    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 212px minmax(0, 1fr) 272px');
+    // The app's own grid (.v2-shell): 56 / 260 / fluid / 272 with 14px gaps.
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('grid-template-columns: 56px 260px minmax(0, 1fr) 272px');
+    expect(ruleBody(demo, '.v2-demo__stage')).toContain('gap: 14px');
     expect(ruleBody(demo, '.v2-demo__stage')).toContain('height: 720px');
     expect(ruleBody(demo, '.v2-demo__stage')).toContain('background: var(--v2-page-bg)');
     // The demo is the product's page, so it sits on the app's canvas colour.
     expect(cssVariable(readV2Css(), '--v2-page-bg')).toBe('#eef0f4');
+  });
+
+  test('the demo draws from the app sheets instead of keeping its own copies', () => {
+    // Without these the real classes below draw unstyled: the landing does not
+    // mount V2App, which is what loads them for the shell.
+    ['primitives/primitives.css', 'chat/chat-message.css', 'chat/chat-pane.css', 'chat/chat-composer.css', 'chat/chat-inspector.css']
+      .forEach((sheet) => expect(component).toContain(`import '../${sheet}';`));
+    ['v2-rail__item', 'v2-pods__row', 'v2-thread__header', 'v2-pod-header__board', 'v2-msg__content', 'v2-composer__send', 'v2-workspace-inspector__group']
+      .forEach((name) => expect(component).toContain(name));
+    // The sheets are the app's phone layout too, and two of its rules assume a
+    // whole window: a composer margin that clears the tab bar, and a header meta
+    // moved to the top bar. Each needs the hero's answer or a phone loses it.
+    const phone = phoneBlock(demo);
+    expect(phone).toMatch(/\.v2-demo \.v2-composer \{ margin: 4px 10px 10px; \}/);
+    // The app's phone starts with this sheet closed, and a hero 1,280px tall
+    // pushes the page's first section off the phone.
+    expect(phone).toMatch(/\.v2-demo__inspector \{ display: none; \}/);
+    // The board chip raises it as a sheet, so that rule has to stay.
+    expect(demo).toMatch(/\.v2-demo__stage--board-open \.v2-demo__inspector \{\s*display: block;/);
+    expect(phone).toMatch(/\.v2-demo \.v2-pod-header__meta \{ display: flex; \}/);
   });
 
   test('a phone stacks the columns and lets the stage grow instead of clipping them', () => {
@@ -3232,55 +3273,30 @@ describe('the landing hero demo (TASK-147)', () => {
     expect(phone).toMatch(/\.v2-demo__stage \{[^}]*height: auto;/);
   });
 
-  test('the transcript keeps a floor on a phone so the thread is never empty', () => {
+  test('the transcript keeps a floor on a phone, and a reply never moves the page', () => {
     const phone = phoneBlock(demo);
     // .v2-demo__log is flex:1 / min-height:0, which needs a sized parent; on a
     // phone the stage is auto-height, so without this floor the hero's thread
     // renders as a blank strip.
     expect(phone).toMatch(/\.v2-demo__log \{[^}]*min-height: 300px;/);
+    // The fixed thread is what keeps the page still: replies land inside it.
+    expect(phone).toMatch(/\.v2-demo__thread \{[^}]*height: 640px;/);
   });
 
-  test('the active pod row keeps its tint on a phone, where a later rule would clear it', () => {
+  test('the phone pod rows stay a two-up grid of real rows', () => {
     const phone = phoneBlock(demo);
-    // ux-lead's 390 gate (#1855, at 62ceda24) measured the strip painting the
-    // open pod like its neighbours. The cause is order, not a missing rule: the
-    // phone row rule below has the same specificity as the desktop --active rule
-    // and comes later, so its surface colour wins and the rail loses its only
-    // position cue at exactly the width where the strip IS the navigation.
-    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod \{[^}]*background: var\(--v2-surface\);/);
-    expect(phone).toMatch(/\.v2-root button\.v2-demo__pod--active \{[^}]*background: var\(--v2-accent-soft\);/);
-    // Order IS the defect, so order is what this guard has to see. The two rules
-    // are the same specificity (0,2,1), so the tint survives only because
-    // --active sits later in the block: move it above the row rule with every
-    // declaration unchanged and the active pod repaints white. sprint-review
-    // measured exactly that in a browser at 390 — 86 parsed rules either way, so
-    // it is the cascade, not a parse break — and this suite stayed green until
-    // this pair. (Textual presence alone cannot see it.)
-    const rowAt = phone.indexOf('.v2-root button.v2-demo__pod {');
-    const activeAt = phone.indexOf('.v2-root button.v2-demo__pod--active {');
-    expect(rowAt).toBeGreaterThanOrEqual(0);
-    expect(activeAt).toBeGreaterThan(rowAt);
-    // And hover cannot wipe it either — hover outranks the active rule, which is
-    // the opposite of the product, where .v2-pods__item:hover is weaker than
-    // .v2-root button.v2-pods__item--active.
-    expect(demo).toMatch(/\.v2-root button\.v2-demo__pod--active:hover \{[^}]*background: var\(--v2-accent-soft\);/);
+    expect(phone).toMatch(/\.v2-demo \.v2-pods__rows \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
+    // The rail and the search row are what a phone drops, never the pods.
+    expect(phone).toMatch(/\.v2-demo__rail,\s+\.v2-demo \.v2-pods__tools,\s+\.v2-demo \.v2-pods__view \{ display: none; \}/);
   });
 
-  test('the inspector is one column at 390 and two only from 641 up', () => {
-    // At 390 the two columns are ~156px against a board row that needs ~230, so
-    // every row title truncated to an ellipsis with nothing left to read
-    // (ux-lead, #1855 gate at 62ceda24).
-    const twoUp = mediaAt(demo, '@media (max-width: 760px) and (min-width: 641px)');
-    expect(twoUp).toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/);
-    expect(twoUp).toMatch(/\.v2-demo__needs \{[^}]*grid-column: 1 \/ -1;/);
-    // The phone block itself must not turn the inspector back into a grid: it
-    // covers widths the 640 rule below also covers, and it comes first, so the
-    // two-column layout would win at 390 as surely as it did before the fix.
+  test('the columns give way one at a time between the canvas and a phone', () => {
+    const noRail = mediaAt(demo, '@media (max-width: 1180px) and (min-width: 761px)');
+    expect(noRail).toMatch(/\.v2-demo__rail \{ display: none; \}/);
+    const noPanel = mediaAt(demo, '@media (max-width: 960px) and (min-width: 761px)');
+    expect(noPanel).toMatch(/\.v2-demo__inspector \{ display: none; \}/);
+    // The folds are one column at every width that shows them.
     expect(phoneBlock(demo)).not.toMatch(/\.v2-demo__inspector \{[^}]*grid-template-columns/);
-    // Below 641 it is the base flex column again, with needs hoisted to the top.
-    expect(ruleBody(demo, '.v2-demo__inspector')).toContain('flex-direction: column');
-    const oneUp = mediaAt(demo, '@media (max-width: 640px) {');
-    expect(oneUp).toMatch(/\.v2-demo__needs \{ order: -1; \}/);
   });
 
   test('the hero is the product, not the video it replaced', () => {
@@ -3290,7 +3306,7 @@ describe('the landing hero demo (TASK-147)', () => {
     // The demo explains its own honesty limit in its chrome, and the component
     // renders that line unconditionally (the phone layout keeps it wrapping on
     // its own row rather than letting it scroll out of the pod strip).
-    expect(component).toContain('sample workspace · replies are scripted');
+    expect(component).toContain("t('landing.hero.demoSample')");
     expect(phoneBlock(read('../landing/demo-workspace.css'))).toMatch(
       /\.v2-demo__sample \{[^}]*flex: 1 1 100%;/,
     );
@@ -3298,13 +3314,11 @@ describe('the landing hero demo (TASK-147)', () => {
 
   test('the active pod row follows the component, not the board that drew it filled', () => {
     // ux-lead's carry note on #1841: the design board paints the active pod row
-    // cobalt-filled, while the live rail uses a tint plus a 3px accent mark.
-    // The build follows the component — a filled row here would be the landing
-    // showing a product that does not exist.
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).toContain('background: var(--v2-accent-soft)');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active')).not.toContain('background: var(--v2-accent);');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('width: 3px');
-    expect(ruleBody(demo, '.v2-root button.v2-demo__pod--active::before')).toContain('background: var(--v2-accent);');
+    // cobalt-filled, while the live rail draws its own selected row. The demo
+    // renders that row's class and keeps no look of its own for it.
+    expect(component).toContain('v2-pods__row--selected');
+    expect(demo).not.toContain('v2-demo__pod--active');
+    expect(demo).not.toContain('v2-pods__row--selected');
   });
 
   test('landing screenshot cards are flat: no window bar anywhere, no shadow anywhere', () => {
@@ -4539,9 +4553,9 @@ describe('TASK-167 row B — trusted, wedge and In action onto Signal', () => {
     expect(landingTsx).toContain('v2-landing__section v2-landing__section--features');
     const phone = mediaAt(landing, '@media (max-width: 680px) {');
     expect(phone).toContain('.v2-landing__section { padding-top: 0; padding-bottom: 64px; }');
-    // 24 here plus the wedge's 24 below is the board's 48 at 390, and the
-    // features rule has to sit after the section rule to win on source order.
-    expect(phone.indexOf('.v2-landing__section--features { padding-top: 24px; }'))
+    // 24 here plus the wedge's 24 is the 48 under the wedge at 390. Agent teams
+    // is the first section there, and its rule sits after the section rule.
+    expect(phone.indexOf('#agent-teams { padding-top: 24px; }'))
       .toBeGreaterThan(phone.indexOf('.v2-landing__section { padding-top: 0;'));
     expect(phone).toContain('.v2-landing__section-head { margin-bottom: 32px; }');
     const h2 = selectorRuleBody(landing, '.v2-landing__h2 {');
@@ -4783,31 +4797,52 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
 
   test('an agent-team card is one bordered box, with its footer pinned to the bottom', () => {
     expect(topLevelRuleBody(landing, '.v2-landing__team-cards')).toContain(
-      'grid-template-columns: repeat(3, minmax(0, 1fr))',
+      'grid-template-columns: repeat(2, minmax(0, 1fr))',
     );
     const card = topLevelRuleBody(landing, '.v2-landing__team-card');
     expect(card).toContain('border: 1px solid var(--v2-border)');
     expect(card).toContain('border-radius: var(--v2-radius)');
     expect(card).toContain('flex-direction: column');
     expect(topLevelRuleBody(landing, '.v2-landing__team-footer')).toContain('margin: auto 0 0');
-    // Three cards in one row, and one column once the tablet switch applies.
+    // Two cards in a row under the feature, and one column once the tablet switch applies.
     expect(mediaAt(landing, '@media (max-width: 900px)')).toContain(
       '.v2-landing__team-cards { grid-template-columns: minmax(0, 1fr); }',
     );
   });
 
-  test('the works-with chips wrap inside their container instead of running past it', () => {
-    // CodeRabbit (PR #2956): the chip list is the element that has to wrap. Removing
-    // flex-wrap would let the set run past a narrow phone container without a failing test.
-    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('flex-wrap: wrap');
+  test('the works-with tiles reflow inside their container instead of running past it', () => {
+    // A fixed four-column grid would squeeze the tiles past a narrow phone, so the
+    // list must step down to two columns.
+    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('repeat(4, minmax(0, 1fr))');
+    expect(landing).toMatch(
+      /@media \(max-width: 900px\) \{\n {2}\.v2-landing__works-list \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/,
+    );
   });
 
-  test('the star count is absent until GitHub answers and never takes the link name', () => {
-    expect(landingTsx).toContain('{starLabel && <span className="v2-landing__star-count"');
-    expect(landingTsx).toContain(
-      "href={REPO} target=\"_blank\" rel=\"noreferrer\">{t('landing.actions.starGithub')}</a>",
-    );
-    expect(topLevelRuleBody(landing, '.v2-landing__star-count')).toContain('font-variant-numeric: tabular-nums');
+  test('the star count is absent until GitHub answers and takes the colour of what holds it', () => {
+    expect(landingTsx).toContain('if (!label) return null;');
+    expect(landingTsx.match(/<StarCount label=\{starLabel\} \/>/g)).toHaveLength(4);
+    const count = topLevelRuleBody(landing, '.v2-landing__star-count');
+    expect(count).toContain('font-variant-numeric: tabular-nums');
+    expect(count).toContain('color: inherit');
+  });
+
+  test('card one is the full-row feature, chat on the right, and the phone stays one stack', () => {
+    expect(landingTsx).toContain("id === 'one' ? ' v2-landing__team-card--feature' : ''");
+    expect(topLevelRuleBody(landing, '.v2-landing__team-cards')).toContain('repeat(2, minmax(0, 1fr))');
+    expect(landing).toContain('.v2-landing__team-card--feature { grid-column: 1 / -1; }');
+    const wide = blockContaining(landing, '@media (min-width: 901px)', 'grid-template-areas');
+    expect(wide).toMatch(/"title chat"\s+"roster chat"\s+"footer chat"/);
+    expect(wide).toContain('grid-template-columns: minmax(0, 5fr) minmax(0, 7fr)');
+    // The grid is desktop-only: outside that block the card keeps its column.
+    expect(landing.replace(wide, '')).not.toContain('grid-template-areas');
+  });
+
+  test('the sample line keeps its reserved height and carries its words in both locales', () => {
+    expect(topLevelRuleBody(landing, '.v2-landing__team-sample')).toContain('min-height: 20px');
+    for (const locale of ['en.json', 'zh-CN.json']) {
+      expect(JSON.parse(read(`../../i18n/locales/${locale}`)).landing.agentTeams.sampleNote).not.toBe('');
+    }
   });
 
   test('the team-card title keeps its weight, leading and tracking', () => {
@@ -4824,7 +4859,7 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
       expect(json.landing.useCases).toBeUndefined();
       expect(Object.keys(json.landing.agentTeams.cards)).toEqual(['one', 'two', 'three']);
       expect(Object.keys(json.landing.worksWith.items)).toEqual([
-        'claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp', 'linear',
+        'claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp', 'linear', 'github', 'telegram', 'slack',
       ]);
     }
   });
@@ -5050,7 +5085,7 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
 
     const en = JSON.parse(read('../../i18n/locales/en.json'));
     expect(`${en.landing.finalCta.titleLead} ${en.landing.finalCta.titleTail}`)
-      .toBe('Your team already has a chat. Give it an agent.');
+      .toBe("Your team already has a chat. Bring everyone's agents.");
     const zh = JSON.parse(read('../../i18n/locales/zh-CN.json'));
     expect(Object.keys(zh.landing.finalCta)).toEqual(['titleLead', 'titleTail']);
   });
@@ -6399,14 +6434,11 @@ describe('front door keys, auth gutter and the shell state line (11-04)', () => 
     expect(phone).toContain('.v2-landing__btn { height: 44px; font-size: 16px; }');
   });
 
-  test('the demo\'s decision choices are keys too, scoped to the demo', () => {
-    const choice = ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice');
-    expect(choice).toContain('min-height: 40px');
-    expect(choice).toContain('border-radius: var(--v2-r-10, 10px)');
-    expect(ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice--primary'))
-      .toContain('linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b))');
-    expect(blockContaining(demo, '@media (max-width: 760px)', 'v2-demo__card button.v2-decision-card__choice'))
-      .toContain('.v2-root .v2-demo__card button.v2-decision-card__choice { min-height: 44px;');
+  test('the demo\'s decision card is the app\'s card, with no look of its own', () => {
+    // Finding 13 gave the demo's choices the front-door keys. The hero moved onto
+    // the live pod (v3 pass, 11-05), where the card is the in-app one, and a pod
+    // that draws a different card from the app is the thing that pass removed.
+    expect(demo).not.toContain('v2-decision-card');
   });
 
   test('the auth card keeps its frame\'s 20px side inset at 390 (d215 auth frames)', () => {
@@ -6481,5 +6513,24 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-run-trace h1')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-run-trace h2')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
+  });
+});
+
+describe('the landing stylesheet parses as written', () => {
+  // The build keeps a stray `}` with only a warning, and the browser then
+  // reads it into the next selector and loses that whole rule.
+  test('every brace closes one that was opened', () => {
+    const css = fs
+      .readFileSync(path.join(__dirname, '../landing/v2-landing.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/"[^"\n]*"|'[^'\n]*'/g, '');
+    let depth = 0;
+    let lowest = 0;
+    for (const char of css) {
+      if (char === '{') depth += 1;
+      if (char === '}') depth -= 1;
+      lowest = Math.min(lowest, depth);
+    }
+    expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
 });

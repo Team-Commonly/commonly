@@ -72,7 +72,7 @@ const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
-const { runAgent, HOSTED_RUN_FAILED_LINE } = require('../../../services/nativeRuntimeService');
+const { runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const OWNER = '507f1f77bcf86cd799439099';
@@ -368,8 +368,10 @@ describe('a hosted turn the guard stops, or that fails', () => {
 
       expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
       expect(savedRun.metered).toBe(false);
-      // Bridged, so not even the fixed line goes out.
-      expect(posted()).toEqual([]);
+      // The reply stays held back. The fixed line carries nothing from the turn,
+      // and noOutboundRelay keeps it out of the bridge (F56).
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
     });
 
     // CodeRabbit on 67496fac9: a decline is not a held-back reply. In a bridged
@@ -415,7 +417,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(result.status).toBe('failed');
       expect(savedRun.errorMessage).toMatch(/ended without a reply: its post was refused\.$/);
       expect(chatBodies).toHaveLength(3);
-      expect(posted()).toEqual([]);
+      // The refused post stays refused. The person gets the fixed line, kept out of the bridge.
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls.at(-1)[0].noOutboundRelay).toBe(true);
     });
 
     // The extra call can itself be stopped. Then every web result left is set
@@ -596,14 +600,128 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
   });
 
-  test('a model error names the model and HTTP reason and uses no turn', async () => {
+  // F234: a stop before the turn ran used to end in silence.
+  test('a person who addresses an agent past its daily cap is told, in plain words', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), mention);
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    const notice = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(notice).toMatchObject({ failureNotice: true, kind: 'error' });
+    // It isn't an answer, so it can't close the first-task card.
+    expect(notice).not.toHaveProperty('answeringMessageId');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['a board wake', { boardWake: true }],
+    ['an assigned-work wake', { triggerAuthor: 'kernel', assignedTaskWake: true }],
+    ['a welcome wake', { welcomeWake: true }],
+  ])('%s past the cap stays quiet, because nobody is waiting on it', async (_label, flags) => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, ...flags } });
+    expect(posted()).toEqual([]);
+  });
+
+  describe('F56: a reply the floor cap refused', () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    const postCall = { id: 'p1', type: 'function', function: { name: 'commonly_post_message', arguments: JSON.stringify({ content: 'Here you go.' }) } };
+
+    test('a person who gets no reply gets the fixed line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.noActionReason).toBeUndefined();
+      expect(savedRun.metered).toBe(false);
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+      const line = AgentMessageService.postMessage.mock.calls[1][0];
+      expect(line).toMatchObject({ failureNotice: true, personWaiting: true });
+    });
+
+    test('an agent\'s @ stays a decline', async () => {
+      const User = require('../../../models/User');
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: true }) }) }));
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) }));
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(posted()).toEqual(['Here you go.']);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
+    test('the plain-text fallback gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [reply('Here you go.')];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.finalMessage).toBeUndefined();
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+    });
+
+    test('a refused offer card gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(call('o1', 'commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(posted()).toEqual(['Connect a local agent with the command below.', HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(true);
+    });
+
+    test('a welcome wake quoting a person is not a person waiting', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const wake = { ...mention, payload: { ...mention.payload, welcomeWake: true } };
+      const result = await runAgent(hostedInstall(), wake);
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
+    test('only the first post of a turn answers the person', async () => {
+      const again = { ...postCall, id: 'p2' };
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: true, message: { id: 'm1' } })
+        .mockResolvedValueOnce({ success: true, message: { id: 'm2' } });
+      chatReplies = [toolCalls(postCall, again), reply('')];
+      await runAgent(hostedInstall(), mention);
+      expect(AgentMessageService.postMessage.mock.calls.map(([args]) => args.personWaiting)).toEqual([true, false]);
+    });
+  });
+
+  test('an agent\'s @ past the cap stays quiet', async () => {
+    const User = require('../../../models/User');
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: true }) }) }));
+    await runAgent(hostedInstall(), mention);
+    User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) }));
+    expect(posted()).toEqual([]);
+  });
+
+  test('a person who addresses an agent past the per-user ceiling is told too', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
+    const result = await runAgent(hostedInstall(), mention);
+    expect(result).toMatchObject({ status: 'failed', errorKind: 'user_ceiling' });
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+  });
+
+  test('a heartbeat past its cap stays quiet', async () => {
+    // The heartbeat hold counts first, on trigger: 'heartbeat'; it has to pass for
+    // this to reach the cap.
+    AgentRun.countDocuments.mockImplementation((query) => Promise.resolve(query.trigger === 'heartbeat' ? 0 : 100000));
+    await runAgent(hostedInstall(), { type: 'heartbeat', eventId: 'hb', payload: {} });
+    expect(AgentRun.countDocuments.mock.calls.some(([query]) => query.trigger !== 'heartbeat')).toBe(true);
+    expect(posted()).toEqual([]);
+  });
+
+  test('a model error names the model in plain words, keeps the reason on the run, and uses no turn', async () => {
     chatReplies = [{ status: 502, headers: {}, data: { error: 'upstream unavailable' } }];
 
     const result = await runAgent(hostedInstall(), mention);
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'llm_error' }));
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (HTTP 502). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted()).toEqual([`DeepSeek V4 Flash could not answer just now. ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(savedRun.errorMessage).toContain('HTTP 502');
     // The model-failure variant is a failed-turn notice too, so it repeats per ask.
     expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
     expect(chatBodies[0].disable_fallbacks).toBe(true);
@@ -613,12 +731,13 @@ describe('a hosted turn the guard stops, or that fails', () => {
     ['ECONNABORTED', 'request timed out'],
     ['ETIMEDOUT', 'request timed out'],
     ['ECONNRESET', 'connection failed'],
-  ])('a transport error %s reports a safe category without the raw error', async (code, reason) => {
+  ])('a transport error %s keeps a safe category on the run, without the raw error', async (code, reason) => {
     axios.post.mockRejectedValueOnce(Object.assign(new Error('secret-token-in-proxy-url'), { code }));
     const result = await runAgent(hostedInstall(), mention);
     expect(result).toMatchObject({ status: 'failed', errorKind: 'llm_error' });
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (${reason}). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted()).toEqual([`DeepSeek V4 Flash could not answer just now. ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(savedRun.errorMessage).toContain(reason);
     expect(posted().join('')).not.toContain('secret-token');
     expect(savedRun.errorMessage).not.toContain('secret-token');
     expect(result.errorMessage).not.toContain('secret-token');
@@ -661,14 +780,40 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
-    test('a silent turn (no text, no post) ends succeeded and posts nothing', async () => {
+    // F56: an empty completion on a person's @ is a failed turn, not a decline.
+    test('a person who gets an empty completion gets the fixed line', async () => {
       chatReplies = [reply('')];
 
       const result = await runAgent(hostedInstall(), mention);
 
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(savedRun.metered).toBe(false);
+      expect(savedRun.emptyCompletion).toBe(true);
+    });
+
+    test('an empty completion nobody is waiting on stays silent and is counted', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      chatReplies = [reply('')];
+
+      const result = await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, boardWake: true } });
+
       expect(result.status).toBe('succeeded');
       expect(posted()).toEqual([]);
       expect(savedRun.metered).toBeUndefined();
+      expect(savedRun.emptyCompletion).toBe(true);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/empty completion #\d+ since start: maya-agent/);
+      warn.mockRestore();
+    });
+
+    test('a NO_REPLY is not counted as an empty completion', async () => {
+      AgentMessageService.postMessage.mockResolvedValue({ skipped: true });
+      chatReplies = [reply('NO_REPLY')];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(savedRun.emptyCompletion).toBeUndefined();
     });
 
     test('a failed greeting posts nothing, though it costs no turn', async () => {
@@ -693,14 +838,15 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
-    test('a pod bridged mid-turn after a page read gets no fixed line', async () => {
+    test('a pod bridged mid-turn after a page read gets the fixed line, kept out of the bridge', async () => {
       // The bridge is added once the page is in the turn.
       mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);
       chatReplies = [toolCalls(fetchCall('c1', CLEAN_URL)), guardStop];
 
       await runAgent(hostedInstall(), mention);
 
-      expect(posted()).toEqual([]);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
       expect(savedRun.metered).toBe(false);
     });
 
@@ -727,9 +873,10 @@ describe('a hosted turn the guard stops, or that fails', () => {
     await runAgent(hostedInstall(), mention);
 
     const queries = AgentRun.countDocuments.mock.calls.map(([query]) => query);
-    const planLine = queries.find((query) => query.podId);
-    const ceiling = queries.find((query) => query.userId);
+    const planLine = queries.find((query) => query.agentName);
+    const ceiling = queries.find((query) => query.userId && !query.agentName);
     expect(planLine.metered).toEqual({ $ne: false });
+    expect(planLine).not.toHaveProperty('podId');
     expect(ceiling).toBeDefined();
     expect(ceiling).not.toHaveProperty('metered');
   });

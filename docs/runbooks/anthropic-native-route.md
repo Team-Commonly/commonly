@@ -49,31 +49,46 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   longer handed `OPENROUTER_API_KEY`. Its client treats any `claude-*` model as
   no-fallback: one LiteLLM call with `disable_fallbacks`, and a failure throws.
 
-What still reaches DeepSeek on dev: only a caller that names `deepseek-v4-flash`
-or `deepseek-flash-1017` itself. Agent driver defaults name one model,
-`litellm.agentDefaultModel` (F103): Claude on dev, `deepseek-v4-flash` in base.
-They cover the K8s provisioner's community and dev-agent primaries and key
-allowlists, the global policy's community default, the gateway seed config and
-cloud-codex. CI checks each render (`scripts/verify-agent-default-model.js`):
-every default must be a LiteLLM route, and on dev none may resolve to
-`deepseek/*`. F103 deleted the other vendors' names that LiteLLM served with
-DeepSeek (nemotron, `gpt-5.4*`, `openai-codex/*`, `codex-mini-latest`, `o4-mini`
-and `codex-cli/gpt-5.4`). Only the Gemini and `gpt-4o` stand-ins remain, where
-their provider is off and `litellm.legacyAliases` is on. That flag is off on dev,
-and on in base for the platform defaults that still name Gemini, until F105
-moves them. None of those names was called on dev in the 7 days to 11-04 (the
-spend-log read is in the F98 pull request). Where Gemini is on
-(base), the four Gemini names also fall back to `deepseek-v4-flash`, so a failed
-Gemini call reaches DeepSeek without its caller naming it. With every native
-pin mapped to Claude, /privacy names no DeepSeek.
-The DeepSeek routes themselves go once post-deploy spend logs show zero.
-**Staging depends on them until then:** staging renders with Anthropic off, so
-its Scout and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`).
-`staging-smoke` does not: staging runs no stranger-journey CronJob, so the gate
-is a health probe plus the Tier-1 UI smoke, which skips the hosted reply.
-Before the deletion, staging needs its own Claude key (never the dev key) and
-`aiProviders.anthropic` on, and the Gemini fallbacks to `deepseek-v4-flash` go
-or move to another target.
+**DeepSeek on dev: deleted (F159, 11-05).** `aiProviders.deepseek.enabled` is
+off in `values-dev.yaml`, so dev renders no `deepseek-v4-flash` or
+`deepseek-flash-1017` route, no Gemini/`gpt-4o` stand-in and no fallback to
+DeepSeek. LiteLLM gets no `DEEPSEEK_API_KEY`, the `api-keys` ExternalSecret maps
+no `deepseek-api-key`, and `LITELLM_CHAT_MODEL` follows
+`litellm.agentDefaultModel` (Claude). A caller that still names a DeepSeek model
+gets an unknown-model error. The deletion followed the zero window Stack
+measured: 396 LiteLLM calls from 19:03:36Z 11-04 to 01:09Z 11-05, 394 on
+`claude-haiku-5-5` and none on DeepSeek. The DeepSeek tool shim callback still
+loads; it acts only on `deepseek-flash-1017`, which dev no longer serves.
+
+Agent driver defaults name one model, `litellm.agentDefaultModel` (F103):
+Claude on dev, `deepseek-v4-flash` in base. They cover the K8s provisioner's
+community and dev-agent primaries and key allowlists, the global policy's
+community default, the gateway seed config and cloud-codex. CI checks each
+render (`scripts/verify-agent-default-model.js`): every default, and each
+chat-model default (`LITELLM_CHAT_MODEL`, `NATIVE_RUNTIME_MODEL`,
+`LLM_SERVICE_MODEL`, the commonly-bot's `AGENT_MODEL`), must be a LiteLLM
+route. On dev (`--no-deepseek`) none may resolve to `deepseek/*`, and the render
+may carry no DeepSeek route, key or ExternalSecret entry at all
+(`helm/devNoDeepseek.test.js` checks the same). F103 deleted the other vendors'
+names that LiteLLM served with DeepSeek (nemotron, `gpt-5.4*`, `openai-codex/*`,
+`codex-mini-latest`, `o4-mini` and `codex-cli/gpt-5.4`). With every native pin
+mapped to Claude, /privacy names no DeepSeek.
+
+**Base and self-hosted installs keep DeepSeek.** `aiProviders.deepseek` is on
+by default: DeepSeek is the base default model and an optional provider for a
+self-hosted instance. There, the Gemini and `gpt-4o` stand-ins render where
+their provider is off and `litellm.legacyAliases` is on (until F105), and where
+Gemini is on the four Gemini names fall back to `deepseek-v4-flash`.
+
+**Staging still runs on DeepSeek.** It renders with Anthropic off, so its Scout
+and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`). Its
+`commonly-staging-anthropic-api-key` holds an 11-byte placeholder (401 on
+`/v1/models`, 11-05), so it cannot move yet. To move it: put a working staging
+Claude key (never the dev key) in that secret, then set `aiProviders.anthropic`
+on, `aiProviders.deepseek` off and `litellm.agentDefaultModel: claude-haiku-5-5`
+in `values-staging.yaml`. `staging-smoke` does not exercise the hosted reply:
+staging runs no stranger-journey CronJob, so the gate is a health probe plus
+the Tier-1 UI smoke.
 
 `LITELLM_DISABLED` does not apply to the pinned path: with `LLM_SERVICE_MODEL`
 set, llmService calls LiteLLM, or throws when no LiteLLM URL is configured,
@@ -120,8 +135,8 @@ runtime ends the turn there:
 - **Cap.** Two layers. The route's `max_budget` of $50 a month is kept in
   LiteLLM's router cache, so a restart (every config change) resets it: a
   backstop, not the cap. The durable cap is the backend service key's $40 per
-  30 days in LiteLLM's Postgres. Native turns spend through that key, and it is
-  shared with DeepSeek spend. The commonly-bot spends through its own key, $20
+  30 days in LiteLLM's Postgres. Native turns spend through that key (shared
+  with DeepSeek spend where DeepSeek is on; not on dev since F159). The commonly-bot spends through its own key, $20
   per 30 days.
 - **Alarm.** That key's 80% budget alarm (`alerting.md`, LiteLLM key budget)
   fires at about $32 of combined spend. The per-user spend alarm

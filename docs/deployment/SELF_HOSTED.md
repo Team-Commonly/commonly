@@ -102,6 +102,25 @@ Optional integration keys are passed through only when you add them to `.env`.
 Leave unused keys unset. Never commit `.env` or put a real key in an issue,
 log, or screenshot.
 
+## Agents on a self-hosted instance
+
+A self-hosted instance runs **your own agents**: Claude Code, or Codex on a Mac,
+connected through the `commonly` CLI from the machine they run on, with your own
+model access. Point the CLI at your instance:
+
+```bash
+npm i -g @commonlyai/cli
+commonly login --instance http://localhost:5000
+commonly agent attach claude --pod <podId> --name my-claude --instance http://localhost:5000
+commonly agent run my-claude
+```
+
+Then @mention it in the pod. More in the [CLI guide](../cli/README.md).
+
+**Hosted agents are not part of self-host.** Agents that run on Commonly itself,
+such as Scout in each new workspace or an agent started from a pod, need
+Commonly's hosted model service. On a self-hosted instance they don't reply.
+
 ## Development and public deployments
 
 `./dev.sh up` is for contributors: it uses `docker-compose.dev.yml`, bind

@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
+import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from '../src/lib/adapters/codex-broker-bridge.mjs';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -23,12 +24,13 @@ const {
   TESTED_QWEN_VERSIONS,
   ALLOW_UNTESTED_QWEN_VERSION_ENV,
   buildQwenMcpConfig,
+  GRANT_TESTED_QWEN_VERSIONS, withoutUnprovenBroker,
 } = await import('../src/lib/adapters/qwen.js');
 
 beforeEach(() => {
   spawnSyncMock.mockReset();
   spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
-    ? { status: 0, stdout: `${TESTED_QWEN_VERSIONS[0]}\n` }
+    ? { status: 0, stdout: `${TESTED_QWEN_VERSIONS.at(-1)}\n` }
     : { status: 0, stdout: '/usr/local/bin/qwen\n' }));
 });
 
@@ -146,6 +148,29 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
     expect(JSON.stringify({ args, mcp, settings })).not.toContain('upstream-secret');
     expect(JSON.stringify({ args, mcp, settings })).not.toContain('cm_agent_test_token');
     expect(JSON.stringify({ args, mcp, settings })).not.toContain('shadow.example');
+  });
+});
+
+// bwrap binds a symlink's target at the link's path, so an entry launched through
+// npm's `.bin/qwen` loses `./cli.js` beside it and exits before it starts.
+test('a bwrap seat launches the real package entry, not npm\'s .bin symlink', async () => {
+  await withSeat(async (ctx) => {
+    let argv;
+    let options;
+    await qwen.spawn('hello', {
+      ...ctx,
+      _platform: 'linux',
+      environment: { ...ctx.environment, sandbox: { trust: 'public', mode: 'bwrap' } },
+      _detectBwrap: () => ({ available: true }),
+      _wrapArgvWithBwrap: (wrapped, _environment, wrapOptions) => {
+        argv = wrapped;
+        options = wrapOptions;
+        return wrapped;
+      },
+      _spawnImpl: () => fakeChild(),
+    });
+    expect(argv[0]).toBe(realpathSync(ctx._binaryPath));
+    expect(options.readOnlyPaths).toContain(dirname(realpathSync(ctx._binaryPath)));
   });
 });
 
@@ -427,5 +452,248 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
       if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
       else process.env.COMMONLY_MCP_HOME = prior;
     }
+  });
+});
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx, root) => {
+    const elsewhere = join(root, 'elsewhere');
+    await mkdir(elsewhere);
+    await rm(ctx.cwd, { recursive: true });
+    await symlink(elsewhere, ctx.cwd);
+    const calls = [];
+    const error = await qwen.spawn('hello', {
+      ...ctx,
+      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+      _spawnImpl: (...args) => { calls.push(args); return fakeChild(); },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(error.message).toContain(ctx.cwd);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+// F219: the temp folder holds this turn's credential, so a workspace that holds
+// the temp folder hands it to the jail.
+test('a public seat in a workspace that holds the temp folder is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx) => {
+    const keyCheck = jest.spyOn(qwen, 'validateEnvironment').mockResolvedValue('/unused/provider-key');
+    const spawn = jest.fn();
+    try {
+      await expect(qwen.spawn('hi', { ...ctx, cwd: tmpdir(), _spawnImpl: spawn }))
+        .rejects.toThrow(/public Qwen agents cannot run in .*set TMPDIR outside it/);
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      keyCheck.mockRestore();
+    }
+  });
+});
+
+// F175d: Qwen reads `--mcp-config` headers literally (measured on 0.26.2: a
+// `${VAR}` reaches the server as those characters), so an HTTP entry could only
+// carry the token by writing it into the config. The broker runs behind the
+// stdio bridge instead, and the token stays in the one credential file.
+describe('F175d: the grant broker reaches a public Qwen seat through the stdio bridge', () => {
+  const broker = (over = {}) => ({
+    name: 'commonly-grant-broker',
+    transport: 'http',
+    url: '${COMMONLY_API_URL}/api/mcp/grants/g1',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+    ...over,
+  });
+  const publicCtx = {
+    credentialFile: '/tmp/seat-token', instanceUrl: 'https://api.commonly.me',
+    runtimeToken: 'cm_agent_test_token', publicSeat: true,
+  };
+
+  test('the entry becomes our bridge, told a url, a template and a path', () => {
+    const { mcpServers } = buildQwenMcpConfig([broker()], publicCtx);
+    expect(mcpServers['commonly-grant-broker']).toEqual({
+      command: process.execPath,
+      args: [BRIDGE_PATH],
+      env: {
+        [BRIDGE_URL_VAR]: 'https://api.commonly.me/api/mcp/grants/g1',
+        [BRIDGE_HEADERS_VAR]: JSON.stringify({ Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' }),
+        COMMONLY_TOKEN_FILE: '/tmp/seat-token',
+      },
+    });
+    expect(JSON.stringify(mcpServers)).not.toContain('cm_agent_test_token');
+  });
+
+  test('a command the entry declares is never run', () => {
+    const { mcpServers } = buildQwenMcpConfig([broker({ command: ['/bin/sh', '-c', 'id'] })], publicCtx);
+    expect(JSON.stringify(mcpServers)).not.toContain('/bin/sh');
+  });
+
+  test('a private seat never gets the bridge: the guard withholds it, and this is the second layer', () => {
+    expect(() => buildQwenMcpConfig([broker()], { ...publicCtx, publicSeat: false }))
+      .toThrow(/requires a credential transport/);
+  });
+
+  test('a broker on another origin is not ours and stays refused', () => {
+    expect(() => buildQwenMcpConfig([broker({ url: 'https://evil.example/api/mcp/grants/g1' })], publicCtx))
+      .toThrow(/requires a credential transport/);
+  });
+
+  test('a seat with no credential file, or a token written into the entry, leaves it unwired', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(buildQwenMcpConfig([broker()], { ...publicCtx, credentialFile: '' }).mcpServers).toEqual({});
+      expect(buildQwenMcpConfig([broker({ headers: { Authorization: 'Bearer cm_agent_test_token' } })], publicCtx).mcpServers)
+        .toEqual({});
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('the launch approves the broker tools, reads the bridge file alone, and holds no token', async () => {
+    await withSeat(async (ctx) => {
+      let launched;
+      let wrapOptions;
+      let config;
+      await qwen.spawn('hello', {
+        ...ctx,
+        environment: { ...ctx.environment, mcp: [broker()] },
+        _wrapArgvWithSeatbelt: (argv, options) => { wrapOptions = options; return argv; },
+        _spawnImpl: (cmd, args, options) => {
+          launched = { args, env: options.env };
+          config = readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8');
+          return fakeChild();
+        },
+      });
+      const allowed = launched.args[launched.args.indexOf('--allowed-tools') + 1];
+      expect(allowed.split(',')).toEqual(['mcp__commonly-grant-broker__*']);
+      expect(wrapOptions.readOnlyDirectories).toContain(BRIDGE_PATH);
+      expect(wrapOptions.readOnlyDirectories).not.toContain(dirname(BRIDGE_PATH));
+      for (const text of [launched.args.join('\n'), config, JSON.stringify(launched.env)]) {
+        expect(text).not.toContain(ctx.runtimeToken);
+      }
+      expect(launched.env.COMMONLY_TOKEN_FILE).toBeUndefined();
+      expect(launched.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+    });
+  });
+
+  test('a bwrap seat binds the bridge file read-only', async () => {
+    await withSeat(async (ctx) => {
+      let wrapOptions;
+      await qwen.spawn('hello', {
+        ...ctx,
+        environment: { ...ctx.environment, mcp: [broker()], sandbox: { trust: 'public', mode: 'bwrap' } },
+        _detectBwrap: () => ({ available: true }),
+        _wrapArgvWithBwrap: (argv, _environment, options) => { wrapOptions = options; return argv; },
+        _spawnImpl: () => fakeChild(),
+      });
+      expect(wrapOptions.readOnlyPaths).toContain(BRIDGE_PATH);
+    });
+  });
+});
+
+// F175d: what keeps a broker-holding seat off its credential is a list of denied
+// built-ins, so a Qwen version with a tool the list doesn't name could read it.
+// Only a version that passed the grant proof holds a broker. The seat still
+// answers, without the grant, on whatever else the public rule admits.
+describe('F175d: a public Qwen seat holds a broker only on a version that passed the grant proof', () => {
+  const broker = {
+    name: 'commonly-grant-broker', transport: 'http',
+    url: 'https://api.commonly.me/api/mcp/grants/g1',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+  };
+  const launch = async (ctx, version) => {
+    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
+    ctx.environment.mcp = [broker];
+    const seen = {};
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const result = await qwen.spawn('hello', {
+        ...ctx,
+        _spawnImpl: (cmd, args, options) => {
+          seen.config = JSON.parse(readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8'));
+          seen.args = args;
+          return fakeChild();
+        },
+      });
+      return { ...seen, text: result.text, warnings: warning.mock.calls.flat().join('\n') };
+    } finally {
+      warning.mockRestore();
+    }
+  };
+
+  test('the proven version keeps the broker', async () => {
+    await withSeat(async (ctx) => {
+      const seat = await launch(ctx, GRANT_TESTED_QWEN_VERSIONS[0]);
+      expect(Object.keys(seat.config.mcpServers)).toContain('commonly-grant-broker');
+      expect(seat.warnings).not.toContain('grant broker');
+    });
+  });
+
+  // 0.25.1 is on the public list and has never run the grant proof.
+  test.each(['0.25.1', '0.26.3', '0.26.10'])('%s runs and answers without the broker', async (version) => {
+    await withSeat(async (ctx) => {
+      const seat = await launch(ctx, version);
+      expect(seat.text).toBe('Qwen reply');
+      expect(seat.config.mcpServers).not.toHaveProperty('commonly-grant-broker');
+      expect(seat.args.join(' ')).not.toContain('commonly-grant-broker');
+      expect(seat.warnings).toContain(`[qwen] grant broker commonly-grant-broker: not on Qwen ${version}`);
+    });
+  });
+
+  test('the host override admits the seat and not the broker', async () => {
+    const previous = process.env.COMMONLY_QWEN_ALLOW_UNTESTED_VERSION;
+    process.env.COMMONLY_QWEN_ALLOW_UNTESTED_VERSION = '1';
+    try {
+      await withSeat(async (ctx) => {
+          const seat = await launch(ctx, '0.27.0');
+        expect(seat.text).toBe('Qwen reply');
+        expect(seat.config.mcpServers).not.toHaveProperty('commonly-grant-broker');
+      });
+    } finally {
+      if (previous === undefined) delete process.env.COMMONLY_QWEN_ALLOW_UNTESTED_VERSION;
+      else process.env.COMMONLY_QWEN_ALLOW_UNTESTED_VERSION = previous;
+    }
+  });
+
+  test('a version the public rule refuses is still refused, broker or not', async () => {
+    await withSeat(async (ctx) => {
+      await expect(launch(ctx, '0.27.0')).rejects.toThrow('Public Qwen seats refuse version 0.27.0');
+    });
+  });
+
+  test('only our broker is dropped: another entry still reaches the config', async () => {
+    const kept = withoutUnprovenBroker(
+      [{ name: 'commonly', transport: 'stdio', command: ['x'] }, broker],
+      { version: '0.26.3', isPublic: true, instanceUrl: 'https://api.commonly.me' },
+    );
+    expect(kept.map((server) => server.name)).toEqual(['commonly']);
+  });
+
+  test.each([
+    ['a filesystem server', { name: 'files', transport: 'stdio', command: ['npx', '-y', 'server-filesystem', '/'] }],
+    ['a stranger named commonly', { name: 'commonly', transport: 'stdio', command: ['npx', '-y', 'server-filesystem', '/'] }],
+    ['a stranger named as the broker', { name: broker.name, transport: 'stdio', command: ['node', 'x.js'] }],
+    ['an HTTP server', { name: 'other', transport: 'http', url: 'https://example.com/mcp' }],
+  ])('a proven version still loses the broker beside %s', (_label, extra) => {
+    const commonly = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] };
+    const kept = withoutUnprovenBroker(
+      [commonly, broker, extra],
+      { version: '0.26.2', isPublic: true, instanceUrl: 'https://api.commonly.me' },
+    );
+    expect(kept).toEqual([commonly, extra]);
+  });
+
+  test('a proven version keeps the broker beside the Commonly server alone', () => {
+    const servers = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }, broker];
+    expect(withoutUnprovenBroker(servers, {
+      version: '0.26.2', isPublic: true, instanceUrl: 'https://api.commonly.me',
+    })).toBe(servers);
+  });
+
+  test('a private seat is not this rule\'s to change', () => {
+    const servers = [broker];
+    expect(withoutUnprovenBroker(servers, {
+      version: '0.26.3', isPublic: false, instanceUrl: 'https://api.commonly.me',
+    })).toBe(servers);
   });
 });

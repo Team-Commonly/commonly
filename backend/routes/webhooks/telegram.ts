@@ -19,7 +19,7 @@ const {
 } = require('../../services/webhookDeliveryService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
-import { applyRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import { applyRelayCommand, parseRelayCommand } from '../../services/chatRelay/chatRelayCore';
 import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
@@ -50,16 +50,12 @@ const HELP_COMMAND = '/help';
 
 const normalizeCommand = (raw = '') => raw.split('@')[0].toLowerCase();
 
-// Telegram's spelling of the shared bridge commands. `/mode` accepts any case
-// of its argument; `/mute` hands its argument to parseInt as typed.
-const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => {
-  if (command === MODE_COMMAND) return { name: 'mode', arg: (arg || '').toLowerCase() };
-  if (command === STATUS_COMMAND) return { name: 'status' };
-  if (command === MUTE_COMMAND) return { name: 'mute', arg };
-  if (command === UNMUTE_COMMAND) return { name: 'unmute' };
-  if (command === HELP_COMMAND) return { name: 'help' };
-  return null;
-};
+// Telegram's spelling of the shared bridge commands is a leading slash on the
+// core's names; the parse itself is the core's, shared with Discord.
+const TELEGRAM_RELAY_COMMANDS = new Set([MODE_COMMAND, STATUS_COMMAND, MUTE_COMMAND, UNMUTE_COMMAND, HELP_COMMAND]);
+const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => (
+  command && TELEGRAM_RELAY_COMMANDS.has(command) ? parseRelayCommand(command.slice(1), arg) : null
+);
 
 const getMessageFromUpdate = (update: any) => update?.message || update?.channel_post || null;
 
@@ -405,7 +401,7 @@ const HELP_TEXT = [
   '  • <b>mirror</b>: every agent message in the pod is copied here',
   '  • <b>attention</b>: only escalations and the lead agent reach you',
   '/status — pod, mode, and mute state for this chat',
-  '/mute [minutes] — pause relay to this chat (default 60); /unmute to resume',
+  '/mute [30m | 2h] — pause relay to this chat (default 60 minutes; a bare number is minutes); /unmute to resume',
   '/tldr — latest pod summary',
   '/summary — summarize recent chat here into the pod',
 ].join('\n');
@@ -429,6 +425,8 @@ const telegramCommandReply = (outcome: RelayCommandOutcome, podName?: string): s
         : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.';
     case 'mute':
       return `Muted for ${outcome.minutes} min — nothing relays here until then. /unmute to resume.`;
+    case 'mute-usage':
+      return 'Usage: /mute 30m or /mute 2h (a bare number is minutes, at most 24 hours)';
     case 'unmute':
       return 'Unmuted — relay resumes.';
     case 'status': {
@@ -528,7 +526,8 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
       return res.sendStatus(200);
     }
 
-    const relayCommand = parseTelegramRelayCommand(command, args[0]);
+    // /mute reads its whole argument (`/mute 2 hours`); /mode reads one word.
+    const relayCommand = parseTelegramRelayCommand(command, command === MUTE_COMMAND ? args.join(' ') : args[0]);
     if (relayCommand) {
       await handleRelayCommand(chat, integration, relayCommand);
       return res.sendStatus(200);

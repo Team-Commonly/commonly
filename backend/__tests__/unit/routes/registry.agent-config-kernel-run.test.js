@@ -16,6 +16,10 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
@@ -45,6 +49,7 @@ const installation = (config) => ({
   config: new Map(Object.entries(config)),
   installedBy: INSTALLER,
   save: jest.fn().mockResolvedValue(true),
+  toObject: jest.fn(() => ({})),
 });
 
 const given = (row, role = 'user') => {
@@ -210,6 +215,29 @@ describe('agent config PATCH — what an installer cannot write', () => {
     const res = await patch({ runtime: { runtimeType: 'webhook', adapter: 'claude' } });
     expect(res.status).toBe(200);
     expect(row.config.get('runtime')).toMatchObject({ adapter: 'claude' });
+  });
+
+  // #3458 re-review: the Settings harness switch sends `{ runtime: { adapter } }`.
+  // Dropping `host` turned a BYO codex row into one every reader takes for
+  // Commonly's (isCloudRuntime, and the grant broker's runsOnCommonly).
+  it('keeps host: byo when the installer switches the adapter of an attached codex seat', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex', host: 'byo' } });
+    given(row);
+    const res = await patch({ runtime: { adapter: 'claude' } });
+    expect(res.status).toBe(200);
+    expect(row.config.get('runtime')).toEqual({ runtimeType: 'codex', adapter: 'claude', host: 'byo' });
+  });
+
+  it('never lets the installer write host: an attached seat cannot call itself cloud', async () => {
+    const row = installation({ runtime: { runtimeType: 'codex', adapter: 'codex', host: 'byo' } });
+    given(row);
+    await patch({ runtime: { adapter: 'codex', host: 'cloud' } });
+    expect(row.config.get('runtime').host).toBe('byo');
+
+    const bare = installation({ runtime: { runtimeType: 'codex', adapter: 'codex' } });
+    given(bare);
+    await patch({ runtime: { adapter: 'codex', host: 'cloud' } });
+    expect(bare.config.get('runtime')).not.toHaveProperty('host');
   });
 
   it('lets an admin change the adapter of a hosted agent', async () => {

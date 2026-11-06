@@ -204,6 +204,37 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByTestId('byo-machine-waiting')).toBeInTheDocument();
   });
 
+  // F164: a placement an outside-writable grant would narrow is answered 409
+  // first; no placement request is filed until "Install anyway".
+  test('an install that would narrow its writes warns first and files no placement until confirmed', async () => {
+    mockGet();
+    const narrowing = {
+      code: 'outsider_grant_runtime_narrowed',
+      losesWrites: [{ podId: 'hq', name: 'Team HQ' }],
+      hiddenLosesWritesCount: 0,
+      targetWritable: true,
+    };
+    axios.post.mockImplementation((url, body) => {
+      if (url === '/api/registry/install' && !body.confirmNarrowing) {
+        return Promise.reject({ response: { status: 409, data: { code: 'outsider_grant_narrowing_confirm_required', narrowing } } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
+    fireEvent.click(screen.getByText('Add to this computer'));
+
+    expect(await screen.findByTestId('byo-narrowing-pods')).toHaveTextContent('Team HQ');
+    expect(axios.post.mock.calls.some(([u]) => u === '/api/agent-binding/request')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Install anyway' }));
+    await waitFor(() => expect(axios.post.mock.calls.some(([u]) => u === '/api/agent-binding/request')).toBe(true));
+    expect(axios.post.mock.calls.filter(([u]) => u === '/api/registry/install')[1][1])
+      .toMatchObject({ agentName: 'sam-local', podId: 'p1', confirmNarrowing: true });
+  });
+
   test('a persona hire onto a machine carries the persona sentence too (#1649)', async () => {
     mockGet();
     axios.post.mockResolvedValue({ data: {} });
@@ -278,6 +309,59 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.getByText('Add to this computer')).toBeDisabled();
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
     expect(screen.queryByTestId('byo-machine-refused')).toBeNull();
+  });
+
+  // F175a: dsh and Hermes can't be sandboxed. pi, Goose and Qwen hold a grant
+  // only as a public agent. Neither line hints that some computer would do.
+  test('a harness with no sandbox says connectors need one; a public-only one says so', async () => {
+    mockGet({ catalog: CATALOG });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'dsh' } });
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(
+      'Connectors need a sandboxed harness. DeepSeek Harness runs without a sandbox, so it can’t use connectors.');
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'hermes' } });
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Hermes runs without a sandbox');
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'pi' } });
+    // F175c: a machine reports no OS here, so pi's line says where it works.
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('pi can use connectors only as a public agent on a Mac.');
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'goose' } });
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Goose can use connectors only as a public agent.');
+    for (const id of ['claude', 'codex', 'opencode', '']) {
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: id } });
+      expect(screen.queryByTestId('byo-no-connectors')).toBeNull();
+    }
+  });
+
+  // CodeRabbit round 2 (#3487): a machine has no OS field, but its daemon
+  // reports `hostUnconfined` from native Windows only (hostSandboxReport is
+  // 'default' on every other platform), and the CLI withholds the grant broker
+  // there. A grant harness on that machine shows the Windows line.
+  test('a grant harness on a machine whose daemon reports no sandbox (native Windows) says connectors don’t work there', async () => {
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, hostUnconfined: true }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
+    for (const id of ['claude', 'codex', 'opencode']) {
+      fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: id } });
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
+    }
+    // A harness that can't be confined anywhere keeps its own reason.
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'dsh' } });
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('runs without a sandbox');
+  });
+
+  test('reverse: the same grant harness on a confined machine shows no connector line', async () => {
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, hostUnconfined: false }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
+    expect(screen.queryByTestId('byo-no-connectors')).toBeNull();
   });
 
   test('Codex accepts a catalog slug beyond the suggestions', async () => {

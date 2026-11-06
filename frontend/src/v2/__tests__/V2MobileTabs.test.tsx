@@ -27,6 +27,7 @@ describe('V2MobileTabs', () => {
     expect(badge).toHaveAttribute('aria-hidden', 'true');
     // The accessible name keeps the count.
     expect(screen.getByRole('button', { name: 'Pods' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-current');
     fireEvent.click(screen.getByRole('button', { name: 'Needs you · 3' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/v2/activity');
     fireEvent.click(screen.getByRole('button', { name: 'Team' }));
@@ -35,6 +36,17 @@ describe('V2MobileTabs', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/v2/settings');
     fireEvent.click(screen.getByRole('button', { name: 'Pods' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/v2');
+  });
+
+  test.each(['/v2/connectors', '/v2/connectors/'])('%s lights Settings, the tab it sits under on a phone', (path) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <V2MobileTabs needsYouCount={0} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(document.querySelectorAll('.v2-mobile-tabs__item--active')).toHaveLength(1);
   });
 
   test('at zero there is no badge and no count in the name', () => {

@@ -890,7 +890,7 @@
   overflow-x: auto;
   white-space: pre;
 }
-.v2-landing__code-comment { color: var(--v2-code-muted); }
+.v2-landing__code-comment { color: var(--v2-code-muted); white-space: pre-wrap; }
 
 /* Why open-source */
 .v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }
@@ -945,9 +945,9 @@
 }
 .v2-landing__card-text { margin: 0; font-size: 16px; line-height: 26px; color: var(--v2-text-secondary); }
 
-/* Works with: walked agents and apps as name chips, each with its one-line
-   requirement beside it. Chips wrap; there is no logo to size. */
-.v2-landing__works { display: grid; gap: 20px; }
+/* Works with: walked agents and apps, one tile each, every tile with its mark
+   in one ink (docs/design/landing-works-with-provenance.md). */
+.v2-landing__works { display: grid; gap: 24px; }
 .v2-landing__works-label {
   margin-bottom: 10px;
   font-size: 13px;
@@ -955,31 +955,70 @@
   color: var(--v2-text-tertiary);
 }
 .v2-landing__works-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .v2-landing__works-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 16px;
   border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
 }
-.v2-landing__works-name { font-size: 15px; line-height: 22px; font-weight: 600; color: var(--v2-text-primary); }
-.v2-landing__works-note { font-size: 13px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-landing__works-logo { flex: none; width: 28px; height: 28px; object-fit: contain; }
+.v2-landing__works-text { display: grid; gap: 2px; min-width: 0; }
+.v2-landing__works-name {
+  font-family: var(--v2-font-display, var(--v2-font));
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--v2-text-primary);
+}
+.v2-landing__works-note { font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+.v2-landing__works-apps-note { margin: 10px 0 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+/* A pair is the vendor's own file per ground. A mono file is one flat colour, so
+   it is drawn in ink here: the shape stays the vendor's. A tone file has two
+   colours, so it maps to ink and ground and its inner shape survives. */
+.v2-landing__works-logo--on-dark { display: none; }
+.v2-landing__works-logo--mono { filter: brightness(0); }
+.v2-landing__works-logo--tone { filter: grayscale(1) brightness(0.75) contrast(20); }
+:root[data-v2-theme="dark"] .v2-landing__works-logo--on-light { display: none; }
+:root[data-v2-theme="dark"] .v2-landing__works-logo--on-dark { display: block; }
+:root[data-v2-theme="dark"] .v2-landing__works-logo--mono { filter: brightness(0) invert(1); }
+:root[data-v2-theme="dark"] .v2-landing__works-logo--tone { filter: grayscale(1) brightness(0.75) contrast(20) invert(1); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) .v2-landing__works-logo--on-light { display: none; }
+  :root:not([data-v2-theme="light"]) .v2-landing__works-logo--on-dark { display: block; }
+  :root:not([data-v2-theme="light"]) .v2-landing__works-logo--mono { filter: brightness(0) invert(1); }
+  :root:not([data-v2-theme="light"]) .v2-landing__works-logo--tone { filter: grayscale(1) brightness(0.75) contrast(20) invert(1); }
+}
 
 /* Agent teams: three cards, each a roster, a few pod messages and one footer.
    The messages are styled as the pod's own rows, so a card reads as a chat. */
+.v2-landing__team-sample {
+  min-height: 20px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--v2-text-tertiary);
+}
+/* Card one is the feature: it takes the whole row, and two and three sit beneath
+   it, so the tall chat never leaves a hole beside a short one. */
 .v2-landing__team-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
+.v2-landing__team-card--feature { grid-column: 1 / -1; }
 .v2-landing__team-card {
   display: flex;
   flex-direction: column;
@@ -1018,16 +1057,6 @@
 .v2-landing__team-msg { margin: 0; font-size: 15px; line-height: 22px; color: var(--v2-text-primary); }
 .v2-landing__team-msg--system { font-size: 13px; color: var(--v2-text-tertiary); }
 .v2-landing__team-author { margin-right: 6px; font-weight: 700; }
-.v2-landing__team-chip {
-  display: inline-block;
-  margin-right: 6px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: var(--v2-surface);
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--v2-text-secondary);
-}
 .v2-landing__team-options { display: inline-flex; gap: 6px; margin-left: 6px; }
 .v2-landing__team-option {
   padding: 0 10px;
@@ -1045,15 +1074,47 @@
   line-height: 22px;
   color: var(--v2-text-secondary);
 }
-/* The live star count sits beside the star link and stays quiet. It is absent
-   until GitHub answers, so the link never waits on it. */
+/* Above the phone stack: title, roster and footer left, the chat right. This
+   follows the card's own rules on purpose: same specificity, so the later one wins. */
+@media (min-width: 901px) {
+  .v2-landing__team-card--feature {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "title chat"
+      "roster chat"
+      "footer chat";
+    gap: 14px 32px;
+    padding: 28px 32px;
+  }
+  .v2-landing__team-card--feature .v2-landing__team-title {
+    grid-area: title;
+    font-size: 24px;
+    line-height: 30px;
+  }
+  .v2-landing__team-card--feature .v2-landing__team-roster { grid-area: roster; }
+  .v2-landing__team-card--feature .v2-landing__team-chat { grid-area: chat; align-content: start; }
+  .v2-landing__team-card--feature .v2-landing__team-footer { grid-area: footer; align-self: end; margin: 0; }
+}
+
+/* The live star count: a star and the number, in the text colour of whatever
+   holds it, so it reads as a count on the band, the bar and a white button. It
+   is absent until GitHub answers, so the link never waits on it. */
 .v2-landing__star-count {
-  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-family: var(--v2-font-mono);
   font-size: 13px;
   line-height: 20px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--v2-text-tertiary);
+  color: inherit;
+  vertical-align: top;
 }
+.v2-landing__star-count svg { flex: none; }
 
 /* Architecture: shell over kernel over drivers, drawn as one bordered stack.
    A layer is not a step, so the 01/02/03 are gone with the cards. */
@@ -1316,6 +1377,7 @@
 }
 
 @media (max-width: 900px) {
+  .v2-landing__works-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* The hero's own responsive values live in the 760 and 680 blocks: the band,
      its bottom padding and the demo's negative margin change together, so
      splitting them across a third breakpoint is how they drift apart. */
@@ -1397,6 +1459,8 @@
 }
 
 @media (max-width: 680px) {
+  .v2-landing__works-item { min-height: 64px; padding: 10px 12px; gap: 10px; }
+  .v2-landing__works-name { font-size: 16px; line-height: 22px; }
   .v2-landing__bar { height: 64px; }
   /* TASK-205: 64 bar + 24, keeping the same air as the 112 above. Same
      specificity as the base rule (0,2,0), later in the file, so it wins. */
@@ -1426,10 +1490,10 @@
   .v2-landing__nav { gap: 14px; }
   .v2-landing__nav .v2-landing__navlink { display: none; }
   /* Square-ish phone rhythm: the section's own bottom padding is the gap, and
-     the features section gets 24 on top so the board's 48 under the wedge is
-     24 (wedge) + 24 (here). */
+     Agent teams, the first section under the wedge, gets 24 on top so the 48
+     under the wedge is 24 (wedge) + 24 (here). */
   .v2-landing__section { padding-top: 0; padding-bottom: 64px; }
-  .v2-landing__section--features { padding-top: 24px; }
+  #agent-teams { padding-top: 24px; }
   .v2-landing__section-head { margin-bottom: 32px; }
   .v2-landing__kicker { margin-bottom: 10px; }
   .v2-landing__h2 { font-size: 30px; line-height: 34px; }
@@ -1675,6 +1739,7 @@
 :lang(zh) .v2-landing__feature-title,
 :lang(zh) .v2-landing__wedge-line,
 :lang(zh) .v2-landing__h2,
+:lang(zh) .v2-landing__works-name,
 :lang(zh) .v2-landing__step-title,
 :lang(zh) .v2-landing__adapter-title,
 :lang(zh) .v2-landing__open-item strong,

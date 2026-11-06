@@ -24,6 +24,7 @@ import pi, {
   PI_BUILTIN_TOOLS, TESTED_PI_VERSIONS, assertSandboxSupported, seatHome,
 } from '../src/lib/adapters/pi.js';
 import { registrableTools } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
 
 const ADAPTERS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'adapters');
@@ -457,3 +458,22 @@ describe('the bridge registers only the tools a seat may have', () => {
     expect(registrableTools(tools, {})).toEqual(tools);
   });
 });
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  const elsewhere = join(root, 'elsewhere');
+  await mkdir(elsewhere);
+  await rm(workspace, { recursive: true });
+  await symlink(elsewhere, workspace);
+  const { impl, calls } = makeSpawnImpl();
+  const error = await pi.spawn('hi', publicCtx({
+    _spawnImpl: impl,
+    _wrapArgvWithSeatbelt: (inner, opts) => { buildSeatbeltProfile(opts); return inner; },
+  })).catch((err) => err);
+  expect(error).toBeInstanceOf(Error);
+  expect(error.message).toMatch(/its writable workspace/);
+  expect(error.message).toContain(workspace);
+  expect(calls).toHaveLength(0);
+});
+

@@ -12,23 +12,34 @@ import {
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
-import { judgeSeatConfinement } from './seatGrantConfinement';
+import { hostedCallerStillCommonlyRun, judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { assertPinnedArgValues } from './hostedMcpArgValues';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
 import { byoPodExemptAgentIds, namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { recordBrokerCall } from './brokerRecordService';
+import { APPROVAL_OUTCOME_UNKNOWN, isWriteUnknown } from './brokerWriteOutcome';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
+import { assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles } from './seatGithubCommit';
+import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 
+// Typed, so tsc refuses a call that names an installation without its App (F172).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const GitHubAppService = require('./githubAppService');
+const GitHubAppService: typeof import('./githubAppService').default = require('./githubAppService');
+import { githubAppOfConfig, isGithubAppConfigured, type GitHubAppName } from './githubAppNames';
+import { assertConnectStillProven } from './githubConnectReproof';
 
 export interface ToolDefinitionBase {
   name: string;
   description: string;
   requiredWriteMode: RoomGrantWriteMode;
   irreversible?: boolean | ((args: Record<string, unknown>) => boolean);
+  /**
+   * Every call parks for the connection owner, whatever the grant's mode and
+   * whether or not the act can be undone (TASK-783's PR-write tools).
+   */
+  requiresApproval?: true;
   inputSchema: Record<string, unknown>;
   /** Prose-free fields a parked call may return in its resolution cue. */
   receipt?: ReadonlyArray<{ field: string; kind: 'positive-integer' }>;
@@ -38,9 +49,15 @@ export interface ToolDefinitionBase {
 export interface GithubToolConnection {
   type: 'github-app';
   installationId: string;
+  /** The GitHub App that signs for `installationId` (F172). Required, so no path can drop it to a default. */
+  app: GitHubAppName;
   owner: string;
   repo: string;
   ownerUserId?: string;
+  /** The Integration row (F172): the key of the per-call Connect re-proof. */
+  rowId?: string;
+  /** GitHub's repository id recorded at proof. A Connect token is narrowed to it. */
+  repositoryId?: string;
 }
 
 /**
@@ -126,6 +143,21 @@ export interface BrokerCallResult {
   outcome: 'ok' | 'failed';
   untrustedSourceTitle?: string;
   receipt?: Record<string, number>;
+  /**
+   * Approved path only: the provider ran but this call's trail row was not
+   * written. The approval still records the call as run and writes the row,
+   * under `callId`, on its retry, from these facts.
+   */
+  trailUnwritten?: UnwrittenTrailRow;
+}
+
+/** What a trail row holds that only the broker knows. Carries no secret. */
+export interface UnwrittenTrailRow {
+  podId?: string;
+  installationId?: string;
+  credentialOwnerId?: string;
+  providerRef?: string;
+  durationMs: number;
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -153,15 +185,6 @@ const pullView = (pull: Record<string, unknown>): Record<string, unknown> => ({
   head: pull.head && typeof pull.head === 'object'
     ? String((pull.head as Record<string, unknown>).ref || '') : undefined,
 });
-
-const assertOwnedSeatBranch = (head: unknown, agentUserId: string): void => {
-  const prefix = `seat/${agentUserId}/`;
-  if (typeof head !== 'string' || !agentUserId || !head.startsWith(prefix)
-    || head.length > 200 || head.split('/').some((part) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part)
-      || part.includes('..') || part.endsWith('.lock') || part.endsWith('.'))) {
-    throw new RoomGrantError('branch_not_owned_by_seat', 'PR head must belong to the authenticated seat', 403);
-  }
-};
 
 const objectArgs = (args: unknown): Record<string, unknown> => {
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
@@ -234,10 +257,12 @@ const listIssues: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       perPage,
     });
-    return { issues: (issues || []).map((issue: Record<string, unknown>) => issueView(issue)) };
+    return { issues: ((issues || []) as unknown as Array<Record<string, unknown>>).map((issue) => issueView(issue)) };
   },
 };
 
@@ -275,12 +300,14 @@ const createIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       title,
       body: rawArgs.body as string | undefined,
       labels: rawArgs.labels as string[] | undefined,
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -301,10 +328,12 @@ const getIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber: positiveInteger(rawArgs.issueNumber, 'issueNumber'),
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -325,6 +354,8 @@ const getPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
@@ -334,10 +365,12 @@ const getPullRequest: GithubToolDefinition = {
 
 const createPullRequest: GithubToolDefinition = {
   name: 'github.create_pull_request',
-  description: 'Open a pull request in the connected GitHub repository.',
+  description: 'Open a pull request in the connected GitHub repository from your own seat/<your user id>/ '
+    + 'branch. The repository owner approves each call before anything reaches GitHub.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   irreversible: true,
+  requiresApproval: true,
   receipt: [{ field: 'number', kind: 'positive-integer' }],
   inputSchema: {
     type: 'object',
@@ -352,6 +385,7 @@ const createPullRequest: GithubToolDefinition = {
     additionalProperties: false,
   },
   async prepareApproval(rawArgs, connection, agentUserId) {
+    assertNoUnknown(rawArgs, ['title', 'head', 'base', 'body', 'draft']);
     assertOwnedSeatBranch(rawArgs.head, agentUserId);
     return pinConnectionRepository(rawArgs, connection);
   },
@@ -375,6 +409,8 @@ const createPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       title,
       head,
@@ -386,11 +422,52 @@ const createPullRequest: GithubToolDefinition = {
   },
 };
 
+const commitFilesDefinition: GithubToolDefinition = {
+  name: 'github.commit_files',
+  description: 'Commit text files to your own seat/<your user id>/ branch in the connected GitHub repository, '
+    + 'creating it from `base`, which must be the repository\'s default branch, if it does not exist. '
+    + 'No attribution trailers (Co-authored-by:, Signed-off-by:). The repository owner approves each call '
+    + 'before anything reaches GitHub. Then open a pull request from that branch.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  requiresApproval: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      branch: { type: 'string', minLength: 1, maxLength: 200 },
+      base: { type: 'string', minLength: 1, maxLength: 200 },
+      message: { type: 'string', minLength: 1, maxLength: 4096 },
+      files: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 50,
+        items: {
+          type: 'object',
+          properties: { path: { type: 'string', minLength: 1, maxLength: 1024 }, content: { type: 'string' } },
+          required: ['path', 'content'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['branch', 'base', 'message', 'files'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection, agentUserId) {
+    return pinConnectionRepository(await prepareCommitFiles(rawArgs, connection, agentUserId), connection);
+  },
+  async call(rawArgs, connection, agentUserId) {
+    if (!agentUserId) throw new RoomGrantError('agent_identity_required', 'seat identity is required', 403);
+    return commitSeatFiles(rawArgs, connection, agentUserId);
+  },
+};
+
 const pushSeatBranchDefinition: GithubToolDefinition = {
   name: 'github.push_branch',
-  description: 'Push one fast-forward seat branch to the connected GitHub repository.',
-  requiredWriteMode: 'write',
+  description: 'Push one fast-forward seat branch to the connected GitHub repository. '
+    + 'The repository owner approves each push before it reaches GitHub.',
+  requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
+  requiresApproval: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -401,6 +478,10 @@ const pushSeatBranchDefinition: GithubToolDefinition = {
     },
     required: ['ref', 'baseOid', 'newOid', 'bundle'],
     additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection, agentUserId) {
+    parseSeatPushArgs(rawArgs, agentUserId);
+    return pinConnectionRepository(rawArgs, connection);
   },
   async call(args, connection, agentUserId) {
     if (!agentUserId) throw new RoomGrantError('agent_identity_required', 'seat identity is required', 403);
@@ -439,6 +520,8 @@ const commentPullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
+        repositoryId: connection.repositoryId,
         forceApp: true,
         pullNumber,
       });
@@ -453,6 +536,8 @@ const commentPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber: pullNumber,
       body,
@@ -488,6 +573,8 @@ const reviewPullRequestComment: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber,
       event: 'COMMENT',
@@ -560,12 +647,14 @@ const listPullRequestFiles: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     let remaining = PR_FILES_PATCH_TOTAL_MAX_BYTES;
     return {
-      files: (files || []).map((file: Record<string, unknown>) => {
+      files: ((files || []) as Array<Record<string, unknown>>).map((file) => {
         const view = prFileView(file, remaining);
         if (typeof view.patch === 'string') remaining -= Buffer.byteLength(view.patch, 'utf8');
         return view;
@@ -597,6 +686,8 @@ const commentIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber,
       body,
@@ -631,10 +722,12 @@ const closeIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber,
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -661,6 +754,8 @@ const mergePullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber,
     }) as Record<string, unknown>;
@@ -691,6 +786,8 @@ const mergePullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
+        repositoryId: connection.repositoryId,
         forceApp: true,
         pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
         mergeMethod: mergeMethod as 'merge' | 'squash' | 'rebase' | undefined,
@@ -720,6 +817,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [getIssue.name]: getIssue,
   [getPullRequest.name]: getPullRequest,
   [createPullRequest.name]: createPullRequest,
+  [commitFilesDefinition.name]: commitFilesDefinition,
   [pushSeatBranchDefinition.name]: pushSeatBranchDefinition,
   [commentPullRequest.name]: commentPullRequest,
   [reviewPullRequestComment.name]: reviewPullRequestComment,
@@ -949,7 +1047,8 @@ const resolveConnection = async (
     revokedAt?: Date | null;
     createdBy?: unknown;
     createdAt?: unknown;
-    config?: { installationId?: string; owner?: string; repo?: string };
+    _id?: unknown;
+    config?: { installationId?: string; owner?: string; repo?: string; app?: unknown; repositoryId?: unknown };
   } | null;
   const config = row?.config;
   if (
@@ -990,12 +1089,43 @@ const resolveConnection = async (
     );
   }
 
+  // The App that signs is the row's, never the grant's or the caller's. A row
+  // naming no App predates F172 and is the tools App's; a value that names no
+  // App at all is refused rather than signed with either key.
+  const app = githubAppOfConfig(config.app);
+  if (!app) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection names an unknown GitHub App', 403);
+  }
+  if (app === 'connect' && !isGithubAppConfigured('connect')) {
+    throw new RoomGrantError(
+      'github_app_not_configured',
+      'the Commonly Connect GitHub App is not configured on this instance',
+      503,
+    );
+  }
+  // A Connect row can change owner (a takeover of a dead row, F173). A grant
+  // runs only for the owner who minted it, whatever order the takeover's
+  // revoke and update land in (F174).
+  if (app === 'connect') {
+    const grantOwner = String((grant as { ownerId?: unknown }).ownerId || '');
+    if (!grantOwner || grantOwner !== String(row.createdBy || '')) {
+      throw new RoomGrantError(
+        'connection_owner_changed',
+        'this GitHub connection now belongs to someone else; this grant no longer works on it',
+        403,
+      );
+    }
+  }
+
   return {
     type: 'github-app',
     installationId: String(config.installationId),
+    app,
     owner: String(config.owner),
     repo: String(config.repo),
     ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+    rowId: row._id ? String(row._id) : undefined,
+    ...(app === 'connect' && config.repositoryId ? { repositoryId: String(config.repositoryId) } : {}),
   };
 };
 
@@ -1031,6 +1161,62 @@ const assertOutsiderGrantPodEligible = async (grant: IRoomGrant | Record<string,
 };
 
 /**
+ * TASK-783's write rule for GitHub tools, one predicate for list and call.
+ *
+ *  - A PR-write tool needs `prWrite` on every grant in the lineage. Attenuation
+ *    already keeps a child from adding it; reading the lineage here means a
+ *    row written around that rule still refuses.
+ *  - Any other GitHub write is refused to a seat a grant names (F94), on a
+ *    grant that names one, and on a `prWrite` grant: for those, opening a
+ *    pull request is the only GitHub write there is.
+ *
+ * A hosted turn on any other grant keeps the path it had (TASK-512): its
+ * projection offers it no other write, and a write that reaches the kernel
+ * parks for the credential owner like any other.
+ *
+ * Hosted-MCP tools answer to their own rules and pass through untouched.
+ */
+const prWriteRefusal = (
+  lineage: Array<IRoomGrant | Record<string, unknown>>,
+  definition: ToolDefinition,
+  narrowedCaller: boolean,
+): RoomGrantError | null => {
+  if (definition.connectionType !== 'github-app') return null;
+  if (isPrWriteTool(definition.name)) {
+    return lineage.length > 0 && lineage.every(grantHoldsPrWrite) ? null : new RoomGrantError(
+      'pr_write_not_granted',
+      'this grant does not include pull-request access; the repository owner can grant it',
+      403,
+    );
+  }
+  if (definition.requiredWriteMode === 'read') return null;
+  const grant = lineage[0] as { byoConsent?: unknown } | undefined;
+  if (narrowedCaller || Boolean(grant?.byoConsent) || grantHoldsPrWrite(grant)) {
+    return new RoomGrantError(
+      'write_tool_not_permitted',
+      'opening a pull request is the only GitHub write this grant allows',
+      403,
+    );
+  }
+  return null;
+};
+
+const assertPrWriteRule = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  definition: ToolDefinition,
+  narrowedCaller: boolean,
+): Promise<void> => {
+  if (definition.connectionType !== 'github-app') return;
+  const refusal = prWriteRefusal(await getGrantLineage(grant), definition, narrowedCaller);
+  if (refusal) throw refusal;
+};
+
+/** A seat that uses the grant only because the grant names it (F94). */
+const isNarrowedCaller = (confinement: CallerConfinement | undefined): boolean => (
+  confinement === 'named_unconfined'
+);
+
+/**
  * The definitions a grant may actually call, for the MCP `tools/list` surface.
  * Listing runs the same authority checks as `callTool`: the grant-level
  * checks through `assertGrantUsable` (existence, revocation, expiry, lineage,
@@ -1062,8 +1248,9 @@ export const listToolsForGrant = async (input: {
   // A list is a capability disclosure, and the refusal covers the list as well
   // as the call: a seat that may not use the grant must not be handed its tool
   // definitions (TASK-146's rule, now for the seat's own confinement).
-  await assertSeatCanConfine(input, grant);
+  const confinement = await assertSeatCanConfine(input, grant);
   await assertOutsiderGrantPodEligible(grant);
+  const lineage = await getGrantLineage(grant);
 
   const allowed = allToolDefinitions().filter((definition) => {
     try {
@@ -1071,10 +1258,10 @@ export const listToolsForGrant = async (input: {
         tool: definition.name,
         requiredWriteMode: definition.requiredWriteMode,
       });
-      return true;
     } catch {
       return false;
     }
+    return !prWriteRefusal(lineage, definition, isNarrowedCaller(confinement));
   });
 
   // One resolution per connection type: the row is a property of the grant, not
@@ -1092,6 +1279,8 @@ export const listToolsForGrant = async (input: {
   const offered: ToolDefinition[] = [];
   let hostedListFailed = false;
   for (const definition of allowed) {
+    // A Connect row cannot write issues (F174): never offered, so never tried.
+    if (connectCannotUse(definition, connections.get(definition.connectionType)!)) continue;
     if (definition.connectionType === 'hosted-mcp' && !hostedListFailed) {
       try {
         await definition.assess(asHostedConnection(connections.get('hosted-mcp')!));
@@ -1202,6 +1391,8 @@ const providerConnection = (connection: ToolConnection): ToolConnection => (conn
   : {
     type: 'github-app',
     installationId: connection.installationId,
+    app: connection.app,
+    ...(connection.repositoryId ? { repositoryId: connection.repositoryId } : {}),
     owner: connection.owner,
     repo: connection.repo,
   });
@@ -1211,6 +1402,48 @@ const asGithubConnection = (connection: ToolConnection): GithubToolConnection =>
     throw new RoomGrantError('connection_mismatch', 'grant connection is not a GitHub App installation', 403);
   }
   return connection;
+};
+
+/**
+ * Every call on a Connect connection, read or write, re-proves the owner's
+ * access with their current GitHub user token (F172 HOLD 1, F173). `fresh`
+ * skips the 60s per-row cache: an approved call at execute, and a write that
+ * runs with no parked approval. Tools rows are never re-proved.
+ */
+const assertConnectProven = async (
+  definition: ToolDefinition,
+  connection: ToolConnection,
+  options: { fresh?: boolean } = {},
+): Promise<void> => {
+  if (definition.connectionType !== 'github-app' || connection.type !== 'github-app') return;
+  if (connection.app !== 'connect') return;
+  await assertConnectStillProven(connection, options);
+};
+
+/**
+ * Commonly Connect is installed with `issues: read` only, by decision (F174).
+ * The issue writes would fail at GitHub after an owner approved them, so they
+ * refuse here, before anything parks, in words an agent cannot read as a
+ * transient failure or a partial success. Tools rows are unchanged.
+ */
+export const CONNECT_UNSUPPORTED_TOOLS: ReadonlySet<string> = new Set([
+  'github.create_issue',
+  'github.close_issue',
+  'github.comment_on_issue',
+]);
+export const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
+  + 'close or comment on them. Nothing was changed on GitHub.';
+
+const connectCannotUse = (definition: ToolDefinition, connection: ToolConnection): boolean => (
+  connection.type === 'github-app' && connection.app === 'connect'
+  && CONNECT_UNSUPPORTED_TOOLS.has(definition.name)
+);
+
+const assertConnectCanUse = (definition: ToolDefinition, connection: ToolConnection): void => {
+  if (!connectCannotUse(definition, connection)) return;
+  throw new RoomGrantError('connection_cannot_write_issues', CONNECT_CANNOT_WRITE_ISSUES_MESSAGE, 403, {
+    retryable: false,
+  });
 };
 
 const asHostedConnection = (connection: ToolConnection): HostedToolConnection => {
@@ -1311,6 +1544,21 @@ const refusedCredentialOwner = (
     : resolved
 );
 
+/** The grant's and call's facts on a trail row. The ref is shape-checked, so it can't be a URL: it's the seat's own branch name. */
+const trailFacts = (
+  input: BrokerCallInput,
+  grant: IRoomGrant | Record<string, unknown> | undefined,
+  startedAt: number,
+): Omit<UnwrittenTrailRow, 'credentialOwnerId'> => ({
+  podId: grant ? String(((grant as Record<string, unknown>).target as { id?: string })?.id || '') : undefined,
+  installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
+  providerRef: input.tool === 'github.push_branch'
+    && typeof (input.args as { ref?: unknown })?.ref === 'string'
+    && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
+    ? (input.args as { ref: string }).ref : undefined,
+  durationMs: Math.max(0, Date.now() - startedAt),
+});
+
 const recordCall = async (
   input: BrokerCallInput,
   grant: IRoomGrant | Record<string, unknown> | undefined,
@@ -1342,9 +1590,8 @@ const recordCall = async (
   const callId = overrides?.callId || `tool_call_${randomUUID()}`;
   await ToolCall.create({
     callId,
+    ...trailFacts(input, grant, startedAt),
     grantId: input.grantId,
-    podId: grant ? String(((grant as Record<string, unknown>).target as { id?: string })?.id || '') : undefined,
-    installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
     agentUserId: input.agentUserId,
     credentialOwnerId: overrides?.credentialOwnerId,
     tool: input.tool,
@@ -1355,12 +1602,7 @@ const recordCall = async (
     vendorStatus: overrides?.vendorStatus,
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
     providerRepo: overrides?.providerRepo,
-    providerRef: input.tool === 'github.push_branch'
-      && typeof (input.args as { ref?: unknown })?.ref === 'string'
-      && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
-      ? (input.args as { ref: string }).ref : undefined,
     approvalId: overrides?.approvalId,
-    durationMs: Math.max(0, Date.now() - startedAt),
     callerConfinement: overrides?.callerConfinement,
   });
   // The trail row has committed; the record mirrors it (ADR-033 B1, B2, B5).
@@ -1495,6 +1737,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     });
     callerConfinement = await assertSeatCanConfine(input, grant);
     await assertOutsiderGrantPodEligible(grant);
+    await assertPrWriteRule(grant, definition, isNarrowedCaller(callerConfinement));
     // The call-time half of hostedBrokerToolsForRun's rule: a hosted turn uses a
     // task-bound grant only from inside its task's pod.
     const binding = (grant as { binding?: { podId?: unknown } }).binding;
@@ -1504,6 +1747,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    assertConnectCanUse(definition, connection);
     if (input.tool === 'github.push_branch' && connection.type === 'github-app') {
       providerRepo = `${connection.owner}/${connection.repo}`;
     }
@@ -1535,13 +1779,25 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     // A `write-with-confirm` grant also confirms every write; full `write`
     // alone is the tier that permits reversible writes to run unattended.
     const requiresConfirmation = irreversible
+      || definition.requiresApproval === true
       || (grant.writeMode === 'write-with-confirm' && definition.requiredWriteMode !== 'read');
+
+    // F172 HOLD 1 / F173: a Connect call runs on the owner's CURRENT access,
+    // proved before it parks or runs. Reads and parks may use the short
+    // per-row cache; a write that runs now, with no approval to re-prove at
+    // execute, proves fresh.
+    await assertConnectProven(definition, connection, {
+      fresh: !requiresConfirmation && definition.requiredWriteMode !== 'read',
+    });
     if (requiresConfirmation) {
       const callId = `tool_call_${randomUUID()}`;
       // No guard on `prepareApproval`: the helper answers for both members, and
       // a hosted tool's arguments are simply its own.
       const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection, input.agentUserId);
-      let proposal: { ok: boolean; approvalId?: string } | undefined;
+      let proposal: {
+        ok: boolean; approvalId?: string; code?: string; reason?: string;
+        reused?: boolean; callId?: string; pending?: number; error?: string;
+      } | undefined;
       try {
         const approvalPodId = await resolveApprovalPodId(
           grant,
@@ -1576,6 +1832,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
             // DECISION writes (approvalActionService) keeps naming it, even if
             // the Connection row is gone by then (§8).
             credentialOwnerId: connection.ownerUserId,
+            // How this caller was judged, so the approved call is judged
+            // again against it (TASK-783).
+            callerConfinement,
           },
         });
       } catch (error) {
@@ -1604,13 +1863,54 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           callId: refusedCallId,
         });
       }
-      if (proposal && !proposal.ok) {
-        await recordCall(input, grant, 'refused', startedAt, 'approval_unavailable', {
+      if (proposal && !proposal.ok && proposal.code === 'approval_queue_full') {
+        // F180: the owner already has this seat's cards waiting here. Asking
+        // again will not help until they act, so it is not retryable.
+        await recordCall(input, grant, 'refused', startedAt, 'approval_queue_full', {
           callId,
           args: canonicalArgs,
           credentialOwnerId,
           callerConfinement,
         });
+        throw new RoomGrantError(
+          'approval_queue_full',
+          proposal.error || 'too many approvals are waiting for the owner',
+          429,
+          { recorded: true, callId, retryable: false, pending: proposal.pending },
+        );
+      }
+      if (proposal?.ok && proposal.reused && proposal.callId) {
+        // F180: the same call is already waiting on the owner. Park again on
+        // that approval and its call id; no new card and no new trail row,
+        // because there is still only one call to decide.
+        throw new RoomGrantError('approval_required', 'tool call requires approval', 403, {
+          approvalId: proposal.approvalId,
+          callId: proposal.callId,
+          recorded: true,
+        });
+      }
+      if (proposal && !proposal.ok) {
+        // A card the message service refused will be refused again (F180):
+        // say so plainly, as a non-retryable refusal. Only a store failure
+        // stays the retryable `approval_unavailable`.
+        const refusedCard = proposal.code === 'approval_card_refused';
+        const code = refusedCard ? 'approval_card_refused' : 'approval_unavailable';
+        await recordCall(input, grant, 'refused', startedAt, code, {
+          callId,
+          args: canonicalArgs,
+          credentialOwnerId,
+          callerConfinement,
+        });
+        if (refusedCard) {
+          throw new RoomGrantError(
+            'approval_card_refused',
+            'The approval request for this call could not be posted in the pod'
+              + `${proposal.reason ? ` (${proposal.reason})` : ''}, so the call was not parked and nothing ran. `
+              + 'Retrying the same call will not help.',
+            409,
+            { recorded: true, callId, retryable: false, ...(proposal.reason ? { reason: proposal.reason } : {}) },
+          );
+        }
         throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
           recorded: true,
           callId,
@@ -1694,7 +1994,67 @@ export interface ApprovedToolCallInput {
   expectedArgsDigest: string;
   expectedDefinitionDigest?: string;
   approvalId: string;
+  /** Server-written at park time (the envelope's `callerConfinement`); never a request field. */
+  callerConfinement?: CallerConfinement;
+  /** The parked row's runtime identity, for judging the seat again. */
+  agentName?: string;
+  instanceId?: string;
 }
+
+/**
+ * TASK-783: an approved call is judged again before it runs, because the
+ * person decided on a call made earlier and the grant and the seat may both
+ * have changed since. One function, so the whole judgement can be read (and
+ * bypassed in a reverse check) as one thing:
+ *  - the grant is still live, unexpired, in audience, and allows the tool;
+ *  - its pod still passes the outsider gate;
+ *  - a PR write still has `prWrite` across the lineage;
+ *  - for a PR write, the caller is judged as it was at park: a hosted turn
+ *    has nothing to confine; a seat must still be confinable now, or still be
+ *    named with a naming that lifts its refusal. Anything else, including a
+ *    missing record of how it was judged, refuses `confinement_changed`.
+ */
+const assertApprovedCallStillPermitted = async (
+  grant: IRoomGrant | Record<string, unknown>,
+  definition: ToolDefinition,
+  input: ApprovedToolCallInput,
+): Promise<void> => {
+  await assertGrantUsable({
+    grant,
+    agentUserId: input.agentUserId,
+    currentMemberIds: await currentMemberIds(grant),
+    tool: definition.name,
+    requiredWriteMode: definition.requiredWriteMode,
+  });
+  await assertOutsiderGrantPodEligible(grant);
+  // The caller's half of the write rule is the confinement check below.
+  await assertPrWriteRule(grant, definition, false);
+  if (definition.connectionType !== 'github-app' || !isPrWriteTool(definition.name)) return;
+  // The park record decides which judgement applies; the agent is judged live.
+  const parkedAs = input.callerConfinement;
+  const changed = new RoomGrantError(
+    'confinement_changed',
+    'the agent\'s sandbox or naming changed since this call was parked; ask again',
+    403,
+  );
+  if (parkedAs === 'hosted') {
+    // A hosted turn has nothing to confine only while Commonly runs it.
+    if (await hostedCallerStillCommonlyRun({
+      agentName: input.agentName, instanceId: input.instanceId, agentUserId: input.agentUserId,
+    })) return;
+    throw changed;
+  }
+  if (parkedAs !== 'confined' && parkedAs !== 'unjudged' && parkedAs !== 'named_unconfined') throw changed;
+  const judgement = await judgeSeatConfinement({
+    agentName: input.agentName,
+    instanceId: input.instanceId,
+    agentUserId: input.agentUserId,
+  });
+  if (!judgement.refusal) return;
+  if (!judgement.hostUnconfined && namingLiftsRefusal(judgement.refusal)
+    && await namingLiftsFor(grant, input.agentUserId)) return;
+  throw changed;
+};
 
 /** Execute the exact envelope captured by an approval winner. This path never
  * consults request arguments and never re-parks; all normal grant, audience,
@@ -1725,17 +2085,10 @@ export const executeApprovedToolCall = async (
     }
     grant = (await RoomGrant.findOne({ grantId: input.grantId })) || undefined;
     if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
-    const members = await currentMemberIds(grant);
-    await assertGrantUsable({
-      grant,
-      agentUserId: input.agentUserId,
-      currentMemberIds: members,
-      tool: definition.name,
-      requiredWriteMode: definition.requiredWriteMode,
-    });
-    await assertOutsiderGrantPodEligible(grant);
+    await assertApprovedCallStillPermitted(grant, definition, input);
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    assertConnectCanUse(definition, connection);
     if (definition.connectionType === 'hosted-mcp') {
       await definition.assess(asHostedConnection(connection));
     }
@@ -1743,6 +2096,9 @@ export const executeApprovedToolCall = async (
       ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
       : input.args;
     if (input.tool === 'github.push_branch') parseSeatPushArgs(executionArgs, input.agentUserId);
+    // Proved again at the moment of the write, never from the cache: an
+    // approval can land long after the park.
+    await assertConnectProven(definition, connection, { fresh: true });
     const budgetEntries = await budgetEntriesFor(grant);
     if (input.tool === 'github.push_branch') budgetEntries.push(...seatPushBudgetEntries(input));
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
@@ -1752,13 +2108,32 @@ export const executeApprovedToolCall = async (
       );
     }
     const result = await runDefinition(definition, executionArgs, connection, input.agentUserId);
-    const recorded = await recordExecutionResult(
-      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
-      grant,
-      result,
-      startedAt,
-      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
-    );
+    // From here the provider has acted, so nothing below may report the call as
+    // not run: a failed trail write must not reach the catch, which would
+    // record this call as failed.
+    let recorded: { callId: string; outcome: 'ok' | 'failed'; trailUnwritten?: UnwrittenTrailRow };
+    try {
+      recorded = await recordExecutionResult(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        result,
+        startedAt,
+        { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
+      );
+    } catch (trailError) {
+      console.error(`[broker] approved call ran but its trail row failed approval=${input.approvalId}:`,
+        (trailError as Error).name);
+      const facts = trailFacts(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        startedAt,
+      );
+      recorded = {
+        callId,
+        outcome: isToolErrorResult(result) ? 'failed' : 'ok',
+        trailUnwritten: { ...facts, credentialOwnerId },
+      };
+    }
     const receipt = recorded.outcome === 'ok' ? approvedCallReceipt(definition, result) : undefined;
     return {
       ...recorded,
@@ -1768,26 +2143,38 @@ export const executeApprovedToolCall = async (
         ? { untrustedSourceTitle: definition.entryTitle } : {}),
     };
   } catch (error) {
-    const reason = error instanceof RoomGrantError || error instanceof HostedMcpCredentialError
+    const known = error instanceof RoomGrantError || error instanceof HostedMcpCredentialError
       ? safeReason(error) : 'broker_error';
+    // A write whose deadline fired may have landed, so it ends under the code
+    // the approval path reads as unknown.
+    const unknown = isWriteUnknown(error) && definition?.requiredWriteMode !== 'read';
+    const reason = unknown ? APPROVAL_OUTCOME_UNKNOWN : known;
     const outcome = executionErrorOutcome(error);
-    await recordCall(
-      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
-      grant,
-      outcome,
-      startedAt,
-      reason,
-      {
-        callId,
-        approvalId: input.approvalId,
-        args: input.args,
-        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
-        vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
-          ? error.details.vendorStatus : undefined,
-        vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
-          ? error.details.vendorError : undefined,
-      },
-    );
+    try {
+      await recordCall(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        outcome,
+        startedAt,
+        reason,
+        {
+          callId,
+          approvalId: input.approvalId,
+          args: input.args,
+          credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+          vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
+            ? error.details.vendorStatus : undefined,
+          vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
+            ? error.details.vendorError : undefined,
+        },
+      );
+    } catch (trailError) {
+      if (!unknown) throw trailError;
+      // The store error must not replace the unknown code. The approval writes
+      // the trail row itself.
+      console.error(`[broker] unknown-outcome trail not written call=${callId}:`, (trailError as Error).message);
+      throw new RoomGrantError(reason, 'approved tool call did not run', 502, { callId, outcome, recorded: false });
+    }
     // The caller needs the trail identity and classification, never the
     // provider's message. This is the approved path only; its resolver turns
     // these facts into the card and the seat's event.

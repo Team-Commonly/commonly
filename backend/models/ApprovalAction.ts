@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
+import type { CallerConfinement } from './ToolCall';
 
 /**
  * ApprovalAction — ADR-020 D2/D3, implementing ADR-017's escalation-card
@@ -15,6 +16,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  *     approved action ran)
  *   - expiresAt is advisory AGE for legacy actions; tool_call actions close
  *     as `expired` and scrub their envelope when the deadline passes.
+ *   - a closed tool_call's side effects are retried by the sweep, which never
+ *     runs the call: a retry has neither the path nor the scrubbed arguments.
  *
  * The resolved row IS the AuthorizedAction record from ADR-020 D2: it links
  * the approving user, the executing agent identity, and the action + params.
@@ -51,6 +54,12 @@ export interface ApprovalToolCall {
    * owner after the Connection row is deleted.
    */
   credentialOwnerId?: string;
+  /**
+   * TASK-783: how the broker judged the caller when it parked (hosted, a
+   * confined seat, a seat the grant names). Server-written; the approved call
+   * is judged again against it before anything reaches the provider.
+   */
+  callerConfinement?: CallerConfinement;
 }
 
 export interface IApprovalAction extends Document {
@@ -69,6 +78,20 @@ export interface IApprovalAction extends Document {
   actionType: ApprovalActionType;
   params: Record<string, unknown>;
   toolCall?: ApprovalToolCall;
+  /**
+   * tool_call only (F184): which of the seat's open-card slots in this pod the
+   * row holds, 0..MAX_OPEN_TOOL_CALL_APPROVALS-1. Two partial unique indexes
+   * read it: one makes the cap atomic, the other makes reuse of an identical
+   * open call atomic. A row stops holding its slot when it leaves `flagged`.
+   * Absent on rows written before F184, which neither index sees.
+   */
+  toolCallSlot?: number;
+  /**
+   * tool_call only (F184): later runs that called the identical tool while
+   * this approval was open and were parked on it instead of getting a card of
+   * their own. The decision event names them beside `runId`.
+   */
+  waitingRuns?: Array<{ runId: Types.ObjectId; runPodId?: Types.ObjectId }>;
   summary: string;
   status: ApprovalStatus;
   decision?: ApprovalDecision;
@@ -91,6 +114,64 @@ export interface IApprovalAction extends Document {
   toolCallEnding?: ApprovalToolCallEnding;
   toolCallCode?: string;
   toolCallTrailId?: string;
+  /**
+   * tool_call only: the broker's receipt for a call that ran, saved with its
+   * ending so a retried wake still carries it. Declared numeric fields only.
+   */
+  toolCallReceipt?: Record<string, number>;
+  /**
+   * tool_call only: the provider ran but the broker could not write its trail
+   * row. These are the facts only the broker had, kept so the approval's retry
+   * can write the row under `toolCallTrailId`; cleared once it lands. Server-only,
+   * never on a card. The ref is shape-checked to `refs/heads/...`, so it can't
+   * be a URL: it's the seat's own branch name.
+   */
+  toolCallTrailUnwritten?: {
+    podId?: string;
+    installationId?: string;
+    credentialOwnerId?: string;
+    providerRef?: string;
+    durationMs?: number;
+  };
+  /**
+   * tool_call only (F202): how many times the sweep has re-run this row's side
+   * effects after it closed. Despite the `expiry` prefix these five fields
+   * cover every closing write: expiry, decline and approve. Set to 0 by the
+   * same write that closes the row, so a row without it (one closed before
+   * this existed) is never re-selected. Retries stop at MAX_EXPIRY_RETRIES in
+   * approvalActionService.
+   */
+  expiryRetryCount?: number;
+  /**
+   * tool_call only (F202): when every side effect last succeeded. Unset means
+   * the trail, card or wake may be missing, and the sweep retries it.
+   */
+  expirySideEffectsDoneAt?: Date;
+  /**
+   * tool_call only (F202): when the row's `approval.resolved` wake was
+   * enqueued. A retry skips the wake once it is set.
+   */
+  expiryEventSentAt?: Date;
+  /**
+   * tool_call only (F202): one attempt's lease on sending the wake, taken
+   * before the send and cleared if the send fails. Another attempt may take it
+   * once it is EXPIRY_WAKE_CLAIM_LEASE_MS old, so a crashed sender never loses
+   * the wake.
+   */
+  expiryEventClaimedAt?: Date;
+  /**
+   * tool_call only (F202): when the sweep last claimed this row for a retry.
+   * The row is held for EXPIRY_RETRY_GRACE_MS after it, as after `resolvedAt`,
+   * so a second sweeper does not take it meanwhile.
+   */
+  expiryRetryClaimedAt?: Date;
+  /**
+   * tool_call only: when an approved call's room receipt was posted, and one
+   * attempt's lease on posting it. They work as `expiryEventSentAt` and
+   * `expiryEventClaimedAt` do for the wake.
+   */
+  toolCallReceiptPostedAt?: Date;
+  toolCallReceiptClaimedAt?: Date;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -113,6 +194,15 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     // Mixed keeps this optional for legacy action rows. The service validates
     // the required envelope fields before a tool_call row is created.
     toolCall: { type: Schema.Types.Mixed },
+    toolCallSlot: { type: Number },
+    waitingRuns: {
+      type: [{
+        _id: false,
+        runId: { type: Schema.Types.ObjectId, ref: 'AgentRun', required: true },
+        runPodId: { type: Schema.Types.ObjectId, ref: 'Pod' },
+      }],
+      default: undefined,
+    },
     summary: { type: String, required: true, maxlength: 500 },
     status: {
       type: String,
@@ -131,6 +221,15 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     toolCallEnding: { type: String, enum: ['ran', 'failed', 'refused', 'declined', 'expired'] },
     toolCallCode: { type: String },
     toolCallTrailId: { type: String },
+    toolCallReceipt: { type: Schema.Types.Mixed },
+    toolCallTrailUnwritten: { type: Schema.Types.Mixed },
+    expiryRetryCount: { type: Number },
+    expirySideEffectsDoneAt: { type: Date },
+    expiryEventSentAt: { type: Date },
+    expiryEventClaimedAt: { type: Date },
+    expiryRetryClaimedAt: { type: Date },
+    toolCallReceiptPostedAt: { type: Date },
+    toolCallReceiptClaimedAt: { type: Date },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
@@ -140,6 +239,42 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
 
 ApprovalActionSchema.index({ podId: 1, status: 1 });
 ApprovalActionSchema.index({ ownerUserId: 1, status: 1 });
+
+// F184: the broker's open-card guards, enforced by the store rather than by a
+// read before the write. Both are PARTIAL on `toolCallSlot` existing, so they
+// see only rows written by F184 code: rows already in the collection (which
+// can hold duplicates, since nothing deduped tool calls before F180) are not
+// indexed, and the boot-time autoIndex build cannot fail on them. Those rows
+// leave `flagged` within their 24-hour deadline. The filters use equality and
+// `$exists` only, the operators FerretDB accepts in a partial index (ADR-034).
+const OPEN_TOOL_CALL_SLOT = {
+  actionType: 'tool_call',
+  status: 'flagged',
+  toolCallSlot: { $exists: true },
+};
+// One open approval per identical call: the key is the reuse lookup's key.
+// A missing definitionDigest indexes as null, so GitHub App calls key alike.
+ApprovalActionSchema.index(
+  {
+    podId: 1, agentUserId: 1, ownerUserId: 1, 'toolCall.grantId': 1, 'toolCall.tool': 1,
+    'toolCall.argsDigest': 1, 'toolCall.definitionDigest': 1,
+  },
+  { unique: true, name: 'tool_call_open_identity', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
+);
+// At most one open row per (pod, seat, slot), and slots run 0..cap-1, so the
+// cap holds under any interleaving. Closing a row frees its slot by dropping
+// it out of the partial index: there is no counter to release or drift.
+ApprovalActionSchema.index(
+  { podId: 1, agentUserId: 1, toolCallSlot: 1 },
+  { unique: true, name: 'tool_call_open_slot', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
+);
+
+// F202: the sweep's retry lookup. Partial on `expiryRetryCount`, which only the
+// closing writes of a parked call set, so older rows and legacy actions stay out.
+ApprovalActionSchema.index(
+  { status: 1, actionType: 1, resolvedAt: 1 },
+  { name: 'tool_call_expiry_retry', partialFilterExpression: { expiryRetryCount: { $exists: true } } },
+);
 
 export const ApprovalAction: Model<IApprovalAction> =
   (mongoose.models.ApprovalAction as Model<IApprovalAction>)

@@ -1,9 +1,11 @@
 // Owner/admin controls for one agent installation at a time.
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
-import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
+import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
+import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
+import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -47,6 +49,18 @@ const invalidWakeField = (body: Record<string, unknown>) => {
   return null;
 };
 
+// D244: a hosted install's heartbeat runs only on the native engine
+// (hostedRunsNative, the predicate nativeRuntimeService gates
+// hostedHeartbeatHold on), at most hourly, and within the owner's daily cap.
+// A hosted install the engine doesn't run (the Durable Object, a deprovisioned
+// row, an unfinished migration) runs no heartbeat at all, so it is told 0 and
+// the panel says heartbeats aren't available. Per installation: runtimeType is
+// a per-row field, so one identity's rows need not agree.
+const hostedHeartbeatFor = (installation: any) => (isHostedInstallation(installation) ? {
+  minMinutes: HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES,
+  runsPerDay: hostedRunsNative(installation) ? hostedHeartbeatRunsPerDay() : 0,
+} : null);
+
 const settings = (installation: any, podName: string) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
@@ -62,6 +76,7 @@ const settings = (installation: any, podName: string) => {
     heartbeatMinutes: Number.isFinite(Number(config.heartbeat?.everyMinutes))
       && Number(config.heartbeat?.everyMinutes) > 0
       ? Math.max(1, Math.min(1440, Math.trunc(Number(config.heartbeat.everyMinutes)))) : 60,
+    hostedHeartbeat: hostedHeartbeatFor(installation),
   };
 };
 
@@ -150,7 +165,20 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const [{ turnsPerDay }, userRunCeiling] = await Promise.all([
       hostedCapsForOwner(quotaOwner), userRunCeilingForOwner(quotaOwner),
     ]);
+    // F164: the owner's readable form of runtime auth's 403
+    // outsider_grant_runtime_narrowed. Same census and rule as the guard.
+    const runtimeNarrowing = visible.length ? await runtimeNarrowingStatus({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      viewerId: userId,
+    }) : null;
+    // The agent-level line: the first hosted row the person can see. Each row
+    // also carries its own bounds, which the wake panel applies per pod.
+    const hostedRow = [source, writable, ...visible].find((entry) => entry && isHostedInstallation(entry));
+    const hostedHeartbeat = hostedRow ? hostedHeartbeatFor(hostedRow) : null;
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
+      runtimeNarrowing,
+      hostedHeartbeat,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
       runtimeSourcePodId: hosted ? null

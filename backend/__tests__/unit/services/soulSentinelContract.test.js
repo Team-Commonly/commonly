@@ -67,3 +67,19 @@ describe('SOUL footer — the NO_REPLY passage matches the sanitizer', () => {
     expect(sanitize('```\nNO_REPLY\n```')).toBe('');
   });
 });
+
+// F233, D247: a seat on this driver reads neither the CLI wrapper's frame nor
+// the hosted one, so the SOUL footer says this.
+describe('the SOUL footer says how a failure should read', () => {
+  it('in plain words, leaving out runtime terms', () => {
+    const source = fs.readFileSync(PROVISIONER_SOURCE, 'utf8');
+    expect(source).toContain(`### When you can't do what someone asked
+
+Say in plain words what didn't work and what they can do next. Leave
+out event types, checkpoints, deliveries, retries, status codes and
+other runtime terms unless they asked about them. Only point them to
+a feature or option you know exists. In an agent DM the reply policy
+above still decides: tell them once, then stop.
+`);
+  });
+});

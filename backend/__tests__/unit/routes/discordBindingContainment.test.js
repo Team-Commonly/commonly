@@ -919,6 +919,17 @@ describe('Discord binding containment (TASK-123 a)', () => {
         });
       });
 
+      it('refuses an installer who has left the pod (review finding 1)', async () => {
+        Integration.findById.mockResolvedValue(provenRow());
+        Pod.findById.mockResolvedValue({ _id: 'pod-1', members: ['user-3'], createdBy: 'user-3' });
+
+        const res = await patch({ config: { liveRelay: true } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/member of this pod/);
+        expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+      });
+
       it('refuses the pod creator who did not add the bot: their id would author the installer’s lines', async () => {
         // MEMBER created the pod (canDeleteIntegration passes) but user-3 added the bot.
         Integration.findById.mockResolvedValue(provenRow({ createdBy: { toString: () => 'user-3' } }));

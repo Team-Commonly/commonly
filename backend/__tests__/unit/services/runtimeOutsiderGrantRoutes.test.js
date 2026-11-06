@@ -70,6 +70,12 @@ test('every runtime-token acceptor is in the route table', () => {
   expect([...new Set(actual)].sort()).toEqual([...runtimeOutsiderGrantRouteKeys].sort());
 });
 
+test('a seat reporting its own host is own state and names no pod', async () => {
+  await expect(classifyRuntimeOutsiderGrantRoute({
+    baseUrl: '/api/agents/runtime', method: 'POST', route: { path: '/host-unconfined' }, body: { podId: 'forged' }, params: {},
+  })).resolves.toEqual({ routeClass: 'own_state', podId: null });
+});
+
 test('private memory passes, shared memory is outward', async () => {
   const req = {
     baseUrl: '/api/agents/runtime', method: 'PUT', route: { path: '/memory' },

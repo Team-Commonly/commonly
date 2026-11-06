@@ -197,6 +197,61 @@ test('an event below the cap is requeued, not retired, and posts nothing', async
   expect(await lines()).toHaveLength(0);
 });
 
+describe('a row carrying joined messages (ADR-018 D6.5)', () => {
+  const entry = (userId, messageId, createdAt) => ({
+    messageId, userId: String(userId), username: 'x', rawContent: 'more', createdAt,
+  });
+  const carrying = (coalesced, overrides = {}) => exhausted({
+    createdAt: HOUR_AGO(),
+    payload: {
+      messageId: '41', threadRootId: '40', userId: String(person._id), content: '@otto review?', coalesced,
+    },
+    ...overrides,
+  });
+  const repliedTo = async () => (await lines()).map((line) => line.reply_to_message_id).sort();
+
+  test('each person\'s message gets its line, in the same thread', async () => {
+    await carrying([entry(person._id, '42', new Date(Date.now() - 50 * 60 * 1000))]);
+
+    await collect();
+
+    const posted = await lines();
+    expect(posted.map((line) => line.reply_to_message_id).sort()).toEqual([41, 42]);
+    expect(posted.every((line) => line.thread_root_id === 40)).toBe(true);
+  });
+
+  test('an agent\'s joined message gets no line: nobody is waiting on it', async () => {
+    await carrying([entry(agent._id, '42')]);
+    await collect();
+    expect(await repliedTo()).toEqual([41]);
+  });
+
+  test('an agent post after the whole row silences every line', async () => {
+    await carrying([entry(person._id, '42', new Date(Date.now() - 50 * 60 * 1000))]);
+    await mockPool.query('INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, $3)', [
+      String(POD), String(agent._id), 'Answered both.',
+    ]);
+    await collect();
+    expect(await lines()).toHaveLength(0);
+  });
+
+  test('an agent post before the joined message says nothing about it', async () => {
+    await carrying([entry(person._id, '42', new Date(Date.now() - 10 * 60 * 1000))]);
+    await mockPool.query(
+      'INSERT INTO messages (pod_id, user_id, content, created_at) VALUES ($1, $2, $3, $4)',
+      [String(POD), String(agent._id), 'Answered the first.', new Date(Date.now() - 30 * 60 * 1000)],
+    );
+    await collect();
+    expect(await repliedTo()).toEqual([42]);
+  });
+
+  test('a malformed entry is skipped and the row\'s own line still posts', async () => {
+    await carrying([{ messageId: '42', userId: 'not-an-id' }, 'junk', null]);
+    await collect();
+    expect(await repliedTo()).toEqual([41]);
+  });
+});
+
 describe('a webhook agent whose endpoint fails', () => {
   const install = {
     agentName: 'otto',

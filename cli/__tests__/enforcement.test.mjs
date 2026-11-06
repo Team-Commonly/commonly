@@ -22,6 +22,7 @@ import {
   DECISION_FORK_FRAME,
   MENTION_EVENT_TYPES,
   classifyTrigger,
+  isPersonMention,
   createCascadeGovernor,
   createClaimHandicap,
   createClaimKeeper,
@@ -44,9 +45,28 @@ describe('decision-fork prompt rule', () => {
     const prompt = frameDecisionForkRule(proseAsk);
     expect(prompt).toContain(DECISION_FORK_FRAME);
     expect(prompt).toContain('MCP: commonly_request_decision');
-    expect(prompt).toContain('include @human when a specific person should rule');
+    expect(prompt).toContain('include that person\'s real @handle when a specific person should rule');
     expect(prompt).toContain('do not duplicate the card with a prose @ask');
     expect(prompt).toContain(proseAsk);
+  });
+});
+
+describe('isPersonMention', () => {
+  test('is a person naming the seat in a pod, and nothing else', () => {
+    expect(isPersonMention({ type: 'chat.mention', payload: {} }, 'human')).toBe(true);
+    for (const trigger of ['agent', 'kernel', 'unknown']) {
+      expect(isPersonMention({ type: 'chat.mention', payload: {} }, trigger)).toBe(false);
+    }
+    expect(isPersonMention({ type: 'chat.mention', payload: { dmKind: 'user-agent' } }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'dm.message', payload: {} }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'message.posted', payload: { addressed: true } }, 'human')).toBe(false);
+    expect(isPersonMention({ type: 'heartbeat', payload: {} }, 'human')).toBe(false);
+    // No turn carries this type: it isn't a prompt event.
+    expect(isPersonMention({ type: 'thread.mention', payload: {} }, 'human')).toBe(false);
+  });
+
+  test.each(['welcomeWake', 'adjacentReply', 'implicitReply'])('%s is a person, but not a mention', (flag) => {
+    expect(isPersonMention({ type: 'chat.mention', payload: { [flag]: true } }, 'human')).toBe(false);
   });
 });
 
@@ -87,6 +107,26 @@ describe('classifyTrigger', () => {
     expect(classifyTrigger(event({ messageId: 'm1' }), [{ _id: 'm1' }])).toBe('unknown');
     expect(classifyTrigger(event({ messageId: 'm1' }), null)).toBe('unknown');
     expect(classifyTrigger(event({}), [{ _id: 'm1', isBot: true }])).toBe('unknown');
+  });
+});
+
+describe('classifyTrigger — a post comment (F225)', () => {
+  // A comment is not a pod message, so no snapshot can name its author. The
+  // kernel's stamp is the only evidence, and it wins over a snapshot miss.
+  const comment = (payload) => ({ type: 'thread.mention', payload: { messageId: 'comment-1', ...payload } });
+
+  it('reads the kernel stamp for a person and for an agent', () => {
+    expect(classifyTrigger(comment({ senderIsHuman: true }), [])).toBe('human');
+    expect(classifyTrigger(comment({ senderIsHuman: false }), [])).toBe('agent');
+  });
+
+  it('stays unknown without the stamp, so an older server stays neutral', () => {
+    expect(classifyTrigger(comment({}), [])).toBe('unknown');
+  });
+
+  it('leaves the stamp on other event types to the snapshot', () => {
+    const event = { type: 'message.posted', payload: { messageId: 'm1', senderIsHuman: true } };
+    expect(classifyTrigger(event, [{ _id: 'm1', isBot: true }])).toBe('agent');
   });
 });
 

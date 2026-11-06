@@ -6,7 +6,9 @@
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { createServer } from 'http';
-import { connectMcp, toPiResult, readServers, isGrantBrokerUrl, GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
+import {
+  connectMcp, toPiResult, readServers, isGrantBrokerUrl, GRANT_BROKER_REFUSAL, GRANT_BROKER_PUBLIC_ONLY_REFUSAL,
+} from '../src/lib/adapters/pi-mcp-client.mjs';
 
 // A fake MCP Streamable HTTP server: records every request it receives, answers
 // `initialize` with JSON and a session id, `tools/list` as an SSE event stream,
@@ -147,6 +149,8 @@ test('isGrantBrokerUrl matches the broker path and nothing that merely resembles
 // the grant.
 test('the daemon half states the server half\'s reason verbatim', () => {
   expect(GRANT_BROKER_REFUSAL).toBe('grant_broker_unconfined: adapter_cannot_confine');
+  // F175c: pi's own reason, `PUBLIC_ONLY_REASON` on the server.
+  expect(GRANT_BROKER_PUBLIC_ONLY_REFUSAL).toBe('grant_broker_unconfined: adapter_confines_public_only');
 });
 
 // The wire is built by resolveMcpServers, which now emits exactly one of
@@ -362,4 +366,26 @@ test('the bridge takes the server list off its inherited pipe, not out of its en
   expect(bridge).not.toMatch(/takeServers\(process\.env/);
   expect(bridge).not.toMatch(/readServers\(process\.env/);
   expect(bridge).not.toContain('COMMONLY_PI_MCP');
+});
+
+// The bridge file imports `typebox`, which resolves only inside pi's loader, so
+// the order is read off its source. pi awaits this factory before it creates
+// the session, so a delete here precedes every prompt; `finally` keeps it there
+// when a connect throws, which pi would otherwise log and carry on past.
+test('F175c: the bridge deletes the credential after the connect loop, before the factory returns', () => {
+  const source = readFileSync(new URL('../src/lib/adapters/pi-commonly-mcp.mjs', import.meta.url), 'utf8');
+  const loop = source.indexOf('for (const server of servers)');
+  const initialize = source.indexOf('await client.initialize()');
+  const finallyAt = source.indexOf('} finally {');
+  const removal = source.indexOf('removeSpawnCredential(servers)');
+  expect(loop).toBeGreaterThan(-1);
+  expect(initialize).toBeGreaterThan(loop);
+  expect(finallyAt).toBeGreaterThan(initialize);
+  expect(removal).toBeGreaterThan(finallyAt);
+  // A second call, or one before the loop, would delete what a server still reads.
+  expect(source.indexOf('removeSpawnCredential(servers)', removal + 1)).toBe(-1);
+  // The exit hook is armed first, so stopping pi here does not orphan a server.
+  const exitHook = source.indexOf("process.on('exit', shutdown)");
+  expect(exitHook).toBeGreaterThan(-1);
+  expect(exitHook).toBeLessThan(loop);
 });

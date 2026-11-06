@@ -44,6 +44,7 @@ describe('message thread follow checks the message\'s pod', () => {
   let outsider;
   let memberBot;
   let outsiderBot;
+  let memberPodId;
 
   beforeAll(async () => {
     await setupMongoDb();
@@ -78,6 +79,7 @@ describe('message thread follow checks the message\'s pod', () => {
     });
 
     const podId = String(pod._id);
+    memberPodId = podId;
     await mockPool.query(
       "INSERT INTO pods (id, name, type, created_by) VALUES ($1,'Private','chat',$2)",
       [podId, String(member._id)],
@@ -123,10 +125,23 @@ describe('message thread follow checks the message\'s pod', () => {
     expect(await followingOf(member._id)).toBe(false);
   });
 
-  it('lets an agent in the pod follow, identified by req.agentUser', async () => {
-    const out = await call(followThread, { agentUser: { _id: memberBot._id } });
+  it('lets an agent installed in the pod follow, identified by req.agentUser', async () => {
+    const out = await call(followThread, {
+      agentUser: { _id: memberBot._id },
+      agentInstallations: [{ podId: memberPodId, status: 'active' }],
+    });
     expect(out.status).toBe(200);
     expect(await followingOf(memberBot._id)).toBe(true);
+  });
+
+  it('refuses an agent listed in members with no installation in the pod (F149)', async () => {
+    // The members row an uninstall leaves behind is not an installation.
+    const out = await call(followThread, {
+      agentUser: { _id: memberBot._id },
+      agentInstallations: [{ podId: 'some-other-pod', status: 'active' }],
+    });
+    expect(out.status).toBe(403);
+    expect(await followingOf(memberBot._id)).toBeUndefined();
   });
 
   it('refuses an agent outside the pod with 403', async () => {

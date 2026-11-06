@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod } from '../hooks/useV2Pods';
 import type { MarkName } from '../icons/glyphs';
@@ -30,6 +31,7 @@ import {
   projectionMissing,
   LINK_INSTALL_PROVIDERS,
   entryOffered,
+  discordRelayReady,
 } from './channelModel';
 import type {
   ConnectorGate,
@@ -46,6 +48,8 @@ import type {
 export const useChannelConnectors = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [hostedCatalog, setHostedCatalog] = useState<CatalogEntry[] | null>(null);
@@ -89,6 +93,7 @@ export const useChannelConnectors = () => {
   const [hostedMcpCallbackNotice, setHostedMcpCallbackNotice] = useState<
     | { kind: 'installed'; provider: string; connected: boolean }
     | { kind: 'access'; provider: string; accessPage: string }
+    | { kind: 'reach'; provider: string }
     | null
   >(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -275,6 +280,11 @@ export const useChannelConnectors = () => {
       if (entry?.label && safeProviderRevokePage(entry.accessPage)) {
         setHostedMcpCallbackNotice({ kind: 'access', provider: entry.label, accessPage: entry.accessPage });
       }
+    }
+    // TASK-782: connected, but the account can see nothing to search yet.
+    if (entryId && query.get('next') === 'reach') {
+      const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
+      if (entry?.label) setHostedMcpCallbackNotice({ kind: 'reach', provider: entry.label });
     }
     if (entryId && revokeAt) {
       const row = connectors.find((candidate) => (
@@ -626,6 +636,11 @@ export const useChannelConnectors = () => {
     try {
       if (connector.installationId) {
         await api.del(installableLifecyclePath(connector.type));
+      } else if (connector.type === 'discord') {
+        // A Discord row is written by the OAuth install, with no Installable
+        // parent. The full DELETE removes its channel webhook as well; the
+        // isActive PATCH below would leave that webhook able to post.
+        await api.del(`/api/integrations/${connector._id}`);
       } else {
         await api.patch(`/api/integrations/${connector._id}`, { isActive: false });
       }
@@ -696,9 +711,24 @@ export const useChannelConnectors = () => {
     const title = connector.config?.chatTitle || connector.config?.teamName || TYPE_LABELS[connector.type] || connector.type;
 
     if (connector.status === 'error') {
+      // F161: reconnecting a Discord channel is adding the bot again, through
+      // the install link the Connect flow uses.
+      const isDiscordRow = connector.type === 'discord';
+      let errorAction: ConnectorAction | null = null;
+      let errorActionLabel = '';
+      if (isTelegram) {
+        errorAction = 'new-code';
+        errorActionLabel = t('connectors.newCode', { defaultValue: 'New code' });
+      } else if (isSlack) {
+        errorAction = 'authorize';
+        errorActionLabel = t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' });
+      } else if (isDiscordRow && connectorPodId(connector)) {
+        errorAction = 'reinstall';
+        errorActionLabel = t('connectors.discordReinstall', { defaultValue: 'Add the bot again' });
+      }
       return {
-        action: isTelegram ? 'new-code' : isSlack ? 'authorize' : null,
-        actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
+        action: errorAction,
+        actionLabel: errorActionLabel,
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
         line: connector.errorMessageUserFacing && connector.errorMessage
@@ -728,13 +758,21 @@ export const useChannelConnectors = () => {
       const mirror = connector.config?.relayAllAgentMessages === true;
       const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
       const markName: MarkName = relay ? (mirror ? 'mirror' : 'attention') : 'off';
+      // A Discord channel is shared: everyone in the server reads what lands there.
+      const isDiscord = connector.type === 'discord';
+      const mirrorLabel = isDiscord
+        ? t('connectors.discordRowMirror', { defaultValue: 'every agent line reaches everyone in the channel' })
+        : t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' });
+      const attentionLabel = isDiscord
+        ? t('connectors.discordRowAttention', {
+          defaultValue: 'escalations and the lead agent’s lines reach everyone in the channel',
+        })
+        : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' });
       const markLabel = relay
-        ? (mirror
-          ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-          : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' }))
+        ? (mirror ? mirrorLabel : attentionLabel)
         : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
-        action: (isTelegram || isSlack) ? 'manage' : null,
+        action: (isTelegram || isSlack || discordRelayReady(connector, viewerId)) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
         detail: '',
         mark: {
@@ -1056,6 +1094,10 @@ export const useChannelConnectors = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
+    if (action === 'reinstall') {
+      const podId = connectorPodId(connector);
+      return podId ? linkInstall(connector.type, String(podId)) : undefined;
+    }
     // The row opens the aside where the active pod's lead can be chosen.
     // Sending a confirm here would silently omit that choice.
     if (action === 'confirm') return undefined;
@@ -1065,6 +1107,7 @@ export const useChannelConnectors = () => {
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
   return {
+    viewerId,
     connectors,
     setConnectors,
     catalog,

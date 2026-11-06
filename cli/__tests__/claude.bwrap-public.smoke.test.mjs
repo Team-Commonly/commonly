@@ -15,6 +15,7 @@ import os from 'os';
 import path from 'path';
 import { detectBwrap } from '../src/lib/sandbox/bwrap.js';
 import claude, { bwrapClaudeStatePath } from '../src/lib/adapters/claude.js';
+import { classifyReadRefusal } from '../scripts/security/deny-rule-refusal.mjs';
 
 jest.setTimeout(240_000);
 
@@ -307,12 +308,11 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
       const text = resultText(result);
       expect(result.is_error).toBe(true);
       expect(text).not.toContain(GIT_CANARY);
-      // Claude Code 2.1.318's Read deny-rule refusal (its path check, nR):
-      // `Permission to read ${path} has been denied.` An OS error reads
-      // "ENOENT: no such file…", "EACCES: permission denied…" or "File does
-      // not exist", none of which this matches.
-      expect(text).toMatch(/Permission to read \S*\.git\/f104-canary has been denied/);
-      expect(text).not.toMatch(/ENOENT|EACCES|EPERM|no such file|does not exist/i);
+      // A permission-layer refusal in any of Claude Code's wordings, with no
+      // leak and no OS error (F154: 2.1.318 refuses this .git path with the
+      // directory-rule sentence, not "Permission to read … has been denied").
+      expect({ text, ...classifyReadRefusal({ text, isError: result.is_error, secret: GIT_CANARY }) })
+        .toMatchObject({ verdict: 'refused' });
     }
     for (const body of model.seen.bodies.slice(before)) {
       for (const canary of [GIT_CANARY, ...CANARIES]) expect(body).not.toContain(canary);

@@ -14,6 +14,7 @@
 //   D215_POD          id of a pod with a long chat history and a busy board
 //   D215_AGENT        agent route segment, e.g. "<name>/default"
 //   D215_SIDEBAR_POD  optional; pod opened for the 1440 sidebar shot (defaults to D215_POD)
+//   D215_FIXTURES     optional; serves account data as the frame draws it (see lib.js)
 //   --only a,b        optional; limit to these surfaces (chat, board, settings, ...)
 // It exits 1 when any surface misses its target. It prints counts only, never page text.
 //
@@ -121,8 +122,8 @@ async function artboard() {
         const t = w.currentNode, txt = t.nodeValue.trim(); if (!txt) continue;
         const el = t.parentElement; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         if (!(r.width > 0 && r.height > 0) || cs.visibility === 'hidden') continue;
-        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.seg,.sel')) continue;
-        const ar = app.getBoundingClientRect(); if (r.top > ar.bottom || r.bottom < ar.top) continue;
+        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.pop,.seg,.sel,.mnote .sn')) continue;
+        if (el.closest('details:not([open])') && !el.closest('summary')) continue;
         const [R, G, B] = cs.color.match(/\d+/g).map(Number); const sat = Math.max(R, G, B) - Math.min(R, G, B), avg = (R + G + B) / 3;
         if (sat < 50 && avg > 60 && avg < 200) words += txt.split(/\s+/).filter(x => /[A-Za-z一-鿿]/.test(x)).length;
       }
@@ -142,8 +143,10 @@ async function artboard() {
   for (const [k, v] of Object.entries(res)) console.log(k.padEnd(20), String(v.helperWords).padStart(4), v.innerRatio);
 }
 
-// Same counter that produced the before numbers on prod.
+// The counter that produced the before numbers on prod, minus memory note text.
 const METRICS = () => {
+  const clipped = el => { const box = el.getBoundingClientRect(), cs = getComputedStyle(el); return (box.width <= 1 || box.height <= 1) && (cs.overflow === 'hidden' || cs.clipPath !== 'none' || cs.clip !== 'auto'); };
+  const hidden = el => clipped(el) || (!!el.closest('details:not([open])') && !el.closest('summary'));
   const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   let best = null, bestH = 0;
   for (const el of document.querySelectorAll('*')) { const cs = getComputedStyle(el); if (!/(auto|scroll)/.test(cs.overflowY)) continue; if (el.clientHeight < 250) continue; const ex = el.scrollHeight - el.clientHeight; if (ex > bestH) { bestH = ex; best = el; } }
@@ -154,7 +157,9 @@ const METRICS = () => {
   while (walk.nextNode()) {
     const t = walk.currentNode; const txt = t.nodeValue.trim(); if (!txt) continue;
     const el = t.parentElement; if (!el || !vis(el)) continue;
-    if (el.closest('button,a,input,textarea,select,[role=button],[role=tab],nav,label,[class*=rail],[class*=Rail],[class*=message-body],[class*=MessageBody],[class*=bubble],.v2-msg__body')) continue;
+    // A closed fold and a screen-reader label are text nobody sees. Both still report a box here.
+    if (hidden(el)) continue;
+    if (el.closest('button,a,input,textarea,select,[role=button],[role=tab],nav,label,[class*=rail],[class*=Rail],[class*=message-body],[class*=MessageBody],[class*=bubble],.v2-msg__body,.v2m-mnote .snip,.v2m-jday > span:not(.mo):not(.v2m-mu)')) continue;
     const r = el.getBoundingClientRect(); if (r.left < 70 && innerWidth > 600) continue;
     const [R, G, B] = getComputedStyle(el).color.match(/\d+/g).map(Number);
     const sat = Math.max(R, G, B) - Math.min(R, G, B), avg = (R + G + B) / 3;
@@ -163,17 +168,17 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
-// Navigates, opens the tab or panel a surface needs, and measures it. The URL is checked again
+// The byo frame draws the machine start with a machine picked. Opened with no machine, the page shows
+// an empty picker and drops a mode card, so it reads fewer words than the frame and could print a HIT.
+const BYO_ROUTE = '/v2/agents/byo?mode=machine';
+const BYO_NEEDS = { sel: '[data-testid=byo-machine-select] option', why: 'no machine on this account or in D215_FIXTURES, so this is not the state the frame draws' };
+
+// Navigates, opens the panel a surface needs, and measures it. The URL is checked again
 // just before measuring, so a redirect that lands after a click cannot be scored either.
 async function checkSurface(p, [name, route, opt = {}], vp, targets) {
   const { go, assertLanded, pathOf } = require('./lib');
   const url = route(vp);
   await go(p, url);
-  if (opt.tab) {
-    const t = p.getByRole('tab', { name: opt.tab });
-    if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${url}`);
-    await t.first().click(); await p.waitForTimeout(2000);
-  }
   if (opt.list390 && vp === '390') {
     // /v2 may auto-select a pod on a first phone visit. The back control is found by class, not
     // by its translated name, and the pods list itself must be on screen before anything counts.
@@ -190,6 +195,7 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
+  if (opt.needs && !(await p.locator(opt.needs.sel).count())) throw new Error(`${name}-${vp}: ${opt.needs.why}`);
   const B = BUSY[name];
   if (B) {
     if (await p.locator(B.refuse).first().isVisible()) throw new Error(`${name}-${vp}: the page did not load (${B.refuse} on screen in place of rows)`);
@@ -248,10 +254,10 @@ async function prod(only) {
   const SURF = [
     ['settings', () => '/v2/settings'],
     ['agent-settings', () => `/v2/agents/${agent}`],
-    ['agent-memory', () => `/v2/agents/${agent}`, { tab: 'Memory' }],
+    ['agent-memory', () => `/v2/agents/${agent}/memory`],
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
-    ['byo', () => '/v2/agents/byo'],
+    ['byo', () => BYO_ROUTE, { needs: BYO_NEEDS }],
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
@@ -260,22 +266,31 @@ async function prod(only) {
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
   let miss = 0, checked = 0;
-  for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
-    const { b, p } = await open(vw, vh, mob);
-    for (const surface of SURF) {
-      if (only && !only.includes(surface[0])) continue;
-      const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
-      checked++;
-      if (!ok) miss++;
-      console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+  // A run that stops partway has already printed scores, so it still says what served them.
+  try {
+    for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
+      const { b, p } = await open(vw, vh, mob);
+      try {
+        for (const surface of SURF) {
+          if (only && !only.includes(surface[0])) continue;
+          const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
+          checked++;
+          if (!ok) miss++;
+          console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+        }
+      } finally {
+        await b.close();
+      }
     }
-    await b.close();
+  } finally {
+    const { fixtureUse } = require('./lib');
+    for (const [fixture, served] of fixtureUse) console.log(`fixture ${fixture} served ${served}`);
   }
   if (!checked) { console.error('no surface was measured'); process.exit(2); }
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { BYO_ROUTE, BYO_NEEDS, METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;

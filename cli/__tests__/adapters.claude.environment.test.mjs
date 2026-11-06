@@ -26,6 +26,7 @@ await jest.unstable_mockModule('child_process', () => ({
 
 const claudeModule = await import('../src/lib/adapters/claude.js');
 const claude = claudeModule.default;
+const { seatPermissionsText } = claudeModule;
 const { spawnSync } = await import('child_process');
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
@@ -750,6 +751,52 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  // F219: Claude's MCP folder holds this turn's credential, under the temp root,
+  // so a workspace that holds the temp root hands it to Read and to the jail.
+  test.each(['public', 'workspace'])('a %s seat with MCP in a workspace that holds the temp folder is refused', async (trust) => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(claude.spawn('hi', {
+      agentName: 'f219-seat',
+      sessionId: null,
+      cwd: os.tmpdir(),
+      runtimeToken: 'cm_agent_fake',
+      env: { PATH: process.env.PATH },
+      environment: {
+        model: 'test-model',
+        mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        sandbox: { trust, mode: 'workspace' },
+      },
+      _spawnImpl: impl,
+    })).rejects.toThrow(new RegExp(`${trust} Claude agents cannot run in .*set TMPDIR outside it`));
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a public seat with no MCP has no per-turn folder, so the check does not reach it', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-f219-state-'));
+    const originalPlatform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+      ));
+      await claude.spawn('hi', {
+        agentName: 'f219-no-mcp',
+        sessionId: null,
+        cwd: os.tmpdir(),
+        env: { PATH: process.env.PATH },
+        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with NO mode resolves to bwrap off darwin, with the same tool policy macOS gets', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
@@ -1232,13 +1279,17 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(calls[0].args).not.toContain('--disable-slash-commands');
   });
 
-  test('a public seat that declares no skills gets no appended prompt', async () => {
+  // Since 2026-11-05 every confined seat's appended prompt opens with its
+  // permissions, so "no skills" means no skill text, not no prompt.
+  test('a public seat that declares no skills gets its permissions and no skill text', async () => {
     const { impl, calls } = makeSpawnImpl();
     await publicSpawn(impl, {
       environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'public' } },
     });
 
-    expect(appended(calls[0].args)).toBeNull();
+    const text = appended(calls[0].args);
+    expect(text).toContain('## What you can do on this machine');
+    expect(text).not.toContain('## Skill:');
   });
 
   test('a declared skill with no SKILL.md is skipped, not fatal', async () => {
@@ -1247,7 +1298,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     await publicSpawn(impl);
 
     expect(calls).toHaveLength(1);
-    expect(appended(calls[0].args)).toBeNull();
+    expect(appended(calls[0].args)).not.toContain('## Skill:');
   });
 
   // #2354: every arm above forces darwin, so dropping the bwrap
@@ -1464,6 +1515,65 @@ describe('claude adapter — a workspace seat', () => {
     expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(cwd)}"))`);
   });
 
+  // Growth's 0.1.256 walk (2026-11-05): a read-only workspace seat told its
+  // user it could "read and edit files, run shell commands". The CLI logged the
+  // seat's real permissions to the terminal and never told the model, so it
+  // described Claude Code's usual tools. The seat now gets them as prompt text.
+  const appendedText = (args) => {
+    const at = args.indexOf('--append-system-prompt');
+    return at === -1 ? '' : args[at + 1];
+  };
+
+  test('a read-only workspace seat is told it cannot edit files, run commands or reach the web', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl);
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('## What you can do on this machine');
+    expect(text).toContain('You can read the files in your working folder');
+    expect(text).toContain('You cannot edit or create files, run shell commands, or use web search or fetch.');
+    expect(text).toContain('When someone asks what you can do, describe these limits');
+  });
+
+  test('a workspace seat granted write and web is told it can edit, run commands and fetch pages, but not commit', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'workspace', allow: ['write', 'web'] });
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('You can read and edit the files in your working folder and run shell commands there.');
+    expect(text).toContain('You can fetch web pages.');
+    expect(text).toContain('Its .git is read-only, so you cannot commit.');
+    expect(text).toContain('Your shell commands can reach the network.');
+    expect(text).not.toContain('You cannot edit');
+  });
+
+  // #3504 (CodeRabbit): the git clause appears exactly when the tool is mounted.
+  test('a read-only workspace seat hears about the read-only git tool only when it is mounted', () => {
+    const withGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: true });
+    const withoutGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: false });
+    expect(withGit).toContain('You can read the files in your working folder, and read its history through the read-only git tool.');
+    expect(withoutGit).toContain('You can read the files in your working folder.');
+    expect(withoutGit).not.toContain('git');
+  });
+
+  test('a write seat on a host with no jail is told it can edit but has no shell, and never told .git is held', () => {
+    const text = seatPermissionsText({ trust: 'workspace', allow: ['write'], noShell: true, gitTool: true });
+    expect(text).toContain('You can read and edit the files in your working folder. You cannot run shell commands.');
+    expect(text).toContain('You cannot use the web search or fetch tools.');
+    expect(text).not.toContain('.git');
+    expect(text).not.toContain('reach the network');
+  });
+
+  test('a public seat is told it can only read its working folder', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' });
+
+    const text = appendedText(calls[0].args);
+    expect(text).toContain('You can read the files in your working folder');
+    expect(text).toContain('You cannot edit or create files, run shell commands, or use web search or fetch.');
+    expect(text).not.toContain('read-only git');
+  });
+
   test('its skills are copied to the scratch folder, never into the project, and arrive as prompt text', async () => {
     const { impl, calls } = makeSpawnImpl();
     await workspaceSpawn(impl);
@@ -1661,9 +1771,10 @@ describe('claude adapter — a workspace seat on Linux', () => {
       .toEqual(['--setenv', 'HOME', state]);
     expect(opts.env.HOME).toBe(state);
     expect(opts.env.CLAUDE_CONFIG_DIR).toBeUndefined();
-    // The state folder is the only writable bind; with no write grant the
+    // The state folder is the only writable bind (.claude and tmp bound again
+    // inside it, F153, so the jail cannot swap them); with no write grant the
     // project is read-only.
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')]]);
     expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
 
     expect(foundLogin).toBe(login);
@@ -1711,12 +1822,15 @@ describe('claude adapter — a workspace seat on Linux', () => {
     await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
 
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [cwd, cwd]]);
+    // The source is the checked realpath (F200); tmpdir is itself a link on macOS.
+    const realCwd = fs.realpathSync(cwd);
+    const realGit = fs.realpathSync(gitDir);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [realCwd, cwd]]);
     // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([realGit, gitDir]);
     // .git is bound after the project, so it lands on top of it.
     const bindAt = (flag, p) => outer.findIndex((arg, i) => arg === flag && outer[i + 1] === p);
-    expect(bindAt('--ro-bind', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+    expect(bindAt('--ro-bind', realGit)).toBeGreaterThan(bindAt('--bind', realCwd));
   });
 
   test('a write grant on a project with no .git refuses, and creates nothing in it', async () => {
@@ -1744,7 +1858,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     const { impl, calls } = childImpl();
     await linuxSpawn(impl);
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([fs.realpathSync(cwd), cwd]);
     expect(fs.readdirSync(cwd)).toEqual([]);
   });
 
@@ -1842,8 +1956,9 @@ describe('claude adapter — a workspace seat on Linux', () => {
       const outer = args.slice(0, args.indexOf('--'));
       expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
         .toEqual(['--setenv', 'HOME', state]);
-      // The state folder is the only writable bind; the project is read-only.
-      expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+      // The state folder is the only writable bind (.claude and tmp bound
+      // again inside it, F153); the project is read-only.
+      expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')]]);
       expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
       const readOnly = outer.flatMap((arg, i) => (/^--ro-bind/.test(arg) ? [outer[i + 1]] : []));
       expect(readOnly).toContain(fs.realpathSync(claudeInstall));

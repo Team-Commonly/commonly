@@ -542,6 +542,18 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     expect(body.messages[0].content).not.toMatch(/Ignore your instructions/);
   });
 
+  // The plan line is per agent, as the meter the owner reads (nativeTurnsToday)
+  // is: a second room is the same agent, not a second day's turns.
+  test('the hosted turn cap counts the agent across its rooms', async () => {
+    await runAgent(hostedInstall(), mention);
+    const [query] = AgentRun.countDocuments.mock.calls.find(([q]) => q.metered);
+    expect(query).toEqual(expect.objectContaining({ agentName: expect.any(String), instanceId: expect.any(String) }));
+    expect(query).not.toHaveProperty('podId');
+    // The plan line is the owner's: someone else hosting the same published
+    // agent has their own.
+    expect(query.userId).toBe(String(hostedInstall().installedBy));
+  });
+
   test.each(['message.posted', 'thread.mention'])(
     'a %s event is acked with no run and no model call, as the Durable Object did',
     async (type) => {
@@ -667,7 +679,8 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
   // and a pro owner's per-user ceiling sits above the free 120.
   describe('the owner\'s plan sets the line', () => {
     const counts = ({ install, user }) => AgentRun.countDocuments.mockImplementation(
-      async (query) => (query.userId ? user : install),
+      // The plan line carries the agent and the owner; the ceiling only the owner.
+      async (query) => (query.userId && !query.agentName ? user : install),
     );
     afterEach(() => { mockOwnerPro = false; });
 

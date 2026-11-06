@@ -11,6 +11,7 @@
  */
 import type { ToolDefinition } from '../toolBrokerService';
 import { RoomGrantError } from '../roomGrantService';
+import { GRANT_BROKER_ID } from './grantBrokerId';
 import {
   HOSTED_MCP_ENTRIES,
   assertHostedMcpEntries,
@@ -21,6 +22,7 @@ import {
   type HostedMcpEntry,
 } from '../hostedMcpEntryService';
 import { hostedToolDefinitions } from '../hostedMcpToolDefinitions';
+import { isPrWriteTool } from '../prWriteScope';
 import { isHostedMcpClientConfigured } from '../hostedMcpIntakeService';
 
 // Resolved on first use, not at import: the broker module loads
@@ -35,8 +37,7 @@ const toolDefinitions = (): ToolDefinition[] => {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Installable = require('../../models/Installable');
 
-/** The MCP server name `routes/mcpGrants.ts` announces; one URL per grant. */
-export const GRANT_BROKER_ID = 'commonly-grant-broker';
+export { GRANT_BROKER_ID } from './grantBrokerId';
 export const GRANT_BROKER_URL = '${COMMONLY_API_URL}/api/mcp/grants/${COMMONLY_GRANT_ID}';
 
 export type ToolReadiness = { available: true } | { available: false; reason: 'not_configured' };
@@ -47,6 +48,8 @@ export interface ProjectedTool {
   requiredWriteMode: 'read' | 'write-with-confirm' | 'write';
   /** A per-tool constant (plan §2): the card and the page list tools, not calls. */
   irreversible: boolean;
+  /** Held only on a `prWrite` grant, whatever the grant's mode (services/prWriteScope). */
+  prWrite?: true;
 }
 
 interface McpComponentLike {
@@ -215,6 +218,7 @@ export const projectTools = (
       description: definition.description,
       requiredWriteMode: definition.requiredWriteMode,
       irreversible: Boolean(definition.irreversible),
+      ...(isPrWriteTool(definition.name) ? { prWrite: true as const } : {}),
     }));
 };
 

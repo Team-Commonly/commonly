@@ -103,6 +103,18 @@ Three components, all defined in `k8s/helm/commonly/templates/agents/litellm-dep
    The rotator polls that signal file every 10s during its 10-min sleep and, if a
    <120s-old signal is present, rotates immediately without waiting for the next tick.
 
+**DeepSeek is an optional provider** (`aiProviders.deepseek.enabled`, F159). On
+by default, so a self-hosted install gets the `deepseek-v4-flash` and
+`deepseek-flash-1017` routes, LiteLLM's `DEEPSEEK_API_KEY` (from
+`commonly-deepseek-api-key`), the Gemini/`gpt-4o` stand-ins and Gemini fallbacks
+that target it, and `LITELLM_CHAT_MODEL=deepseek-v4-flash` on the backend. Off,
+none of that renders and `LITELLM_CHAT_MODEL` follows `litellm.agentDefaultModel`,
+which must then name another route. Dev turns it off: hosted agents run Claude
+only (D243), and DeepSeek had no calls in the window before deletion (see
+`docs/runbooks/anthropic-native-route.md`). Tests:
+`backend/__tests__/unit/helm/devNoDeepseek.test.js`, and
+`scripts/verify-agent-default-model.js --no-deepseek` on the dev render in CI.
+
 **DeepSeek tool shim** (`/app/deepseek_tool_shim.py`, source in
 `k8s/helm/commonly/files/litellm/`, mounted from the `litellm-config` ConfigMap). It's
 the second entry in `litellm_settings.callbacks` and applies only to the
@@ -121,7 +133,8 @@ group is served, and `deepseek-flash-1017` requests are refused with the load
 error. Verified 2026-10-24 on the pinned image, with a real codex turn going through
 a fake upstream. One quirk to expect: the `response.created` echo of the request's
 tools still shows the flat names. To shim another DeepSeek group, add it to
-`SHIM_MODEL_GROUPS`. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
+`SHIM_MODEL_GROUPS`. With `aiProviders.deepseek` off (dev) the callback still
+loads and acts on nothing, because the group is not served. Tests are in `backend/__tests__/unit/helm/litellmDeepseekToolShim.test.js`.
 
 **Model fallback signal** (`/app/model_fallback_signal.py`, same source dir and
 mount; the third callback). When `router_settings.fallbacks` answers a request

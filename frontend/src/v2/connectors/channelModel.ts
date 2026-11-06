@@ -24,6 +24,10 @@ export interface ConnectorConfig {
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
   leadAgentUsername?: string;
+  // F131/F132: the Discord account the bot-add proved for this row's creator.
+  // Server-owned, and withheld from every viewer but the creator, so its
+  // presence is what says "you may switch live relay on here".
+  discordUserId?: string;
   gates?: Record<string, ConnectorGate>;
   // Projected by the server as { reason, at } only — the admin is never named.
   adminPause?: { reason?: string; at?: string };
@@ -52,6 +56,8 @@ export interface Connector {
   updatedAt?: string;
   config?: ConnectorConfig;
   podId?: { _id: string; name?: string } | string | null;
+  // An id, or a populated user on the pod-scoped read.
+  createdBy?: string | { _id?: string } | null;
 }
 
 export interface CatalogInstallation {
@@ -121,7 +127,7 @@ export interface SlackAuthorizeResponse {
 
 export type ConnectorAction =
   | 'manage' | 'show-code' | 'new-code' | 'authorize' | 'confirm'
-  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod';
+  | 'connect' | 'cancel' | 'retry' | 'retry-remove' | 'pick-pod' | 'reinstall';
 
 export interface ConnectorRow {
   action: ConnectorAction | null;
@@ -259,6 +265,27 @@ export const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string 
   slack_lead_invalid: { key: 'connectors.slackLeadInvalid', defaultValue: 'Choose an agent in the active pod.' },
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
+
+export const connectorCreatorId = (connector: Connector | null | undefined): string => {
+  const createdBy = connector?.createdBy;
+  if (!createdBy) return '';
+  return typeof createdBy === 'object' ? String(createdBy._id || '') : String(createdBy);
+};
+
+// A Discord row relays to a shared guild channel, and only the installer the
+// bot-add proved may switch that on (backend discordInboundAdapter
+// .liveRelayRefusal). The viewer must be the row's creator: an admin is handed
+// the row whole, `discordUserId` included, and the server would still refuse
+// them. A row without the proof gets no switch, never one the server refuses.
+export const viewerCreatedConnector = (connector: Connector | null | undefined, viewerId: string): boolean => (
+  Boolean(viewerId) && connectorCreatorId(connector) === viewerId
+);
+
+export const discordRelayReady = (connector: Connector | null | undefined, viewerId: string): boolean => (
+  connector?.type === 'discord'
+  && Boolean(connector.config?.discordUserId)
+  && viewerCreatedConnector(connector, viewerId)
+);
 
 export const connectorPodId = (connector: Connector | null | undefined): string | null => {
   if (!connector || !connector.podId) return null;

@@ -41,6 +41,18 @@ regexes = [
   # ANCHORED to the exact captured value, so any other id still fails.
   '''^345678901234567890$''',
   '''^456789012345678901$''',
+  # A made-up Discord application id an intermediate #3469 commit carried in
+  # discord.relayCommands.test.js (the scan reads every commit in a PR).
+  '''^123456789012345678$''',
+  # A test-only JWT secret an earlier #3477 commit carried in
+  # install-outsider-grant-narrowing.test.js (the scan reads every commit).
+  '''^test-jwt-secret-f164-narrowing$''',
+  # A fake per-turn proxy token in cli/__tests__/adapters.claude.state-symlinks.test.mjs.
+  '''^per-turn-f153-bw$''',
+  # A fake credential in cli/__tests__/adapter-failure-scrub.test.mjs (#3523): the
+  # test proves a provider code that echoes a spawn's credential is dropped, so the
+  # value has to look like a key. The exact literal only.
+  '''^sk-test-0123456789abcdef$''',
 ]
 
 paths = [

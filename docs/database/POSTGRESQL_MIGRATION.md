@@ -1,7 +1,8 @@
 # PostgreSQL Message Storage Migration
 
-> **Where this is heading:** [ADR-034](../adr/ADR-034-postgres-single-store.md) makes Postgres the single
-> data store and records the measured split as of 2026-11-02. The table below describes chat only.
+> **Where this was heading:** [ADR-034](../adr/ADR-034-postgres-single-store.md) set Postgres as the single
+> data store and records the measured split as of 2026-11-02. That migration is paused. The table below
+> describes chat only.
 
 For schema upgrades and the repository extraction template, see
 [Versioned PostgreSQL changes](schema-migrations.md).
@@ -9,6 +10,8 @@ For schema upgrades and the repository extraction template, see
 ## Overview
 
 Commonly has been updated to use **PostgreSQL as the default storage for all chat messages**, while maintaining MongoDB for user management and pod metadata. This document describes the current implementation and key changes.
+
+PG `pods`, `pod_members` and `users` are **mirrors** of Mongo and never decide a permission. How they are kept in step, and the nightly repair: [`docs/runbooks/pg-mirror-repair.md`](../runbooks/pg-mirror-repair.md).
 
 ## Current Architecture
 

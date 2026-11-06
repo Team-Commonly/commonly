@@ -1,5 +1,6 @@
 import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
+import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
 
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
@@ -22,11 +23,35 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const AgentEvent = require('../models/AgentEvent');
+// eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
 
 const File = require('../models/File');
 
 const mongoose = require('mongoose');
+
+// agentMentionService's MENTION_EVENT_TYPES. That module loads this one lazily
+// and pulls in the whole event stack, so the two literals are repeated here.
+const ADDRESSING_MENTION_TYPES = ['chat.mention', 'thread.mention'];
+
+interface AskRow {
+  status?: string;
+  deliveredAt?: Date | null;
+  delivery?: { outcome?: string };
+  payload?: {
+    messageId?: unknown;
+    coalesced?: Array<{ messageId?: unknown; notAnAsk?: boolean }>;
+    [flag: string]: unknown;
+  };
+}
+
+const askRowIsOpen = (row: AskRow): boolean => {
+  if (row.status === 'pending' || row.status === 'delivered') return true;
+  return row.status === 'acked'
+    && (row.delivery?.outcome ?? 'acknowledged') === 'acknowledged'
+    && Date.now() - new Date(row.deliveredAt ?? 0).valueOf() < RUNNING_TURN_WINDOW_MS;
+};
 
 // Upper bound on how many File rows we fetch per phantom-directive
 // scan. The single-query refactor (see postMessage phantom-directive
@@ -195,6 +220,9 @@ interface PostMessageOptions {
   // the native runtime's trigger. Read by the answer rule (agentAnswerService)
   // only. Never stored and never a reply edge, so an answer is not threaded.
   answeringMessageId?: string | null;
+  // The caller files this post in a thread itself, whatever the post answers:
+  // a decision card goes where commonly_request_decision was told to put it.
+  threadIsDeliberate?: boolean;
   // Server-set, never model-set: only install intros and stalled-connect
   // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
@@ -203,6 +231,20 @@ interface PostMessageOptions {
   // hosted turn posts when it failed with nothing posted. Each one answers its
   // own ask, so the shared-pod duplicate guard does not apply to it.
   failureNotice?: boolean;
+  // Server-set, never model-set and never read from metadata (F56): a person's
+  // own words addressed this native or hosted turn and it hasn't answered yet. Its reply
+  // answers that ask, so the duplicate guard does not apply. With
+  // `failureNotice`, neither does the run cap: asks that land together fail
+  // together, and a person who sees three lines for five asks got silence on two.
+  // The cap still bounds an ordinary reply, and an agent's ask gets neither.
+  personWaiting?: boolean;
+  // Server-set, never model-set and never read from metadata (F180): the
+  // approval card proposeAction posts for a parked action. A consent surface
+  // must never be crowded out, so neither the duplicate guard (a second card
+  // for the same tool repeats the first's text) nor the consecutive-run cap
+  // (the card is posted as the seat) applies to it. The HTTP routes never
+  // forward it; `metadata.source: 'approval-card'` alone exempts nothing.
+  approvalCard?: boolean;
   // D245: the optional message contract, as the agent sent it. Normalized by
   // services/messageContract.ts here, warn-only; never read for @mentions.
   summary?: unknown;
@@ -229,6 +271,9 @@ interface PostTargetOptions {
   skipSummaryPersistence?: boolean;
   noOutboundRelay?: boolean;
   answeringMessageId?: string | null;
+  // The caller files this post in a thread itself, whatever the post answers:
+  // a decision card goes where commonly_request_decision was told to put it.
+  threadIsDeliberate?: boolean;
   authorKind?: 'kernel' | null;
   // D245: already normalized; stored beside the content.
   contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
@@ -307,6 +352,14 @@ interface DuplicateResult {
   createdAt: unknown;
   dedupeWindowMinutes: number;
 }
+
+// F212: returned on the post, so a model that threaded its answer learns where
+// it went. The post has already landed; this is never a refusal.
+const THREAD_ROOT_DROPPED = {
+  code: 'thread_root_dropped',
+  message: 'This answers a top-level message, so it was posted to the channel, not in a thread. '
+    + 'Any quote was kept. To continue, thread under your own post.',
+};
 
 class AgentMessageService {
   static normalizeInstallationConfig(config: unknown): Record<string, unknown> {
@@ -857,6 +910,13 @@ class AgentMessageService {
       const messageUserId = String(message?.userId?._id || message?.user_id || '');
       if (!messageUserId) break;
       if (messageUserId !== userIdString) break;
+      // The author's own `system` lines are not the author speaking (F180):
+      // the receipt an owner's approval writes under the seat's identity
+      // ("<owner> approved <seat>'s <tool> · ran") must not count toward the
+      // seat's run. Agents can only post `text` or `card`
+      // (uiCardValidation), so no agent can mark its own post this way. A
+      // system line skips; it neither counts nor ends the run.
+      if (String((message as { messageType?: string })?.messageType || '').toLowerCase() === 'system') continue;
       run += 1;
     }
     return run;
@@ -873,13 +933,104 @@ class AgentMessageService {
     return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
   }
 
+  /**
+   * Has a person asked this agent something it has not answered yet?
+   * `recent` is oldest first and holds the agent's copy of the text.
+   *
+   * Asked: the agent's own event rows say so, not the text. Mentions are resolved
+   * at send through aliases, display slugs and reply edges and stored nowhere
+   * else, so a second parser here would drift from routing. Only a chat or
+   * thread mention row counts, by the rule the wrapper's "a person addressed
+   * this to you" line uses (answersAPerson, cli/src/commands/agent.js).
+   * `message.posted` never does, not even stamped `addressed`: that stamp means
+   * "you wrote in this thread or this names your task", which a person's @ to
+   * someone else also earns. A reply under the agent's message counts unless it
+   * @'d someone, and so does a person's message joined to a row that wouldn't.
+   *
+   * Not answered: nothing the agent posted comes after the ask. That is what
+   * makes one ask buy one repeat, and it stops a person's "hi" reopening every
+   * older text once the agent has said hello. A post in the same turn ahead of
+   * the answer closes it too; the agent is told so and can reword.
+   *
+   * Still open: a row being worked or waiting. A finished row usually closes,
+   * except that a seat's commonly_checkpoint_event is a plain `acknowledged` ack
+   * and can reach us before the post it covers, so that ack stays open while its
+   * turn could still be running. No later row status can stand in for this.
+   *
+   * An ask older than the agent's newest post stays closed, even one that post
+   * did not answer. A turn replaying its own post and a later turn answering an
+   * ask that arrived mid-turn look the same here: no message records which ask
+   * it answered, and `deliveredAt` is not a claim time, because the minute renew,
+   * markPosted and an ack all rewrite it. Opening that order opens replays.
+   *
+   * Authorship comes from the message and User, never the row. A row's
+   * `senderIsHuman` describes its lead, and an agent's message can join a
+   * person's row. Only a person opens this, so two agents cannot trade identical
+   * text past the guard (the same rule as agentThreadService's one standalone
+   * comment). A post comment never reaches here: comments have their own path.
+   *
+   * A failed read lets the repeat through once a person has spoken since the
+   * agent's post: we can't tell whether it was an ask, and a repeat is noise
+   * where a skip is silence (review checklist rule 19).
+   */
+  static async personAskStillOpen(options: {
+    podId: unknown;
+    agentName?: string;
+    instanceId?: string;
+    userId: unknown;
+    recent: Array<MessageNormalized & { user_id?: string }>;
+  }): Promise<boolean> {
+    const {
+      podId, agentName, instanceId, userId, recent,
+    } = options;
+    if (!agentName) return false;
+    const authorOf = (message: MessageNormalized & { user_id?: string }) => String(message?.userId?._id || message?.user_id || '');
+    const isOwnPost = (message: MessageNormalized & { user_id?: string }) => (
+      authorOf(message) === String(userId) && message.messageType !== 'system'
+    );
+    const newestOwn = recent.map(isOwnPost).lastIndexOf(true);
+    if (newestOwn < 0) return false;
+    const since = recent.slice(newestOwn + 1)
+      .filter((message) => authorOf(message) && authorOf(message) !== String(userId));
+    if (since.length === 0) return false;
+    const ids = since.map((message) => String(message.id ?? message._id));
+    const newestOwnAt = new Date(recent[newestOwn].createdAt as string | Date).valueOf();
+    try {
+      const rows = await AgentEvent.find({
+        agentName: { $eq: String(agentName).toLowerCase() },
+        instanceId: { $eq: String(instanceId || 'default') },
+        podId: { $eq: String(podId) },
+        type: { $in: ADDRESSING_MENTION_TYPES },
+        // A joined message is newer than its row, by at most this much.
+        createdAt: { $gte: new Date(newestOwnAt - JOINABLE_ROW_AGE_MS) },
+        $or: [{ 'payload.messageId': { $in: ids } }, { 'payload.coalesced.messageId': { $in: ids } }],
+      }).select('status deliveredAt delivery.outcome payload').lean() as AskRow[];
+      const asked = new Set(rows.filter(askRowIsOpen).flatMap((row) => [
+        ...(asksThisAgent(row.payload) ? [String(row.payload?.messageId)] : []),
+        ...(row.payload?.coalesced || []).filter((entry) => !entry.notAnAsk).map((entry) => String(entry.messageId)),
+      ]));
+      const authors = since.filter((message) => asked.has(String(message.id ?? message._id))).map(authorOf);
+      if (authors.length === 0) return false;
+      return Boolean(await User.exists({ _id: { $in: [...new Set(authors)] }, isBot: { $ne: true } }));
+    } catch (error) {
+      console.warn('[agent-message] open-ask check failed; letting the repeat through:', (error as Error).message);
+      // Two seats trading one text must not pass here: the wake dampener reads
+      // the same collection and fails open with this read.
+      return since.some((message) => message.isBot !== true);
+    }
+  }
+
   static async findRecentDuplicate(options: {
     podId: unknown;
     userId: unknown;
     content: unknown;
     metadata?: MetadataDoc;
+    agentName?: string;
+    instanceId?: string;
   }): Promise<DuplicateResult | null> {
-    const { podId, userId, content, metadata = {} } = options;
+    const {
+      podId, userId, content, metadata = {}, agentName, instanceId,
+    } = options;
     const dedupeWindowMinutes = AgentMessageService.resolveDedupeWindowMinutes(metadata);
     if (!dedupeWindowMinutes || dedupeWindowMinutes <= 0) return null;
 
@@ -903,6 +1054,9 @@ class AgentMessageService {
       });
 
     if (!hit) return null;
+    if (await AgentMessageService.personAskStillOpen({
+      podId, agentName, instanceId, userId, recent: recent as MessageEntry[],
+    })) return null;
     return {
       id: hit.id || hit._id || null,
       createdAt: hit.createdAt || null,
@@ -1039,6 +1193,9 @@ class AgentMessageService {
       answeringMessageId,
       authorKind = null,
       failureNotice = false,
+      personWaiting = false,
+      approvalCard = false,
+      threadIsDeliberate = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1528,14 +1685,28 @@ class AgentMessageService {
       // On 2026-11-01 five asks failed in five minutes in a shared pod and four
       // got silence. Only the native runtime sets `failureNotice`; the HTTP
       // routes never forward it.
+      //
+      // The same holds in a shared room while a person's ask to this agent is
+      // open (F253, findRecentDuplicate). In a walk on 2026-11-06 a seat answered
+      // 130061 with "Blue" as 130062. A person replied under it with a new
+      // question, 130064, and 26 seconds after the first the seat's right answer
+      // was "Blue" again. It was skipped, so no row exists for it, and the person
+      // saw nothing. A one-word "yes" hits this far more easily. Nothing here
+      // needs a client change, so it holds for MCP posts, wrapper posts and the
+      // native runtime alike.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
-      const duplicate = (isOneToOne || failureNotice === true)
+      // An approval card (F180) is exempt for a sharper reason: a second card
+      // for the same tool repeats the first's text by construction, and a
+      // dropped card fails the parked call.
+      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
           userId: agentUser._id,
           content: sanitizedContent,
           metadata,
+          agentName,
+          instanceId,
         });
       if (duplicate) {
         AgentMessageService.logMessageLifecycle('skipped', {
@@ -1591,7 +1762,11 @@ class AgentMessageService {
       // the duplicate rows become a storage cost. `agent-admin` is also excluded from
       // DM_POD_TYPES_GUARD (ADR-001 §3.10) because it is N:1, a separate fact.
       // `isOneToOne` is the const read once above, shared with the duplicate check.
-      const runCap = isOneToOne ? 0 : AgentMessageService.resolveConsecutiveRunCap();
+      // An approval card is not the seat holding the floor: it is the server
+      // asking the owner to decide (F180), so the run cap does not apply.
+      const failureForPerson = failureNotice === true && personWaiting === true;
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson)
+        ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
         if (run >= runCap) {
@@ -1646,6 +1821,7 @@ class AgentMessageService {
       threadRootId,
       noOutboundRelay,
       answeringMessageId,
+      threadIsDeliberate,
       authorKind,
       contract: contract.summary || contract.kind || receipt
         ? { summary: contract.summary, kind: contract.kind, ...(receipt ? { receipt } : {}) }
@@ -1656,15 +1832,18 @@ class AgentMessageService {
     // agent its first task" (starterTaskService). Fire-and-forget: a board
     // write never delays or fails a post, and it never throws.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    void require('./starterTaskService').completeFirstTaskOnAnswer({
-      podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
-      agentLabel: displayName || agentName, content: sanitizedContent,
-    });
+    if (failureNotice !== true) {
+      void require('./starterTaskService').completeFirstTaskOnAnswer({
+        podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
+        agentLabel: displayName || agentName, content: sanitizedContent,
+      });
+    }
 
+    const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
     return {
       success: true,
       message: posted.message,
-      ...(postWarnings.length ? { warnings: postWarnings } : {}),
+      ...(allWarnings.length ? { warnings: allWarnings } : {}),
       summary: posted.summary
         ? {
           id: (posted.summary as { _id?: unknown })._id?.toString?.() || (posted.summary as { _id?: unknown })._id,
@@ -1715,7 +1894,9 @@ class AgentMessageService {
     return { routedToDM: true, dmPodId: dmPod._id };
   }
 
-  static async _postToTarget(options: PostTargetOptions): Promise<{ message: MessageNormalized; summary: unknown }> {
+  static async _postToTarget(options: PostTargetOptions): Promise<{
+    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean;
+  }> {
     const {
       agentName,
       instanceId = 'default',
@@ -1733,6 +1914,7 @@ class AgentMessageService {
       skipSummaryPersistence = false,
       noOutboundRelay = false,
       answeringMessageId,
+      threadIsDeliberate = false,
       authorKind = null,
       contract = null,
     } = options;
@@ -1773,6 +1955,24 @@ class AgentMessageService {
       }
     }
 
+    // F212: the answer to a person's main-channel mention stays in the channel. Asked
+    // after the validation above, so a bad target is still refused. A reply
+    // edge is kept (the quote), which is why the write needs telling: left
+    // alone, it derives the root back from that edge.
+    let topLevelAnswer = false;
+    let threadRootDropped = false;
+    if (PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { answerStaysTopLevel } = require('./agentAnswerService');
+      threadRootDropped = await answerStaysTopLevel({
+        podId, agentName, instanceId, agentUserId: agentUser._id, replyToMessageId, threadRootId, kind: contract?.kind,
+      });
+      if (threadRootDropped) {
+        resolvedThreadRootId = null;
+        topLevelAnswer = Boolean(replyToMessageId);
+      }
+    }
+
     if (PGMessage && process.env.PG_HOST) {
       try {
         await AgentIdentityService.syncUserToPostgreSQL(agentUser);
@@ -1804,9 +2004,15 @@ class AgentMessageService {
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
             authorKind?: 'kernel' | null,
             contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null,
+            topLevelAnswer?: boolean,
           ): Promise<Record<string, unknown>>;
         };
-        const newMessage = contract
+        const newMessage = topLevelAnswer
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, null, answeringMessageId, authorKind, contract, true,
+          )
+          : contract
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
@@ -1861,8 +2067,8 @@ class AgentMessageService {
           createdAt: newMessage.created_at as Date,
           metadata,
           ...(payload != null ? { payload: newMessage.payload ?? payload } : {}),
-          // Threading: the INSERT already derived this (or NULL for a
-          // non-reply); dropping it here was one of the two closed literals
+          // Threading: the INSERT already set this (NULL for a non-reply or a
+          // top-level answer); dropping it here was one of the two closed literals
           // that made agent replies arrive over the socket root-less.
           thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
@@ -2019,7 +2225,11 @@ class AgentMessageService {
       console.warn('[tg-bridge] outbound hook failed:', (bridgeError as Error).message);
     }
 
-    return { message: message as MessageNormalized, summary: persistedSummary };
+    return {
+      message: message as MessageNormalized,
+      summary: persistedSummary,
+      ...(threadRootDropped ? { threadRootDropped } : {}),
+    };
   }
 
   // ADR-012 §4: fire-and-forget hook for agent-dm-conclusion. Lives here so

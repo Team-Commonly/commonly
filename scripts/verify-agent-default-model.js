@@ -18,8 +18,13 @@
 // provider prefix), custom_llm_provider or api_base says so, in any case.
 // `google/*` gateway fallbacks go straight to Google, not through LiteLLM, so
 // they are listed but not resolved (F105 moves them); a google/* primary fails.
+// Also resolved: the chat-model defaults LITELLM_CHAT_MODEL, NATIVE_RUNTIME_MODEL
+// and LLM_SERVICE_MODEL on the backend workloads and AGENT_MODEL on the
+// commonly-bot, wherever they are set.
 // --no-deepseek (dev, Claude-only under D243): no default may reach a
-// deepseek/* upstream.
+// deepseek/* upstream, and DeepSeek is deleted outright (F159): no model_list
+// entry reaches it, no workload carries DEEPSEEK_API_KEY or reads the
+// deepseek-api-key secret key, and no ExternalSecret maps a deepseek key.
 const fs = require('fs');
 const yaml = require('js-yaml');
 
@@ -98,7 +103,8 @@ const resolve = (where, name) => {
   }
 };
 
-// 1. AGENT_DEFAULT_MODEL wherever the provisioner runs.
+// 1. AGENT_DEFAULT_MODEL wherever the provisioner runs, and the chat-model
+// defaults beside it.
 for (const name of ['backend', 'backend-worker', 'ops-runner']) {
   const dep = docs.find((d) => d.kind === 'Deployment' && d.metadata?.name === name);
   if (!dep) continue;
@@ -106,9 +112,43 @@ for (const name of ['backend', 'backend-worker', 'ops-runner']) {
   const entry = env.find((e) => e.name === 'AGENT_DEFAULT_MODEL');
   if (!entry || !entry.value) {
     failures.push(`${name}: AGENT_DEFAULT_MODEL is not set`);
-    continue;
+  } else {
+    resolve(`${name} AGENT_DEFAULT_MODEL`, entry.value);
   }
-  resolve(`${name} AGENT_DEFAULT_MODEL`, entry.value);
+  for (const key of ['LITELLM_CHAT_MODEL', 'NATIVE_RUNTIME_MODEL', 'LLM_SERVICE_MODEL']) {
+    const set = env.find((e) => e.name === key);
+    if (set && set.value) resolve(`${name} ${key}`, set.value);
+  }
+}
+const bot = docs.find((d) => d.kind === 'Deployment' && d.metadata?.name === 'commonly-bot');
+const botModel = (bot?.spec.template.spec.containers[0].env || []).find((e) => e.name === 'AGENT_MODEL');
+if (botModel && botModel.value) resolve('commonly-bot AGENT_MODEL', botModel.value);
+
+// 1b. F159: with --no-deepseek, DeepSeek is gone, not only unused.
+if (noDeepseek) {
+  for (const [name, params] of upstreamsOf) {
+    for (const p of params) {
+      if (isDeepseek(p)) failures.push(`litellm-config routes "${name}" to DeepSeek (${p.model})`);
+    }
+  }
+  for (const d of docs) {
+    const spec = d.spec?.jobTemplate?.spec?.template?.spec || d.spec?.template?.spec;
+    for (const c of [...(spec?.containers || []), ...(spec?.initContainers || [])]) {
+      for (const e of c.env || []) {
+        if (/deepseek/i.test(e.name)) failures.push(`${d.metadata?.name}: env ${e.name} is set`);
+        else if (/deepseek/i.test(String(e.valueFrom?.secretKeyRef?.key || ''))) {
+          failures.push(`${d.metadata?.name}: env ${e.name} reads secret key ${e.valueFrom.secretKeyRef.key}`);
+        }
+      }
+    }
+    if (d.kind === 'ExternalSecret') {
+      for (const e of d.spec?.data || []) {
+        if (/deepseek/i.test(`${e.secretKey} ${e.remoteRef?.key || ''}`)) {
+          failures.push(`ExternalSecret ${d.metadata?.name} maps ${e.secretKey}`);
+        }
+      }
+    }
+  }
 }
 
 // 2. The gateway seed config (moltbot.json).

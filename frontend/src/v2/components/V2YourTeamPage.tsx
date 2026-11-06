@@ -177,7 +177,7 @@ const dedupeAgents = (rows: Array<AgentInstallationSummary & { podName?: string 
 const V2YourTeamPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, mergeUser } = useAuth();
   const entitledFromUser = useMemo(() => {
     const entitlements = (user as { entitlements?: { cloudAgents?: boolean } } | null)?.entitlements;
     return Boolean(entitlements?.cloudAgents) || user?.role === 'admin';
@@ -213,13 +213,20 @@ const V2YourTeamPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      await axios.post('/api/auth/redeem-invitation', { code }, { headers });
+      const res = await axios.post<{ entitlements?: Record<string, unknown> }>('/api/auth/redeem-invitation', { invitationCode: code }, { headers });
+      // The grant belongs to the account that asked, so a sign-out mid-request doesn't pass it on.
+      if (res.data?.entitlements && localStorage.getItem('token') === token) mergeUser?.({ entitlements: res.data.entitlements });
       setRedeemed(true);
       setRedeemOpen(false);
       setRedeemCode('');
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setRedeemError(msg || t('yourTeam.errors.redeemFailed'));
+      // The server's text is English only. A rate limit, a server error and a dropped connection
+      // aren't about the code, so a good code mustn't read as a bad one. The rate limit is shared
+      // with sign-in on this IP, and a server error can land after the code was spent.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 429) setRedeemError(t('yourTeam.errors.redeemRateLimited'));
+      else if (!status || status >= 500) setRedeemError(t('yourTeam.errors.redeemServerFailed'));
+      else setRedeemError(t('yourTeam.errors.redeemFailed'));
     } finally {
       setRedeeming(false);
     }
@@ -582,7 +589,9 @@ const V2YourTeamPage: React.FC = () => {
             </span>
           </div>
           <p className="v2-team-card__desc">{t('yourTeam.own.text')}</p>
-          <code className="v2-team-card__command">{t('yourTeam.own.command')}</code>
+          {/* No bare command here: `npx @commonlyai/cli agent attach claude`
+              exited 1 on a clean machine (missing --pod, then --name). The
+              walked path is the setup page, which issues the full command. */}
           <div className="v2-team-card__actions">
             <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" onClick={() => navigate('/v2/agents/byo')}>
               {t('yourTeam.own.setup')}

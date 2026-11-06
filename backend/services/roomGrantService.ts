@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { recordGrantExpired, recordGrantsRevoked } from './brokerRecordService';
+import { noteRevokedGrants } from './grantRemovalCueService';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import Pod from '../models/Pod';
@@ -11,7 +12,7 @@ import RoomGrant, {
   RoomGrantTaskBinding,
   RoomGrantWriteMode,
 } from '../models/RoomGrant';
-import { BOARD_ACTOR, emitRecord, type RecordActor } from './recordService';
+import { BOARD_ACTOR, emitRecord, SERVER_ACTOR, type RecordActor } from './recordService';
 
 export interface RoomGrantCreateInput {
   grantId?: string;
@@ -26,6 +27,8 @@ export interface RoomGrantCreateInput {
   /** F94: set by the mint route after its checks, never copied from the body. */
   byoAgents?: string[];
   byoConsent?: IRoomGrantByoConsent;
+  /** TASK-783: set by the mint route after its checks, or inherited by a child; never copied from the body. */
+  prWrite?: boolean;
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
@@ -45,6 +48,8 @@ export interface RoomGrantAttenuationInput {
   budget?: IRoomGrantBudget;
   audience?: string[];
   expiresAt?: Date | string | number;
+  /** TASK-783: only `false` is meaningful (drop the scope); a child can never add it. */
+  prWrite?: boolean;
   /** Accepted for API compatibility but never copied into the row. */
   grantId?: string;
   /** The delegating agent, from authentication; set by the route, never the body. */
@@ -477,6 +482,9 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     // with named agents.
     ...(input.byoConsent
       ? { byoAgents: uniqueStrings(input.byoAgents || [], 'byoAgents'), byoConsent: input.byoConsent } : {}),
+    // Stored only when exactly true, so a read of the field cannot meet a
+    // truthy non-boolean.
+    ...(input.prWrite === true ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     rootGrantId,
@@ -573,6 +581,16 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     throw new RoomGrantError('grant_not_attenuated', 'child writeMode cannot be stronger than its parent');
   }
 
+  // TASK-783: a child keeps the parent's PR access unless it drops it, and
+  // never gains it. A read child holds no write, so it holds no PR access.
+  if (input.prWrite !== undefined && typeof input.prWrite !== 'boolean') {
+    throw new RoomGrantError('invalid_grant', 'prWrite must be a boolean');
+  }
+  if (input.prWrite === true && parent.prWrite !== true) {
+    throw new RoomGrantError('grant_not_attenuated', 'a child cannot add pull-request access');
+  }
+  const prWrite = parent.prWrite === true && input.prWrite !== false && writeMode !== 'read';
+
   const requestedBudget = normalizeBudget(input.budget);
   const budget = mergeBudget(parent.budget, requestedBudget);
   assertBudgetAttenuated(budget, parent.budget);
@@ -616,6 +634,7 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
       byoAgents: (parent.byoAgents || []).map(String).filter((id) => audience.includes(id)),
       byoConsent: parent.byoConsent,
     } : {}),
+    ...(prWrite ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,
@@ -627,13 +646,39 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
   });
 };
 
-export const revokeGrant = async (grantId: string, revokedBy: string): Promise<number> => {
+/**
+ * The `revokedBy` of a revocation no person asked for (F174: a takeover ending
+ * the previous owner's grants). It is the record format's server actor id, so
+ * the grant.revoked line names the system rather than a user.
+ */
+export const SYSTEM_REVOKER = SERVER_ACTOR.id;
+
+export interface RevokeGrantOptions {
+  /**
+   * F181: false when the owner is reconnecting (an OAuth account change, a
+   * re-pasted key), so the agents are not told the owner removed the connector.
+   */
+  cue?: boolean;
+}
+
+export const revokeGrant = async (
+  grantId: string,
+  revokedBy: string,
+  options: RevokeGrantOptions = {},
+): Promise<number> => {
   const id = asId(grantId, 'grantId');
   const actor = asId(revokedBy, 'revokedBy');
   const root = await RoomGrant.findOne({ grantId: id }).select('grantId').lean();
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   const moved = await RoomGrant.revokeCascadeMoved(id, actor);
   recordGrantsRevoked(id, moved, actor);
+  // F181: every agent that held one of these grants is told on its next
+  // mention that the connector was taken away. The revoke has already
+  // committed, so a failure here costs the cue, never the revoke.
+  if (options.cue === false) return moved.length;
+  await noteRevokedGrants(moved.map((grant) => grant.grantId), actor).catch((error: Error) => {
+    console.error('[room-grant] removal cue not recorded:', error.message);
+  });
   return moved.length;
 };
 
@@ -709,27 +754,54 @@ export const assertGrantUsable = async (
 export const revokeConnectionGrants = async (options: {
   connection?: {
     _id?: unknown;
+    type?: unknown;
     installationId?: unknown;
     config?: { installationId?: unknown };
   } | null;
   revokedBy: string;
+  /** Only grants this person minted (F174: an old owner's sweep never reaches a new owner's grants). */
+  ownerId?: string;
+  /** Only grants minted before this moment (F174: a takeover never sweeps the new owner's grants). */
+  createdBefore?: Date;
+  /** F181: false on a reconnect revoke; see `RevokeGrantOptions.cue`. */
+  cue?: boolean;
 }): Promise<number> => {
-  const identifiers = new Set<string>();
   const connection = options.connection;
-  if (connection?._id) identifiers.add(String(connection._id));
-  // Both slots independently: they are written together today, but the
+  const rowId = connection?._id ? String(connection._id) : '';
+  // A per-repository GitHub App row (F172) carries its installation only in
+  // `config` and shares it with every other repository on that installation.
+  // Its grants name the row `_id` (the only id that finds it), so removing
+  // one repository must not reach a sibling's grants through the shared id.
+  const perRepositoryRow = connection?.type === 'github-app' && !connection?.installationId;
+  // Both slots independently: they are written together on legacy rows, but the
   // top-level one is request-supplied on some rows and the config one is
   // server-owned, so a grant may have been minted against either (Vera 74451).
-  if (connection?.installationId) identifiers.add(String(connection.installationId));
-  if (connection?.config?.installationId) identifiers.add(String(connection.config.installationId));
-  if (identifiers.size === 0) return 0;
+  const installationIds = new Set<string>();
+  if (!perRepositoryRow) {
+    if (connection?.installationId) installationIds.add(String(connection.installationId));
+    if (connection?.config?.installationId) installationIds.add(String(connection.config.installationId));
+  }
+  if (!rowId && installationIds.size === 0) return 0;
 
-  const addressed = [...identifiers];
+  const clauses: Array<Record<string, unknown>> = [];
+  if (rowId) clauses.push({ connectionId: rowId }, { connectionRowId: rowId });
+  if (installationIds.size > 0) {
+    const addressed = [...installationIds];
+    // L1: a grant reached through the installation id belongs to THIS row only
+    // when it is bound to no row (minted before binding existed) or to this
+    // one. A grant bound to a newer per-repository row on the same
+    // installation also stores the installation id, and is not this row's.
+    clauses.push({
+      $and: [
+        { $or: [{ connectionId: { $in: addressed } }, { installationId: { $in: addressed } }] },
+        { $or: [{ connectionRowId: null }, ...(rowId ? [{ connectionRowId: rowId }] : [])] },
+      ],
+    });
+  }
   const grants = await RoomGrant.find({
-    $or: [
-      { connectionId: { $in: addressed } },
-      { installationId: { $in: addressed } },
-    ],
+    $or: clauses,
+    ...(options.ownerId ? { ownerId: options.ownerId } : {}),
+    ...(options.createdBefore ? { createdAt: { $lt: options.createdBefore } } : {}),
   }).select('grantId').lean() as Array<{ grantId?: string }>;
 
   let revoked = 0;
@@ -738,7 +810,7 @@ export const revokeConnectionGrants = async (options: {
     try {
       // revokeGrant cascades the lineage and counts only the rows it moved, so
       // a child reached twice or already revoked contributes nothing.
-      revoked += await revokeGrant(String(grant.grantId), options.revokedBy);
+      revoked += await revokeGrant(String(grant.grantId), options.revokedBy, { cue: options.cue });
     } catch (error) {
       // A grant deleted between this read and that write is already gone;
       // removal must not fail on it. Anything else is real.

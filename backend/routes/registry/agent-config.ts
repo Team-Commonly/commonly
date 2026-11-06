@@ -27,12 +27,19 @@ const {
   normalizeContextPolicy,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
-const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const {
+  identityHoldsRuntimeToken,
+  ownsRuntimeIdentity,
+  RUNTIME_TOKEN_HELD,
+  takeBackInstallation,
+  webhookUrlRefusal,
+} = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
-const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
+const { isHostedInstallation } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
 // Serialize this route's IDENTITY.md read/modify/write operations per account.
@@ -46,7 +53,10 @@ const identityWrites = new Map<string, Promise<void>>();
  * `instructions`, `persona`, `toolPolicy`, `contextPolicy`, `modelPreferences`)
  * and drives `config.skillSync`. A narrower gate leaves those open.
  */
+const HOSTED_ABOUT_MAX = 160;
+
 const INSTALLER_GATED_FIELDS = [
+  'about',
   'config',
   'scopes',
   'status',
@@ -76,6 +86,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       persona,
       toolPolicy,
       contextPolicy,
+      about,
     } = req.body;
     const normalizedToolPolicy = normalizeToolPolicy(toolPolicy);
     const normalizedContextPolicy = normalizeContextPolicy(contextPolicy);
@@ -137,6 +148,24 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     if (displayName !== undefined && (typeof displayName !== 'string'
       || !displayName.trim() || displayName.trim().length > 80)) {
       return res.status(400).json({ error: 'Display name must be 1–80 characters' });
+    }
+    // TASK-780: a hosted agent's description is config.hosted.about, the
+    // persona line its system prompt carries. Normalized the way install
+    // normalizes it, but refused rather than cut when too long, so the owner
+    // never saves a sentence that loses its end.
+    const requestedAbout = about === undefined ? undefined
+      : typeof about === 'string' ? about.trim().replace(/\s+/g, ' ') : null;
+    if (requestedAbout === null || (requestedAbout && requestedAbout.length > HOSTED_ABOUT_MAX)) {
+      return res.status(400).json({ code: 'invalid_about',
+        error: `Description must be text of at most ${HOSTED_ABOUT_MAX} characters` });
+    }
+    // Only the native engine reads `about` (hostedNativeRunConfig); a row still
+    // on the Durable Object would take the text and never use it, and its
+    // migration rewrites config.hosted from the card.
+    if (requestedAbout !== undefined && (!isHostedInstallation(installation)
+      || hostedEngineInEffect(installation) !== 'native')) {
+      return res.status(400).json({ code: 'about_hosted_only',
+        error: 'Only a hosted agent on the native engine takes a description here' });
     }
     if (normalizedContextPolicy) {
       const numbers = ['maxTokens', 'compactionThreshold', 'summaryHours'];
@@ -250,6 +279,15 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (displayName) {
         targetInstallation.displayName = displayName;
       }
+      // Written past configWriteRefusal, which keeps a client's `config.hosted`
+      // out: only `about` changes, and the engine record stays as stored.
+      if (requestedAbout !== undefined) {
+        const { about: _previous, ...hosted } = readHostedConfig(targetInstallation);
+        const existing = normalizeConfigMap(targetInstallation.config) || {};
+        targetInstallation.config = new Map(Object.entries({
+          ...existing, hosted: { ...hosted, ...(requestedAbout ? { about: requestedAbout } : {}) },
+        }));
+      }
     };
 
     const peerInstallations = await AgentInstallation.find({
@@ -349,6 +387,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       const { status: refusalStatus, ...refusalBody } = writeRefusal;
       return res.status(refusalStatus).json(refusalBody);
     }
+    // Every row the description reaches must take it, decided before any is
+    // saved: a row that skipped it while the shared card changed would leave
+    // the card and that agent's prompt saying different things.
+    const takesAbout = (entry: any) => isHostedInstallation(entry) && hostedEngineInEffect(entry) === 'native';
+    if (requestedAbout !== undefined && !installationsToUpdate.every(takesAbout)) {
+      return res.status(400).json({ code: 'about_hosted_only',
+        error: 'Every installation this write reaches must be a hosted agent on the native engine' });
+    }
     // An installation can show a different label from its bot User, and a pod
     // lists every installer's card side by side. Guard every active card in
     // each pod the rename reaches, whoever installed it, plus every card the
@@ -395,6 +441,27 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
     }
 
+    // One runtime per agent identity (services/runtimeIdentityOwnership), asked
+    // for each row this write puts in service in process, and again once saved.
+    const entersInProcess = (entry: any) => {
+      const stored = normalizeConfigMap(entry.config) || {};
+      const requested = config?.runtime;
+      const runtime = requested && typeof requested === 'object'
+        ? runtimeKeepingType(requested, stored, { mayChangeType: isInstanceAdmin })
+        : (requested === undefined ? stored.runtime : requested);
+      if (!configRunsInProcess({ ...stored, runtime })) return false;
+      return !configRunsInProcess(stored) || (status === 'active' && entry.status !== 'active');
+    };
+    const rowsEntering = installationsToUpdate.filter(entersInProcess);
+    const holdsToken = () => identityHoldsRuntimeToken(name.toLowerCase(), normalizedInstanceId);
+    if (rowsEntering.length && await holdsToken()) {
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
+    }
+    const rowsToRestore = rowsEntering.map((entry: any) => ({
+      key: { agentName: entry.agentName, podId: entry.podId, instanceId: entry.instanceId },
+      previous: entry.toObject(),
+    }));
+
     // The User row is the name source for chat and the pod roster. An explicit
     // rename must update that portable identity, not only per-pod projections.
     let renamedIdentity;
@@ -417,6 +484,15 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
         // eslint-disable-next-line no-await-in-loop
         await targetInstallation.save();
+      }
+      if (rowsToRestore.length && await holdsToken()) {
+        await Promise.all(rowsToRestore.map(({ key, previous }: any) => takeBackInstallation(key, previous)));
+        return res.status(409).json(RUNTIME_TOKEN_HELD);
+      }
+      // The card's sentence is the shared User's, so it follows only when this
+      // write reached every installation of the identity, as a rename must.
+      if (requestedAbout !== undefined && installationsToUpdate.length === peerByPod.size) {
+        await AgentIdentityService.setAgentDescription(name, normalizedInstanceId, requestedAbout);
       }
 
       if (

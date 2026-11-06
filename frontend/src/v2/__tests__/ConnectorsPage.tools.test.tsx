@@ -247,7 +247,7 @@ describe('Connectors page: tools', () => {
     // Direction A: the audience is the sentence; the write mode is the glyph (label) and rides the 390 kicker as words.
     expect(within(live).getByText('Scout may use it')).toBeInTheDocument();
     expect(within(live).getByRole('img', { name: /asks|write/ })).toBeInTheDocument();
-    expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
+    expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('a write would ask first');
     expect(within(live).getByText(/granted 1h$/)).toBeInTheDocument();
     const liveDot = live.querySelector('.v2-connector-row__dot');
     expect(liveDot).toHaveClass('v2-connector-row__dot--live');
@@ -378,7 +378,7 @@ describe('Connectors page: tools', () => {
     expect(within(aside).getByText(/Granted by sam 1h ago\. Ends 6d from now\./)).toBeInTheDocument();
     expect(within(aside).getByText('agents allowed').nextElementSibling).toHaveTextContent('Scout');
     expect(within(aside).getByText('read and write, ask first').nextElementSibling).toHaveTextContent('github.list_issues');
-    expect(within(aside).getByText('asks a person first').nextElementSibling).toHaveTextContent('every write asks first');
+    expect(within(aside).getByText('asks a person first').nextElementSibling).toHaveTextContent('a write would ask first');
     expect(within(aside).getByText('budget').nextElementSibling).toHaveTextContent('50 calls per 1h');
     await waitFor(() => expect(within(aside).getByText('calls').previousElementSibling).toHaveTextContent('3'));
     expect(within(aside).getByText('refused').previousElementSibling).toHaveTextContent('1');
@@ -479,7 +479,7 @@ describe('Connectors page: tools', () => {
     const drawer = await openTool('GitHub');
     const live = await within(drawer).findByRole('button', { name: 'View GitHub in Launch pod' });
     expect(within(live).getByText('sam, Scout may use it')).toBeInTheDocument();
-    expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('every write asks first');
+    expect(live.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent('a write would ask first');
     expect(screen.queryByText(/an agent/)).not.toBeInTheDocument();
 
     fireEvent.click(live);
@@ -836,7 +836,7 @@ describe('Connectors page: tools', () => {
     const popover = await openToolPopover('GitHub');
     await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 available'));
     expect(within(popover).getByText('Issues and pull requests.')).toBeInTheDocument();
-    expect(within(popover).getByText('read, or read and write')).toBeInTheDocument();
+    expect(within(popover).getByText('read')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Granted' })).toBeNull();
     fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
     const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
@@ -846,16 +846,13 @@ describe('Connectors page: tools', () => {
     expect(within(form).queryByText('github.comment_on_issue')).toBeNull();
     expect(within(form).getByText('nothing asks first')).toBeInTheDocument();
     expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
-    fireEvent.click(within(form).getByRole('button', { name: 'read and write' }));
-    expect(within(form).getByText('github.comment_on_issue')).toBeInTheDocument();
-    expect(within(form).getByText('github.comment_on_issue, github.close_issue ask first')).toBeInTheDocument();
     fireEvent.change(within(form).getByRole('combobox', { name: 'ends' }), { target: { value: '30' } });
     const before = grantReads().length;
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
     const [url, body] = axios.post.mock.calls[0];
     expect(url).toBe('/api/grants');
-    expect(body).toMatchObject({ connectionId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'write', audience: ['a1'], tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] });
+    expect(body).toMatchObject({ connectionId: 'conn-1', target: { kind: 'pod', id: 'p1' }, writeMode: 'read', audience: ['a1'], tools: ['github.list_issues'] });
     // Both are the server's: the broker from the catalogue, the installation from the Connection (#1677).
     expect(body).not.toHaveProperty('brokerId');
     expect(body).not.toHaveProperty('installationId');
@@ -872,7 +869,7 @@ describe('Connectors page: tools', () => {
 
     const drawer = await openTool('GitHub');
     await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 available'));
-    expect(within(drawer).getByText('read, or read and write')).toBeInTheDocument();
+    expect(within(drawer).getByText('read')).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Add' })).toBeInTheDocument();
     expect(within(drawer).getByText('inactive · 1')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Granted' })).toBeNull();
@@ -953,14 +950,17 @@ describe('Connectors page: tools', () => {
 
     const { drawer, aside } = await openRow('GitHub', 'View GitHub in Launch pod');
     // Under `write` the aside names the irreversible tools from the catalogue.
-    expect(within(aside).getByText('asks a person first').nextElementSibling).toHaveTextContent('every write asks first');
+    expect(within(aside).getByText('asks a person first').nextElementSibling).toHaveTextContent('a write would ask first');
     fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
     const form = await screen.findByRole('complementary', { name: 'Change access' });
-    expect(within(form).getByRole('button', { name: 'read and write, ask first' })).toHaveAttribute('aria-pressed', 'true');
+    // A stored write grant reopens on the one mode the form offers.
+    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(form).queryByRole('button', { name: 'read and write, ask first' })).toBeNull();
     expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
     expect(axios.post.mock.calls[0][0]).toBe('/api/grants');
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
     expect(axios.post.mock.calls[1][0]).toBe('/api/grants/grant_live/revoke');
 
     axios.post.mockClear();
@@ -1173,6 +1173,23 @@ describe('Connectors page: tools', () => {
     const after = await openToolPopover('Linear');
     expect(within(after).getByRole('link', { name: 'Choose what Linear can reach' })).toHaveAttribute('href', accessPage);
     expect(within(after).queryByRole('button', { name: 'Connect' })).toBeNull();
+  });
+
+  it('a live GitHub grant carries the install warning on its reach link', async () => {
+    const tool = 'github-mcp.list_issues';
+    const entry = {
+      ...linearEntry,
+      installableId: 'github-mcp',
+      entryId: 'github-mcp',
+      label: 'GitHub MCP',
+      accessPage: 'https://github.com/apps/commonly-connect/installations/new',
+      tools: [{ name: tool, requiredWriteMode: 'read', irreversible: false }],
+    };
+    mockTools({ entries: [entry], grants: [{ ...grantLinear, tools: [tool] }] });
+    renderPage();
+    const { aside } = await openRow('GitHub MCP', 'View GitHub MCP in Launch pod');
+    const link = within(aside).getByRole('link', { name: 'Choose what GitHub MCP can reach' });
+    expect(link.closest('.v2-cx-warning')).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
   });
 
   // A live grant takes the entry off the offer, so the page moves to the grant's
@@ -1523,18 +1540,18 @@ describe('Connectors page: tools', () => {
   });
 });
 
-describe('Linear write reconnect note', () => {
+describe('Linear read note', () => {
   afterEach(async () => { await act(async () => { await i18n.changeLanguage('en'); }); });
 
-  it.each(['en', 'zh-CN'])('a connected Linear drawer says older connections must reconnect to write, in %s', async (language) => {
+  it.each(['en', 'zh-CN'])('a connected Linear drawer says agents read it and cannot write to it, in %s', async (language) => {
     await i18nReady;
     await act(async () => { await i18n.changeLanguage(language); });
     mockTools({ entries: [githubEntry, linearEntry], grants: [grantLinear] });
     renderPage();
     const drawer = await openTool('Linear');
     const note = within(drawer).getByRole('note');
-    expect(note).toHaveTextContent(language === 'en' ? 'disconnect it and connect it again to turn on writes' : '先断开再重新连接');
-    expect(note).toHaveTextContent(language === 'en' ? 'Each write asks for your approval first' : '每次写入都需要你批准');
+    expect(note).toHaveTextContent(language === 'en' ? "Agents can read Linear from here, but they can't write to it." : '智能体可以在这里读取 Linear，但不能写入。');
+    expect(note).not.toHaveTextContent(language === 'en' ? 'turn on writes' : '重新连接');
   });
 
   it('a connected Linear with no grant shows it once in the popover, before Add', async () => {
@@ -1542,7 +1559,7 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const pop = await openToolPopover('Linear');
     expect(within(pop).getAllByRole('note')).toHaveLength(1);
-    expect(within(pop).getByRole('note')).toHaveTextContent('disconnect it and connect it again to turn on writes');
+    expect(within(pop).getByRole('note')).toHaveTextContent("Agents can read Linear from here, but they can't write to it.");
   });
 
   it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
@@ -1566,6 +1583,407 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const pop = await openToolPopover('Atlassian');
     expect(within(pop).queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+// F213: no form-made grant gives an agent a write today, so the form offers none
+// until F214 and F215 restore it. A grant already stored keeps its true mode.
+describe('the form offers read, and a stored write grant stays what it is', () => {
+  const sentryEntry = {
+    installableId: 'sentry', list: 'tools', label: 'Sentry', description: 'Issues in Sentry.', available: true,
+    connectionType: 'hosted-mcp', entryId: 'sentry',
+    broker: { id: 'commonly-grant-broker' },
+    tools: [
+      { name: 'sentry.list_issues', requiredWriteMode: 'read', irreversible: false },
+      { name: 'sentry.update_issue', requiredWriteMode: 'write-with-confirm', irreversible: false },
+    ],
+    connections: [{ connectionId: 'conn-s', owner: 'acme', repo: 'sentry' }],
+  };
+  const modeButtons = (form) => within(within(form).getByRole('group', { name: 'what it may do' })).getAllByRole('button');
+
+  it.each([
+    ['a GitHub App', githubEntry, 'GitHub', 'github.list_issues', 'github.comment_on_issue'],
+    ['a hosted connection', sentryEntry, 'Sentry', 'sentry.list_issues', 'sentry.update_issue'],
+  ])('%s with write tools offers only read, and mints read', async (_kind, entry, label, readTool, writeTool) => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockTools({ entries: [entry], grants: [] });
+    renderPage();
+    const popover = await openToolPopover(label);
+    expect(within(popover).queryByText('read, or read and write')).toBeNull();
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    const form = await screen.findByRole('complementary', { name: `Add ${label}` });
+    expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read']);
+    expect(within(form).getByText(readTool)).toBeInTheDocument();
+    expect(within(form).queryByText(writeTool)).toBeNull();
+    expect(within(form).getByText('nothing asks first')).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: [readTool] });
+  });
+
+  it.each([
+    ['en', 'a write would ask first'],
+    ['zh-CN', '如有写入，需先确认'],
+  ])('the asks line on a stored grant makes no promise of a write, in %s', async (language, text) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(language); });
+    try {
+      mockTools({ grants: [grantLive] });
+      renderPage();
+      const drawer = await openTool('GitHub');
+      expect(drawer.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent(text);
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  it.each([
+    ['write-with-confirm', 'read and write, ask first', 'a write would ask first'],
+    ['write', 'read and write', 'github.comment_on_issue, github.close_issue ask first'],
+    ['read', 'read', 'nothing asks first'],
+  ])('a stored %s grant shows its true mode in the row and the detail', async (writeMode, label, asks) => {
+    mockTools({
+      grants: [{ ...grantLive, writeMode, tools: ['github.list_issues', 'github.comment_on_issue', 'github.close_issue'] }],
+      trails: { grant_live: { ...trail, calls: [] } },
+    });
+    renderPage();
+    const { drawer, aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+    expect(within(drawer).getByRole('img', { name: label })).toBeInTheDocument();
+    expect(drawer.querySelector('.v2-connector-row__kicker-mode')).toHaveTextContent(asks);
+    expect(within(aside).getByText(label).nextElementSibling).toHaveTextContent('github.list_issues');
+    expect(within(aside).getByText('asks a person first').nextElementSibling).toHaveTextContent(asks);
+  });
+});
+
+describe('F221: connecting your own repository', () => {
+  const ROUTE = '/api/integrations/github-app/repositories';
+  const appEntry = { ...githubEntry, connectionType: 'github-app', repositoryConnect: true, connections: [] };
+  const hostedGithub = {
+    ...linearEntry, installableId: 'github-mcp', label: 'GitHub MCP', entryId: 'github-mcp', repositoryConnect: true, accessPage: 'https://github.com/apps/connect/installations/new', connections: [],
+  };
+  const repos = [
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Widget', private: true },
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget', private: false },
+  ];
+  const openStep = async ({ listed, refused, entries = [appEntry, hostedGithub] }) => {
+    const route = (url) => {
+      if (url !== ROUTE) return undefined;
+      return refused ? Promise.reject({ response: { data: { error: refused } } }) : Promise.resolve({ data: listed });
+    };
+    mockTools({ entries, grants: [], seats: { p1: [scout], p2: [] }, route });
+    axios.post.mockResolvedValue({ data: { integration: { _id: 'row-1' } } });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
+    return screen.findByRole('complementary', { name: 'Connect a repository' });
+  };
+
+  it('is not offered where the catalogue does not say so', async () => {
+    mockTools({ entries: [{ ...hostedGithub, repositoryConnect: undefined }], grants: [], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    expect(within(popover).queryByRole('button', { name: 'Connect a repository' })).toBeNull();
+  });
+
+  it('a member who is no admin connects the repository they pick, with the row GitHub listed', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: false } });
+    const connect = await within(step).findByRole('button', { name: 'Connect' });
+    expect(connect).toBeDisabled();
+    fireEvent.change(within(step).getByLabelText('repository'), { target: { value: 'Outside-Team/Gadget' } });
+    fireEvent.click(connect);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(ROUTE, { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' }, expect.anything()));
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Connect a repository' })).toBeNull());
+  });
+
+  it('with no GitHub account connected, it starts that sign-in instead of asking for ids', async () => {
+    const opened = { opener: 'x', location: { assign: jest.fn() }, close: jest.fn() };
+    jest.spyOn(window, 'open').mockReturnValue(opened);
+    const step = await openStep({ refused: 'github_connect_required' });
+    fireEvent.click(await within(step).findByRole('button', { name: 'Connect GitHub' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/integrations/connect/hosted-mcp/github-mcp/start', {}, expect.anything()));
+  });
+
+  it('with nothing to connect, it links the install page', async () => {
+    const step = await openStep({ listed: { repositories: [], truncated: false } });
+    const link = await within(step).findByRole('link');
+    expect(link).toHaveAttribute('href', hostedGithub.accessPage);
+    const warning = link.closest('.v2-cx-warning');
+    expect(warning).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(warning).toHaveTextContent('Commonly Connect can reach every repository on the account or org you install it on');
+  });
+
+  it('warns beside the install link on the offer, and only for GitHub', async () => {
+    mockTools({ entries: [hostedGithub, { ...linearEntry, accessPage: 'https://linear.example/access' }], grants: [], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const github = await openToolPopover('GitHub MCP');
+    expect(within(github).getByRole('link', { name: 'Choose what GitHub MCP can reach' }).closest('.v2-cx-warning')).not.toBeNull();
+    const linear = await openToolPopover('Linear');
+    expect(within(linear).queryByText("On GitHub, choose 'Only select repositories'.")).toBeNull();
+  });
+
+  it('labels each row and names the picked repository, public or private', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: false } });
+    const select = await within(step).findByLabelText('repository');
+    expect(within(select).getByRole('option', { name: 'Outside-Team/Widget (private)' })).toHaveValue('Outside-Team/Widget');
+    expect(within(select).getByRole('option', { name: 'Outside-Team/Gadget (public)' })).toHaveValue('Outside-Team/Gadget');
+    expect(within(step).queryByRole('status')).toBeNull();
+    fireEvent.change(select, { target: { value: 'Outside-Team/Gadget' } });
+    expect(within(step).getByRole('status')).toHaveTextContent("You're connecting Outside-Team/Gadget, a public repository.");
+    fireEvent.change(select, { target: { value: 'Outside-Team/Widget' } });
+    expect(within(step).getByRole('status')).toHaveTextContent("You're connecting Outside-Team/Widget, a private repository.");
+  });
+
+  it('names the one repository it picked by itself', async () => {
+    const step = await openStep({ listed: { repositories: [repos[1]], truncated: false } });
+    expect(await within(step).findByText("You're connecting Outside-Team/Gadget, a public repository.")).toBeInTheDocument();
+  });
+
+  it('does not call a row public when the field is missing', async () => {
+    const { private: _dropped, ...unmarked } = repos[1];
+    const step = await openStep({ listed: { repositories: [unmarked], truncated: false } });
+    expect(await within(step).findByText("You're connecting Outside-Team/Gadget, a private repository.")).toBeInTheDocument();
+    expect(within(step).getByRole('option', { name: 'Outside-Team/Gadget (private)' })).toBeInTheDocument();
+  });
+
+  it('a member with a live grant can still connect another repository', async () => {
+    const connected = { ...appEntry, connections: [{ connectionId: 'conn-1', owner: 'Team-Commonly', repo: 'commonly' }] };
+    mockTools({ entries: [connected, hostedGithub], grants: [grantLive], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const drawer = await openTool('GitHub');
+    expect(within(drawer).getByRole('button', { name: 'Connect a repository' })).toBeInTheDocument();
+  });
+
+  it('a read that lands after the step closed does not reopen it', async () => {
+    let answer;
+    const route = (url) => (url === ROUTE ? new Promise((resolve) => { answer = resolve; }) : undefined);
+    mockTools({ entries: [appEntry, hostedGithub], grants: [], seats: { p1: [scout], p2: [] }, route });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
+    const step = await screen.findByRole('complementary', { name: 'Connect a repository' });
+    fireEvent.click(within(step).getByRole('button', { name: 'Cancel' }));
+    await act(async () => { answer({ data: { repositories: repos, truncated: false } }); });
+    await settle();
+    expect(screen.queryByRole('complementary', { name: 'Connect a repository' })).toBeNull();
+  });
+
+  it('coming back from the GitHub sign-in reads the list again', async () => {
+    const step = await openStep({ refused: 'github_connect_required' });
+    await within(step).findByRole('button', { name: 'Connect GitHub' });
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === ROUTE).length;
+    const before = reads();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+
+  it('says when the list may be incomplete', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: true } });
+    expect(await within(step).findByText('This list may be incomplete.')).toBeInTheDocument();
+  });
+
+  it('a refused connect stays on the step and says why', async () => {
+    const step = await openStep({ listed: { repositories: [repos[0]], truncated: false } });
+    const connect = await within(step).findByRole('button', { name: 'Connect' });
+    expect(connect).toBeEnabled();
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'repository_write_required' } } });
+    fireEvent.click(connect);
+    expect(await within(step).findByRole('alert')).toHaveTextContent('You need write access to that repository to connect it.');
+  });
+});
+
+describe('F214: pull-request access in the grant form', () => {
+  const PR_TOOLS = ['github.create_pull_request', 'github.commit_files', 'github.push_branch'];
+  const CHOICE = /open pull requests from their own branch/;
+  const appEntry = {
+    ...githubEntry,
+    connectionType: 'github-app',
+    tools: [
+      { name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false },
+      { name: 'github.create_issue', requiredWriteMode: 'write-with-confirm', irreversible: false },
+      ...PR_TOOLS.map((name) => ({ name, requiredWriteMode: 'write-with-confirm', irreversible: false, prWrite: true })),
+    ],
+  };
+  const openAdd = async (entries = [appEntry], seats = { p1: [scout], p2: [] }, route) => {
+    mockTools({ entries, grants: [], seats, route });
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    renderPage();
+    const popover = await openToolPopover('GitHub');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    return screen.findByRole('complementary', { name: 'Add GitHub' });
+  };
+  const mintBody = () => axios.post.mock.calls.find(([url]) => url === '/api/grants')[1];
+
+  it('is off by default, and that mint carries no write', async () => {
+    const form = await openAdd();
+    expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+    expect(mintBody()).not.toHaveProperty('prWrite');
+  });
+
+  it('mints the read tools and the PR tools, no other write, and says every one asks first', async () => {
+    const form = await openAdd();
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    expect(within(form).getByText('every commit, push and pull request asks you first')).toBeInTheDocument();
+    PR_TOOLS.forEach((name) => expect(within(form).getByText(name)).toBeInTheDocument());
+    expect(within(form).queryByText('github.create_issue')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({
+      writeMode: 'write-with-confirm', prWrite: true, tools: ['github.list_issues', ...PR_TOOLS],
+    });
+  });
+
+  it('is not offered on a connection that is not a GitHub App', async () => {
+    const form = await openAdd([{ ...appEntry, connectionType: 'hosted-mcp', entryId: 'github' }]);
+    expect(within(form).queryByRole('checkbox', { name: CHOICE })).toBeNull();
+  });
+
+  it('adds the PR writes to an outside agent\'s consent, and ticking it clears an earlier consent', async () => {
+    const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+    const agents = [{ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined' }];
+    const route = (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+    const form = await openAdd([appEntry], { p1: [scout, claude], p2: [] }, route);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    const consent = () => within(form).getByRole('checkbox', { name: /runs on your computer/ });
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(consent());
+    expect(grant).toBeEnabled();
+
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    expect(grant).toBeDisabled();
+    expect(consent()).toHaveAccessibleName(expect.stringContaining('send commits and pull requests to this repository'));
+
+    fireEvent.click(consent());
+    fireEvent.click(grant);
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'write-with-confirm', prWrite: true, byoAgents: ['b1'], byoConsent: true });
+  });
+
+  describe('on a grant that holds it', () => {
+    const held = {
+      ...grantLive, grantId: 'grant_pr', prWrite: true, connectionId: 'conn-1', tools: ['github.list_issues', ...PR_TOOLS],
+    };
+
+    it('the detail names it, and Change access keeps it', async () => {
+      mockTools({ entries: [appEntry], grants: [held], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      axios.post.mockResolvedValue({ data: { grantId: 'grant_new', revoked: 1 } });
+      renderPage();
+      const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+      expect(within(aside).getByText('read, plus pull requests you approve')).toBeInTheDocument();
+      expect(within(aside).getByText('every commit, push and pull request asks you first')).toBeInTheDocument();
+
+      fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
+      const form = await screen.findByRole('complementary', { name: 'Change access' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).toBeChecked();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant_pr/revoke', undefined, expect.anything()));
+      expect(mintBody()).toMatchObject({ writeMode: 'write-with-confirm', prWrite: true });
+    });
+
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const openChange = async (grant, entry = twoRepos) => {
+      mockTools({ entries: [entry], grants: [grant], seats: { p1: [scout], p2: [] }, trails: { [grant.grantId]: { ...trail, grantId: grant.grantId } } });
+      axios.post.mockResolvedValue({ data: { grantId: 'grant_new', revoked: 1 } });
+      renderPage();
+      const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
+      return { aside, form: await screen.findByRole('complementary', { name: 'Change access' }) };
+    };
+    const ENDS = 'This change ends pull-request access on this grant.';
+
+    it('names it on the list row too', async () => {
+      mockTools({ entries: [twoRepos], grants: [{ ...held, connectionId: 'conn-b' }], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      await openTool('GitHub');
+      expect(await screen.findByRole('img', { name: 'read, plus pull requests you approve' })).toHaveAttribute('aria-label', 'read, plus pull requests you approve');
+    });
+
+    it('Change access stays on the grant\'s own repository', async () => {
+      const { form } = await openChange({ ...held, connectionId: 'conn-b' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).toBeChecked();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ connectionId: 'conn-b', prWrite: true });
+    });
+
+    it('Change access never adds a PR tool the grant did not name', async () => {
+      const narrow = { ...held, connectionId: 'conn-b', tools: ['github.create_pull_request', 'github.commit_files'] };
+      const { form } = await openChange(narrow);
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody().tools).toEqual(['github.list_issues', 'github.create_pull_request', 'github.commit_files']);
+    });
+
+    it.each([
+      ['its connection is no longer offered', { connectionId: 'conn-gone' }],
+      ['it is a child grant', { connectionId: 'conn-b', parentGrantId: 'grant_root', rootGrantId: 'grant_root' }],
+    ])('says Change access ends it when %s, and mints a read grant', async (_, over) => {
+      const { form } = await openChange({ ...held, ...over });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).getByText(ENDS)).toBeInTheDocument();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+      expect(mintBody()).not.toHaveProperty('prWrite');
+    });
+
+    it('an ended grant opens without it and says nothing is ending', async () => {
+      const ended = { ...held, connectionId: 'conn-b', revokedAt: iso(-1000), revokedBy: 'u1' };
+      mockTools({ entries: [twoRepos], grants: [ended], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      const drawer = await openTool('GitHub');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
+      const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).queryByText(ENDS)).toBeNull();
+    });
+  });
+
+  it('is not offered when the catalogue does not hold the tool that opens the pull request', async () => {
+    const form = await openAdd([{ ...appEntry, tools: appEntry.tools.filter((tool) => tool.name !== 'github.create_pull_request') }]);
+    expect(within(form).queryByRole('checkbox', { name: CHOICE })).toBeNull();
+  });
+
+  it('unticking it sends no PR tool and no prWrite', async () => {
+    const form = await openAdd();
+    const box = within(form).getByRole('checkbox', { name: CHOICE });
+    fireEvent.click(box);
+    fireEvent.click(box);
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+    expect(mintBody()).not.toHaveProperty('prWrite');
+  });
+
+  it('a consent for one repository does not carry to another', async () => {
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+    const agents = [{ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined' }];
+    const route = (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+    const form = await openAdd([twoRepos], { p1: [scout, claude], p2: [] }, route);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    fireEvent.click(within(form).getByRole('checkbox', { name: /runs on your computer/ }));
+    expect(grant).toBeEnabled();
+    fireEvent.change(within(form).getByLabelText('connection'), { target: { value: 'conn-b' } });
+    expect(grant).toBeDisabled();
   });
 });
 
@@ -1625,22 +2043,12 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     expect(body).not.toHaveProperty('byoConsent');
   });
 
-  it('write modes are off while an agent of yours is checked', async () => {
+  it('read is the only mode with an agent of yours checked or unchecked', async () => {
     const form = await openAdd([candidate()]);
-    expect(within(form).getByRole('button', { name: 'read and write' })).toBeDisabled();
-    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(form).getByText('An agent on your computer can only read.')).toBeInTheDocument();
+    const modes = () => within(within(form).getByRole('group', { name: 'what it may do' })).getAllByRole('button');
+    expect(modes().map((button) => button.textContent)).toEqual(['read']);
     fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
-    expect(within(form).getByRole('button', { name: 'read and write' })).toBeEnabled();
-  });
-
-  it('checking an agent of yours after picking a write mode puts the draft back to read', async () => {
-    const form = await openAdd([candidate()]);
-    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
-    fireEvent.click(within(form).getByRole('button', { name: 'read and write' }));
-    expect(within(form).getByRole('button', { name: 'read and write' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
-    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+    expect(modes().map((button) => button.textContent)).toEqual(['read']);
   });
 
   it('a consent covers only the agents it was ticked for', async () => {
@@ -1679,6 +2087,22 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
+  });
+
+  // F175a: a harness that can't hold a grant names the ones that can.
+  it('an agent on a harness with no sandbox is offered disabled, naming the harnesses that can', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' })]);
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText('Connectors need a sandboxed harness: only Claude Code, Codex or OpenCode agents can be named.'))
+      .toBeInTheDocument();
+  });
+
+  it('a mint refused for its harness reads in the page\'s words, naming the full set', async () => {
+    const form = await openAdd([candidate()]);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'byo_adapter_unsupported', message: 'raw' } } });
+    fireEvent.click(consentBox(form));
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByText('Only a Claude Code, Codex or OpenCode agent can be named on a grant.')).toBeInTheDocument();
   });
 
   it('an agent the roster hides still appears so it can be named', async () => {

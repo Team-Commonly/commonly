@@ -3,6 +3,7 @@ import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { noteMachineAnswered } from '../services/machineService';
+import { describeSkippedPost } from '../services/skippedPostGuidance';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -57,7 +58,8 @@ const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 const { rateLimitObserver } = require('../middleware/rateLimitObserver');
-const { adapterForRuntimeBinding } = require('../services/grantBrokerConfinement');
+const { adapterForRuntimeBinding, normalizeAdapter } = require('../services/grantBrokerConfinement');
+const { grantBrokersForRuntimeSeat } = require('../services/seatGrantBrokerProjection');
 const {
   assertAgentRuntimeMayJoinPod,
   runtimeTypeFromConfig,
@@ -539,6 +541,21 @@ router.post('/observation', phase4RateLimit, daemonAuth('agents:adopt'), async (
   }
 });
 
+// A foreground run on a host with no sandbox says so here, because no daemon is
+// reporting for it, and an unconfined agent can read this run's token and call
+// the grant broker itself. Set-only on purpose: that same token must never be
+// able to lift the refusal, so nothing on this route clears it. It only ever
+// adds a refusal, so a seat can set it on itself alone and nothing else.
+router.post('/host-unconfined', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, { $set: { 'botMetadata.hostUnconfined': true } });
+    return res.json({ hostUnconfined: true });
+  } catch (error) {
+    console.error('Host report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'host_report_unavailable' });
+  }
+});
+
 router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     return await patchAgentRuntimeConfiguration(req, res);
@@ -563,6 +580,33 @@ const runtimeControlsFor = (config: any): { model?: string; effort?: string } =>
   if (controlText(effort)) controls.effort = effort;
   return controls;
 };
+
+/**
+ * GET /grant-brokers?adapter=<name> (agent runtime token auth) — F150.
+ *
+ * The grant brokers a seat run with `commonly agent run` (no daemon) receives:
+ * the same `{ servers, refusal }` the daemon's /assigned projects per seat,
+ * from the same function. The seat is the token's own bot User; nothing in the
+ * request names an identity, so no other seat's grant can come back. The
+ * caller declares the adapter it runs, which is judged on top of the row's
+ * own runtime: a declaration can add `adapter_cannot_confine`, never remove it,
+ * and naming (F94) never lifts that one. The cli applies its own
+ * `withholdGrantBroker` after merging, and the broker re-checks every call.
+ */
+router.get('/grant-brokers', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    const adapter = normalizeAdapter(req.query?.adapter);
+    if (!adapter) {
+      return res.status(400).json({ code: 'adapter_required', message: 'Declare the adapter this seat runs (?adapter=)' });
+    }
+    const agentUserId = req.agentUser?._id ? String(req.agentUser._id) : '';
+    if (!agentUserId) return res.json({ servers: [], refusal: null });
+    return res.json(await grantBrokersForRuntimeSeat({ agentUserId, adapter }));
+  } catch (error) {
+    console.error('Error projecting grant brokers:', (error as Error).message || error);
+    return res.status(500).json({ message: 'Failed to read grant brokers' });
+  }
+});
 
 router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
@@ -1416,13 +1460,18 @@ router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(
   }
 });
 
+// The body of /events/renew and /events/release: 1–50 { eventId, deliveryId }.
+const isDeliveryPairList = (events: unknown): events is Array<{ eventId: string; deliveryId: string }> => (
+  Array.isArray(events) && events.length >= 1 && events.length <= 50
+  && events.every((entry: any) => entry && typeof entry.eventId === 'string'
+    && /^[a-fA-F0-9]{24}$/.test(entry.eventId) && typeof entry.deliveryId === 'string' && entry.deliveryId)
+);
+
 // A live inbox turn may outlast the stale-delivery GC interval. Renew only
 // the token owner's current nonce; this never marks work handled.
 router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   const events = req.body?.events;
-  if (!Array.isArray(events) || events.length < 1 || events.length > 50
-    || events.some((entry: any) => !entry || typeof entry.eventId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(entry.eventId)
-      || typeof entry.deliveryId !== 'string' || !entry.deliveryId)) {
+  if (!isDeliveryPairList(events)) {
     return res.status(400).json({ message: 'events requires 1–50 eventId/deliveryId pairs' });
   }
   const agentName = req.agentInstallation?.agentName
@@ -1449,6 +1498,37 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);
     return res.status(500).json({ message: 'Could not renew inbox deliveries' });
+  }
+});
+
+// F189/F182: a stopping runner hands back the deliveries it holds but will not
+// run, so its replacement gets them on its first poll instead of after the
+// requeue sweep. Same shape and nonce binding as /events/renew; never an ack.
+// Bounded: past the redelivery ceiling a release is refused (atCeiling).
+router.post('/events/release', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  const events = req.body?.events;
+  if (!isDeliveryPairList(events)) {
+    return res.status(400).json({ message: 'events requires 1–50 eventId/deliveryId pairs' });
+  }
+  const agentName = req.agentInstallation?.agentName
+    || req.agentUser?.botMetadata?.agentName
+    || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
+  const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
+  if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  try {
+    const results = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => ({
+      eventId: entry.eventId,
+      outcome: await AgentEventService.releaseDelivery(entry.eventId, agentName, instanceId, entry.deliveryId),
+    })));
+    // atCeiling: refused because the event reached the redelivery ceiling; it
+    // stays delivered and the requeue sweep retires it.
+    return res.json({
+      released: results.filter((r) => r.outcome === 'released').map((r) => r.eventId),
+      atCeiling: results.filter((r) => r.outcome === 'at_ceiling').map((r) => r.eventId),
+    });
+  } catch (error: any) {
+    console.error('Error releasing inbox deliveries:', error.message);
+    return res.status(500).json({ message: 'Could not release inbox deliveries' });
   }
 });
 
@@ -1674,7 +1754,7 @@ router.post(
         installationConfig: installation.config || null,
       });
 
-      return res.json(result);
+      return res.json({ ...describeSkippedPost(result), ...result });
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
       // A message-store outage is retryable (TASK-503): 503, not 500.
@@ -1714,6 +1794,9 @@ router.post(
       const { content, podId: requestPodId } = req.body || {};
       if (!content) {
         return res.status(400).json({ message: 'content is required' });
+      }
+      if (typeof content !== 'string') {
+        return res.status(400).json({ message: 'content must be a string' });
       }
 
       const post = await Post.findById(threadId).select('_id podId').lean();
@@ -1952,6 +2035,34 @@ router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (r
   }
 });
 
+/**
+ * Who else is in a pod, so the CLI wrapper can tell who an open question is put
+ * to. commonly-bot is installed in every agent-created pod and answers nobody,
+ * so it isn't a peer. A failure returns nothing: a read of the pod must not fail
+ * on this, and the wrapper treats a missing field as unknown.
+ */
+const podAttendance = async (podId: string, installation: any) => {
+  if (!installation?.agentName) return {};
+  try {
+    const [installs, pod] = await Promise.all([
+      AgentInstallation.find({ podId, status: 'active' }).select('agentName instanceId').lean(),
+      Pod.findById(podId).select('members').lean(),
+    ]);
+    const isCaller = (row: any) => row.agentName === installation.agentName
+      && (row.instanceId || 'default') === (installation.instanceId || 'default');
+    const peopleInPod = await User.countDocuments({
+      _id: { $in: pod?.members || [] }, isBot: { $ne: true },
+    });
+    return {
+      otherAgentsInPod: installs.some((row: any) => row.agentName !== 'commonly-bot' && !isCaller(row)),
+      peopleInPod,
+    };
+  } catch (error: any) {
+    console.warn('[agents-runtime] Failed to read pod attendance:', error?.message);
+    return {};
+  }
+};
+
 router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -2043,7 +2154,10 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // `mention`: the @handle routing resolves for the author, so a reply can
     // address them without guessing from the display name in `username`.
     const withMention = await AgentMessageService.withMentionHandles(page, req.params.podId);
-    return res.json({ messages: withMention, hasMore });
+    const attendance = beforeMs === undefined && rawThreadRootId === undefined
+      ? await podAttendance(podId, installation)
+      : {};
+    return res.json({ messages: withMention, hasMore, ...attendance });
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });
@@ -2423,6 +2537,8 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       }
     }
     return res.json({
+      // First, so a model reading the JSON top down meets this before `success`.
+      ...describeSkippedPost(result),
       ...result,
       mentionNotices,
       ...(mentionNotices.length > 0
@@ -2590,9 +2706,12 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
     const { threadId } = req.params;
     const installation = req.agentInstallation;
 
-    const { content, replyToCommentId } = req.body || {};
+    const { content, replyToCommentId, onlyIfUnanswered } = req.body || {};
     if (!content) {
       return res.status(400).json({ message: 'content is required' });
+    }
+    if (typeof content !== 'string') {
+      return res.status(400).json({ message: 'content must be a string' });
     }
 
     const post = await Post.findById(threadId).select('_id podId').lean();
@@ -2619,6 +2738,7 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
       threadId,
       content,
       replyToCommentId: replyToCommentId || null,
+      onlyIfUnanswered: onlyIfUnanswered === true,
     });
 
     return res.json(result);
@@ -3478,6 +3598,9 @@ router.post('/pods', phase4RateLimit, agentRuntimeAuth, async (req: any, res: an
       if (!isMember) {
         existingPod.members.push(agentUser._id);
         await existingPod.save();
+        // F183: best-effort PG mirror write; never fails the join.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+        await require('../services/pgMirrorWrite').mirrorMemberAdded(String(existingPod._id), String(agentUser._id));
         await existingPod.populate(podMemberPopulate('username profilePicture'));
       }
       // Ensure an AgentInstallation exists so the agent appears in the Agents section

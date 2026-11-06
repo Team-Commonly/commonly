@@ -75,7 +75,8 @@ const blockOf = (at) => {
   const next = lines.findIndex((l, k) => k > at && /^\s*- model_name:|^\s*router_settings:|^\s*\{\{-? (if|end|else)/.test(l));
   return lines.slice(at + 1, next === -1 ? undefined : next).join('\n');
 };
-const standInGate = (provider) => `{{- if and (not .Values.aiProviders.${provider}.enabled) .Values.litellm.legacyAliases }}`;
+// F159: and only where DeepSeek, the stand-in's upstream, renders.
+const standInGate = (provider) => `{{- if and (not .Values.aiProviders.${provider}.enabled) .Values.litellm.legacyAliases .Values.aiProviders.deepseek.enabled }}`;
 const LEGACY_NAMES = [
   'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3-super-120b-a12b:free',
   'gpt-5.4', 'openai-codex/gpt-5.4', 'gpt-5.4-mini', 'openai-codex/gpt-5.4-mini', 'gpt-5.4-nano',
@@ -96,7 +97,7 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
       ['gemini-2.5-flash', 'google/gemini-2.0-flash', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'gpt-4o'],
     );
     // A provider-off gate ANDed with the flag; never `not` the flag.
-    const gate = /^\{\{- if and \(not \.Values\.aiProviders\.\w+\.enabled\) \.Values\.litellm\.legacyAliases \}\}$/;
+    const gate = /^\{\{- if and \(not \.Values\.aiProviders\.\w+\.enabled\) \.Values\.litellm\.legacyAliases \.Values\.aiProviders\.deepseek\.enabled \}\}$/;
     standIns.forEach(({ name, i }) => expect([name, gateAbove(i)]).toEqual([name, expect.stringMatching(gate)]));
   });
 
@@ -120,14 +121,14 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
     expect(blockOf(standIn.i)).toMatch(/model:\s*deepseek\/deepseek-v4-flash/);
   });
 
-  test('a Gemini fallback renders where Gemini is on or legacyAliases is, and no other fallback is listed', () => {
+  test('a Gemini fallback renders where DeepSeek is on and Gemini or legacyAliases is, and no other fallback is listed', () => {
     const gemini = [];
     const other = [];
     lines.forEach((l, i) => {
       if (/^\s*- \{"(gemini-|google\/)/.test(l)) gemini.push(gateAbove(i));
       else if (/^\s*- \{"[^"]+":\s*\[/.test(l)) other.push(l.trim());
     });
-    expect(gemini).toEqual(Array(4).fill('{{- if or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases }}'));
+    expect(gemini).toEqual(Array(4).fill('{{- if and .Values.aiProviders.deepseek.enabled (or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases) }}'));
     expect(other).toEqual([]);
   });
 });

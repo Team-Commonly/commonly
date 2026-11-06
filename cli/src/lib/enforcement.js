@@ -37,7 +37,7 @@ export const CLAIMABLE_EVENT_TYPES = new Set([
 // whether the work genuinely cannot continue without a human ruling.
 export const DECISION_FORK_FRAME = [
   '[Decision forks]',
-  'If you are blocked on a genuine fork that needs a human choice, use your runtime\'s decision-card tool (MCP: commonly_request_decision); include @human when a specific person should rule, and do not duplicate the card with a prose @ask.',
+  'If you are blocked on a genuine fork that needs a human choice, use your runtime\'s decision-card tool (MCP: commonly_request_decision); include that person\'s real @handle when a specific person should rule, and do not duplicate the card with a prose @ask.',
   'Use it only when you cannot safely continue before a ruling. Give 2–4 concrete options and mark one recommendation.',
   'Use ordinary pod messages for status, factual questions, and coordination that do not require a human choice.',
 ].join('\n');
@@ -61,6 +61,11 @@ export const frameDecisionForkRule = (prompt) => `${DECISION_FORK_FRAME}\n\n${pr
  */
 export const classifyTrigger = (event, recentMessages) => {
   const p = event?.payload || {};
+  // A post comment is not a pod message, so a snapshot can never name its
+  // author (F225). The kernel stamps it; an older server leaves it 'unknown'.
+  if (event?.type === 'thread.mention' && typeof p.senderIsHuman === 'boolean') {
+    return p.senderIsHuman ? 'human' : 'agent';
+  }
   // The third pricing branch (#1044, fable 55845). Kernel-found work is not
   // agent churn and must not price as it: counted as 'agent' it eats cascade
   // budget exactly when the board is busiest; counted as 'human' it CLEARS the
@@ -85,6 +90,20 @@ export const classifyTrigger = (event, recentMessages) => {
 // (message.posted) are the opposite: nobody asked for THIS seat, so a lost
 // race is a free stand-down.
 export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 'dm.message']);
+
+/**
+ * A person @-mentioned this seat in a pod (ADR-018 D9.2): the one wake that
+ * carries unread message bodies. `trigger` is classifyTrigger's verdict, so an
+ * agent's mention, a kernel wake and an author the snapshot can't name are all
+ * out. A DM wake is not a mention, whichever type it rides, and neither is a
+ * broadcast. Nor are three `chat.mention` wakes where nobody typed the seat's
+ * name: a welcome, an adjacent reply and a reply to the seat's own message.
+ */
+export const isPersonMention = (event, trigger) => {
+  const payload = event?.payload || {};
+  return trigger === 'human' && event?.type === 'chat.mention' && !payload.dmKind
+    && !payload.welcomeWake && !payload.adjacentReply && !payload.implicitReply;
+};
 
 // These are the two event types the kernel's bot-to-bot mention dampener
 // bounds as one shared budget. Keep the wrapper out of that same loop's
@@ -621,6 +640,42 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
   }
   if (acc) chunks.push(acc);
   return chunks;
+};
+
+/**
+ * The final text of a comment @, as a reply to that comment (F225). It returns
+ * deliverChatReply's shape, so the run loop treats a refusal or a skip the same
+ * way on both. The route answers 200 with `success: false` for a refusal.
+ * `onlyIfUnanswered` is how a reply the seat already posted through
+ * commonly_post_thread_comment is not posted twice: a pod snapshot can't see a
+ * comment, and the server can. A 400, 403 or 404 won't change on a retry, so it
+ * is a refusal too; anything else throws, for redelivery.
+ */
+export const deliverCommentReply = async ({ client, postId, commentId, text }) => {
+  const refused = (reason, guidance) => ({
+    mode: 'refused', messages: 0, attemptedMessages: 1, refused: true, reason, guidance,
+  });
+  let response;
+  try {
+    response = await client.post(`/api/agents/runtime/threads/${encodeURIComponent(postId)}/comments`, {
+      content: text, replyToCommentId: commentId, onlyIfUnanswered: true,
+    });
+  } catch (error) {
+    if (![400, 403, 404].includes(error?.status)) throw error;
+    return refused(`comment_post_${error.status}`, `The server refused this comment: ${error.message}`);
+  }
+  if (response?.agentCommentsDisabled) {
+    return refused('agent_comments_disabled', 'This post has agent comments turned off.');
+  }
+  if (response?.selfReply) return refused('self_reply', 'An agent cannot reply to its own comment.');
+  if (response?.success === false) return refused('comment_refused', 'The server refused this comment.');
+  if (response?.skipped) {
+    return {
+      mode: 'skipped', messages: 0, attemptedMessages: 1, skipped: true, reason: response.reason || 'skipped',
+    };
+  }
+  return { mode: 'comment', messages: response?.duplicate ? 0 : 1, attemptedMessages: 1,
+    alreadyAnswered: response?.duplicate === true };
 };
 
 /**

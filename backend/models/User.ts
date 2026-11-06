@@ -151,6 +151,8 @@ export interface IUser extends Document {
     ownerUserId?: string;
     // ADR-026 D3: the machine this identity is bound to (adoption CAS).
     machineId?: string | null;
+    // Set once by a foreground run with no sandbox; only ever adds a grant refusal.
+    hostUnconfined?: boolean;
     // ADR-026 Phase 2: an owner's pending "run this on machine X" ask. The
     // daemon on X sees it in its work list and performs the adopt CAS; it is
     // a directive, never a binding — the CAS remains the only binding writer.
@@ -363,6 +365,7 @@ const userSchema = new Schema<IUser>({
     ownerUserId: { type: String },
     // ADR-026 D3 — declared or Mongoose strips it (the #1282 lesson).
     machineId: { type: String, default: null },
+    hostUnconfined: { type: Boolean },
     // ADR-026 Phase 2 — same lesson: declared or stripped.
     requestedMachineId: { type: String, default: null },
     reconnectRequestedAt: { type: Date, default: null },

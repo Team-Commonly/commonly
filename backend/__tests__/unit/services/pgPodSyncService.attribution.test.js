@@ -19,7 +19,11 @@
 
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: jest.fn() }));
 
-const mockPGPod = { create: jest.fn(), addMember: jest.fn().mockResolvedValue(undefined) };
+const mockPGPod = {
+  create: jest.fn(),
+  addMember: jest.fn().mockResolvedValue(undefined),
+  removeMember: jest.fn().mockResolvedValue(undefined),
+};
 const mockMongoPod = { findById: jest.fn() };
 
 jest.mock('../../../models/pg/Pod', () => mockPGPod);
@@ -84,5 +88,23 @@ describe('syncPodFromMongo attribution', () => {
 
     await expect(syncPodFromMongo(POD, INTRUDER)).resolves.toBeNull();
     expect(mockPGPod.create).not.toHaveBeenCalled();
+  });
+
+  // F183: PGPod.create inserts its owner into pod_members. When Mongo's owner
+  // is not in Mongo `members`, that row is a ghost the nightly diff counts, so
+  // the backfill takes it back out. The mirror should say what the pod says.
+  test('removes the owner row PGPod.create inserted when Mongo does not list the owner', async () => {
+    await syncPodFromMongo(POD, INTRUDER);
+    expect(mockPGPod.removeMember).toHaveBeenCalledWith(POD, OWNER);
+  });
+
+  test('keeps the owner row when Mongo lists the owner as a member', async () => {
+    mockMongoPod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        name: 'P', description: '', type: 'chat', createdBy: OWNER, members: [OWNER, MEMBER],
+      }),
+    });
+    await syncPodFromMongo(POD, INTRUDER);
+    expect(mockPGPod.removeMember).not.toHaveBeenCalled();
   });
 });

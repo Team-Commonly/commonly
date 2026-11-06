@@ -1,3 +1,4 @@
+const { isWriteUnknown, markWriteUnknown } = require('../../../services/brokerWriteOutcome');
 const { execFile } = require('child_process');
 const { mkdtemp, mkdir, rename, rm, writeFile } = require('fs/promises');
 const { tmpdir } = require('os');
@@ -5,6 +6,7 @@ const { dirname, join } = require('path');
 const { promisify } = require('util');
 const {
   parseSeatPushArgs, fetchProviderObjects, pushWithLease, validateSeatBundle, PROVIDER_GIT_MAX_BUFFER,
+  providerGitFailure, runProviderGit, SeatPushError,
 } = require('../../../services/seatGithubPush');
 
 const runFile = promisify(execFile);
@@ -258,6 +260,80 @@ describe('seat push proof against the default branch', () => {
 
     await expect(validateSeatBundle({ git: boundGit, repo, bundlePath, baseOid: other, oldOid: zero, newOid: tip, defaultTip }))
       .rejects.toMatchObject({ code: 'bundle_base_not_in_provider', statusCode: 400 });
+  });
+
+  it('a push killed by its timeout may have landed, so nothing reads it as a stale ref or a failure', async () => {
+    const seen = [];
+    const hung = async (args) => {
+      seen.push(args[0]);
+      throw markWriteUnknown(Object.assign(new Error('provider_git_failed'), { code: 'provider_git_failed' }));
+    };
+    const failed = await pushWithLease({
+      git: hung, repo: 'r', url: 'u', ref: 'refs/heads/seat/x', oldOid: '0'.repeat(40), newOid: '1'.repeat(40),
+    }).catch((error) => error);
+    expect(isWriteUnknown(failed)).toBe(true);
+    expect(seen).toEqual(['push']);
+  });
+
+  describe('a push git reported as failed', () => {
+    const OLD = '0'.repeat(39) + '1';
+    const NEW = '0'.repeat(39) + '2';
+    const lease = (ls) => pushWithLease({
+      git: async (args) => {
+        if (args[0] === 'push') throw new SeatPushError('provider_git_failed', 502);
+        return ls();
+      },
+      repo: 'r', url: 'u', ref: 'refs/heads/seat/x', oldOid: OLD, newOid: NEW,
+    });
+
+    it('that landed anyway is a success', async () => {
+      await expect(lease(async () => `${NEW}\trefs/heads/seat/x`)).resolves.toBeUndefined();
+    });
+
+    it('cannot be settled when ls-remote fails, so it is unknown', async () => {
+      const failed = await lease(async () => { throw new SeatPushError('provider_git_failed', 502); }).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'provider_git_failed' });
+      expect(isWriteUnknown(failed)).toBe(true);
+    });
+
+    it('with the ref unmoved is an ordinary failure', async () => {
+      const failed = await lease(async () => `${OLD}\trefs/heads/seat/x`).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'provider_git_failed' });
+      expect(isWriteUnknown(failed)).toBe(false);
+    });
+
+    it('with the ref on a third commit is a stale ref', async () => {
+      const failed = await lease(async () => `${'3'.repeat(40)}\trefs/heads/seat/x`).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'stale_ref' });
+      expect(isWriteUnknown(failed)).toBe(false);
+    });
+  });
+
+  it('a real git push killed at its timeout comes back marked', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'seat-push-hang-'));
+    const options = {
+      cwd,
+      env: {
+        PATH: '/usr/bin:/bin', GIT_ALLOW_PROTOCOL: 'ext', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t',
+        GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t',
+      },
+    };
+    await runProviderGit(['init', '--bare', '.'], options);
+    const tree = await runProviderGit(['hash-object', '-t', 'tree', '-w', '/dev/null'], options);
+    const commit = await runProviderGit(['commit-tree', tree, '-m', 'm'], options);
+    const failed = await runProviderGit(['push', 'ext::sleep 3', `${commit}:refs/heads/x`], { ...options, timeout: 300 })
+      .catch((e) => e);
+    await rm(cwd, { recursive: true, force: true });
+    expect(failed).toBeInstanceOf(SeatPushError);
+    expect(isWriteUnknown(failed)).toBe(true);
+  });
+
+  it('only a killed push is marked: a killed read, or a push git refused, is an ordinary failure', () => {
+    const fallback = new SeatPushError('provider_git_failed', 502);
+    expect(isWriteUnknown(providerGitFailure(['push', 'u'], { killed: true }))).toBe(true);
+    expect(isWriteUnknown(providerGitFailure(['ls-remote', 'u'], { killed: true }))).toBe(false);
+    expect(isWriteUnknown(providerGitFailure(['fetch', 'u'], { killed: true }, fallback))).toBe(false);
+    expect(isWriteUnknown(providerGitFailure(['push', 'u'], { code: 1 }))).toBe(false);
   });
 
   // Production runs git under PROVIDER_GIT_MAX_BUFFER. A check that lists every

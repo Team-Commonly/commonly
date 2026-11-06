@@ -27,6 +27,8 @@ interface AuthContextValue {
   logout: () => void;
   updateProfile: (profile: FormData | Record<string, string>) => Promise<unknown>;
   updateUsername?: (username: string) => Promise<unknown>;
+  // Merges fields a server response just changed, so the page you go to next sees them.
+  mergeUser?: (fields: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -250,6 +252,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const mergeUser = (fields: Partial<User>): void => {
+    setCurrentUser((current) => (current ? { ...current, ...fields } : current));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -264,6 +270,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         logout,
         updateProfile,
         updateUsername,
+        mergeUser,
         isAuthenticated: !!token,
       }}
     >

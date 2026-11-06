@@ -190,7 +190,7 @@ describe('agent runtime tokens', () => {
   it('matches every in-process shape in any spelling, and nothing else', async () => {
     await mintFor('scout', { runtime: { runtimeType: 'native' } });
     const [query] = AgentInstallation.exists.mock.calls[0];
-    expect(query.status).toBe('active');
+    expect(query.status).toEqual({ $ne: 'uninstalled' });
     const [, runtimeRule] = query.$and;
     const matches = (doc) => runtimeRule.$or.some((branch) => Object.entries(branch)
       .every(([field, cond]) => cond.$regex.test(doc[field] || '')));
@@ -318,7 +318,7 @@ describe('agent runtime tokens', () => {
       { $set: expect.objectContaining({ status: 'revoked', revokedAt: expect.any(Date) }) },
     );
     expect(AgentInstallation.updateMany).toHaveBeenCalledWith(
-      { agentName: 'commonly-bot', instanceId: 'default' },
+      { agentName: 'commonly-bot', $or: [{ instanceId: 'default' }, { instanceId: null }] },
       { $set: { runtimeTokens: [] } },
     );
   });

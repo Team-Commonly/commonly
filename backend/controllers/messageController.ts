@@ -506,7 +506,20 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
         res.status(401).json({ msg: 'User authentication failed' });
         return;
       }
-      if (message.user_id.toString() !== userId.toString()) {
+      // A bot User can hold a cm_ user API token (auth.ts admits it on this
+      // branch as req.botCaller, without req.agentUser). It gets what F141
+      // gives its runtime token: only its own message, only while installed
+      // in the pod, and never the pod-creator override below (F149).
+      if (req.botCaller) {
+        if (message.user_id.toString() !== userId.toString()) {
+          res.status(401).json({ msg: 'Not authorized to delete this message' });
+          return;
+        }
+        if (!(await callerHasPodWriteAccess(String(message.pod_id), String(userId), req))) {
+          res.status(403).json({ msg: 'Agent is not installed in this pod', code: 'agent_not_installed_in_pod' });
+          return;
+        }
+      } else if (message.user_id.toString() !== userId.toString()) {
         const pod = await Pod.findById(message.pod_id) as { createdBy?: { toString(): string } } | null;
         if (!pod || pod.createdBy?.toString() !== userId.toString()) {
           res.status(401).json({ msg: 'Not authorized to delete this message' });

@@ -1,4 +1,5 @@
 import dualAuth, { resolveDualAuthCredential } from '../middleware/dualAuth';
+import { githubAppOfConfig, isGithubAppConfigured } from '../services/githubAppNames';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -33,6 +34,9 @@ import {
   byoNamingRefusalMessage, checkByoNaming, listByoCandidates, byoPodExemptAgentIds, namedByoAgentIds,
 } from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
+import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemovalCueService';
+import { grantHoldsPrWrite, prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
+import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 
 const plainGrant = (grant: unknown) => {
@@ -101,31 +105,12 @@ interface AuthenticatedRequest extends express.Request {
 /**
  * What the page may see of a grant (tools plan §6): the
  * explicit list and nothing else. `connectionId` and `brokerId` are the
- * broker's business; the raw `audience` snapshot still names agents who have
- * left, so only the effective audience goes out.
+ * broker's business, except that the owner's own list adds `connectionId` (see
+ * GET /); the raw `audience` snapshot still names agents who have left, so only
+ * the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
-  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent'> & { audience?: string[]; connectionId?: string };
-
-/**
- * The connector a grant belongs to, read from its tool names (TASK-753). The
- * page matches a grant to a catalogue row by those same names, so a grant
- * whose entry is hidden, or whose connection is gone, matched no row and
- * rendered as "Unknown connector" with no way to tell what it was. Every name
- * carries its entry's namespace (`hostedMcpToolName`), so the namespace still
- * names the connector. This adds nothing the row did not already say: the tool
- * names it carries spell the same namespace. A grant naming two namespaces, or
- * one no entry claims, is not guessed at.
- */
-const GITHUB_CONNECTOR = { id: 'github', label: 'GitHub' };
-const grantConnector = (tools: string[] | undefined): { id: string; label: string } | null => {
-  const namespaces = new Set((tools || []).map((name) => (name.includes('.') ? name.slice(0, name.indexOf('.')) : '')));
-  if (namespaces.size !== 1) return null;
-  const [id] = [...namespaces];
-  if (id === GITHUB_CONNECTOR.id) return GITHUB_CONNECTOR;
-  const entry = id ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, id) : undefined;
-  return entry ? { id: entry.id, label: entry.title } : null;
-};
+  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent' | 'prWrite'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (
   grant: GrantRow,
@@ -139,6 +124,7 @@ const projectGrant = (
   tools: [...(grant.tools || [])],
   connector: grantConnector(grant.tools),
   writeMode: grant.writeMode,
+  ...(grantHoldsPrWrite(grant) ? { prWrite: true } : {}),
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
   // F94: the granter's own agents running outside Commonly that this grant
@@ -401,6 +387,22 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     } else if (connection.type !== 'github-app' || !isConnected || !installationId) {
       return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
     }
+    if (!hosted) {
+      // F172: the App that signs is the row's. A row naming no App is a tools
+      // row; one naming neither App is not a connection the broker can run.
+      const githubApp = githubAppOfConfig(connection.config?.app);
+      if (!githubApp) {
+        return res.status(403).json({ error: 'connection_mismatch', message: 'connection names an unknown GitHub App' });
+      }
+      // A Connect grant is not minted while this instance cannot sign for
+      // Connect, so an owner never holds a grant every call would refuse.
+      if (githubApp === 'connect' && !isGithubAppConfigured('connect')) {
+        return res.status(503).json({
+          error: 'github_app_not_configured',
+          message: 'the Commonly Connect GitHub App is not configured on this instance',
+        });
+      }
+    }
     if (body.installationId !== undefined) {
       return res.status(400).json({ error: 'invalid_installation', message: 'installationId is set by the server from the connection, not the caller' });
     }
@@ -479,6 +481,23 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
+    // TASK-783: pull-request access is chosen here or not at all. Only `true`
+    // asks for it; it is a GitHub App scope that sits beside the PR tools and no
+    // other write, and every one of its calls parks for this granter.
+    if (body.prWrite !== undefined && typeof body.prWrite !== 'boolean') {
+      return res.status(400).json({ error: 'invalid_pr_write', message: 'prWrite must be a boolean' });
+    }
+    const prWrite = body.prWrite === true;
+    if (prWrite) {
+      const refusal = prWriteMintRefusal({
+        connectionType: connection.type,
+        writeMode: body.writeMode,
+        tools: requestedTools,
+        requiredWriteModeOf: (tool) => TOOL_DEFINITIONS[tool]?.requiredWriteMode,
+      });
+      if (refusal) return res.status(403).json({ error: refusal, message: prWriteMintRefusalMessage(refusal) });
+    }
+
     // F94: the granter's own agents that run outside Commonly, named with
     // consent. Checked before the pod gate, which then exempts only them.
     if (body.byoAgents !== undefined && (!Array.isArray(body.byoAgents)
@@ -497,6 +516,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
         entryId: hosted ? String(connection.config?.entryId || '') : undefined,
         tools: requestedTools,
         podId: String(target.id),
+        prWrite,
       });
       if (naming.refusal) {
         return res.status(403).json({ error: naming.refusal, message: byoNamingRefusalMessage(naming.refusal) });
@@ -535,6 +555,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       budget: body.budget,
       audience: audienceValues,
       ...(byoConsent ? { byoAgents, byoConsent } : {}),
+      ...(prWrite ? { prWrite: true } : {}),
       expiresAt: body.expiresAt,
       brokerId: broker.brokerId,
       // Bound here, at mint, to the row the caller just proved they own.
@@ -593,6 +614,7 @@ router.post(
       budget: body.budget as any,
       audience: body.audience as string[] | undefined,
       expiresAt: body.expiresAt as string | undefined,
+      prWrite: body.prWrite as boolean | undefined,
       issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
     // An agent attenuated its own grant: the agent is the issuer.
@@ -653,6 +675,11 @@ router.delete('/:grantId/byo-agents/:agentId', grantRateLimit, auth, async (
       { $or: [{ grantId: grant.grantId }, { rootGrantId: grant.grantId }] },
       { $pull: { byoAgents: agentId, audience: agentId, 'byoConsent.agents': { userId: agentId } } },
     );
+    // F181: the agent's next mention says its owner took this connector away,
+    // so it does not ask anyone to reconnect it.
+    await noteAgentRemovedFromGrant(grant, agentId).catch((error: Error) => {
+      console.error('[grants] removal cue not recorded:', error.message);
+    });
     // Only what changed: the raw row carries connectionId and brokerId, which
     // no grant read returns.
     const updated = await RoomGrant.findOne({ grantId: grant.grantId }).select('grantId byoAgents byoConsent').lean();
@@ -788,12 +815,17 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
     }
     return res.json({ grants: grants
       .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
-      .map((grant) => projectGrant(
-        grant,
-        grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
-        userId,
-        confinements.get(grant.grantId),
-      )) });
+      .map((grant) => ({
+        ...projectGrant(
+          grant,
+          grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+          userId,
+          confinements.get(grant.grantId),
+        ),
+        // The owner's own read only, the key the catalogue already gives this
+        // person: Change access has to reopen on the grant's own repository.
+        connectionId: grant.connectionId,
+      })) });
   } catch (error) {
     return handleError(res, error);
   }

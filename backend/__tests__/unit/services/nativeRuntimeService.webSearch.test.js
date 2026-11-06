@@ -129,6 +129,10 @@ describe('native turn with commonly_web_search', () => {
 
   test.each([
     [{ success: false, refused: true, reason: 'consecutive_agent_cap' }, 'failed', false],
+    // F253: a duplicate the guard kept out reached nobody, and said posted:true.
+    [{ success: true, skipped: true, reason: 'duplicate_recent', duplicate: { id: 7 } }, 'failed', false],
+    // A runtime failure the service kept out is no answer either.
+    [{ success: true, skipped: true, reason: 'runtime_model_failure_suppressed' }, 'failed', false],
     [{ success: true, message: { id: 'posted-1' } }, 'ok', true],
   ])('records the actual post result %j as %s', async (postResult, outcome, posted) => {
     AgentMessageService.postMessage.mockResolvedValueOnce(postResult);
@@ -140,6 +144,18 @@ describe('native turn with commonly_web_search', () => {
     expect(recorded.outcome).toBe(outcome);
     expect(recorded.error).toBe(posted ? undefined : 'message_post_refused');
     expect(JSON.parse(toolMessages(1)[0].content)).toEqual(expect.objectContaining({ posted, ok: posted }));
+  });
+
+  test('a NO_REPLY through the tool stays a decline, and reads as not posted (F253)', async () => {
+    AgentMessageService.postMessage.mockResolvedValueOnce({ success: true, skipped: true, reason: 'silent_or_empty' });
+    axios.post.mockResolvedValueOnce(toolCalls(call('p1', 'commonly_post_message', { content: 'NO_REPLY' })))
+      .mockResolvedValueOnce(finalReply);
+    await runAgent(install, mention);
+    const recorded = savedRun.turns[0].toolCalls[0];
+    expect(recorded.outcome).toBe('ok');
+    expect(recorded.error).toBeUndefined();
+    expect(JSON.parse(toolMessages(1)[0].content)).toEqual(expect.objectContaining({ ok: true, posted: false }));
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
   });
 
   test('a post refused because the agent holds the floor ends the run that round, as a decline', async () => {

@@ -7,11 +7,14 @@ import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeT
 import { ActGlyph } from '../icons/glyphs';
 import { PlatformGlyph } from '../icons/platforms';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
+import GithubInstallWarning from './GithubInstallWarning';
+import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   shortAge,
   isExpired,
   isDead,
   boundAgentOf,
+  entryOffersPrWrite,
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
@@ -53,11 +56,12 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
 };
 
 
-export const useToolPanels = (m: ToolConnectorsModel) => {
+export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string | null = null) => {
   const { t, i18n } = useTranslation();
   const {
     manualRevokeNotice,
     isGranter,
+    catalog,
     seats,
     trail,
     trailError,
@@ -66,6 +70,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     draft,
     setDraft,
     githubAppSetup,
+    repositoryConnect,
+    setRepositoryConnect,
+    readConnectableRepositories,
+    openRepositoryConnect,
+    submitRepositoryConnect,
     setGithubAppSetup,
     staleAfterChange,
     confirmRevoke,
@@ -96,6 +105,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     outcomeLabel,
     reasonLabel,
     modeLabel,
+    grantModeLabel,
     entryGrantModes,
     entryModeCopy,
     usedRecently,
@@ -103,6 +113,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftPrWrite,
     draftBoundAgent,
     startingAudience,
     selectedAgentIds,
@@ -122,6 +133,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     revoke,
     removeHiddenConnection,
     disconnect,
+    setError,
   } = m;
   const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
     if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;
@@ -326,7 +338,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               )}
             </strong>
             <span className="v2-connector-row__detail">
-              {!dead && <span className="v2-tools__mode" title={modeLabel(grant.writeMode)} role="img" aria-label={modeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
+              {!dead && <span className="v2-tools__mode" title={grantModeLabel(grant)} role="img" aria-label={grantModeLabel(grant)}><ModeGlyph mode={grant.writeMode} /></span>}
               {line2}
             </span>
           </span>
@@ -366,6 +378,12 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     </a>
   );
 
+  // The page's own access notice stays up behind a popover and travels into
+  // every drawer, so a panel for the same install page would only repeat it.
+  const renderGithubWarning = (entry: ToolCatalogEntry) => (
+    entry.accessPage === accessNoticePage ? null : <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+  );
+
   // An operator-key entry holds one connection per agent (TASK-330), so it
   // stays open to a key for each of the person's agents that has none yet. An
   // OAuth entry is connected once, by `connections.length`.
@@ -394,6 +412,12 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       {entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
     </>
   );
+
+  const renderRepositoryConnectAction = (entry: ToolCatalogEntry) => (entry.available && entry.repositoryConnect ? (
+    <button type="button" className="v2-connector-row__action" onClick={openRepositoryConnect}>
+      {t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}
+    </button>
+  ) : null);
 
   // What a person can do with an entry that has no live grant: the verbs of the
   // old "Not yet" row, shared by the tile's popover.
@@ -424,6 +448,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           </button>
         )}
         {renderDisconnect(entry, 'row')}
+        {renderRepositoryConnectAction(entry)}
         {canInstallGithubApp && (
           <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
             {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
@@ -433,12 +458,20 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  // A Linear connection made before write access lacks the write scope, so the
-  // server refuses to grant it write mode until it is connected again. The page
-  // cannot see a connection's scope, so the note is conditional and always shown.
+  // F213: the form offers Linear no write, so the line says that. When write
+  // mode returns, a connection made before write access needs reconnecting: the
+  // server refuses it the mode, and the page cannot see a connection's scope.
   const renderLinearWriteNote = (entry: ToolCatalogEntry) => (
     entry.connectionType === 'hosted-mcp' && entry.entryId === 'linear' && entry.connections.length > 0
       ? <p className="v2-cx-note" role="note">{t('tools.linearWriteReconnect')}</p>
+      : null
+  );
+
+  // TASK-782: a connection whose account saw nothing to search at connect.
+  // A warning, never a block: the person may add a project afterwards.
+  const renderReachNote = (entry: ToolCatalogEntry, connections: ToolConnection[]) => (
+    connections.some((connection) => connection.reach === 'none')
+      ? <p className="v2-cx-note" role="note">{t('tools.reachNone', { label: entry.label })}</p>
       : null
   );
 
@@ -456,8 +489,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           ? t('tools.operatorKey.noAgents')
           : t('tools.operatorKey.note');
       }
-      return isHosted
-        ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+      if (isHosted) return t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label });
+      return entry.repositoryConnect
+        ? t('tools.repoConnect.note', { defaultValue: 'connect a repository first' })
         : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' });
     };
     return (
@@ -468,8 +502,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           </p>
         )}
         {renderLinearWriteNote(entry)}
+        {renderReachNote(entry, entry.connections)}
         {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
-        {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
+        {isHosted && entry.available && entry.accessPage && (entry.entryId === 'github-mcp'
+          ? renderGithubWarning(entry)
+          : <p className="v2-cx-note">{renderAccessLink(entry)}</p>)}
         {renderManualRevokeNotice(entry)}
       </>
     );
@@ -531,6 +568,80 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
+  // F221: a person connects a repository of their own. GitHub comes first: the
+  // list and the proof both read that person's token, and the hosted GitHub
+  // entry holds both the sign-in and the page that installs the App.
+  const renderRepositoryConnect = () => {
+    if (!repositoryConnect) return null;
+    const { status, repositories, truncated, selected } = repositoryConnect;
+    const githubEntry = catalog.find((entry) => entry.entryId === 'github-mcp');
+    // The list can hold public repositories, and a single row comes picked, so
+    // the step names what Connect will connect.
+    const picked = repositories.find(({ owner, repo }) => `${owner}/${repo}` === selected);
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}>
+        <section className="v2-connector-aside__card">
+          <h2>{t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}</h2>
+          {status === 'loading' && <p role="status">{t('tools.repoConnect.loading', { defaultValue: 'Reading your repositories…' })}</p>}
+          {status === 'failed' && <p role="alert">{t('tools.repoConnect.readFailed', { defaultValue: 'Could not read your repositories from GitHub.' })}</p>}
+          {status === 'needsGithub' && <p>{t('tools.repoConnect.needsGithub', { defaultValue: 'Connect your GitHub account first. Commonly reads which repositories you can push to from it.' })}</p>}
+          {status === 'ready' && repositories.length === 0 && (
+            <>
+              <p>{t('tools.repoConnect.none', { defaultValue: 'No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.' })}</p>
+              {githubEntry?.accessPage && renderGithubWarning(githubEntry)}
+            </>
+          )}
+          {status === 'ready' && repositories.length > 0 && (
+            <div className="v2-tools__form">
+              <label className="v2-tools__field">
+                <span>{t('tools.repository', { defaultValue: 'repository' })}</span>
+                <select className="v2-connectors__select" value={selected} onChange={(event) => setRepositoryConnect({ ...repositoryConnect, selected: event.target.value })}>
+                  <option value="" disabled>{t('tools.repoConnect.choose', { defaultValue: 'Choose a repository' })}</option>
+                  {repositories.map(({ owner, repo, private: isPrivate }) => (
+                    <option key={`${owner}/${repo}`} value={`${owner}/${repo}`}>
+                      {isPrivate === false
+                        ? t('tools.repoConnect.optionPublic', { defaultValue: '{{repository}} (public)', repository: `${owner}/${repo}` })
+                        : t('tools.repoConnect.optionPrivate', { defaultValue: '{{repository}} (private)', repository: `${owner}/${repo}` })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {picked && (
+                <p className="v2-tools__hint" role="status">
+                  {picked.private === false
+                    ? t('tools.repoConnect.pickedPublic', { defaultValue: "You're connecting {{repository}}, a public repository.", repository: selected })
+                    : t('tools.repoConnect.pickedPrivate', { defaultValue: "You're connecting {{repository}}, a private repository.", repository: selected })}
+                </p>
+              )}
+            </div>
+          )}
+          {truncated && <p className="v2-tools__hint">{t('tools.repoConnect.truncated', { defaultValue: 'This list may be incomplete.' })}</p>}
+          <div className="v2-connector-aside__actions">
+            {status === 'ready' && repositories.length > 0 && (
+              <button type="button" className="v2-connector-aside__primary" disabled={busy || !selected} onClick={() => { void submitRepositoryConnect(); }}>
+                {busy ? t('tools.repoConnect.connecting', { defaultValue: 'Connecting…' }) : t('tools.connect', { defaultValue: 'Connect' })}
+              </button>
+            )}
+            {status === 'needsGithub' && githubEntry && (
+              <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void connectHostedMcp(githubEntry); }}>
+                {t('tools.repoConnect.connectGithub', { defaultValue: 'Connect GitHub' })}
+              </button>
+            )}
+            {status !== 'loading' && (
+              <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void readConnectableRepositories(); }}>
+                {t('tools.repoConnect.checkAgain', { defaultValue: 'Check again' })}
+              </button>
+            )}
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { setRepositoryConnect(null); setError(null); }}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
+    );
+  };
+
   // F94: the disclosure for one agent that runs outside Commonly. The server
   // records 'confined' only on evidence, so anything else reads as no sandbox.
   const byoAgentLabel = (agent: ByoCandidate) => agentNameById(agent.userId) || agent.agentName;
@@ -539,7 +650,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     : t('tools.byo.consent', { agent: byoAgentLabel(agent) }));
   const byoReason = (agent: ByoCandidate) => (agent.reason === 'unconfined_host'
     ? t('tools.byo.reasonUnconfinedHost')
-    : t('tools.byo.reasonAdapterUnsupported'));
+    : t('tools.byo.reasonAdapterUnsupported', { harnesses: grantHarnessNames(t) }));
   const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
     ? t('tools.byo.namedNoSandbox', { agent: name })
     : t('tools.byo.named', { agent: name }));
@@ -560,12 +671,13 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     // A key grant whose key was removed opens with no key chosen (openDraft):
     // the picker shows even for one remaining key, and the seats wait for a key.
     const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
-    const tools = draftTools(draftEntry, draft.writeMode);
+    const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools);
     const irreversible = irreversibleTools(draftEntry, tools);
-    const asks = draft.writeMode === 'read'
-      ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
+    const asks = draftPrWrite
+      ? t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' })
+      : draft.writeMode === 'read' ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
       : draft.writeMode === 'write-with-confirm'
-        ? t('tools.asksEveryWrite', { defaultValue: 'every write asks first' })
+        ? t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' })
         : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
@@ -613,16 +725,26 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 </select>
               </label>
             )}
+            {renderReachNote(draftEntry, draftEntry.connections.filter((connection) => connection.connectionId === draft.connectionId))}
             <div className="v2-tools__field">
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
                 {entryGrantModes(draftEntry).map((mode) => (
-                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={naming && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={(naming || draftPrWrite) && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
                 ))}
               </div>
-              {naming && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
+              {naming && !draftPrWrite && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
+              {entryOffersPrWrite(draftEntry) && (
+                <label className="v2-connector-aside__relay">
+                  <input type="checkbox" checked={draft.prWrite} onChange={(event) => setDraft({ ...draft, prWrite: event.target.checked, writeMode: event.target.checked ? 'read' : draft.writeMode })} />
+                  <span>{t('tools.prWriteChoice', { defaultValue: 'Agents can also open pull requests from their own branch. You approve each commit, push and pull request.' })}</span>
+                </label>
+              )}
+              {draft.losesPrWrite && !draftPrWrite && (
+                <span className="v2-tools__hint" role="status">{t('tools.prWriteEnds', { defaultValue: 'This change ends pull-request access on this grant.' })}</span>
+              )}
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
@@ -673,7 +795,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {naming && (
               <label className="v2-connector-aside__relay">
                 <input type="checkbox" checked={draftByoConsented} onChange={(event) => setDraft({ ...draft, byoConsentFor: event.target.checked ? draftByoKey : null })} />
-                <span>{draftByoNamed.map((agent) => byoConsentLine(agent)).join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
+                <span>{[...draftByoNamed.map((agent) => byoConsentLine(agent)), ...(draftPrWrite ? [t('tools.byo.prWriteConsent', { agents: joinList(draftByoNamed.map(byoAgentLabel)) })] : [])].join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
               </label>
             )}
           </div>
@@ -727,7 +849,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
             <dd>{audienceLabels(grant)}</dd>
-            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{modeLabel(grant.writeMode)}</dt>
+            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{grantModeLabel(grant)}</dt>
             <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
             <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
             <dd>{asksFirst(grant)}</dd>
@@ -765,7 +887,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           {/* The granter is the connection's owner (the hosted mint refuses anyone
               else), so the page they reach is the one that bounds this grant. */}
           {!dead && isGranter(grant) && entry?.connectionType === 'hosted-mcp' && entry.available && entry.accessPage && (
-            <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
+            entry.entryId === 'github-mcp'
+              ? renderGithubWarning(entry)
+              : <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
           )}
           {staleAfterChange?.oldGrantId === grant.grantId && (
             <div className="v2-connector-aside__actions" role="alert">
@@ -830,5 +954,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderRepositoryConnect, renderRepositoryConnectAction, renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

@@ -1,7 +1,9 @@
 import { jest } from '@jest/globals';
+// Bound before the mock below: the real git, for the worktree-boundary tests.
+import { spawnSync as realSpawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import { createServer, request as httpRequest } from 'http';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
 import {
   chmod,
   mkdir,
@@ -11,13 +13,14 @@ import {
   writeFile,
 } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, isAbsolute, join, relative } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
 import { validateEnvironmentSpec } from '../src/lib/environment.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
-  spawnSync: spawnSyncMock,
+  // git runs for real (the worktree check); everything else is the mock.
+  spawnSync: (cmd, ...rest) => (cmd === 'git' ? realSpawnSync(cmd, ...rest) : spawnSyncMock(cmd, ...rest)),
   spawn: jest.fn(),
 }));
 
@@ -33,6 +36,7 @@ const {
   publicPermissions,
   qualifiedProviderModel,
   resolveProviderKeyFile,
+  scanWorkspaceLinks,
   startProviderProxy,
   ALLOW_UNTESTED_OPENCODE_VERSION_ENV,
   TESTED_OPENCODE_VERSIONS,
@@ -250,6 +254,27 @@ describe('opencode MCP config', () => {
     expect(permission.read['**/.npmrc']).toBeUndefined();
     expect(publicPermissions('bwrap', []).edit['*']).toBe('allow');
     expect(publicPermissions('read-only', [])).toMatchObject({ edit: { '*': 'deny' } });
+  });
+
+  // CodeRabbit round 2 (#3487): glob, grep and list carry the spawn-folder deny
+  // as pattern rules, the way read and edit do. Measured in the 1.19.4 binary:
+  // OpenCode matches these rules against the tool's own argument (the glob
+  // string, the grep REGEX), never against the searched path or the result
+  // paths, so this stops only a search that names the folder. A search through
+  // a workspace link is stopped by the pre-spawn symlink walk, not by this.
+  test('glob, grep and list deny the per-spawn commonly-opencode folder as a pattern rule', () => {
+    const permission = publicPermissions('workspace', []);
+    for (const key of ['glob', 'grep', 'list']) {
+      expect(permission[key]).toEqual(expect.objectContaining({
+        '*': 'allow',
+        '**/commonly-opencode-*/**': 'deny',
+      }));
+      // The allow first, so the deny is the later, winning rule.
+      const order = Object.keys(permission[key]);
+      expect(order.indexOf('**/commonly-opencode-*/**')).toBeGreaterThan(order.indexOf('*'));
+    }
+    // Only the spawn-folder rule: a glob for `.env` files is not a read of one.
+    expect(permission.glob['**/.env']).toBeUndefined();
   });
 
   test('a public cold MCP is omitted from OpenCode config', async () => {
@@ -937,9 +962,9 @@ describe('opencode external provider config', () => {
           const tokenFile = providerConfig.options.apiKey.match(/^\{file:(.+)\}$/)[1];
           expect(permission.external_directory).toBe('deny');
           expect(permission.read['*']).toBe('allow');
-          expect(permission.grep).toBe('allow');
-          expect(permission.glob).toBe('allow');
-          expect(permission.list).toBe('allow');
+          expect(permission.grep).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
+          expect(permission.glob).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
+          expect(permission.list).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
           expect(providerConfig.options.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
           expect(providerConfig.options.apiKey).not.toContain(realKey);
           expect(JSON.stringify(config)).not.toContain('provider-key');
@@ -1001,9 +1026,9 @@ describe('opencode external provider config', () => {
           }
           expect(permission.external_directory).toBe('deny');
           expect(permission.read[tokenFile]).toBeUndefined();
-          expect(permission.grep).toBe('allow');
-          expect(permission.glob).toBe('allow');
-          expect(permission.list).toBe('allow');
+          expect(permission.grep).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
+          expect(permission.glob).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
+          expect(permission.list).toEqual({ '*': 'allow', '**/commonly-opencode-*/**': 'deny' });
           expect(permission.lsp).toBe('allow');
           expect(config.provider.litellm.options.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
           expect(JSON.stringify(config)).not.toContain('provider-key');
@@ -1871,3 +1896,1042 @@ test('an own key stays in the confined parent proxy, never argv, config, tool en
     expect(spawn.calls).toHaveLength(1);
   });
 });
+
+// F175a: OpenCode joins the grant-broker set. The broker entry rides the same
+// http branch as any remote MCP: a file-backed bearer on THIS spawn's
+// credential file, never the token in config, env or argv. What keeps the
+// credential from the agent's own tools is OpenCode's permission layer, not the
+// OS jail (OpenCode itself must read the file to expand {file:}): read, glob,
+// grep and lsp each ask `external_directory` for a path outside --dir
+// (Tool.assertExternalDirectory, checked in the 1.19.4 binary 2026-11-04), and
+// a public seat denies it after OpenCode's own defaults, so its `$TMPDIR/*`
+// allow does not survive. That holds only while the credential lives OUTSIDE
+// the workspace, which is what the last test pins.
+describe('opencode public seat — the grant broker (F175a)', () => {
+  const BROKER = {
+    name: 'commonly-grant-broker', transport: 'http',
+    url: '${COMMONLY_API_URL}/api/mcp/grants/grant_1',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+  };
+  const TOKEN = 'cm_agent_broker_seat_token';
+  const within = (parent, child) => {
+    const rel = relative(parent, child);
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  };
+  const publicCtx = async (root, over = {}) => {
+    const workspace = join(root, 'workspace');
+    const keyFile = join(root, 'secrets', 'provider-key');
+    await mkdir(workspace, { recursive: true });
+    await mkdir(join(root, 'secrets'), { recursive: true });
+    await writeFile(keyFile, 'provider-key');
+    await chmod(keyFile, 0o600);
+    return {
+      cwd: workspace,
+      env: { PATH: process.env.PATH, COMMONLY_AGENT_TOKEN: TOKEN },
+      environment: {
+        model: 'gpt-5.4',
+        provider: { id: 'litellm', baseURL: 'https://llm.example.test/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+        mcp: [BROKER],
+      },
+      runtimeToken: TOKEN,
+      instanceUrl: 'https://api.example.test',
+      agentName: 'broker-seat',
+      _opencodeHomeRoot: join(root, 'opencode-state'),
+      _binaryPath: '/usr/local/bin/opencode',
+      _platform: 'darwin',
+      ...over,
+    };
+  };
+
+  test('the broker is a remote entry whose bearer is this spawn\'s credential file, outside every readable root', async () => {
+    await withTemp(async (root) => {
+      let seen = null;
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, args, options) => {
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          const entry = config.mcp['commonly-grant-broker'];
+          expect(entry).toEqual({
+            type: 'remote', enabled: true,
+            url: 'https://api.example.test/api/mcp/grants/grant_1',
+            headers: { Authorization: `Bearer {file:${options.env.COMMONLY_TOKEN_FILE}}` },
+          });
+          const credential = options.env.COMMONLY_TOKEN_FILE;
+          expect(readFileSync(credential, 'utf8').trim()).toBe(TOKEN);
+          // Never the token itself: not in config, env or argv.
+          expect(JSON.stringify(config)).not.toContain(TOKEN);
+          expect(Object.values(options.env).join('\n')).not.toContain(TOKEN);
+          expect(args.join('\n')).not.toContain(TOKEN);
+          // The per-spawn 0700 root that holds the config, not the workspace.
+          const spawnRoot = dirname(options.env.OPENCODE_CONFIG);
+          expect(within(spawnRoot, credential)).toBe(true);
+          expect(statSync(spawnRoot).mode & 0o777).toBe(0o700);
+          expect(statSync(credential).mode & 0o777).toBe(0o600);
+          // Readable set: OpenCode's tools read the workspace (--dir) freely
+          // and reach anything else only through external_directory, denied.
+          const dirArg = args[args.indexOf('--dir') + 1];
+          expect(within(dirArg, credential)).toBe(false);
+          expect(within(realpathSync(dirArg), realpathSync(credential))).toBe(false);
+          const permission = config.permission;
+          expect(permission.external_directory).toBe('deny');
+          expect(permission.bash).toBe('deny');
+          expect(permission.webfetch).toBe('deny');
+          expect(permission.task).toBe('deny');
+          // The broker's own tools are allowed, its withheld writes still denied.
+          expect(permission['commonly_grant_broker_*']).toBe('allow');
+          seen = credential;
+        },
+      });
+      await opencode.spawn('broker turn', await publicCtx(root, {
+        _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv, opts) => {
+          // Seatbelt admits the spawn root because OpenCode itself expands
+          // {file:} from it; the jail is not what hides it from the tools.
+          expect(opts.mcpConfigDir).toMatch(/commonly-opencode-/);
+          return ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv];
+        },
+      }));
+      expect(seen).not.toBeNull();
+      // Per spawn: gone once the turn ends.
+      expect(existsSync(seen)).toBe(false);
+    });
+  });
+
+  test('a public bwrap seat carries the broker the same way, through the instance bridge', async () => {
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, args, options) => {
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          expect(config.mcp['commonly-grant-broker']).toEqual({
+            type: 'remote', enabled: true,
+            url: 'http://127.0.0.1:8766/api/mcp/grants/grant_1',
+            headers: { Authorization: `Bearer {file:${options.env.COMMONLY_TOKEN_FILE}}` },
+          });
+          expect(config.permission.external_directory).toBe('deny');
+          expect(JSON.stringify(config)).not.toContain(TOKEN);
+          expect(args.join('\n')).not.toContain(TOKEN);
+        },
+      });
+      const ctx = await publicCtx(root, {
+        _platform: 'linux',
+        _detectBwrap: () => ({ available: true, path: '/usr/bin/bwrap' }),
+        _spawnImpl: spawn.impl,
+        _wrapArgvWithBwrap: (argv) => ['/usr/bin/bwrap', '--test', ...argv],
+      });
+      ctx.environment.sandbox = { trust: 'public', mode: 'bwrap' };
+      await opencode.spawn('broker turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  test('a public seat whose workspace would contain the credential refuses before the model runs', async () => {
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl();
+      // The workspace is the temp root every per-spawn directory is made in:
+      // the credential would sit inside --dir, where read needs no
+      // external_directory approval.
+      // An own key (no key file), since a key file under the temp root would
+      // be refused first, by the key-file check.
+      const ctx = await publicCtx(root, { cwd: realpathSync(tmpdir()), providerKey: 'sk-own-key', _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/credential.*workspace/i);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
+  // Review fix (#3487): LSP servers and formatters run workspace code (a planted
+  // tsserver.js, a prettier config) inside the jail, where the credential is
+  // readable. Off by OpenCode's default today; a public seat turns them off
+  // itself, so a default flip in a later patch release changes nothing.
+  test('a public seat turns LSP and formatters off in its own config', async () => {
+    await withTemp(async (root) => {
+      let config = null;
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, _args, options) => {
+          config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+        },
+      });
+      await opencode.spawn('broker turn', await publicCtx(root, { providerKey: 'sk-own-key', _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] }));
+      expect(config.lsp).toBe(false);
+      expect(config.formatter).toBe(false);
+    });
+  });
+
+  // Review fix (#3487): OpenCode's older tools compare paths as text and do not
+  // follow symlinks, so a workspace link to the temp root would pass
+  // external_directory. The read (and edit) rules deny the spawn root by name.
+  test('read and edit deny every per-spawn commonly-opencode directory by name', async () => {
+    await withTemp(async (root) => {
+      let seen = null;
+      const spawn = makeSpawnImpl({
+        onCall: (_cmd, _args, options) => {
+          const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
+          seen = { permission: config.permission, credential: options.env.COMMONLY_TOKEN_FILE };
+        },
+      });
+      await opencode.spawn('broker turn', await publicCtx(root, { providerKey: 'sk-own-key', _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] }));
+      const pattern = '**/commonly-opencode-*/**';
+      expect(seen.permission.read[pattern]).toBe('deny');
+      expect(seen.permission.edit[pattern]).toBe('deny');
+      // OpenCode's Wildcard.match turns `*` into `.*`; the rule must match the
+      // credential as reached through a workspace symlink to the temp root.
+      const asRegex = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+      const viaLink = join(root, 'workspace', 'tmp-link', relative(tmpdir(), seen.credential));
+      expect(asRegex.test(seen.credential)).toBe(true);
+      expect(asRegex.test(viaLink)).toBe(true);
+    });
+  });
+
+  // F219 item 1: this adapter already refused it. Pinned beside the others.
+  test('a public seat in a workspace that holds the temp folder is refused, and nothing is spawned', async () => {
+    await withTemp(async (root) => {
+      const ctx = await publicCtx(root);
+      await mkdir(join(ctx.cwd, 'tmp'));
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('hello', { ...ctx, _tempRoot: join(ctx.cwd, 'tmp'), _spawnImpl: spawn.impl }))
+        .rejects.toThrow(/refuse a workspace .* that contains the per-spawn credential directory/);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
+  // Review fix (#3487): OpenCode treats the whole git worktree as inside the
+  // project, so a workspace below a repo root that also holds the temp root
+  // would let the tools reach the credential without external_directory.
+  test('a public seat refuses when the workspace\'s git toplevel contains the spawn root', async () => {
+    await withTemp(async (root) => {
+      const repo = join(root, 'repo');
+      await mkdir(join(repo, '.git'), { recursive: true });
+      await mkdir(join(repo, 'tmp'), { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { cwd: join(repo, 'packages', 'app'), providerKey: 'sk-own-key',
+        _tempRoot: join(repo, 'tmp'),
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(ctx.cwd, { recursive: true });
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/git worktree.*credential/i);
+      expect(spawn.calls).toHaveLength(0);
+      // Reverse: the same layout without the .git marker runs.
+      await rm(join(repo, '.git'), { recursive: true, force: true });
+      await opencode.spawn('broker turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // CodeRabbit (#3487): a linked git worktree marks its root with a `.git`
+  // FILE, not a directory; the same refusal holds. The fixture is a real linked
+  // worktree: git answers `--show-toplevel` there, so the refusal is the
+  // containment one, not "could not confirm" (a dangling gitdir fails on git
+  // 2.56, CI #3487).
+  test('a public seat refuses when a git worktree (.git file) root contains the spawn root', async () => {
+    await withTemp(async (root) => {
+      const main = join(root, 'main');
+      const repo = join(root, 'wt');
+      await mkdir(main, { recursive: true });
+      const git = (cwd, ...args) => {
+        const run = realSpawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], {
+          cwd, encoding: 'utf8',
+          env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+        });
+        if (run.status !== 0) throw new Error(`git ${args.join(' ')}: ${run.stderr}`);
+      };
+      git(main, 'init', '-q');
+      git(main, 'commit', '-q', '--allow-empty', '-m', 'init');
+      git(main, 'worktree', 'add', '-q', repo);
+      expect(statSync(join(repo, '.git')).isFile()).toBe(true);
+      await mkdir(join(repo, 'tmp'), { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { cwd: join(repo, 'app'), providerKey: 'sk-own-key',
+        _tempRoot: join(repo, 'tmp'),
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(ctx.cwd, { recursive: true });
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/git worktree.*credential/i);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
+  // CodeRabbit (#3487): a workspace symlink to the temp root (or anything
+  // above the spawn root) is refused before the model runs; the read deny on
+  // `commonly-opencode-*` is the backstop past the walk's bounds.
+  test('a public seat refuses a workspace holding a symlink that reaches the spawn root', async () => {
+    await withTemp(async (root) => {
+      const tempRoot = join(root, 'temp-root');
+      await mkdir(tempRoot, { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: tempRoot,
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(join(ctx.cwd, 'src', 'deep'), { recursive: true });
+      await symlink(tempRoot, join(ctx.cwd, 'src', 'deep', 'cache'));
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*credential/i);
+      expect(spawn.calls).toHaveLength(0);
+      // Reverse: a link elsewhere runs on a seat with no grant (a grant seat
+      // refuses any link out of the workspace; see the chain tests below).
+      await rm(join(ctx.cwd, 'src', 'deep', 'cache'));
+      await mkdir(join(root, 'elsewhere'), { recursive: true });
+      await symlink(join(root, 'elsewhere'), join(ctx.cwd, 'src', 'other'));
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await opencode.spawn('plain turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // CodeRabbit round 2 (#3487): the walk does not descend into node_modules
+  // (a typical one would exhaust the entry bound on every spawn), but every
+  // link AT its top level, or under an @scope there, is checked: one reaching
+  // the spawn root, or one leading out of the workspace into a tree the walk
+  // never read, is refused.
+  test('a public seat checks the links at a node_modules top level', async () => {
+    await withTemp(async (root) => {
+      const tempRoot = join(root, 'temp-root');
+      await mkdir(tempRoot, { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: tempRoot,
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      const modules = join(ctx.cwd, 'node_modules');
+      await mkdir(join(modules, '@scope'), { recursive: true });
+
+      await symlink(tempRoot, join(modules, 'pkg'));
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*pkg.*credential/i);
+      await rm(join(modules, 'pkg'));
+
+      await mkdir(join(root, 'linked-elsewhere'), { recursive: true });
+      await symlink(join(root, 'linked-elsewhere'), join(modules, '@scope', 'linked'));
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*@scope.*linked.*outside the workspace/i);
+      await rm(join(modules, '@scope', 'linked'));
+      expect(spawn.calls).toHaveLength(0);
+
+      // Reverse: a workspace package linked from inside the workspace runs, and
+      // so does a deep link that stays inside it (round 4 refuses one that
+      // leaves; see the dependency-walk tests below).
+      await mkdir(join(ctx.cwd, 'packages', 'local'), { recursive: true });
+      await symlink(join(ctx.cwd, 'packages', 'local'), join(modules, '@scope', 'local'));
+      await mkdir(join(modules, 'real-pkg', 'dist'), { recursive: true });
+      await symlink(join(ctx.cwd, 'packages', 'local'), join(modules, 'real-pkg', 'dist', 'deep-link'));
+      await opencode.spawn('broker turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // A pnpm package workspace links its node_modules into the repo root's
+  // store, above the package; the git worktree is the boundary, since OpenCode
+  // counts the whole worktree as inside the project anyway.
+  test('a node_modules link into the same git worktree is not "outside the workspace"', async () => {
+    await withTemp(async (root) => {
+      const repo = join(root, 'repo');
+      await mkdir(join(repo, '.git'), { recursive: true });
+      await mkdir(join(repo, 'node_modules', '.pnpm', 'dep@1.0.0'), { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { cwd: join(repo, 'packages', 'app'), providerKey: 'sk-own-key',
+        _tempRoot: join(root, 'temp-root'),
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(join(root, 'temp-root'), { recursive: true });
+      await mkdir(join(ctx.cwd, 'node_modules'), { recursive: true });
+      await symlink(join(repo, 'node_modules', '.pnpm', 'dep@1.0.0'), join(ctx.cwd, 'node_modules', 'dep'));
+      await opencode.spawn('broker turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // CodeRabbit round 2 (#3487): a walk that stops at its bound has not proven
+  // the workspace clean. A seat carrying the grant broker refuses; a seat with
+  // no broker entry has no grant to protect and runs.
+  test('a walk that reaches its entry bound refuses a broker seat and lets a seat without one run', async () => {
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: join(root, 'temp-root'),
+        _symlinkWalkBounds: { maxDepth: 32, maxEntries: 5 },
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(join(root, 'temp-root'), { recursive: true });
+      await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      expect(spawn.calls).toHaveLength(0);
+
+      // Reverse: the same workspace, no broker entry, runs.
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await opencode.spawn('plain turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  test('a walk that reaches its depth bound refuses a broker seat, and one just inside it runs', async () => {
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: join(root, 'temp-root'),
+        _symlinkWalkBounds: { maxDepth: 3, maxEntries: 20000 },
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      await mkdir(join(root, 'temp-root'), { recursive: true });
+      await mkdir(join(ctx.cwd, 'a', 'b', 'c'), { recursive: true });
+      await opencode.spawn('broker turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+      await mkdir(join(ctx.cwd, 'a', 'b', 'c', 'd'), { recursive: true });
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  test('reverse: the same workspace check lets an ordinary public workspace through', async () => {
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl();
+      await opencode.spawn('broker turn', await publicCtx(root, { providerKey: 'sk-own-key', _spawnImpl: spawn.impl,
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] }));
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // CodeRabbit round 3 (#3487): the walk cannot prove a whole node_modules tree
+  // clean, so the credential stops existing once OpenCode no longer needs it.
+  // OpenCode 1.19.4 expands {file:} once, over the config text at load
+  // (ConfigPaths `IT`, called from Config.state); every MCP connect, the first
+  // and any later one, takes headers from that cached config; and `run`
+  // writes `step_start` only after tools are resolved and every MCP server is
+  // connected. So the adapter deletes the file on the first step_start, before
+  // the model can call a tool.
+  const stagedSpawn = (stages) => {
+    const calls = [];
+    const impl = (cmd, args, options) => {
+      calls.push({ cmd, args, options });
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = jest.fn();
+      setTimeout(() => {
+        const credential = options.env.COMMONLY_TOKEN_FILE;
+        stages.atSpawn = existsSync(credential);
+        proc.stdout.emit('data', Buffer.from('a line that is not an event\n'));
+        stages.beforeStep = existsSync(credential);
+        proc.stdout.emit('data', Buffer.from(event('step_start', 'ses_del', { type: 'step-start' })));
+        stages.afterStep = existsSync(credential);
+        proc.stdout.emit('data', Buffer.from(event('text', 'ses_del', { type: 'text', text: 'done' })));
+        proc.emit('close', 0);
+      }, 0);
+      return proc;
+    };
+    return { impl, calls };
+  };
+
+  test('a seat that delivers the credential to a remote MCP deletes it at the first step_start', async () => {
+    await withTemp(async (root) => {
+      const stages = {};
+      const spawn = stagedSpawn(stages);
+      const result = await opencode.spawn('broker turn', await publicCtx(root, { providerKey: 'sk-own-key',
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] }));
+      expect(spawn.calls).toHaveLength(1);
+      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: false });
+      // The turn itself is unaffected.
+      expect(result.text).toBe('done');
+    });
+  });
+
+  test('reverse: a public seat with no remote bearer keeps its credential for the whole turn', async () => {
+    await withTemp(async (root) => {
+      const stages = {};
+      const spawn = stagedSpawn(stages);
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key',
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      ctx.environment = { ...ctx.environment, mcp: [] };
+      await opencode.spawn('plain turn', ctx);
+      expect(stages).toEqual({ atSpawn: true, beforeStep: true, afterStep: true });
+    });
+  });
+
+  // CodeRabbit round 3 (#3487): buildMcpConfig hands `Bearer {file:...}` to any
+  // http entry whose Authorization is exactly `Bearer ${COMMONLY_AGENT_TOKEN}`,
+  // whatever its URL, so whether this spawn carries the credential to a remote
+  // server is what buildMcpConfig wrote, not what isOurGrantBroker recognises.
+  const OFF_ORIGIN_BEARER = {
+    name: 'side-mcp', transport: 'http',
+    url: 'https://elsewhere.example.test/mcp',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+  };
+
+  test('buildMcpConfig reports each remote entry it gave the credential file', () => {
+    const bearerFileServers = [];
+    const config = buildMcpConfig([OFF_ORIGIN_BEARER, {
+      name: 'no-auth', transport: 'http', url: 'https://elsewhere.example.test/plain',
+    }], {
+      runtimeToken: TOKEN, instanceUrl: 'https://api.example.test',
+      credentialFile: '/spawn/agent/token', bearerFileServers,
+    });
+    expect(config['side-mcp'].headers.Authorization).toBe('Bearer {file:/spawn/agent/token}');
+    expect(bearerFileServers).toEqual(['side-mcp']);
+  });
+
+  test('a walk that hits its bound refuses an entry isOurGrantBroker rejects but that still gets the credential', async () => {
+    const { isOurGrantBroker } = await import('../src/lib/grant-broker-guard.js');
+    expect(isOurGrantBroker(OFF_ORIGIN_BEARER, { instanceUrl: 'https://api.example.test' })).toBe(false);
+    await withTemp(async (root) => {
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: join(root, 'temp-root'),
+        _symlinkWalkBounds: { maxDepth: 32, maxEntries: 5 },
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv] });
+      ctx.environment = { ...ctx.environment, mcp: [OFF_ORIGIN_BEARER] };
+      await mkdir(join(root, 'temp-root'), { recursive: true });
+      await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(ctx.cwd, `f${n}.txt`), 'x')));
+      await expect(opencode.spawn('side turn', ctx)).rejects.toThrow(/could not finish checking.*grant/i);
+      expect(spawn.calls).toHaveLength(0);
+
+      // Reverse: the same entry with no credential header gets no file and runs.
+      ctx.environment = { ...ctx.environment, mcp: [{ ...OFF_ORIGIN_BEARER, headers: {} }] };
+      await opencode.spawn('side turn', ctx);
+      expect(spawn.calls).toHaveLength(1);
+    });
+  });
+
+  // CodeRabbit round 4 (#3487): a parent-side delete on step_start is not a
+  // cross-process boundary, so a seat that hands the credential to a remote
+  // server first proves no link anywhere inside a node_modules tree reaches the
+  // spawn root. Links only: nothing is followed, and a regular file costs no stat.
+  describe('the node_modules link walk on a grant-bearing spawn', () => {
+    const brokerCtx = async (root, over = {}) => {
+      const tempRoot = join(root, 'temp-root');
+      await mkdir(tempRoot, { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: tempRoot,
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv], ...over });
+      return { ctx, spawn, tempRoot, modules: join(ctx.cwd, 'node_modules') };
+    };
+
+    test('a deep link in an installed package to an ancestor of the spawn root is refused', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root);
+        await mkdir(join(modules, 'real-pkg', 'dist'), { recursive: true });
+        await symlink(tempRoot, join(modules, 'real-pkg', 'dist', 'x'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*real-pkg.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the same link to a directory inside the workspace runs.
+        await rm(join(modules, 'real-pkg', 'dist', 'x'));
+        await mkdir(join(ctx.cwd, 'src'), { recursive: true });
+        await symlink(join(ctx.cwd, 'src'), join(modules, 'real-pkg', 'dist', 'x'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    // A path argument resolves a link chain in the OS: node_modules/x/y ->
+    // /outside/dir/y -> /tmp. The walk never reads /outside, so a deep link
+    // that leaves the workspace is refused, the same rule as at the top level.
+    test('a deep link out of the workspace is refused, so a chain through it cannot reach the spawn root', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root);
+        const outside = join(root, 'outside', 'dir');
+        await mkdir(outside, { recursive: true });
+        await symlink(tempRoot, join(outside, 'y'));
+        await mkdir(join(modules, 'x'), { recursive: true });
+        await symlink(outside, join(modules, 'x', 'y'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
+        // Without the chain, a deep link to any directory outside is refused too:
+        // the walk cannot vouch for a tree it never read.
+        await rm(join(outside, 'y'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*x.*y.*outside the workspace/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a seat with no remote bearer is not held to it.
+        ctx.environment = { ...ctx.environment, mcp: [] };
+        await opencode.spawn('plain turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    // The same chain through a link outside node_modules, or through a
+    // node_modules that is itself a link (a worktree sharing another's install):
+    // on a grant seat every workspace link is held to the boundary.
+    test('a grant seat refuses any workspace link out, node_modules itself included', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot } = await brokerCtx(root);
+        const outside = join(root, 'outside', 'dir');
+        await mkdir(join(outside, 'pkg'), { recursive: true });
+        await symlink(tempRoot, join(outside, 'y'));
+        await mkdir(join(ctx.cwd, 'src'), { recursive: true });
+        await symlink(outside, join(ctx.cwd, 'src', 'vendor'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(
+          /symlink \(.*src\/vendor\).*outside the workspace.*move the seat to a workspace without links that leave it, or remove the link/i,
+        );
+        await rm(join(ctx.cwd, 'src', 'vendor'));
+        await symlink(outside, join(ctx.cwd, 'node_modules'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*outside the workspace/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a link that stays in the workspace runs.
+        await rm(join(ctx.cwd, 'node_modules'));
+        await symlink(join(ctx.cwd, 'src'), join(ctx.cwd, 'src-alias'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a pnpm-style layout whose links stay inside the workspace runs', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, modules } = await brokerCtx(root);
+        const store = join(modules, '.pnpm', 'dep@1.0.0', 'node_modules');
+        await mkdir(join(store, 'dep', 'dist'), { recursive: true });
+        await mkdir(join(store, 'peer'), { recursive: true });
+        await symlink(join(store, 'dep'), join(modules, 'dep'));
+        await symlink(join(store, 'peer'), join(store, 'dep', 'node_modules-peer'));
+        await mkdir(join(modules, '.bin'), { recursive: true });
+        await symlink(join(store, 'dep', 'dist'), join(modules, '.bin', 'dep'));
+        await mkdir(join(ctx.cwd, 'packages', 'app'), { recursive: true });
+        await symlink(join(ctx.cwd, 'packages', 'app'), join(store, 'app'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+        // Reverse: one store link pointed out of the workspace is refused.
+        await mkdir(join(root, 'global-store', 'peer'), { recursive: true });
+        await rm(join(store, 'dep', 'node_modules-peer'));
+        await symlink(join(root, 'global-store', 'peer'), join(store, 'dep', 'node_modules-peer'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*\.pnpm.*node_modules-peer.*outside the workspace/i);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a nested link under a scoped package, and one in a nested node_modules, are refused', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root);
+        const scoped = join(modules, '@scope', 'pkg', 'lib', 'deep');
+        await mkdir(scoped, { recursive: true });
+        await symlink(root, join(scoped, 'up'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*@scope.*pkg.*lib.*deep.*up/i);
+        await rm(join(scoped, 'up'));
+        const nested = join(modules, 'a', 'node_modules', 'b', 'build');
+        await mkdir(nested, { recursive: true });
+        await symlink(tempRoot, join(nested, 'cache'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*b.*build.*cache/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a dangling link is no route anywhere and runs.
+        await rm(join(nested, 'cache'));
+        await symlink(join(root, 'gone'), join(nested, 'cache'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a deep node_modules link INTO a spawn root is found by the walk', async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const spawnRoot = join(root, 'temp-root', 'commonly-opencode-abc');
+        await mkdir(join(spawnRoot, 'agent-1'), { recursive: true });
+        await mkdir(join(workspace, 'node_modules', 'real-pkg', 'dist'), { recursive: true });
+        await symlink(join(spawnRoot, 'agent-1'), join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'));
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: true })).toEqual({
+          link: join(workspace, 'node_modules', 'real-pkg', 'dist', 'x'), reason: 'reaches_spawn_root',
+        });
+        // Reverse: without the deep walk (a no-grant spawn) it is not looked at.
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toBeNull();
+      });
+    });
+
+    test('a dependency walk that runs out of entries or depth refuses the grant seat', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, modules } = await brokerCtx(root, {
+          _dependencyWalkBounds: { maxDepth: 64, maxEntries: 5 },
+        });
+        await mkdir(join(modules, 'pkg', 'dist'), { recursive: true });
+        await Promise.all([1, 2, 3, 4, 5, 6].map((n) => writeFile(join(modules, 'pkg', 'dist', `f${n}.js`), 'x')));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*node_modules.*entry bound \(5/i);
+        ctx._dependencyWalkBounds = { maxDepth: 2, maxEntries: 200000 };
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not finish checking.*node_modules.*depth bound \(2/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the same tree inside both bounds runs.
+        ctx._dependencyWalkBounds = { maxDepth: 3, maxEntries: 200000 };
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a spawn with no remote bearer skips the dependency walk, bad link and all', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot, modules } = await brokerCtx(root, {
+          _dependencyWalkBounds: { maxDepth: 1, maxEntries: 1 },
+        });
+        ctx.environment = { ...ctx.environment, mcp: [] };
+        await mkdir(join(modules, 'real-pkg', 'dist'), { recursive: true });
+        await symlink(tempRoot, join(modules, 'real-pkg', 'dist', 'x'));
+        await opencode.spawn('plain turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+  });
+
+  // CodeRabbit round 4 (#3487): a credential that could not be deleted is still
+  // readable, so the turn ends instead of running on with it.
+  test('a failed credential delete kills the child and fails the turn', async () => {
+    await withTemp(async (root) => {
+      const stages = {};
+      const spawn = stagedSpawn(stages);
+      let child = null;
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key',
+        _spawnImpl: (...a) => { child = spawn.impl(...a); return child; },
+        _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv],
+        _rmSync: () => { throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }); } });
+      await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not delete.*credential.*EACCES/i);
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+
+      // Reverse: a delete that succeeds lets the turn finish.
+      ctx._rmSync = () => {};
+      const result = await opencode.spawn('broker turn', ctx);
+      expect(result.text).toBe('done');
+      expect(child.kill).not.toHaveBeenCalled();
+    });
+  });
+
+  // Opus delta review, round 6 (#3487).
+  describe('the grant walk: unreadable directories, the whole worktree, case, unresolvable links', () => {
+    const grantCtx = async (root, over = {}) => {
+      const tempRoot = join(root, 'temp-root');
+      await mkdir(tempRoot, { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { providerKey: 'sk-own-key', _tempRoot: tempRoot,
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv], ...over });
+      return { ctx, spawn, tempRoot };
+    };
+    const noGrant = (ctx) => { ctx.environment = { ...ctx.environment, mcp: [] }; };
+
+    // HIGH 1: a directory the walk cannot list (0111) is still traversable by
+    // the OS, so a link inside it is invisible to the walk but not to grep.
+    test('an unlistable directory refuses a grant seat, in node_modules and in the workspace', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn, tempRoot } = await grantCtx(root);
+        const hidden = join(ctx.cwd, 'node_modules', 'bad', 'h');
+        const locked = join(ctx.cwd, 'src', 'locked');
+        await mkdir(hidden, { recursive: true });
+        await mkdir(locked, { recursive: true });
+        await symlink(tempRoot, join(hidden, 'y'));
+        try {
+          await chmod(hidden, 0o111);
+          await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not list.*node_modules.*bad.*h.*EACCES/i);
+          await chmod(hidden, 0o755);
+          await rm(join(hidden, 'y'));
+          await symlink(tempRoot, join(locked, 'y'));
+          await chmod(locked, 0o111);
+          await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not list.*src.*locked.*EACCES/i);
+          expect(spawn.calls).toHaveLength(0);
+          // Reverse: a seat with no grant is not held to it.
+          noGrant(ctx);
+          await opencode.spawn('plain turn', ctx);
+          expect(spawn.calls).toHaveLength(1);
+        } finally {
+          await chmod(hidden, 0o755).catch(() => {});
+          await chmod(locked, 0o755).catch(() => {});
+        }
+      });
+    });
+
+    // HIGH 2: OpenCode's tools reach the whole git worktree, so a grant walk
+    // starts at the worktree root: a sibling package's node_modules counts.
+    test('a monorepo subfolder workspace refuses a link in a sibling package\'s node_modules', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(join(repo, '.git'), { recursive: true });
+        const { ctx, spawn, tempRoot } = await grantCtx(root, { cwd: join(repo, 'packages', 'app') });
+        await mkdir(ctx.cwd, { recursive: true });
+        await mkdir(join(repo, 'other', 'node_modules', 'evil', 'dist'), { recursive: true });
+        await symlink(tempRoot, join(repo, 'other', 'node_modules', 'evil', 'dist', 'x'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*other.*node_modules.*evil.*dist.*x.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a seat with no grant walks only its workspace.
+        noGrant(ctx);
+        await opencode.spawn('plain turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    // CodeRabbit 4479743278: a link inside the worktree but outside cwd, into a
+    // pnpm store whose tree holds an escaping link.
+    test('a workspace dep linked into the repo-root pnpm store, whose tree reaches the spawn parent, is refused', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(join(repo, '.git'), { recursive: true });
+        const { ctx, spawn, tempRoot } = await grantCtx(root, { cwd: join(repo, 'packages', 'app') });
+        const store = join(repo, 'node_modules', '.pnpm', 'dep');
+        await mkdir(join(store, 'dist'), { recursive: true });
+        await mkdir(join(ctx.cwd, 'node_modules'), { recursive: true });
+        await symlink(store, join(ctx.cwd, 'node_modules', 'dep'));
+        await symlink(tempRoot, join(store, 'dist', 'cache'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*node_modules.*\.pnpm.*dep.*dist.*cache.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the same layout with the store's link removed runs.
+        await rm(join(store, 'dist', 'cache'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a link under .git is refused on a grant seat', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(join(repo, '.git', 'hooks'), { recursive: true });
+        const { ctx, spawn, tempRoot } = await grantCtx(root, { cwd: join(repo, 'app') });
+        await mkdir(ctx.cwd, { recursive: true });
+        await symlink(tempRoot, join(repo, '.git', 'x'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*\.git.*x.*credential/i);
+        await rm(join(repo, '.git', 'x'));
+        await symlink(tempRoot, join(repo, '.git', 'hooks', 'pre-commit'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/symlink.*\.git.*hooks.*pre-commit.*credential/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a plain .git with no links runs.
+        await rm(join(repo, '.git', 'hooks', 'pre-commit'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    // MEDIUM: realpath must canonicalise case on a case-insensitive volume, or
+    // a link spelled /PRIVATE/... passes reaches_spawn_root.
+    test('a link spelled in another case still reaches the spawn root, deep walk off', async () => {
+      await withTemp(async (root) => {
+        const tempRoot = realpathSync(await mkdir(join(root, 'temp-root'), { recursive: true }) || join(root, 'temp-root'));
+        const upper = tempRoot.toUpperCase();
+        if (!existsSync(upper)) return; // a case-sensitive volume: nothing to canonicalise
+        const workspace = join(root, 'workspace');
+        const spawnRoot = join(tempRoot, 'commonly-opencode-abc');
+        await mkdir(spawnRoot, { recursive: true });
+        await mkdir(join(workspace, 'src'), { recursive: true });
+        await symlink(upper, join(workspace, 'src', 'up'));
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toEqual({
+          link: join(workspace, 'src', 'up'), reason: 'reaches_spawn_root',
+        });
+        // Reverse: an unrelated directory in another case is not a hit.
+        await rm(join(workspace, 'src', 'up'));
+        await mkdir(join(root, 'elsewhere'), { recursive: true });
+        await symlink(realpathSync(join(root, 'elsewhere')).toUpperCase(), join(workspace, 'src', 'up'));
+        expect(scanWorkspaceLinks(workspace, spawnRoot, { deepDependencies: false })).toBeNull();
+      });
+    });
+
+    // LOW: a link realpath cannot resolve for a reason other than a missing
+    // target (a loop) is not proof of no route; a grant seat refuses.
+    test('an unresolvable link (a loop) refuses a grant seat; a dangling one does not', async () => {
+      await withTemp(async (root) => {
+        const { ctx, spawn } = await grantCtx(root);
+        await mkdir(join(ctx.cwd, 'src'), { recursive: true });
+        await symlink(join(ctx.cwd, 'src', 'b'), join(ctx.cwd, 'src', 'a'));
+        await symlink(join(ctx.cwd, 'src', 'a'), join(ctx.cwd, 'src', 'b'));
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not resolve.*src.*(a|b).*ELOOP/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a dangling link still runs.
+        await rm(join(ctx.cwd, 'src', 'a'));
+        await rm(join(ctx.cwd, 'src', 'b'));
+        await symlink(join(root, 'gone'), join(ctx.cwd, 'src', 'a'));
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+  });
+
+  // Opus delta review, round 7 (#3487): OpenCode 1.19.4 takes its project
+  // worktree from `git rev-parse --show-toplevel`, run in the folder holding
+  // .git (GitV2 `Git.repo.discover`), and its tools reach everything under it.
+  // `core.worktree` widens that past the folder the walk starts from.
+  describe('the worktree git reports, and edits to .git', () => {
+    const FORCED_GIT_ENV = {
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'core.fsmonitor', GIT_CONFIG_VALUE_0: 'false',
+      GIT_CONFIG_KEY_1: 'core.hooksPath', GIT_CONFIG_VALUE_1: '/dev/null',
+    };
+    const git = (cwd, ...args) => {
+      const run = realSpawnSync('git', args, {
+        cwd, encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: cwd, GIT_CONFIG_NOSYSTEM: '1' },
+      });
+      if (run.status !== 0) throw new Error(`git ${args.join(' ')}: ${run.stderr}`);
+      return run.stdout.trim();
+    };
+    const repoCtx = async (root, cwd, over = {}) => {
+      const tempRoot = join(root, 'temp-root');
+      await mkdir(tempRoot, { recursive: true });
+      await mkdir(cwd, { recursive: true });
+      const spawn = makeSpawnImpl();
+      const ctx = await publicCtx(root, { cwd, providerKey: 'sk-own-key', _tempRoot: tempRoot,
+        _spawnImpl: spawn.impl, _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', ...argv], ...over });
+      return { ctx, spawn, tempRoot };
+    };
+
+    test('a repo whose core.worktree is the spawn root\'s parent is refused, grant or not', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(repo, { recursive: true });
+        git(repo, 'init', '-q');
+        const { ctx, spawn, tempRoot } = await repoCtx(root, join(repo, 'app'));
+        git(repo, 'config', 'core.worktree', tempRoot);
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/git reports the worktree.*temp-root.*not.*repo.*core\.worktree/i);
+        ctx.environment = { ...ctx.environment, mcp: [] };
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/git reports the worktree.*temp-root/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: the same repo without the setting runs.
+        git(repo, 'config', '--unset', 'core.worktree');
+        await opencode.spawn('plain turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('a normal repo and a linked worktree (git worktree add) run on a grant seat', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'main');
+        await mkdir(repo, { recursive: true });
+        git(repo, 'init', '-q');
+        await writeFile(join(repo, 'README'), 'x');
+        git(repo, 'add', 'README');
+        git(repo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-qm', 'init');
+        const { ctx, spawn } = await repoCtx(root, join(repo, 'app'));
+        await opencode.spawn('broker turn', ctx);
+        git(repo, 'worktree', 'add', '-q', join(root, 'linked'));
+        await mkdir(join(root, 'linked', 'app'), { recursive: true });
+        ctx.cwd = join(root, 'linked', 'app');
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(2);
+      });
+    });
+
+    // Round 8 (#3487): a git that cannot answer refuses every public seat,
+    // grant or not; only "not a git repository" means no worktree.
+    test('a public seat refuses when git is missing or fails in a repo, with or without a grant', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(repo, { recursive: true });
+        git(repo, 'init', '-q');
+        await mkdir(join(root, 'empty-bin'), { recursive: true });
+        await mkdir(join(root, 'failing-bin'), { recursive: true });
+        await writeFile(join(root, 'failing-bin', 'git'), '#!/bin/sh\necho "fatal: boom" >&2\nexit 2\n');
+        await chmod(join(root, 'failing-bin', 'git'), 0o755);
+        const { ctx, spawn } = await repoCtx(root, join(repo, 'app'));
+        const pathEnv = ctx.env.PATH;
+        ctx.env = { ...ctx.env, PATH: join(root, 'empty-bin') };
+        await expect(opencode.spawn('broker turn', ctx)).rejects.toThrow(/could not confirm the git worktree.*ENOENT/i);
+        ctx.environment = { ...ctx.environment, mcp: [] };
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not confirm the git worktree.*ENOENT/i);
+        ctx.env = { ...ctx.env, PATH: `${join(root, 'failing-bin')}:${pathEnv}` };
+        await expect(opencode.spawn('plain turn', ctx)).rejects.toThrow(/could not confirm the git worktree.*exit 2: fatal: boom/i);
+        expect(spawn.calls).toHaveLength(0);
+        // Reverse: a folder git says is no repository (an empty .git) runs.
+        const bare = join(root, 'not-a-repo');
+        await mkdir(join(bare, '.git'), { recursive: true });
+        await mkdir(join(bare, 'app'), { recursive: true });
+        ctx.env = { ...ctx.env, PATH: pathEnv };
+        ctx.cwd = join(bare, 'app');
+        await opencode.spawn('plain turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+      });
+    });
+
+    test('git config redirects in the launcher env never reach a public seat or its git check', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(repo, { recursive: true });
+        git(repo, 'init', '-q');
+        const { ctx, spawn, tempRoot } = await repoCtx(root, join(repo, 'app'));
+        const other = join(root, 'other.git');
+        await mkdir(other, { recursive: true });
+        git(other, 'init', '-q', '--bare');
+        // Redirects that, if honoured, would name the spawn root's parent.
+        ctx.env = {
+          ...ctx.env,
+          GIT_DIR: other, GIT_WORK_TREE: tempRoot,
+          GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.worktree', GIT_CONFIG_VALUE_0: tempRoot,
+          GIT_CONFIG_GLOBAL: join(root, 'nope'),
+        };
+        await opencode.spawn('broker turn', ctx);
+        expect(spawn.calls).toHaveLength(1);
+        const childEnv = spawn.calls[0].options.env;
+        // Nothing from the launcher; only the adapter's own forced keys.
+        expect(Object.fromEntries(Object.entries(childEnv).filter(([key]) => key.startsWith('GIT_')))).toEqual(FORCED_GIT_ENV);
+      });
+    });
+
+    test('a public seat denies edits to .git, its config and a linked worktree\'s .git file', () => {
+      const permission = publicPermissions('workspace', []);
+      const denies = Object.entries(permission.edit).filter(([, action]) => action === 'deny').map(([pattern]) => pattern);
+      expect(denies).toEqual(expect.arrayContaining(['.git', '.git/**', '**/.git', '**/.git/**']));
+      // OpenCode's Wildcard.match turns `*` into `.*`; the last matching rule wins.
+      const matches = (pattern, path) => new RegExp(
+        `^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`,
+      ).test(path);
+      const action = (path) => Object.entries(permission.edit)
+        .filter(([pattern]) => matches(pattern, path)).pop()?.[1];
+      for (const path of ['.git/config', '/ws/.git/config', '/ws/pkg/.git/hooks/pre-commit', '.git', '/ws/.git']) {
+        expect(action(path)).toBe('deny');
+      }
+      // Reverse: an ordinary source file, and names that merely start with .git, stay editable.
+      expect(action('/ws/src/index.js')).toBe('allow');
+      expect(action('/ws/.github/workflows/ci.yml')).toBe('allow');
+      expect(action('/ws/.gitignore')).toBe('allow');
+    });
+
+    // Round 8 (#3487): OpenCode's permission match is case-sensitive and APFS
+    // is not, so `.GIT/config` passes the `.git` edit deny. Env config outranks
+    // repo config however the path is spelled, so a public seat's git runs no
+    // fsmonitor and no hook.
+    test('a public seat\'s git env forces fsmonitor off and hooks away, whatever the repo config says', async () => {
+      await withTemp(async (root) => {
+        const repo = join(root, 'repo');
+        await mkdir(repo, { recursive: true });
+        git(repo, 'init', '-q');
+        const marker = join(root, 'fsmonitor-ran');
+        const hookMarker = join(root, 'hook-ran');
+        await writeFile(join(root, 'fsmon.sh'), `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+        await chmod(join(root, 'fsmon.sh'), 0o755);
+        await writeFile(join(repo, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\ntouch '${hookMarker}'\n`);
+        await chmod(join(repo, '.git', 'hooks', 'pre-commit'), 0o755);
+        // Written through the case-folded spelling the deny misses, where the
+        // volume folds case (APFS); a case-sensitive one (Linux CI) has no
+        // `.GIT`, so the write goes through `.git` and the env still has to win.
+        const probe = join(root, 'case-probe');
+        await writeFile(probe, '');
+        const foldsCase = existsSync(join(root, 'CASE-PROBE'));
+        const config = join(repo, foldsCase ? '.GIT' : '.git', 'config');
+        await writeFile(config, `${readFileSync(config, 'utf8')}[core]\n\tfsmonitor = ${join(root, 'fsmon.sh')}\n`);
+        expect(readFileSync(join(repo, '.git', 'config'), 'utf8')).toContain(join(root, 'fsmon.sh'));
+        const { ctx, spawn } = await repoCtx(root, join(repo, 'app'));
+        ctx.environment = { ...ctx.environment, mcp: [] };
+        await opencode.spawn('plain turn', ctx);
+        const childEnv = spawn.calls[0].options.env;
+        expect(Object.fromEntries(Object.entries(childEnv).filter(([key]) => key.startsWith('GIT_')))).toEqual(FORCED_GIT_ENV);
+        const run = (env, ...args) => realSpawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], {
+          cwd: repo, encoding: 'utf8', env: { ...env, HOME: root },
+        });
+        run(childEnv, 'status');
+        run(childEnv, 'commit', '-q', '--allow-empty', '-m', 'x');
+        expect(existsSync(marker)).toBe(false);
+        expect(existsSync(hookMarker)).toBe(false);
+        // Reverse: the same env without the forced keys runs both.
+        const unforced = Object.fromEntries(Object.entries(childEnv).filter(([key]) => !key.startsWith('GIT_')));
+        run(unforced, 'status');
+        run(unforced, 'commit', '-q', '--allow-empty', '-m', 'y');
+        expect(existsSync(marker)).toBe(true);
+        expect(existsSync(hookMarker)).toBe(true);
+      });
+    });
+  });
+});
+
+// F197: a public seat's writable workspace is the scratch folder the CLI made,
+// so the profile pins it. A link at that path refuses the turn before spawn.
+test('a public seat whose writable workspace is a link is refused, and nothing is spawned', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'opencode-f197-'));
+  try {
+    const workspace = join(root, 'workspace');
+    const elsewhere = join(root, 'elsewhere');
+    await mkdir(elsewhere);
+    await symlink(elsewhere, workspace);
+    const keyFile = join(root, 'provider-key');
+    await writeFile(keyFile, 'provider-secret', { mode: 0o600 });
+    const spawn = makeSpawnImpl();
+    const error = await opencode.spawn('turn', {
+      cwd: workspace,
+      env: { PATH: process.env.PATH },
+      environment: {
+        model: 'gpt-5.4',
+        sandbox: { trust: 'public', mode: 'workspace' },
+        provider: { id: 'local', baseURL: 'https://llm.example.test/v1', keyFile },
+      },
+      agentName: 'public-agent',
+      _opencodeHomeRoot: join(root, 'opencode-state'),
+      _binaryPath: '/usr/local/bin/opencode',
+      _platform: 'darwin',
+      _spawnImpl: spawn.impl,
+      _wrapArgvWithSeatbelt: (argv, options) => { buildSeatbeltProfile(options); return argv; },
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(error.message).toContain(workspace);
+    expect(spawn.calls).toHaveLength(0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+

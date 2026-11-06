@@ -243,6 +243,9 @@ const createThemedPod = async ({
     createdBy,
     members: [createdBy],
   }) as PodRecord;
+  // F183: best-effort PG mirror write; never fails the curation run.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  await require('./pgMirrorWrite').mirrorPodCreated(String(pod._id));
 
   return { pod, created: true };
 };

@@ -111,6 +111,22 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
 
   // The refusal names the host's own mechanism (Seatbelt on this test host, bwrap on Windows,
   // where host-check refuses earlier still); what matters is that nothing is spawned.
+  // #3504 (CodeRabbit): the no-jail seat is told what it really has, through
+  // the same spawn that grants it, so the prompt and the policy can't drift.
+  test('a workspace seat with --allow write is told it can edit but has no shell, and nothing about .git', async () => {
+    const { run, calls } = turn({
+      hostUnconfined: true,
+      environment: { model: 'test-model', sandbox: { trust: 'workspace', allow: ['write'] } },
+    });
+    await run;
+    const { args } = calls[0];
+    const text = args[args.indexOf('--append-system-prompt') + 1] || '';
+    expect(text).toContain('You can read and edit the files in your working folder. You cannot run shell commands.');
+    expect(text).not.toContain('run shell commands there');
+    expect(text).not.toContain('.git');
+    expect(text).not.toContain('reach the network');
+  });
+
   test('a workspace seat with --allow write gets edits but no shell, and PowerShell stays denied', async () => {
     const { run, calls } = turn({
       hostUnconfined: true,

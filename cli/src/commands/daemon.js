@@ -478,7 +478,7 @@ Examples:
   daemon
     .command('install')
     .description('Register the daemon as a login service (launchd, systemd, or a Windows scheduled task); on Linux, also turn on lingering so it starts at boot')
-    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Install again without it to turn it off.')
+    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it. Install again without it to turn it off.')
     .action(async (opts) => {
       try {
         if (opts.unsandboxed) {
@@ -495,7 +495,7 @@ Examples:
         const optedInBefore = loadUnsandboxedOptIn();
         if (opts.unsandboxed) {
           saveUnsandboxedOptIn();
-          console.log('Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. To turn this off, run: commonly daemon install');
+          console.log('Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, people you invite later included, can direct it. To turn this off, run: commonly daemon install');
         } else if (clearUnsandboxedOptIn()) {
           console.log('Turned off running without a sandbox: on Windows, agents this daemon runs are refused again until you choose otherwise.');
         }
@@ -759,7 +759,7 @@ Examples:
         });
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
         console.log(`${machine.name}: ${machine.status} (last heartbeat: ${lastSeen})`);
-        if (loadUnsandboxedOptIn()) console.log('Sandbox: unsandboxed (opted in). Agents run with your own access and get no connector grants. Turn off: commonly daemon install');
+        if (loadUnsandboxedOptIn()) console.log('Sandbox: unsandboxed (opted in). Agents run with your own access and get no connector grants, and anyone in an invite-only pod can direct a Codex agent there. Turn off: commonly daemon install');
         if (opts.verbose) {
           const local = loadDaemonState();
           if (!local) {

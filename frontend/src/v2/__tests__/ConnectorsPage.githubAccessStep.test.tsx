@@ -107,13 +107,15 @@ describe('connected, with the App not installed yet (next=access)', () => {
     mockApi({ connectors: [githubRow], installables: [hostedGithub({ connections: [{ connectionId: 'i-gh', owner: 'sam', repo: '' }] })] });
     renderPage();
 
-    const notice = (await screen.findByText(fill(en.connectors.hostedMcpAccessNext), { exact: false })).closest('p');
+    const notice = (await screen.findByText(en.connectors.hostedMcpAccessNext)).closest('.v2-cx-warning');
     expect(notice).toHaveAttribute('role', 'status');
     // GitHub's install page preselects "All repositories" and always reads
-    // public repos, so the notice names the choice; the link only opens the page.
+    // public repos, so the link carries the choice and what leaving it costs.
+    expect(notice).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
     expect(notice).toHaveTextContent(
-      "Choose 'Only select repositories' to limit which private repos GitHub can read. Public repos are always readable.",
+      'Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones.',
     );
+    expect(notice).toHaveTextContent('Public repos are readable either way.');
     const link = within(notice).getByRole('link', { name: fill(en.connectors.hostedMcpAccessOpen) });
     expect(link).toHaveTextContent('Open GitHub');
     expect(link).toHaveAttribute('href', accessPage);
@@ -133,10 +135,28 @@ describe('connected, with the App not installed yet (next=access)', () => {
     });
     renderPage();
 
-    expect(await screen.findByText(fill(en.connectors.hostedMcpAccessNext), { exact: false })).toBeInTheDocument();
+    expect(await screen.findAllByText(en.connectors.hostedMcpAccessNext)).not.toHaveLength(0);
     const popover = await findPopover('GitHub');
     expect(await within(popover).findByRole('link', { name: "Open GitHub's connected apps" })).toHaveAttribute('href', revokePage);
     expect(window.location.search).toBe('');
+    // The page's notice carries the warning, so the popover leaves its own copy out.
+    expect(screen.getAllByText(en.connectors.hostedMcpAccessNext)).toHaveLength(1);
+    expect(within(popover).queryByText(en.connectors.hostedMcpAccessNext)).toBeNull();
+    expect(within(popover).queryByRole('link', { name: 'Choose what GitHub can reach' })).toBeNull();
+  });
+
+  it('keeps the warning on the entry once no notice is carrying it', async () => {
+    const revokePage = 'https://github.com/settings/apps/authorizations';
+    window.history.replaceState({}, '', `/v2/connectors?hostedMcp=connected&entryId=github-mcp&revokeAt=${encodeURIComponent(revokePage)}`);
+    mockApi({
+      connectors: [{ ...githubRow, config: { entryId: 'github-mcp', revokePage } }],
+      installables: [hostedGithub({ connections: [{ connectionId: 'i-gh', owner: 'sam', repo: '' }] })],
+    });
+    renderPage();
+
+    const popover = await findPopover('GitHub');
+    expect(await within(popover).findByText(en.connectors.hostedMcpAccessNext)).toBeInTheDocument();
+    expect(screen.getAllByText(en.connectors.hostedMcpAccessNext)).toHaveLength(1);
   });
 
   it('reads in zh-CN, keeping GitHub\'s own option label in English', async () => {
@@ -146,8 +166,10 @@ describe('connected, with the App not installed yet (next=access)', () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     try {
       renderPage();
-      const notice = (await screen.findByText('Only select repositories', { exact: false })).closest('p');
-      expect(notice).toHaveTextContent('选择“Only select repositories”，限定 GitHub 可以读取哪些私有仓库。公开仓库始终可以读取。');
+      const notice = (await screen.findByText('Only select repositories', { exact: false })).closest('.v2-cx-warning');
+      expect(notice).toHaveTextContent('在 GitHub 上选择“Only select repositories”。');
+      expect(notice).toHaveTextContent('Commonly Connect 就能访问你安装到的账号或组织下的所有仓库');
+      expect(notice).toHaveTextContent('公开仓库无论怎么选都能读取。');
       expect(within(notice).getByRole('link', { name: '打开 GitHub' })).toHaveAttribute('href', accessPage);
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
@@ -162,7 +184,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
     await pageReady();
     await waitFor(() => expect(window.location.search).toBe(''));
     await settle();
-    expect(screen.queryByText(fill(en.connectors.hostedMcpAccessNext), { exact: false })).toBeNull();
+    expect(screen.queryByText(en.connectors.hostedMcpAccessNext)).toBeNull();
   });
 
   it('leaves other query values in place', async () => {
@@ -170,7 +192,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
     mockApi({ connectors: [githubRow], installables: [hostedGithub()] });
     renderPage();
 
-    await screen.findByText(fill(en.connectors.hostedMcpAccessNext), { exact: false });
+    await screen.findByText(en.connectors.hostedMcpAccessNext);
     expect(window.location.search).toBe('?keep=1');
   });
 });

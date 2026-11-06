@@ -14,6 +14,7 @@ import {
   allPodsConfirmedPrivate,
   firstRunWorkspace,
   podIsConfirmedPrivate,
+  unconfinedTurnPlacement,
   workspaceStartDirRefusal,
   workspaceTurnPlacement,
 } from '../src/lib/workspace-trust.js';
@@ -72,6 +73,12 @@ describe('workspace start directory', () => {
   test('a directory inside a credential store is refused', () => {
     expect(workspaceStartDirRefusal(join(home, '.commonly', 'tokens'), { home }))
       .toBe('the start directory is inside ~/.commonly');
+  });
+
+  test('a folder inside a credential store is refused even when its name starts with two dots', () => {
+    const inner = join(home, '.ssh', '..cache');
+    mkdirSync(inner, { recursive: true });
+    expect(workspaceStartDirRefusal(inner, { home })).toMatch(/inside ~\/\.ssh/);
   });
 
   test('a relative path is refused', () => {
@@ -189,5 +196,37 @@ describe('workspace turn placement', () => {
     expect(place({ environment: null, workspacePath: null, installations: null })).toEqual({
       environment: null, cwd: '/tmp/scratch', reason: null,
     });
+  });
+});
+
+describe('unconfinedTurnPlacement: a Windows Codex turn with the user\'s opt-in', () => {
+  const privatePod = {
+    publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+  };
+  const seat = { model: 'm', effort: 'low', sandbox: { trust: 'public' } };
+
+  test('every pod confirmed private: the turn has no sandbox block, and the seat\'s own object is not changed', () => {
+    const placement = unconfinedTurnPlacement({ environment: seat, installations: [privatePod], cwd: '/s' });
+    expect(placement).toEqual({ environment: { model: 'm', effort: 'low' }, cwd: '/s', reason: null });
+    expect(seat.sandbox).toEqual({ trust: 'public' });
+  });
+
+  test.each([
+    ['open to join', [{ ...privatePod, joinPolicy: 'open' }]],
+    ['publicly readable', [{ ...privatePod, publicRead: true }]],
+    ['listed', [{ ...privatePod, communityListed: true }]],
+    ['silent about a field', [{ publicRead: false, joinPolicy: 'invite-only' }]],
+    ['one private, one open', [privatePod, { ...privatePod, joinPolicy: 'open' }]],
+    ['no pods at all', []],
+  ])('%s: the turn is placed public, so the host check refuses it', (_label, installations) => {
+    const placement = unconfinedTurnPlacement({ environment: { model: 'm' }, installations, cwd: '/s' });
+    expect(placement.environment.sandbox).toEqual({ trust: 'public' });
+    expect(placement.reason).toContain('publicly readable or open to join');
+  });
+
+  test('a failed read fails closed, and says the read failed', () => {
+    const placement = unconfinedTurnPlacement({ environment: { model: 'm' }, installations: null, cwd: '/s' });
+    expect(placement.environment.sandbox).toEqual({ trust: 'public' });
+    expect(placement.reason).toBe('its pods could not be read');
   });
 });

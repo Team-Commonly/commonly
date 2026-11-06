@@ -22,7 +22,9 @@
 import { spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { homedir } from 'os';
-import { isAbsolute, join } from 'path';
+import {
+  basename, dirname, isAbsolute, join, resolve,
+} from 'path';
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 const DARWIN_MESSAGE = 'Seatbelt sandboxing is available only on macOS';
@@ -351,6 +353,53 @@ const isSymlink = (path) => {
   }
 };
 
+// A folder this profile lets the jail write is one the jail can also replace:
+// a write rule on a folder covers the folder's own name, so a process from an
+// earlier turn can move it aside and leave a link there. The profile grants
+// the folder's resolved path, so a link at that name would carry the next
+// turn's write grant to wherever it points. Each such folder must therefore
+// resolve to itself: its realpath must be its parent's realpath plus its own
+// name. A folder that does not exist yet has nothing to resolve and is
+// granted by name, as before.
+//
+// Returns the path to grant. It is the same realpath the check compared, read
+// once, so the grant and the check cannot disagree. Seatbelt matches the
+// resolved path of each access, not the name used, so a link planted after
+// this read leads outside the granted path and is denied there: a swap after
+// the check breaks that turn's own writes, it does not widen them. That is why
+// the check is not repeated just before spawn. The time-of-check gap that
+// remains is inside this function, between the two realpath reads, and a
+// swap there is caught by the comparison or yields a grant on the real
+// folder.
+const pinnedRealpath = (given, label) => {
+  // Normalized first, so a trailing `.`, `..` or slash cannot make the name
+  // compared differ from the folder the jail is granted.
+  const path = resolve(given);
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return path;
+  }
+  const refuse = () => new Error(
+    `refusing a confined turn: its writable ${label} ${path} is a symbolic link or resolves `
+    + 'somewhere other than its own name. A confined turn may write only to a real folder at '
+    + 'the path it was given. Remove the link (the agent recreates its own folders) or point the '
+    + 'agent at a real folder, and run the turn again.',
+  );
+  if (stat.isSymbolicLink()) throw refuse();
+  let resolved;
+  let resolvedParent;
+  try {
+    resolved = realpathSync(path);
+    resolvedParent = realpathSync(dirname(path));
+  } catch {
+    throw refuse();
+  }
+  if (resolved !== join(resolvedParent, basename(path))) throw refuse();
+  return resolved;
+};
+
 export const detectSeatbelt = () => {
   if (process.platform !== 'darwin') {
     return { available: false, error: DARWIN_MESSAGE };
@@ -396,6 +445,20 @@ export const buildSeatbeltProfile = ({
   // a seat credential in memory, as a public pi does. Signals are not narrowed:
   // a parent must still stop the children it started.
   processInfo = 'same-sandbox',
+  // Pin a writable workspace to its own name (see pinnedRealpath). Set it for
+  // a public seat. Its workspace is usually the scratch folder the CLI made;
+  // when it is an `environment.workspace.path` the operator gave and that path
+  // is a link, the pin refuses the turn (fail-closed) rather than follow it.
+  // Other seats work in a folder the operator chose, which may be a link on
+  // purpose, and leave this unset.
+  pinWorkspace = false,
+  // The realpath the workspace must still resolve to (F200): a workspace
+  // seat's folder as recorded on its first turn (workspace-pin.js). The grant
+  // is refused, not moved, when the folder now resolves elsewhere.
+  expectedWorkspaceRealpath = null,
+  // Folders no rule here may let the jail write, however a grant above is
+  // shaped: a workspace seat's own record of its folder (F200).
+  denyWritePaths = [],
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -405,6 +468,7 @@ export const buildSeatbeltProfile = ({
     assertAbsolutePath(path, label);
   }
   if (mcpConfigDir) assertAbsolutePath(mcpConfigDir, 'mcpConfigDir');
+  for (const path of denyWritePaths) assertAbsolutePath(path, 'denyWritePaths entry');
   for (const path of readOnlyPaths) assertAbsolutePath(path, 'readOnlyPaths entry');
   for (const path of readOnlyDirectories) assertAbsolutePath(path, 'readOnlyDirectories entry');
   for (const port of loopbackNetworkPorts) {
@@ -427,9 +491,33 @@ export const buildSeatbeltProfile = ({
     }
   }
 
-  const resolvedWorkspace = realpathOrSelf(workspacePath);
+  // Two folders here get a write grant: the state folder, and the workspace
+  // when it is writable. The state folder is always pinned (see
+  // pinnedRealpath): the CLI creates it for every seat, so it is never a link
+  // on purpose. The writable workspace is pinned only when the caller asks
+  // (pinWorkspace), which is a public seat. Its workspace is usually a
+  // scratch folder the CLI creates; a public seat given an
+  // `environment.workspace.path` that is a link is refused (fail-closed).
+  // Any other seat's workspace is a folder the operator chose, and a link
+  // there may be the operator's own, which the profile cannot tell from one a
+  // seat left; it keeps the link-following grant on its target, as before. A
+  // read-only workspace also follows links. The other write rules in this
+  // profile name fixed device paths (/dev/null, /dev/zero, /dev/dtracehelper,
+  // /dev/fd, /dev/ptmx, /dev/ttys*, /dev/tty), which no seat can replace.
+  //
+  // The turn reaper is best-effort; this pin is the boundary.
+  const resolvedWorkspace = workspaceAccess === 'write' && pinWorkspace
+    ? pinnedRealpath(workspacePath, 'workspace')
+    : realpathOrSelf(workspacePath);
+  if (expectedWorkspaceRealpath && resolvedWorkspace !== expectedWorkspaceRealpath) {
+    throw new Error(
+      `refusing a workspace turn: ${workspacePath} now resolves to ${resolvedWorkspace}, `
+      + `not ${expectedWorkspaceRealpath} as it did when the turn was checked. The folder was `
+      + 'replaced during the turn\'s preparation; run the turn again.',
+    );
+  }
   const resolvedExecutable = realpathOrSelf(executablePath);
-  const resolvedState = realpathOrSelf(statePath);
+  const resolvedState = pinnedRealpath(statePath, 'state folder');
   const resolvedMcpConfig = mcpConfigDir ? realpathOrSelf(mcpConfigDir) : null;
   const resolvedReadOnlyPaths = [...new Set(readOnlyPaths.map(realpathOrSelf))];
   const resolvedReadOnlyDirectories = [...new Set(readOnlyDirectories.map(realpathOrSelf))];
@@ -503,6 +591,10 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
     readOnlyWorkspaceRules,
+    // After every allow above, so a workspace that contained one of these
+    // folders still could not write it (later rules win).
+    [...new Set(denyWritePaths.flatMap((path) => [path, realpathOrSelf(path)]))]
+      .map((path) => `(deny file-write* ${subpath(path)})`).join('\n'),
     ...claudeRuntimeRules,
     // Later rules win, so this narrows the baseline's same-sandbox allow.
     processInfo === 'self'

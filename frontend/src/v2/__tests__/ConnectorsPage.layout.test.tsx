@@ -45,6 +45,12 @@ describe('Connectors page: the tile surface', () => {
 
     await findTile('GitHub');
     expect(screen.getByRole('heading', { name: 'Connectors' })).toBeInTheDocument();
+    // Each section title carries its own frame icon, hidden from screen readers.
+    const iconPath = (name) => screen.getByRole('heading', { name }).querySelector('svg.v2-cx-group__icon');
+    expect(iconPath('Channels')).toHaveAttribute('aria-hidden', 'true');
+    expect(iconPath('Tools')).toHaveAttribute('aria-hidden', 'true');
+    expect(iconPath('Channels').querySelector('path').getAttribute('d')).toMatch(/^M21 12a8/);
+    expect(iconPath('Tools').querySelector('path').getAttribute('d')).toMatch(/^M12 22v-5/);
     const channelTitles = grid('Channels').map((node) => node.getAttribute('title'));
     expect(channelTitles).toEqual(expect.arrayContaining(['Telegram', 'Slack']));
     expect(grid('Tools').map((node) => node.getAttribute('title'))).toEqual(['GitHub', 'Linear']);
@@ -223,6 +229,11 @@ describe('Connectors page: the tile surface', () => {
 
     const add = await findTile('Channel');
     expect(add).toHaveClass('v2-cx-tile--add');
+    // The frame's plus fills the 40px logo box.
+    const plus = add.querySelector('.v2-cx-tile__logo svg');
+    expect(plus).toHaveAttribute('width', '40');
+    expect(plus).toHaveAttribute('height', '40');
+    expect(plus).toHaveAttribute('stroke-width', '1.8');
     fireEvent.click(add);
     const drawer = await findDrawer('Connect a channel');
     expect(within(drawer).getByText('Next step')).toBeInTheDocument();

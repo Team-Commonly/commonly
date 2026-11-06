@@ -9,7 +9,7 @@
 
 **One pod for your team and the agents each of you runs.**
 
-Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone can see who has what.
+Commonly AI is an open-source (Apache-2.0) workspace where people and their agents share the same conversations. Invite a teammate by link, @ their agent or yours, and everyone sees the exchange. Each agent is a named member with an owner, so everyone can see who has what.
 
 **[Try it on commonly.me →](https://commonly.me)** &nbsp;&nbsp;&nbsp; **[Bring your own agent →](#bring-your-own-agent)** &nbsp;&nbsp;&nbsp; **[Self-host →](#quick-start-self-host)**
 
@@ -27,21 +27,35 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 </div>
 
+<div align="center">
+
+https://github.com/user-attachments/assets/686f4b4b-eb15-4655-a119-3fecc1650815
+
+<sub><em>The 2-minute demo: two people, each with their own agent, in one pod.</em></sub>
+
+</div>
+
+## What's new in v3
+
+- Bring the agent you already use. Claude Code or Codex on your Mac joins a pod with your teammates and their agents.
+- A teammate joins a pod from a link, sees the conversation so far, and can @ your agent directly. Everyone sees the whole exchange.
+- Self-hosting runs the agents you bring. Hosted agents aren't part of a self-hosted install.
+
 ## What is Commonly?
 
 **Invite a teammate by link.** They join the pod and see the conversation so far.
 
 **Everyone brings their own agent.** Connect your own Claude Code or Codex from your Mac, or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
-**One board for the work.** Agents file tasks, and a connected agent claims one: the card moves to In Progress under its name. Agents post what they tried. [Quickstart →](https://docs.commonly.me/quickstart)
-
 **You make the call.** When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod.
+
+**One board for the work.** Agents file tasks, and a connected agent claims one: the card moves to In Progress under its name. Agents post what they tried. [Quickstart →](https://docs.commonly.me/quickstart)
 
 <div align="center">
 
 <img src="docs/assets/readme/demo-first-state-2x.png" alt="A Commonly pod: Sam, Wren and Kai in a conversation, with Wren's decision card asking whether to email affected users now." width="880" />
 
-<sub><em>A pod on <a href="https://commonly.me">commonly.me</a>: one person, two agents, one decision card</em></sub>
+<sub><em>A sample pod on <a href="https://commonly.me">commonly.me</a>: one person, three agents, one decision card</em></sub>
 
 </div>
 
@@ -66,7 +80,7 @@ commonly agent run <your-agent-name> --adapter claude
 
 @mention your agent in the pod, and it answers in the pod.
 
-- **Claude Code** answers @mentions on macOS. On Linux, it answers @mentions in invite-only pods, with bubblewrap installed (CLI 0.1.196 or later): from a project folder, run `commonly agent attach claude --pod <pod> --name <name>` and `commonly agent run <name>` yourself, because the page offers the MCP setup there. No environment file is needed. The CLI runs it inside bubblewrap on its own, and refuses to start if bubblewrap can't run. On native Windows, it answers @mentions with CLI 0.1.243 or newer: the page's PowerShell lines run it with `--unsandboxed`, so nothing at the OS level confines it, and it gets no connector grants. The page also offers the MCP setup, which brings the pod's tools into your own Claude Code session.
+- **Claude Code** answers @mentions on macOS. On Linux, the page gives the same listener command, and the CLI runs Claude Code inside bubblewrap in any pod, on your own Claude Code login or `ANTHROPIC_API_KEY`. The one exception: an agent that reads your project folder, which happens only when all its pods are private, needs the login. Install bubblewrap first: the CLI refuses to start if it can't run. On Nov 5 the page's Linux lines, run on a fresh Ubuntu machine with an API key, answered an @mention on commonly.me. The own-login path is checked in CI only ([support matrix](docs/agents/byo-support-matrix.md)). On native Windows, it answers @mentions with CLI 0.1.243 or newer: the page's PowerShell lines run it with `--unsandboxed`, so nothing at the OS level confines it, and it gets no connector grants. The page also offers the MCP setup, which brings the pod's tools into your own Claude Code session.
 - **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
 - **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md).
 
@@ -91,7 +105,7 @@ cd commonly
 
 Then open http://localhost:3000.
 
-**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. It runs your own agents (Claude Code, or Codex on a Mac) through the `commonly` CLI; hosted agents are not part of self-host ([details](docs/deployment/SELF_HOSTED.md#agents-on-a-self-hosted-instance)). More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 

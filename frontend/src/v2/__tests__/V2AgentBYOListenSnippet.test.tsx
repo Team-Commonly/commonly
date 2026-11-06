@@ -270,9 +270,9 @@ describe('BYO listener snippet', () => {
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
 
-  // Where the listener runs: Mac with either CLI, Linux with Codex, and Linux
-  // with Claude Code in an invite-only pod (TASK-027: the CLI refuses a public
-  // Claude Code seat under bubblewrap). Native Windows has no sandbox, so the
+  // Where the listener runs: Mac with either CLI, and Linux with Claude Code in
+  // any pod (F96, #3395: a public Claude Code seat runs in the bubblewrap jail
+  // on the person's own login). Codex on Linux is not tested yet. Native Windows has no sandbox, so the
   // listener runs unconfined there and the page says so beside the PowerShell
   // lines (D245). The Windows MCP command goes through cmd /c (windows-latest).
   describe('where the listener runs', () => {
@@ -368,17 +368,27 @@ describe('BYO listener snippet', () => {
       expect(listener()?.textContent).toMatch(/^\$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"$/m);
     });
 
-    test('Linux with Claude Code: no listener command, and the bash MCP command', async () => {
+    test('Linux with Claude Code in an open pod: the listener command, the Linux reach note, and the bash MCP command', async () => {
       setUserAgent(LINUX);
       await issueToken();
       expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
-      expect(listener()).toBeUndefined();
-      expect(screen.queryByTestId('byo-listen-reach')).toBeNull();
-      expect(screen.getByTestId('byo-listen-unavailable'))
-        .toHaveTextContent(/On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t/);
-      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* runs inside bubblewrap \(bwrap\)\. Usually it works in its own scratch folder/);
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
-      expect(screen.getByTestId('byo-mcp-claude')).not.toHaveTextContent(/command above|Optional/);
+    });
+
+    // Say only what is walked on Linux: the API-key scratch-folder setup (run 41945040493); the rest is CI or untested.
+    test('Linux with Claude Code: the reach note says how far it has been tested, and the login rule', async () => {
+      setUserAgent(LINUX);
+      await issueToken();
+      const reach = screen.getByTestId('byo-listen-reach');
+      expect(reach).toHaveTextContent(/On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention\. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet/);
+      expect(reach).toHaveTextContent(/run \/login in Claude Code/);
+      // The CLI's workspace seat copies a login and drops ANTHROPIC_API_KEY (claude.js),
+      // and refuses --allow anywhere else (agent.js, firstRunWorkspace).
+      expect(reach).toHaveTextContent(/there it needs your Claude Code login: an API key alone won’t do/);
+      expect(reach).toHaveTextContent(/In the project-folder case only, you can add --allow write to the last line to let it edit files and run commands, or --allow web/);
     });
 
     test('Linux with Codex: no listener command, and Codex says it is not tested yet', async () => {
@@ -392,21 +402,18 @@ describe('BYO listener snippet', () => {
 
     const PRIVATE_POD = { joinPolicy: 'invite-only', publicRead: false, communityListed: false };
 
-    test('Linux with Claude Code in an invite-only pod: the listener command and the Linux reach note', async () => {
+    test('Linux with Claude Code in an invite-only pod: the same listener command and reach note', async () => {
       setUserAgent(LINUX);
       await issueToken(undefined, PRIVATE_POD);
-      expect(screen.getByTestId('byo-setup-os-linux')).toHaveAttribute('aria-pressed', 'true');
       expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
-      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
-      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^On Linux, .* answers only while every pod it's in is private, invite-only/);
-      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/bubblewrap \(bwrap\)/);
+      expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/it reads only that folder instead/);
     });
 
-    test('Linux with Claude Code: the folder and bubblewrap requirement sits beside the command', async () => {
+    test('Linux with Claude Code: the bubblewrap requirement sits beside the command, with no home-folder refusal', async () => {
       setUserAgent(LINUX);
-      await issueToken(undefined, PRIVATE_POD);
-      expect(screen.getByTestId('byo-listen-needs'))
-        .toHaveTextContent(/On Linux, open the window in your project folder first, with bubblewrap \(bwrap\) installed: run from your home folder, it won’t start\./);
+      await issueToken();
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/On Linux, install bubblewrap \(bwrap\) first\./);
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/won’t start/);
     });
 
     test('Mac with Claude Code: no Linux folder note', async () => {
@@ -423,39 +430,17 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI has been tested only on a Mac and may not answer @mentions from Linux yet/);
     });
 
-    test('Linux with Claude Code in a pod that is not private: the footnote names the pod rule, not the computer', async () => {
-      setUserAgent(LINUX);
-      axios.get.mockImplementation((url) => {
-        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'open', publicRead: false, communityListed: false }] });
-        if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
-        return Promise.resolve({ data: {} });
-      });
-      render(
-        <AuthContext.Provider value={authValue}>
-          <MemoryRouter>
-            <V2AgentBYO />
-          </MemoryRouter>
-        </AuthContext.Provider>,
-      );
-      await waitFor(() => expect(screen.getByText('Workspace (chat)')).toBeInTheDocument());
-      expect(screen.getByText(/On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only/)).toBeInTheDocument();
-      expect(screen.queryByText(/run the listener on a supported computer/)).toBeNull();
-    });
-
-    // The CLI treats a pod that does not report a flag as public, so the page
-    // must not offer a listener the CLI would refuse.
+    // The pod rule is gone with F96: a pod's join policy no longer decides
+    // whether Linux Claude Code gets a listener.
     test.each([
       ['open to join', { ...PRIVATE_POD, joinPolicy: 'open' }],
       ['listed in Community', { ...PRIVATE_POD, communityListed: true }],
-      ['publicRead not reported', { joinPolicy: 'invite-only', communityListed: false }],
-      ['communityListed not reported', { joinPolicy: 'invite-only', publicRead: false }],
-      // The CLI treats a missing joinPolicy as open.
       ['joinPolicy not reported', { publicRead: false, communityListed: false }],
-    ])('Linux with Claude Code in a pod %s: no listener command', async (_label, pod) => {
+    ])('Linux with Claude Code in a pod %s: the listener command', async (_label, pod) => {
       setUserAgent(LINUX);
       await issueToken(undefined, pod);
-      expect(listener()).toBeUndefined();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/under “Who can join” in pod settings/);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter claude$/);
+      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
     });
 
     test('Mac with Claude Code keeps the macOS reach note', async () => {
@@ -464,30 +449,43 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^By default, on macOS/);
     });
 
-    // --unsandboxed doesn't change Codex (it keeps its own permission profile),
-    // so its line has no flag and the note is the Codex line alone.
-    test('Codex on Windows: the PowerShell listener command without --unsandboxed, and only the Codex note', async () => {
+    // Codex has no policy without a sandbox, so the page says what the flag
+    // costs, and offers the line only in an invite-only pod.
+    test('Codex on Windows in an invite-only pod: the PowerShell line with --unsandboxed, and what that costs', async () => {
       setUserAgent(WINDOWS);
-      await issueToken('codex');
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
-      expect(listener()?.textContent).not.toContain('--unsandboxed');
+      await issueToken('codex', PRIVATE_POD);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex --unsandboxed$/);
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
-      expect(screen.getByTestId('byo-listen-windows').textContent)
-        .toBe('Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.');
+      const note = screen.getByTestId('byo-listen-windows');
+      expect(note).toHaveTextContent(/nothing confines/);
+      expect(note).toHaveTextContent(/anyone in this pod, people you invite later included, can direct it/);
+      expect(note).toHaveTextContent(/no connector grants/);
+      expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
     });
 
-    // No listener is now a Linux case only: Claude Code in a pod that is not invite-only.
-    test('no listener: the first line says it will not answer @mentions, MCP stays open, no Run it here without hosting', async () => {
+    test.each([
+      ['open to join', { ...PRIVATE_POD, joinPolicy: 'open' }],
+      ['joinPolicy not reported', { publicRead: false, communityListed: false }],
+    ])('Codex on Windows in a pod %s: no command to paste, and the page says why', async (_label, pod) => {
+      setUserAgent(WINDOWS);
+      await issueToken('codex', pod);
+      expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
+      expect(screen.getByTestId('byo-listen-wont-answer')).toBeInTheDocument();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/can run only in an invite-only pod/);
+    });
+
+    // No listener is now Codex on Linux.
+    test('no listener: the first line says it will not answer @mentions, no Run it here without hosting', async () => {
       setUserAgent(LINUX);
-      await issueToken();
+      await issueToken('codex');
       const wont = screen.getByTestId('byo-listen-wont-answer');
       expect(wont).toHaveTextContent(/will not answer @mentions from here/);
       expect(wont.compareDocumentPosition(screen.getByTestId('byo-listen-unavailable')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(screen.queryByTestId('byo-listen-run-here')).toBeNull();
       expect(screen.queryByTestId('byo-mcp-details')).toBeNull();
-      expect(screen.getByTestId('byo-mcp-claude')).toBeInTheDocument();
       expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
     });
 
@@ -495,7 +493,7 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       hostedConfigured = true;
       try {
-        await issueToken();
+        await issueToken('codex');
         expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('button', { name: 'Run it here' })).toBeInTheDocument();
         // The hosted offer section would repeat the same action: one button only.
         expect(screen.getAllByRole('button', { name: /Run it here/ })).toHaveLength(1);
@@ -509,14 +507,13 @@ describe('BYO listener snippet', () => {
       }
     });
 
-    test('the switch overrides the browser: Linux to Mac brings the listener back', async () => {
+    test('the switch overrides the browser: Linux to Mac brings the Codex listener back', async () => {
       setUserAgent(LINUX);
-      await issueToken();
+      await issueToken('codex');
       fireEvent.click(screen.getByTestId('byo-setup-os-mac'));
       expect(screen.getByTestId('byo-setup-os-mac')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeDefined();
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
-      expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
     });
   });
 });
@@ -552,8 +549,13 @@ describe('BYO listener: Work in my repo', () => {
     expect(screen.getByTestId('byo-repo-saved-note')).toHaveTextContent(/detach/);
   });
 
-  test('not offered in a pod that is not confirmed private', async () => {
-    await issueToken(undefined, { joinPolicy: 'open', publicRead: false, communityListed: false });
+  // The CLI reads a pod that omits a flag as public; the repo choice must too.
+  test.each([
+    ['open to join', { joinPolicy: 'open', publicRead: false, communityListed: false }],
+    ['publicRead not reported', { joinPolicy: 'invite-only', communityListed: false }],
+    ['communityListed not reported', { joinPolicy: 'invite-only', publicRead: false }],
+  ])('not offered in a pod %s', async (_label, pod) => {
+    await issueToken(undefined, pod);
     expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
     expect(runLine()).not.toMatch(/--allow/);
   });

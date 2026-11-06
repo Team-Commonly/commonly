@@ -48,6 +48,7 @@ jest.mock('../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
 jest.mock('../../services/discordService', () => jest.fn().mockImplementation(() => ({
   initialize: jest.fn().mockResolvedValue(true),
   connect: jest.fn().mockResolvedValue(true),
+  disconnect: jest.fn().mockResolvedValue(true),
 })));
 jest.mock('../../services/connectorSecrets', () => ({
   put: jest.fn().mockResolvedValue('secret-ref-1'),
@@ -326,5 +327,75 @@ describe('binding a Discord channel takes authority over the pod', () => {
     const proof = new URL(cb.headers.location).searchParams.get('install');
 
     expect((await bindAs('member-token', proof)).status).toBe(201);
+  });
+});
+
+// F161 (CodeRabbit 4475816316): "Add the bot again" on a row in error starts a
+// fresh install. The new bind retires the caller's dropped row on the same pod,
+// guild and channel the way Remove would, so the page doesn't show two rows.
+describe('a fresh bind replaces the dropped row it reconnects', () => {
+  const OTHER_CHANNEL = '456789012345678901';
+  const seedRow = async (over = {}) => {
+    const row = await Integration.create({
+      podId: POD_ID,
+      type: 'discord',
+      createdBy: OWNER,
+      status: 'error',
+      config: { serverId: GUILD, channelId: CHANNEL, channelName: 'general' },
+      ...over,
+    });
+    await DiscordIntegration.create({
+      integrationId: row._id, serverId: GUILD, serverName: 'Commonly Dev', channelId: row.config.channelId, channelName: 'general', webhookId: 'old-hook',
+    });
+    return row;
+  };
+
+  const bindViaInstall = async () => {
+    const link = await request(app).get(`/api/discord/install-link/${POD_ID}`).set('Authorization', 'Bearer owner-token');
+    const authorize = new URL(link.body.installUrl);
+    const back = new URL(authorize.searchParams.get('redirect_uri'));
+    const cb = await request(app)
+      .get(`${back.pathname}?code=the-code&state=${authorize.searchParams.get('state')}&guild_id=${GUILD}`);
+    const proof = new URL(cb.headers.location).searchParams.get('install');
+    return request(app)
+      .post('/api/integrations')
+      .set('Authorization', 'Bearer owner-token')
+      .send({
+        podId: POD_ID,
+        type: 'discord',
+        config: { serverId: GUILD, serverName: 'Commonly Dev', channelId: CHANNEL, channelName: 'general' },
+        install: proof,
+      });
+  };
+
+  test.each(['error', 'disconnected'])('a %s row on the same channel ends up inactive, its webhook record gone', async (status) => {
+    const old = await seedRow({ status });
+    const bind = await bindViaInstall();
+    expect(bind.status).toBe(201);
+    const retired = await Integration.findById(old._id).lean();
+    expect(retired.isActive).toBe(false);
+    expect(retired.status).toBe('disconnected');
+    expect(await DiscordIntegration.findOne({ integrationId: old._id })).toBeNull();
+    const DiscordService = require('../../services/discordService');
+    const retiredService = DiscordService.mock.results
+      .map((r, i) => ({ value: r.value, id: String(DiscordService.mock.calls[i][0]) }))
+      .find((r) => r.id === String(old._id));
+    expect(retiredService.value.disconnect).toHaveBeenCalled();
+    const live = await Integration.find({ podId: POD_ID, type: 'discord', isActive: true }).lean();
+    expect(live.map((r) => String(r._id))).toEqual([String(bind.body.integration._id)]);
+  });
+
+  test('rows the bind does not replace stay as they are', async () => {
+    const otherChannel = await seedRow({ config: { serverId: GUILD, channelId: OTHER_CHANNEL } });
+    const connected = await seedRow({ status: 'connected' });
+    const someoneElses = await seedRow({ createdBy: MEMBER });
+    const bind = await bindViaInstall();
+    expect(bind.status).toBe(201);
+    for (const row of [otherChannel, connected, someoneElses]) {
+      // eslint-disable-next-line no-await-in-loop
+      const after = await Integration.findById(row._id).lean();
+      expect(after.isActive).toBe(true);
+      expect(after.status).toBe(row.status);
+    }
   });
 });

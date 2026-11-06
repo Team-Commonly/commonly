@@ -17,6 +17,7 @@ const {
 } = require('../services/podListing');
 const User = require('../models/User');
 const { validatePodParent } = require('../services/podParentService');
+const { mirrorMemberAdded, mirrorMemberRemoved } = require('../services/pgMirrorWrite');
 // Add PGPod at the top level if it's available
 let PGPod: any;
 let PGMessage: any;
@@ -631,6 +632,9 @@ exports.joinPod = async (req: any, res: any) => {
           $set: { updatedAt: new Date() },
         },
       );
+      // F183: mirror into PG `pod_members` after the Mongo write. Best-effort;
+      // a failure is logged and the join still answers from Mongo.
+      await mirrorMemberAdded(String(pod._id), String(userId));
     }
 
     const updatedPod = await Pod.findById(id)
@@ -685,6 +689,8 @@ exports.leavePod = async (req: any, res: any) => {
     pod.updatedAt = Date.now();
 
     await pod.save();
+    // F183: drop the PG `pod_members` mirror row too. Best-effort; never fails the leave.
+    await mirrorMemberRemoved(String(pod._id), String(req.userId));
     await leaveUnviewablePodRooms(String(req.userId));
 
     // Populate the user data

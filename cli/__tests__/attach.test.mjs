@@ -89,7 +89,18 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // (pi was the witness here until it gained Seatbelt in F113b.)
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'stub',
-    })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
+    })).toThrow(/stub adapter can't enforce sandbox\.mode=workspace\. On macOS, these adapters can: claude, codex, goose, opencode, pi, qwen\./);
+  });
+
+  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112, D247)', () => {
+    let message = '';
+    try {
+      resolveAttachSandbox({ environment: { sandbox: { mode: 'read-only', trust: 'public' } }, adapterName: 'stub' });
+    } catch (err) {
+      ({ message } = err);
+    }
+    expect(message).toContain("The stub adapter can't enforce sandbox.mode=read-only");
+    expect(message).not.toMatch(/needs sandbox\.trust/);
   });
 
   test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
@@ -107,7 +118,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // refused.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace' } }, adapterName: 'goose',
-    })).toThrow(/sandbox enforcement/);
+    })).toThrow(/needs sandbox\.trust=public/);
   });
 
   test('a public pi seat attaches under the Seatbelt sandbox its adapter now enforces (F113b)', () => {
@@ -123,7 +134,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // A mode with no confined trust is still refused for pi.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace' } }, adapterName: 'pi', platform: 'darwin',
-    })).toThrow(/sandbox enforcement/);
+    })).toThrow(/needs sandbox\.trust=public/);
   });
 
   test('the enforcement set is the default-sandbox set plus Goose and pi; pi is never a derived default', () => {
@@ -185,13 +196,13 @@ describe("resolveAttachSandbox — dsh's confined shape", () => {
   test('the same env is still refused for adapters without their own confined shape', () => {
     for (const adapterName of ['claude', 'codex', 'opencode', 'qwen', 'pi']) {
       expect(() => resolveAttachSandbox({ environment: confined, adapterName, adapter: { name: adapterName } }))
-        .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+        .toThrow(/needs sandbox\.trust=public\. Add it, or remove sandbox\.mode to run without a sandbox\./);
     }
   });
 
-  test('without the adapter object, the old refusal still holds for dsh', () => {
+  test('without the adapter object, dsh is still refused', () => {
     expect(() => resolveAttachSandbox({ environment: confined, adapterName: 'dsh' }))
-      .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+      .toThrow(/needs sandbox\.trust=public/);
   });
 });
 
@@ -554,7 +565,7 @@ describe('performAttach', () => {
       fs.writeFileSync(envPath, JSON.stringify({
         version: 1,
         workspace: { path: path.join(root, 'workspace') },
-        sandbox: { trust: 'public', mode },
+        sandbox: { trust: 'public', ...(mode ? { mode } : {}) },
       }));
       const client = makeClient();
       const error = await performAttach({
@@ -607,6 +618,24 @@ describe('performAttach', () => {
       expect(error.message).not.toContain('--unsandboxed');
       expect(error.message).not.toMatch(/macOS|Seatbelt|requested but unavailable/);
     }
+  });
+
+  // CTO review of #3501: a Codex env file naming workspace or read-only took
+  // the Codex-profile branch, which checked only the Codex version, and the
+  // agent was published before `agent run` refused it.
+  test.each([
+    ['no mode', undefined],
+    ['workspace', 'workspace'],
+    ['read-only', 'read-only'],
+  ])('on win32, a public Codex --env with %s refuses with the Codex line and WSL, before anything is published', async (_label, mode) => {
+    const { error, client } = await attachConfined({
+      adapterName: 'codex', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain("A public agent needs a sandbox, which Codex can't enforce on Windows without its elevated setup");
+    expect(error.message).toContain('WSL 2');
+    expect(error.message).not.toContain('--unsandboxed');
+    expect(client.post).not.toHaveBeenCalled();
   });
 
   test('on darwin and linux, the Seatbelt and bwrap refusals keep their text', async () => {
@@ -1316,35 +1345,22 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toThrow(/No supported agent CLI found on PATH/);
   });
 
-  test('an explicit OpenCode bootstrap requires the server to declare that adapter for the selected install', async () => {
-    const declared = makeFactory({
-      agentName: 'smoke-agent',
-      instanceId: 'default',
-      installations: [{
-        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
-        type: 'installation', runtimeAdapter: 'OpenCode',
-      }],
-    });
+  test('F175a: an explicit OpenCode bootstrap is judged by the grant-broker gates, not a declared binding', async () => {
+    // OpenCode joined ADAPTERS_WITH_GRANT_BROKER, so like claude and codex it no
+    // longer needs the server to declare the adapter before an env-token seat
+    // runs: the run path asks /grant-brokers?adapter=opencode and withholds
+    // the broker itself. pi (below) still needs the declaration.
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
-      clientFactory: declared,
+      clientFactory: makeFactory({
+        ...identityResponse,
+        installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+      }),
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
     });
     expect(record.adapter).toBe('opencode');
-
-    const undeclared = makeFactory({
-      ...identityResponse,
-      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
-    });
-    await expect(bootstrapAgentRecordFromEnv({
-      name: 'smoke-agent',
-      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
-      clientFactory: undeclared,
-      adapterRegistry: makeRegistry({ opencodeFound: true }),
-      adapterOverride: 'opencode',
-    })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
   });
 
   test('TASK-317: a reported CLI on the installation never counts as a declared adapter', () => {
@@ -1363,7 +1379,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
 
   test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
     const refusal = serverAdapterBindingRefusal({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       installations: identityResponse.installations,
       podId: 'pod-main',
@@ -1419,7 +1435,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const get = jest.fn(async () => ({ installations: identityResponse.installations }));
     const clientFactory = jest.fn(() => ({ get }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'default',
@@ -1448,7 +1464,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const response = installations === undefined ? {} : { installations };
     const clientFactory = jest.fn(() => ({ get: jest.fn(async () => response) }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'default',
@@ -1470,12 +1486,12 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const clientFactory = jest.fn(() => ({
       get: jest.fn(async () => ({
         installations: [{
-          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ',
+          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' Goose ',
         }],
       })),
     }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'writer',
@@ -1493,8 +1509,19 @@ describe('bootstrapAgentRecordFromEnv', () => {
   });
 
   test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {
+    // F175c: pi is on the broker list but holds a grant only when public, and
+    // the broker's per-call check reads the adapter off the row, so its run
+    // path still needs the server to declare it.
     expect(adapterRequiresServerBinding('pi')).toBe(true);
-    expect(adapterRequiresServerBinding('opencode')).toBe(true);
+    expect(adapterRequiresServerBinding(' PI ')).toBe(true);
+    // F175a: OpenCode joined the broker set, so like claude its run path is
+    // judged by the grant-broker gates (`/grant-brokers?adapter=` and
+    // withholdGrantBroker), not by a server-declared binding.
+    expect(adapterRequiresServerBinding('opencode')).toBe(false);
+    expect(adapterRequiresServerBinding('OpenCode ')).toBe(false);
+    // F175d: on the broker list like pi, and on pi's rule for the same reason.
+    expect(adapterRequiresServerBinding('goose')).toBe(true);
+    expect(adapterRequiresServerBinding('qwen')).toBe(true);
     expect(adapterRequiresServerBinding('claude')).toBe(false);
     expect(adapterRequiresServerBinding('codex')).toBe(false);
     expect(adapterRequiresServerBinding('stub')).toBe(false);

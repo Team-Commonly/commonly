@@ -41,6 +41,15 @@ aiProviders:
   anthropic:
     enabled: false
     nativeModel: claude-haiku-5-5
+  # DeepSeek through LiteLLM: the deepseek-v4-flash and deepseek-flash-1017
+  # routes, LiteLLM's DEEPSEEK_API_KEY (from commonly-deepseek-api-key), the
+  # Gemini/gpt-4o stand-ins and the Gemini fallbacks, and the backend's
+  # LITELLM_CHAT_MODEL default. On by default: DeepSeek is the base chart's
+  # default model (litellm.agentDefaultModel) and stays a self-host option.
+  # Off, LITELLM_CHAT_MODEL follows litellm.agentDefaultModel, which must then
+  # name another route. Dev turns it off (F159).
+  deepseek:
+    enabled: true
 
 # Web search for native turns (TASK-267a). Off by default: on, the api-keys
 # ExternalSecret references commonly-dev-search-api-key, and ESO rejects the
@@ -104,6 +113,16 @@ hostedMcp:
     # install page where a person picks the repositories the App's user token
     # can reach. Empty: no install link is offered.
     appSlug: ""
+
+# Commonly Connect as a SIGNING App (F172): the broker mints installation
+# tokens for outside teams' Connect installations with this App's own id and
+# private key, never the commonly-tools key. Enable only after both remote keys
+# (`<prefix>github-connect-app-id`, `<prefix>github-connect-app-private-key`)
+# exist with an enabled version: a missing remoteRef stalls api-keys. Disabled,
+# the backend refs stay optional and Connect connections refuse
+# `github_app_not_configured`. The App needs Contents RW and Pull requests RW.
+githubConnectApp:
+  enabled: false
 
 # Agent provisioning (RBAC + PVCs)
 agentProvisioning:

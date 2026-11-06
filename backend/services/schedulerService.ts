@@ -564,13 +564,23 @@ class SchedulerService {
     const approvalToolCallSweepJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const {
+          sweepExpiredToolCallApprovals, sweepCardlessToolCallApprovals,
+        } = require('./approvalActionService');
+        // Each sweep frees slots on its own, so one failing never skips the other.
         try {
-          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const { sweepExpiredToolCallApprovals } = require('./approvalActionService');
           const expired = await sweepExpiredToolCallApprovals();
           if (expired) console.log(`[approval] expired tool calls=${expired}`);
         } catch (error) {
           console.error('[approval] tool-call expiry sweep failed:', error);
+        }
+        try {
+          // F184: a row whose card never posted holds a seat's open slot.
+          const mooted = await sweepCardlessToolCallApprovals();
+          if (mooted) console.log(`[approval] mooted cardless tool calls=${mooted}`);
+        } catch (error) {
+          console.error('[approval] tool-call cardless sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
@@ -675,6 +685,25 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
+    // F183: repair the PG mirror (pods, pod_members, users) from Mongo,
+    // nightly at 03:30 UTC (services/pgMirrorRepairService.ts). Registered only
+    // when the deployment opts in; report-only unless PG_MIRROR_REPAIR_APPLY=1,
+    // which the service reads itself. An advisory lock keeps two replicas from
+    // overlapping.
+    const pgMirrorRepairJob: CronJob = cron.schedule(
+      '30 3 * * *',
+      async () => {
+        try {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { runPgMirrorRepair } = require('./pgMirrorRepairService');
+          await runPgMirrorRepair();
+        } catch (error) {
+          console.error('[pg-mirror-repair] run failed:', error);
+        }
+      },
+      { scheduled: false, timezone: 'UTC' },
+    );
+
     this.jobs = [
       summarizerJob,
       externalFeedJob,
@@ -702,6 +731,7 @@ class SchedulerService {
       spendAlarmJob,
       ...(process.env.SYNTHETIC_ACCOUNT_PURGE === 'true' ? [syntheticAccountPurgeJob] : []),
       ...(process.env.AGENT_RUN_CONTENT_WINDOW === 'true' ? [runContentWindowJob] : []),
+      ...(process.env.PG_MIRROR_REPAIR === 'true' ? [pgMirrorRepairJob] : []),
     ];
     this.jobs.forEach((job) => job.start());
     this.isRunning = true;

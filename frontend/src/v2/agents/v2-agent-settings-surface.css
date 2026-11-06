@@ -140,7 +140,7 @@
      action. A long value (a refusal, a status) wraps inside its own cell, never under the label. */
   .v2-agent-settings-page .lrow { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 4px 4px 12px; }
   .v2-agent-settings-page .lrow .lb { font-weight: 500; }
-  .v2-agent-settings-page .lrow .vl { justify-content: flex-end; text-align: right; font-size: 12px; color: var(--mu); }
+  .v2-agent-settings-page .lrow .vl { justify-content: flex-end; text-align: right; font-size: 13px; color: var(--ink2); }
   .v2-agent-settings-page .lrow .ac .b.v2-agent-settings-page__textbtn { width: 44px; padding: 0; }
   .v2-agent-settings-page__textbtn-label { display: none; }
 }
@@ -210,6 +210,10 @@
 .v2-agent-settings-page .v2-runtime-controls__control { min-width: 220px; justify-content: space-between; }
 .v2-agent-settings-page__name { flex: 1; max-width: 360px; }
 .v2-agent-settings-page__fielderror { flex-basis: 100%; font-size: 12.5px; color: var(--ink); }
+/* TASK-780: a hosted agent's description. Sized like the name box, read left to right even where the
+   phone value cell aligns right, with its hint on its own line under the box. */
+.v2-agent-settings-page .v2-agent-settings-page__about textarea { text-align: left; }
+.v2-agent-settings-page__abouthint { flex-basis: 100%; font-size: 12px; color: var(--mu); text-align: left; }
 .v2-agent-settings-page__form { display: contents; }
 .v2-agent-settings-page__pair { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; align-items: center; }
 .v2-agent-settings-page__pair > .mu { font-size: 12.5px; }
@@ -259,7 +263,7 @@
 
 @media (max-width: 600px) {
   .v2-agent-settings-page details.disc > summary { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 14px 4px 12px; }
-  .v2-agent-settings-page details.disc > summary .vl { justify-content: flex-end; text-align: right; font-size: 12px; color: var(--mu); }
+  .v2-agent-settings-page details.disc > summary .vl { justify-content: flex-end; text-align: right; font-size: 13px; color: var(--ink2); }
   .v2-agent-settings-page .dbody { padding: 0 12px 12px; }
   .v2-agent-settings-page__pair { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .v2-agent-settings-page__pair > .mu, .v2-agent-settings-page__pair--top > .mu { font-size: 12px; padding-top: 0; }

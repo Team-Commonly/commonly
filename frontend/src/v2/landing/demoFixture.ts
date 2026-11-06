@@ -8,9 +8,13 @@
  * caption says it again. No backend is involved: replies are scripted and
  * delayed locally.
  *
- * Faces are NOT in this file. They come from the real kit —
- * `characterAvatarFor('demo:<name>', kind)` — because the `/_blob/…` URLs in
- * the design canvas do not resolve outside it.
+ * Message text stays English in every language: it is what people and agents
+ * typed, and the zh-CN glossary never translates that. The chrome around it
+ * comes from the app's own locale keys, as it does in a real pod.
+ *
+ * Faces are NOT in this file. They come from the real kit through `V2Avatar`
+ * (seed `demo:<name>`), because the `/_blob/…` URLs in the design canvas do
+ * not resolve outside it.
  */
 
 export type PodKey = 'launch' | 'support' | 'website' | 'growth';
@@ -74,18 +78,18 @@ export interface FixtureChip {
   steps: (decided: boolean) => ScriptedStep[];
 }
 
+/** The inspector's own three states; the square and the status line follow it. */
+export type AgentState = 'needs-you' | 'working' | 'idle';
+
 export interface FixtureAgent {
   faceKey: FaceKey;
-  /** Status line before this pod's decision is ruled. */
-  status: string;
-  /** Status line after it is ruled; falls back to `status`. */
-  ruledStatus?: string;
-  /** Draws the accent dot. A waiting agent is also `true` (spec: both are accent). */
-  working?: boolean;
-  waiting?: boolean;
-  /** …and after it is ruled. */
-  ruledWorking?: boolean;
-  ruledWaiting?: boolean;
+  /** State before this pod's decision is ruled. */
+  state: AgentState;
+  /** What the state is about: a task id or a decision title. */
+  title?: string;
+  /** State and title after it is ruled; both fall back to the unruled pair. */
+  ruledState?: AgentState;
+  ruledTitle?: string;
 }
 
 export interface FixtureBoardRow {
@@ -95,14 +99,16 @@ export interface FixtureBoardRow {
   ruledState?: string;
   /** Renders "needs you" in accent until the decision is ruled. */
   needsYou?: boolean;
+  /** Counts toward the header's "N to do" chip while nobody has started it. */
+  todo?: boolean;
 }
 
 export interface FixturePod {
   key: PodKey;
   name: string;
-  sub: string;
   group: 'pinned' | 'team';
-  channel: string;
+  /** The people in the pod, drawn ahead of its agents in the header's faces. */
+  people: FaceKey[];
   channelName: string;
   channelCount: string;
   linked: boolean;
@@ -114,13 +120,14 @@ export interface FixturePod {
   board: FixtureBoardRow[];
 }
 
+const PEOPLE: FaceKey[] = ['sam', 'priya'];
+
 export const FIXTURE_PODS: FixturePod[] = [
   {
     key: 'launch',
     name: 'Launch',
-    sub: 'ship the new signup',
     group: 'pinned',
-    channel: 'telegram · linked',
+    people: PEOPLE,
     channelName: 'Telegram · Launch',
     channelCount: '8 today',
     linked: true,
@@ -129,20 +136,25 @@ export const FIXTURE_PODS: FixturePod[] = [
       {
         who: 'Sam',
         faceKey: 'sam',
-        meta: '09:02 · from telegram',
+        meta: '9:02 AM',
         text: '@wren the signup fix is green. Merge it, then tell me what broke in last night’s deploy.',
       },
       {
         who: 'Wren',
         faceKey: 'wren',
-        meta: '09:14',
+        meta: '9:14 AM',
         text: 'Merged #212. Two things broke last night: the email webhook lost its retry, and the digest job answered 500 for six minutes. Both are fixed in #212.',
-        sub: '#212 merged · deployed 09:21',
+      },
+      {
+        who: 'Priya',
+        faceKey: 'priya',
+        meta: '9:17 AM',
+        text: '@kai can you close the retry gap for good?',
       },
       {
         who: 'Kai',
         faceKey: 'kai',
-        meta: '09:20',
+        meta: '9:20 AM',
         text: 'Took TASK-31, the retry gap. One-line fix and a test; PR within the hour.',
       },
     ],
@@ -194,7 +206,7 @@ export const FIXTURE_PODS: FixturePod[] = [
       },
       {
         id: 'l3',
-        text: '@vera what did you review today?',
+        text: '@vera what did you review?',
         steps: () => [{
           faceKey: 'vera',
           text: 'Three PRs. #212 approved, #213 sent back for a missing test, #214 approved after one nit.',
@@ -203,22 +215,21 @@ export const FIXTURE_PODS: FixturePod[] = [
       },
     ],
     agents: [
-      { faceKey: 'wren', status: 'waiting on you', ruledStatus: 'working · note to users', waiting: true, ruledWorking: true, ruledWaiting: false },
-      { faceKey: 'kai', status: 'working · TASK-31', working: true },
-      { faceKey: 'vera', status: 'idle · 18m' },
+      { faceKey: 'wren', state: 'needs-you', title: 'Tell affected users', ruledState: 'working', ruledTitle: 'note to users' },
+      { faceKey: 'kai', state: 'working', title: 'TASK-31' },
+      { faceKey: 'vera', state: 'idle' },
     ],
     board: [
       { title: 'TASK-30 Signup fix', state: 'done' },
       { title: 'TASK-31 Retry gap', state: 'kai · wip' },
-      { title: 'TASK-32 Note to users', state: 'needs you', needsYou: true, ruledState: 'wren · wip' },
+      { title: 'TASK-32 Note to users', state: 'needs you', needsYou: true, todo: true, ruledState: 'wren · wip' },
     ],
   },
   {
     key: 'support',
     name: 'Support',
-    sub: 'questions from Slack #help',
     group: 'team',
-    channel: 'slack · mirror',
+    people: ['sam'],
     channelName: 'Slack · #help',
     channelCount: '9 today',
     linked: true,
@@ -227,19 +238,19 @@ export const FIXTURE_PODS: FixturePod[] = [
       {
         who: 'Dana',
         initial: 'D',
-        meta: '10:41 · from slack #help',
+        meta: '10:41 AM · from slack #help',
         text: 'Hi! Is there a way to export our pod history to CSV?',
       },
       {
         who: 'Quill',
         faceKey: 'quill',
-        meta: '10:42 · answered in slack',
+        meta: '10:42 AM · answered in slack',
         text: 'Yes: pod settings, then Export, then CSV. It includes messages, tasks and files. Want me to run it for your workspace?',
       },
       {
         who: 'Dana',
         initial: 'D',
-        meta: '10:44 · from slack #help',
+        meta: '10:44 AM · from slack #help',
         text: 'Please do, for the Launch pod.',
       },
     ],
@@ -293,20 +304,19 @@ export const FIXTURE_PODS: FixturePod[] = [
       },
     ],
     agents: [
-      { faceKey: 'quill', status: 'waiting on you', ruledStatus: 'working · export', waiting: true, ruledWorking: true, ruledWaiting: false },
-      { faceKey: 'kai', status: 'working · TASK-31', working: true },
+      { faceKey: 'quill', state: 'needs-you', title: 'Export for Dana', ruledState: 'working', ruledTitle: 'export' },
+      { faceKey: 'kai', state: 'working', title: 'TASK-31' },
     ],
     board: [
-      { title: 'TASK-33 Export button', state: 'kai · next' },
-      { title: 'TASK-34 Export for Dana', state: 'needs you', needsYou: true, ruledState: 'quill · wip' },
+      { title: 'TASK-33 Export button', state: 'kai · next', todo: true },
+      { title: 'TASK-34 Export for Dana', state: 'needs you', needsYou: true, todo: true, ruledState: 'quill · wip' },
     ],
   },
   {
     key: 'website',
     name: 'Website',
-    sub: 'pricing page and guides',
     group: 'team',
-    channel: 'no channel',
+    people: PEOPLE,
     channelName: '',
     channelCount: '',
     linked: false,
@@ -315,19 +325,19 @@ export const FIXTURE_PODS: FixturePod[] = [
       {
         who: 'Sage',
         faceKey: 'sage',
-        meta: '08:30',
+        meta: '8:30 AM',
         text: 'The pricing page is live. Two guide pages were indexed this morning.',
       },
       {
         who: 'Priya',
         faceKey: 'priya',
-        meta: '08:47',
+        meta: '8:47 AM',
         text: 'Nice. Can you write the Slack guide next?',
       },
       {
         who: 'Sage',
         faceKey: 'sage',
-        meta: '08:49',
+        meta: '8:49 AM',
         text: 'Started it. A draft will be in this pod by noon.',
         sub: 'TASK-28 · wip',
       },
@@ -344,7 +354,7 @@ export const FIXTURE_PODS: FixturePod[] = [
         }],
       },
     ],
-    agents: [{ faceKey: 'sage', status: 'working · TASK-28', working: true }],
+    agents: [{ faceKey: 'sage', state: 'working', title: 'TASK-28' }],
     board: [
       { title: 'TASK-27 Pricing page', state: 'done' },
       { title: 'TASK-28 Slack guide', state: 'sage · wip' },
@@ -353,9 +363,8 @@ export const FIXTURE_PODS: FixturePod[] = [
   {
     key: 'growth',
     name: 'Growth',
-    sub: 'first lines and follow-ups',
     group: 'team',
-    channel: 'no channel',
+    people: PEOPLE,
     channelName: '',
     channelCount: '',
     linked: false,
@@ -364,13 +373,13 @@ export const FIXTURE_PODS: FixturePod[] = [
       {
         who: 'Reed',
         faceKey: 'reed',
-        meta: '07:55',
+        meta: '7:55 AM',
         text: 'Twelve teams asked about Slack agents this week. I drafted a first line for each; they are on the board as TASK-40.',
       },
       {
         who: 'Priya',
         faceKey: 'priya',
-        meta: '08:10',
+        meta: '8:10 AM',
         text: 'I’ll read them after lunch.',
       },
     ],
@@ -387,7 +396,7 @@ export const FIXTURE_PODS: FixturePod[] = [
         }],
       },
     ],
-    agents: [{ faceKey: 'reed', status: 'idle · 2h' }],
+    agents: [{ faceKey: 'reed', state: 'idle' }],
     board: [{ title: 'TASK-40 First lines', state: 'priya · review' }],
   },
 ];

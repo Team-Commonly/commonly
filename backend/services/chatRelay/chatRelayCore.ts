@@ -22,7 +22,8 @@
 // proof has passed.
 //
 // Adding a platform is one adapter in its bridge plus one entry in
-// ./adapters.ts — the dispatcher's selector reads the registry's keys.
+// ./adapters.ts — the dispatcher's selector reads the registry's keys, and its
+// `directRows` flag.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const IntegrationModel = require('../../models/Integration');
@@ -113,21 +114,66 @@ export type RelayCommandOutcome =
     lead: string | null;
   }
   | { kind: 'mute'; minutes: number; until: Date; update: RelayConfigUpdate }
-  | { kind: 'unmute'; update: RelayConfigUpdate };
+  /** A `/mute` duration the parse cannot read (`90s`, `1.5h`): nothing is written. */
+  | { kind: 'mute-usage' }
+  | { kind: 'unmute'; update: RelayConfigUpdate }
+  /** A settings change from someone the platform could not prove may make it. */
+  | { kind: 'refused'; command: RelayCommand['name'] };
 
 const DEFAULT_MUTE_MINUTES = 60;
 const MAX_MUTE_MINUTES = 24 * 60;
 
 /**
- * Pure: what a command means for this connector, and the config write it
- * needs. The caller applies `update` with its own model call and renders the
- * outcome in its platform's words. `arg` is compared as given — a platform that
- * accepts `/mode Mirror` lowercases before calling, one that does not, doesn't.
+ * Platform-neutral parse: a command's bare name (no slash, no bot suffix) and
+ * its one argument, as a platform received them. Null for a name that is not a
+ * bridge command, so the platform keeps its own handling for it. `/mode` takes
+ * its argument in any case; `/mute` hands its argument on as typed.
  */
-export const applyRelayCommand = (
+export const parseRelayCommand = (name: string | null | undefined, arg?: string): RelayCommand | null => {
+  const normalized = String(name || '').trim().toLowerCase();
+  if (normalized === 'mode') return { name: 'mode', arg: (arg || '').trim().toLowerCase() };
+  if (normalized === 'status') return { name: 'status' };
+  if (normalized === 'mute') return { name: 'mute', arg };
+  if (normalized === 'unmute') return { name: 'unmute' };
+  if (normalized === 'help') return { name: 'help' };
+  return null;
+};
+
+// Read against a trimmed argument of at most 16 characters, with no
+// adjacent optional whitespace, so the match is linear.
+const MUTE_DURATION = /^(\d{1,5}) ?(m|min|mins|minutes?|h|hr|hrs|hours?)?$/i;
+const MUTE_ARG_MAX = 16;
+
+/**
+ * The minutes a `/mute` argument asks for: none means the default, a bare
+ * number is minutes, and `30m` or `2h` carry their unit. Anything else is null,
+ * which the caller answers with usage: a guess at `90s` or `1.5h` would mute
+ * for a time nobody asked for (F161).
+ */
+const muteMinutesOf = (arg?: string): number | null => {
+  const raw = String(arg || '').trim();
+  if (!raw) return DEFAULT_MUTE_MINUTES;
+  if (raw.length > MUTE_ARG_MAX) return null;
+  const match = MUTE_DURATION.exec(raw);
+  if (!match) return null;
+  const asked = parseInt(match[1], 10) * (match[2] && /^h/i.test(match[2]) ? 60 : 1);
+  return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
+};
+
+export interface RelayCommandAuthority {
+  /**
+   * Whether the platform proved the caller may change this connector's relay
+   * settings. Omitted means the platform's surface already proves it (a
+   * private Telegram chat is its linked user's alone). `false` turns every
+   * outcome that writes into `refused`; reads are unaffected.
+   */
+  mayChangeSettings?: boolean;
+}
+
+const decideRelayCommand = (
   command: RelayCommand,
   integration: ChatRelayIntegration | null | undefined,
-  now: Date = new Date(),
+  now: Date,
 ): RelayCommandOutcome => {
   if (command.name === 'help') return { kind: 'help' };
   if (!integration) return { kind: 'not-linked' };
@@ -141,10 +187,8 @@ export const applyRelayCommand = (
     };
   }
   if (command.name === 'mute') {
-    const minutes = Math.min(
-      Math.max(parseInt(command.arg || String(DEFAULT_MUTE_MINUTES), 10) || DEFAULT_MUTE_MINUTES, 1),
-      MAX_MUTE_MINUTES,
-    );
+    const minutes = muteMinutesOf(command.arg);
+    if (minutes === null) return { kind: 'mute-usage' };
     const until = new Date(now.getTime() + minutes * 60_000);
     return { kind: 'mute', minutes, until, update: { $set: { 'config.relayMutedUntil': until } } };
   }
@@ -160,6 +204,28 @@ export const applyRelayCommand = (
     mutedUntil: activeMuteUntil(integration, now),
     lead: lead ? String(lead) : null,
   };
+};
+
+/**
+ * Pure: what a command means for this connector, and the config write it
+ * needs. The caller applies `update` with its own model call and renders the
+ * outcome in its platform's words. `arg` is compared as given — a platform that
+ * accepts `/mode Mirror` lowercases before calling, one that does not, doesn't.
+ */
+export const applyRelayCommand = (
+  command: RelayCommand,
+  integration: ChatRelayIntegration | null | undefined,
+  now: Date = new Date(),
+  authority: RelayCommandAuthority = {},
+): RelayCommandOutcome => {
+  const outcome = decideRelayCommand(command, integration, now);
+  // One rule for every platform: a write needs the authority the platform
+  // proved. Shown here rather than per platform so a new surface cannot ship
+  // its settings commands open by forgetting the check.
+  if ('update' in outcome && authority.mayChangeSettings === false) {
+    return { kind: 'refused', command: command.name };
+  }
+  return outcome;
 };
 
 // ---------------------------------------------------------------------------
@@ -190,6 +256,14 @@ export interface ChatRelayAdapter<I extends ChatRelayIntegration = ChatRelayInte
   provider: string;
   /** The relayMap / cards key the inbound reply router reads back. */
   relayMapKey: string;
+  /**
+   * True when the platform's rows can be plain Integration rows with no
+   * Installable parent (`installationId` absent): legacy Telegram binds, and
+   * every Discord row, which the OAuth install writes directly. The dispatcher
+   * hands such a row to `<provider>.relay` itself; an adapter without this flag
+   * is reached only through an installed event-handler component.
+   */
+  directRows?: boolean;
   findLiveIntegration: (podId: string) => Promise<I | null>;
   isRelayableIntegration: (integration: I, podId: string) => boolean;
   /** Render and send. Return null to skip without a send (e.g. no bot token). */
@@ -315,6 +389,8 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
 export interface LiveRelayRow {
   config?: Record<string, unknown> | null;
   createdBy?: unknown;
+  /** The pod the row serves, for a platform whose rule reads its members (Discord). */
+  pod?: { members?: unknown[] } | null;
 }
 
 /**

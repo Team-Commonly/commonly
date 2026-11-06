@@ -8,6 +8,7 @@ const AgentIdentityService = require('../../services/agentIdentityService').defa
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
 const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
+const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -62,6 +63,12 @@ const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
 const resolveUsername = (req: any): string | null => (
   req.user?.username || req.agentUser?.username || null
 );
+
+// `config.hosted` may still be a Mongoose Map when read off a document.
+const readHostedAbout = (hosted: any): string => {
+  const value = hosted instanceof Map ? hosted.get('about') : hosted?.about;
+  return typeof value === 'string' ? value : '';
+};
 
 const normalizeConfigMap = (config: any) => {
   if (!config) return null;
@@ -527,6 +534,12 @@ const buildAgentInstallationPayload = (installation: any, {
       ? user.botMetadata.description.trim()
       : null,
     runtime: runtimeConfig,
+    // TASK-780: a hosted agent's editable description (config.hosted.about);
+    // absent for every other runtime, which has no such field to edit.
+    ...(String(normalizedConfig?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'
+      && hostedEngineInEffect(installation) === 'native' ? {
+      about: readHostedAbout(normalizedConfig?.hosted),
+    } : {}),
     // Resolved at the boundary so the frontend doesn't need to know
     // about presets — `category` is the human-readable role family
     // (Development, Design, Strategy, …) used by the V2 inspector role

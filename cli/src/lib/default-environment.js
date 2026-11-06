@@ -52,10 +52,34 @@ export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'openco
 // adapter runs (D247 walk, 11-04; F113b).
 export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi']);
 
-// The server has not yet admitted OpenCode to its grant-broker confinement
-// allowlist. Keep runtime sandbox support separate from the narrower set of
-// adapters that may receive a room grant.
-export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
+// Adapters that may receive a room grant: each confines a public seat AND keeps
+// the per-spawn credential out of its own tools' reach (OpenCode: F175a, its
+// external_directory deny with the credential outside --dir; pi: F175c, a
+// public turn with no built-in tool, and the credential file deleted once pi
+// has loaded its extensions; Qwen and Goose: F175d, a public turn that offers no
+// file or shell tool, with the broker behind the stdio bridge so the token
+// stays in one file). Narrower than the sandbox sets above on purpose, and
+// mirrored by the server's CONFINING_ADAPTERS
+// (backend/services/grantBrokerConfinement.ts).
+export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex', 'opencode', 'pi', 'qwen', 'goose']);
+
+// The modes a jail enforces, by host: what an adapter's spawn turns into
+// Seatbelt on macOS and bubblewrap on Linux.
+const SEATBELT_MODES = new Set(['workspace', 'read-only']);
+const BWRAP_MODES = new Set(['bwrap']);
+
+// F175c, F175d: adapters in the set above that hold a grant ONLY on a confined
+// public seat, in the modes each host's jail enforces; a host with no entry has
+// no jail for it. Each runs a private seat with no sandbox at all, so a private
+// seat is never confined. pi confines in macOS Seatbelt alone
+// (adapters/pi.js assertSandboxSupported). Naming the agent on the grant (F94)
+// does not lift this, unlike the sandbox refusals of Claude, Codex and OpenCode.
+// Mirrored by the server's PUBLIC_ONLY_GRANT_ADAPTERS.
+export const ADAPTERS_WITH_PUBLIC_ONLY_GRANT = new Map([
+  ['pi', Object.freeze({ darwin: SEATBELT_MODES })],
+  ['qwen', Object.freeze({ darwin: SEATBELT_MODES, linux: BWRAP_MODES })],
+  ['goose', Object.freeze({ darwin: SEATBELT_MODES, linux: BWRAP_MODES })],
+]);
 
 /**
  * The sandbox an unconfigured seat gets.
@@ -81,8 +105,7 @@ export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
  * Claude, codex, opencode and qwen receive this default block
  * (ADAPTERS_WITH_DEFAULT_SANDBOX). Goose and pi support explicitly configured
  * public confinement, but are not defaulted into it (see the set's comment).
- * Grant-broker eligibility is
- * narrower until the server admits OpenCode after its confinement proof.
+ * Grant-broker eligibility is its own list (ADAPTERS_WITH_GRANT_BROKER).
  */
 export const COMMONLY_DEFAULT_SANDBOX = Object.freeze({ trust: 'public' });
 

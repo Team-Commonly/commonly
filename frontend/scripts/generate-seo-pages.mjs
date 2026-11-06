@@ -251,7 +251,7 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
           <p class="seo-kicker">${escapeHtml(landing.openSource.kicker)}</p>
           <h2>${escapeHtml(landing.openSource.title)}</h2>
           <p>${escapeHtml(landing.openSource.lede)}</p>
-          <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.readSource)}</a></p>
+          <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.starGithub)}</a></p>
         </section>${faqSection}
       </main>
       <footer class="seo-footer">Commonly is open source under Apache-2.0.${siteLinks}</footer>
@@ -432,7 +432,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=4" />
+    <meta property="og:image" content="${siteUrl}/og-card.png?v=6" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -440,7 +440,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=4" />
+    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=6" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -766,7 +766,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
-    description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
+    description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);

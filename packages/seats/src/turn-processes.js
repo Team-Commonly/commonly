@@ -14,7 +14,11 @@
  * the turn started on first use, such as tmux, and a seat it restarted. A
  * process started with COMMONLY_KEEP_PROCESS=1 is left running, and so is
  * anything it starts, even one that clears the setting; the turn's child itself
- * never inherits it. COMMONLY_TURN_REAP=0 turns the whole check off.
+ * never inherits it. A confined seat's turn does not honour the setting: what
+ * a confined turn leaves running is stopped whatever its environment says,
+ * because a process that outlives the turn would keep running with the
+ * turn's grants after the host has moved on to preparing the next one.
+ * COMMONLY_TURN_REAP=0 turns the whole check off.
  *
  * Only processes started since the turn began are read, and each one's
  * environment is only compared against the marker and the keep setting. Each
@@ -95,10 +99,12 @@ const selfAndAncestors = (table, pid) => {
  * neither kept nor under a kept one. Each one brings its descendants, except a
  * kept one and everything
  * under it, whose environments may be unreadable. The start-time window only
- * limits what is read; the marker is what decides. `io` is a test seam
+ * limits what is read; the marker is what decides. With `honorKeep: false`
+ * (a confined turn) nothing is kept, and a row whose environment carried the
+ * keep setting is returned with `keepIgnored: true`. `io` is a test seam
  * ({ table, envs, self }).
  */
-export const findTurnProcesses = (mark, since, io = {}) => {
+export const findTurnProcesses = (mark, since, io = {}, { honorKeep = true } = {}) => {
   const { table = readProcessTable, envs = readEnvironments, self = process.pid } = io;
   if (!mark) return [];
   const rows = table();
@@ -109,7 +115,8 @@ export const findTurnProcesses = (mark, since, io = {}) => {
   const environments = envs(recent.map((row) => row.pid));
   const marked = `${TURN_MARK_ENV}=${mark}`;
   const keep = `${KEEP_PROCESS_ENV}=1`;
-  const kept = (pid) => environments.get(pid)?.has(keep) === true;
+  const askedToKeep = (pid) => environments.get(pid)?.has(keep) === true;
+  const kept = (pid) => honorKeep && askedToKeep(pid);
   const byPid = new Map(rows.map((row) => [row.pid, row]));
   // A kept process keeps what it starts even when that drops the setting.
   const underKept = (row) => {
@@ -136,7 +143,8 @@ export const findTurnProcesses = (mark, since, io = {}) => {
       stack.push(child.pid);
     }
   }
-  return [...found.values()];
+  const out = [...found.values()];
+  return honorKeep ? out : out.map((row) => (askedToKeep(row.pid) ? { ...row, keepIgnored: true } : row));
 };
 
 /**
@@ -147,7 +155,7 @@ export const findTurnProcesses = (mark, since, io = {}) => {
  * open until SIGKILL has gone out, so a seat stopped mid-turn still escalates.
  * `io` adds `read` (pids -> rows) to the find seam.
  */
-export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, io = {} } = {}) => {
+export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, io = {}, honorKeep = true } = {}) => {
   const read = io.read || readProcesses;
   const signal = (rows, name) => {
     const now = new Map((read(rows.map((row) => row.pid)) || []).map((row) => [row.pid, row]));
@@ -156,22 +164,30 @@ export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, i
       try { process.kill(row.pid, name); return true; } catch { return false; }
     });
   };
-  const termed = signal(findTurnProcesses(mark, since, io), 'SIGTERM');
+  const termed = signal(findTurnProcesses(mark, since, io, { honorKeep }), 'SIGTERM');
   const done = termed.length === 0
     ? Promise.resolve({ killed: [] })
     : new Promise((resolve) => {
       setTimeout(() => resolve({ killed: signal(termed, 'SIGKILL').map((row) => row.pid) }), graceMs);
     });
-  return { termed: termed.map((row) => row.pid), done };
+  return {
+    termed: termed.map((row) => row.pid),
+    keepIgnored: termed.filter((row) => row.keepIgnored).map((row) => row.pid),
+    honorKeep,
+    done,
+  };
 };
 
 /**
  * One turn's marker. `env` is the child's environment with the marker added;
  * `reap(child)` runs once the child has closed, and returns what
  * `reapTurnProcesses` does, or null when the check is off, the child never had
- * a pid, or the turn was already reaped.
+ * a pid, or the turn was already reaped. `confined` marks a confined seat's
+ * turn, whose reap does not honour the keep setting.
  */
-export const markTurn = (env, { enabled = turnReapEnabled(), now = Date.now, graceMs } = {}) => {
+export const markTurn = (env, {
+  enabled = turnReapEnabled(), now = Date.now, graceMs, confined = false,
+} = {}) => {
   if (!enabled) return { env, mark: null, reap: () => null };
   const mark = randomUUID();
   const since = now();
@@ -185,15 +201,26 @@ export const markTurn = (env, { enabled = turnReapEnabled(), now = Date.now, gra
     reap: (child, { io } = {}) => {
       if (reaped || !Number.isInteger(child?.pid) || child.pid <= 0) return null;
       reaped = true;
-      try { return reapTurnProcesses(mark, since, { graceMs, io }); } catch { return null; }
+      try {
+        return reapTurnProcesses(mark, since, { graceMs, io, honorKeep: !confined });
+      } catch { return null; }
     },
   };
 };
 
-/** The log line for a reap that stopped something, or null. */
+/**
+ * The log line for a reap that stopped something, or null. A confined turn's
+ * line offers no keep setting, and says once when one was set and not
+ * honoured.
+ */
 export const describeTurnReap = (result) => {
   if (!result?.termed?.length) return null;
   const n = result.termed.length;
-  return `stopped ${n} process${n === 1 ? '' : 'es'} this turn left running (pid ${result.termed.join(', ')}); `
-    + `start one with ${KEEP_PROCESS_ENV}=1 to keep it across turns`;
+  const stopped = `stopped ${n} process${n === 1 ? '' : 'es'} this turn left running (pid ${result.termed.join(', ')})`;
+  if (result.honorKeep !== false) {
+    return `${stopped}; start one with ${KEEP_PROCESS_ENV}=1 to keep it across turns`;
+  }
+  if (!result.keepIgnored?.length) return stopped;
+  return `${stopped}; ${KEEP_PROCESS_ENV}=1 was set on pid ${result.keepIgnored.join(', ')} `
+    + 'and is not honoured on a confined seat';
 };

@@ -16,6 +16,12 @@
 const { createHash } = require('crypto');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { configRunsInProcess } = require('./hostedEngine');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const {
+  identityHoldsRuntimeToken, identityIsDormant, RUNTIME_TOKEN_HELD, takeBackInstallation,
+} = require('./runtimeIdentityOwnership');
 
 interface HireArgs {
   agentName: string;
@@ -80,7 +86,15 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
   const { buildInstallationConfig } = require('../scripts/seed-native-agents');
   const installationConfig = buildInstallationConfig(manifest);
   await assertAgentRuntimeMayJoinPod(podId, installationConfig?.runtime?.runtimeType);
-  await AgentInstallation.findOneAndUpdate(
+  // One runtime per agent identity, the same two checks /install makes.
+  const inProcess = configRunsInProcess(installationConfig);
+  const tokenHeldRefusal = () => new HireError(RUNTIME_TOKEN_HELD.code, 409, RUNTIME_TOKEN_HELD.error);
+  if (inProcess && await identityHoldsRuntimeToken(key, instanceId)) {
+    if (!await identityIsDormant(key, instanceId)) throw tokenHeldRefusal();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    await require('../routes/registry/tokens').revokeRuntimeTokensAfterLastUninstall(key, instanceId);
+  }
+  const previousRow = await AgentInstallation.findOneAndUpdate(
     { agentName: key, podId, instanceId },
     {
       $set: {
@@ -99,6 +113,10 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
     },
     { upsert: true, setDefaultsOnInsert: true },
   );
+  if (inProcess && await identityHoldsRuntimeToken(key, instanceId)) {
+    await takeBackInstallation({ agentName: key, podId, instanceId }, previousRow);
+    throw tokenHeldRefusal();
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const AgentIdentityService = require('./agentIdentityService');
@@ -116,6 +134,9 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
       { _id: podId, members: { $ne: botUser._id } },
       { $push: { members: botUser._id } },
     );
+    // F183: best-effort PG mirror write; never fails the hire.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    await require('./pgMirrorWrite').mirrorMemberAdded(String(podId), String(botUser._id));
 
     // It speaks first (D2): deterministic and free, so the seat is never a
     // silent tile at the exact moment a first impression forms. Best-effort —

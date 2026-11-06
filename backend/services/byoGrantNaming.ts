@@ -1,13 +1,15 @@
 /**
  * F94: a grant may name the granter's own agents that run outside Commonly
- * (Claude Code or Codex through the `commonly` daemon), read-only.
+ * (any harness in CONFINING_ADAPTERS, through the `commonly` daemon), read-only.
  *
  * The threat is plain: connector text can be written by outsiders (a Jira
  * comment, a shared Notion page, a Sentry event), and an agent with its own
  * shell and network cannot be held to anything once it has read that text. So
  * the grant is allowed only where the person who owns the data also owns the
  * agent and says yes to that, and never for the whole pod:
- *   - read only, and never a Limited Use connector (Calendar stays hosted-only);
+ *   - read only, and never a Limited Use connector (Calendar stays hosted-only).
+ *     The one write it may hold is pull-request access on a GitHub App grant
+ *     (TASK-783, `prWriteScope.ts`), every call parked for the granter;
  *   - every named agent is in the audience, is an agent, and is solely
  *     installed by the granter;
  *   - the granter ticked the consent, which records each agent's sandbox state;
@@ -20,19 +22,36 @@ import type { IRoomGrant, IRoomGrantByoConsent } from '../models/RoomGrant';
 import { LIMITED_USE_ENTRIES, isLimitedUseTool } from './limitedUseConnectors';
 import { ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import { judgeSeatConfinement } from './seatGrantConfinement';
+import { CONFINING_ADAPTERS, PUBLIC_ONLY_GRANT_ADAPTERS, PUBLIC_ONLY_REASON } from './grantBrokerConfinement';
+import { harnessCatalogEntry } from '../config/harnessCatalog';
+
+/**
+ * "Claude Code, Codex or OpenCode": the harnesses an agent can be NAMED on a
+ * grant from, by their catalogue names, from the one list the confinement
+ * check reads. pi, Qwen and Goose are left out (F175c, F175d): each holds a
+ * grant only on a public seat, which needs no naming, and naming lifts nothing
+ * for it.
+ */
+export const grantHarnessNames = (): string => {
+  const names = [...CONFINING_ADAPTERS.keys()]
+    .filter((id) => !PUBLIC_ONLY_GRANT_ADAPTERS.has(id))
+    .map((id) => harnessCatalogEntry(id)?.label || id);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
+};
 
 export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
   | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_adapter_unsupported'
   | 'byo_consent_required';
 
 export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
-  byo_read_only: 'An agent that runs on your computer can be named only on a read-only grant.',
+  byo_read_only: 'An agent that runs on your computer can be named only on a read-only grant, '
+    + 'or on one whose only write is opening a pull request.',
   byo_limited_use: 'This connector is used only by Commonly-hosted agents.',
   byo_not_audience: 'Name an agent that this grant reaches.',
   byo_not_agent: 'Only an agent can be named on a grant.',
   byo_agent_not_owned: 'You can name only an agent you installed, and that no one else installed.',
   byo_unconfined_host: 'This agent runs on native Windows, where no grant can be used.',
-  byo_adapter_unsupported: 'Only a Claude Code or Codex agent can be named on a grant.',
+  byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
   byo_consent_required: 'Confirm that what this agent reads can leave through it.',
 }[reason]);
 
@@ -105,11 +124,12 @@ export const namingLiftsFor = async (grant: object | NamingFields, agentUserId: 
 
 /**
  * Naming lifts a refusal about the seat's sandbox. It never lifts an adapter
- * that is not approved for the broker (the daemon applies the same rule), nor
+ * that is not approved for the broker, nor one approved only on a public seat
+ * (pi, Qwen, Goose: `adapter_confines_public_only`; the daemon applies the same rule), nor
  * a machine with no enforceable sandbox (`hostUnconfined`, checked by callers).
  */
 export const namingLiftsRefusal = (refusal: { reason?: unknown } | null | undefined): boolean => (
-  Boolean(refusal) && refusal?.reason !== 'adapter_cannot_confine'
+  Boolean(refusal) && refusal?.reason !== 'adapter_cannot_confine' && refusal?.reason !== PUBLIC_ONLY_REASON
 );
 
 type SandboxState = IRoomGrantByoConsent['agents'][number]['sandbox'];
@@ -147,8 +167,17 @@ export const checkByoNaming = async (input: {
   tools: string[];
   /** The grant's pod: the install read here must be the one the form read. */
   podId?: string;
+  /**
+   * TASK-783: the grant holds pull-request access, already checked by the mint
+   * (`prWriteMintRefusal`: write-with-confirm, a GitHub App, and no write but
+   * the PR tools). That is the one write a named agent may hold, each call
+   * parked for the granter; every other write keeps `byo_read_only`.
+   */
+  prWrite?: boolean;
 }): Promise<ByoNamingResult> => {
-  if (input.writeMode !== 'read') return { refusal: 'byo_read_only' };
+  if (input.writeMode !== 'read' && !(input.prWrite === true && input.writeMode === 'write-with-confirm')) {
+    return { refusal: 'byo_read_only' };
+  }
   if ((input.entryId && LIMITED_USE_ENTRIES.has(input.entryId)) || input.tools.some(isLimitedUseTool)) {
     return { refusal: 'byo_limited_use' };
   }
@@ -184,7 +213,10 @@ export const checkByoNaming = async (input: {
     });
   }
   if (input.consented !== true) return { refusal: 'byo_consent_required' };
-  return { refusal: null, consent: { by: input.granterId, at: new Date(), version: 'byo-v1', agents } };
+  // The form's words differ when the grant holds pull-request access, so the
+  // record says which ones the person agreed to.
+  const version = input.prWrite === true ? 'byo-pr-v1' : 'byo-v1';
+  return { refusal: null, consent: { by: input.granterId, at: new Date(), version, agents } };
 };
 
 export interface ByoCandidate {

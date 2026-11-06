@@ -310,7 +310,12 @@ describe('dispatchHostedBrokerTool', () => {
       agentUserId: SEAT,
     });
     expect(call).toEqual({
-      content: { status: 'pending_approval', approvalId: 'approval-9' },
+      content: {
+        status: 'pending_approval',
+        approvalId: 'approval-9',
+        // TASK-783: the agent is told it waits, and how the decision reaches it.
+        message: expect.stringContaining('approval.resolved'),
+      },
       callId: 'tool_call_parked',
       outcome: 'pending_approval',
     });

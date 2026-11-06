@@ -1,3 +1,7 @@
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
@@ -129,7 +133,11 @@ describe('registry install runtimeType fallback', () => {
     }));
 
     AgentInstallation.findOne.mockResolvedValue(null);
-    AgentInstallation.find.mockReturnValue(buildLeanChain([]));
+    // The hosted held-agent lookup reads find().select().sort().lean().
+    AgentInstallation.find.mockReturnValue({
+      ...buildLeanChain([]),
+      select: jest.fn().mockReturnValue({ sort: jest.fn().mockReturnValue(buildLeanChain([])) }),
+    });
     AgentInstallation.install.mockImplementation(async (_agentName, _podId, options) => ({
       _id: { toString: () => 'install-1' },
       agentName: 'sample-agent',

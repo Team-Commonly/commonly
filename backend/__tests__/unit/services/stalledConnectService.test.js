@@ -642,7 +642,7 @@ describe('keeping the forward promise', () => {
     expect(r.resolved).toHaveLength(1);
     const posted = mockPost.mock.calls[0][0];
     // Past stated flat, present derived at post time (ux-lead 53307).
-    expect(posted.content).toContain('first seen 11:50');
+    expect(posted.content).toContain('last checked in 2026-08-15 11:50 UTC');
     expect(mockEpUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ _id: 'ep9', status: 'open' }),
       expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
@@ -728,6 +728,25 @@ describe('keeping the forward promise', () => {
     expect(resolvedIds).toEqual(['ep-east']);
   });
 
+  // Byo-linux walk, 2026-11-05: the agent exited at 00:58 and the pass at 01:02
+  // still saw it inside the five-minute listening window. The time is the
+  // latest check-in, not the first, and "Listening now" was a promise the
+  // stopped agent could not keep.
+  it('names the latest check-in and does not promise it is listening now', async () => {
+    const usedAt = new Date(NOW.getTime() - 3.5 * MINUTE);
+    setup({ installs: [], open: [openEpisode] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
+    });
+
+    await scan({ now: NOW });
+
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('last checked in 2026-08-15 11:56 UTC');
+    expect(content).not.toMatch(/first seen|Listening now/);
+    expect(content).toContain('while the listener is running');
+  });
+
   it('reports the present honestly when it connected and has since gone quiet', async () => {
     // Connected 3 hours ago, stale now: the past is still a fact, the present
     // is not "listening". This is the connect-then-disconnect case.
@@ -740,7 +759,7 @@ describe('keeping the forward promise', () => {
     await scan({ now: NOW });
 
     const posted = mockPost.mock.calls[0][0];
-    expect(posted.content).toContain('first seen 09:00');
+    expect(posted.content).toContain('last checked in 2026-08-15 09:00 UTC');
     expect(posted.content).toContain("isn't running right now");
     expect(posted.content).toContain('commonly agent run ai1-agent');
   });
@@ -926,5 +945,17 @@ describe('keeping the forward promise', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+  });
+});
+
+describe('the resolution copy', () => {
+  // eslint-disable-next-line global-require
+  const { composeStalledConnectResolution } = require('../../../services/stalledConnectCopy');
+
+  it('claims no check-in time when the runtime keeps none', () => {
+    const content = composeStalledConnectResolution({
+      displayName: 'AI1 Agent', handle: 'ai1-agent', lastCheckInAt: null, presentState: 'reachable', fixCommand: 'x',
+    });
+    expect(content).toBe("AI1 Agent connected. Mention @ai1-agent while the listener is running and I'll answer.");
   });
 });

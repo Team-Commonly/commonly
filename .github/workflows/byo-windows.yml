@@ -7,6 +7,18 @@ name: Bring your own on Windows
 # The walk passes when the reply comes back and the @mention is acknowledged.
 # Claude Code is real; only its model is a stub. The lines come from
 # V2AgentBYO.tsx. It walks the published CLI and this checkout's.
+#
+# Dispatched with target=prod, it walks the published CLI (or, with cli=tree,
+# this checkout's) against the live
+# API instead, with a real model through the model gateway, as the agent the
+# inputs name. The run does not post the @mention: it logs
+# "READY: listening in <podId>", a person in that pod posts it, and the run
+# passes when the agent's reply is in the pod and the @mention is acked, or
+# fails 10 minutes after READY. The two secrets reach only the walk step.
+# With adapter=codex (prod only) it walks the page's Codex line instead: Codex
+# reaches the gateway through a provider in its Windows system config
+# (%ProgramData%\OpenAI\Codex\config.toml), since a public seat skips the
+# user's config.toml and Codex ignores OPENAI_BASE_URL.
 
 on:
   pull_request:
@@ -17,9 +29,40 @@ on:
       - 'packages/seats/**'
       - 'cli/scripts/windows-byo-smoke.mjs'
       - 'cli/scripts/windows-byo-verdict.mjs'
+      - 'cli/scripts/windows-byo-prod.mjs'
+      - 'cli/scripts/linux-byo-prod.mjs'
+      - 'cli/scripts/windows-byo-ack-recorder.mjs'
       - 'frontend/src/v2/components/V2AgentBYO.tsx'
       - '.github/workflows/byo-windows.yml'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'stub: stub API and stub model. prod: the live API, a real model, and a person posts the @mention'
+        type: choice
+        options: [stub, prod]
+        default: stub
+      agent_name:
+        description: 'prod: the agent the token belongs to'
+        type: string
+        default: ''
+      instance_id:
+        description: 'prod: its instance id'
+        type: string
+        default: ''
+      pod_id:
+        description: 'prod: the pod the @mention is posted in'
+        type: string
+        default: ''
+      adapter:
+        description: 'prod: the CLI the page line runs (the stub walk is Claude Code only)'
+        type: choice
+        options: [claude, codex]
+        default: claude
+      cli:
+        description: "prod: published (the page's install line) or tree (this checkout's CLI, to walk a fix before it publishes)"
+        type: choice
+        options: [published, tree]
+        default: published
 
 permissions:
   contents: read
@@ -38,7 +81,12 @@ jobs:
       # The same Claude Code the other real-Claude smokes pin.
       - name: Install Claude Code
         run: npm i -g @anthropic-ai/claude-code@2.1.318
+      # Codex at the version the Linux walk passed on.
+      - name: Install Codex
+        if: inputs.target == 'prod' && inputs.adapter == 'codex'
+        run: npm i -g @openai/codex@0.164.0
       - name: Pack this checkout's CLI
+        if: inputs.target != 'prod' || inputs.cli == 'tree'
         id: pack
         shell: bash
         working-directory: cli
@@ -53,4 +101,18 @@ jobs:
           # A CLI fix reaches npm only after merge, so on a PR the published
           # leg is reported and this tree's leg decides. Dispatched, both do.
           COMMONLY_BYO_PUBLISHED_REPORT_ONLY: ${{ github.event_name == 'pull_request' && '1' || '' }}
-        run: node cli/scripts/windows-byo-smoke.mjs
+          COMMONLY_BYO_TARGET: ${{ inputs.target || 'stub' }}
+          # Inputs reach the script as env, never inline in the shell.
+          COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
+          COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
+          COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_PROD_ADAPTER: ${{ inputs.adapter || 'claude' }}
+          COMMONLY_BYO_PROD_CLI: ${{ inputs.cli || 'published' }}
+          COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_AGENT_TOKEN || '' }}
+          COMMONLY_BYO_PROD_LLM_KEY: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_LLM_KEY || '' }}
+        run: |
+          foreach ($name in 'COMMONLY_BYO_PROD_AGENT_TOKEN', 'COMMONLY_BYO_PROD_LLM_KEY') {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value) { Write-Output "::add-mask::$value" }
+          }
+          node cli/scripts/windows-byo-smoke.mjs

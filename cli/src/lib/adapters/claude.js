@@ -85,6 +85,8 @@ import {
   normalizeSandboxTrust,
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
+import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
@@ -121,7 +123,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
 const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
-// (TASK-545). Parallel reads live here because only this CLI has a subagent
+// (TASK-545). Parallel reads live here because the cue names this CLI's Agent
 // tool; codex is passed row slicing and the background-process cue. A public
 // seat is passed none: its argv allows Read and the MCP under dontAsk, so it
 // has no subagent to spawn or shell to background from, and it answers
@@ -234,6 +236,92 @@ const statOrNull = async (path) => {
   }
 };
 
+// A subfolder of a seat's state, which the confined child can also write: it
+// must be a real directory (created 0700 if absent), never a link the child
+// left. The chmod goes through a handle opened with O_NOFOLLOW|O_DIRECTORY, so
+// a link swapped in after the check (Seatbelt has no PID namespace, and a
+// process a prior turn left can still run) fails the open instead of being
+// followed out of the folder. `_afterCheck` is a test seam for that swap.
+export const ensurePrivateDir = async (dir, { _afterCheck } = {}) => {
+  const refuse = () => new Error(`refusing Claude state path that is not a directory: ${dir}`);
+  const existing = await statOrNull(dir);
+  if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) throw refuse();
+  if (!existing) await mkdir(dir, { mode: 0o700 });
+  await _afterCheck?.();
+  let handle;
+  try {
+    handle = await open(dir, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY);
+  } catch (err) {
+    if (['ELOOP', 'ENOTDIR', 'ENOENT'].includes(err?.code)) throw refuse();
+    throw err;
+  }
+  try {
+    if (!(await handle.stat()).isDirectory()) throw refuse();
+    await handle.chmod(0o700);
+  } finally {
+    await handle.close();
+  }
+};
+
+// The seat's state folder itself. A Seatbelt rule that lets the child write
+// below a folder lets it write the folder too, so a child can remove it and
+// leave a link in its place. Every later step of the next turn walks below this
+// path (chmod, tmp, Library, the Keychains link, the auth metadata), so a link
+// here refuses the turn before any of them runs. The parent is made by path;
+// the folder is made and chmodded through a handle that does not follow a link.
+const ensureStateFolder = async (statePath) => {
+  await mkdir(dirname(statePath), { recursive: true, mode: 0o700 });
+  const existing = await statOrNull(statePath);
+  if (existing?.isSymbolicLink()) {
+    throw new Error(`refusing Claude state folder that is a symbolic link: ${statePath}. `
+      + 'A confined turn can replace its own state folder; remove the link (it is the seat\'s state, '
+      + 'not the place it points to) and run the turn again, which recreates the folder.');
+  }
+  await ensurePrivateDir(statePath);
+};
+
+// Removes files the host put in a child-writable folder: the one named, or
+// every name `match` accepts. The folder is checked first, and nothing is
+// removed if the child swapped it for a link (to the person's own ~/.claude,
+// say). The check is a path check, so it holds only while no confined process
+// can swap the folder: on bwrap the folders the host removes from (.claude)
+// are mount points inside every jail of the seat, which the child cannot
+// rename or replace (EBUSY), and between turns no child of the seat runs.
+const removePrivateFile = async (dir, name, { match } = {}) => {
+  const dirStat = await statOrNull(dir);
+  if (!dirStat) return;
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+    // eslint-disable-next-line no-console
+    console.warn(`[claude] not removing ${name}: ${dir} is no longer a directory`);
+    return;
+  }
+  const names = match ? (await readdir(dir)).filter(match) : [name];
+  for (const entry of names) {
+    try {
+      await rm(join(dir, entry), { force: true });
+    } catch (err) {
+      // A directory under the name is the child's, not a copy the host wrote:
+      // it is left, and the rest of the removal goes on.
+      if (!['ERR_FS_EISDIR', 'EISDIR'].includes(err?.code)) throw err;
+      // eslint-disable-next-line no-console
+      console.warn(`[claude] not removing ${join(dir, entry)}: it is not a file`);
+    }
+  }
+};
+
+// The staged name `replacePrivateFile` writes beside its target.
+const stagedName = (name) => `.${name}.${randomUUID()}.tmp`;
+const STAGED_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const isStagedCopyOf = (name) => (entry) => entry.startsWith(`.${name}.`) && entry.endsWith('.tmp')
+  && STAGED_UUID.test(entry.slice(name.length + 2, -4));
+
+// The login copy and any staged copy of it a failed or killed turn left: both
+// hold the access token.
+const removeLoginCopy = async (configDir) => {
+  await removePrivateFile(configDir, '.credentials.json');
+  await removePrivateFile(configDir, '.credentials.json', { match: isStagedCopyOf('.credentials.json') });
+};
+
 // The non-secret account metadata Claude needs from ~/.claude.json to find its
 // login, and nothing else from that file.
 const claudeAuthMetadata = async () => {
@@ -275,11 +363,12 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
   const stateKeychains = join(stateLibrary, 'Keychains');
   const operatorKeychains = join(homedir(), 'Library', 'Keychains');
 
-  await mkdir(tmpPath, { recursive: true, mode: 0o700 });
-  await mkdir(stateLibrary, { recursive: true, mode: 0o700 });
-  await chmod(statePath, 0o700);
-  await chmod(tmpPath, 0o700);
-  await chmod(stateLibrary, 0o700);
+  // The jail writes inside this folder, so the folder or a subfolder may be a
+  // link a prior turn left: each is checked before the host chmods or links
+  // inside it.
+  await ensureStateFolder(statePath);
+  await ensurePrivateDir(tmpPath);
+  await ensurePrivateDir(stateLibrary);
 
   // `/usr/bin/security` resolves the default login keychain relative to HOME.
   // Keep HOME isolated while pointing that one standard location at the
@@ -302,29 +391,31 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
     await symlink(operatorKeychains, stateKeychains);
   }
 
-  await writeFile(
-    configPath,
-    `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
-    { encoding: 'utf8', mode: 0o600 },
-  );
-  await chmod(configPath, 0o600);
+  // Staged and renamed, as on bwrap: a link at this name is replaced, never
+  // written through (F153).
+  await replacePrivateFile(statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`);
   return { statePath, tmpPath, configPath };
 };
 
 // Writes a 0600 file into a directory the confined child can also write. The
 // directory must still be a real directory, and the file is written beside the
 // target and renamed over it, so a symlink the child left at either name is
-// replaced, never followed into another of the person's files.
-const replacePrivateFile = async (dir, name, content) => {
+// replaced, never followed into another of the person's files. The directory
+// check is a path check: it holds while no confined process can swap the
+// directory, which on bwrap the .claude mount point inside the jail ensures.
+// A failed write or rename removes the staged copy, which holds the content.
+// `_writeFile` is a test seam.
+export const replacePrivateFile = async (dir, name, content, { _writeFile = writeFile } = {}) => {
   const dirStat = await statOrNull(dir);
   if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
     throw new Error(`refusing to write Claude state into a non-directory: ${dir}`);
   }
   const target = join(dir, name);
-  const staged = join(dir, `.${name}.${randomUUID()}.tmp`);
-  await writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  const staged = join(dir, stagedName(name));
   try {
-    await chmod(staged, 0o600);
+    // `wx` creates the file 0600 or fails; no chmod by path after it, which
+    // would follow a link a concurrent child swapped in for the staged name.
+    await _writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     await rename(staged, target);
   } catch (err) {
     await rm(staged, { force: true });
@@ -382,7 +473,7 @@ const releaseLoginTurn = async (marker, loginPath) => {
     else await rm(join(dir, name), { force: true });
   }
   if (!live) {
-    await rm(loginPath, { force: true });
+    await removeLoginCopy(dirname(loginPath));
     // Only an empty folder goes: a turn registering at this moment keeps it.
     try { await rmdir(dir); } catch { /* not empty, or already gone */ }
   }
@@ -446,7 +537,7 @@ const carryClaudeLogin = async (env, configDir, { accessOnly = false, mustOutlas
     handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (err) {
     if (err?.code === 'ENOENT') {
-      await rm(join(configDir, '.credentials.json'), { force: true });
+      await removeLoginCopy(configDir);
       return null;
     }
     if (err?.code === 'ELOOP') throw refuse();
@@ -483,22 +574,14 @@ const prepareWorkspaceBwrapClaudeState = async (ctx, { login = 'carry', seat = '
   const statePath = bwrapClaudeStatePath(ctx, seat);
   const tmpPath = join(statePath, 'tmp');
   const configDir = join(statePath, '.claude');
-  await mkdir(statePath, { recursive: true, mode: 0o700 });
-  await chmod(statePath, 0o700);
-  for (const dir of [tmpPath, configDir]) {
-    const existing = await statOrNull(dir);
-    if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) {
-      throw new Error(`refusing Claude state path that is not a directory: ${dir}`);
-    }
-    if (!existing) await mkdir(dir, { mode: 0o700 });
-    await chmod(dir, 0o700);
-  }
+  await ensureStateFolder(statePath);
+  for (const dir of [tmpPath, configDir]) await ensurePrivateDir(dir);
 
   const configPath = await replacePrivateFile(
     statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
   );
   if (login === 'none') {
-    await rm(join(configDir, '.credentials.json'), { force: true });
+    await removeLoginCopy(configDir);
     return { statePath, tmpPath, configPath, loginPath: null };
   }
   const loginPath = await carryClaudeLogin(ctx.env, configDir, login === 'access-only'
@@ -643,14 +726,49 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
 // be admitted through Seatbelt. Linux caps one argv string at 128 KiB, so the
 // total is capped well under it.
 const PUBLIC_SKILL_PROMPT_MAX_BYTES = 96 * 1024;
-const publicSkillPromptArgs = async (skillSources) => {
+const publicSkillPromptArgs = async (skillSources, preamble = '') => {
   const included = [];
-  const text = await skillsAsText(skillSources, {
+  const skills = await skillsAsText(skillSources, {
     maxBytes: PUBLIC_SKILL_PROMPT_MAX_BYTES,
     label: 'claude',
     onIncluded: (source) => included.push(source),
   });
+  const text = [preamble, skills].filter(Boolean).join('\n\n');
   return { args: text ? ['--append-system-prompt', text] : [], included };
+};
+
+// What a confined seat may do on this machine, as prompt text. The CLI logs
+// the same facts to the owner's terminal (workspaceGrantLine in agent.js), but
+// the model never saw them: on 2026-11-05 a read-only workspace seat told its
+// user it could "read and edit files, run shell commands", which is Claude
+// Code's usual kit, not this seat's. Each sentence follows the policy above:
+// a write grant adds Edit, Write and Bash (no Bash on a host with no jail), a
+// web grant adds WebFetch only, and WebSearch is always denied.
+export const seatPermissionsText = ({
+  trust, allow = [], noShell = false, gitTool = false,
+}) => {
+  const write = trust === 'workspace' && allow.includes('write');
+  const web = trust === 'workspace' && allow.includes('web');
+  const lines = ['## What you can do on this machine', ''];
+  if (write) {
+    lines.push(noShell
+      ? 'You can read and edit the files in your working folder. You cannot run shell commands.'
+      : 'You can read and edit the files in your working folder and run shell commands there. '
+        + 'Its .git is read-only, so you cannot commit.');
+  } else {
+    lines.push(`You can read the files in your working folder${
+      gitTool ? ', and read its history through the read-only git tool' : ''}.`);
+    lines.push(web
+      ? 'You cannot edit or create files or run shell commands.'
+      : 'You cannot edit or create files, run shell commands, or use web search or fetch.');
+  }
+  if (web) lines.push('You can fetch web pages. You cannot use web search.');
+  else if (write) lines.push('You cannot use the web search or fetch tools.');
+  // A shell's commands can reach the network (workspaceGrantLine says so too),
+  // so a seat with one is never told it is offline.
+  if (write && !noShell) lines.push('Your shell commands can reach the network.');
+  lines.push('When someone asks what you can do, describe these limits, not Claude Code\'s usual tools.');
+  return lines.join('\n');
 };
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
@@ -670,28 +788,28 @@ const parseEvent = (line) => {
   }
 };
 
-// The reply is the `result` event's text. A turn that reaches no result event
-// (killed mid-stream, exit 0) gets the text of its assistant events, never the
-// raw NDJSON. Output with no JSON lines at all is plain text and returned as it
-// arrived. A result flagged `is_error` is a failed turn, whatever its exit code,
-// so it is raised here, outside the parse guard, and never returned as a reply.
+const STOPPED_TURN = 'the turn stopped before it finished';
+
+// The reply is the `result` event's text. A turn with no result event stopped
+// before it finished: SIGINT exits 0 without printing one (claude 2.1.318), with
+// or without assistant text, and before startup it prints nothing at all. That
+// text isn't an answer, since each assistant event may be an interim message on
+// the way to a tool, and empty text would read as a turn with nothing to say.
+// Other output with no JSON lines is plain text and returned as it arrived. A
+// result flagged `is_error` is a failed turn, whatever its exit code, so it is
+// raised here, outside the parse guard, and never returned as a reply.
 export const claudeResultText = (stdout, { credentials = [] } = {}) => {
   const text = String(stdout || '');
   const events = text.split('\n').map(parseEvent);
-  if (!events.some(Boolean)) return text.trim();
+  if (text.trim() && !events.some(Boolean)) return text.trim();
   for (let i = events.length - 1; i >= 0; i -= 1) {
     if (events[i]?.type !== 'result') continue;
     const reply = String(events[i].result ?? '').trim();
-    if (events[i].is_error === true) throw adapterFailure('claude', reply, { credentials });
+    // An interrupted request reports error_during_execution with empty text.
+    if (events[i].is_error === true) throw adapterFailure('claude', reply || STOPPED_TURN, { credentials });
     return reply;
   }
-  return events
-    .filter((event) => event?.type === 'assistant')
-    .flatMap((event) => event.message?.content || [])
-    .filter((block) => block?.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim();
+  throw adapterFailure('claude', STOPPED_TURN, { credentials });
 };
 
 // TASK-256: what a public seat's own stream says about its Commonly MCP server.
@@ -797,11 +915,12 @@ const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
   processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
-  commandResolution = {},
+  commandResolution = {}, confined = false,
 }) => new Promise((resolve, reject) => {
   // Every process the turn starts inherits this marker however it detaches,
-  // so what it leaves running is stopped once the turn has closed.
-  const turn = markTurn(env ?? process.env, { enabled: turnReap });
+  // so what it leaves running is stopped once the turn has closed. A confined
+  // seat's turn keeps nothing: COMMONLY_KEEP_PROCESS is not honoured there.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap, confined });
   // On Windows an npm `claude.cmd` is read, not run through cmd.exe: the
   // prompt in `args` is pod content (#2141). Off Windows this is identity.
   const launch = resolveLaunch(cmd, args, { env: turn.env, ...commandResolution });
@@ -1336,6 +1455,15 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspaceAccess: sandboxMode === 'read-only'
         || (sandboxTrust === 'workspace' && !grants.includes('write')) ? 'read' : 'write',
       readOnlyWorkspaceEntries: sandboxTrust === 'workspace' ? ['.git'] : [],
+      // A public seat's workspace is pinned: usually the scratch folder the
+      // CLI made, and an `environment.workspace.path` it was given that is a
+      // link refuses the turn (fail-closed). A workspace seat's folder is the
+      // operator's own choice, which may be a link, and keeps following it.
+      pinWorkspace: sandboxTrust === 'public',
+      // F200: a workspace seat's folder is held to the realpath recorded on
+      // its first turn, and that record is never writable from the jail.
+      expectedWorkspaceRealpath: ctx.workspaceRealpath || null,
+      denyWritePaths: ctx.workspacePinDirs || [],
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
@@ -1402,10 +1530,19 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { statePath } = ctx.publicClaudeState;
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
+      // F200: bwrap resolves a bind source when the jail starts, after the
+      // check, so the checked realpath is the source, mounted at the path the
+      // seat was given.
+      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
       workspaceReadOnly: !grants.includes('write'),
       readOnlyWorkspaceEntries: ['.git'],
       homePath: statePath,
-      writablePaths: [statePath],
+      // .claude (the login copy) and tmp are bound again on their own, after
+      // the state folder: a mount point cannot be renamed or replaced from
+      // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
+      // cannot swap either for a link while the host writes or removes the
+      // login there. The state preparation made both real directories.
+      writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
       readOnlyPaths: [
         ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
         ...(ctx.mcpReadDirectories || []),
@@ -1521,10 +1658,21 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
+    // Only an MCP seat has a per-turn folder (createMcpConfig). Before skills
+    // mount, because they write into the workspace.
+    if (publicTrust && Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+      await refuseWorkspaceHoldingTurnDirs({
+        workspace: ctx.cwd, seat: `${ctx.environment.sandbox.trust} Claude agents`,
+      });
+    }
     // Only a stranger-facing seat is witnessed (TASK-256). A workspace seat is
     // confined too, but it answers its own team, and an outage it narrates
     // there is a signal, not a leak.
     const witnessedMcp = ctx.environment?.sandbox?.trust === 'public' ? ctx.environment?.mcp : null;
+    // A stranger-facing seat keeps nothing a turn leaves running, whatever the
+    // turn set (F197). A workspace seat keeps the setting for its own team's
+    // long-running work in its own project.
+    const reapEverything = ctx.environment?.sandbox?.trust === 'public';
     const workCues = publicTrust ? [] : WORK_CUES;
     // F118: a public seat reads its memory but is not offered a write.
     const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public';
@@ -1589,6 +1737,14 @@ export default {
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    // F200: a jailed workspace seat's folder must still resolve where it did
+    // on the seat's first turn, or a link the seat left in its place would
+    // carry this turn's grant elsewhere. The record sits beside the seat's
+    // state folder, the one bwrapClaudeStatePath names for both jails.
+    const heldWorkspace = ctx.environment?.sandbox?.trust === 'workspace' && Boolean(ctx.cwd)
+      && (publicNativeSandbox || workspaceBwrapSandbox);
+    const workspacePinDirs = heldWorkspace ? [workspacePinDir(bwrapClaudeStatePath(ctx))] : [];
+    let workspaceRealpath = null;
     // The proxy's address and per-turn token, never the host's key.
     const withProvider = (env) => {
       if (providerProxy) {
@@ -1602,6 +1758,11 @@ export default {
       ...spawnCredentials(spawnContext), providerProxy?.token,
     ].filter(Boolean);
     try {
+      // Checked (and recorded, the first time) before the state is prepared
+      // or anything is spawned.
+      if (heldWorkspace) {
+        workspaceRealpath = await holdWorkspaceRealpath({ cwd: ctx.cwd, statePath: bwrapClaudeStatePath(ctx) });
+      }
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
@@ -1677,7 +1838,12 @@ export default {
         }
       }
       if (publicTrust) {
-        const prompt = await publicSkillPromptArgs(mountedSkills);
+        const prompt = await publicSkillPromptArgs(mountedSkills, seatPermissionsText({
+          trust: ctx.environment?.sandbox?.trust === 'workspace' ? 'workspace' : 'public',
+          allow: workspaceGrants(ctx.environment?.sandbox),
+          noShell: policyOnlyHost(ctx),
+          gitTool: Boolean(ctx.workspaceGit),
+        }));
         publicSkillArgs = prompt.args;
         skillMount = {
           mounted: prompt.included,
@@ -1718,6 +1884,8 @@ export default {
         publicClaudeState,
         publicSkillArgs,
         providerProxyPort: proxyPort(providerProxy),
+        workspaceRealpath,
+        workspacePinDirs,
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
@@ -1743,6 +1911,7 @@ export default {
         survivorIo: ctx._survivorIo,
         turnReap: ctx._turnReap,
         commandResolution: ctx._commandResolution, // test seam only
+        confined: reapEverything,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1818,6 +1987,7 @@ export default {
           survivorIo: ctx._survivorIo,
           turnReap: ctx._turnReap,
           commandResolution: ctx._commandResolution, // test seam only
+          confined: reapEverything,
         });
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
@@ -1830,6 +2000,12 @@ export default {
           stats: claudeRunStats(stdout),
         };
       }
+      // F153: a Seatbelt seat with no key signs in only through the keychain.
+      // When that fails, say how to give it a key instead, as bwrap does.
+      if (publicNativeSandbox && !providerProxy && /not logged in/i.test(String(err?.message))) {
+        err.message = `${err.message}. Sign in with \`claude\` in your own terminal on this Mac, `
+          + 'or set ANTHROPIC_API_KEY (in the service env for daemon seats)';
+      }
       throw err;
     } finally {
       if (mcpConfig?.dir) {
@@ -1840,7 +2016,7 @@ export default {
       // turn of the agent to finish removes it.
       if (publicBwrapSandbox && !workspaceBwrapSandbox && publicClaudeState?.loginPath) {
         if (loginTurn) await releaseLoginTurn(loginTurn, publicClaudeState.loginPath);
-        else await rm(publicClaudeState.loginPath, { force: true });
+        else await removeLoginCopy(dirname(publicClaudeState.loginPath));
       }
     }
   },

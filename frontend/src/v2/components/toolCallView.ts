@@ -23,11 +23,19 @@ export interface ToolCallRow {
   href?: string;
   /** The full value when `value` is shortened (a commit SHA). */
   title?: string;
+  /** i18n key that stands in for `value` (a yes or no). */
+  valueKey?: string;
+  /** Text shown whole beneath `value`, as code (a file's contents). */
+  detail?: string;
+  /** A line about the row itself. */
+  note?: { key: string; vars: Record<string, string> };
 }
 
 export interface ToolCallView {
   verb: { key: string; vars: Record<string, string> } | null;
   rows: ToolCallRow[];
+  /** What the owner should know that no row shows. */
+  notices?: Array<{ key: string; vars: Record<string, string> }>;
 }
 
 const VERB_KEYS: Record<string, string> = {
@@ -146,4 +154,141 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
     ? { key: verbKey, vars: number !== null ? { number: String(number) } : {} }
     : null;
   return { verb, rows };
+};
+
+const PR_WRITE_VERBS: Record<string, string> = {
+  'github.create_pull_request': 'approvalCard.toolCall.verb.createPullRequest',
+  'github.commit_files': 'approvalCard.toolCall.verb.commitFiles',
+  'github.push_branch': 'approvalCard.toolCall.verb.pushBranch',
+};
+
+const SUMMARY_LABEL_KEYS: Record<string, string> = {
+  repo: 'approvalCard.toolCall.label.repository',
+  base: 'approvalCard.toolCall.label.base',
+  head: 'approvalCard.toolCall.label.branch',
+  lands: 'approvalCard.toolCall.label.lands',
+  title: 'approvalCard.toolCall.label.title',
+  subject: 'approvalCard.toolCall.label.commitTitle',
+  message: 'approvalCard.toolCall.label.commitMessage',
+  bodyPreview: 'approvalCard.toolCall.label.body',
+  bodyLength: 'approvalCard.toolCall.label.bodyLength',
+  draft: 'approvalCard.toolCall.label.draft',
+  fileCount: 'approvalCard.toolCall.label.fileCount',
+  branchExists: 'approvalCard.toolCall.label.branchExists',
+  parentSha: 'approvalCard.toolCall.label.parentCommit',
+  baseOid: 'approvalCard.toolCall.label.baseCommit',
+  newOid: 'approvalCard.toolCall.label.newCommit',
+  bundleBytes: 'approvalCard.toolCall.label.bundleSize',
+};
+const SUMMARY_COMMIT_KEYS = new Set(['parentSha', 'baseOid', 'newOid']);
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  !!value && typeof value === 'object' && !Array.isArray(value)
+);
+
+/** Whether the owner can be shown this parked call at all. Approve depends on it. */
+export const canShowToolCall = (envelope?: {
+  tool?: string;
+  canonicalArgs?: unknown;
+  summary?: unknown;
+}): boolean => {
+  if (!envelope?.tool) return false;
+  if (isRecord(envelope.canonicalArgs)) return true;
+  return Object.prototype.hasOwnProperty.call(PR_WRITE_VERBS, envelope.tool)
+    && isRecord(envelope.summary)
+    && Object.keys(envelope.summary).length > 0;
+};
+
+// A path is the agent's to choose, so it is never a row's label: a file called
+// "Repository" must not read like the repository row.
+const fileRow = (file: Record<string, unknown>, index: number): ToolCallRow => {
+  const content = asText(file.content);
+  const bytes = asText(file.bytes);
+  const notShown = file.truncated === true && content === '';
+  return {
+    keys: ['files', String(index)],
+    labelKey: 'approvalCard.toolCall.label.file',
+    label: 'file',
+    value: asText(file.path),
+    kind: 'mono',
+    ...(notShown ? {} : { detail: content }),
+    note: {
+      key: `approvalCard.toolCall.file.${notShown ? 'notShown' : (file.truncated === true ? 'cut' : 'size')}`,
+      vars: { bytes },
+    },
+  };
+};
+
+/**
+ * A parked PR write, readable. The server keeps a commit's or push's raw
+ * arguments on the row and sends the owner `summary` in their place
+ * (buildOwnerCardPayload), so this is the only view of the call the owner gets.
+ * Like toolCallView it may format but never drops, and because Approve runs the
+ * whole call, whatever the summary leaves out is said in `notices`.
+ */
+export const prWriteView = (tool: string, summary: Record<string, unknown>): ToolCallView => {
+  const rows: ToolCallRow[] = [];
+  const notices: ToolCallView['notices'] = [];
+  for (const [key, raw] of Object.entries(summary)) {
+    const labelKey = Object.prototype.hasOwnProperty.call(SUMMARY_LABEL_KEYS, key)
+      ? SUMMARY_LABEL_KEYS[key]
+      : undefined;
+    if (key === 'files' && Array.isArray(raw)) {
+      raw.filter(isRecord).forEach((file, index) => rows.push(fileRow(file, index)));
+    } else if (key === 'contents' && isRecord(raw)) {
+      if (raw.truncated === true) {
+        notices.push({
+          key: 'approvalCard.toolCall.notice.contentsCut',
+          vars: { shown: asText(raw.shownBytes), total: asText(raw.totalBytes) },
+        });
+      }
+    } else if (key === 'message' && isRecord(raw)) {
+      rows.push({ keys: [key], labelKey, label: key, value: asText(raw.text), kind: 'block' });
+      if (raw.truncated === true) {
+        notices.push({ key: 'approvalCard.toolCall.notice.messageCut', vars: { total: asText(raw.length) } });
+      }
+    } else if (key === 'bodyPreview') {
+      rows.push({ keys: [key], labelKey, label: key, value: asText(raw), kind: 'block' });
+      const shown = asText(raw).length;
+      if (typeof summary.bodyLength === 'number' && summary.bodyLength > shown) {
+        notices.push({
+          key: 'approvalCard.toolCall.notice.bodyCut',
+          vars: { shown: String(shown), total: String(summary.bodyLength) },
+        });
+      }
+    } else if (typeof raw === 'boolean') {
+      rows.push({
+        keys: [key],
+        labelKey,
+        label: key,
+        value: asText(raw),
+        valueKey: `approvalCard.toolCall.${raw ? 'yes' : 'no'}`,
+        kind: 'text',
+      });
+    } else {
+      const [owner, name, extra] = key === 'repo' && typeof raw === 'string' ? raw.split('/') : [];
+      const sha = SUMMARY_COMMIT_KEYS.has(key) && typeof raw === 'string' && COMMIT_SHA.test(raw) ? raw : null;
+      rows.push({
+        keys: [key],
+        ...(labelKey ? { labelKey } : {}),
+        label: key,
+        value: sha ? sha.slice(0, 7) : `${asText(raw)}${key === 'bundleBytes' ? ' B' : ''}`,
+        kind: sha ? 'mono' : 'text',
+        ...(sha ? { title: sha } : {}),
+        ...(owner && name && extra === undefined && GITHUB_SEGMENT.test(owner) && GITHUB_SEGMENT.test(name)
+          ? { href: `https://github.com/${owner}/${name}` }
+          : {}),
+      });
+    }
+  }
+  if (tool === 'github.push_branch') notices.push({ key: 'approvalCard.toolCall.notice.pushContents', vars: {} });
+  const verbKey = PR_WRITE_VERBS[tool];
+  const namesBranch = tool !== 'github.create_pull_request';
+  return {
+    verb: verbKey && (!namesBranch || typeof summary.head === 'string')
+      ? { key: verbKey, vars: namesBranch ? { head: summary.head as string } : {} }
+      : null,
+    rows,
+    notices,
+  };
 };

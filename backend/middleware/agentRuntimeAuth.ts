@@ -16,6 +16,7 @@ import {
   credentialRefusalReason, recordAgentAuthRefusal, refusalRoute, type AgentAuthRefusalReason,
 } from '../services/agentAuthRefusals';
 import { podsWithOutsiderWritableGrants } from '../services/nativeOutsiderGrantPolicy';
+import { podWriteSurvivesNarrowing } from '../services/outsiderGrantNarrowingRule';
 import { installationIdentityFilter } from '../services/agentInstallationIdentity';
 import { classifyRuntimeOutsiderGrantRoute } from '../services/runtimeOutsiderGrantRoutes';
 
@@ -103,8 +104,7 @@ const checkOutsiderGrantRuntimeNarrowing = async (
   const allowed = route.routeClass === 'read'
     || route.routeClass === 'own_state'
     || route.routeClass === 'grant'
-    || (route.routeClass === 'pod_write' && narrowedPods.size === 1
-      && route.podId === [...narrowedPods][0]);
+    || (route.routeClass === 'pod_write' && podWriteSurvivesNarrowing(narrowedPods, route.podId));
   if (allowed) return true;
   const action = req.method.toUpperCase() === 'GET' ? route.routeClass : 'write';
   res.status(403).json({

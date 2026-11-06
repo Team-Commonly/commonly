@@ -40,6 +40,15 @@ describe('ChannelVerdict', () => {
     ]));
   });
 
+  // CodeRabbit (PR #3465): the Discord relay records decision-card verdicts
+  // with provider 'discord'; the enum must accept it on a real round trip.
+  it('stores and validates a Discord verdict', async () => {
+    const created = await ChannelVerdict.create(row({ provider: 'discord' }));
+    const stored = await ChannelVerdict.findById(created._id);
+    expect(stored.provider).toBe('discord');
+    await expect(stored.validate()).resolves.toBeUndefined();
+  });
+
   it('accepts a lazily-linked decision id and a later channel receipt', async () => {
     const verdict = new ChannelVerdict(row({
       provider: 'slack',

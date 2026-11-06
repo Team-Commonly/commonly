@@ -465,9 +465,14 @@ describe('hosted-mcp connect: callback', () => {
     expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'exchange_refused' });
     expect(dcr.refuseDcrClient).not.toHaveBeenCalled();
   });
-  it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
+  it('the captured Linear grant is the entry\'s scopes plus the write it no longer asks for', () => {
+    const entry = SHIPPED_ENTRIES.find((candidate) => candidate.resource === LINEAR_SCOPE_CAPTURE.server);
+    expect([...scopeSet(LINEAR_SCOPE_CAPTURE.tokenShape.grantedScope)].sort())
+      .toEqual([...scopeSet([...entry.scopes, entry.writeScope].join(' '))].sort());
+  });
+
+  it('the captured Atlassian and Airtable grants match their requested scope sets', () => {
     const captures = [
-      [LINEAR_SCOPE_CAPTURE, 'grantedScope'],
       [ATLASSIAN_SCOPE_CAPTURE, 'grantedScope'],
       [AIRTABLE_SCOPE_CAPTURE, 'grantedScope'],
     ];
@@ -942,6 +947,8 @@ describe('hosted-mcp connect: callback', () => {
     expect(revokeConnectionGrants).toHaveBeenCalledWith({
       connection: expect.objectContaining({ _id: 'row-1' }),
       revokedBy: 'user-1',
+      // F181: the owner is reconnecting, so no removal cue is written.
+      cue: false,
     });
     // ORDER is the claim §2 makes: the old grant is gone before the new pair
     // exists, or a grant could be made against the new account's reach while

@@ -1,0 +1,136 @@
+name: Self-host walk
+
+# Walks the README's "Quick Start: self-host" as a stranger would, on a clean
+# runner: git clone, ./install.sh, sign up with no mail configured, make a pod,
+# post, then bring your own agent through the published CLI: the stub adapter
+# and Claude Code, which must answer an @mention. `commonly login` is interactive,
+# so the walk writes the saved profile a login would write.
+#
+# Nightly and on dispatch. Claude Code runs on SELFHOST_WALK_LLM_KEY, a LiteLLM
+# key capped to one model and a monthly budget, behind SELFHOST_WALK_LLM_BASE
+# (passed as ANTHROPIC_BASE_URL). No credential that can mint keys lives here.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: selfhost-walk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Clone and install, exactly as the README says
+        run: |
+          set -x
+          cd "$RUNNER_TEMP"
+          git clone https://github.com/Team-Commonly/commonly.git
+          cd commonly
+          git log --oneline -1
+          ./install.sh
+      - name: Wait for every service
+        run: |
+          cd "$RUNNER_TEMP/commonly"
+          for i in $(seq 1 90); do
+            api=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/health || true)
+            web=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ || true)
+            [ "$api" = 200 ] && [ "$web" = 200 ] && { echo "up after $((i*5))s"; docker compose --env-file .env -f docker-compose.local.yml ps; exit 0; }
+            sleep 5
+          done
+          echo "api=$api web=$web"; docker compose --env-file .env -f docker-compose.local.yml ps; exit 1
+      - name: Install the published CLI and Claude Code
+        run: |
+          npm i -g @commonlyai/cli @anthropic-ai/claude-code >/dev/null 2>&1
+          echo "cli $(commonly --version 2>&1)"; echo "claude $(claude --version 2>&1 | head -1)"
+      - name: Walk it like a stranger
+        id: walk
+        env:
+          LLM_KEY: ${{ secrets.SELFHOST_WALK_LLM_KEY }}
+          LLM_BASE: ${{ secrets.SELFHOST_WALK_LLM_BASE }}
+        run: |
+          set +e
+          cd "$RUNNER_TEMP"
+          API=http://localhost:5000
+          echo "::add-mask::$LLM_BASE"
+          # Everything printed goes through redact: the LLM secrets, JWTs, agent tokens.
+          redact() { LLM_KEY="$LLM_KEY" LLM_BASE="$LLM_BASE" node -e "let t=require('fs').readFileSync(0,'utf8');for(const v of [process.env.LLM_KEY,process.env.LLM_BASE])if(v)t=t.split(v).join('[secret]');process.stdout.write(t.replace(/cm_agent_[A-Za-z0-9_-]+/g,'[token]').replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[jwt]'))"; }
+          show() { echo "--- $1"; tail -40 "$1" | redact; }
+          S="$GITHUB_STEP_SUMMARY"
+          echo "## Self-host walk (README Quick Start)" | tee -a "$S"
+          echo "| Step | HTTP | Result | Detail |" >> "$S"; echo "|---|---|---|---|" | tee -a "$S"
+          fail=0
+          row() { echo "| $1 | $2 | $3 | ${4//|//} |" | redact | tee -a "$S"; [ "$3" = PASS ] || fail=1; }
+          req() { # method path [json] [token] -> sets CODE and BODY
+            local m=$1 p=$2 d=${3:-} t=${4:-}
+            local args=(-s -o body.json -w '%{http_code}' -X "$m" "$API$p" -H 'Content-Type: application/json')
+            [ -n "$t" ] && args+=(-H "Authorization: Bearer $t")
+            [ -n "$d" ] && args+=(-d "$d")
+            CODE=$(curl "${args[@]}"); BODY=$(head -c 300 body.json | tr '\n' ' ')
+          }
+          pw="Walk-$(openssl rand -hex 8)!"
+          req GET /api/auth/registration-policy; row "registration policy" "$CODE" "$([ "$CODE" = 200 ] && echo PASS || echo FAIL)" "$BODY"
+          req POST /api/auth/register "{\"username\":\"stranger\",\"email\":\"stranger@example.com\",\"password\":\"$pw\"}"
+          row "register first user (no mail configured)" "$CODE" "$([[ "$CODE" =~ ^20 ]] && echo PASS || echo FAIL)" "$BODY"
+          req POST /api/auth/login "{\"email\":\"stranger@example.com\",\"password\":\"$pw\"}"
+          TOKEN=$(node -e "try{process.stdout.write(require('./body.json').token||'')}catch{}")
+          row "sign in" "$CODE" "$([ -n "$TOKEN" ] && echo PASS || echo FAIL)" "$([ -n "$TOKEN" ] && echo 'token [token]' || echo "$BODY")"
+          echo "::add-mask::$TOKEN"
+          req GET /api/auth/user "" "$TOKEN"; row "who am I" "$CODE" "$([ "$CODE" = 200 ] && echo PASS || echo FAIL)" "$(node -e "try{const b=require('./body.json');process.stdout.write('username='+b.username+' verified='+b.verified)}catch{}")"
+          req POST /api/pods "{\"name\":\"walk\",\"description\":\"self-host walk\",\"type\":\"chat\"}" "$TOKEN"
+          POD=$(node -e "try{const b=require('./body.json');process.stdout.write(String(b._id||b.pod?._id||''))}catch{}")
+          row "create pod" "$CODE" "$([ -n "$POD" ] && echo PASS || echo FAIL)" "$([ -n "$POD" ] && echo "pod $POD" || echo "$BODY")"
+          req POST "/api/messages/$POD" "{\"content\":\"hello from a clean install\"}" "$TOKEN"
+          row "post a message" "$CODE" "$([[ "$CODE" =~ ^20 ]] && echo PASS || echo FAIL)" "$BODY"
+          req GET "/api/messages/$POD" "" "$TOKEN"
+          row "read it back" "$CODE" "$(grep -q 'hello from a clean install' body.json && echo PASS || echo FAIL)" ""
+
+          # Bring your own agent: the published CLI, as the README's BYO link says.
+          # `commonly login` is interactive (device auth or a raw-mode password
+          # prompt), so the walk saves the same profile it would write.
+          mkdir -p ~/.commonly && chmod 700 ~/.commonly
+          T="$TOKEN" node -e "require('fs').writeFileSync(process.env.HOME+'/.commonly/config.json',JSON.stringify({active:'local',instances:{local:{url:'$API',token:process.env.T,username:'stranger'}}}))"
+          timeout 60 commonly agent list --pod "$POD" --instance local > list.log 2>&1
+          row "CLI reaches the instance as the user" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < list.log | tail -c 200 | tr '\n' ' ')"
+          timeout 120 commonly agent attach stub --pod "$POD" --name walk-stub --instance local < /dev/null > attach.log 2>&1
+          row "agent attach stub" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < attach.log | tail -c 240 | tr '\n' ' ')"
+          (commonly agent run walk-stub < /dev/null > run.log 2>&1 &)
+          sleep 10
+          req POST "/api/messages/$POD" "{\"content\":\"@walk-stub are you there?\"}" "$TOKEN"
+          row "mention the agent" "$CODE" "$([[ "$CODE" =~ ^20 ]] && echo PASS || echo FAIL)" ""
+          replied=FAIL
+          for i in $(seq 1 24); do
+            req GET "/api/messages/$POD" "" "$TOKEN"
+            node -e "const b=require('./body.json');const m=(Array.isArray(b)?b:b.messages||[]);process.exit(m.some(x=>/walk-stub/i.test(String(x.username||x.userId?.username||x.authorName||'')))?0:1)" && { replied=PASS; break; }
+            sleep 5
+          done
+          row "the stub agent replies in the pod" "-" "$replied" "$(redact < run.log | tail -c 300 | tr '\n' ' ')"
+
+          # Bring your own agent, for real: Claude Code through the published CLI.
+          timeout 120 commonly agent attach claude --pod "$POD" --name walk-claude --instance local < /dev/null > attach2.log 2>&1
+          row "agent attach claude" "-" "$([ $? = 0 ] && echo PASS || echo FAIL)" "$(redact < attach2.log | tail -c 240 | tr '\n' ' ')"
+          (ANTHROPIC_BASE_URL="$LLM_BASE" ANTHROPIC_API_KEY="$LLM_KEY" ANTHROPIC_MODEL=claude-haiku-5-5 commonly agent run walk-claude < /dev/null > run2.log 2>&1 &)
+          sleep 15
+          req POST "/api/messages/$POD" "{\"content\":\"@walk-claude in one short sentence, what is 2+2?\"}" "$TOKEN"
+          row "mention Claude Code" "$CODE" "$([[ "$CODE" =~ ^20 ]] && echo PASS || echo FAIL)" ""
+          replied=FAIL
+          for i in $(seq 1 36); do
+            req GET "/api/messages/$POD" "" "$TOKEN"
+            node -e "const b=require('./body.json');const m=(Array.isArray(b)?b:b.messages||[]);const r=m.filter(x=>/walk-claude/i.test(String(x.username||x.userId?.username||x.authorName||'')));const hit=r.find(x=>/\\b4\\b|four/i.test(String(x.content||'')));if(hit){require('fs').writeFileSync('reply.txt',String(hit.content).slice(0,200));process.exit(0)}process.exit(1)" && { replied=PASS; break; }
+            sleep 5
+          done
+          row "Claude Code answers the @mention (reply contains 4)" "-" "$replied" "$( [ -f reply.txt ] && tr '\n' ' ' < reply.txt || redact < run2.log | tail -c 300 | tr '\n' ' ')"
+
+          for f in list.log attach.log run.log attach2.log run2.log; do [ -f "$f" ] && show "$f"; done
+          exit $fail
+      - name: Backend logs on failure
+        if: failure()
+        run: |
+          cd "$RUNNER_TEMP/commonly"
+          docker compose --env-file .env -f docker-compose.local.yml logs --tail 200 backend | sed -E 's/(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/[jwt]/g; s/cm_agent_[A-Za-z0-9_-]+/[token]/g'

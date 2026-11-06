@@ -20,7 +20,9 @@
  * declaration names neither an adapter nor a runtimeType, stay daemon-decided —
  * undeclared, the daemon resolves only claude or codex
  * (`cli/src/commands/daemon.js:142`), never pi, so failing closed there would
- * refuse working claude seats (Wren 12:17Z).
+ * refuse working claude seats (Wren 12:17Z). An absent SANDBOX block is
+ * daemon-decided only for a seat bound to a machine: with no daemon nothing
+ * derives a baseline, so it refuses as `sandbox_absent` (F150, below).
  *
  * Disagreement fails closed: the seat's rows can be projected by more than one
  * owner, and if any projection withholds the broker, the call is refused. A
@@ -30,7 +32,9 @@ import { Types } from 'mongoose';
 import User from '../models/User';
 import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
-import { GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal } from './grantBrokerConfinement';
+import {
+  GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon, runsOnCommonly,
+} from './grantBrokerConfinement';
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
 /** `unbound` is the same word the grant read uses: nothing projected this seat. */
@@ -56,13 +60,13 @@ const NOT_JUDGED: SeatConfinementJudgement = { refusal: null, scope: 'unbound' }
 
 /** The seat's own row: the identity the auth path resolved, for the key fallback. */
 const loadSeat = async (agentUserId: unknown): Promise<{
-  botMetadata?: { agentName?: unknown; instanceId?: unknown; machineId?: unknown };
+  botMetadata?: { agentName?: unknown; instanceId?: unknown; machineId?: unknown; hostUnconfined?: unknown };
 } | null> => {
   // The routes in front of this pass the token's identity and Mongo will not
   // cast a non-ObjectId — a 500 is not a judgement.
   if (typeof agentUserId !== 'string' || !Types.ObjectId.isValid(agentUserId)) return null;
   const seat = await User.findById(agentUserId)
-    .select('botMetadata.machineId botMetadata.agentName botMetadata.instanceId')
+    .select('botMetadata.machineId botMetadata.hostUnconfined botMetadata.agentName botMetadata.instanceId')
     .lean();
   return seat as never;
 };
@@ -147,7 +151,9 @@ const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
 
 export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<SeatConfinementJudgement> => {
   const seat = await loadSeat(caller.agentUserId);
-  if (await onUnconfinedHost(seat?.botMetadata?.machineId)) {
+  // A foreground run has no machine to report for it, so it marks the seat
+  // itself (POST /api/agents/runtime/host-unconfined).
+  if (seat?.botMetadata?.hostUnconfined === true || await onUnconfinedHost(seat?.botMetadata?.machineId)) {
     return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat', hostUnconfined: true };
   }
   const keys = seatKeysFor(caller, seat);
@@ -166,10 +172,16 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
     }
   }
 
+  // F150 (security review): a seat bound to no machine has no daemon to derive
+  // a sandbox baseline, so an absent sandbox block on its row confines nothing
+  // and is refused (`sandbox_absent`, which naming lifts). A daemon seat, and a
+  // runtime Commonly runs (`runsOnCommonly`, read inside the predicate from the
+  // row), keep the old reading.
+  const judge = seat?.botMetadata?.machineId ? grantBrokerRefusal : grantBrokerRefusalWithoutDaemon;
   let judged = false;
   for (const entry of entries.values()) {
     judged = true;
-    const refusal = grantBrokerRefusal(entry.environment, entry.runtime);
+    const refusal = judge(entry.environment, entry.runtime);
     // Fail closed on disagreement: the first projection that withholds the
     // broker decides, even if a sibling projection would have admitted it.
     if (refusal) return { refusal, scope: 'seat' };
@@ -177,4 +189,22 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
   return judged ? { refusal: null, scope: 'seat' } : NOT_JUDGED;
 };
 
-export default { judgeSeatConfinement };
+/**
+ * TASK-783 re-judge: an approved call parked from a hosted turn runs only if
+ * Commonly still runs that agent. Every active installation of the identity
+ * must be on a Commonly-run runtime, the seat must be bound to no machine, and
+ * there must be at least one: a row moved to someone's own machine, or gone,
+ * fails closed. Matched on the same identity keys the judgement above uses.
+ */
+export const hostedCallerStillCommonlyRun = async (caller: SeatCallerIdentity): Promise<boolean> => {
+  const seat = await loadSeat(caller.agentUserId);
+  if (!seat || seat.botMetadata?.machineId) return false;
+  const keys = seatKeysFor(caller, seat);
+  const installs = await AgentInstallation.find({ status: 'active' })
+    .select('agentName instanceId config').lean();
+  const rows = (installs as Array<{ agentName?: unknown; instanceId?: unknown; config?: { runtime?: unknown } }>)
+    .filter((row) => keys.has(seatEnvironmentKey(row.agentName, row.instanceId)));
+  return rows.length > 0 && rows.every((row) => runsOnCommonly(row.config?.runtime));
+};
+
+export default { judgeSeatConfinement, hostedCallerStillCommonlyRun };

@@ -32,6 +32,7 @@ import {
   type HostedMcpUpstreamTool,
   withoutWithheldArgs,
 } from './hostedMcpEntryService';
+import { GATEWAY_STATUSES, markWriteUnknown } from './brokerWriteOutcome';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
@@ -484,6 +485,33 @@ export const listHostedMcpTools = async (
   }
 };
 
+/**
+ * One short session for a post-connect check (TASK-782): `fn` gets a raw
+ * tools/call under the fresh bearer and the whole check shares one deadline,
+ * because the person's browser is waiting on the callback redirect. This is
+ * not the broker path: no grant, no drift assessment, no result cap, so it is
+ * only for the entry's own reach probe, never for a model's call.
+ */
+export const withHostedMcpSession = async <T>(
+  entry: HostedMcpEntry,
+  token: string,
+  deadlineMs: number,
+  fn: (call: (name: string, args: Record<string, unknown>) => Promise<any>) => Promise<T>,
+  fetcher: typeof fetch = guardedFetch,
+): Promise<T> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), deadlineMs);
+  let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
+  try {
+    session = await openHostedMcpSession(entry.resource, token, fetcher, controller.signal);
+    const open = session;
+    return await fn((name, args) => open.request('tools/call', { name, arguments: args }));
+  } finally {
+    await session?.close();
+    clearTimeout(timer);
+  }
+};
+
 // The cache survives definition reconstruction on each broker call. A failed
 // list is never cached, so it cannot turn a vendor outage into a clean pin.
 export const createHostedMcpRuntimeDriftCache = (
@@ -567,6 +595,15 @@ export const assertHostedToolUnchanged = async (
   }
 };
 
+// A reply that started and broke, or a gateway in front of the vendor, doesn't
+// say whether the call ran.
+const replyLost = (error: unknown): boolean => {
+  if (!(error instanceof RoomGrantError)) return false;
+  const { vendorStatus, failure } = error.details || {};
+  return GATEWAY_STATUSES.has(Number(vendorStatus))
+    || failure === 'missing_rpc_reply' || failure === 'invalid_json';
+};
+
 const callHostedTool = async (
   entry: HostedMcpEntry,
   tool: HostedMcpPinnedTool,
@@ -624,9 +661,14 @@ const callHostedTool = async (
   } catch (error) {
     // The deadline covers the body too: a vendor that sends headers and then
     // trickles the reply would otherwise hold the turn open past it (TASK-254).
-    if (controller.signal.aborted && !(error instanceof RoomGrantError)) {
-      throw new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
-    }
+    const unreachable = error instanceof RoomGrantError
+      ? error.code === 'provider_unreachable' && error
+      : controller.signal.aborted
+        && new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
+    // tools/call goes out once a session is open, so with no answer the vendor
+    // may have run it. Failing to open the session sent no call.
+    if (unreachable) throw session ? markWriteUnknown(unreachable) : unreachable;
+    if (session && replyLost(error)) throw markWriteUnknown(error);
     throw error;
   } finally {
     await session?.close();

@@ -30,13 +30,24 @@ export interface RoomGrantTaskBinding { taskId: string; podId: string; endsOn: R
  * F94: the granter's consent, recorded at mint, that the named agents run
  * outside Commonly (on the granter's own computer) and that whatever they read
  * through this grant can leave through them. `sandbox` is what the server knew
- * of each agent's confinement at mint.
+ * of each agent's confinement at mint. `byo-pr-v1` also covers the PR writes
+ * of a `prWrite` grant: each one sent only after the granter approves it.
  */
 export interface IRoomGrantByoConsent {
   by: string;
   at: Date;
-  version: 'byo-v1';
+  version: 'byo-v1' | 'byo-pr-v1';
   agents: Array<{ userId: string; sandbox: 'confined' | 'unconfined' | 'unknown' }>;
+}
+
+export interface IRoomGrantRemovalCue {
+  /** The agent's bot User `_id`, the id the grant carried in `audience`. */
+  userId: string;
+  /** `seatEnvironmentKey(agentName, instanceId)`: how a mention addresses it. */
+  seat: string;
+  /** The grant's own owner removed it (false for an admin revoke). */
+  byOwner: boolean;
+  at: Date;
 }
 
 export interface IRoomGrant extends Document {
@@ -59,6 +70,13 @@ export interface IRoomGrant extends Document {
    */
   byoAgents?: string[];
   byoConsent?: IRoomGrantByoConsent | null;
+  /**
+   * TASK-783: the granter chose pull-request access at mint. Only `true`
+   * counts. It permits the PR-write tools (`services/prWriteScope.ts`) and
+   * nothing else, each call parked for the connection owner. A child can drop
+   * it and never add it.
+   */
+  prWrite?: boolean;
   expiresAt: Date;
   revokedAt?: Date | null;
   /** User who revoked this grant (and its descendants), when known. */
@@ -80,6 +98,13 @@ export interface IRoomGrant extends Document {
    * Null means unbound: revoke and seat read refuse it.
    */
   ownerId?: string | null;
+  /**
+   * F181: agents that lost this grant and have not been told yet, one entry
+   * per agent. `grantRemovalCueService` writes an entry on revoke or on
+   * removal of a named agent, and the agent's next mention claims it with a
+   * `$pull`. Never returned by a grant read.
+   */
+  removalCuePending?: IRoomGrantRemovalCue[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -140,7 +165,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       type: new Schema({
         by: { type: String, required: true },
         at: { type: Date, required: true },
-        version: { type: String, enum: ['byo-v1'], required: true },
+        version: { type: String, enum: ['byo-v1', 'byo-pr-v1'], required: true },
         agents: {
           type: [new Schema({
             userId: { type: String, required: true },
@@ -151,6 +176,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       }, { _id: false }),
       default: undefined,
     },
+    prWrite: { type: Boolean, default: undefined },
     // No TTL index: expiry is a capability check and an audit fact, not a
     // reason to delete the grant or its call trail.
     expiresAt: { type: Date, required: true },
@@ -161,6 +187,15 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     brokerId: { type: String, required: true, trim: true },
     connectionRowId: { type: String, default: null, trim: true },
     ownerId: { type: String, default: null, trim: true },
+    removalCuePending: {
+      type: [new Schema({
+        userId: { type: String, required: true },
+        seat: { type: String, required: true },
+        byOwner: { type: Boolean, required: true },
+        at: { type: Date, required: true },
+      }, { _id: false })],
+      default: undefined,
+    },
   },
   { timestamps: true, collection: 'room_grants' },
 );
@@ -170,6 +205,11 @@ RoomGrantSchema.index({ 'binding.podId': 1, 'binding.taskId': 1, taskEpoch: 1, r
 RoomGrantSchema.index({ parentGrantId: 1 });
 RoomGrantSchema.index({ rootGrantId: 1 });
 RoomGrantSchema.index({ connectionId: 1, installationId: 1 });
+// Read on every mention build; only grants with a pending note are indexed.
+RoomGrantSchema.index(
+  { 'removalCuePending.seat': 1 },
+  { partialFilterExpression: { 'removalCuePending.seat': { $exists: true } } },
+);
 
 /**
  * Gather the grant lineage first, then perform exactly one write. This is

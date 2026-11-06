@@ -159,7 +159,7 @@ export const CUTOFF_SQL = `
            WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NOT NULL) rooted,
          (SELECT MAX(created_at) AS newest_unrooted
             FROM messages
-           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL) unrooted`;
+           WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL AND top_level_answer IS NOT TRUE) unrooted`;
 
 /**
  * The migration body. Exported ONLY so a test can execute it — the guards on
@@ -224,7 +224,7 @@ export async function main(injectedPool?: Partial<Pool>): Promise<void> {
     const { rows: [before] } = await pool.query(
       `SELECT count(*)::int AS needs_root
          FROM messages
-        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`,
+        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL AND top_level_answer IS NOT TRUE`,
     );
     console.log(`rows with a reply edge and no root: ${before.needs_root}`);
     if (before.needs_root === 0) {
@@ -301,7 +301,7 @@ export async function main(injectedPool?: Partial<Pool>): Promise<void> {
                 count(DISTINCT root)::int AS threads
            FROM chain
           WHERE id IN (SELECT id FROM messages
-                        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL)`,
+                        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL AND top_level_answer IS NOT TRUE)`,
       );
       console.log(`would set a root on ${rows[0].resolvable} rows across ${rows[0].threads} threads`);
       if (rows[0].resolvable !== before.needs_root) {
@@ -364,6 +364,7 @@ export async function main(injectedPool?: Partial<Pool>): Promise<void> {
           WHERE m.id = chain.id
             AND m.reply_to_message_id IS NOT NULL
             AND m.thread_root_id IS NULL
+            AND m.top_level_answer IS NOT TRUE
             AND chain.root <> m.id`,
       );
       console.log(`APPLIED — ${result.rowCount} of ${before.needs_root} rows updated.`);
@@ -402,7 +403,7 @@ export async function main(injectedPool?: Partial<Pool>): Promise<void> {
     const { rows: [after] } = await pool.query(
       `SELECT count(*)::int AS still_null
          FROM messages
-        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL`,
+        WHERE reply_to_message_id IS NOT NULL AND thread_root_id IS NULL AND top_level_answer IS NOT TRUE`,
     );
     // A LEFTOVER IS AN INVARIANT VIOLATION, NOT A DESIGN NOTE — where the FK
     // binds. This line used to read "(orphaned chains stay NULL by design)"

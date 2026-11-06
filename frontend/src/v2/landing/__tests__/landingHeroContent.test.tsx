@@ -152,7 +152,9 @@ describe('V2LandingPage hero content (TASK-152)', () => {
 
   it('keeps the zh landing glossary free of Latin agent wording (TASK-231)', () => {
     const zhLanding = (readLocale('zh-CN.json').landing as TranslationTree);
-    expect(landingStrings(zhLanding).filter((value) => /agent/i.test(value))).toEqual([]);
+    // payments-agent is a sample agent's handle in card three, so it stays Latin.
+    const wording = (value: string) => value.replace(/payments-agent/g, '');
+    expect(landingStrings(zhLanding).filter((value) => /agent/i.test(wording(value)))).toEqual([]);
   });
 
   it('does not put OpenClaw anywhere in the rendered hero', () => {

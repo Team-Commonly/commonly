@@ -17,10 +17,12 @@
  * hand-written token file). Both halves emit the same `code`.
  *
  * THE ADAPTER IS THE HOST-INDEPENDENT FACT, but sandbox support and broker
- * admission are separate. OpenCode enforces a public sandbox locally; until
- * the server allowlist admits its proven modes, only `claude` and `codex` may
- * receive the grant broker. `pi` is also withheld because it refuses a declared
- * sandbox rather than honouring it.
+ * admission are separate: only ADAPTERS_WITH_GRANT_BROKER may receive the grant
+ * broker (claude, codex, OpenCode since F175a, pi since F175c, Qwen and Goose
+ * since F175d). pi, Qwen and Goose are admitted on a narrower rule
+ * (ADAPTERS_WITH_PUBLIC_ONLY_GRANT): a public seat in a jail this host has (for
+ * pi, macOS Seatbelt only), and every other declaration is
+ * `adapter_confines_public_only`, which a named grant (F94) does not lift.
  *
  * ONE REASON THE SERVER DOES NOT HAVE: `sandbox_absent`. The server must ALLOW
  * an absent block (a daemon-provisioned seat's baseline is derived here and is
@@ -73,7 +75,7 @@
  * a foreign server cannot be drawn in by its spelling.
  */
 import { isGrantBrokerUrl } from './adapters/pi-mcp-client.mjs';
-import { ADAPTERS_WITH_GRANT_BROKER } from './default-environment.js';
+import { ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_PUBLIC_ONLY_GRANT } from './default-environment.js';
 import { effectiveSandboxTrust } from './environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './sandbox/mode.js';
 
@@ -172,12 +174,34 @@ export const declaresGrantBroker = (environment, opts) => (
 );
 
 /**
+ * F175c: the one reason naming (F94) does not lift for an adapter on the grant
+ * list. pi, Qwen and Goose hold a grant only on a public seat in a jail, so
+ * every declaration of theirs short of that is this reason, not a sandbox
+ * reason a consent could waive. Same literal as the server's.
+ */
+export const PUBLIC_ONLY_REASON = 'adapter_confines_public_only';
+
+const publicOnlyReason = (environment, rule, platform) => {
+  const sandbox = environment?.sandbox;
+  if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return PUBLIC_ONLY_REASON;
+  if (sandbox.mode === 'none' || effectiveSandboxTrust(sandbox.trust) !== 'public') return PUBLIC_ONLY_REASON;
+  // D245: a public declaration on native Windows reads the same for every adapter.
+  if (platform === 'win32') return 'sandbox_mode_unenforceable';
+  const modes = Object.hasOwn(rule, platform) ? rule[platform] : null;
+  if (!modes) return PUBLIC_ONLY_REASON;
+  const mode = resolvePublicSandboxMode(sandbox, platform);
+  return typeof mode === 'string' && modes.has(mode) ? null : PUBLIC_ONLY_REASON;
+};
+
+/**
  * Why this daemon cannot confine a seat running `adapter` with this
  * environment — or `null` when confinement is enforced and the broker may ride.
  * The reason vocabulary mirrors the server's, plus `sandbox_absent`.
  */
 export const confinementReason = (environment, adapter, platform = process.platform) => {
   if (!ADAPTERS_WITH_GRANT_BROKER.has(adapter)) return 'adapter_cannot_confine';
+  const publicOnly = ADAPTERS_WITH_PUBLIC_ONLY_GRANT.get(adapter);
+  if (publicOnly) return publicOnlyReason(environment, publicOnly, platform);
 
   const sandbox = environment?.sandbox;
   if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return 'sandbox_absent';
@@ -185,12 +209,19 @@ export const confinementReason = (environment, adapter, platform = process.platf
   if (declared.mode === 'none') return 'sandbox_mode_none';
   if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
   // D245: native Windows has no OS jail for any adapter. Claude there runs
-  // only by the user's --unsandboxed (policy without a jail), and Codex runs on
-  // its own profiles with no Commonly sandbox, so neither carries a grant.
+  // only by the user's --unsandboxed (policy without a jail), and a public
+  // Codex seat is refused there outright (host-check.js), so neither carries a
+  // grant.
   if (platform === 'win32') return 'sandbox_mode_unenforceable';
   const mode = resolvePublicSandboxMode(declared, platform);
   if (typeof mode !== 'string' || !ENFORCING_MODES.has(mode)) return 'sandbox_mode_unenforceable';
   return null;
+};
+
+/** "claude, codex or opencode": the broker set, as a remedy names it. */
+const brokerAdapterList = () => {
+  const names = [...ADAPTERS_WITH_GRANT_BROKER];
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
 };
 
 const detailFor = (reason, adapter, environment, platform = process.platform) => {
@@ -199,13 +230,19 @@ const detailFor = (reason, adapter, environment, platform = process.platform) =>
     return 'native Windows has no sandbox Commonly can enforce, so no agent on this computer gets connector grants;'
       + ` run the agent on macOS or Linux to use grants, ${drop}`;
   }
+  if (reason === PUBLIC_ONLY_REASON) {
+    const jails = Object.keys(ADAPTERS_WITH_PUBLIC_ONLY_GRANT.get(adapter) || {});
+    const macOnly = jails.length === 1 && jails[0] === 'darwin';
+    return `the seat runs the '${adapter}' adapter, which carries a grant only on a public seat confined by the`
+      + `${macOnly ? ' macOS' : ''} sandbox; declare sandbox.trust 'public'${macOnly ? ' and run it on a Mac' : ''},`
+      + ` or move it to an adapter that confines this host, ${drop} (naming the agent on the grant does not lift this)`;
+  }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
-      + ' move this seat to the claude or codex'
-      + ` adapter, ${drop}`;
+      + ` move this seat to the ${brokerAdapterList()} adapter, ${drop}`;
   }
   if (reason === 'sandbox_absent') {
-    return 'this seat declares no sandbox block and this daemon derives one only for the claude and codex adapters,'
+    return 'this seat declares no sandbox block and none was derived for it,'
       + ` so it would run with a granter's authority and no confinement; declare sandbox.trust 'public' ${drop}`;
   }
   if (reason === 'sandbox_mode_none') {
@@ -249,7 +286,7 @@ export const withholdGrantBroker = (environment, adapter, {
   // only; the broker checks the naming on every call. Never on native Windows,
   // and never for an adapter not approved for the broker.
   const rides = (server) => server?.byoNamed === true
-    && reason !== 'adapter_cannot_confine' && platform !== 'win32';
+    && reason !== 'adapter_cannot_confine' && reason !== PUBLIC_ONLY_REASON && platform !== 'win32';
   const isWithheld = (server) => isOurGrantBroker(server, { instanceUrl }) && !rides(server);
   if (!environment.mcp.some(isWithheld)) return environment;
 
@@ -268,11 +305,41 @@ export const withholdGrantBroker = (environment, adapter, {
   return { ...environment, mcp: kept };
 };
 
+/**
+ * Merge the server's grant-broker entries into a seat environment, the way the
+ * daemon's work list does it (`GET /api/agent-binding/assigned` in
+ * `backend/routes/agentBinding.ts`): an existing entry with a broker's name is
+ * replaced, the brokers are appended, and a seat with no environment gets one
+ * holding only them. Used by `agent run` without a daemon (F150), whose
+ * `GET /api/agents/runtime/grant-brokers` returns the same per-seat projection.
+ *
+ * Merge only. The caller runs `withholdGrantBroker` on the result, so the
+ * client-side refusal still applies to whatever the server sent.
+ * Identity is preserved when there is nothing to merge.
+ */
+export const mergeGrantBrokers = (environment, servers) => {
+  const brokers = Array.isArray(servers)
+    ? servers.filter((server) => server && typeof server === 'object' && !Array.isArray(server))
+    : [];
+  if (!brokers.length) return environment;
+  if (!environment) return { mcp: brokers };
+  const existing = Array.isArray(environment.mcp) ? environment.mcp : [];
+  return {
+    ...environment,
+    mcp: [
+      ...existing.filter((server) => !brokers.some((broker) => broker.name === server?.name)),
+      ...brokers,
+    ],
+  };
+};
+
 export default {
   GRANT_BROKER_REFUSAL_CODE,
+  PUBLIC_ONLY_REASON,
   ENFORCING_MODES,
   isOurGrantBroker,
   declaresGrantBroker,
   confinementReason,
   withholdGrantBroker,
+  mergeGrantBrokers,
 };

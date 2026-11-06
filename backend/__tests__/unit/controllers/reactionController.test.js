@@ -102,14 +102,12 @@ describe('reactionController.addReaction — agent runtime path', () => {
     pool.query
       // loadMessageContext
       .mockResolvedValueOnce(messageLookup('pod-xyz'));
-    AgentInstallation.findOne.mockReturnValue({
-      lean: () => Promise.resolve({ _id: 'inst-1' }),
-    });
-
     const req = {
       params: { messageId: '42' },
       body: { emoji: '👍' },
       agentUser: { _id: 'bot-user-1' },
+      // agentRuntimeAuth's resolved installations for the token (F149).
+      agentInstallations: [{ podId: 'pod-xyz', status: 'active' }],
     };
     const res = buildRes();
 
@@ -131,27 +129,26 @@ describe('reactionController.addReaction — agent runtime path', () => {
     );
   });
 
-  test('agent without AgentInstallation falls back to Pod.members and still succeeds', async () => {
+  test('agent listed in Pod.members without an installation there is refused 403 (F149)', async () => {
+    // This arm used to assert the opposite: an agent with no installation in
+    // the pod "falls back to Pod.members and still succeeds". That fallback is
+    // the F149 defect — an uninstall can leave the members row behind — so an
+    // agent installed only in another pod is refused here.
     pool.query.mockResolvedValueOnce(messageLookup('pod-abc'));
-    AgentInstallation.findOne.mockReturnValue({
-      lean: () => Promise.resolve(null),
-    });
-    // `Pod.members` holds ObjectIds (`models/Pod.ts:157`), the same shape
-    // `createMessage` compares against — not `{ userId }` objects, which that
-    // comparison would refuse.
     podListing('bot-user-2');
 
     const req = {
       params: { messageId: '7' },
       body: { emoji: '🎉' },
       agentUser: { _id: 'bot-user-2' },
+      agentInstallations: [{ podId: 'pod-elsewhere', status: 'active' }],
     };
     const res = buildRes();
 
     await reactionController.addReaction(req, res);
 
-    expect(MessageReaction.add).toHaveBeenCalledWith('7', 'bot-user-2', '🎉');
-    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(MessageReaction.add).not.toHaveBeenCalled();
   });
 
   test('agent with neither AgentInstallation nor Pod membership is rejected 403', async () => {
@@ -304,9 +301,6 @@ describe('reactionController.addReaction — agent runtime path', () => {
     // wrong does not just fail this test: it leaves the shared pool.query mock
     // queue misaligned and every following test reports "Number of calls: 0".
     pool.query.mockResolvedValueOnce(messageLookup('pod-loop', 'author-bot'));
-    AgentInstallation.findOne.mockReturnValue({
-      lean: () => Promise.resolve({ _id: 'inst-loop' }),
-    });
     MessageReaction.add.mockResolvedValueOnce(true);
     User.findById.mockReturnValue({
       select: () => ({
@@ -324,6 +318,7 @@ describe('reactionController.addReaction — agent runtime path', () => {
       // agentRuntimeAuth populates req.agentUser for cm_agent_* tokens only,
       // so its presence IS the authorship answer at the call site.
       agentUser: { _id: 'agent-reactor' },
+      agentInstallations: [{ podId: 'pod-loop', status: 'active' }],
     };
     const res = buildRes();
 
@@ -441,15 +436,13 @@ describe('reactionController.addReaction — agent runtime path', () => {
 
   test('an agent reacting to its own message does not wake itself', async () => {
     pool.query.mockResolvedValueOnce(messageLookup('pod-self', 'bot-self'));
-    AgentInstallation.findOne.mockReturnValue({
-      lean: () => Promise.resolve({ _id: 'inst-self' }),
-    });
     MessageReaction.add.mockResolvedValueOnce(true);
 
     const req = {
       params: { messageId: '47' },
       body: { emoji: '👀' },
       agentUser: { _id: 'bot-self' },
+      agentInstallations: [{ podId: 'pod-self', status: 'active' }],
     };
     const res = buildRes();
 

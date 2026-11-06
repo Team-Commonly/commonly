@@ -406,6 +406,22 @@ spec:
               name: api-keys
               key: GITHUB_APP_PRIVATE_KEY
               optional: true
+        {{- if .Values.githubConnectApp.enabled }}
+        # Commonly Connect, the public App outside teams install (F172). Absent:
+        # Connect connections refuse github_app_not_configured, never fall back.
+        - name: GITHUB_CONNECT_APP_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_CONNECT_APP_ID
+              optional: true
+        - name: GITHUB_CONNECT_APP_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: GITHUB_CONNECT_APP_PRIVATE_KEY
+              optional: true
+        {{- end }}
         - name: GITHUB_APP_INSTALLATION_ID_COMMONLY
           valueFrom:
             secretKeyRef:
@@ -634,8 +650,13 @@ spec:
         - name: LITELLM_CHAT_MODEL
           # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
           # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
-          # entry already exists in LiteLLM with a live key.
+          # entry already exists in LiteLLM with a live key. With DeepSeek
+          # off (F159, dev), the configured agent default instead.
+          {{- if .Values.aiProviders.deepseek.enabled }}
           value: "deepseek-v4-flash"
+          {{- else }}
+          value: {{ .Values.litellm.agentDefaultModel | quote }}
+          {{- end }}
         # F103: the model every agent driver default names (the K8s provisioner's
         # primaries and key allowlists, the global policy's community default).
         - name: AGENT_DEFAULT_MODEL
@@ -717,6 +738,18 @@ spec:
         {{- if .Values.backend.env.syntheticAccountPurge }}
         - name: SYNTHETIC_ACCOUNT_PURGE
           value: {{ .Values.backend.env.syntheticAccountPurge | quote }}
+        {{- end }}
+
+        {{- if .Values.backend.env.pgMirrorRepair }}
+        # F183: the scheduler repairs the PG mirror (pods, pod_members, users)
+        # from Mongo at 03:30 UTC (services/pgMirrorRepairService.ts). Opt-in;
+        # report-only unless pgMirrorRepairApply is "1".
+        - name: PG_MIRROR_REPAIR
+          value: {{ .Values.backend.env.pgMirrorRepair | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.pgMirrorRepairApply }}
+        - name: PG_MIRROR_REPAIR_APPLY
+          value: {{ .Values.backend.env.pgMirrorRepairApply | quote }}
         {{- end }}
 
         # Native-runtime guardrail set (comma-separated; see

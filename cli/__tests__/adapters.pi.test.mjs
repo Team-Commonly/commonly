@@ -16,18 +16,19 @@ import { Writable } from 'stream';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { GRANT_BROKER_PUBLIC_ONLY_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMock, spawn: jest.fn() }));
 const mod = await import('../src/lib/adapters/pi.js');
 const pi = mod.default;
+const { classifySpawnFailure } = await import('../src/lib/spawn-retry.js');
 const { extractReply, thinkingFor, resolveMcpServers, buildModelsJson, resolveProvider } = mod;
 
 const event = (obj) => `${JSON.stringify(obj)}\n`;
 const assistant = (text) => event({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }] } });
 
-const fakeChild = ({ stdout = '', stderr = '', code = 0 } = {}) => {
+const fakeChild = ({ stdout = '', stderr = '', code = 0, signal = null } = {}) => {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
@@ -41,7 +42,7 @@ const fakeChild = ({ stdout = '', stderr = '', code = 0 } = {}) => {
   setTimeout(() => {
     if (stdout) proc.stdout.emit('data', Buffer.from(stdout));
     if (stderr) proc.stderr.emit('data', Buffer.from(stderr));
-    proc.emit('close', code);
+    proc.emit('close', code, signal);
   }, 5);
   return proc;
 };
@@ -224,7 +225,7 @@ describe('spawn', () => {
     expect(wired).not.toContain('sh');
   });
 
-  test('a granted pi seat is not handed the broker at all — no entry, and no bridge started for one', async () => {
+  test('a granted private pi seat is not handed the broker at all — no entry, and no bridge started for one', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
@@ -252,7 +253,7 @@ describe('spawn', () => {
       expect(calls[0].args).not.toContain('/x/bridge.mjs');
       expect(calls[0].args[calls[0].args.indexOf('-e') + 1]).toMatch(/pi-shell-env\.mjs$/);
       expect(JSON.stringify(calls[0].opts.env)).not.toContain('cm_agent_secret');
-      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(1);
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_PUBLIC_ONLY_REFUSAL))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
@@ -277,7 +278,7 @@ describe('spawn', () => {
     const stdout = event({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'toolCall', name: 'bash' }] } })
       + event({ type: 'message_end', message: { role: 'toolResult', content: [{ type: 'text', text: 'hello\n' }] } })
       + assistant('first') + assistant('final answer');
-    expect(extractReply(stdout)).toEqual({ text: 'final answer', sawAssistant: true, errors: [] });
+    expect(extractReply(stdout)).toEqual({ text: 'final answer', sawAssistant: true, finished: false, errors: [] });
     const { impl } = makeSpawnImpl({ stdout });
     expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('final answer');
   });
@@ -285,6 +286,117 @@ describe('spawn', () => {
   test('a non-zero exit with no assistant message surfaces pi\'s error, quota text included', async () => {
     const { impl } = makeSpawnImpl({ stdout: event({ type: 'error', message: 'Rate limit exceeded: You have hit your usage limit' }), code: 1 });
     await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/usage limit/);
+  });
+
+  // Measured on pi 0.84.1: SIGTERM exits 143, SIGHUP 129, SIGINT dies by the
+  // signal, and none of them prints agent_end. The last assistant message of a
+  // stopped turn is an interim one, so a reply seen there is not an answer.
+  describe('a turn stopped by a signal', () => {
+    const interim = event({ type: 'message_end', message: { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'text', text: 'let me look' }, { type: 'toolCall', name: 'read' }] } });
+
+    test.each([[143], [129], [null]])('rejects after an interim message, exit %s', async (code) => {
+      const { impl } = makeSpawnImpl({ stdout: interim, code });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/stopped before it finished/);
+    });
+
+    const final = (text) => event({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: text ? [{ type: 'text', text }] : [] } });
+    const stopped = (stopReason, errorMessage) => event({ type: 'message_end', message: { role: 'assistant', stopReason, errorMessage, content: [] } });
+    const ended = event({ type: 'agent_end', messages: [] });
+
+    test('a turn that finished keeps its reply, though pi then exits non-zero', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim + final('the answer') + ended, code: 1 });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('the answer');
+    });
+
+    // An overflow's agent_end says willRetry: false, because compaction carries
+    // the turn on rather than a retry. Stopped there, it has not finished.
+    test.each(['error', 'length'])('an agent_end after a %s stop has not finished', async (stopReason) => {
+      const { impl } = makeSpawnImpl({ stdout: interim + stopped(stopReason, '400 context_length_exceeded') + ended + event({ type: 'compaction_start' }), code: 143 });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/stopped before it finished/);
+    });
+
+    test('the final message after compaction finishes the turn', () => {
+      const stdout = interim + stopped('error', '400 context_length_exceeded') + ended + final('done') + ended;
+      expect(extractReply(stdout)).toEqual(expect.objectContaining({ text: 'done', finished: true }));
+    });
+
+    test('an interim message after an agent_end takes finished back', () => {
+      expect(extractReply(final('first') + ended + interim).finished).toBe(false);
+    });
+
+    test('a failed turn is never acked as silent, though agent_end followed the error', async () => {
+      const { impl } = makeSpawnImpl({ stdout: event({ type: 'error', message: 'boom crash' }) + ended, code: 1 });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/boom crash/);
+    });
+
+    test('an error event fails a turn whose last stop was stop, once pi exits non-zero', async () => {
+      const { impl } = makeSpawnImpl({ stdout: final('half') + event({ type: 'error', message: 'boom crash' }) + ended, code: 1 });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/boom crash/);
+    });
+
+    test('a tool-only turn that finished stays silent, though pi then exits non-zero', async () => {
+      const toolOnly = event({ type: 'message_end', message: { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'toolCall', name: 'bash' }] } });
+      const { impl } = makeSpawnImpl({ stdout: toolOnly + final('') + ended, code: 1 });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('');
+    });
+
+    test('a crash after an interim message keeps its cause, so quota still classes as quota', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim, stderr: 'quota exceeded: out of credits\n', code: 1 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.message).toMatch(/out of credits/);
+      expect(classifySpawnFailure(failure)).toBe('quota');
+    });
+
+    test('a crash after an interim message carries the refusal pi saw', async () => {
+      const refused = stopped('error', '429: {"error":{"message":"slow down"}}');
+      const { impl } = makeSpawnImpl({ stdout: interim + refused, code: 1 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.status).toBe(429);
+      expect(classifySpawnFailure(failure)).toBe('rate_limit');
+    });
+
+    test('a real signal is read as a kill, whatever stderr says', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim, stderr: 'Warning: No project session found with id x', code: null, signal: 'SIGINT' });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.message).toMatch(/stopped before it finished/);
+      expect(failure.message).not.toMatch(/No project session/);
+    });
+
+    test('a long crash keeps a cause at the end of stderr', async () => {
+      const stack = Array.from({ length: 12 }, (_, i) => `    at frame${i} (file.js:${i}:1)`).join('\n');
+      const { impl } = makeSpawnImpl({ stdout: interim, stderr: `${stack}\nError: quota exceeded: out of credits`, code: 1 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(classifySpawnFailure(failure)).toBe('quota');
+    });
+
+    test('a signal is not blamed on stderr or an earlier refusal', async () => {
+      const refused = stopped('error', '401: {"error":{"message":"bad key"}}');
+      const { impl } = makeSpawnImpl({ stdout: interim + refused, stderr: 'Warning: No project session found with id x', code: 143 });
+      const failure = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((err) => err);
+      expect(failure.message).toMatch(/stopped before it finished/);
+      expect(failure.message).not.toMatch(/No project session/);
+      expect(failure.status).toBeUndefined();
+    });
+
+    test('an agent_end pi will retry past has not finished', async () => {
+      const { impl } = makeSpawnImpl({ stdout: interim + event({ type: 'agent_end', messages: [], willRetry: true }), code: 143 });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/stopped before it finished/);
+    });
+
+    test('pi\'s word that it will retry outranks a stop', async () => {
+      const { impl } = makeSpawnImpl({ stdout: final('first try') + event({ type: 'agent_end', willRetry: true }), code: 143 });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toThrow(/stopped before it finished/);
+    });
+
+    test('a retried turn that then finishes counts as finished', () => {
+      const stdout = interim + event({ type: 'agent_end', willRetry: true }) + final('done') + ended;
+      expect(extractReply(stdout).finished).toBe(true);
+    });
+
+    test('a clean exit still posts its reply without agent_end', async () => {
+      const { impl } = makeSpawnImpl({ stdout: assistant('done') });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('done');
+    });
   });
 
   test('a timeout SIGTERMs pi and rejects', async () => {
@@ -420,13 +532,14 @@ describe('helpers', () => {
     expect(resolveMcpServers([{ name: 'c' }], {})).toEqual([]);
   });
 
-  test('the grant broker is refused to a pi seat by its path, not by its name', () => {
+  test('the grant broker is refused to a private pi seat by its path, not by its name', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const tokenHeader = { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' };
     try {
-      // TASK-063's daemon-side half: pi confines on no host, so
-      // the broker's reach is refused here as well as at the server's
-      // projection. The broker as `grantBrokerServer` builds it:
+      // The daemon-side half of the server's refusal: a private pi turn is not
+      // confined (F175c carries the broker on a public turn only), so the
+      // broker's reach is refused here as well as at the server's projection.
+      // The broker as `grantBrokerServer` builds it:
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // The same path under a name that means nothing to the predicate.
       expect(resolveMcpServers([{ name: 'commonly', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/other', headers: tokenHeader }], ctx)).toEqual([]);
@@ -436,7 +549,7 @@ describe('helpers', () => {
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/API/MCP/GRANTS/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // All three refusals state the reason the server gives, so the
       // log line and the grant read can be read side by side.
-      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(3);
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_PUBLIC_ONLY_REFUSAL))).toHaveLength(3);
       // CONTROL: the name alone refuses nothing. An entry CALLED
       // `commonly-grant-broker` on a path that is not the broker's is carried,
       // so this cannot decay into a name match.

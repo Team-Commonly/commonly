@@ -100,6 +100,7 @@ export const WRITER_LEASE_OVERRUN_MS = UPSTREAM_TIMEOUT_MS;
 export interface RemovableConnection {
   _id?: unknown;
   type?: string;
+  createdBy?: unknown;
   status?: string;
   revokedAt?: Date | null;
   config?: {
@@ -159,6 +160,17 @@ export interface RemovalDeps {
   secrets: Pick<typeof connectorSecrets, 'get' | 'revoke' | 'writeGenerationOf'>;
   /** Step 5. */
   remove: (id: unknown) => Promise<void>;
+  /**
+   * F172 HOLD 1: the owner's Commonly Connect `github-app` rows were proved
+   * with this row's user token. They are disconnected (kept, so the owner sees
+   * them and can remove them or prove them again) and their grants revoked.
+   * Returns the number of grants revoked.
+   */
+  retireConnectRepositories: (input: {
+    ownerUserId: string;
+    revokedBy: string;
+    revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
+  }) => Promise<number>;
 }
 
 export type RemovalResult =
@@ -361,7 +373,35 @@ export const defaultDeps = (): RemovalDeps => ({
     const { forgetHostedMcpDrift } = await import('./hostedMcpToolDefinitions');
     forgetHostedMcpDrift(String(id));
   },
+  retireConnectRepositories: async ({ ownerUserId, revokedBy, revokeGrants }) => {
+    if (!/^[a-f\d]{24}$/i.test(ownerUserId)) return 0;
+    // Every one of the owner's Connect rows, whatever its status: a retry after
+    // a revoke failed finds the row already disconnected, and must still end
+    // its grants. Revoking is idempotent; the status write only moves a
+    // connected row.
+    const rows = await Integration.find({
+      type: 'github-app', 'config.app': 'connect', createdBy: ownerUserId,
+    }).lean() as unknown as RemovableConnection[];
+    let revoked = 0;
+    for (const row of rows) {
+      // Disconnect first, so the broker refuses the row even if a revoke fails.
+      // Both writes are scoped to this owner (F174): a row someone else took
+      // over after the read above is not theirs to disconnect, and only the
+      // grants this owner minted are theirs to end.
+      // eslint-disable-next-line no-await-in-loop
+      await Integration.updateOne(
+        { _id: row._id, createdBy: ownerUserId, status: 'connected' },
+        { $set: { status: 'disconnected' } },
+      );
+      // eslint-disable-next-line no-await-in-loop
+      revoked += await revokeGrants({ connection: row, revokedBy, ownerId: ownerUserId });
+    }
+    return revoked;
+  },
 });
+
+/** The hosted-MCP entry whose user token proves Commonly Connect repositories (F172). */
+const GITHUB_USER_TOKEN_ENTRY = 'github-mcp';
 
 /** Only "we hold nothing to revoke" takes the swept path. Every other read failure keeps the row. */
 const holdsNothingToRevoke = (error: unknown): boolean =>
@@ -621,14 +661,25 @@ const revokeThenSweep = async (input: {
 export const removeConnection = async (options: {
   connection: RemovableConnection;
   removedBy: string;
-  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string }) => Promise<number>;
+  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
   deps?: Partial<RemovalDeps>;
 }): Promise<RemovalResult> => {
   const deps: RemovalDeps = { ...defaultDeps(), ...options.deps };
   const { connection, removedBy } = options;
   const id = connection?._id;
 
-  const grantsRevoked = await options.revokeGrants({ connection, revokedBy: removedBy });
+  let grantsRevoked = await options.revokeGrants({ connection, revokedBy: removedBy });
+  // The person's GitHub user token is going, and with it the proof behind
+  // every Connect repository they connected: those rows stop here, before any
+  // provider step, so a failed vendor revoke still leaves them refused.
+  if (connection?.type === HOSTED_MCP_TYPE && connection?.config?.entryId === GITHUB_USER_TOKEN_ENTRY
+    && connection?.createdBy) {
+    grantsRevoked += await deps.retireConnectRepositories({
+      ownerUserId: String(connection.createdBy),
+      revokedBy: removedBy,
+      revokeGrants: options.revokeGrants,
+    });
+  }
 
   const entry = deps.entryFor(connection);
 

@@ -12,6 +12,7 @@ import { resolveOnPath } from '../resolve-on-path.js';
 // A newer minor or major, an older patch, an older line, or a prerelease still
 // refuses until it is smoke-tested and added to the adapter's list.
 const STABLE = /^(\d+)\.(\d+)\.(\d+)$/;
+const SEMVER = /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$/;
 
 export const isPatchAfterNewestTested = (version, tested) => {
   const installed = STABLE.exec(String(version || ''));
@@ -20,6 +21,36 @@ export const isPatchAfterNewestTested = (version, tested) => {
   return Number(installed[1]) === Number(newest[1])
     && Number(installed[2]) === Number(newest[2])
     && Number(installed[3]) > Number(newest[3]);
+};
+
+// A floor rather than a list: the version, or anything later, prereleases of a
+// later version included, so the list's prerelease rule above doesn't apply. A
+// prerelease of the floor comes before it, and an unreadable version meets nothing.
+export const meetsMinimumVersion = (version, minimum) => {
+  const installed = SEMVER.exec(String(version ?? ''));
+  const floor = STABLE.exec(String(minimum ?? ''));
+  if (!installed || !floor) return false;
+  for (let part = 1; part <= 3; part += 1) {
+    const difference = Number(installed[part]) - Number(floor[part]);
+    if (difference !== 0) return difference > 0;
+  }
+  return !installed[4];
+};
+
+export const PUBLIC_CODEX_VERSION_CODE = 'public_codex_version';
+
+// `found` stays in this message, which only the seat's log shows. The line a pod
+// sees is built from `requiredVersion` (turn-failure-notice.js).
+export const publicCodexVersionError = ({ found, required }) => {
+  const error = new Error(found
+    ? `public seat refused this turn: Codex ${found} is older than this seat needs. `
+      + `Upgrade Codex to at least ${required} and start the agent again.`
+    : 'public seat refused this turn: could not read the Codex version. '
+      + `Check that \`codex --version\` works for this agent, upgrade Codex to at least ${required} `
+      + 'if it is older, and start the agent again.');
+  error.code = PUBLIC_CODEX_VERSION_CODE;
+  error.requiredVersion = required;
+  return error;
 };
 
 // The harness's own `--version`, asked without blocking the event loop and
@@ -36,6 +67,10 @@ export const isPatchAfterNewestTested = (version, tested) => {
 // cwd lookup missed the cache every turn and could key it on a same-named file
 // there. What runs is that resolved real path, so the binary that answers is
 // the one the key names. A name that does not resolve runs as given, uncached.
+//
+// `args` come before `--version`, for a launch that is an interpreter and a
+// script (a Windows npm shim). The interpreter's path says nothing about which
+// script it would run, so that probe is never cached.
 const versionCache = new Map();
 
 const resolveBinary = (binary, env) => {
@@ -52,14 +87,14 @@ const resolveBinary = (binary, env) => {
 };
 
 export const probeVersion = async (binary, {
-  env, timeoutMs = 30000, parse, execFileImpl = childProcess.execFile, cache = versionCache,
+  args = [], env, timeoutMs = 30000, parse, execFileImpl = childProcess.execFile, cache = versionCache,
 } = {}) => {
-  const resolved = resolveBinary(binary, env);
+  const resolved = args.length ? null : resolveBinary(binary, env);
   const key = resolved?.key || null;
   const hit = key ? cache.get(key) : null;
   if (hit && hit.mtimeMs === resolved.mtimeMs) return hit.version;
   const stdout = await new Promise((resolve) => {
-    execFileImpl(key || binary, ['--version'], { encoding: 'utf8', env, timeout: timeoutMs }, (error, out) => {
+    execFileImpl(key || binary, [...args, '--version'], { encoding: 'utf8', env, timeout: timeoutMs }, (error, out) => {
       resolve(error ? null : out);
     });
   });

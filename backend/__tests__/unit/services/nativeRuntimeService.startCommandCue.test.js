@@ -106,6 +106,19 @@ describe('native runtime: Scout carries the start command for a never-connected 
     expect(sent.indexOf(CUE)).toBeLessThan(sent.indexOf('how do I use this?'));
   });
 
+
+  it('a turn carrying another author\'s coalesced message has no requester', async () => {
+    const base = trigger();
+    await runAgent(installation('scout'), {
+      ...base,
+      payload: {
+        ...base.payload,
+        coalesced: [{ messageId: 'm5', userId: 'their-agent', rawContent: 'also this' }],
+      },
+    });
+    expect(askerStartCommandCue).not.toHaveBeenCalled();
+  });
+
   test('another agent gets no cue and makes no lookup', async () => {
     await runAgent(installation('pixel'), trigger());
 

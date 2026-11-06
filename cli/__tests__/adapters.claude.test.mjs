@@ -334,6 +334,18 @@ describe('claude adapter — spawn()', () => {
  * fleet then retries into an exhausted quota instead of standing down.
  */
 describe('claude adapter — failure reporting', () => {
+  test('exit 0 with no result event is a stopped turn, not a reply', async () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"let me look"}]}}',
+    ].join('\n');
+    const { impl } = makeSpawnImpl({ stdout });
+
+    await expect(
+      claude.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
+    ).rejects.toThrow(/stopped before it finished/);
+  });
+
   test('surfaces a stdout-only failure reason instead of an empty message', async () => {
     const { impl } = makeSpawnImpl({
       stdout: 'Claude usage limit reached. Your limit will reset at 11:40pm.',

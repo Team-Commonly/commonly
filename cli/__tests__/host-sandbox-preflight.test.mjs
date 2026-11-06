@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
   listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
-const { hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
+const { hostSandboxRefusal, windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 const { registerAgent, saveAgentToken } = await import('../src/commands/agent.js');
 const { defaultSeatSandbox } = await import('../src/lib/default-environment.js');
 
@@ -141,8 +141,74 @@ describe('hostSandboxRefusal', () => {
     expect(message).not.toContain('claude mcp add');
   });
 
+  // Codex's unelevated Windows sandbox cannot enforce a public seat's split read
+  // denies, and Codex has no tool policy beneath its permission profile, so an
+  // unconfined Codex is a full shell driven by pod content. A public seat on
+  // native Windows therefore always refuses, whatever opt-in it carries. Only a
+  // seat with no public trust can pass, and only with hostUnconfined, which
+  // `agent run` sets after confirming every pod private.
+  test('a public Codex seat on native Windows always refuses, and the opt-in does not name the flag again', () => {
+    for (const hostUnconfined of [false, true]) {
+      const message = hostSandboxRefusal({
+        environment: connectPage, adapterName: 'codex', platform: 'win32', hostUnconfined, optedIn: true,
+      });
+      expect(message).toContain('publicly readable or open to join');
+      expect(message).toContain('WSL 2');
+      expect(message).toContain('sudo apt install bubblewrap');
+      expect(message).toContain('Run it here');
+      expect(message).not.toContain('--unsandboxed');
+    }
+    expect(hostSandboxRefusal({
+      environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'win32', hostUnconfined: true,
+    })).not.toBeNull();
+  });
+
+  test('a seat with no sandbox block that passed the flag and still fails is not told to add the flag', () => {
+    const message = hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'win32', optedIn: true });
+    expect(message).toContain('publicly readable or open to join');
+    expect(message).not.toContain('--unsandboxed');
+  });
+
+  test('without the opt-in, a Codex seat on native Windows refuses and names the flag, the pod it needs and what it costs', () => {
+    for (const environment of [connectPage, null, { sandbox: { mode: 'none' } }]) {
+      const message = hostSandboxRefusal({ environment, adapterName: 'codex', platform: 'win32' });
+      expect(message).toContain('--unsandboxed');
+      expect(message).toContain('invite-only');
+      expect(message).toContain('anyone in the pod, people you invite later included, can direct it');
+      expect(message).toContain('no connector grants');
+      expect(message).toContain('WSL 2');
+      expect(message).toContain('Run it here');
+    }
+    expect(windowsSandboxMessage('codex')).toBe(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'win32' }));
+  });
+
+  test('a Codex seat with no public trust passes on native Windows only with hostUnconfined', () => {
+    for (const environment of [null, { model: 'gpt-5.1-codex' }, { sandbox: { mode: 'none' } }]) {
+      expect(hostSandboxRefusal({ environment, adapterName: 'codex', platform: 'win32', hostUnconfined: true })).toBeNull();
+      // A string or a truthy value is not the opt-in.
+      expect(hostSandboxRefusal({ environment, adapterName: 'codex', platform: 'win32', hostUnconfined: 'true' })).not.toBeNull();
+    }
+  });
+
+  // CodeRabbit on #3501: Codex refuses workspace trust on every platform
+  // (refuseWorkspaceTrust, at attach and at spawn), in its own words. Pointing
+  // such a seat to WSL would send it somewhere it fails again, so this check
+  // leaves workspace to that refusal.
+  test('a workspace Codex seat on Windows is left to the adapter\'s own workspace refusal, opt-in or not', () => {
+    for (const hostUnconfined of [false, true]) {
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName: 'codex', platform: 'win32', hostUnconfined,
+      })).toBeNull();
+    }
+  });
+
+  test('Codex on a Mac or Linux is left alone', () => {
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux' })).toBeNull();
+  });
+
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: null, adapterName: 'claude', platform: 'win32' })).toBeNull();
     expect(hostSandboxRefusal({ environment: { sandbox: { mode: 'none' } }, adapterName: 'claude', platform: 'win32' })).toBeNull();
@@ -235,6 +301,109 @@ describe('agent run on a host that cannot confine the seat', () => {
     expect(stderr).toContain('No supported agent CLI found on PATH');
     expect(stderr).toContain('has no sandbox for Windows yet');
     expect(fs.existsSync(tokenPath)).toBe(false);
+  });
+});
+
+describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => {
+  const privatePod = {
+    type: 'installation', podId: 'pod-1', instanceId: 'default', status: 'active',
+    publicRead: false, communityListed: false, joinPolicy: 'invite-only',
+  };
+  const exitSentinel = new Error('process.exit called');
+  const recordPath = path.join(homeTmpDir, '.commonly', 'tokens', 'byo-codex-win.json');
+  let platform; let exitSpy; let errorSpy; let warnSpy; let logSpy; let before;
+
+  beforeEach(() => {
+    saveAgentToken('byo-codex-win', {
+      agentName: 'byo-codex-win',
+      podId: 'pod-1',
+      instanceUrl: 'https://api.commonly.me',
+      runtimeToken: 'cm_agent_test',
+      adapter: 'codex',
+      workspacePath: null,
+      environment: { model: 'gpt-5.1-codex', sandbox: { trust: 'public' } },
+    });
+    before = fs.readFileSync(recordPath);
+    platform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation((code) => {
+      exitSentinel.code = code;
+      throw exitSentinel;
+    });
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', platform);
+    for (const spy of [exitSpy, errorSpy, warnSpy, logSpy]) spy.mockRestore();
+    createClientMock.mockReset();
+    fs.rmSync(recordPath, { force: true });
+  });
+
+  const run = async (args, rejection) => {
+    const program = new Command();
+    program.exitOverride();
+    registerAgent(program);
+    const running = program.parseAsync(['agent', 'run', 'byo-codex-win', ...args], { from: 'user' });
+    if (rejection === exitSentinel) await expect(running).rejects.toBe(exitSentinel);
+    else await expect(running).rejects.toThrow(rejection);
+  };
+  const printed = (spy) => spy.mock.calls.map((call) => call.join(' ')).join('\n');
+  const hostReport = jest.fn().mockResolvedValue({ hostUnconfined: true });
+  const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result, post: hostReport });
+
+  test('no flag, private pods: refused, the pods are not read, and the line names the flag', async () => {
+    await run([], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(createClientMock).not.toHaveBeenCalled();
+    expect(printed(errorSpy)).toContain('--unsandboxed');
+    expect(printed(warnSpy)).not.toContain('unsandboxed (opted in)');
+  });
+
+  test('the flag with every pod private: past the host check, with the notice, and the saved record untouched', async () => {
+    podsRead(jest.fn().mockResolvedValue({ installations: [privatePod] }));
+    createClientMock.mockImplementation(() => { throw new Error('reached the poll loop'); });
+    await run(['--unsandboxed'], 'reached the poll loop');
+    const warned = printed(warnSpy);
+    expect(hostReport).toHaveBeenCalledWith('/api/agents/runtime/host-unconfined', {});
+    expect(warned).toContain('nothing confines this agent');
+    expect(warned).toContain('anyone in its pods, people invited later included, can direct it');
+    expect(warned).toContain('no connector grants');
+    expect(fs.readFileSync(recordPath).equals(before)).toBe(true);
+  });
+
+  test.each([
+    ['open to join', [{ ...privatePod, joinPolicy: 'open' }]],
+    ['publicly readable', [{ ...privatePod, publicRead: true }]],
+    ['no fields reported', [{ type: 'installation', podId: 'pod-1' }]],
+    ['one of two pods open', [privatePod, { ...privatePod, podId: 'pod-2', joinPolicy: 'open' }]],
+    ['no pods', []],
+  ])('the flag with a pod that is %s: refused without naming the flag again', async (_label, installations) => {
+    podsRead(jest.fn().mockResolvedValue({ installations }));
+    await run(['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain('publicly readable or open to join');
+    expect(printed(errorSpy)).not.toContain('--unsandboxed');
+    expect(printed(warnSpy)).not.toContain('nothing confines this agent');
+  });
+
+  test('a run that can\'t tell the server it has no sandbox does not start', async () => {
+    hostReport.mockRejectedValueOnce(new Error('offline'));
+    podsRead(jest.fn().mockResolvedValue({ installations: [privatePod] }));
+    await run(['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain('could not tell the server this agent has no sandbox');
+    expect(printed(warnSpy)).not.toContain('nothing confines this agent');
+  });
+
+  test('the flag when the pods cannot be read: it does not start', async () => {
+    podsRead(jest.fn().mockRejectedValue(new Error('offline')));
+    await run(['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain("could not read whether this agent's pods are private");
+    expect(printed(warnSpy)).not.toContain('nothing confines this agent');
   });
 });
 

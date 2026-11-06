@@ -26,10 +26,12 @@ jest.mock('../../../models/User', () => ({ findById: jest.fn().mockResolvedValue
 jest.mock('../../../models/Task', () => ({ create: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../../services/agentIdentityService', () => ({ syncUserToPostgreSQL: mockSyncUser }));
 jest.mock('../../../services/pgPodSyncService', () => ({ syncPodFromMongo: mockSyncPod }));
+jest.mock('../../../models/pg/Pod', () => ({ findById: jest.fn().mockResolvedValue(null) }));
 
 const authController = require('../../../controllers/authController');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
+const PGPod = require('../../../models/pg/Pod');
 
 describe('workspace onboarding PG mirror (2026-07-24 incident)', () => {
   const OLD_PG = process.env.PG_HOST;
@@ -81,5 +83,9 @@ describe('workspace onboarding PG mirror (2026-07-24 incident)', () => {
     await new Promise((resolve) => { setTimeout(resolve, 0); });
     expect(mockSyncUser).not.toHaveBeenCalled();
     expect(mockSyncPod).not.toHaveBeenCalled();
+    // #3500 review: no second, awaited pod mirror on the response path. The
+    // queued tail's syncPodFromMongo is the one write; a duplicate raced it and
+    // logged a duplicate-key warning per signup.
+    expect(PGPod.findById).not.toHaveBeenCalled();
   });
 });

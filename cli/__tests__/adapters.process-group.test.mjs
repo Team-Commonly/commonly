@@ -25,7 +25,7 @@ const makeSpawnImpl = () => {
     proc.kill = jest.fn();
     calls.push({ cmd, args, opts, proc });
     setTimeout(() => {
-      proc.stdout.emit('data', Buffer.from('ok'));
+      proc.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n{"type":"result","result":""}\n'));
       proc.emit('close', 0);
     }, 0);
     return proc;

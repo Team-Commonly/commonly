@@ -46,6 +46,11 @@ aiProviders:
   # commonly-dev-anthropic-api-key (200 on /v1/models, 11-04).
   anthropic:
     enabled: true
+  # F159 (D243/F98, Cofounder 11-04): DeepSeek is deleted on dev. 396 LiteLLM
+  # calls from 19:03:36Z 11-04 to 01:09Z 11-05, 394 on claude-haiku-5-5 and 0
+  # on DeepSeek (#3421). No route, key or default names it here.
+  deepseek:
+    enabled: false
 
 backend:
   replicaCount: 1
@@ -78,6 +83,10 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
+    # F183: nightly PG mirror repair at 03:30 UTC, report-only. Read the first
+    # night's pg_mirror_repair_runs row, then set pgMirrorRepairApply: "1"
+    # (docs/runbooks/pg-mirror-repair.md).
+    pgMirrorRepair: "true"
     # D244 pilot 2 (Walker): the agent computer. Only an installation whose
     # config.tools lists the computer_* tools can reach it (agentComputer.ts),
     # and only Walker's will. It stays inert until the waker token exists AND
@@ -478,6 +487,12 @@ backup:
 slack:
   oauth:
     enabled: true
+
+# The grant broker's PR path on the public Commonly Connect App (F172, #3481).
+# Turned on 2026-11-05 after the App gained Contents and Pull requests write and
+# both api-keys secrets had an enabled version. Issues stay read-only on Connect.
+githubConnectApp:
+  enabled: true
 
 # Google Calendar credentials are on (2026-11-03, D239), but the tile stays
 # hidden below. Wren found on 2026-10-14 that OAuth works and every tool call

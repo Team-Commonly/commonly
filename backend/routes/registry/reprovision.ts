@@ -8,6 +8,7 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const {
   provisionAgentRuntime,
+  runtimeReceivesToken,
   startAgentRuntime,
   restartAgentRuntime,
   syncOpenClawSkills,
@@ -30,6 +31,14 @@ const {
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
+
+// A token issued here reaches a seat only through the provisioner. A seat outside
+// it has no way to learn the new one, so revoking its token takes it offline.
+const keepsItsOwnToken = (installation: any, typeRuntime?: string) => {
+  const runtime = normalizeConfigMap(installation?.config)?.runtime || {};
+  if (String(runtime.host || '').trim().toLowerCase() === 'byo') return true;
+  return !runtimeReceivesToken(runtime.runtimeType || typeRuntime);
+};
 
 const reprovisionInstallation = async ({
   installation,
@@ -54,10 +63,26 @@ const reprovisionInstallation = async ({
   const identityKey = `${name}:${normalizedInstanceId}`;
   const typeConfig = AgentIdentityService.getAgentTypeConfig(name);
   const runtimeType = typeConfig?.runtime;
-  if (!runtimeType) {
-    throw new Error('Unknown agent runtime type');
-  }
+  const skipped = (skipReason: string) => ({
+    installationId: installation._id?.toString(),
+    podId,
+    agentName: name,
+    instanceId: normalizedInstanceId,
+    runtimeType: normalizeConfigMap(installation.config)?.runtime?.runtimeType || runtimeType || null,
+    skipped: true,
+    skipReason,
+  });
+  if (keepsItsOwnToken(installation, runtimeType)) return skipped('keeps_its_own_token');
+  if (!runtimeType) return skipped('unknown_runtime');
   await assertAgentRuntimeMayJoinPod(podId, runtimeType, hostedEngineInEffect(installation));
+
+  // A revoke reaches every install of this identity, not only this row.
+  const sameIdentity = await AgentInstallation.find({
+    agentName: name, instanceId: normalizedInstanceId, status: { $in: ['active', 'paused'] },
+  }).collation({ locale: 'en', strength: 2 }).select('config').lean();
+  if (sameIdentity.some((row: any) => keepsItsOwnToken(row, runtimeType))) {
+    return skipped('shares_identity_with_external_seat');
+  }
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {
     instanceId: normalizedInstanceId,

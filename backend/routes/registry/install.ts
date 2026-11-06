@@ -52,11 +52,21 @@ const {
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
-const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const {
+  identityHoldsRuntimeToken,
+  identityIsDormant,
+  RUNTIME_TOKEN_HELD,
+  takeBackInstallation,
+  willSolelyInstallRuntimeIdentity,
+  webhookUrlRefusal,
+} = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const {
+  previewInstallNarrowing, installNarrowingMessage, NARROWING_CONFIRM_CODE,
+} = require('../../services/outsiderGrantNarrowingPreview');
 
 // Inlined per-route limiter. This comment used to attribute its clean CodeQL
 // status to `js/missing-rate-limiting` "only seeing express-rate-limit calls
@@ -89,12 +99,15 @@ const installRouter = express.Router();
 /**
  * The hosted beta cap (ADR-023 D3.1) as a 403 body, or null when the user has
  * room. One body for both places the route checks it, so a refusal reads the
- * same whichever check caught it.
+ * same whichever check caught it. An agent the person already holds, going into
+ * another room, is not a new agent, so at the cap it passes. Over the cap it
+ * does not, which also covers a cap of 0: /api/hosted/provision refuses an
+ * owner over the cap, so the row would only strand one call later.
  */
-const hostedCapRefusal = async (userId: unknown): Promise<Record<string, unknown> | null> => {
+const hostedCapRefusal = async (userId: unknown, holdsThisAgent: boolean): Promise<Record<string, unknown> | null> => {
   const { agentsPerUser } = HostedRuntime.hostedCaps();
   const used = await HostedRuntime.countHostedAgentsForUser(userId);
-  if (used < agentsPerUser) return null;
+  if (used < agentsPerUser || (holdsThisAgent && used === agentsPerUser)) return null;
   let holders: any[] = [];
   try {
     holders = await HostedRuntime.listHostedInstallationsForUser(userId);
@@ -312,7 +325,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       // row is written: a refused second hosted install used to leave that row
       // behind with no installation (QA walk, 2026-10-16).
       if (requestedRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
-        const refusal = await hostedCapRefusal(userId);
+        const held = await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId);
+        const refusal = await hostedCapRefusal(userId, Boolean(held));
         if (refusal) return res.status(403).json(refusal);
         hostedCapChecked = true;
       }
@@ -598,8 +612,18 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
-    const newHostedEngine = effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE
-      ? HostedEngine.engineForNewHostedInstall() : undefined;
+    // The same agent in another room stays on the engine it runs on. One on the
+    // Durable Object keeps its token, so a native row beside it would trip the
+    // one-runtime check below; one on native has no worker to answer a new
+    // Durable Object row. Read in effect, so an unfinished migration is not
+    // taken for an agent with no channel outside this process.
+    const heldHostedRow = effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE
+      ? await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId) : null;
+    let newHostedEngine;
+    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
+      newHostedEngine = heldHostedRow
+        ? HostedEngine.hostedEngineInEffect(heldHostedRow) : HostedEngine.engineForNewHostedInstall();
+    }
     try {
       await assertAgentRuntimeMayJoinPod(podId, effectiveRuntimeType, newHostedEngine);
     } catch (joinError: any) {
@@ -627,8 +651,44 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // (moltbot/codex/...), this one is the per-user beta cap. Admins bypass
     // the cap the same way they bypass the entitlement.
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
-      const refusal = await hostedCapRefusal(userId);
+      const refusal = await hostedCapRefusal(userId, Boolean(heldHostedRow));
       if (refusal) return res.status(403).json(refusal);
+    }
+
+    // One runtime per agent identity (services/runtimeIdentityOwnership). Asked
+    // again once the row is written. A dormant identity's tokens are revoked
+    // below, so they don't count here.
+    const installsInProcess = effectiveRuntimeType === 'native'
+      || newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE;
+    if (installsInProcess
+      && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)
+      && !await identityIsDormant(safeAgentName, normalizedInstanceId)) {
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
+    }
+
+    // F164: joining this pod can confine the seat's writes everywhere else
+    // (agentRuntimeAuth's outsider-grant narrowing). Say so, naming the pods
+    // the installer can see, before the installation or pod membership is
+    // written; the installer confirms with `confirmNarrowing: true`. The guard
+    // itself is unchanged. This runs after every other refusal, so it answers
+    // only an install that would otherwise go ahead, and cannot be used to
+    // probe grants on an identity the caller could not install.
+    if (req.body.confirmNarrowing !== true) {
+      const narrowing = await previewInstallNarrowing({
+        agentName: safeAgentName,
+        instanceId: normalizedInstanceId,
+        targetPodId: String(podId),
+        viewerId: userId,
+        runtimeType: effectiveRuntimeType,
+        hostedEngine: newHostedEngine,
+      });
+      if (narrowing.status !== 'clear') {
+        return res.status(409).json({
+          code: NARROWING_CONFIRM_CODE,
+          message: installNarrowingMessage(safeAgentName, narrowing),
+          narrowing: narrowing.status === 'warn' ? narrowing.preview : { unavailable: true },
+        });
+      }
     }
 
     // `config.hosted` is the kernel's record of where a hosted agent runs
@@ -637,7 +697,15 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
       delete installConfig.hosted;
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
-        installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
+        const held = HostedEngine.readHostedConfig(heldHostedRow);
+        installConfig.hosted = {
+          ...HostedEngine.nativeHostedConfigForInstall(
+            explicitDescription || (typeof held.about === 'string' ? held.about : undefined),
+          ),
+          // Started and stopped are the agent's state, not one room's: a
+          // stopped agent added to another pod stays stopped there too.
+          ...(heldHostedRow ? { provisionedAt: held.provisionedAt ?? null } : {}),
+        };
       }
     }
 
@@ -829,6 +897,14 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     const wakeDefault = personAgentWakeDefault(installConfig);
     if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
+    const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
+    const previousRow = installsInProcess
+      ? await AgentInstallation.findOne({
+        agentName: { $eq: installationKey.agentName },
+        podId: { $eq: podId },
+        instanceId: { $eq: normalizedInstanceId },
+      })
+      : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
       config: installConfig,
@@ -838,6 +914,15 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
     });
+    if (installsInProcess && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)) {
+      await takeBackInstallation(installationKey, previousRow);
+      if (!previousRow || previousRow.status === 'uninstalled') {
+        await AgentIdentityService.removeAgentFromPod(
+          AgentIdentityService.resolveAgentType(safeAgentName), podId, normalizedInstanceId,
+        );
+      }
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
+    }
 
     // Use upsert by the natural key (podId + agentId) so reinstalling
     // over a stale row left behind by raw status='uninstalled' updates

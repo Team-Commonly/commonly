@@ -219,12 +219,14 @@ spec:
               # recreated without it would never start and take every route down.
               optional: true
         {{- end }}
+        {{- if .Values.aiProviders.deepseek.enabled }}
         - name: DEEPSEEK_API_KEY
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: deepseek-api-key
               optional: true
+        {{- end }}
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:

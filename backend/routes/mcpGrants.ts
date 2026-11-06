@@ -2,7 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
-import { untrustedConnectorMarker } from '../services/brokerResultMarker';
+import { PENDING_APPROVAL_NOTE, untrustedConnectorMarker } from '../services/brokerResultMarker';
 import { isLimitedUseTool } from '../services/limitedUseConnectors';
 import { reserveBudgetLineage } from '../models/ToolCall';
 
@@ -50,7 +50,7 @@ export const pushBodyRateLimit = rateLimit({
   handler: (_req, res) => res.status(429).json({ error: 'push_body_rate_limited' }),
 });
 
-const errorPayload = (error: unknown): Record<string, unknown> => {
+export const errorPayload = (error: unknown): Record<string, unknown> => {
   const e = error as { code?: string; message?: string; details?: unknown };
   return {
     error: e.code || 'broker_error',
@@ -116,7 +116,17 @@ router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
       tool: 'github.push_branch', args });
     return res.json({ callId: result.callId, outcome: result.outcome, result: result.result });
   } catch (error) {
-    const e = error as { statusCode?: number };
+    const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
+    // Every push parks for the owner (TASK-783). The shipped git remote helper
+    // prints `error` for any non-200 answer, so it names the wait, not a fault.
+    if (e.code === 'approval_required') {
+      return res.status(202).json({
+        status: 'pending_approval',
+        approvalId: e.details?.approvalId || null,
+        error: 'pending_owner_approval',
+        message: PENDING_APPROVAL_NOTE,
+      });
+    }
     return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
   }
 });
@@ -171,7 +181,9 @@ router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: expr
   } catch (error) {
     const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
     if (e.code === 'approval_required') {
-      return res.status(202).json({ status: 'pending_approval', approvalId: e.details?.approvalId || null });
+      return res.status(202).json({
+        status: 'pending_approval', approvalId: e.details?.approvalId || null, message: PENDING_APPROVAL_NOTE,
+      });
     }
     return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
   }
@@ -269,6 +281,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
           content: [{ type: 'text', text: JSON.stringify({
             status: 'pending_approval',
             approvalId: approvalError.details?.approvalId || null,
+            message: PENDING_APPROVAL_NOTE,
           }) }],
         };
       }

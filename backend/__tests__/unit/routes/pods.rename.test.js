@@ -14,6 +14,12 @@ const AuditLog = require('../../../models/AuditLog');
 jest.mock('../../../models/Pod');
 jest.mock('../../../models/User');
 jest.mock('../../../models/AuditLog');
+jest.mock('../../../services/pgMirrorWrite', () => ({
+  mirrorPodRenamed: jest.fn().mockResolvedValue(true),
+  mirrorMemberAdded: jest.fn().mockResolvedValue(true),
+  mirrorMemberRemoved: jest.fn().mockResolvedValue(true),
+}));
+const { mirrorPodRenamed } = require('../../../services/pgMirrorWrite');
 
 const routes = require('../../../routes/pods');
 
@@ -112,5 +118,25 @@ describe('PATCH /api/pods/:id/name (TASK-419)', () => {
 
     await request(app).patch('/api/pods/p1/name').send({ name: 'Nope' }).expect(400);
     expect(p.save).not.toHaveBeenCalled();
+  });
+  // F183: a rename used to reach Mongo only, so PG `pods.name` kept the old
+  // name. The mirror write follows the Mongo save and never fails the request.
+  it('mirrors the new name into PG after the Mongo save, with the pod description', async () => {
+    const p = pod({ description: 'about' });
+    Pod.findById.mockResolvedValue(p);
+    await request(app).patch('/api/pods/p1/name').send({ name: 'Mirrored' }).expect(200);
+    expect(mirrorPodRenamed).toHaveBeenCalledWith('p1', 'Mirrored', 'about');
+  });
+
+  it('still answers 200 when the PG mirror write reports failure', async () => {
+    mirrorPodRenamed.mockResolvedValueOnce(false);
+    Pod.findById.mockResolvedValue(pod());
+    await request(app).patch('/api/pods/p1/name').send({ name: 'Mirrored' }).expect(200);
+  });
+
+  it('does not touch the mirror when the rename is refused', async () => {
+    Pod.findById.mockResolvedValue(pod({ createdBy: { toString: () => 'someone-else' } }));
+    await request(app).patch('/api/pods/p1/name').send({ name: 'Nope' }).expect(403);
+    expect(mirrorPodRenamed).not.toHaveBeenCalled();
   });
 });

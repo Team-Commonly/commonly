@@ -25,26 +25,34 @@
  * refuse the working path.
  *
  * The server also refuses a named adapter absent from CONFINING_ADAPTERS,
- * even when the adapter has a local sandbox. OpenCode remains absent until its
- * public enforcement is reviewed for server-side broker admission.
+ * even when the adapter has a local sandbox. OpenCode was admitted in F175a,
+ * once its public seat was shown to keep the per-spawn credential out of its
+ * own tools' reach (cli adapters/opencode.js). pi was admitted in F175c, and
+ * Qwen Code and Goose in F175d, on a narrower rule
+ * (PUBLIC_ONLY_GRANT_ADAPTERS below).
  *
  * Two further cases ARE host-independent, so they are decided here as well
  * (Vera 69810):
  *
- *  - An adapter that confines on NO host. `pi` is the one that exists — its
- *    `assertNoSandboxDeclared` (`cli/src/lib/adapters/pi.js`) throws only when
- *    a sandbox is DECLARED, so a pi seat that declares nothing spawns
- *    unconfined and nothing ever derives one. The adapter is then the deciding
- *    fact, not the declaration. The name is normalised the way the daemon
- *    normalises it before spawning (`trim().toLowerCase()`, see
- *    `normalizeAdapter`), because `'PI'` reaches the pi adapter too.
+ *  - An adapter that confines only a public seat. `pi` is the one that exists:
+ *    it confines a public turn in macOS Seatbelt (`assertSandboxSupported`,
+ *    `cli/src/lib/adapters/pi.js`) and is never handed a default sandbox, so a
+ *    pi seat that declares nothing, or declares a non-public trust, spawns
+ *    unconfined and nothing ever derives one. For pi an absent block is
+ *    therefore a refusal, not a daemon-decided case, and every pi refusal is
+ *    `adapter_confines_public_only`, which naming (F94) does not lift. The
+ *    name is normalised the way the daemon normalises it before spawning
+ *    (`trim().toLowerCase()`, see `normalizeAdapter`), because `'PI'` reaches
+ *    the pi adapter too. Qwen and Goose read the same, with Seatbelt or
+ *    bubblewrap: neither jails a private seat. One difference: the daemon
+ *    derives Qwen's sandbox, so an absent block on a Qwen seat stays its to
+ *    judge (DAEMON_SANDBOXED_PUBLIC_ONLY_ADAPTERS).
  *  - A declared public mode that no adapter implements. The write-time schema
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
  *    nowhere else in `cli/src`, so a seat declaring one fails every host the
- *    same way. Claude and Codex implement {workspace, read-only}; Claude adds
- *    `bwrap` for Linux. OpenCode implements the same modes locally but is not
- *    admitted to this server's map yet. A mode that is not a string belongs
+ *    same way. Claude, Codex and OpenCode implement {workspace, read-only};
+ *    Claude and OpenCode add `bwrap` for Linux. A mode that is not a string belongs
  *    here too: every adapter compares it with `===` against a string, so
  *    `['bwrap']` confines nothing even though it stringifies to a mode that
  *    does.
@@ -74,7 +82,37 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
 export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['claude', new Set(['workspace', 'read-only', 'bwrap'])],
   ['codex', new Set(['workspace', 'read-only'])],
+  // F175a: Seatbelt workspace/read-only on macOS, bwrap on Linux; a public
+  // OpenCode seat on any other mode refuses to spawn (adapters/opencode.js).
+  ['opencode', new Set(['workspace', 'read-only', 'bwrap'])],
+  // F175c: Seatbelt workspace/read-only on macOS only, and only on a public
+  // seat (PUBLIC_ONLY_GRANT_ADAPTERS). A public pi turn has no built-in tool,
+  // so the model cannot open the per-spawn credential file, and the file is
+  // deleted once pi has loaded its extensions (adapters/pi.js).
+  ['pi', new Set(['workspace', 'read-only'])],
+  // F175d: Seatbelt on macOS, bwrap on Linux, and only on a public seat. A
+  // public turn on either offers no file or shell tool, and the broker runs
+  // behind the stdio bridge, so the token stays in the per-spawn credential file
+  // (adapters/qwen.js, adapters/goose.js).
+  ['qwen', new Set(['workspace', 'read-only', 'bwrap'])],
+  ['goose', new Set(['workspace', 'read-only', 'bwrap'])],
 ]);
+
+/**
+ * F175c, F175d: confining adapters that hold a grant ONLY on a declared public
+ * seat. Mirrors the cli's `ADAPTERS_WITH_PUBLIC_ONLY_GRANT`
+ * (`cli/src/lib/default-environment.js`); the reason string is the cli guard's
+ * own, so one refusal reads the same from either emitter.
+ */
+export const PUBLIC_ONLY_GRANT_ADAPTERS: ReadonlySet<string> = new Set(['pi', 'qwen', 'goose']);
+export const PUBLIC_ONLY_REASON = 'adapter_confines_public_only';
+
+/**
+ * Of those, the ones the daemon hands the default public sandbox (the cli's
+ * `ADAPTERS_WITH_DEFAULT_SANDBOX`). On the daemon path an absent block on one
+ * of these is the normal state of a working seat, not a refusal.
+ */
+const DAEMON_SANDBOXED_PUBLIC_ONLY_ADAPTERS: ReadonlySet<string> = new Set(['qwen']);
 
 export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
 
@@ -142,8 +180,8 @@ export const adapterForRuntimeBinding = (runtime: unknown): string | null => {
 
 /**
  * Every mode ANY of the enforcing adapters implements for a public seat:
- * {workspace, read-only} in both claude and codex, plus `bwrap` (claude's
- * Linux path). A declared mode outside this set confines nowhere, so the
+ * {workspace, read-only} in claude, codex and opencode, plus `bwrap` (the
+ * Linux path of claude and opencode). A declared mode outside this set confines nowhere, so the
  * server can refuse it without resolving the host.
  */
 export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(['workspace', 'read-only', 'bwrap']);
@@ -175,6 +213,41 @@ const refusalFor = (reason: string, detail: string): GrantBrokerRefusal => ({
   reason,
   detail,
 });
+
+const publicOnlyRefusalFor = (adapter: string, modes: ReadonlySet<string>): GrantBrokerRefusal => refusalFor(
+  PUBLIC_ONLY_REASON,
+  modes.has('bwrap')
+    ? `the seat runs the '${adapter}' adapter, which holds a grant only on a public seat in its sandbox;`
+      + " declare sandbox.trust 'public', or drop the grant broker from this seat."
+      + ' Naming the agent on the grant does not lift this'
+    : `the seat runs the '${adapter}' adapter, which holds a grant only on a public seat confined by the macOS sandbox;`
+      + " declare sandbox.trust 'public' and run it on a Mac, or drop the grant broker from this seat."
+      + ' Naming the agent on the grant does not lift this',
+);
+
+/**
+ * A public-only adapter is confined by exactly one declaration: a public trust,
+ * no `none` mode, and a mode it enforces or none at all (the host resolves it;
+ * on a host with no jail for it the daemon refuses). Anything short of that runs
+ * unconfined on every host. So does an absent block, unless the daemon derives
+ * a baseline for this adapter (Qwen), which leaves that case to the daemon.
+ */
+const publicOnlyRefusal = (
+  adapter: string,
+  environment: unknown,
+  modes: ReadonlySet<string>,
+): GrantBrokerRefusal | null => {
+  const sandbox = (environment as { sandbox?: unknown } | null | undefined)?.sandbox;
+  if ((sandbox === undefined || sandbox === null) && DAEMON_SANDBOXED_PUBLIC_ONLY_ADAPTERS.has(adapter)) return null;
+  const declared = sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
+    ? sandbox as { mode?: unknown; trust?: unknown }
+    : null;
+  const mode = declared?.mode;
+  const confined = Boolean(declared)
+    && effectiveSandboxTrust(declared?.trust) === 'public'
+    && (mode === undefined || mode === null || (typeof mode === 'string' && modes.has(mode)));
+  return confined ? null : publicOnlyRefusalFor(adapter, modes);
+};
 
 /**
  * The adapter is `runtime.adapter`, or `runtime.runtimeType` when no adapter is
@@ -212,6 +285,9 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
   // Modes are judged against the declared adapter's own set; a seat that names
   // no adapter is daemon-decided (claude or codex), so the union applies there.
   const enforceableModes = adapter ? CONFINING_ADAPTERS.get(adapter) as ReadonlySet<string> : PUBLIC_HOST_MODES;
+  if (adapter && PUBLIC_ONLY_GRANT_ADAPTERS.has(adapter)) {
+    return publicOnlyRefusal(adapter, environment, enforceableModes);
+  }
 
   const source = environment as { sandbox?: unknown } | null | undefined;
   const sandbox = source?.sandbox;
@@ -247,4 +323,84 @@ export const grantBrokerRefusal = (environment: unknown, runtime?: unknown): Gra
     );
   }
   return null;
+};
+
+/**
+ * F150 (security review, HIGH): an ABSENT sandbox block is left to the daemon
+ * above because the daemon derives a confining baseline before it spawns the
+ * seat. A seat with no daemon — `commonly agent run` with no machine binding,
+ * or a token pasted into a client from the Connect page — has nothing that
+ * derives one, so the same absence confines nothing there. The reason string is
+ * the cli guard's own (`cli/src/lib/grant-broker-guard.js`, `sandbox_absent`),
+ * so one refusal reads the same from either emitter. It is a sandbox refusal,
+ * so a grant that names the seat (F94, `namingLiftsRefusal`) lifts it.
+ */
+export const SANDBOX_ABSENT_REASON = 'sandbox_absent';
+
+export const absentSandboxRefusal = (environment: unknown): GrantBrokerRefusal | null => {
+  const sandbox = (environment as { sandbox?: unknown } | null | undefined)?.sandbox;
+  if (sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)) return null;
+  return refusalFor(
+    SANDBOX_ABSENT_REASON,
+    'this seat runs with no daemon to derive a sandbox, and its saved settings declare no sandbox block,'
+      + " so nothing confines it; declare sandbox.trust 'public', name this agent on the grant,"
+      + ' or drop the grant broker from this seat',
+  );
+};
+
+/**
+ * Runtimes Commonly itself runs: `CLOUD_RUNTIME_TYPES` (agentIdentityService)
+ * plus `KERNEL_RUN_RUNTIME_TYPES` (configWriteGuard, which adds `hosted`).
+ * Mirrored, not imported, so this module stays a leaf; the suite asserts the
+ * mirror. A seat on one of these is not a BYO seat, so "no daemon derives its
+ * sandbox" is not a fact about it, and `sandbox_absent` never applies.
+ */
+export const COMMONLY_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set([
+  'moltbot', 'internal', 'native', 'managed-agents', 'hosted',
+]);
+
+/**
+ * Does Commonly run this seat? The order of `isCloudRuntime`, made stricter
+ * for codex: a type above wins whatever `host` says; otherwise `host: 'byo'` is
+ * the person's own compute.
+ *
+ * A codex row is Commonly's only with `host: 'cloud'`, or with neither `host`
+ * nor `adapter`. The second shape is the stored data, not a guess: cloud-codex
+ * (ADR-014) seeds its token file in the pod and is installed through the
+ * registry as `{ runtimeType: 'codex' }` with no host (the inspector reads it as
+ * cloud by default, `normalizeRuntimeIdentity`), so keying on `host === 'cloud'`
+ * alone would refuse every existing cloud codex seat. Every BYO codex row names
+ * an adapter: `commonly agent attach` writes `{ runtimeType, adapter, host:
+ * 'byo' }`, and the Settings harness switch writes `adapter`. A Settings switch
+ * used to drop `host` (`runtimeKeepingType`, #3458 re-review), leaving
+ * `{ runtimeType: 'codex', adapter: 'claude' }`, which the old bare-codex rule
+ * read as Commonly's. Everything else (webhook, claude-code, adapter-shaped,
+ * nothing at all) runs on someone's own machine.
+ */
+export const runsOnCommonly = (runtime: unknown): boolean => {
+  const row = runtime as { runtimeType?: unknown; host?: unknown; adapter?: unknown } | null | undefined;
+  const runtimeType = normalizeAdapter(row?.runtimeType);
+  if (runtimeType && COMMONLY_RUN_RUNTIME_TYPES.has(runtimeType)) return true;
+  const host = normalizeAdapter(row?.host);
+  if (host === 'byo' || runtimeType !== 'codex') return false;
+  if (host === 'cloud') return true;
+  return !host && !normalizeAdapter(row?.adapter);
+};
+
+/**
+ * `grantBrokerRefusal` for a seat no daemon spawns: an absent block refuses
+ * too, but only for a seat that runs on someone's own machine. `runtime` is the
+ * seat's ROW runtime; a runtime Commonly runs keeps the daemon-path reading.
+ */
+export const grantBrokerRefusalWithoutDaemon = (environment: unknown, runtime?: unknown): GrantBrokerRefusal | null => {
+  const refusal = grantBrokerRefusal(environment, runtime);
+  if (refusal || runsOnCommonly(runtime)) return refusal;
+  const absent = absentSandboxRefusal(environment);
+  // F175d: with no daemon nothing derives Qwen's sandbox, so its absent block
+  // refuses here, as the reason naming doesn't lift: `sandbox_absent` would let
+  // a grant naming the seat through the broker's per-call check.
+  const adapter = adapterForRuntimeBinding(runtime);
+  return absent && adapter && PUBLIC_ONLY_GRANT_ADAPTERS.has(adapter)
+    ? publicOnlyRefusalFor(adapter, CONFINING_ADAPTERS.get(adapter) as ReadonlySet<string>)
+    : absent;
 };
