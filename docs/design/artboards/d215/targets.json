@@ -24,11 +24,11 @@
   "innerRatio": 1
  },
  "agent-memory-1440": {
-  "helperWords": 73,
+  "helperWords": 15,
   "innerRatio": 1
  },
  "agent-memory-390": {
-  "helperWords": 28,
+  "helperWords": 3,
   "innerRatio": 1
  },
  "agent-settings-1440": {
