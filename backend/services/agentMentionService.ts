@@ -611,7 +611,7 @@ const formatPodContextFrame = (podId: string): string =>
   // structure in their reads (thread_root_id on every message,
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
-  `This pod has threads; three distinct verbs: a plain post broadcasts to the channel; ` +
+  `This pod has threads; three distinct verbs: a plain post defaults to the channel; ` +
   `replyToMessageId quotes a message and the post joins its thread; it wakes no one, so @mention ` +
   `whoever must see it; ` +
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
@@ -1024,6 +1024,18 @@ const isCollaborativePod = (
 //   message.posted + specialist            → [Pod] [Author] [Wake] body
 // [Handoff?] is present only when an agent hands work to another agent for
 // the first time in a chain (formatHandoffCue); never on message.posted.
+//
+// F245: a wake inside a thread names the thread. The root rode only in
+// `payload.threadRootId`, which a wrapper never shows the model, so a seat could
+// not name it and a plain post left the conversation. The kernel files that
+// post (agentAnswerService.threadOfRunningTurn) when it can tell; this covers a
+// turn where it can't.
+const formatThreadAnswerCue = (threadRootId: number): string => (
+  `[This message is in thread ${threadRootId}, not the main channel. Your answer belongs in that thread: `
+  + `send threadRootId ${threadRootId} with your post if your post tool takes it. `
+  + 'Do not count on a plain post to land there: it does only when this thread is all your turn holds.]'
+);
+
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
@@ -1034,7 +1046,7 @@ const buildContentForTarget = (
   // fabricated-stamp path reachable by accident. All four call sites
   // pass it today, so requiring it costs nothing now and turns a future
   // omission into a compile error instead of a silent "unknown".
-  author: { username?: string; createdAt?: unknown; messageId?: string },
+  author: { username?: string; createdAt?: unknown; messageId?: string; threadRootId?: number | null },
   // The handle of the agent that handed this over, when this mention is the
   // first handoff in an agent-to-agent chain (see formatHandoffCue).
   handoffFrom?: string,
@@ -1059,6 +1071,9 @@ const buildContentForTarget = (
   }
   if (handoffFrom && eventType !== 'message.posted') {
     frames.push(formatHandoffCue(handoffFrom));
+  }
+  if (author.threadRootId) {
+    frames.push(formatThreadAnswerCue(author.threadRootId));
   }
   // Last before the body on purpose: this is the frame that tells the
   // agent why it is awake at all, and proximity to the body is the one
@@ -1485,7 +1500,7 @@ const enqueueWakeOnMessage = async ({
   installations: Array<Record<string, unknown>>;
   sender: SenderRow | null;
   excludeKeys: Set<string> | null;
-  authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
+  authorFrame: { username: string; createdAt: unknown; messageId: string | undefined; threadRootId: number | null };
   resolvedBotUserIds?: Map<string, string>;
   replyToMessageId?: string | null;
   // A person @mentioned one or more agents in this message. Those agents got
@@ -1719,6 +1734,7 @@ const enqueueMentions = async ({
     username,
     createdAt: message?.createdAt || message?.created_at,
     messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
+    threadRootId,
   };
   // Per-target content composition: see buildContentForTarget above for
   // the four-case matrix (chat-vs-thread × specialist-vs-not). Each

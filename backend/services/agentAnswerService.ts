@@ -20,8 +20,11 @@
  * Callers decide what the answer means; this only names who was answered. Any
  * failure answers nobody, so every caller falls back to its old behaviour.
  *
- * answerStaysTopLevel, below, is the placement half of the same question.
+ * answerStaysTopLevel and threadOfRunningTurn, below, are the placement half of
+ * the same question.
  */
+import { RUNNING_TURN_WINDOW_MS } from './mentionCoalesce';
+
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const PGMessage = require('../models/pg/Message');
 
@@ -183,7 +186,81 @@ export const answerStaysTopLevel = async ({
   }
 };
 
-export default { humansAnsweredBy, answerStaysTopLevel };
+/** The most deliveries one pod's turn can hold: the runner renews 50 at a time. */
+const MAX_TURN_DELIVERIES = 50;
+
+const threadRootOf = (payload: unknown): number | null => {
+  const root = Number((payload as { threadRootId?: unknown } | null)?.threadRootId);
+  return Number.isSafeInteger(root) && root > 0 ? root : null;
+};
+
+/**
+ * F245: the thread a plain CAP post answers, or null to post it as sent. A
+ * model told nothing about the thread, or holding a tool with no thread field
+ * (OpenClaw's commonly_post_message takes only podId and content), sends a plain
+ * post. The native runtime knows its trigger and passes the root itself. A
+ * model's tool call over HTTP names no event, and the one driver that names one
+ * (OpenClaw's channel dispatcher, metadata.sourceEventId on its reply) is not
+ * all of a turn's posts. So the kernel reads the turn from the deliveries this
+ * agent holds in this pod: `delivered` is between the fetch and the ack, and a
+ * live driver renews it, so past RUNNING_TURN_WINDOW_MS no turn holds it.
+ *
+ * The post goes in the thread only when every delivery agrees: each one is a
+ * message wake inside the same thread. A turn holding a top-level mention, a
+ * second thread, a heartbeat or a task beside it cannot say which of them a
+ * plain post answers, so that post stays as sent, and the wake cue is what asks
+ * the model to name the thread. Unrelated work in a turn is the same limit:
+ * only `progress`, `fyi` and the caller's own opt-out (mainChannel on the CAP
+ * route) say a post is not the answer. So is a post after the event is acked,
+ * including one after a mid-turn checkpoint. And a held row need not be the
+ * running turn's: a carried or crashed row in thread N files a plain post from
+ * a turn that holds nothing else in this pod, until the row is acked or ages out.
+ *
+ * Comment wakes carry no thread root. Personal pods keep their plain post, as
+ * the top-level rule leaves them alone. A root that fails the resolver's checks
+ * (deleted, say) is no reason to refuse a post that named no thread.
+ */
+export const threadOfRunningTurn = async ({
+  podId, agentName, instanceId, kind,
+}: {
+  podId: unknown;
+  agentName: string;
+  instanceId?: string;
+  kind?: string | null;
+}): Promise<number | null> => {
+  if (!podId || !agentName || (kind && NON_ANSWER_KINDS.has(kind))) return null;
+  try {
+    /* eslint-disable global-require, @typescript-eslint/no-require-imports */
+    const AgentEvent = require('../models/AgentEvent');
+    const Pod = require('../models/Pod');
+    const { isPersonalPodType } = require('./podTypePolicyService');
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    /* eslint-enable global-require, @typescript-eslint/no-require-imports */
+    const held: Array<{ type?: string; payload?: unknown }> = await AgentEvent.find({
+      agentName: { $eq: String(agentName).toLowerCase() },
+      instanceId: { $eq: String(instanceId || 'default') },
+      status: 'delivered',
+      podId: { $eq: String(podId) },
+      deliveryMode: { $ne: 'digest' },
+      deliveredAt: { $gte: new Date(Date.now() - RUNNING_TURN_WINDOW_MS) },
+    }).sort({ createdAt: -1, _id: -1 }).select('type payload').limit(MAX_TURN_DELIVERIES)
+      .maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
+      .lean();
+    const roots = new Set(held.map((event) => (
+      WAKE_TYPES.includes(String(event.type)) ? threadRootOf(event.payload) : null
+    )));
+    const [root] = [...roots];
+    if (roots.size !== 1 || root == null) return null;
+    const pod = await Pod.findOne({ _id: { $eq: String(podId) } }).select('type').lean();
+    if (!pod || isPersonalPodType(pod.type)) return null;
+    return await resolveThreadRoot({ podId: String(podId), threadRootId: root });
+  } catch (error) {
+    console.warn('[agent-answer] running-turn thread check failed; leaving the post as sent:', (error as Error).message);
+    return null;
+  }
+};
+
+export default { humansAnsweredBy, answerStaysTopLevel, threadOfRunningTurn };
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports.default; Object.assign(module.exports, exports);

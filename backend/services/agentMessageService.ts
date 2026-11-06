@@ -227,6 +227,10 @@ interface PostMessageOptions {
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
+  // Server-set, never model-set: this post came over CAP, which names no event,
+  // so a plain post may be filed in the thread its turn answers
+  // (agentAnswerService.threadOfRunningTurn). The route clears it on mainChannel.
+  inferAnswerThread?: boolean;
   // Server-set, never model-set: only install intros and stalled-connect
   // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
@@ -278,6 +282,7 @@ interface PostTargetOptions {
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
+  inferAnswerThread?: boolean;
   authorKind?: 'kernel' | null;
   // D245: already normalized; stored beside the content.
   contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
@@ -364,6 +369,13 @@ const THREAD_ROOT_DROPPED = {
   message: 'This answers a top-level message, so it was posted to the channel, not in a thread. '
     + 'Any quote was kept. To continue, thread under your own post.',
 };
+
+// F245: the same courtesy the other way round, and the way out of it.
+const threadRootFromWake = (root: number) => ({
+  code: 'thread_root_from_wake',
+  message: `This answers a message in thread ${root}, so it was posted in that thread, not the main channel. `
+    + `To continue it, use threadRootId ${root}. To post in the main channel, send mainChannel: true.`,
+});
 
 class AgentMessageService {
   static normalizeInstallationConfig(config: unknown): Record<string, unknown> {
@@ -1200,6 +1212,7 @@ class AgentMessageService {
       personWaiting = false,
       approvalCard = false,
       threadIsDeliberate = false,
+      inferAnswerThread = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1830,6 +1843,7 @@ class AgentMessageService {
       noOutboundRelay,
       answeringMessageId,
       threadIsDeliberate,
+      inferAnswerThread,
       authorKind,
       contract: contract.summary || contract.kind || receipt
         ? { summary: contract.summary, kind: contract.kind, ...(receipt ? { receipt } : {}) }
@@ -1847,7 +1861,11 @@ class AgentMessageService {
       });
     }
 
-    const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
+    const allWarnings = [
+      ...postWarnings,
+      ...(posted.threadRootDropped ? [THREAD_ROOT_DROPPED] : []),
+      ...(posted.wakeThreadRoot ? [threadRootFromWake(posted.wakeThreadRoot)] : []),
+    ];
     return {
       success: true,
       message: posted.message,
@@ -1903,7 +1921,7 @@ class AgentMessageService {
   }
 
   static async _postToTarget(options: PostTargetOptions): Promise<{
-    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean;
+    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean; wakeThreadRoot?: number;
   }> {
     const {
       agentName,
@@ -1923,6 +1941,7 @@ class AgentMessageService {
       noOutboundRelay = false,
       answeringMessageId,
       threadIsDeliberate = false,
+      inferAnswerThread = false,
       authorKind = null,
       contract = null,
     } = options;
@@ -1979,6 +1998,17 @@ class AgentMessageService {
         resolvedThreadRootId = null;
         topLevelAnswer = Boolean(replyToMessageId);
       }
+    }
+
+    // F245: a plain CAP post that answers a thread goes in it. A post naming a
+    // target was judged above; the root found here is already validated.
+    let wakeThreadRoot: number | null = null;
+    const namesNoTarget = !replyToMessageId && (threadRootId == null || threadRootId === '');
+    if (inferAnswerThread && namesNoTarget && PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { threadOfRunningTurn } = require('./agentAnswerService');
+      wakeThreadRoot = await threadOfRunningTurn({ podId, agentName, instanceId, kind: contract?.kind });
+      if (wakeThreadRoot) resolvedThreadRootId = wakeThreadRoot;
     }
 
     if (PGMessage && process.env.PG_HOST) {
@@ -2237,6 +2267,7 @@ class AgentMessageService {
       message: message as MessageNormalized,
       summary: persistedSummary,
       ...(threadRootDropped ? { threadRootDropped } : {}),
+      ...(wakeThreadRoot ? { wakeThreadRoot } : {}),
     };
   }
 

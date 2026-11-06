@@ -12,6 +12,10 @@ jest.mock('../../../models/AgentEvent', () => ({
   findByIdAndUpdate: jest.fn().mockResolvedValue({}),
 }));
 
+jest.mock('../../../services/threadRootResolver', () => ({
+  resolveThreadRoot: jest.fn(async ({ threadRootId }) => threadRootId),
+}));
+
 jest.mock('../../../services/outboundUrlGuard', () => ({
   postToPublicAddress: jest.fn(),
 }));
@@ -79,6 +83,17 @@ const event = {
 
 const agentUser = { _id: 'user_echo', username: 'echo-agent' };
 
+const { resolveThreadRoot } = require('../../../services/threadRootResolver');
+
+const withPg = async (run) => {
+  const saved = process.env.PG_HOST;
+  process.env.PG_HOST = 'test';
+  try { return await run(); } finally {
+    if (saved === undefined) delete process.env.PG_HOST;
+    else process.env.PG_HOST = saved;
+  }
+};
+
 const respondWith = (body) => postToPublicAddress.mockResolvedValue({
   ok: true,
   status: 200,
@@ -118,6 +133,32 @@ describe('webhook inline reply (TASK-015)', () => {
       installationConfig: installation.config,
     }));
     expect(recordedDelivery()).toEqual(expect.objectContaining({ outcome: 'posted' }));
+  });
+
+  test('an answer to a wake inside a thread stays in that thread', async () => {
+    respondWith({ outcome: 'posted', content: 'hi there' });
+
+    await withPg(() => AgentEventService.deliverEventViaWebhook(installation, { ...event, payload: { threadRootId: 129844 } }));
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ threadRootId: 129844 }));
+  });
+
+  test('a root that went away sends the answer to the channel, and it still counts as posted', async () => {
+    respondWith({ outcome: 'posted', content: 'hi there' });
+    resolveThreadRoot.mockRejectedValueOnce(new Error('thread_root_not_found'));
+
+    await withPg(() => AgentEventService.deliverEventViaWebhook(installation, { ...event, payload: { threadRootId: 129844 } }));
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ threadRootId: null }));
+    expect(recordedDelivery()).toMatchObject({ outcome: 'posted' });
+  });
+
+  test('an answer to a top-level wake names no thread', async () => {
+    respondWith({ outcome: 'posted', content: 'hi there' });
+
+    await AgentEventService.deliverEventViaWebhook(installation, event);
+
+    expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ threadRootId: null }));
   });
 
   test('a mention-enqueue runs for the posted reply, as on the CAP route', async () => {

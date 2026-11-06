@@ -121,6 +121,7 @@ const MENTION_CUES = [
   'formatConsultationCue',
   'formatMentionReplyCue',
   'formatHandoffCue',
+  'formatThreadAnswerCue',
 ];
 
 /**

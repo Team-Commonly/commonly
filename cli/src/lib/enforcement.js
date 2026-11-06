@@ -883,7 +883,10 @@ export const deliverChatReply = async ({
       // is present, because a continuation posted with a missing root would
       // silently become another top-level message — the exact flood this rung
       // exists to prevent.
-      const rootId = rootRes?.message?.id ?? rootRes?.message?._id ?? rootRes?.id ?? rootRes?._id;
+      // The kernel can file the headline in the thread the turn answers (F245),
+      // and a thread has one root, so its root wins over the headline's own id.
+      const rootId = rootRes?.message?.thread_root_id
+        ?? rootRes?.message?.id ?? rootRes?.message?._id ?? rootRes?.id ?? rootRes?._id;
       if (!rootId) throw new Error('no message id in post response — cannot root the thread');
       for (const chunk of chunks.slice(1)) {
         // eslint-disable-next-line no-await-in-loop
