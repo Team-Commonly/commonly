@@ -290,6 +290,15 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
   });
 
+  test('a contact mention in a DM does not pull a third agent in', async () => {
+    process.env.ENABLE_MENTION_AUTOJOIN = 'true';
+    setup({ podType: 'agent-room', contacts: { helper: { agentName: 'helper-bot', instanceId: 'default' } } });
+    jest.spyOn(AgentIdentityService, 'getOrCreateAgentUser').mockResolvedValue({ _id: '64ccccccccccccccccccccc1' });
+    await send(`@helper ${TEXT}`);
+    expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+    expect(calls('chat.mention').find((e) => e.agentName === 'helper-bot')).toBeUndefined();
+  });
+
   test('chat.mention via the alias fallback (@guide, two scout installs): rawContent is exactly what was typed', async () => {
     // With two scout installs the single-install rule leaves @guide out of the
     // mention map, so it resolves through MENTION_ALIASES and fans out to
