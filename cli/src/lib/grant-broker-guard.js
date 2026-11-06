@@ -193,6 +193,12 @@ export const confinementReason = (environment, adapter, platform = process.platf
   return null;
 };
 
+/** "claude, codex or opencode": the broker set, as a remedy names it. */
+const brokerAdapterList = () => {
+  const names = [...ADAPTERS_WITH_GRANT_BROKER];
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
+};
+
 const detailFor = (reason, adapter, environment, platform = process.platform) => {
   const drop = 'or drop the grant broker from this seat';
   if (reason === 'sandbox_mode_unenforceable' && platform === 'win32') {
@@ -201,11 +207,10 @@ const detailFor = (reason, adapter, environment, platform = process.platform) =>
   }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
-      + ' move this seat to the claude or codex'
-      + ` adapter, ${drop}`;
+      + ` move this seat to the ${brokerAdapterList()} adapter, ${drop}`;
   }
   if (reason === 'sandbox_absent') {
-    return 'this seat declares no sandbox block and this daemon derives one only for the claude and codex adapters,'
+    return 'this seat declares no sandbox block and none was derived for it,'
       + ` so it would run with a granter's authority and no confinement; declare sandbox.trust 'public' ${drop}`;
   }
   if (reason === 'sandbox_mode_none') {

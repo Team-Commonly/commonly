@@ -4367,3 +4367,14 @@ A person granted their agent GitHub through the grant broker, then revoked the g
 **Repair:** `grantRemovalCueService` adds one entry per agent to the grant's own `RoomGrant.removalCuePending` (ADR-034 D4 allows no new Mongo collection) when `revokeGrant` moves a live grant, which covers a direct revoke and a connection removal, and when a granter takes a named agent off a grant. `AgentEventService.enqueueEvent` claims the entries with an atomic `$pull` as it builds the agent's next `chat.mention` or `thread.mention`, and prepends one line to `payload.content`: "[access: GitHub access was removed by its owner. There is nothing to reconnect; ask them if you need it again.]". An entry whose agent holds a live grant on the same connector again is dropped unread. `backend/__tests__/service/grantRemovalCue.test.js` covers revoke, removal, re-grant, another agent and concurrent builds on real mongod.
 
 **Lesson:** when the kernel takes a capability away, a missing tool is not enough information for the agent. Say what changed and who changed it, inline, on the next turn.
+
+## 100. "Never set threadRootId" taught the seat that replyToMessageId stays top-level (2026-11-05, launch)
+
+*Origin: Growth's walk of CLI 0.1.258, after #3499 told a seat to answer a top-level mention top-level.*
+
+#3499 added a line beside each top-level mention: post your answer top-level, and never set `threadRootId` to this message's id. On the next walk the mention shared a turn with the seat's greeting. The seat obeyed the line as written and posted through `commonly_post_message` with `replyToMessageId` set to the mention instead. The kernel files every reply in its parent's thread (`COALESCE(parent.thread_root_id, parent.id)` in `models/pg/Message.ts`), so the answer threaded anyway. The MCP tool's description fed the wrong model: it said `replyToMessageId` "addresses a specific message AND pings its author" and `threadRootId` "continues an existing thread", which reads as if only the second one threads.
+
+**Repair:** #3511. The cue names both fields and says why: a reply is filed in the thread of the message it replies to. The MCP description of `replyToMessageId` says it files the post in that message's thread.
+
+**Lesson:** a prohibition that names one field reads as permission for its sibling. When two fields reach the same storage effect, name the effect, and name every field that causes it.
+

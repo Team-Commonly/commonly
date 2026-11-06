@@ -1,9 +1,10 @@
 /**
- * Local sandbox support and server grant-broker admission are separate.
- * OpenCode enforces a public sandbox locally, but it remains ineligible for the
- * broker until the server's per-adapter confinement proof includes it. Keep
- * this literal pin independent of the sandbox set so adding a sandbox-capable
- * adapter cannot silently grant it room credentials.
+ * Local sandbox support and grant-broker admission are separate. An adapter
+ * joins the broker set only with its server twin (CONFINING_ADAPTERS in
+ * backend/services/grantBrokerConfinement.ts) and a test that its own tools
+ * cannot read the per-spawn credential (OpenCode: F175a). Keep this literal pin
+ * independent of the sandbox set so adding a sandbox-capable adapter cannot
+ * silently grant it room credentials.
  */
 import { listAdapterNames } from '../src/lib/adapters/index.js';
 import { ADAPTERS_WITH_GRANT_BROKER } from '../src/lib/default-environment.js';
@@ -20,7 +21,7 @@ describe('adapter registry and grant-broker admission stay explicit', () => {
     const eligible = new Set([...ADAPTERS_WITH_GRANT_BROKER, 'stub']);
     const withheld = names.filter((name) => !eligible.has(name));
 
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
-    expect(withheld.sort()).toEqual(['dsh', 'goose', 'hermes', 'opencode', 'pi', 'qwen']);
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode']);
+    expect(withheld.sort()).toEqual(['dsh', 'goose', 'hermes', 'pi', 'qwen']);
   });
 });

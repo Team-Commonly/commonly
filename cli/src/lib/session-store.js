@@ -21,13 +21,14 @@
  * restart can still suppress a re-delivered event whose ack previously failed.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
 const sessionsDir = () => join(homedir(), '.commonly', 'sessions');
 const sessionsFile = (agentName) => join(sessionsDir(), `${agentName}.json`);
 const handledEventsFile = (agentName) => join(sessionsDir(), `${agentName}.events.json`);
+const noticesFile = (agentName) => join(sessionsDir(), `${agentName}.notices.json`);
 const MAX_HANDLED_EVENTS = 500;
 const handledEventsCache = new Map();
 
@@ -138,10 +139,51 @@ export const recordHandledEvent = (agentName, eventId) => {
   handledEventsCache.set(agentName, { ids, set: new Set(ids) });
 };
 
+// F178: when the wrapper last posted a rate-limited pod notice, by key, so a
+// notice is not repeated every turn and a restarted seat remembers it.
+// Shape on disk: { "<key>": "<ISO time>" }.
+const readNotices = (agentName) => {
+  const file = noticesFile(agentName);
+  if (!existsSync(file)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+/** True when no notice under `key` was recorded within the last `windowMs`. */
+export const noticeDue = (agentName, key, windowMs, now = Date.now()) => {
+  if (!agentName || !key) return false;
+  const last = Date.parse(readNotices(agentName)[key]);
+  return !Number.isFinite(last) || now - last >= windowMs || last > now;
+};
+
+export const recordNotice = (agentName, key, now = Date.now()) => {
+  if (!agentName || !key) return;
+  const state = readNotices(agentName);
+  state[key] = new Date(now).toISOString();
+  if (!existsSync(sessionsDir())) mkdirSync(sessionsDir(), { recursive: true });
+  // Temp file then rename, so a crash mid-write never leaves a torn file, and
+  // 0600 because the record says which models this seat's key cannot use.
+  const file = noticesFile(agentName);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600 });
+    renameSync(tmp, file);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+};
+
 export const clearSessions = (agentName) => {
   const file = sessionsFile(agentName);
   if (existsSync(file)) rmSync(file);
   const eventsFile = handledEventsFile(agentName);
   if (existsSync(eventsFile)) rmSync(eventsFile);
+  const notices = noticesFile(agentName);
+  if (existsSync(notices)) rmSync(notices);
   handledEventsCache.delete(agentName);
 };

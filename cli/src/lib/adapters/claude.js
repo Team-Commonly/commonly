@@ -85,6 +85,7 @@ import {
   normalizeSandboxTrust,
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
@@ -1458,6 +1459,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       // link refuses the turn (fail-closed). A workspace seat's folder is the
       // operator's own choice, which may be a link, and keeps following it.
       pinWorkspace: sandboxTrust === 'public',
+      // F200: a workspace seat's folder is held to the realpath recorded on
+      // its first turn, and that record is never writable from the jail.
+      expectedWorkspaceRealpath: ctx.workspaceRealpath || null,
+      denyWritePaths: ctx.workspacePinDirs || [],
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
@@ -1524,6 +1529,10 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { statePath } = ctx.publicClaudeState;
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
+      // F200: bwrap resolves a bind source when the jail starts, after the
+      // check, so the checked realpath is the source, mounted at the path the
+      // seat was given.
+      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
       workspaceReadOnly: !grants.includes('write'),
       readOnlyWorkspaceEntries: ['.git'],
       homePath: statePath,
@@ -1720,6 +1729,14 @@ export default {
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    // F200: a jailed workspace seat's folder must still resolve where it did
+    // on the seat's first turn, or a link the seat left in its place would
+    // carry this turn's grant elsewhere. The record sits beside the seat's
+    // state folder, the one bwrapClaudeStatePath names for both jails.
+    const heldWorkspace = ctx.environment?.sandbox?.trust === 'workspace' && Boolean(ctx.cwd)
+      && (publicNativeSandbox || workspaceBwrapSandbox);
+    const workspacePinDirs = heldWorkspace ? [workspacePinDir(bwrapClaudeStatePath(ctx))] : [];
+    let workspaceRealpath = null;
     // The proxy's address and per-turn token, never the host's key.
     const withProvider = (env) => {
       if (providerProxy) {
@@ -1733,6 +1750,11 @@ export default {
       ...spawnCredentials(spawnContext), providerProxy?.token,
     ].filter(Boolean);
     try {
+      // Checked (and recorded, the first time) before the state is prepared
+      // or anything is spawned.
+      if (heldWorkspace) {
+        workspaceRealpath = await holdWorkspaceRealpath({ cwd: ctx.cwd, statePath: bwrapClaudeStatePath(ctx) });
+      }
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
@@ -1854,6 +1876,8 @@ export default {
         publicClaudeState,
         publicSkillArgs,
         providerProxyPort: proxyPort(providerProxy),
+        workspaceRealpath,
+        workspacePinDirs,
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);

@@ -428,6 +428,9 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
       scopeMode: Array.isArray(issued.scopes) && issued.scopes.length > 0 ? 'scoped' : 'all',
     });
   } catch (error) {
+    if ((error as { code?: string })?.code === 'in_process_agent_no_token') {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: (error as Error).message });
+    }
     console.error('Error issuing agent user token:', error);
     return res.status(500).json({ error: 'Failed to issue user token' });
   }

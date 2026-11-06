@@ -25,8 +25,9 @@
  * refuse the working path.
  *
  * The server also refuses a named adapter absent from CONFINING_ADAPTERS,
- * even when the adapter has a local sandbox. OpenCode remains absent until its
- * public enforcement is reviewed for server-side broker admission.
+ * even when the adapter has a local sandbox (Goose, Qwen Code). OpenCode was
+ * admitted in F175a, once its public seat was shown to keep the per-spawn
+ * credential out of its own tools' reach (cli adapters/opencode.js).
  *
  * Two further cases ARE host-independent, so they are decided here as well
  * (Vera 69810):
@@ -42,9 +43,8 @@
  *    (`cli/src/lib/environment.js` `ALLOWED_SANDBOX_MODES`) accepts more modes
  *    than any adapter enforces: `firejail`, `container` and `managed` appear
  *    nowhere else in `cli/src`, so a seat declaring one fails every host the
- *    same way. Claude and Codex implement {workspace, read-only}; Claude adds
- *    `bwrap` for Linux. OpenCode implements the same modes locally but is not
- *    admitted to this server's map yet. A mode that is not a string belongs
+ *    same way. Claude, Codex and OpenCode implement {workspace, read-only};
+ *    Claude and OpenCode add `bwrap` for Linux. A mode that is not a string belongs
  *    here too: every adapter compares it with `===` against a string, so
  *    `['bwrap']` confines nothing even though it stringifies to a mode that
  *    does.
@@ -74,6 +74,9 @@ export const LEGACY_SANDBOX_TRUST: Readonly<Record<string, string>> = Object.fre
 export const CONFINING_ADAPTERS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['claude', new Set(['workspace', 'read-only', 'bwrap'])],
   ['codex', new Set(['workspace', 'read-only'])],
+  // F175a: Seatbelt workspace/read-only on macOS, bwrap on Linux; a public
+  // OpenCode seat on any other mode refuses to spawn (adapters/opencode.js).
+  ['opencode', new Set(['workspace', 'read-only', 'bwrap'])],
 ]);
 
 export const KNOWN_CONFINING_ADAPTERS = [...CONFINING_ADAPTERS.keys()].join(', ');
@@ -142,8 +145,8 @@ export const adapterForRuntimeBinding = (runtime: unknown): string | null => {
 
 /**
  * Every mode ANY of the enforcing adapters implements for a public seat:
- * {workspace, read-only} in both claude and codex, plus `bwrap` (claude's
- * Linux path). A declared mode outside this set confines nowhere, so the
+ * {workspace, read-only} in claude, codex and opencode, plus `bwrap` (the
+ * Linux path of claude and opencode). A declared mode outside this set confines nowhere, so the
  * server can refuse it without resolving the host.
  */
 export const PUBLIC_HOST_MODES: ReadonlySet<string> = new Set(['workspace', 'read-only', 'bwrap']);

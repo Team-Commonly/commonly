@@ -225,8 +225,8 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
       }
       // The grant broker is the one http entry that carries AUTHORITY rather
       // than data: a granted seat acts on external systems as the granter. pi is
-      // not admitted to grant-broker confinement (ADAPTERS_WITH_GRANT_BROKER is
-      // claude and codex; a public pi's Seatbelt jail, F113b, has not been
+      // not admitted to grant-broker confinement (it is not in
+      // ADAPTERS_WITH_GRANT_BROKER; a public pi's Seatbelt jail, F113b, has not been
       // reviewed for that), so the reach is refused here as well as at the
       // server's projection — this
       // layer is what holds when the backend predates that refusal, when the

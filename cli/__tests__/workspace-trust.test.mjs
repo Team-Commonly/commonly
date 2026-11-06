@@ -74,6 +74,12 @@ describe('workspace start directory', () => {
       .toBe('the start directory is inside ~/.commonly');
   });
 
+  test('a folder inside a credential store is refused even when its name starts with two dots', () => {
+    const inner = join(home, '.ssh', '..cache');
+    mkdirSync(inner, { recursive: true });
+    expect(workspaceStartDirRefusal(inner, { home })).toMatch(/inside ~\/\.ssh/);
+  });
+
   test('a relative path is refused', () => {
     expect(workspaceStartDirRefusal('code/repo', { home }))
       .toBe('the start directory is not an absolute path');

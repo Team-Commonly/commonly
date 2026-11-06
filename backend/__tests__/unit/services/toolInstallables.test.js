@@ -22,6 +22,8 @@ const githubTools = () => getToolDefinitions().filter((d) => d.connectionType ==
 const brokerTools = githubTools();
 const SEAT_PUSH_TOOL = 'github.push_branch';
 
+const { PR_WRITE_TOOLS } = require('../../../services/prWriteScope');
+
 describe('the builtin GitHub tool Installable', () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -55,6 +57,7 @@ describe('the builtin GitHub tool Installable', () => {
     projected.forEach((tool) => {
       expect(tool.requiredWriteMode).toBe(TOOL_DEFINITIONS[tool.name].requiredWriteMode);
       expect(tool.irreversible).toBe(Boolean(TOOL_DEFINITIONS[tool.name].irreversible));
+      expect(tool.prWrite === true).toBe(PR_WRITE_TOOLS.includes(tool.name));
     });
     expect(JSON.stringify(installable)).not.toMatch(/GITHUB_APP_|PRIVATE_KEY|ghs_/i);
   });

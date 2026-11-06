@@ -1118,7 +1118,7 @@
         }
       },
       "title": "把你已经在用的带过来。",
-      "appsNote": "智能体对 Linear 和 GitHub 只有读取权限。"
+      "appsNote": "智能体可以读取 Linear 和 GitHub。"
     },
     "agentTeams": {
       "kicker": "智能体团队",
@@ -2742,6 +2742,7 @@
     "agentsAllowed": "可使用的智能体",
     "ask": "申请",
     "asksEveryWrite": "如有写入，需先确认",
+    "asksPrWrite": "每次提交、推送和发起 PR 前都需要你确认",
     "asksFirst": "调用前需人工确认",
     "asksList": "{{tools}} 调用前需确认",
     "asksNothing": "无需确认",
@@ -2806,6 +2807,9 @@
     "modeRead": "读取",
     "modeWrite": "读取和写入",
     "modeWriteConfirm": "读取和写入，写入前需确认",
+    "modePrWrite": "读取，以及经你批准后发起 PR",
+    "prWriteEnds": "这次更改会取消此授权的 PR 权限。",
+    "prWriteChoice": "智能体还可以从自己的分支发起 PR。每次提交、推送和发起 PR 都要你批准。",
     "existingConnection": "现有连接",
     "noLongerOffered": "此连接器已不在本实例提供。",
     "removeConnection": "移除连接",
@@ -2930,8 +2934,9 @@
       "consent": "{{agent}} 运行在你的电脑上，不在 Commonly 里。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
       "consentNoSandbox": "{{agent}} 运行在你的电脑上，不在 Commonly 里，也没有沙箱。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
       "readOnlyHint": "运行在你电脑上的智能体只能读取。",
+      "prWriteConsent": "{{agents}} 还能向这个仓库提交代码和发起 PR，每次都要你批准。",
       "reasonUnconfinedHost": "运行在原生 Windows 上，用不了任何授权。",
-      "reasonAdapterUnsupported": "只能指定 Claude Code 或 Codex 智能体。",
+      "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
       "namedHeading": "运行在你电脑上",
       "named": "{{agent}} 在 Commonly 之外运行",
       "namedNoSandbox": "{{agent}} 在 Commonly 之外运行，没有沙箱",
@@ -2947,7 +2952,7 @@
         "notAgent": "授权中只能指定智能体。",
         "notOwned": "你只能指定由你独自安装的智能体。",
         "unconfinedHost": "这个智能体运行在原生 Windows 上，用不了任何授权。",
-        "adapterUnsupported": "授权中只能指定 Claude Code 或 Codex 智能体。"
+        "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。"
       }
     }
   },
@@ -3290,7 +3295,12 @@
     "other": "其他…",
     "otherPlaceholder": "完整的模型 ID",
     "answeredIn": "用 {{harness}} 回复，耗时{{seconds}}秒",
-    "answeredWith": "用 {{harness}} 回复"
+    "answeredWith": "用 {{harness}} 回复",
+    "listSeparator": "、",
+    "listOr": " 或 ",
+    "noConnectors": "连接器需要带沙箱的运行器。{{tool}} 运行时没有沙箱，所以用不了连接器。",
+    "noConnectorsYet": "{{tool}} 暂时还用不了连接器。",
+    "noConnectorsWindows": "Windows 上暂时还用不了连接器。"
   },
   "outsiderNarrowing": {
     "install": {

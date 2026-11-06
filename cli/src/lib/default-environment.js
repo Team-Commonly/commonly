@@ -52,10 +52,12 @@ export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'openco
 // adapter runs (D247 walk, 11-04; F113b).
 export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi']);
 
-// The server has not yet admitted OpenCode to its grant-broker confinement
-// allowlist. Keep runtime sandbox support separate from the narrower set of
-// adapters that may receive a room grant.
-export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex']);
+// Adapters that may receive a room grant: each confines a public seat AND keeps
+// the per-spawn credential out of its own tools' reach (OpenCode: F175a, its
+// external_directory deny with the credential outside --dir). Narrower than the
+// sandbox sets above on purpose, and mirrored by the server's
+// CONFINING_ADAPTERS (backend/services/grantBrokerConfinement.ts).
+export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex', 'opencode']);
 
 /**
  * The sandbox an unconfigured seat gets.

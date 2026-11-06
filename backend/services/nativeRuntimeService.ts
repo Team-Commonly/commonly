@@ -45,6 +45,7 @@ import { nativeCueFromKernel } from './nativeKernelCue';
 import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
+import { carriesOtherAuthors } from './mentionCoalesce';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
@@ -1574,6 +1575,8 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
     ? trigger.payload as Record<string, unknown> : {}) as Record<string, unknown>;
   const senderId = typeof payload.userId === 'string' ? payload.userId.trim() : '';
   if (!payload.messageId || !senderId) return false;
+  // A coalesced message rides in this turn's text under someone else's name.
+  if (carriesOtherAuthors(payload)) return false;
   try {
     const User = require('../models/User');
     const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: unknown } | null;
@@ -2285,6 +2288,7 @@ export async function runAgent(
     installationConfig: cfg,
     computerRequesterId: SENDER_WRITTEN_EVENT_TYPES.has(String(trigger.type))
       && (trigger.payload as { messageId?: unknown } | null)?.messageId
+      && !carriesOtherAuthors(trigger.payload)
       ? String((trigger.payload as { userId?: unknown }).userId || '')
       : undefined,
     ownUserId: null,

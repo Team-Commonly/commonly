@@ -47,6 +47,86 @@ const ownershipInstallations = async (agentName: string, instanceId: string): Pr
   return installations.filter((installation) => !dmPodIds.has(String(installation.podId)));
 };
 
+/**
+ * One runtime per agent identity: it runs in process or it holds a token. The
+ * issuers (routes/registry/tokens.ts) refuse an identity with an in-process
+ * installation. The routes that write an in-process installation ask this
+ * instead: before the write, and again after it, taking the row back. Every
+ * installation counts, whatever its status: a key on a stopped row is still a
+ * key. Reads the runtime tokens on the bot user and on its installations, and
+ * the bot's user token.
+ */
+export const identityHoldsRuntimeToken = async (agentName: string, instanceId: string): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentIdentityService = require('./agentIdentityService');
+  const username = AgentIdentityService.buildAgentUsername(
+    AgentIdentityService.resolveAgentType(agentName), instanceId,
+  );
+  const botHolds = await User.exists({
+    username,
+    isBot: true,
+    $or: [{ 'agentRuntimeTokens.0': { $exists: true } }, { apiTokenHash: { $type: 'string' } }],
+  });
+  if (botHolds) return true;
+  const sibling = await AgentInstallation.findOne({ agentName, instanceId, 'runtimeTokens.0': { $exists: true } })
+    .collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
+  return Boolean(sibling);
+};
+
+/** The refusal body for an in-process write on an identity that holds a token. */
+export const RUNTIME_TOKEN_HELD = {
+  code: 'runtime_token_held',
+  error: 'This agent already holds a token, so it can\'t run on Commonly as well. '
+    + 'Revoke the token first, or use a different name.',
+} as const;
+
+/**
+ * Nothing active and something uninstalled: the install paths revoke what such
+ * an identity left behind (revokeRuntimeTokensAfterLastUninstall), and no token
+ * route can reach it first, because each one needs an active row.
+ */
+export const identityIsDormant = async (agentName: string, instanceId: string): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const statusRow = (status: string) => AgentInstallation.exists(
+    { agentName, instanceId, status }, { collation: RUNTIME_INSTALLATION_COLLATION },
+  );
+  return Boolean(await statusRow('uninstalled')) && !(await statusRow('active'));
+};
+
+const RESTORED_FIELDS = ['status', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite'];
+
+/**
+ * Undo an installation write, as the issuer takes a token back after its own
+ * re-check. `previous` is the row as it stood before the write, null if there
+ * was none.
+ */
+export const takeBackInstallation = async (
+  key: { agentName: unknown; podId: unknown; instanceId: unknown },
+  previous: Record<string, unknown> | null,
+): Promise<void> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const row = {
+    agentName: { $eq: key.agentName }, podId: { $eq: key.podId }, instanceId: { $eq: key.instanceId },
+  };
+  if (!previous) {
+    await AgentInstallation.deleteOne(row);
+    return;
+  }
+  const $set: Record<string, unknown> = {};
+  const $unset: Record<string, 1> = {};
+  RESTORED_FIELDS.forEach((field) => {
+    if (previous[field] === undefined) $unset[field] = 1;
+    else $set[field] = previous[field];
+  });
+  await AgentInstallation.updateOne(row, { $set, ...(Object.keys($unset).length ? { $unset } : {}) });
+};
+
 /** Explain a genuine second installer to the first installer in Settings. */
 export type RuntimeIdentityBlocker = { podName: string; installerName: string };
 export const describeRuntimeIdentityBlockers = async (

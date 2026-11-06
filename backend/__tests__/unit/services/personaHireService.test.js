@@ -14,6 +14,10 @@
  *  - it speaks first: the manifest's introMessage posts on placement
  */
 
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { findOneAndUpdate: jest.fn() },
   AgentRegistry: { findOne: jest.fn() },

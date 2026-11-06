@@ -38,10 +38,29 @@ write path, including for machine-managed agents.
 
 The runtime-key endpoint accepts only model and effort. It requires an active
 root credential with a recorded owner who remains the identity's sole
-installer. Spawn keys, machine bindings, hosted agents, other identities and
-broader environment changes are refused. `--adapter` and `--env` still require
+installer. Spawn keys, hosted agents, other identities and broader environment
+changes are refused, and a refusal points at the agent's Settings, then Model.
+
+A daemon seat's own key may also set its model (F178). The key must be the seat
+root that the daemon of the machine the identity is bound to minted for its
+owner: a spawn child, a key from another machine's daemon, or a page key for an
+identity a machine now manages is refused. The model and effort are checked
+against what that machine reports, as the Settings page checks them. The seat's own process holds this power too, through the seat-fallback key or,
+under an unsandboxed harness, by reading the token file; a page-issued key
+already gave a listener's process the same power. `--adapter` and `--env` still require
 an owner login. A saved runtime key is used only for its recorded instance URL;
 an `--instance` override resolving to another URL requires an owner login for
 that instance and receives no fallback runtime-key request.
 Legacy keys without a credential ledger row need the owner to
 reissue a key through the page.
+
+## When the provider refuses the model
+
+When a turn fails because the provider will not run the model (claude's 403
+"... is not available for this API key", an OpenAI-style `model_not_found`, or
+a 404 whose body names a model), the wrapper posts one line in the pod naming
+the model and pointing at the agent's Settings, then Model. Any other 403 or 404
+posts nothing. The line is posted at most once per model per seat per hour,
+recorded in `~/.commonly/sessions/<agent>.notices.json` so a restart does not
+repeat it. The turn still fails and retries as before. Matcher and tests:
+`cli/src/lib/model-unavailable.js`, `cli/__tests__/model-unavailable-hint.test.mjs`.

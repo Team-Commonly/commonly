@@ -1738,6 +1738,202 @@ describe('F221: connecting your own repository', () => {
   });
 });
 
+describe('F214: pull-request access in the grant form', () => {
+  const PR_TOOLS = ['github.create_pull_request', 'github.commit_files', 'github.push_branch'];
+  const CHOICE = /open pull requests from their own branch/;
+  const appEntry = {
+    ...githubEntry,
+    connectionType: 'github-app',
+    tools: [
+      { name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false },
+      { name: 'github.create_issue', requiredWriteMode: 'write-with-confirm', irreversible: false },
+      ...PR_TOOLS.map((name) => ({ name, requiredWriteMode: 'write-with-confirm', irreversible: false, prWrite: true })),
+    ],
+  };
+  const openAdd = async (entries = [appEntry], seats = { p1: [scout], p2: [] }, route) => {
+    mockTools({ entries, grants: [], seats, route });
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    renderPage();
+    const popover = await openToolPopover('GitHub');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    return screen.findByRole('complementary', { name: 'Add GitHub' });
+  };
+  const mintBody = () => axios.post.mock.calls.find(([url]) => url === '/api/grants')[1];
+
+  it('is off by default, and that mint carries no write', async () => {
+    const form = await openAdd();
+    expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+    expect(mintBody()).not.toHaveProperty('prWrite');
+  });
+
+  it('mints the read tools and the PR tools, no other write, and says every one asks first', async () => {
+    const form = await openAdd();
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    expect(within(form).getByText('every commit, push and pull request asks you first')).toBeInTheDocument();
+    PR_TOOLS.forEach((name) => expect(within(form).getByText(name)).toBeInTheDocument());
+    expect(within(form).queryByText('github.create_issue')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({
+      writeMode: 'write-with-confirm', prWrite: true, tools: ['github.list_issues', ...PR_TOOLS],
+    });
+  });
+
+  it('is not offered on a connection that is not a GitHub App', async () => {
+    const form = await openAdd([{ ...appEntry, connectionType: 'hosted-mcp', entryId: 'github' }]);
+    expect(within(form).queryByRole('checkbox', { name: CHOICE })).toBeNull();
+  });
+
+  it('adds the PR writes to an outside agent\'s consent, and ticking it clears an earlier consent', async () => {
+    const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+    const agents = [{ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined' }];
+    const route = (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+    const form = await openAdd([appEntry], { p1: [scout, claude], p2: [] }, route);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    const consent = () => within(form).getByRole('checkbox', { name: /runs on your computer/ });
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(consent());
+    expect(grant).toBeEnabled();
+
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    expect(grant).toBeDisabled();
+    expect(consent()).toHaveAccessibleName(expect.stringContaining('send commits and pull requests to this repository'));
+
+    fireEvent.click(consent());
+    fireEvent.click(grant);
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'write-with-confirm', prWrite: true, byoAgents: ['b1'], byoConsent: true });
+  });
+
+  describe('on a grant that holds it', () => {
+    const held = {
+      ...grantLive, grantId: 'grant_pr', prWrite: true, connectionId: 'conn-1', tools: ['github.list_issues', ...PR_TOOLS],
+    };
+
+    it('the detail names it, and Change access keeps it', async () => {
+      mockTools({ entries: [appEntry], grants: [held], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      axios.post.mockResolvedValue({ data: { grantId: 'grant_new', revoked: 1 } });
+      renderPage();
+      const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+      expect(within(aside).getByText('read, plus pull requests you approve')).toBeInTheDocument();
+      expect(within(aside).getByText('every commit, push and pull request asks you first')).toBeInTheDocument();
+
+      fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
+      const form = await screen.findByRole('complementary', { name: 'Change access' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).toBeChecked();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant_pr/revoke', undefined, expect.anything()));
+      expect(mintBody()).toMatchObject({ writeMode: 'write-with-confirm', prWrite: true });
+    });
+
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const openChange = async (grant, entry = twoRepos) => {
+      mockTools({ entries: [entry], grants: [grant], seats: { p1: [scout], p2: [] }, trails: { [grant.grantId]: { ...trail, grantId: grant.grantId } } });
+      axios.post.mockResolvedValue({ data: { grantId: 'grant_new', revoked: 1 } });
+      renderPage();
+      const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Change access' }));
+      return { aside, form: await screen.findByRole('complementary', { name: 'Change access' }) };
+    };
+    const ENDS = 'This change ends pull-request access on this grant.';
+
+    it('names it on the list row too', async () => {
+      mockTools({ entries: [twoRepos], grants: [{ ...held, connectionId: 'conn-b' }], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      await openTool('GitHub');
+      expect(await screen.findByRole('img', { name: 'read, plus pull requests you approve' })).toHaveAttribute('aria-label', 'read, plus pull requests you approve');
+    });
+
+    it('Change access stays on the grant\'s own repository', async () => {
+      const { form } = await openChange({ ...held, connectionId: 'conn-b' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).toBeChecked();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ connectionId: 'conn-b', prWrite: true });
+    });
+
+    it('Change access never adds a PR tool the grant did not name', async () => {
+      const narrow = { ...held, connectionId: 'conn-b', tools: ['github.create_pull_request', 'github.commit_files'] };
+      const { form } = await openChange(narrow);
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody().tools).toEqual(['github.list_issues', 'github.create_pull_request', 'github.commit_files']);
+    });
+
+    it.each([
+      ['its connection is no longer offered', { connectionId: 'conn-gone' }],
+      ['it is a child grant', { connectionId: 'conn-b', parentGrantId: 'grant_root', rootGrantId: 'grant_root' }],
+    ])('says Change access ends it when %s, and mints a read grant', async (_, over) => {
+      const { form } = await openChange({ ...held, ...over });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).getByText(ENDS)).toBeInTheDocument();
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await waitFor(() => expect(axios.post).toHaveBeenCalled());
+      expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+      expect(mintBody()).not.toHaveProperty('prWrite');
+    });
+
+    it('an ended grant opens without it and says nothing is ending', async () => {
+      const ended = { ...held, connectionId: 'conn-b', revokedAt: iso(-1000), revokedBy: 'u1' };
+      mockTools({ entries: [twoRepos], grants: [ended], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      const drawer = await openTool('GitHub');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
+      const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+      expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
+      expect(within(form).queryByText(ENDS)).toBeNull();
+    });
+  });
+
+  it('is not offered when the catalogue does not hold the tool that opens the pull request', async () => {
+    const form = await openAdd([{ ...appEntry, tools: appEntry.tools.filter((tool) => tool.name !== 'github.create_pull_request') }]);
+    expect(within(form).queryByRole('checkbox', { name: CHOICE })).toBeNull();
+  });
+
+  it('unticking it sends no PR tool and no prWrite', async () => {
+    const form = await openAdd();
+    const box = within(form).getByRole('checkbox', { name: CHOICE });
+    fireEvent.click(box);
+    fireEvent.click(box);
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    expect(mintBody()).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+    expect(mintBody()).not.toHaveProperty('prWrite');
+  });
+
+  it('a consent for one repository does not carry to another', async () => {
+    const twoRepos = {
+      ...appEntry,
+      connections: [
+        { connectionId: 'conn-a', owner: 'Team-Commonly', repo: 'a' },
+        { connectionId: 'conn-b', owner: 'Team-Commonly', repo: 'b' },
+      ],
+    };
+    const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+    const agents = [{ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined' }];
+    const route = (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+    const form = await openAdd([twoRepos], { p1: [scout, claude], p2: [] }, route);
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
+    fireEvent.click(within(form).getByRole('checkbox', { name: /runs on your computer/ }));
+    expect(grant).toBeEnabled();
+    fireEvent.change(within(form).getByLabelText('connection'), { target: { value: 'conn-b' } });
+    expect(grant).toBeDisabled();
+  });
+});
+
 describe('F94: naming your own agent that runs outside Commonly', () => {
   const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
   const candidate = (over = {}) => ({ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined', ...over });
@@ -1838,6 +2034,22 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
+  });
+
+  // F175a: a harness that can't hold a grant names the ones that can.
+  it('an agent on a harness with no sandbox is offered disabled, naming the harnesses that can', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' })]);
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText('Connectors need a sandboxed harness: only Claude Code, Codex or OpenCode agents can be named.'))
+      .toBeInTheDocument();
+  });
+
+  it('a mint refused for its harness reads in the page\'s words, naming the full set', async () => {
+    const form = await openAdd([candidate()]);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'byo_adapter_unsupported', message: 'raw' } } });
+    fireEvent.click(consentBox(form));
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByText('Only a Claude Code, Codex or OpenCode agent can be named on a grant.')).toBeInTheDocument();
   });
 
   it('an agent the roster hides still appears so it can be named', async () => {
