@@ -16,11 +16,11 @@
   "innerRatio": 6.28
  },
  "chat-agents-away-1440": {
-  "helperWords": 79,
+  "helperWords": 46,
   "innerRatio": 1
  },
  "chat-agents-away-390": {
-  "helperWords": 48,
+  "helperWords": 15,
   "innerRatio": 1
  },
  "chat-trace-390": {
@@ -64,7 +64,7 @@
   "innerRatio": 1
  },
  "connectors-1440": {
-  "helperWords": 36,
+  "helperWords": 5,
   "innerRatio": 1
  },
  "connectors-390": {
@@ -72,19 +72,19 @@
   "innerRatio": 1
  },
  "byo-1440": {
-  "helperWords": 39,
+  "helperWords": 15,
   "innerRatio": 1
  },
  "byo-handoff-1440": {
-  "helperWords": 141,
+  "helperWords": 118,
   "innerRatio": 1
  },
  "byo-390": {
-  "helperWords": 28,
+  "helperWords": 4,
   "innerRatio": 1.03
  },
  "byo-handoff-390": {
-  "helperWords": 130,
+  "helperWords": 107,
   "innerRatio": 1.31
  },
  "connect-1440": {

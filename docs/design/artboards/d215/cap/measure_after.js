@@ -121,7 +121,8 @@ async function artboard() {
         const t = w.currentNode, txt = t.nodeValue.trim(); if (!txt) continue;
         const el = t.parentElement; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         if (!(r.width > 0 && r.height > 0) || cs.visibility === 'hidden') continue;
-        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.seg,.sel,.mnote .sn')) continue;
+        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.pop,.seg,.sel,.mnote .sn')) continue;
+        if (el.closest('details:not([open])') && !el.closest('summary')) continue;
         const [R, G, B] = cs.color.match(/\d+/g).map(Number); const sat = Math.max(R, G, B) - Math.min(R, G, B), avg = (R + G + B) / 3;
         if (sat < 50 && avg > 60 && avg < 200) words += txt.split(/\s+/).filter(x => /[A-Za-z一-鿿]/.test(x)).length;
       }
@@ -143,7 +144,8 @@ async function artboard() {
 
 // The counter that produced the before numbers on prod, minus memory note text.
 const METRICS = () => {
-  const hidden = el => { const box = el.getBoundingClientRect(); if (box.width <= 1 || box.height <= 1) return true; return !!el.closest('details:not([open])') && !el.closest('summary'); };
+  const clipped = el => { const box = el.getBoundingClientRect(), cs = getComputedStyle(el); return (box.width <= 1 || box.height <= 1) && (cs.overflow === 'hidden' || cs.clipPath !== 'none' || cs.clip !== 'auto'); };
+  const hidden = el => clipped(el) || (!!el.closest('details:not([open])') && !el.closest('summary'));
   const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   let best = null, bestH = 0;
   for (const el of document.querySelectorAll('*')) { const cs = getComputedStyle(el); if (!/(auto|scroll)/.test(cs.overflowY)) continue; if (el.clientHeight < 250) continue; const ex = el.scrollHeight - el.clientHeight; if (ex > bestH) { bestH = ex; best = el; } }
