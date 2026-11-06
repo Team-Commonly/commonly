@@ -57,42 +57,30 @@ describe('Scout welcome locale', () => {
   // Scout waiting on them. Three never answered "What's the project?".
   describe('the start-pod first move', () => {
     // eslint-disable-next-line global-require
-    const { scoutApp, SCOUT_FIRST_TASK, SCOUT_AGENT_OFFER } = require('../../../config/native-agents/scout');
+    const { scoutApp, SCOUT_OFFER_COPY } = require('../../../config/native-agents/scout');
     const prompt = scoutApp.systemPrompt;
+    const { en } = SCOUT_OFFER_COPY;
 
-    it('puts one task on the board instead of asking', () => {
-      expect(SCOUT_FIRST_TASK).toBe('Read your repo and say what to do first');
-      expect(prompt).toContain(`Call commonly_create_task once with the title "${SCOUT_FIRST_TASK}"`);
+    it('hands the move to the tool instead of asking', () => {
+      expect(en.firstTask).toBe('Read your repo and say what to do first');
+      expect(prompt).toContain('Call commonly_offer_own_agent with addFirstTask true');
       expect(prompt).not.toContain('ask what the project is if');
-      expect(scoutApp.tools).toContain('commonly_create_task');
+      expect(scoutApp.tools).toContain('commonly_offer_own_agent');
     });
 
-    it('offers their own agent, then the pod, in one fixed line', () => {
-      expect(SCOUT_AGENT_OFFER).toBe("I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.");
-      expect(prompt).toContain(`"${SCOUT_AGENT_OFFER}"`);
-    });
-
-    it('lists Connect first, Run it here second, and says it can\'t read a repo', () => {
-      const connect = SCOUT_AGENT_OFFER.indexOf('connect Claude Code or Codex');
-      const runHere = SCOUT_AGENT_OFFER.indexOf('run one here');
-      const pod = SCOUT_AGENT_OFFER.indexOf('tell me the project');
-      expect(connect).toBeGreaterThan(-1);
-      expect(runHere).toBeGreaterThan(connect);
-      expect(pod).toBeGreaterThan(runHere);
-      expect(SCOUT_AGENT_OFFER).toContain("which can't open repos yet");
-    });
-
-    it('sends the offer with the hosted button, and leaves that part out if the tool refuses', () => {
-      expect(prompt).toContain('Your next call is commonly_offer_hosted_agent with that whole reply as its content');
-      expect(prompt).toContain('leaving out the part about running one here');
-      const hardRules = prompt.slice(prompt.lastIndexOf('ROLE-SPECIFIC HARD RULES:'));
-      expect(hardRules).toContain('goes out through commonly_offer_hosted_agent, never commonly_post_message');
-      expect(scoutApp.tools).toContain('commonly_offer_hosted_agent');
+    it('lists Connect, then Run it here with its limit, then the pod', () => {
+      Object.values(SCOUT_OFFER_COPY).forEach((copy) => {
+        expect(copy.withHosted).toContain('Claude Code');
+        expect(copy.withHosted.indexOf('Codex')).toBeLessThan(copy.withHosted.search(/run one here|在这里运行/));
+        expect(copy.withHosted.search(/run one here|在这里运行/)).toBeLessThan(copy.withHosted.search(/tell me the project|告诉我是什么项目/));
+        expect(copy.withoutHosted).not.toMatch(/run one here|在这里运行/);
+      });
+      expect(en.withHosted).toContain("which can't open repos yet");
     });
 
     // Over the 200-character budget by the caveat, which the budget exempts.
     it('stays close to the reply budget with the task clause in front', () => {
-      expect(`I put "${SCOUT_FIRST_TASK}" on your board. ${SCOUT_AGENT_OFFER}`.length).toBeLessThanOrEqual(240);
+      expect(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`.length).toBeLessThanOrEqual(240);
     });
 
     it('still proposes the pod once a project is named, and keeps its locale rule', () => {
@@ -100,20 +88,15 @@ describe('Scout welcome locale', () => {
       expect(prompt).toContain('Set create_pod params.locale to the person\'s language');
     });
 
-    it('claims the task only when the tool said so', () => {
-      expect(prompt).toContain('Say the task is on their board only if commonly_create_task returned ok');
-      const hardRules = prompt.slice(prompt.lastIndexOf('ROLE-SPECIFIC HARD RULES:'));
-      expect(hardRules).toContain('Never say a task is on the board unless commonly_create_task returned ok');
-    });
-
-    it('does not add the task twice', () => {
-      expect(prompt).toContain('If your earlier messages show that task is already on the board, skip the call');
-    });
-
     it('makes the same offer at any "I can\'t" moment, with Run it here after Connect', () => {
       expect(prompt).toContain('Any time you have to say you can\'t do something their own agent could');
-      expect(prompt).toContain('"Run it here" comes right after Connect, never first');
+      expect(prompt).toContain('"Run it here" comes right after Connect in that reply, never first');
       expect(prompt).toContain('never offer it as the way to read one');
+    });
+
+    it('keeps the no-false-claim rule last', () => {
+      const hardRules = prompt.slice(prompt.lastIndexOf('ROLE-SPECIFIC HARD RULES:'));
+      expect(hardRules).toContain('Never say a task is on the board unless a tool told you it is');
     });
   });
 });

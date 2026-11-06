@@ -51,17 +51,30 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here'
 /**
  * What "Start a pod for a project" does instead of asking (Growth, 2026-11-06):
  * 8 people clicked a start and 5 of those chats ended with Scout waiting on
- * them, three of them on "What's the project?". Scout adds this task itself and
- * makes the offer, so the chat doesn't stop on a question.
+ * them, three of them on "What's the project?". The same offer follows any
+ * "I can't". Run it here comes right after Connect: 3 of 3 people who took it
+ * got an agent's answer, but it can't read a repo, so the line says so.
+ *
+ * This is fixed text that commonly_offer_own_agent posts, because a prompt rule
+ * did not hold: on deepseek-v4-flash, 4 of 6 replies still went out through the
+ * plain post and dropped the Run it here part, with the rule in the hard rules.
  */
-export const SCOUT_FIRST_TASK = 'Read your repo and say what to do first';
-
-/**
- * The next step a person gets from this and from any "I can't" moment. Run it
- * here comes right after Connect: 3 of 3 people who took it got an agent's
- * answer (Growth, 2026-11-06), but it can't read a repo, so the line says so.
- */
-export const SCOUT_AGENT_OFFER = "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.";
+export const SCOUT_OFFER_COPY = {
+  en: {
+    firstTask: 'Read your repo and say what to do first',
+    taskOnBoard: (title: string): string => `"${title}" is on your board.`,
+    taskFailed: "I couldn't add a task to your board.",
+    withHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.",
+    withoutHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.",
+  },
+  'zh-CN': {
+    firstTask: '读一读你的仓库，说说先做什么',
+    taskOnBoard: (title: string): string => `“${title}”已经在你的任务板上了。`,
+    taskFailed: '我没能把任务加到你的任务板上。',
+    withHosted: '我打不开代码仓库，但你自己的智能体可以：连接 Claude Code 或 Codex。也可以在这里运行一个，不过它暂时也打不开仓库。或者告诉我是什么项目，我来建好它的 Pod。',
+    withoutHosted: '我打不开代码仓库，但你自己的智能体可以：连接 Claude Code 或 Codex。或者告诉我是什么项目，我来建好它的 Pod。',
+  },
+} as const;
 
 /**
  * Scout's first message in a new workspace; the starts render under it. The
@@ -126,17 +139,9 @@ export const scoutApp = {
     + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
     + 'clause that if they would rather install nothing, Commonly can run one here. '
     + `For "${startLabel('start-pod')}", if they have not named a project, do not `
-    + `ask what it is. Call commonly_create_task once with the title "${SCOUT_FIRST_TASK}", `
-    + 'written in their language, with no assignee. If your earlier messages show '
-    + 'that task is already on the board, skip the call. Then reply in one short '
-    + 'clause about the task, followed by this line, in their language: '
-    + `"${SCOUT_AGENT_OFFER}" `
-    + 'Your next call is commonly_offer_hosted_agent with that whole reply as its '
-    + 'content, not commonly_post_message: it posts the reply with the button. Only '
-    + 'if it returns ok false, post the reply with commonly_post_message, leaving '
-    + 'out the part about running one here. '
-    + 'Say the task is on their board only if commonly_create_task returned ok; if '
-    + 'it failed, say you could not add it, and still give that line. '
+    + 'ask what it is. Call commonly_offer_own_agent with addFirstTask true and locale '
+    + 'set to their language (en or zh-CN). It adds the first task and posts your whole '
+    + 'reply, so post nothing else. '
     + 'Once they name a project, propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
     + 'Once they approve it, reply with the exact one-line wording in the '
@@ -353,12 +358,11 @@ export const scoutApp = {
     + 'do it. Asked which tools, models or paths work, name them.\n'
     + '- Any time you have to say you can\'t do something their own agent could, '
     + 'such as opening a repo, reading or changing code, or running a command on '
-    + `their computer, say so and make the same offer: "${SCOUT_AGENT_OFFER}" `
-    + 'Send it with commonly_offer_hosted_agent, the same way, whole, including the '
-    + 'part about running one here. "Run it here" comes '
-    + 'right after Connect, never first, unless they have neither tool or would '
-    + 'rather install nothing. An agent run here can\'t read a repo today, so never '
-    + 'offer it as the way to read one.\n'
+    + 'their computer, call commonly_offer_own_agent with locale set to their language. '
+    + 'Give it a lead, one short sentence in their language naming what you can\'t do, '
+    + 'only when that is not opening a repo. It posts your whole reply, so post nothing '
+    + 'else. "Run it here" comes right after Connect in that reply, never first. An '
+    + 'agent run here can\'t read a repo today, so never offer it as the way to read one.\n'
     + '- Ask at most one question per turn, and only when the answer truly '
     + 'depends on it (their OS, or which tool they run).\n'
     + '- Before ANY terminal command: if you do not know their operating '
@@ -407,10 +411,7 @@ export const scoutApp = {
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
     'Never claim the user\'s own agent is connected or working, or that it '
     + 'is not, unless commonly_agent_status said so in this turn. Never say a '
-    + 'task is on the board unless commonly_create_task returned ok. The line '
-    + `that starts "${SCOUT_AGENT_OFFER.slice(0, 22)}" goes out through `
-    + 'commonly_offer_hosted_agent, never commonly_post_message, unless that tool '
-    + 'just refused. And '
+    + 'task is on the board unless a tool told you it is. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else. A first impression is '
     + 'also short: two or three short sentences, the last one the next step, '
@@ -431,6 +432,9 @@ export const scoutApp = {
     'commonly_agent_status',
     // Answers "can Commonly host it?" with a button to Run it here.
     'commonly_offer_hosted_agent',
+    // The start-pod first move and every "I can't": fixed text, with the task
+    // and the Run it here button composed in code.
+    'commonly_offer_own_agent',
   ],
   iconUrl: '',
   categories: ['onboarding', 'utility'],

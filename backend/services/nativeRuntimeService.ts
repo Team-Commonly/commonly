@@ -25,6 +25,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, global-require,
    @typescript-eslint/no-require-imports */
 
+import { SCOUT_OFFER_COPY, normalizeScoutLocale } from '../config/native-agents/scout';
 import { Types } from 'mongoose';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
@@ -589,6 +590,26 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_offer_own_agent',
+      description:
+        'Tell someone you cannot open their repo and offer the ways forward. Posts your whole '
+        + 'reply, in fixed words: connect Claude Code or Codex, run an agent here with a '
+        + `"${HOSTED_OFFER_LABEL}" button when this person can, or name the project for a pod. `
+        + 'Do not post another message about it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          locale: { type: 'string', enum: ['en', 'zh-CN'], description: 'The person\'s language.' },
+          addFirstTask: { type: 'boolean', description: 'Also add the first task to this pod\'s board. It is not added twice.' },
+          lead: { type: 'string', description: 'Optional. One short sentence, in their language, posted before the fixed words.' },
+        },
+        required: ['locale'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_offer_local_agent',
       description:
         'When someone asks you to inspect or change code, files, or a repository on their own computer, '
@@ -704,6 +725,7 @@ export const NATIVE_TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.fun
 // key, and reading a page (TASK-267b).
 const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
   'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent',
+  'commonly_offer_own_agent',
   'commonly_run_code', 'commonly_web_search',
   'commonly_fetch_url',
   'computer_navigate', 'computer_snapshot', 'computer_click', 'computer_type',
@@ -794,6 +816,7 @@ const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat,
   + 'cannot post in it.';
 const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
+  'commonly_offer_own_agent',
 ]);
 
 export const toolsForConfig = (
@@ -1160,6 +1183,69 @@ export async function dispatchTool(
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
           payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] },
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
+          answeringMessageId: ctx.answeringMessageId,
+          threadRootId: ctx.answeringThreadRootId ?? null,
+          runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
+        });
+        fanOutAgentPost(ctx, result);
+        return postToolResult(ctx, result);
+      }
+
+      case 'commonly_offer_own_agent': {
+        const copy = SCOUT_OFFER_COPY[normalizeScoutLocale(args.locale)];
+        const lead = args.lead ? toSingleLineTitle(String(args.lead)) : '';
+        let taskLine = '';
+        if (args.addFirstTask === true) {
+          const Task = require('../models/Task');
+          try {
+            // One title, so a second click doesn't stack a second row.
+            if (!await Task.exists({ podId: ctx.podId, title: copy.firstTask })) {
+              const taskNum = (await Task.countDocuments({ podId: ctx.podId })) + 1;
+              await Task.create({
+                podId: ctx.podId,
+                taskNum,
+                taskId: `N-${taskNum}-${ctx.agentName}-${Date.now().toString(36)}`,
+                title: copy.firstTask,
+                priority: 'P2',
+                assignee: null,
+                notes: null,
+                status: 'pending',
+                source: 'agent',
+                createdByUserId: (await resolveSeatUserId(ctx.podId, ctx.agentName, ctx.instanceId)) || null,
+              });
+            }
+            taskLine = copy.taskOnBoard(copy.firstTask);
+          } catch (err) {
+            console.warn('[native-runtime] first task not added:', (err as Error).message);
+            taskLine = copy.taskFailed;
+          }
+        }
+        // A button that leads to the install route's 403 is worse than no button,
+        // and the words go with it. A failed count fails toward leaving it out.
+        let hosted = false;
+        if (hostedEngineAvailable() && ctx.installation?.installedBy) {
+          try {
+            const held = await listHostedInstallationsForUser(ctx.installation.installedBy);
+            hosted = held.length < hostedCaps().agentsPerUser;
+          } catch (err) {
+            console.warn('[native-runtime] hosted count failed, offering no button:', (err as Error).message);
+          }
+        }
+        const href = `/v2/agents/byo?pod=${encodeURIComponent(String(ctx.podId))}&mode=hosted`;
+        const AgentMessageService = require('./agentMessageService');
+        const result = await AgentMessageService.postMessage({
+          agentName: ctx.agentName,
+          instanceId: ctx.instanceId,
+          podId: ctx.podId,
+          content: [lead, taskLine, hosted ? copy.withHosted : copy.withoutHosted].filter(Boolean).join(' '),
+          messageType: 'text',
+          displayName: ctx.displayName,
+          installationConfig: ctx.installationConfig,
+          metadata: { source: 'native-runtime' },
+          ...(hosted ? { payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] } } : {}),
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
@@ -2976,7 +3062,7 @@ export async function runAgent(
               ? String((parsedArgs as any).content)
               : undefined;
           }
-          if (toolName === 'commonly_offer_local_agent' && !result.error) {
+          if ((toolName === 'commonly_offer_local_agent' || toolName === 'commonly_offer_own_agent') && !result.error) {
             postedViaTool = true;
           }
           messages.push({
