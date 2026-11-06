@@ -116,7 +116,7 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
     <div className="lrow">
       <span className="lb"><V2AgentSettingsIcon name="user" />{t('agentSettings.name')}</span>
       <span className="vl">{installation.displayName
-        || (installation.instanceId && installation.instanceId !== 'default' ? installation.instanceId : installation.name)}</span>
+        || (installation.instanceId !== 'default' && installation.instanceId) || installation.name || installation.instanceId}</span>
       <span className="ac">
         <button type="button" className="b b-g ib b-sm" title={t('agentSettings.rename')} aria-label={t('agentSettings.rename')}
           aria-expanded={open} aria-controls={formId} onClick={() => setOpen((value) => !value)}>

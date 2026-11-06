@@ -117,7 +117,7 @@ const V2AgentSettingsPage: React.FC = () => {
   // connection as it was, and the header shouldn't drop it while it's re-read.
   useEffect(() => {
     setConnection(null);
-  }, [identityKey]);
+  }, [agentName, instanceId]);
 
   useEffect(() => {
     let active = true;

@@ -309,6 +309,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toContain('.v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }');
     expect(phone).toContain('.v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center;');
   });
+  test('a private Wake row stays on one line at phone width, with the kind readable', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const phone = mediaBlockContaining(surface, '.wt td[data-personal="true"]');
+    expect(phone).toContain('.wt td[data-personal="true"] { flex-wrap: nowrap; }');
+    expect(phone).toContain('.wt td[data-personal="true"] a { flex: 1 1 0; white-space: nowrap; }');
+    expect(surface).toContain('.v2-agent-wake-pods__kind { margin-left: 8px;');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));

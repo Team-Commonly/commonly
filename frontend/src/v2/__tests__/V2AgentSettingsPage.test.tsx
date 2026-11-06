@@ -1105,8 +1105,10 @@ describe('one Identity & access list (d215 frame)', () => {
       renderPage();
       const rows = await screen.findAllByRole('link', { name: 'Maya' });
       expect(rows).toHaveLength(2);
-      expect(rows[0].closest('td')).toHaveTextContent('direct');
-      expect(rows[1].closest('td')).toHaveTextContent('admin');
+      expect(rows[0].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^direct$/);
+      expect(rows[1].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
+      expect(screen.getByRole('button', { name: 'Maya, direct' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Maya, admin' })).toBeInTheDocument();
       const team = screen.getByRole('link', { name: 'Workspace' });
       expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
     });
@@ -1138,6 +1140,43 @@ describe('one Identity & access list (d215 frame)', () => {
       await screen.findByText('Added to Design.');
       await waitFor(() => expect(rosterReads).toBeGreaterThan(1));
       expect(document.querySelector('.st')).toHaveTextContent('Connected · 1 pod');
+    });
+
+    test('the header keeps the connection when an add moves the writable pod', async () => {
+      const base = fleet({ state: 'connected' });
+      let moved = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.endsWith('/manage-settings')) {
+          return base(url, ...rest).then(({ data }) => ({ data: moved ? {
+            ...data,
+            writablePodId: 'pod-2',
+            installations: [...data.installations, { podId: 'pod-2', podName: 'Design', status: 'active' }],
+          } : data }));
+        }
+        // The roster read after the move never lands, so only a kept status can show.
+        if (url === '/api/registry/pods/pod-2/agents') return new Promise(() => {});
+        return base(url.replace('/pods/pod-2/', '/pods/pod-1/'), ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        moved = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/api/registry/pods/pod-2/agents')).toBe(true));
+      await waitFor(() => expect(document.querySelector('.st')).not.toBeNull());
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
     });
 
     test('Add to pod falls back to the agent name when no display name is set', async () => {

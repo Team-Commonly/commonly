@@ -102,7 +102,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
       .select('name type').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
-    const types = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.type)]));
+    const types = new Map<string, string | undefined>(pods.map((pod: any) => [String(pod._id), pod.type]));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
     const quotaOwner = fallback?.installedBy || userId;

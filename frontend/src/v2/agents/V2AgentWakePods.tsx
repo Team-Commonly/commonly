@@ -240,6 +240,11 @@ const V2AgentWakePods: React.FC<{
     ? t('agentSettings.wakeNote', { mentions: t('agentSettings.mentionsAlwaysWake'), heartbeat: heartbeatNote })
     : t('agentSettings.mentionsAlwaysWake');
 
+  const podKindLabel = (entry: InstallationSettings): string | null => {
+    const kind = PERSONAL_POD_KINDS[entry.podType || ''];
+    return kind ? t(`podsSidebar.workspace.${kind}`) : null;
+  };
+
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
   }
@@ -283,14 +288,12 @@ const V2AgentWakePods: React.FC<{
             <tbody>
               {installations.map((entry) => (
                 <tr className="v2-agent-wake-pods__pod" key={entry.podId} data-open={openPods[entry.podId] ? 'true' : undefined}>
-                  <td data-personal={PERSONAL_POD_KINDS[entry.podType || ''] ? 'true' : undefined}>
+                  <td data-personal={podKindLabel(entry) ? 'true' : undefined}>
                     <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-                    {PERSONAL_POD_KINDS[entry.podType || ''] && (
-                      <span className="v2-agent-wake-pods__kind">{t(`podsSidebar.workspace.${PERSONAL_POD_KINDS[entry.podType || '']}`)}</span>
-                    )}
+                    {podKindLabel(entry) && <span className="v2-agent-wake-pods__kind">{podKindLabel(entry)}</span>}
                     <span className="v2-agent-wake-pods__mode">{t(`agentSettings.messageWakeShort_${messageWakeChoice(entry)}`)}</span>
                     <button type="button" className="v2-agent-wake-pods__fold" aria-expanded={!!openPods[entry.podId]}
-                      aria-label={entry.podName}
+                      aria-label={[entry.podName, podKindLabel(entry)].filter(Boolean).join(', ')}
                       onClick={() => setOpenPods((current) => ({ ...current, [entry.podId]: !current[entry.podId] }))}>
                       <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
                     </button>
