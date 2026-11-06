@@ -2946,7 +2946,9 @@ export async function runAgent(
           instanceId,
           podId,
           content: modelFailureReason
-            ? `Model ${model} could not answer (${modelFailureReason}). ${hostedNative
+            // The model's name tells the person which one failed (#2718). The
+            // status code means nothing in a pod, and stays on run.errorMessage.
+            ? `Model ${model} could not answer just now. ${hostedNative
               ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
             : HOSTED_RUN_FAILED_LINE,
           messageType: 'text',

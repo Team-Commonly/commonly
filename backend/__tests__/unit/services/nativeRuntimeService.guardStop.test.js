@@ -603,7 +603,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
 
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'llm_error' }));
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (HTTP 502). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer just now. ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(savedRun.errorMessage).toContain('HTTP 502');
     // The model-failure variant is a failed-turn notice too, so it repeats per ask.
     expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
     expect(chatBodies[0].disable_fallbacks).toBe(true);
@@ -618,7 +619,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     const result = await runAgent(hostedInstall(), mention);
     expect(result).toMatchObject({ status: 'failed', errorKind: 'llm_error' });
     expect(savedRun.metered).toBe(false);
-    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (${reason}). ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(posted()).toEqual([`Model deepseek-v4-flash could not answer just now. ${HOSTED_RUN_FAILED_LINE}`]);
+    expect(savedRun.errorMessage).toContain(reason);
     expect(posted().join('')).not.toContain('secret-token');
     expect(savedRun.errorMessage).not.toContain('secret-token');
     expect(result.errorMessage).not.toContain('secret-token');
