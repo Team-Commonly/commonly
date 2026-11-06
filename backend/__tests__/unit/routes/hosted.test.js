@@ -590,6 +590,23 @@ describe('/api/hosted on the native engine', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/cm_agent_/);
   });
 
+  it('provision runs what waited while the agent was stopped, and a failure there doesn\'t fail the start', async () => {
+    const AgentEventService = require('../../../services/agentEventService');
+    const stopped = nativeInstallation({ provisionedAt: null });
+    // A stopped row isn't a target yet, so this has to come after the write.
+    let startedByThen;
+    const waiting = jest.spyOn(AgentEventService, 'rescuePendingForIdentity').mockImplementation(async () => {
+      startedByThen = stopped.config.get('hosted').provisionedAt;
+      throw new Error('sweep down');
+    });
+    mockFindOne.mockResolvedValue(stopped);
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(waiting).toHaveBeenCalledWith('scout', 'default');
+    expect(startedByThen).toBeTruthy();
+    waiting.mockRestore();
+  });
+
   // QA 2026-10-16: "Connect your first agent" stayed pending after a hosted
   // agent went live, because the card completes on a runtime token's first
   // use and a native hosted agent has no token. Provision is its live moment.

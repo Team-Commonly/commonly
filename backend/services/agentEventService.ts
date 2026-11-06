@@ -1329,16 +1329,36 @@ class AgentEventService {
    * attempt cap bounds a poison event. Only targets that would run are
    * selected, and each is re-checked by enqueue's own routing before it runs.
    */
-  static rescueStrandedPendingInProcess(now: Date, attemptCap: number): Promise<{ rescued: number; closed: number }> {
+  static rescueStrandedPendingInProcess(
+    now: Date,
+    attemptCap: number,
+    only?: { agentName: string; instanceId: string },
+  ): Promise<{ rescued: number; closed: number }> {
     if (this.inProcessDraining) return Promise.resolve({ rescued: 0, closed: 0 });
-    return this.trackInProcessWork(() => this.rescueStrandedPendingInProcessWhileServing(now, attemptCap));
+    return this.trackInProcessWork(() => this.rescueStrandedPendingInProcessWhileServing(now, attemptCap, only));
+  }
+
+  /**
+   * A hosted agent started: what waited for it while stopped runs now, not on
+   * the next sweep up to 5 minutes away. A start is the signal the sweep's
+   * minimum age stands in for, so a brand new event runs too; the claim is the
+   * same compare-and-set, so a sweep running alongside can't run one twice.
+   */
+  static rescuePendingForIdentity(agentName: string, instanceId: string): Promise<{ rescued: number; closed: number }> {
+    const attemptCap = Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
+    return this.rescueStrandedPendingInProcess(new Date(), attemptCap, {
+      agentName: agentName.toLowerCase(), instanceId,
+    });
   }
 
   private static async rescueStrandedPendingInProcessWhileServing(
     now: Date,
     attemptCap: number,
+    only?: { agentName: string; instanceId: string },
   ): Promise<{ rescued: number; closed: number }> {
-    const targets = await this.inProcessEventTargets();
+    const targets = (await this.inProcessEventTargets()).filter((target) => (
+      !only || (target.agentName === only.agentName && target.instanceId === only.instanceId)
+    ));
     if (!targets.length) return { rescued: 0, closed: 0 };
     const targetFilter = { $or: targets };
     const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
@@ -1356,7 +1376,7 @@ class AgentEventService {
       status: 'pending',
       deliveryMode: { $ne: 'digest' },
       createdAt: {
-        $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
+        $lte: new Date(now.getTime() - (only ? 0 : STRANDED_PENDING_MIN_AGE_MS)),
         $gte: ceiling,
       },
       $and: [

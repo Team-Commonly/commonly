@@ -335,6 +335,10 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         podIds: startedPods,
         agentLabel: agentUser.botMetadata?.displayName || installation.displayName || agentName,
       });
+      // Mentions sent while it was stopped run now, not on the next sweep.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      void require('../services/agentEventService').rescuePendingForIdentity(agentName, instanceId)
+        .catch((error: any) => console.warn('[hosted] waiting events on start:', error?.message || error));
       return res.json({
         provisioned: true,
         // Native turns run in-process, so the agent is live from here; the page
