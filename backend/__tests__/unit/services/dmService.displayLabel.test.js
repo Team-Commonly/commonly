@@ -12,7 +12,7 @@ jest.mock('../../../models/Pod', () => {
 });
 jest.mock('../../../models/pg/Pod', () => null);
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: () => ({ sort: () => ({ lean: async () => null }) }), install: jest.fn() },
+  AgentInstallation: { findOne: () => ({ sort: () => ({ lean: async () => null }) }), exists: async () => null, install: jest.fn() },
 }));
 const DMService = require('../../../services/dmService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');

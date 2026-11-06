@@ -44,6 +44,7 @@ jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
   ownsIdentityCountingPaused: jest.fn().mockResolvedValue({ owned: true }),
   relabelIdentityDmRows: jest.fn().mockResolvedValue([]),
+  setIdentityDmRowsStatus: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),

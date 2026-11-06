@@ -33,6 +33,7 @@ const {
   ownsIdentityCountingPaused,
   ownsRuntimeIdentity,
   relabelIdentityDmRows,
+  setIdentityDmRowsStatus,
   takeBackInstallation,
   webhookUrlRefusal,
 } = require('../../services/runtimeIdentityOwnership');
@@ -511,6 +512,20 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
           await AgentProfile.updateMany(
             { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },
             { $set: { name: effectiveDisplayName } },
+            { runValidators: true },
+          );
+        }
+      }
+      // A DM's row is its opener's, so the save above skipped it, and pausing an
+      // agent means everywhere. Only whoever owns the agent can say that.
+      if (status === 'active' || status === 'paused') {
+        const ownsAgent = isInstanceAdmin
+          || (await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId)).owned;
+        const dmPodIds = ownsAgent ? await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status) : [];
+        if (dmPodIds.length) {
+          await AgentProfile.updateMany(
+            { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },
+            { $set: { status } },
             { runValidators: true },
           );
         }

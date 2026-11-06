@@ -16,11 +16,18 @@ const Pod = require('../../models/Pod');
 const AgentCredential = require('../../models/AgentCredential');
 const AgentMemory = require('../../models/AgentMemory');
 const AgentProfile = require('../../models/AgentProfile');
+const Integration = require('../../models/Integration');
+const RoomGrant = require('../../models/RoomGrant');
+const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
+const { buildAgentProfileId } = require('../../routes/registry/helpers');
+const outsiderGrantAgentJoinPolicy = require('../../services/outsiderGrantAgentJoinPolicy');
+const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const {
   describeRuntimeIdentityBlockers, identityHoldsRuntimeToken, ownsRuntimeIdentity, willSolelyInstallRuntimeIdentity,
 } = require('../../services/runtimeIdentityOwnership');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const DMService = require('../../services/dmService');
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 const credentialRoutes = require('../../routes/credentials');
@@ -281,6 +288,207 @@ describe('an agent-room row and who owns the agent', () => {
       const room = await seedRoom(guest);
       await seedRow(undefined, room._id);
       expect(await ownsRuntimeIdentity(owner._id, NAME, 'default')).toEqual({ owned: true });
+    });
+  });
+
+  describe('pausing an agent', () => {
+    const setStatus = (user, podId, status) => request(app).patch(`/api/registry/pods/${podId}/agents/${NAME}`)
+      .set('Authorization', bearer(user)).send({ status });
+    const statusIn = async (podId) => (await AgentInstallation.findOne({ agentName: NAME, podId }).lean()).status;
+
+    beforeEach(async () => {
+      expect((await installOwner()).status).toBe(200);
+      await shareAgentWith(guest);
+    });
+
+    it('reaches a guest\'s DM, and resuming brings it back', async () => {
+      const roomId = await openDm(guest);
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('paused');
+
+      expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('active');
+    });
+
+    it('takes the guest\'s room profile with it', async () => {
+      const roomId = await openDm(guest);
+      await AgentProfile.updateOne(
+        { agentId: buildAgentProfileId(NAME, 'default'), podId: roomId },
+        { $set: { name: NAME, purpose: 'x', instructions: 'x', status: 'active' } },
+        { upsert: true },
+      );
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      const profile = await AgentProfile.findOne({ agentId: buildAgentProfileId(NAME, 'default'), podId: roomId }).lean();
+      expect(profile.status).toBe('paused');
+    });
+
+    it('leaves a row in any other state alone', async () => {
+      const roomId = await openDm(guest);
+      await AgentInstallation.updateOne({ agentName: NAME, podId: roomId }, { $set: { status: 'stale' } });
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('stale');
+    });
+
+    it('a guest pausing their own DM moves only that row', async () => {
+      const roomId = await openDm(guest);
+      const otherRoom = await openDm(owner);
+
+      expect((await setStatus(guest, roomId, 'paused')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('paused');
+      expect(await statusIn(otherRoom)).toBe('active');
+      expect(await statusIn(home._id)).toBe('active');
+    });
+
+    it('an installer who isn\'t the only one leaves the DM rows alone', async () => {
+      const roomId = await openDm(guest);
+      const other = await pod('Other', [third._id]);
+      await seedRow(third._id, other._id);
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      expect(await statusIn(home._id)).toBe('paused');
+      expect(await statusIn(roomId)).toBe('active');
+    });
+
+    it('resuming leaves a DM a grant now keeps the agent out of', async () => {
+      const roomId = await openDm(guest);
+      await setStatus(owner, home._id, 'paused');
+      const refuseRoom = jest.spyOn(outsiderGrantAgentJoinPolicy, 'assertAgentRuntimeMayJoinPod')
+        .mockImplementation(async (podId) => {
+          if (String(podId) === String(roomId)) {
+            throw Object.assign(new Error('refused'), { code: 'outsider_grant_non_native_agent_join' });
+          }
+        });
+      try {
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      } finally {
+        refuseRoom.mockRestore();
+      }
+      expect(await statusIn(home._id)).toBe('active');
+      expect(await statusIn(roomId)).toBe('paused');
+    });
+
+    it('resuming leaves a DM with a stored outsider-writable grant paused', async () => {
+      const roomId = await openDm(guest);
+      await setStatus(owner, home._id, 'paused');
+      await Integration.collection.insertOne({ type: 'github-app', installationId: 'room-install', podId: roomId });
+      await RoomGrant.create({
+        grantId: 'grant_room_rows',
+        connectionId: 'room-install',
+        installationId: 'room-install',
+        brokerId: GRANT_BROKER_ID,
+        target: { kind: 'pod', id: String(roomId) },
+        tools: ['github.list_issues'],
+        writeMode: 'read',
+        audience: [String(guest._id)],
+        ownerId: String(guest._id),
+        expiresAt: new Date(Date.now() + 3600000),
+        revokedAt: null,
+      });
+
+      expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      expect(await statusIn(home._id)).toBe('active');
+      expect(await statusIn(roomId)).toBe('paused');
+    });
+
+    it('reaches a default-instance DM row stored with no instance id', async () => {
+      const roomId = await openDm(guest);
+      await AgentInstallation.collection.updateOne({ agentName: NAME, podId: roomId }, { $unset: { instanceId: 1 } });
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('paused');
+    });
+
+    it('a row retired while the resume runs stays retired', async () => {
+      const roomId = await openDm(guest);
+      await setStatus(owner, home._id, 'paused');
+      const retireRoom = jest.spyOn(outsiderGrantAgentJoinPolicy, 'assertAgentRuntimeMayJoinPod')
+        .mockImplementation(async (podId) => {
+          if (String(podId) !== String(roomId)) return;
+          await AgentInstallation.updateOne({ agentName: NAME, podId: roomId }, { $set: { status: 'uninstalled' } });
+        });
+      try {
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      } finally {
+        retireRoom.mockRestore();
+      }
+      expect(await statusIn(roomId)).toBe('uninstalled');
+    });
+
+    it('a retry catches up a profile the first write missed', async () => {
+      const roomId = await openDm(guest);
+      const profileId = buildAgentProfileId(NAME, 'default');
+      await AgentProfile.updateOne(
+        { agentId: profileId, podId: roomId },
+        { $set: { agentId: profileId, podId: roomId, name: 'x', purpose: 'x', instructions: 'x', status: 'active' } },
+        { upsert: true },
+      );
+      await AgentInstallation.updateOne({ agentName: NAME, podId: roomId }, { $set: { status: 'paused' } });
+
+      expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+      expect((await AgentProfile.findOne({ agentId: profileId, podId: roomId }).lean()).status).toBe('paused');
+    });
+
+    it('a DM another agent opens while this one is paused starts paused, and comes back with its runtime', async () => {
+      await AgentInstallation.updateOne({ agentName: NAME, podId: home._id }, { $set: {
+        'config.runtime': { runtimeType: 'moltbot' },
+      } });
+      await setStatus(owner, home._id, 'paused');
+
+      const agent = await User.findOne({ username: AgentIdentityService.buildAgentUsername(NAME, 'default'), isBot: true });
+      const room = await DMService.getOrCreateAgentRoom(agent._id, guest._id, { agentName: NAME, instanceId: 'default' });
+      const roomId = room._id;
+      expect(await statusIn(roomId)).toBe('paused');
+
+      expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      const row = await AgentInstallation.findOne({ agentName: NAME, podId: roomId }).lean();
+      expect(row.status).toBe('active');
+      expect(row.config.runtime.runtimeType).toBe('moltbot');
+    });
+
+    it('a paused agent removed from its last pod ends the DM, and reinstalling brings it back', async () => {
+      const roomId = await openDm(guest);
+      await User.updateOne(
+        { username: AgentIdentityService.buildAgentUsername(NAME, 'default'), isBot: true },
+        { $set: { 'botMetadata.ownerUserId': owner._id } },
+      );
+      await setStatus(owner, home._id, 'paused');
+
+      const removed = await request(app).delete(`/api/registry/agents/${NAME}/pods/${home._id}`)
+        .set('Authorization', bearer(owner));
+      expect(removed.status).toBe(200);
+      expect(await statusIn(roomId)).toBe('uninstalled');
+
+      expect((await installOwner()).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('active');
+    });
+
+    it('a hosted agent\'s paused room rows end with it too', async () => {
+      const room = await seedRoom(owner);
+      const { insertedId } = await seedRow(owner._id, room._id, {
+        status: 'paused', config: { runtime: { runtimeType: 'hosted' }, autoJoinSource: 'agent-room-create' },
+      });
+      await AgentInstallation.updateOne({ agentName: NAME, podId: home._id }, { $set: { status: 'uninstalled' } });
+
+      expect(await retireHostedRoomRows(NAME, 'default', owner._id)).toBe(1);
+      expect((await AgentInstallation.findById(insertedId).lean()).status).toBe('uninstalled');
+    });
+
+    it('resuming doesn\'t start an in-process DM row on an identity holding a token', async () => {
+      const roomId = await openDm(guest);
+      await AgentInstallation.updateOne({ agentName: NAME, podId: roomId }, { $set: {
+        status: 'paused', 'config.runtime': { runtimeType: 'native' },
+      } });
+      await setStatus(owner, home._id, 'paused');
+      await AgentInstallation.updateOne({ agentName: NAME, podId: home._id }, { $push: {
+        runtimeTokens: { tokenHash: 'held', label: 'held', createdAt: new Date() },
+      } });
+
+      expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+      expect(await statusIn(roomId)).toBe('paused');
     });
   });
 
