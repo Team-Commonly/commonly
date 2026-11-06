@@ -3,10 +3,26 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
+
+test('the prod count skips text nobody can see', () => {
+  const src = String(METRICS);
+  assert.match(src, /details:not\(\[open\]\)/, 'a closed fold still reports a box');
+  assert.match(src, /box\.width <= 1/, 'a screen-reader label is a 1px box');
+  assert.match(src, /cs\.overflow === 'hidden'/, 'a thin box that shows its text still counts');
+  assert.match(src, /!el\.closest\('summary'\)/, 'a fold\'s summary is on screen');
+  assert.match(src, /if \(hidden\(el\)\) continue/);
+});
+
+test('both sides skip a closed fold, and the frame skips the reveal-only popover', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'measure_after.js'), 'utf8');
+  const frameSide = src.slice(src.indexOf('async function artboard'), src.indexOf('const METRICS'));
+  assert.match(frameSide, /details:not\(\[open\]\)/);
+  assert.match(frameSide, /\.tip,\.pop,/);
+});
 
 test('no argument measures the artboard', () => {
   assert.deepStrictEqual(parseArgs(argv()), { mode: 'artboard', only: null });

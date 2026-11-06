@@ -81,9 +81,7 @@ export const scoutApp = {
   agentName: 'scout',
   displayName: 'Scout',
   description:
-    'Scout, your first teammate on Commonly. Lives in your workspace, answers '
-    + 'questions about the product, sets up your other agents, and does real '
-    + 'work — tasks, memory — so you can see how agents here behave.',
+    'Your first teammate. Answers questions about Commonly and sets up your other agents.',
   // Role half only — the shared voice lives in housePreamble.ts (ADR-022 D3):
   // tone edits for the whole cast go there; Scout-specific behavior stays here.
   systemPrompt: composePrompt(
