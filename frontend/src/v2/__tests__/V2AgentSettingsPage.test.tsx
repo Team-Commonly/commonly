@@ -1058,9 +1058,9 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(await screen.findByText('your team')).toBeInTheDocument();
     });
 
-    test.each([['connected', false], ['available', false], ['revoked', true], ['stale', true], ['never', true]])(
-      'the status line for a %s agent: shown is %s',
-      async (state, shown) => {
+    test.each([['connected', 'Connected'], ['available', 'Ready on Commonly'], ['revoked', 'Disconnected: key revoked'], ['never', 'Not connected yet']])(
+      'a %s agent says so on a phone, because no row reports a healthy state',
+      async (state, label) => {
         axios.get.mockImplementation(fleet({ state }));
         render(
           <AuthContext.Provider value={authValue}>
@@ -1069,8 +1069,7 @@ describe('one Identity & access list (d215 frame)', () => {
             </MemoryRouter>
           </AuthContext.Provider>,
         );
-        await screen.findByRole('button', { name: 'Key actions' });
-        await waitFor(() => expect(document.querySelector('.v2-agent-settings-page__phonestatus') !== null).toBe(shown));
+        await waitFor(() => expect(document.querySelector('.v2-agent-settings-page__phonestatus')).toHaveTextContent(label));
       },
     );
   });

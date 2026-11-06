@@ -365,9 +365,7 @@ const V2AgentSettingsPage: React.FC = () => {
       )}
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
-          {/* On a phone the line only reports trouble: a healthy agent's state and pods are in the rows below. */}
-          {phone && <>{tabs}{(connection?.state === 'revoked' || connection?.state === 'stale' || connection?.state === 'never')
-            && <div className="v2-agent-settings-page__phonestatus">{status}</div>}</>}
+          {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
           {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">

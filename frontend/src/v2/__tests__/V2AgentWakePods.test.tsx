@@ -317,6 +317,15 @@ describe('per-agent Wake and Pods settings', () => {
       expect(screen.getByRole('tooltip')).toHaveTextContent(
         'Mentions always wake this agent. Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.',
       );
+      // A tap has no hover or focus style, so it pins the note open, and leaving it closes the note.
+      const note = screen.getByRole('button', { name: /^Mentions always wake this agent\./ });
+      expect(note).not.toHaveClass('pin');
+      fireEvent.click(note);
+      expect(note).toHaveClass('pin');
+      fireEvent.blur(note);
+      expect(note).not.toHaveClass('pin');
+      fireEvent.keyDown(note, { key: 'Enter' });
+      expect(note).toHaveClass('pin');
       expect(document.querySelector('.v2-agent-wake-pods__hint')).toBeNull();
       expect(screen.getAllByRole('option', { name: '60 min' })).toHaveLength(2);
     });

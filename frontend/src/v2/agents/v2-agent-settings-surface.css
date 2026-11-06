@@ -139,6 +139,8 @@
   /* The 390 frame keeps each row on one 48px line: the label, the value beside it, the
      action. A long value (a refusal, a status) wraps inside its own cell, never under the label. */
   .v2-agent-settings-page .lrow { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 4px 4px 12px; }
+  /* A phone taps the (i), so an invisible ring takes its hit area to 44px. */
+  .v2-agent-settings-page .info::after { content: ""; position: absolute; inset: -13px; }
   .v2-agent-settings-page .lrow .lb { font-weight: 500; }
   .v2-agent-settings-page .lrow .vl { justify-content: flex-end; text-align: right; font-size: 13px; color: var(--ink2); }
   .v2-agent-settings-page .lrow .ac .b.v2-agent-settings-page__textbtn { width: 44px; padding: 0; }

@@ -59,6 +59,8 @@ const V2AgentWakePods: React.FC<{
   // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
+  // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
+  const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -234,7 +236,13 @@ const V2AgentWakePods: React.FC<{
       <h2 className="gtitle">
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
         {t('agentSettings.wakeTitle')}
-        <span className="info" tabIndex={0} aria-label={wakeNote}>
+        <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote} aria-expanded={wakeNoteOpen}
+          onClick={() => setWakeNoteOpen((open) => !open)} onBlur={() => setWakeNoteOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setWakeNoteOpen((open) => !open);
+          }}>
           <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></svg>
           <span className="tip" role="tooltip">{wakeNote}</span>
         </span>
