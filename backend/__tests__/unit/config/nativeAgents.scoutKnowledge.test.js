@@ -260,6 +260,13 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/post the MCP line with commonly_post_message first, propose the card last, and post nothing after it/);
   });
 
+  // Growth's re-walk: a line outside a code block chipped `@commonlyai`, and one
+  // saying "the card below" stood alone when a pending card refused the next.
+  test('keeps the MCP line whole and free of any promise of a card', () => {
+    expect(prompt).toMatch(/Put that line in a code block so it copies as one command, and do not mention the card in that message/);
+    expect(prompt).toMatch(/Post the line each time they ask, even after they declined a card/);
+  });
+
   test('gives an MCP line for each tool the card connects', () => {
     expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
       + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');
