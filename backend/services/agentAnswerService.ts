@@ -274,9 +274,10 @@ export const threadOfRunningTurn = async ({
       deliveryMode: { $ne: 'digest' },
       createdAt: { $gte: new Date(Date.now() - WAKE_LOOKUP_WINDOW_MS) },
       updatedAt: { $gte: new Date(Date.now() - JUST_ACKED_MS) },
-    }).select('type payload').limit(MAX_TURN_DELIVERIES).maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
+    }).select('type payload').limit(MAX_TURN_DELIVERIES + 1).maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
       .lean();
-    if (justAcked.some((event) => wakeRoot(event) !== root)) return null;
+    // A full page can hide the disagreement, so it counts as one.
+    if (justAcked.length > MAX_TURN_DELIVERIES || justAcked.some((event) => wakeRoot(event) !== root)) return null;
     return await resolveThreadRoot({ podId: String(podId), threadRootId: root });
   } catch (error) {
     console.warn('[agent-answer] running-turn thread check failed; leaving the post as sent:', (error as Error).message);

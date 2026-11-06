@@ -361,6 +361,19 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       expect(await rootOf(await capPost())).toBeNull();
     });
 
+    it('more acks than the read can hold: a disagreement past the page still counts', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      const at = Date.now() - 60 * 1000;
+      await AgentEvent.insertMany([
+        ...Array.from({ length: 50 }, (_, i) => ({
+          ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: { threadRootId: root.id }, createdAt: new Date(at + i),
+        })),
+        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: {}, createdAt: new Date(at + 50) },
+      ]);
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
     it('a failed read of what was just acked: the post still lands, in the channel', async () => {
       await threadedWake();
       await deliver();
