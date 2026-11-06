@@ -726,6 +726,20 @@ describe('deliverChatReply', () => {
       expect(res.threadRootId).toBe('99');
     });
 
+    // F245: the kernel files a turn's plain post in the thread it answers, so the
+    // headline can already be inside one. A thread has one root, and a reply
+    // named as a root is a 400.
+    test('a headline the kernel filed in a thread continues in that thread', async () => {
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 4250, thread_root_id: 4242 } })
+        .mockResolvedValue({});
+      const res = await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
+      expect(res.threadRootId).toBe('4242');
+      for (const call of post.mock.calls.slice(1)) {
+        expect(call[1].threadRootId).toBe('4242');
+      }
+    });
+
     test('a refused thread headline stops without falling through to an attachment', async () => {
       const refusal = {
         refused: true,

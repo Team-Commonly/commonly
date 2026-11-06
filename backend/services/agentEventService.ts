@@ -304,6 +304,23 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// An inline reply answers exactly one event, so it needs no inference: it goes
+// where the wake came from. postMessage refuses a root it can't use, and the
+// event is settled by then, so a deleted root falls to the channel here rather
+// than lose the answer.
+const threadRootOfWake = async (event: EventDoc): Promise<number | null> => {
+  const root = Number(event.payload?.threadRootId);
+  if (!Number.isInteger(root) || root <= 0 || !process.env.PG_HOST) return null;
+  try {
+    // eslint-disable-next-line global-require
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    return await resolveThreadRoot({ podId: String(event.podId), threadRootId: root });
+  } catch (err) {
+    console.warn('[webhook] wake thread root unusable; posting to the channel:', (err as Error).message);
+    return null;
+  }
+};
+
 // Inline webhook replies take the same service path as the CAP post route
 // (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
 // installation config, then the mention or agent-dm enqueue. Resolves to a
@@ -336,7 +353,7 @@ const postInlineReply = async (
     podId: event.podId,
     content,
     replyToMessageId: null,
-    threadRootId: null,
+    threadRootId: await threadRootOfWake(event),
     installationConfig: installation.config || null,
   });
   if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };

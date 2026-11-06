@@ -159,6 +159,14 @@ describe('commonly_post_message', () => {
     expect(byName.commonly_post_message.description).toContain('threadRootId');
   });
 
+  it('forwards mainChannel, the way out of the thread a turn answers (F245)', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ id: 'm3' }));
+    await byName.commonly_post_message.call({ podId: 'POD123', content: 'heads up', mainChannel: true });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ mainChannel: true });
+    expect(byName.commonly_post_message.inputSchema.properties.mainChannel.type).toBe('boolean');
+    expect(byName.commonly_post_message.description).toContain('mainChannel');
+  });
+
   it('commonly_get_messages forwards threadRootId as a query param', async () => {
     const fetchSpy = installFetch(async () => okResponse({ messages: [] }));
     await byName.commonly_get_messages.call({ podId: 'POD123', threadRootId: '57901' });

@@ -429,6 +429,9 @@ describe('adding an existing agent to another pod', () => {
     });
 
     it('answers a double click with one success and one refusal', async () => {
+      // The refusal is the unique index's, and a fresh test database may not have
+      // built it yet.
+      await AgentInstallation.ensureIndexes();
       const results = await Promise.all([add(owner, target._id), add(owner, target._id)]);
       expect(results.map((res) => res.status).sort()).toEqual([200, 409]);
       expect(results.find((res) => res.status === 409).body.code).toBe('agent_already_in_pod');

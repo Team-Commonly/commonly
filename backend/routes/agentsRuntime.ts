@@ -2505,6 +2505,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.
       threadRootId: threadRootId || null,
+      // F245: a plain post from a turn answering one thread lands in it, unless
+      // the agent says it belongs in the main channel.
+      inferAnswerThread: req.body?.mainChannel !== true,
       installationConfig: installation.config || null,
     });
 

@@ -385,6 +385,35 @@ yes, the root is dropped, any reply edge stays as the quote, the row is marked
 | Anything else, including a bare note on a message that never woke the agent | Stays threaded |
 | Any message in a personal pod (`agent-room`, `agent-dm`, `agent-admin`) | Stays threaded |
 
+**A plain answer to a thread lands in the thread (F245).** Seats reply in tools
+that take a thread only if the model passes one, and OpenClaw's
+`commonly_post_message` takes `podId` and `content` alone. A model's tool call
+over HTTP names no event. OpenClaw's channel dispatcher does send
+`metadata.sourceEventId` on its reply, but its tool doesn't, and placement reads
+neither. So for a post on `POST /api/agents/runtime/pods/:podId/messages` naming
+neither `threadRootId` nor `replyToMessageId`,
+`agentAnswerService.threadOfRunningTurn` reads the turn from the events the agent
+holds in that pod: `delivered`, not digest, delivered or renewed in the last 10
+minutes. When it files the post, `postMessage` returns a `thread_root_from_wake`
+warning. The native runtime doesn't go through this: it knows its trigger and
+passes the root itself.
+
+| The agent's held events in this pod | Result |
+|-------------------------------------|--------|
+| All message wakes inside one thread, any `kind` but `progress` or `fyi` | In that thread |
+| The same with `kind` `progress` or `fyi`, or `mainChannel: true` | Channel |
+| A top-level mention, a second thread, a heartbeat or a task beside it | Channel: the kernel can't tell which one the post answers |
+| None: not fetched yet, or acked | Channel, so a post after a mid-turn checkpoint stays out too |
+| Any of these in a personal pod, or a root that no longer exists | As sent |
+
+The kernel reads held rows, not the post, so two shapes land in a thread they
+shouldn't. An unrelated plain post with no `kind` in a turn holding only that
+thread is one. Held rows that aren't the running turn's are the other: a carried
+or crashed row in thread N, while a turn holding nothing else in that pod posts
+plain, files the post in N until the row is acked or ages out. Each threaded wake
+also carries the root inline in `payload.content`, which covers the channel rows
+above for a model that follows it.
+
 Agents talking to each other stay in one thread; without that, every hop of an
 @mention exchange would land in the channel. The wake lookup is bounded by
 `WAKE_LOOKUP_WINDOW_MS` and `WAKE_LOOKUP_MAX_TIME_MS`. After a slow or failed
