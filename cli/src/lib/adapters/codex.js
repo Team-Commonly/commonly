@@ -68,7 +68,6 @@ import {
   isAbsolute,
   join,
   resolve as pathResolve,
-  sep,
 } from 'path';
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
@@ -79,6 +78,7 @@ import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } fro
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
+import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
@@ -401,8 +401,6 @@ const statOrNull = async (path) => {
 // refused. macOS has no arg0 helper and keeps its homes where they were.
 const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
 
-const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
-
 const stateHomeUnderCommonly = (ctx, home) => new Error(
   `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the public Codex home under ${join(home, '.commonly')}, `
   + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.',
@@ -419,26 +417,6 @@ const publicCodexHomesRoot = (ctx) => {
   // through symlinks before anything is created (preparePublicCodexHome).
   if (contains(pathResolve(home, '.commonly'), pathResolve(root))) throw stateHomeUnderCommonly(ctx, home);
   return root;
-};
-
-// The real path of a path that may not exist yet: its nearest existing
-// ancestor resolved, with the rest appended.
-const realpathOfNearest = async (path) => {
-  const rest = [];
-  let current = pathResolve(path);
-  for (;;) {
-    try {
-      return join(await realpath(current), ...rest);
-    } catch (err) {
-      // Only a missing path walks up. Anything else (EACCES, ELOOP) would leave
-      // the containment check comparing a path nobody resolved: fail closed.
-      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') throw err;
-      const parent = dirname(current);
-      if (parent === current) return join(current, ...rest);
-      rest.unshift(basename(current));
-      current = parent;
-    }
-  }
 };
 
 const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
@@ -637,6 +615,7 @@ const publicPermissionProfileFlags = (
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
   platform = process.platform,
+  workspacePath = null,
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -666,6 +645,16 @@ const publicPermissionProfileFlags = (
   const gitConfigKeySet = Object.entries(commitAttributionEnv || {})
     .filter(([name]) => /^GIT_CONFIG_KEY_\d+$/.test(name))
     .map(([name, value]) => `${toml(name)}=${toml(value)}`);
+  // The profile denies $TMPDIR and /tmp, so a shell heredoc fails. Set for the
+  // model's shell alone: codex, its MCP child and the per-turn folder keep the
+  // host's temp root, which spawn refuses to find in the workspace. The
+  // workspace is the one folder this shell already writes. zsh, the macOS
+  // login shell codex runs, takes its heredoc file from TMPPREFIX and ignores
+  // TMPDIR. A read-only seat has no such folder, so its heredocs keep failing.
+  const shellTmpDir = workspaceAccess === 'write' && workspacePath
+    ? [`${toml('TMPDIR')}=${toml(workspacePath)}`, `${toml('TMPPREFIX')}=${toml(join(workspacePath, 'zsh'))}`]
+    : [];
+  const shellSet = [...gitConfigKeySet, ...shellTmpDir];
   const filesystem = [
     '":minimal"="read"',
     '"~/.commonly"="deny"',
@@ -686,7 +675,7 @@ const publicPermissionProfileFlags = (
     ...codexHelperReadPaths.map((path) => `${toml(path)}="read"`),
   ].join(',');
   const shellEnvironment = [
-    'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
+    'PATH', 'HOME', 'TMPDIR', 'TMPPREFIX', 'LANG', 'LC_*',
     ...(commitHooksPath ? [
       ...gitConfigEnv,
       'COMMONLY_AGENT_GIT_CONFIG_INDEX',
@@ -715,9 +704,7 @@ const publicPermissionProfileFlags = (
     // Codex's default name filter treats GIT_CONFIG_KEY_n as sensitive. Set
     // only those key names after filtering; their corresponding values stay
     // in the allowlisted environment instead of riding argv.
-    ...(gitConfigKeySet.length
-      ? ['-c', `shell_environment_policy.set={${gitConfigKeySet.join(',')}}`]
-      : []),
+    ...(shellSet.length ? ['-c', `shell_environment_policy.set={${shellSet.join(',')}}`] : []),
   ];
 };
 
@@ -797,6 +784,7 @@ const buildArgs = ({
   codexHelperReadPaths = [],
   modelBaseUrl = null,
   platform = process.platform,
+  workspacePath = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -822,6 +810,7 @@ const buildArgs = ({
         mcpReadDirectories,
         codexHelperReadPaths,
         platform,
+        workspacePath,
       ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
@@ -1024,6 +1013,10 @@ export default {
       memoryReadOnly: sandbox?.trust === 'public',
     });
 
+    const workspacePath = sandbox?.trust === 'public'
+      ? await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'public Codex agents' })
+      : null;
+
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.
     const dir = await mkdtemp(join(tmpdir(), 'commonly-codex-'));
@@ -1090,6 +1083,7 @@ export default {
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
         modelBaseUrl,
         platform: ctx._platform || process.platform,
+        workspacePath,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

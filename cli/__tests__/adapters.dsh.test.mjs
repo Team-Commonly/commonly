@@ -191,3 +191,20 @@ test('helpers keep the native route disabled and child env closed', () => {
     supportsDeveloperRole: false, supportsStore: false,
   });
 });
+
+// F219: the temp folder holds this turn's credential and proxy token, so a
+// workspace that holds the temp folder hands them to the jail.
+test('a confined seat in a workspace that holds the temp folder is refused before a child starts', async () => {
+  await withSeat(async (ctx) => {
+    const spawn = jest.fn();
+    await expect(dsh.spawn('hi', {
+      ...ctx,
+      cwd: tmpdir(),
+      environment: { ...ctx.environment, sandbox: { mode: 'workspace', network: { policy: 'restricted' } } },
+      _platform: 'darwin',
+      _detectSeatbelt: () => ({ available: true }),
+      _spawnImpl: spawn,
+    })).rejects.toThrow(/confined dsh agents cannot run in .*set TMPDIR outside it/);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+});

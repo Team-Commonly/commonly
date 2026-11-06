@@ -15,6 +15,7 @@ import { normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } 
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
@@ -281,6 +282,7 @@ export default {
     const executable = symlinkedBinary
       ? join(realpathSync(dirname(binary)), basename(binary)) : binary;
     const packageDir = symlinkedBinary ? dirname(realpathSync(executable)) : null;
+    if (isPublic) await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'public Qwen agents' });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-qwen-'));
     await chmod(tempDir, 0o700);
     // Keep child-writable state separate from adapter-owned config and keys.

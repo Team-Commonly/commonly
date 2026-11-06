@@ -341,3 +341,74 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
   }
 });
 
+// F219: the temp folder holds this turn's credential, so a workspace that holds
+// the temp folder hands it to the jail.
+test('a public seat in a workspace that holds the temp folder is refused, and nothing is spawned', async () => {
+  const keyCheck = jest.spyOn(goose, 'validateEnvironment').mockResolvedValue('/unused/provider-key');
+  const spawn = jest.fn();
+  try {
+    const ctx = baseCtx();
+    await expect(goose.spawn('hello', {
+      ...ctx,
+      cwd: tmpdir(),
+      environment: { ...ctx.environment,
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile: '/unused/provider-key' },
+        sandbox: { trust: 'public', mode: 'workspace' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _platform: 'darwin',
+      _spawnImpl: spawn,
+    })).rejects.toThrow(/public Goose agents cannot run in .*set TMPDIR outside it/);
+    expect(spawn).not.toHaveBeenCalled();
+  } finally {
+    keyCheck.mockRestore();
+  }
+});
+
+// F219: the jail writes the seat home, so nothing adapter-owned sits in it.
+test('a public bwrap seat gets its own files read-only, apart from the home it writes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'goose-f219-bwrap-'));
+  const home = join(root, 'mcp-home');
+  const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+  mkdirSync(join(pkgDir, 'src'), { recursive: true });
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+    name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+  }));
+  writeFileSync(join(pkgDir, 'src', 'index.js'), '');
+  writeFileSync(join(home, 'current'), '0.3.13\n');
+  // A held warm lock keeps prepareMcpSpawn from starting a real warm.
+  writeFileSync(join(home, '.warm.lock'), 'warming\n');
+  const keyFile = join(root, 'provider-key');
+  writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
+  const prior = process.env.COMMONLY_MCP_HOME;
+  process.env.COMMONLY_MCP_HOME = home;
+  let seen;
+  try {
+    const ctx = baseCtx();
+    await goose.spawn('hello', {
+      ...ctx,
+      environment: { ...ctx.environment,
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'bwrap' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _platform: 'linux',
+      _detectBwrap: () => ({ available: true }),
+      _wrapArgvWithBwrap: (argv, environment, options) => {
+        seen = { environment, options, recipe: argv[argv.indexOf('--recipe') + 1] };
+        return argv;
+      },
+      _spawnImpl: () => childWith(reply('ok')),
+    });
+  } finally {
+    if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = prior;
+    rmSync(root, { recursive: true, force: true });
+  }
+  const seatHome = seen.options.homePath;
+  expect(seen.environment.sandbox.filesystem['write-outside']).toEqual([seatHome]);
+  const owned = seen.options.readOnlyPaths.find((path) => seen.recipe.startsWith(`${path}/`));
+  expect(owned).toBeTruthy();
+  expect(seen.recipe.startsWith(`${seatHome}/`)).toBe(false);
+  expect(owned.startsWith(`${seatHome}/`)).toBe(false);
+});

@@ -451,3 +451,18 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
   });
 });
 
+// F219: the temp folder holds this turn's credential, so a workspace that holds
+// the temp folder hands it to the jail.
+test('a public seat in a workspace that holds the temp folder is refused, and nothing is spawned', async () => {
+  await withSeat(async (ctx) => {
+    const keyCheck = jest.spyOn(qwen, 'validateEnvironment').mockResolvedValue('/unused/provider-key');
+    const spawn = jest.fn();
+    try {
+      await expect(qwen.spawn('hi', { ...ctx, cwd: tmpdir(), _spawnImpl: spawn }))
+        .rejects.toThrow(/public Qwen agents cannot run in .*set TMPDIR outside it/);
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      keyCheck.mockRestore();
+    }
+  });
+});

@@ -1470,6 +1470,75 @@ describe('codex adapter — the public Codex home on Linux', () => {
     expect(existsSync(join(project, 'state'))).toBe(false);
   });
 
+  // F219: the temp folder holds this turn's credential and last-message.txt, on
+  // macOS as on Linux, so a workspace that holds it hands them to the sandbox.
+  test('a public seat in a workspace that holds the temp folder is refused before anything is written', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const publicHome = join(fakeHome, 'public-home');
+    await expect(codex.spawn('hi', {
+      sessionId: null,
+      cwd: tmpdir(),
+      environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+      env: { ...process.env, CODEX_HOME: join(fakeHome, '.codex') },
+      runtimeToken: 'cm_agent_fake',
+      agentName: 'macos-public-seat',
+      _homeDir: fakeHome,
+      _platform: 'darwin',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    })).rejects.toThrow(/public Codex agents cannot run in .*set TMPDIR outside it/);
+    expect(calls).toHaveLength(0);
+    expect(existsSync(publicHome)).toBe(false);
+  });
+
+  // F219: the sandbox denies $TMPDIR, so a shell heredoc and mktemp fail (real
+  // turn on codex-cli 0.162.1). The shell alone gets a writable temp folder.
+  describe('the temp folder a public shell gets', () => {
+    const turn = async (mode) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const workspace = join(fakeHome, 'project');
+      await mkdir(workspace, { recursive: true });
+      await codex.spawn('hi', {
+        sessionId: null,
+        cwd: workspace,
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode } },
+        env: { ...process.env, CODEX_HOME: join(fakeHome, '.codex') },
+        runtimeToken: 'cm_agent_fake',
+        agentName: 'macos-public-seat',
+        _homeDir: fakeHome,
+        _platform: 'darwin',
+        _publicCodexHome: join(fakeHome, 'public-home'),
+        _spawnImpl: impl,
+      });
+      const { args, opts } = calls[0];
+      return { args, opts, workspace: realpathSync(workspace) };
+    };
+    const shellSet = (args) => args[args.findIndex((arg) => arg.startsWith('shell_environment_policy.set='))] || '';
+
+    test('a writable workspace is the shell\'s TMPDIR, and only the shell\'s', async () => {
+      const { args, opts, workspace } = await turn('workspace');
+      expect(shellSet(args)).toBe('shell_environment_policy.set={'
+        + `"TMPDIR"=${JSON.stringify(workspace)},"TMPPREFIX"=${JSON.stringify(join(workspace, 'zsh'))}}`);
+      // Without the name here, include_only drops the value set above.
+      expect(args.find((arg) => arg.startsWith('shell_environment_policy.include_only='))).toContain('"TMPPREFIX"');
+      // Codex, its MCP child and the per-turn folder stay where they were.
+      expect(opts.env.TMPDIR).toBe(process.env.TMPDIR);
+      const lastMessage = args[args.indexOf('-o') + 1];
+      expect(realpathSync(dirname(dirname(lastMessage)))).toBe(realpathSync(tmpdir()));
+    });
+
+    test('a read-only workspace has nowhere to point it', async () => {
+      const { args } = await turn('read-only');
+      expect(shellSet(args)).toBe('');
+    });
+  });
+
+  test('a private seat keeps running in the temp folder: it has no sandbox to widen', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    await codex.spawn('hi', { sessionId: null, cwd: tmpdir(), environment: { model: 'test-model' }, env: process.env, _spawnImpl: impl });
+    expect(calls).toHaveLength(1);
+  });
+
   test('a workspace that contains the home is refused before Codex runs', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, CODEX_HOME: join(fakeHome, '.codex') };
