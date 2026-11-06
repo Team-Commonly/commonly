@@ -2606,8 +2606,8 @@ export const performRun = ({
   // answer and was then killed, so nothing will retry it and the person holds a
   // promise of more. Only `lostEvents` reach here, so a turn that ended cleanly
   // never does, and neither does one whose event is retried or handed back.
-  // No window of its own: an event is lost once, and in a shared pod the server's
-  // duplicate guard already bounds a fixed line to one per 30 minutes.
+  // No window of its own: an event is lost once. The kernel lets this exact line
+  // past its duplicate guard, since a second cut-off has no open ask to carry it.
   // A turn only agents woke gets no line: "ask me again" isn't for them, and in
   // an agent-dm the line would wake the peer into a paid turn.
   const noticeCutOff = async (lostEvents) => {

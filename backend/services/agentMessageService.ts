@@ -93,6 +93,10 @@ const { normalizeMessageContract } = require('./messageContract');
 const { normalizeReceipt } = require('./byoReceipt');
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
+// The wrapper's line for a turn killed after its event was settled
+// (cli/src/lib/turn-failure-notice.js, pinned by a test). An exact match, so
+// the exemption below can't carry anything else past the guard.
+const CUT_OFF_LINE = 'I got cut off before I could finish that, so please ask me again if anything is missing.';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
 // decision-only copy before total-match and leading-sentinel checks so one
 // invisible prefix cannot bypass both suppression paths. Do not rewrite the
@@ -1695,10 +1699,14 @@ class AgentMessageService {
       // needs a client change, so it holds for MCP posts, wrapper posts and the
       // native runtime alike.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+      // The wrapper's cut-off line is the same case, from a seat: fixed text, one
+      // per lost event, and no open ask left to let it through. A wrapper can't
+      // send `failureNotice`, because the HTTP routes don't forward it.
+      const isCutOffLine = sanitizedContent === CUT_OFF_LINE;
       // An approval card (F180) is exempt for a sharper reason: a second card
       // for the same tool repeats the first's text by construction, and a
       // dropped card fails the parked call.
-      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true)
+      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true || isCutOffLine)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
