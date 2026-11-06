@@ -374,8 +374,10 @@ const V2AgentSettingsPage: React.FC = () => {
             displayName={displayName}
             addedPod={addedPod?.identity === `${agentName}:${instanceId}` ? addedPod.name : null}
             onAdded={(name) => {
-              setAddedPod({ identity: `${agentName}:${instanceId}`, name });
-              void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))));
+              // After the refresh, so the note doesn't blink while the page reloads.
+              const added = { identity: `${agentName}:${instanceId}`, name };
+              void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))))
+                .finally(() => setAddedPod(added));
             }} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
             <h2 id="agent-identity-access" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityAccess')}</h2>

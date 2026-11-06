@@ -1073,7 +1073,7 @@ describe('one Identity & access list (d215 frame)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
       await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      expect(await screen.findByText('Added to Design.')).toBeInTheDocument();
+      await screen.findByText('Added to Design.');
       expect(axios.post.mock.calls[0][0]).toBe('/api/registry/agents/maya-claude/pods/pod-2?instanceId=default');
       await screen.findByRole('button', { name: 'Add to pod' });
       expect(screen.getByText('Added to Design.')).toBeInTheDocument();
