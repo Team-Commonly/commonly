@@ -164,7 +164,7 @@ describe('V2AgentBYO on Windows', () => {
     renderPage();
     await issue();
     const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Codex 在这里用不了 Windows 沙箱/);
+    expect(note).toHaveTextContent(/^Windows 上没有 Codex 在这里能用的沙箱/);
     expect(note).toHaveTextContent('这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它');
     expect(note).toHaveTextContent('连接器授权');
     expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
