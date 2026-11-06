@@ -111,8 +111,11 @@ export const takeBackInstallation = async (
 ): Promise<void> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { AgentInstallation } = require('../models/AgentRegistry');
+  const row = {
+    agentName: { $eq: key.agentName }, podId: { $eq: key.podId }, instanceId: { $eq: key.instanceId },
+  };
   if (!previous) {
-    await AgentInstallation.deleteOne(key);
+    await AgentInstallation.deleteOne(row);
     return;
   }
   const $set: Record<string, unknown> = {};
@@ -121,7 +124,7 @@ export const takeBackInstallation = async (
     if (previous[field] === undefined) $unset[field] = 1;
     else $set[field] = previous[field];
   });
-  await AgentInstallation.updateOne(key, { $set, ...(Object.keys($unset).length ? { $unset } : {}) });
+  await AgentInstallation.updateOne(row, { $set, ...(Object.keys($unset).length ? { $unset } : {}) });
 };
 
 /** Explain a genuine second installer to the first installer in Settings. */

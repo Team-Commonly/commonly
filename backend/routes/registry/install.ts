@@ -876,7 +876,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
     const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
-    const previousRow = installsInProcess ? await AgentInstallation.findOne(installationKey) : null;
+    const previousRow = installsInProcess
+      ? await AgentInstallation.findOne({
+        agentName: { $eq: installationKey.agentName },
+        podId: { $eq: podId },
+        instanceId: { $eq: normalizedInstanceId },
+      })
+      : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
       config: installConfig,
