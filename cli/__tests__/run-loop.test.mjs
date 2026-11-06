@@ -1474,6 +1474,112 @@ describe('performRun', () => {
     expect(prompt).toContain(ANSWER_IN_CHANNEL);
   });
 
+  // Growth's wake-mode walk, 11-06: a person's direct @ ended in NO_REPLY in 5
+  // of 12 runs on Codex, after the seat had read the answer. The closing line
+  // offered silence on every batch, so a turn that answers a person no longer
+  // does. Pinned as literals, like FINAL_TEXT_IS_POSTED above.
+  const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
+    + "is short, is that you can't help, or repeats what another agent said. Do not leave them without a reply.]";
+  const PERSON_CLOSING = 'Do not narrate the inbox. Answer each person who addressed you above. '
+    + 'For anything else here, post only an action or a materially useful response. '
+    + 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+    + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
+  const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
+
+  const promptWithMessages = async (events, messages, { claimHolder } = {}) => {
+    createClient.mockReturnValue({
+      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages } : { events })),
+      post: jest.fn(async (url) => {
+        if (!url.endsWith('/claim')) return {};
+        return claimHolder ? { claimed: false, claimedBy: claimHolder } : { claimed: true, expiresAt: 'later' };
+      }),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    return spawn.mock.calls[0][0];
+  };
+  const mention = (id, payload = {}) => makeEvent({
+    _id: `evt-${id}`, payload: { content: '@seat what is the status?', messageId: id, ...payload },
+  });
+
+  test('a person\'s direct @ is not offered silence', async () => {
+    const prompt = await promptWithMessages([mention('m1')], [{ _id: 'm1', isBot: false }]);
+    expect(prompt).toContain(PERSON_ADDRESSED);
+    expect(prompt).toContain(PERSON_CLOSING);
+    expect(prompt).not.toContain('otherwise return NO_REPLY');
+    expect(prompt).not.toContain('If you did nothing');
+    expect(prompt).not.toContain('intentional NO_REPLY');
+    expect(prompt).toContain('(including any reply posted through a tool), checkpoint that item');
+  });
+
+  test('a person\'s DM is not offered silence, with no message snapshot to read', async () => {
+    const prompt = await promptWithMessages([mention('m1', { dmKind: 'user-agent', source: 'dm' })], []);
+    expect(prompt).toContain(PERSON_ADDRESSED);
+    expect(prompt).toContain(PERSON_CLOSING);
+  });
+
+  test('the checkpoint line on a person\'s item asks for the posted answer, not for NO_REPLY', async () => {
+    const prompt = await promptWithMessages(
+      [mention('m1', { deliveryId: 'd-1' })], [{ _id: 'm1', isBot: false }],
+    );
+    expect(prompt).toContain('[After your answer is posted through a tool for only this item, call commonly_checkpoint_event(');
+    expect(prompt).not.toContain('intentional NO_REPLY');
+  });
+
+  test.each([
+    ['another agent\'s @', () => mention('m1'), [{ _id: 'm1', isBot: true }]],
+    ['an agent\'s DM', () => mention('m1', { dmKind: 'agent-agent', source: 'dm' }), []],
+    ['a sender the snapshot cannot name', () => mention('m1'), []],
+    ['a kernel reminder', () => mention('m1', { triggerAuthor: 'kernel' }), [{ _id: 'm1', isBot: false }]],
+    ['a heartbeat', () => makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: { content: 'Run your checklist.' } }), []],
+    ['a person\'s message that named nobody', () => makeEvent({
+      _id: 'evt-amb', type: 'message.posted', payload: { content: 'morning all', messageId: 'm1' },
+    }), [{ _id: 'm1', isBot: false }]],
+  ])('%s keeps the way out', async (_label, build, messages) => {
+    const prompt = await promptWithMessages([build()], messages);
+    expect(prompt).not.toContain(PERSON_ADDRESSED);
+    expect(prompt).toContain(SILENCE_CLOSING);
+    expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
+  });
+
+  test('a seat whose peer holds the person\'s message may still stand down', async () => {
+    const prompt = await promptWithMessages(
+      [mention('m1')], [{ _id: 'm1', isBot: false }], { claimHolder: 'peer-seat' },
+    );
+    expect(prompt).toContain('[Claim notice: @peer-seat holds message m1');
+    expect(prompt).not.toContain(PERSON_ADDRESSED);
+    expect(prompt).toContain(SILENCE_CLOSING);
+  });
+
+  test('a delivery already answered gets no line beside a person\'s new @', async () => {
+    recordHandledEvent('my-stub', 'evt-m1');
+    const prompt = await promptWithMessages(
+      [mention('m1'), mention('m2')], [{ _id: 'm1', isBot: false }, { _id: 'm2', isBot: false }],
+    );
+    const [oldItem, newItem] = prompt.split('Event 2/2');
+    expect(oldItem).not.toContain(PERSON_ADDRESSED);
+    expect(newItem).toContain(PERSON_ADDRESSED);
+  });
+
+  test('in a mixed batch only the person\'s item gets the line, and the closing still answers them', async () => {
+    const prompt = await promptWithMessages(
+      [mention('m1'), mention('m2')], [{ _id: 'm1', isBot: false }, { _id: 'm2', isBot: true }],
+    );
+    expect(prompt.split(PERSON_ADDRESSED)).toHaveLength(2);
+    expect(prompt.indexOf(PERSON_ADDRESSED)).toBeLessThan(prompt.indexOf('Event 2/2'));
+    expect(prompt).toContain(PERSON_CLOSING);
+    expect(prompt).not.toContain('otherwise return NO_REPLY');
+  });
+
   // CodeRabbit on #3499: a duplicate delivery (already handled here) stays in
   // the batch prompt beside a new item, and must not be told to post an answer.
   test('a duplicate delivery beside a new mention gets no top-level line; the new one does', async () => {
