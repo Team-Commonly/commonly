@@ -214,15 +214,19 @@ const V2YourTeamPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
       const res = await axios.post<{ entitlements?: Record<string, unknown> }>('/api/auth/redeem-invitation', { invitationCode: code }, { headers });
-      if (res.data?.entitlements) mergeUser?.({ entitlements: res.data.entitlements });
+      // The grant belongs to the account that asked, so a sign-out mid-request doesn't pass it on.
+      if (res.data?.entitlements && localStorage.getItem('token') === token) mergeUser?.({ entitlements: res.data.entitlements });
       setRedeemed(true);
       setRedeemOpen(false);
       setRedeemCode('');
     } catch (err: unknown) {
-      // The server's text is English only. A rate limit is the one failure that isn't about the
-      // code, and it's shared with sign-in on this IP, so a good code mustn't read as a bad one.
+      // The server's text is English only. A rate limit, a server error and a dropped connection
+      // aren't about the code, so a good code mustn't read as a bad one. The rate limit is shared
+      // with sign-in on this IP, and a server error can land after the code was spent.
       const status = (err as { response?: { status?: number } })?.response?.status;
-      setRedeemError(t(status === 429 ? 'yourTeam.errors.redeemRateLimited' : 'yourTeam.errors.redeemFailed'));
+      if (status === 429) setRedeemError(t('yourTeam.errors.redeemRateLimited'));
+      else if (!status || status >= 500) setRedeemError(t('yourTeam.errors.redeemServerFailed'));
+      else setRedeemError(t('yourTeam.errors.redeemFailed'));
     } finally {
       setRedeeming(false);
     }

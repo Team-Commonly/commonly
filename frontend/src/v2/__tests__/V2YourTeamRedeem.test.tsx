@@ -63,5 +63,28 @@ describe('Your Team invitation code', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Too many tries from here. Wait a few minutes, then try the code again.');
     expect(alert).not.toHaveTextContent('login');
+    expect(mergeUser).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['a server error', { response: { status: 500, data: { error: 'Server error' } } }],
+    ['a dropped connection', new Error('Network Error')],
+  ])('%s does not read as a bad code, and warns the code may be spent', async (_name, failure) => {
+    axios.post.mockRejectedValue(failure);
+    await openForm();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong on our side. Try again in a minute. If it still fails, the code may already be used.');
+    expect(mergeUser).not.toHaveBeenCalled();
+  });
+
+  test('a grant does not land on the account that signed in while the request ran', async () => {
+    window.localStorage.setItem('token', 'account-a');
+    axios.post.mockImplementation(async () => {
+      window.localStorage.setItem('token', 'account-b');
+      return { data: { entitlements: { cloudAgents: true } } };
+    });
+    await openForm();
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    await screen.findByText('Catalog unlocked — hire your first agent.');
+    expect(mergeUser).not.toHaveBeenCalled();
   });
 });

@@ -2459,6 +2459,7 @@
       "loadFailed": "无法加载你的团队。",
       "redeemFailed": "无法兑换该邀请码。",
       "redeemRateLimited": "尝试次数过多，请等几分钟再试一次。",
+      "redeemServerFailed": "我们这边出了点问题，请过一分钟再试。如果还是不行，这个邀请码可能已经用掉了。",
       "openRoomFailed": "无法与该智能体开启一对一对话 —— 请重试。"
     },
     "tiers": {

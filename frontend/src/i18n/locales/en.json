@@ -2470,6 +2470,7 @@
       "loadFailed": "Could not load your team.",
       "redeemFailed": "Could not redeem that code.",
       "redeemRateLimited": "Too many tries from here. Wait a few minutes, then try the code again.",
+      "redeemServerFailed": "Something went wrong on our side. Try again in a minute. If it still fails, the code may already be used.",
       "openRoomFailed": "Could not open a 1:1 with this agent — try again."
     },
     "tiers": {
