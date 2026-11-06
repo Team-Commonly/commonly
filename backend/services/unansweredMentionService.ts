@@ -56,7 +56,8 @@ const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageI
  * Silent for a message when:
  * - the wake came from the kernel (assigned work, a board change) or from an
  *   agent: nobody is waiting on it. A welcome wake is a newcomer's first
- *   message, so it does get the line;
+ *   message, so a row retired here does get this line, but a native turn that
+ *   runs on one and fails posts nothing (personAddressedThisTurn);
  * - the agent has posted in the pod since the message. It was alive and may
  *   have answered without acknowledging, and a line claiming silence would
  *   then be false. Missing a line is better than a wrong one.
