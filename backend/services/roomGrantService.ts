@@ -416,6 +416,7 @@ const recordGrantIssued = (grant: IRoomGrant, issuer: RecordActor | null | undef
     // Explicit, because the format's default reads issuedBy as a human: an
     // agent delegating a child is named as the agent it is.
     actor: issuer ?? null,
+    connectionOwner: grant.ownerId,
     data: {
       grantId: grant.grantId,
       ...(grant.parentGrantId ? { parentGrantId: grant.parentGrantId } : {}),

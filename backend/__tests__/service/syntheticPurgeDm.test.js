@@ -36,6 +36,7 @@ describe('Synthetic purge DM preservation', () => {
     await pool.query('CREATE TABLE pods (id varchar(24) PRIMARY KEY, type text)');
     await pool.query('CREATE TABLE pod_members (pod_id varchar(24) REFERENCES pods(id) ON DELETE CASCADE, user_id varchar(24))');
     await pool.query('CREATE TABLE messages (pod_id varchar(24))');
+    await pool.query('CREATE TABLE record_openings (subject varchar(128))');
     await pool.query('CREATE TABLE message_claims (pod_id varchar(24))');
   });
   afterEach(async () => { await clearMongoDb(); await pool.end();
@@ -60,11 +61,16 @@ describe('Synthetic purge DM preservation', () => {
       const keep = await AgentInstallation.create({ agentName: 'other-agent', podId: pod._id, version: '1.0.0', installedBy: other._id });
       const key = await AgentCredential.create({ tokenHash: 'owned', kind: 'runtime', ownerUserId: human._id, agentUserId: agent._id });
       const otherKey = await AgentCredential.create({ tokenHash: 'other', kind: 'runtime', ownerUserId: other._id, agentUserId: agent._id });
+      await pool.query('INSERT INTO record_openings VALUES ($1), ($2)', [String(human._id), String(other._id)]);
       const dry = await purgeSyntheticAccounts({ now: NOW, pool });
+      expect(dry.counts['pg.record_openings']).toBe(1);
       expect(await User.findById(human._id)).not.toBeNull();
       expect((await AgentInstallation.findById(own._id)).status).toBe('active');
       expect((await AgentCredential.findById(key._id)).status).toBe('active');
       await purgeSyntheticAccounts({ apply: true, now: NOW, pool });
+      // F265: this path forgets a person's record ids too, and leaves the sweep a receipt.
+      expect((await pool.query('SELECT subject FROM record_openings')).rows).toEqual([{ subject: String(other._id) }]);
+      expect(await require('../../models/AccountDeletion').exists({ _id: human._id })).toBeTruthy();
       const after = await Pod.findById(pod._id);
       const pair = pod.members.map(String).sort();
       expect(after?.members.map(String).sort()).toEqual(pair);

@@ -14,6 +14,8 @@ const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLi
 const { sendEmail } = require('../../services/emailService');
 const Integration = require('../../models/Integration');
 const { HOSTED_MCP_TYPE } = require('../../services/connectionRemovalService');
+const { deleteOpeningsFor } = require('../../repositories/recordChainRepository');
+const AccountDeletion = require('../../models/AccountDeletion');
 
 const router = express.Router();
 
@@ -387,6 +389,9 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
       // target document itself so a claim appearing after the reads above
       // cannot lose its recoverable owner during billing preflight or cleanup.
       beginWrite();
+      // Before the row goes, so a failed removal can be retried. Their record
+      // lines stay and still verify (ADR-033 D7).
+      await deleteOpeningsFor(String(target._id));
       const deleted = await User.findOneAndDelete({
         _id: target._id, accountDeletionRequestedAt: { $exists: false },
       });
@@ -396,6 +401,10 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
           code: 'ACCOUNT_CHANGED',
         });
       }
+      // Only now: a receipt on a live row would tell a racing self-deletion its
+      // billing preflight had passed. The sweep re-clears any id a late line
+      // brings back, from an agent or a grant that outlived this person.
+      await AccountDeletion.updateOne({ _id: target._id }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
       return mutationResponse(200, { message: 'User deleted successfully' });
     });
     return res.status(result.status).json(result.body);

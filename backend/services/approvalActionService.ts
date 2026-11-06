@@ -1586,13 +1586,14 @@ type ToolCallClosure = 'expired' | 'approved' | 'declined';
 type LiveDecider = { approver: { userId: string; username: string }; receiptName: string };
 
 /** The person who decided, for a retry that has no request to read them from. */
-const deciderOf = async (row: IApprovalAction): Promise<LiveDecider> => {
+export const deciderOf = async (row: Pick<IApprovalAction, 'resolvedBy'>): Promise<LiveDecider> => {
   const user = await User.findById(row.resolvedBy).select('username displayName').lean() as
     { username?: string; displayName?: string } | null;
   const name = user?.displayName?.trim() || user?.username?.trim();
   return {
     approver: { userId: String(row.resolvedBy), username: name || 'The workspace owner' },
-    receiptName: name || String(row.resolvedBy),
+    // Never the raw id: this goes into chat text.
+    receiptName: name || 'The workspace owner',
   };
 };
 

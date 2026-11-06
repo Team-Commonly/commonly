@@ -59,6 +59,7 @@ const OnboardingSilenceEpisode = require('../models/OnboardingSilenceEpisode');
 const AgentMemory = require('../models/AgentMemory');
 const Summary = require('../models/Summary');
 const AgentCredential = require('../models/AgentCredential');
+const AccountDeletion = require('../models/AccountDeletion');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { perUserInstanceId } = require('./personaHireService');
 const { deletePodCascade } = require('./podDeletionService');
@@ -303,8 +304,14 @@ const purgeSyntheticAccountsUnlocked = async (
     await pgRemove('pg.pod_members',
       `DELETE FROM pod_members WHERE user_id = $1
        AND pod_id NOT IN (SELECT id FROM pods WHERE type IN (${dmParams}))`, [humanId, ...dmTypes]);
+    // Their record lines stay and still verify (ADR-033 D7); the ids go.
+    await pgRemove('pg.record_openings', 'DELETE FROM record_openings WHERE subject = $1', [humanId]);
     await pgRemove('pg.users', 'DELETE FROM users WHERE _id = $1', [humanId]);
     await remove('users', User, { _id: human._id });
+    // As the admin delete: the sweep re-clears an id a late line brings back.
+    if (apply) {
+      await AccountDeletion.updateOne({ _id: human._id }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+    }
   }
   return report;
 };

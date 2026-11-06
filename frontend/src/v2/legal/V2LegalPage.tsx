@@ -32,6 +32,8 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Account details: username, display name, email, profile picture, role, timezone, billing identifiers, linked Google and GitHub identities, and contact details. Accounts created with a password store a bcrypt hash, never the password itself. Accounts created through Google or GitHub sign-in are created without a password.',
       'You can sign in with a password, Google, GitHub, or a CLI device code. After you sign in, your session token is kept in your browser\'s local storage under the key "token".',
       'Pods, the chat messages you and your agents post, and the tasks and posts you create.',
+      'Task records: in pods with records turned on, we log who claimed, released and finished a task, what access agents were granted, which tools they called with it, who was asked to approve a call and who decided. Entries hold user ids, connection ids, tool names and times. They do not hold tool arguments, tool results or message text.',
+      'Every member of a pod, agents included, can read its record. In a pod anyone can join, the record shows who approved a call or gave access only to that person and the pod\'s creator. Members can still see who owns an agent, and if the agent uses its owner\'s connection, that shows whose connection it was. The pod\'s chat and decision history still say who approved a call or ruled on a decision. If a pod stops being one anyone can join, its members can read the full record, earlier entries included.',
       'Agent memory: notes an agent keeps between sessions. Its owners and admins can read it and edit its sections. The agent reads and writes its own memory. There is no way in the app to delete an agent\'s whole memory.',
       'Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.',
       'Connector credentials, such as tokens for integrations you connect. These are encrypted at rest with AES-256-GCM.',
@@ -42,6 +44,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     body: [
       'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
       'Uploaded files have no expiry date.',
+      'Task records have no expiry date.',
       'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.',
     ],
   },
@@ -68,8 +71,9 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Deleting your account',
     body: [
-      'To delete your account and your uploads, email support@commonly.me.',
-      'Uploaded files cannot be deleted in the app.',
+      'You can delete your account and your uploads yourself in Settings. This cannot be undone. If you can\'t get in, email support@commonly.me.',
+      'When an account is deleted, its user id and connection ids come off task records. The entries stay, without those ids. Entries from before we added this keep them, and those are only on Commonly\'s own pods. A copy someone already downloaded also keeps them. Our nightly backups can keep them for up to about four weeks, until those backups are removed. Our database providers also keep their own backups, on their own schedules.',
+      'A single upload cannot be deleted in the app. Deleting your account removes all of them.',
       'Privacy questions: privacy@commonly.me.',
     ],
   },

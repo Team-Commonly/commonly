@@ -4,6 +4,7 @@ import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import mongoose from 'mongoose';
 import AgentRun from '../models/AgentRun';
 import ToolCall from '../models/ToolCall';
+import { personIdFor } from '../services/recordRedaction';
 
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
@@ -24,13 +25,15 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     }
     const userId = (req as express.Request & { user?: { id: string }; userId?: string }).user?.id
       || (req as express.Request & { userId?: string }).userId;
-    const pod = await Pod.findById(podId).select('members type').lean();
+    const pod = await Pod.findById(podId).select('members type joinPolicy publicRead communityListed createdBy').lean();
     if (!await DMService.canViewPod(userId, pod)) {
       return res.status(404).json({ error: 'trace_not_found' });
     }
     // Pod-read bypasses admit admins and agent-DM observers, but authorization
     // identities are visible only to actual origin members. This pod is lean
-    // and unpopulated, so members are ObjectIds.
+    // and unpopulated, so members are ObjectIds. On a pod anyone can join, a
+    // credential owner's id goes only to that owner and the pod's creator
+    // (recordRedaction).
     const isOriginMember = pod.members.some((member: unknown) => String(member) === String(userId));
     // Do not load content-bearing args, results or LLM text even transiently.
     const run = await AgentRun.findOne({ _id: runId, podId })
@@ -49,7 +52,9 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     const byId = new Map(trail.map((call) => [call.callId, {
       callId: call.callId, tool: call.tool, outcome: call.outcome,
       at: call.at, durationMs: call.durationMs,
-      ...(isOriginMember ? { grantId: call.grantId, credentialOwnerId: call.credentialOwnerId } : {}),
+      ...(isOriginMember ? { grantId: call.grantId } : {}),
+      ...(isOriginMember && personIdFor(pod, userId, call.credentialOwnerId) === call.credentialOwnerId
+        ? { credentialOwnerId: call.credentialOwnerId } : {}),
     }]));
     res.set('Cache-Control', 'no-store');
     return res.json({

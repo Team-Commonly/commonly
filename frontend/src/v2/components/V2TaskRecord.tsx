@@ -23,7 +23,17 @@ export interface RecordLine {
   seq: number; ts: string; kind: string; runId: string;
   actor: { type: string; id: string; owner?: string } | null;
   data: Record<string, unknown>;
+  /** Set when this isn't the stored line: an older line on an open pod's view (record-v1 §8). */
+  redaction?: { fields: string[]; hash: string | null };
+  /** The ids and salts behind this line's commitments that this reader may have (record-v1 §9). */
+  openings?: Record<string, { id: string; salt: string }>;
 }
+
+// What stands where an id isn't served: a view's placeholder (record-v1 §8), or
+// a commitment nobody opened, because the id is withheld or was deleted (§9).
+// Neither means an entry changed.
+const COMMITMENT = /^c1:[0-9a-f]{64}$/;
+const isHiddenId = (value: string): boolean => value === 'redacted' || COMMITMENT.test(value);
 
 // Kinds the server writes today. A reader shows any other kind by its raw name.
 const KNOWN_KINDS = new Set([
@@ -85,14 +95,37 @@ const isRecordLine = (value: unknown): value is RecordLine => isObject(value)
     && typeof value.actor.type === 'string' && typeof value.actor.id === 'string'))
   && isObject(value.data);
 
+// Every string in a value through one mapping, at any depth.
+const mapStrings = (value: unknown, map: (text: string) => string): unknown => {
+  if (typeof value === 'string') return map(value);
+  if (Array.isArray(value)) return value.map((item) => mapStrings(item, map));
+  if (isObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mapStrings(item, map)]));
+  return value;
+};
+
+// A line with the ids it was served openings for put back in place, as
+// readRecord does. A commitment with no opening stays, and shows as hidden.
+const openLine = (line: RecordLine): RecordLine => {
+  const { openings, ...stored } = line;
+  if (!isObject(openings)) return line;
+  const opened = (text: string) => (Object.prototype.hasOwnProperty.call(openings, text) ? openings[text].id : text);
+  return { ...stored, actor: mapStrings(stored.actor, opened) as RecordLine['actor'], data: mapStrings(stored.data, opened) as RecordLine['data'] };
+};
+
 /** Every line of a record, or a throw when any line is not a record-v1 entry. */
 export const parseRecord = (jsonl: string): RecordLine[] => jsonl.split('\n')
   .filter((line) => line.trim())
   .map((line) => {
     const value: unknown = JSON.parse(line);
     if (!isRecordLine(value)) throw new Error('not a record line');
-    return value;
+    return openLine(value);
   });
+
+const mentionsHidden = (value: unknown): boolean => {
+  let found = false;
+  mapStrings(value, (text) => { found = found || isHiddenId(text); return text; });
+  return found;
+};
 
 const saveFile = (content: string, type: string, name: string) => {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -196,7 +229,8 @@ const V2TaskRecord: React.FC = () => {
     return () => { live = false; };
   }, [api, podId, taskId, valid]);
 
-  const personLabel = useCallback((id: string) => names.get(id)?.name || id, [names]);
+  const personLabel = useCallback((id: string) => (isHiddenId(id)
+    ? t('taskRecord.hiddenPerson') : names.get(id)?.name || id), [names, t]);
   const actorLabel = (actor: RecordLine['actor']) => {
     if (!actor) return t('taskRecord.actor.unknown');
     if (actor.type === 'system') return actor.id === 'board' ? t('taskRecord.actor.board') : t('taskRecord.actor.system', { id: actor.id });
@@ -218,8 +252,10 @@ const V2TaskRecord: React.FC = () => {
   };
   const kindLabel = (kind: string) => (KNOWN_KINDS.has(kind) ? t(`taskRecord.kinds.${kind.replace('.', '_')}`) : kind);
   const valueLabel = (key: string, value: unknown) => {
-    if (typeof value === 'string') return PERSON_FIELDS.has(key) ? personLabel(value) : value;
-    return typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value);
+    if (typeof value === 'string') return PERSON_FIELDS.has(key) || isHiddenId(value) ? personLabel(value) : value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    // A grant's scope nests ids, so a hidden one must not show here as a token.
+    return JSON.stringify(mapStrings(value, (text) => (isHiddenId(text) ? t('taskRecord.hiddenPerson') : text)));
   };
   const locale = appDateLocale(i18n.resolvedLanguage);
   const clock = (ts: unknown) => {
@@ -268,6 +304,8 @@ const V2TaskRecord: React.FC = () => {
     }
     return parts.filter(Boolean).join(' · ');
   };
+  const hasHidden = lines.some((line) => line.redaction || (line.actor && isHiddenId(line.actor.id))
+    || mentionsHidden(line.data));
   const runId = lines[0]?.runId;
   const fileBase = `${taskId}.record`;
   const [open, setOpen] = useState<Set<number>>(() => new Set());
@@ -359,6 +397,8 @@ const V2TaskRecord: React.FC = () => {
       {loaded && <>
         <h2 className="v2-task-record__task">{title || taskId}</h2>
         <p className="v2-task-record__id">{`${taskId} · ${counts}`}</p>
+        {hasHidden && <p className="v2-task-record__note">{t('taskRecord.hiddenNote')}</p>}
+        {lines.some((line) => line.redaction?.hash === null) && <p className="v2-task-record__note">{t('taskRecord.unlinkedNote')}</p>}
         {downloadError && <p className="v2-task-record__alert" role="alert">{t('taskRecord.downloadError')}</p>}
         {!lines.length && <div className="v2-task-record__none">
           <span className="v2-task-record__tile" aria-hidden="true"><RecordGlyph name="clock" /></span>

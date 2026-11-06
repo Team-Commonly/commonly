@@ -25,7 +25,7 @@ const { pool } = require('../../config/db-pg');
 const repository = require('../../repositories/recordChainRepository');
 const { flushRecordWrites } = require('../../services/recordService');
 const KernelWorkSweepService = require('../../services/kernelWorkSweepService').default;
-const { verifyRecord } = require('../../vendor/seats/src/record/format');
+const { verifyRecord, readRecord } = require('../../vendor/seats/src/record/format');
 const {
   setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb, generateTestToken,
 } = require('../utils/testUtils');
@@ -83,6 +83,10 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     jest.restoreAllMocks();
     await flushRecordWrites();
     await pool.query(
+      'DELETE FROM record_openings WHERE chain_id IN (SELECT id FROM record_chains WHERE pod_id = ANY($1))',
+      [podIds()],
+    );
+    await pool.query(
       'DELETE FROM record_lines WHERE chain_id IN (SELECT id FROM record_chains WHERE pod_id = ANY($1))',
       [podIds()],
     );
@@ -117,7 +121,7 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(verified).toMatchObject({ ok: true, entries: 4, settled: false });
     expect(res.headers['x-record-head']).toBe(verified.head);
     expect(res.headers['x-record-entries']).toBe('4');
-    const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
+    const lines = readRecord(res.text);
     expect(lines.map((l) => [l.kind, l.data])).toEqual([
       ['task.claimed', { leaseUntil: expect.any(String) }],
       ['task.released', { reason: 'blocked' }],
@@ -150,7 +154,7 @@ real('task record route on real PostgreSQL and MongoDB', () => {
 
     const res = await read(generateTestToken(owner._id));
     expect(verifyRecord(res.text)).toMatchObject({ ok: true, entries: 4 });
-    const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
+    const lines = readRecord(res.text);
     expect(lines.map((l) => [l.kind, l.actor && l.actor.type, l.data.reason])).toEqual([
       ['task.claimed', 'agent', undefined],
       ['task.released', 'system', 'lease_expired'],
@@ -169,7 +173,7 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(as(AGENT_TOKEN)).send({ status: 'in_progress' })).status).toBe(400);
     await flushRecordWrites();
     const res = await read(generateTestToken(owner._id));
-    const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
+    const lines = readRecord(res.text);
     expect(lines.map((l) => [l.kind, l.data])).toEqual([
       ['task.claimed', { leaseUntil: expect.any(String) }],
       ['task.released', { reason: 'blocked' }],
@@ -256,6 +260,33 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(await request(app).get(`/api/pods/${dm._id}/record`).set(as(observer)))
       .toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
     expect(readChain).not.toHaveBeenCalled();
+  });
+
+  it('F265: on a pod anyone can join, a real chain keeps the approver unopened and the whole check passes', async () => {
+    const { appendRecord } = require('../../services/recordService');
+    await Pod.updateOne({ _id: pod._id }, { publicRead: true, communityListed: true, joinPolicy: 'open' });
+    const member = await User.create({
+      username: `record-member-${Date.now()}`, email: `record-member-${Date.now()}@test.com`, password: 'Password123!', verified: true,
+    });
+    await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: member._id } });
+    const decided = {
+      outcome: 'selected', toolCallId: 'tc', rule: { list: 'ask', pattern: null },
+      decidedBy: String(owner._id), decidedByRole: 'credential-owner',
+    };
+    await appendRecord({ podId: String(pod._id) }, 'f265/1', [
+      { kind: 'permission.decided', data: decided },
+      { kind: 'tool.update', actor: { type: 'agent', id: String(agent._id) }, data: { toolCallId: 'tc', status: 'completed' } },
+    ]);
+    const res = await request(app).get(`/api/pods/${pod._id}/record`).set('Authorization', `Bearer ${generateTestToken(member._id)}`);
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain(String(owner._id));
+    const result = verifyRecord(res.text);
+    expect(result).toMatchObject({ ok: true, errors: [] });
+    expect(result.partial).toBeUndefined();
+    expect(res.headers['x-record-head']).toBe(result.head);
+    expect(res.headers['x-record-unopened']).toBe('1');
+    const own = await request(app).get(`/api/pods/${pod._id}/record`).set('Authorization', `Bearer ${generateTestToken(owner._id)}`);
+    expect(own.text).toContain(String(owner._id));
   });
 
   it('answers a store outage with 503, never an empty record', async () => {

@@ -9,11 +9,12 @@ jest.mock('../../../repositories/recordChainRepository', () => {
   return {
     ...actual,
     appendToChain: jest.fn(async (ref, runId, eventKey, build) => {
-      if (!mockChains.has(key(ref))) mockChains.set(key(ref), { runId, lines: [], keys: new Set() });
+      if (!mockChains.has(key(ref))) mockChains.set(key(ref), { runId, lines: [], openings: [], keys: new Set() });
       const chain = mockChains.get(key(ref));
       if (chain.keys.has(eventKey)) return { appended: 0, duplicate: true };
-      const { lines } = build(chain.lines[chain.lines.length - 1] || null, chain.runId);
+      const { lines, openings } = build(chain.lines[chain.lines.length - 1] || null, chain.runId);
       chain.lines.push(...lines);
+      chain.openings = [...(chain.openings || []), ...openings];
       chain.keys.add(eventKey);
       return { appended: lines.length, duplicate: false };
     }),
@@ -24,9 +25,10 @@ const mongoose = require('mongoose');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../../utils/testUtils');
 const Task = require('../../../models/Task');
 const Pod = require('../../../models/Pod');
+const { attachOpenings } = require('../../../services/recordRedaction');
 const service = require('../../../services/roomGrantService');
 const { flushRecordWrites } = require('../../../services/recordService');
-const { verifyRecord } = require('../../../vendor/seats/src/record/format');
+const { verifyRecord, readRecord } = require('../../../vendor/seats/src/record/format');
 
 const POD = new mongoose.Types.ObjectId().toString();
 const OWNER = new mongoose.Types.ObjectId().toString();
@@ -50,7 +52,8 @@ const chainLines = async (podId = POD, taskId = 'TASK-1') => {
   const chain = mockChains.get(`${podId}|${taskId}`);
   if (!chain) return [];
   expect(verifyRecord(chain.lines.map((line) => `${line}\n`).join(''))).toMatchObject({ ok: true });
-  return chain.lines.map((line) => JSON.parse(line));
+  // The stored bytes hold no people; the reader opens them from the rows beside them.
+  return readRecord(chain.lines.map((line, index) => `${attachOpenings(line, chain.openings[index])}\n`).join(''));
 };
 const close = async () => {
   const task = await Task.findOneAndUpdate(

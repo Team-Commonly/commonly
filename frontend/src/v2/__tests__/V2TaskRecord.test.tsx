@@ -426,3 +426,101 @@ test('a long actor name keeps its full text in the title, so a truncated row sti
   const name = await screen.findByText(long, { selector: '.v2-task-record__name' });
   expect(name.closest('.v2-task-record__who')).toHaveAttribute('title', long);
 });
+
+describe('a redacted view (F265)', () => {
+  const hidden = (seq: number, kind: string, actor: unknown, data: Record<string, unknown>) => JSON.stringify({
+    ...JSON.parse(line(seq, kind, actor, data)), redaction: { fields: ['data.decidedBy'], hash: 'b'.repeat(64) },
+  });
+  const VIEW = [
+    hidden(1, 'permission.decided', { id: 'redacted', type: 'human' }, { decidedBy: 'redacted', kind: 'allow_once' }),
+    line(2, 'tool.update', { id: AGENT, type: 'agent' }, { toolCallId: 'tc', status: 'completed' }),
+  ].join('\n').concat('\n');
+
+  test('names a hidden person as hidden, never by the placeholder, and says why', async () => {
+    wire(() => Promise.resolve(VIEW));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.getByText(/shows only to that person and the pod's creator/)).toBeInTheDocument();
+    expect(screen.getByText(/A hidden name doesn't mean an entry changed/)).toBeInTheDocument();
+    expect(screen.getAllByText('Hidden').length).toBeGreaterThan(0);
+    expect(screen.queryByText('redacted')).not.toBeInTheDocument();
+  });
+
+  test('a full record shows no such note', async () => {
+    wire(() => Promise.resolve(JSONL));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByText(/names here are hidden/)).not.toBeInTheDocument();
+  });
+
+  const COMMITTED = `c1:${'a'.repeat(64)}`;
+  const OPENED = `c1:${'c'.repeat(64)}`;
+  const committed = (seq: number, data: Record<string, unknown>, openings?: Record<string, unknown>) => JSON.stringify({
+    ...JSON.parse(line(seq, 'grant.issued', { id: COMMITTED, type: 'human' }, data)), ...(openings ? { openings } : {}),
+  });
+
+  test('a commitment nobody opened shows as hidden, in the row and in its details, never as a token', async () => {
+    const scope = { audience: [OPENED], connectionId: COMMITTED };
+    wire(() => Promise.resolve(`${committed(1, { grantId: 'g', issuedBy: COMMITTED, scope }, { [OPENED]: { id: AGENT, salt: 'd'.repeat(32) } })}\n`));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.getByText(/names here are hidden/)).toBeInTheDocument();
+    screen.getAllByRole('button').filter((button) => button.hasAttribute('aria-expanded')).forEach((button) => fireEvent.click(button));
+    expect(document.body.textContent).not.toContain('c1:');
+    expect(document.body.textContent).toContain(AGENT);
+  });
+
+  test('an older line\'s placeholder nested in a scope shows as hidden too, never as the word redacted', async () => {
+    wire(() => Promise.resolve(`${hidden(1, 'grant.issued', { id: 'redacted', type: 'human' }, {
+      grantId: 'g', issuedBy: 'redacted', scope: { audience: ['redacted'], connectionId: 'redacted' },
+    })}\n`));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    screen.getAllByRole('button').filter((button) => button.hasAttribute('aria-expanded')).forEach((button) => fireEvent.click(button));
+    expect(document.body.textContent).not.toContain('redacted');
+    expect(document.body.textContent).toContain('"connectionId":"Hidden"');
+  });
+
+  test('an opened commitment reads as the person, with no note', async () => {
+    wire(() => Promise.resolve(`${committed(1, { grantId: 'g', issuedBy: COMMITTED }, { [COMMITTED]: { id: AGENT, salt: 'd'.repeat(32) } })}\n`));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByText('Hidden')).not.toBeInTheDocument();
+    expect(screen.queryByText(/names here are hidden/)).not.toBeInTheDocument();
+  });
+
+  test('an unlinked or redacted line never reads as damage: no error state, no alert, and a plain note', async () => {
+    const unlinked = JSON.stringify({
+      ...JSON.parse(line(1, 'permission.decided', { id: 'redacted', type: 'human' }, { decidedBy: 'redacted', kind: 'allow_once' })),
+      prev: null, redaction: { fields: ['data.decidedBy'], hash: null },
+    });
+    wire(() => Promise.resolve(`${unlinked}\n${line(2, 'tool.update', { id: AGENT, type: 'agent' }, { status: 'completed' })}\n`));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.getByText(/That doesn't mean they changed/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('This record could not be read.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/tamper|broken|corrupt|invalid|modified|failed/i)).not.toBeInTheDocument();
+  });
+
+  test('a salted hidden line has no unlinked note', async () => {
+    wire(() => Promise.resolve(VIEW));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.queryByText(/can't be linked/)).not.toBeInTheDocument();
+  });
+
+  test('the note reads in Chinese under zh-CN', async () => {
+    await i18n.changeLanguage('zh-CN');
+    wire(() => Promise.resolve(VIEW));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.getByText(/只有本人和 Pod 的创建者能看到/)).toBeInTheDocument();
+    expect(screen.getAllByText('已隐藏').length).toBeGreaterThan(0);
+  });
+});
+
+test('the intro says what the record holds and who can read it, in both languages', async () => {
+  expect(i18n.getFixedT('en')('taskRecord.intro')).toMatch(/Members of this pod can read it\./);
+  expect(i18n.getFixedT('zh-CN')('taskRecord.intro')).toMatch(/此 Pod 的成员都能查看/);
+});

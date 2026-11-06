@@ -321,6 +321,60 @@ describe('GET /api/grants/:grantId/calls', () => {
     expect(foreignAgent.status).toBe(403);
   });
 
+  describe('on a pod anyone can join (F265)', () => {
+    const open = { _id: POD, type: 'team', publicRead: true, communityListed: true, joinPolicy: 'open', members: [OWNER, MEMBER, SEAT] };
+    beforeEach(() => {
+      Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => open }) }));
+    });
+
+    test('the trail hides whose credential ran from everyone but that owner, and agents too', async () => {
+      const row = await RoomGrant.create(grant());
+      ToolCall.listForGrant.mockResolvedValue([trailRow({ grantId: row.grantId, credentialOwnerId: OWNER })]);
+      const url = `/api/grants/${row.grantId}/calls`;
+      expect((await request(app).get(url).set('x-test-user', MEMBER)).body.calls[0].credentialOwnerId).toBeNull();
+      expect((await request(app).get(url).set('x-test-user', OWNER)).body.calls[0].credentialOwnerId).toBe(OWNER);
+      const seat = await request(app).get(url).set('Authorization', 'Bearer cm_agent_x').set('x-test-agent', SEAT);
+      expect(seat.body.calls[0].credentialOwnerId).toBeNull();
+    });
+
+    test('a grant read and the pod list name the granter and revoker only to themselves', async () => {
+      const row = await RoomGrant.create(grant({
+        revokedAt: new Date(), revokedBy: OWNER,
+        byoConsent: { by: OWNER, at: new Date(), version: 'byo-v1', agents: [] },
+      }));
+      const asMember = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', MEMBER);
+      expect(asMember.body.grantedBy).toBeNull();
+      expect(asMember.body.revokedBy).toBeNull();
+      expect(asMember.body.byoConsent.by).toBeNull();
+      const list = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
+      expect(JSON.stringify(list.body)).not.toContain(OWNER);
+      const asOwner = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', OWNER);
+      expect(asOwner.body).toMatchObject({ grantedBy: OWNER, revokedBy: OWNER });
+    });
+
+    test('the connection is held back with the person: a hosted grant\'s installationId is the connection row', async () => {
+      const row = await RoomGrant.create(grant());
+      const asMember = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', MEMBER);
+      expect(asMember.body.installationId).toBeNull();
+      const list = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
+      expect(list.body.grants[0].installationId).toBeNull();
+      const asOwner = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', OWNER);
+      expect(asOwner.body.installationId).toBe('install-1');
+    });
+
+    test('the pod\'s creator reads them, and a global admin who isn\'t the creator doesn\'t', async () => {
+      Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => ({ ...open, createdBy: MEMBER }) }) }));
+      const row = await RoomGrant.create(grant());
+      ToolCall.listForGrant.mockResolvedValue([trailRow({ grantId: row.grantId, credentialOwnerId: OWNER })]);
+      const read = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', MEMBER);
+      expect(read.body.grantedBy).toBe(OWNER);
+      const trail = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', MEMBER);
+      expect(trail.body.calls[0].credentialOwnerId).toBe(OWNER);
+      const agentRead = await request(app).get(`/api/grants/${row.grantId}`).set('Authorization', 'Bearer cm_agent_x').set('x-test-agent', SEAT);
+      expect(agentRead.body.grantedBy).toBeNull();
+    });
+  });
+
   test("a seat grant's trail is visible only to its granter and the seat", async () => {
     const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] }));
     const read = (headers) => request(app).get(`/api/grants/${row.grantId}/calls`).set(headers);

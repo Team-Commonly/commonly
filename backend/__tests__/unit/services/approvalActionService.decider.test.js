@@ -67,7 +67,7 @@ jest.mock('../../../services/attentionItemService', () => ({
   resolve: jest.fn().mockResolvedValue(undefined),
 }));
 
-const { proposeAction } = require('../../../services/approvalActionService');
+const { deciderOf, proposeAction } = require('../../../services/approvalActionService');
 
 const HUMAN_INSTALLER = 'aaaaaaaaaaaaaaaaaaaaaaa1';
 const HUMAN_POD_CREATOR = 'aaaaaaaaaaaaaaaaaaaaaaa2';
@@ -429,5 +429,20 @@ describe('proposeAction — decider derivation', () => {
     expect(result.error).toMatch(/built-in agent/);
     expect(reservedAgentNameRefusal).toHaveBeenCalledWith('claude-code');
     expect(mockApprovalCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('deciderOf (F265)', () => {
+  const lookup = (user) => mockUserFindById.mockImplementationOnce(() => ({ select: () => ({ lean: async () => user }) }));
+  const ID = 'a'.repeat(24);
+
+  it('never puts a raw id into chat text when the decider has no name left', async () => {
+    lookup(null);
+    expect(await deciderOf({ resolvedBy: ID })).toMatchObject({ receiptName: 'The workspace owner' });
+  });
+
+  it('uses the decider\'s name when there is one', async () => {
+    lookup({ displayName: 'Ben', username: 'ben' });
+    expect((await deciderOf({ resolvedBy: ID })).receiptName).toBe('Ben');
   });
 });

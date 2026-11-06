@@ -38,6 +38,7 @@ import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemo
 import { grantHoldsPrWrite, prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
 import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
+import { personIdFor } from '../services/recordRedaction';
 
 const plainGrant = (grant: unknown) => {
   const doc = grant as { toObject?: () => Record<string, unknown> };
@@ -150,6 +151,23 @@ const projectGrant = (
   // broker actually reached the seat.
   grantBrokerRefusal: confinement.refusal,
   grantBrokerRefusalScope: confinement.scope,
+});
+
+type GrantPeople = { grantedBy: string | null; revokedBy?: unknown; installationId?: unknown; byoConsent?: { by: string | null } | null };
+
+/**
+ * On a pod anyone can join, the granter's and revoker's ids go only to the
+ * person they name and the pod's creator (recordRedaction), as on the record.
+ * The Tools page reads a null as an unnamed grant, and the granter still finds
+ * their own.
+ */
+const maskGrantPeople = <T extends GrantPeople>(row: T, pod: Parameters<typeof personIdFor>[0], viewerId: string): T => ({
+  ...row,
+  grantedBy: row.grantedBy && personIdFor(pod, viewerId, row.grantedBy),
+  revokedBy: row.revokedBy && personIdFor(pod, viewerId, row.revokedBy),
+  // A hosted connection's row id, the id the record hides as scope.connectionId.
+  installationId: personIdFor(pod, viewerId, row.grantedBy ?? '') === null ? null : row.installationId,
+  ...(row.byoConsent ? { byoConsent: { ...row.byoConsent, by: personIdFor(pod, viewerId, row.byoConsent.by) } } : {}),
 });
 
 /**
@@ -282,7 +300,7 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
 };
 
 const loadPod = async (podId: string) => (Types.ObjectId.isValid(podId)
-  ? Pod.findById(podId).select('type members').lean()
+  ? Pod.findById(podId).select('type members joinPolicy publicRead communityListed createdBy').lean()
   : null);
 
 const memberIdsOf = (pod: { members?: unknown[] } | null): string[] => (pod?.members || [])
@@ -709,7 +727,7 @@ router.delete('/:grantId', grantRateLimit, auth, revokeHandler);
 const gateGrantRead = async (
   grant: { target: { kind: 'pod' | 'seat'; id: string }; ownerId?: string | null },
   req: AuthenticatedRequest,
-): Promise<{ status: number; error: string } | { members: string[]; granter: string | null }> => {
+): Promise<{ status: number; error: string } | { members: string[]; granter: string | null; pod?: any; viewerId: string }> => {
   const agentId = (req as any).agentUser?._id ? String((req as any).agentUser._id) : '';
   const humanId = agentId ? '' : callerId(req);
   if (!agentId && !humanId) return { status: 401, error: 'unauthorized' };
@@ -722,12 +740,12 @@ const gateGrantRead = async (
     const isGranter = Boolean(humanId) && granter === humanId;
     const isSeat = Boolean(agentId) && agentId === String(grant.target.id);
     if (!isGranter && !isSeat) return { status: 403, error: 'access_denied' };
-    return { members: [], granter };
+    return { members: [], granter, viewerId: agentId || humanId };
   }
   const pod = await loadPod(grant.target.id);
   if (!pod) return { status: 404, error: 'target_not_found' };
   if (!await DMService.canViewPod(agentId || humanId, pod)) return { status: 403, error: 'access_denied' };
-  return { members: memberIdsOf(pod), granter };
+  return { members: memberIdsOf(pod), granter, pod, viewerId: agentId || humanId };
 };
 
 /**
@@ -755,7 +773,9 @@ router.get('/:grantId/calls', dualGrantCredential, grantRateLimit, dualAuth, asy
         agentUserId: row.agentUserId,
         // Whose credential ran (plan §8). Copied onto the record, so it is still
         // nameable after the Connection row is deleted.
-        credentialOwnerId: row.credentialOwnerId ?? null,
+        credentialOwnerId: (gate.pod
+          ? personIdFor(gate.pod, gate.viewerId, row.credentialOwnerId)
+          : row.credentialOwnerId) ?? null,
         tool: row.tool,
         outcome: row.outcome,
         reason: row.reason ?? null,
@@ -774,7 +794,8 @@ router.get('/:grantId/calls', dualGrantCredential, grantRateLimit, dualAuth, asy
 });
 
 // Read is gated exactly as the trail is, and projected: the explicit field
-// list and nothing else — never connectionId, brokerId or the raw audience.
+// list and nothing else — never brokerId or the raw audience. installationId
+// is the connection for a hosted row, so maskGrantPeople holds it on open pods.
 router.get('/:grantId', dualGrantCredential, grantRateLimit, dualAuth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const grant = await RoomGrant.findOne({ grantId: req.params.grantId }).lean();
@@ -783,7 +804,8 @@ router.get('/:grantId', dualGrantCredential, grantRateLimit, dualAuth, async (re
     if ('status' in gate) return res.status(gate.status).json({ error: gate.error });
     const currentMembers = grant.target.kind === 'seat' ? grant.audience : gate.members;
     const confinements = await seatGrantRefusals([grant]);
-    return res.json(projectGrant(grant, currentMembers, gate.granter, confinements.get(grant.grantId)));
+    const projected = projectGrant(grant, currentMembers, gate.granter, confinements.get(grant.grantId));
+    return res.json(gate.pod ? maskGrantPeople(projected, gate.pod, gate.viewerId) : projected);
   } catch (error) {
     return handleError(res, error);
   }
@@ -856,12 +878,12 @@ podGrantsRouter.get('/:podId/grants', grantRateLimit, auth, async (req: Authenti
     const confinements = await seatGrantRefusals(grants);
     return res.json({
       podId,
-      grants: grants.map((grant) => projectGrant(
+      grants: grants.map((grant) => maskGrantPeople(projectGrant(
         grant,
         grant.target.kind === 'seat' ? grant.audience : members,
         grant.ownerId || null,
         confinements.get(grant.grantId),
-      )),
+      ), pod, userId)),
     });
   } catch (error) {
     return handleError(res, error);

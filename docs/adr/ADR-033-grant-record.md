@@ -155,6 +155,99 @@ path may treat the absence of `grant.revoked` as "still usable", or its presence
 lost access (spec §2, "What revocation means in v1": an environment credential lasts until the
 process exits).
 
+**D6. On a pod anyone can join, approver and credential-owner ids go only to the person they name
+and the pod's creator (F265, the lead's rulings of 2026-11-06).** Turning the record on for every pod would otherwise show a
+stranger who joins every line, ids included. Spec §8 defines the view; `services/recordRedaction.ts`
+is the policy.
+
+- **Open means `isDirectlyJoinable`, plus the `COMMUNITY_POD_ID` pod.** `joinPolicy: 'open'` alone
+  isn't it: that is the schema default, and `joinPod` refuses an unlisted pod. Unlisted, invite-only
+  and DM pods keep the full record. Openness is read at each request, so a pod that gets listed is
+  redacted from then on. A pod delisted later serves the full record to its members, whoever joined
+  while it was listed included; the privacy page says so.
+- **Where this applies today.** `outsiderGrantPodRefusal` refuses grants on open pods, so no grant or
+  approval line is written on one now. The redaction touches history on a pod listed later and the
+  `COMMUNITY_POD_ID` pod. The tests are fixtures, not a walked live path.
+- **There is no join time to do better with.** `Pod.members` is a bare id array.
+  `pod_members.joined_at` looks like the answer and isn't: it is the insert time of a best-effort
+  mirror row, `addMember` keeps the old row on conflict, and a row can outlive the membership it
+  mirrors (`podWriteAccessService`), so it can read earlier than the real join, which is the unsafe
+  direction. Nothing reads it. An unknown join time fails closed, which would redact for everyone,
+  so the rule is simply: the person named and the pod's creator, with no exception for earlier
+  members or for admins. The creator is `Pod.createdBy` in Mongo, never the Postgres mirror, which
+  drifts. A pod an agent created has that agent as its creator.
+- **What's held back:** `permission.decided` and `decision.ruled` (`decidedBy` and a person actor),
+  `permission.requested.askedOf.id` unless it is a policy, `grant.issued` (`issuedBy`, a person
+  actor and `scope.connectionId`, because a connection is one person's credential; not
+  `scope.audience`, because the grant read gives every member `effectiveAudience`) and a person actor on `grant.revoked`. Lines of a kind not on the safe list are held back
+  whole, so a new kind starts hidden. **Not held back:** `task.*` and `tool.*` lines, so who claimed
+  or finished a task, the acting agent and its `actor.owner` stay visible. The ruling covers approvers
+  and credential owners, and those lines name neither as such. For a BYO agent the owner and the
+  credential owner are the same person, so `actor.owner` can say whose connection it was. The privacy
+  page says so.
+- **A redacted line can't verify on the chain, and stubbing it isn't enough.** Every `prev` and the
+  head commit to all lines before them, the rest of a line can be read off its neighbours, and a pod's
+  member list is short, so any later hash lets a reader confirm a guess. The test
+  `guessing an id against the hashes a view exposes` runs that attack. Server lines now carry a
+  128-bit `salt`, an optional v1 field with no storage change, so a hash is a commitment. On a salted
+  chain the real chain and head stay checkable, and only the redacted lines' content is taken on
+  trust. Lines written before the salt can't change: for those, no hash at or after a hidden line goes
+  out, `X-Record-Head` included, until the next salted line.
+- **How a read reports.** `verifyRecord` passes on a view and adds `partial`, `redacted` and
+  `unlinked`; the route sends `X-Record-View: redacted`, `X-Record-Redacted` and `X-Record-Unlinked`.
+  Spec §8 has the table of what each line class proves.
+- **A view is built from line 1,** because whether a line may show its hash depends on every line
+  before it. `readRecordView` keeps the built view per chain, head, openings count and viewer, in a
+  small bounded cache, so paging a long chain doesn't rebuild it. A new line or a deleted id changes
+  the key, so neither waits out the cache, on any replica.
+- **The same ids are hidden on run traces and the grant reads** (`credentialOwnerId`, `grantedBy`,
+  `revokedBy`, `byoConsent.by`, and `installationId`, which for a hosted connection is the connection
+  row's `_id`).
+- **This does not make an approver secret on an open pod.** The approval card's shared payload
+  carries `ownerUserId`, and the room receipt prints the approver's name, in ordinary pod chat. A
+  ruling reply and `GET /api/activity/decision-history` give a decision's decider. The privacy page
+  says so, and the lead ruled to ship chat as it is.
+
+**Before `*`.** What the privacy page and the record's intro say was checked against the emitters
+(`taskRecordService`, `brokerRecordLines`, `roomGrantService.recordGrantIssued`): no line holds tool
+arguments, results, message text or a task title. Nothing deletes `record_lines`, and D7 is how a
+deleted person's ids leave them.
+
+**D7. People's ids are committed, so deleting them leaves every chain verifying (F265, the lead's
+ruling of 2026-11-06).** Spec §9 has the format. A chain commits to every byte before it, so an id in
+the hashed bytes can't be deleted, and a line salt doesn't help: its hash still covers the id. So
+`services/recordCommitments.ts` puts a `c1:` commitment where each person's id sits, with a salt of
+its own for each position, and `record_openings` holds the id and salt beside the chain. The
+commitment has to be in the hash from the start.
+
+- **Coverage.** Every position that holds a person, in every kind a server writes: `actor.id`,
+  `actor.owner`, `actor.onBehalfOf.id`, `doneBy`, `decidedBy`, `issuedBy`, `askedOf.id`,
+  `scope.audience` and `scope.connectionId`. `recordCommitments.test.js` runs each emitter and fails
+  on a new kind. An agent's own `actor.id` stays plain: it isn't a person.
+- **Deleting** removes the person's rows on all three paths that delete a human User:
+  `deleteOwnAccount`, the admin delete and the synthetic purge. Each leaves a cleanup receipt, and
+  every sweep round removes the rows again, so an id a late line brings back goes on the next round.
+  That covers an agent that outlives its owner: `botMetadata.ownerUserId` stays on it, and its next
+  line commits the id again until the sweep. Don't unset it: `agentIdentityService` reads a missing
+  owner as free to claim, and stamps the next caller as owner of the agent and its memory. A receipt
+  also has the sweep remove the account's uploads and pod memberships, on every path.
+  `recordDeletion.realPg.test.js` deletes through the route and re-verifies on real stores.
+- **A connection's subject is the grant's `ownerId`,** so a child grant from an agent is forgotten
+  with the person whose connection it is. A grant from before `ownerId` falls back to the issuer: the
+  agent's owner, or the agent itself if it has none, and that opening then outlives the person.
+- **After deletion,** the commitment stays and nothing a reader holds can test a guess against it.
+  An unopened commitment means withheld or deleted, never changed, and the record page says so.
+- **On an open pod** a joiner gets the stored bytes verbatim and a whole check, so a view of these
+  lines isn't `partial`. Each opening goes only to who `opensTo` allows. The line salt stays, so the
+  chain can resume after an older held-back line.
+- **Older lines stay as written.** A line with only a line salt, or none, holds the id in its bytes
+  and can't be made deletable. They exist only on Commonly's own pods, and the privacy page says so.
+- **Limits.** The claim covers task records, not `tool_calls` or approval rows. A downloaded copy
+  keeps its ids, and the page says so. Backups keep what they held for as long as they last; the
+  page gives SRE's figures, and it must not say "permanently". A served line with `openings` needs a current
+  verifier, while the stored bytes verify under an older one; `v` stays 1. The migration has to
+  deploy with the code.
+
 ## 3. The record (summary of record-v1 at `fb686d4f`)
 
 **Envelope (spec §1).** One RFC 8785 (JCS) canonical JSON object per line, `\n`-terminated. A

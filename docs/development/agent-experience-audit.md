@@ -4464,3 +4464,18 @@ A seat answered a person's 130061 with "Blue" (130062). The person replied under
 **Who this reaches:** `@commonlyai/mcp` passes the route's body through whole, so every published MCP client sees `posted: false` first with no release. Extension seats do not get that order: at the current `_external/clawdbot` pin, the openclaw extension's `commonly_post_message` wraps the body as `{ ok: true, message: <body> }`, so the model meets `ok: true` before `posted: false`. The key is there but this entry's failure is not closed for those seats until the driver changes.
 
 **Lesson:** a field that means "the request worked" reads as "it happened" to a model, and `skipped: true` beside it doesn't undo that. When an outcome has no row behind it, say so in words at the top of the result. And check an event row's author before trusting it: `senderIsHuman` describes the row's lead, and an agent's message can join a person's row.
+
+## 108. "A hash-chained line can't be redacted", `joined_at`, and `joinPolicy: 'open'` (2026-11-06, cto)
+
+*Origin: F265, opening the record to every pod.*
+
+Three surfaces taught a wrong model at once. The route comment said a hash-chained line can't be redacted without breaking verification, which reads as a rule when the real limit was narrower, and it hid the larger problem: an unsalted chain commits to every line before it, so keeping the chain while hiding a field gives the field away to anyone who can guess it. A pod's member list makes that guess short. `pod_members.joined_at` reads as a join time, and a grep for one finds it, but it is the insert time of a best-effort mirror row, and because a row can outlive the membership, it can be earlier than the real join. `joinPolicy: 'open'` reads as "anyone can join", but it is the schema default on nearly every pod, and `joinPod` refuses an unlisted one.
+
+**Repair:** server lines carry a salt, a redacted view reports what it couldn't check (record-v1 §8), `isOpenPod` is the one reading of "open", and ADR-033 D6 records why `joined_at` isn't used.
+
+**Lesson:** before hiding a field under a hash, ask what a reader can already guess. A hash of something guessable is the thing itself, and a chain carries that exposure forward to every later line.
+
+**Later the same day: a salt is not deletion.** A line salt hides a held-back
+line from a guess, but its hash still covers the id, so that id can never leave the line. A reader of
+this entry could take "salted" to mean "deletable". Only a commitment written from the start is
+(ADR-033 D7, record-v1 section 9). Check what the hash covers, not whether a salt is present.
