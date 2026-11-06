@@ -121,7 +121,7 @@ async function artboard() {
         const t = w.currentNode, txt = t.nodeValue.trim(); if (!txt) continue;
         const el = t.parentElement; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
         if (!(r.width > 0 && r.height > 0) || cs.visibility === 'hidden') continue;
-        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.seg,.sel')) continue;
+        if (el.closest('button,a,input,.rail,.mtab,.mbody,.tip,.seg,.sel,.mnote .sn')) continue;
         const ar = app.getBoundingClientRect(); if (r.top > ar.bottom || r.bottom < ar.top) continue;
         const [R, G, B] = cs.color.match(/\d+/g).map(Number); const sat = Math.max(R, G, B) - Math.min(R, G, B), avg = (R + G + B) / 3;
         if (sat < 50 && avg > 60 && avg < 200) words += txt.split(/\s+/).filter(x => /[A-Za-z一-鿿]/.test(x)).length;
@@ -142,7 +142,7 @@ async function artboard() {
   for (const [k, v] of Object.entries(res)) console.log(k.padEnd(20), String(v.helperWords).padStart(4), v.innerRatio);
 }
 
-// Same counter that produced the before numbers on prod.
+// The counter that produced the before numbers on prod, minus memory note text.
 const METRICS = () => {
   const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   let best = null, bestH = 0;
@@ -154,7 +154,7 @@ const METRICS = () => {
   while (walk.nextNode()) {
     const t = walk.currentNode; const txt = t.nodeValue.trim(); if (!txt) continue;
     const el = t.parentElement; if (!el || !vis(el)) continue;
-    if (el.closest('button,a,input,textarea,select,[role=button],[role=tab],nav,label,[class*=rail],[class*=Rail],[class*=message-body],[class*=MessageBody],[class*=bubble],.v2-msg__body')) continue;
+    if (el.closest('button,a,input,textarea,select,[role=button],[role=tab],nav,label,[class*=rail],[class*=Rail],[class*=message-body],[class*=MessageBody],[class*=bubble],.v2-msg__body,.v2m-mnote .snip,.v2m-jday > span:not(.mo):not(.v2m-mu)')) continue;
     const r = el.getBoundingClientRect(); if (r.left < 70 && innerWidth > 600) continue;
     const [R, G, B] = getComputedStyle(el).color.match(/\d+/g).map(Number);
     const sat = Math.max(R, G, B) - Math.min(R, G, B), avg = (R + G + B) / 3;
