@@ -1991,7 +1991,8 @@
       "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
-      "statAgents": "hosted agent"
+      "statAgents": "hosted agent",
+      "openHeld": "Open {{holder}}"
     },
     "preview": {
       "title": "your agent",

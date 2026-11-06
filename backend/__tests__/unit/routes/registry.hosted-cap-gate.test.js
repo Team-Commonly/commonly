@@ -4,6 +4,7 @@
 // Mirrors the harness in registry.cloud-entitlement-gate.test.js.
 const mockCountHosted = jest.fn();
 const mockListHosted = jest.fn();
+const mockHeldHosted = jest.fn();
 const mockPodHasOutsiderWritableGrant = jest.fn();
 
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
@@ -48,6 +49,7 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 200 }),
   countHostedAgentsForUser: (...args) => mockCountHosted(...args),
   listHostedInstallationsForUser: (...args) => mockListHosted(...args),
+  findHeldHostedInstallation: (...args) => mockHeldHosted(...args),
   readRuntimeConfig: (installation) => installation?.config?.runtime || {},
   isHostedInstallation: (installation) => (
     String(installation?.config?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'
@@ -96,6 +98,8 @@ describe('registry install — hosted runtime cap gate', () => {
     jest.clearAllMocks();
     mockPodHasOutsiderWritableGrant.mockResolvedValue(false);
     mockListHosted.mockResolvedValue([]);
+    mockHeldHosted.mockResolvedValue(null);
+    mockCountHosted.mockResolvedValue(0);
     Pod.findById.mockReturnValue(buildLeanChain({
       _id: 'pod-1', createdBy: 'user-1', members: ['user-1'], type: 'chat',
     }));
@@ -188,6 +192,48 @@ describe('registry install — hosted runtime cap gate', () => {
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 
+  it('compares the identity the install writes, on the self-serve check and the one after it', async () => {
+    mockCountHosted.mockResolvedValue(1);
+    const req = makeReq('hosted');
+    req.body.agentName = 'My-Agent';
+    req.body.displayName = 'Night Owl';
+    await installHandler(req, makeRes());
+    // Refused at the self-serve check: the instance comes from the display name.
+    expect(mockHeldHosted).toHaveBeenCalledWith('user-1', 'my-agent', 'night-owl');
+
+    jest.clearAllMocks();
+    mockCountHosted.mockResolvedValue(1);
+    mockHeldHosted.mockResolvedValue(null);
+    mockListHosted.mockResolvedValue([]);
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'my-agent', displayName: 'My agent', latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    const published = makeReq('hosted');
+    published.body.instanceId = 'my-agent';
+    await installHandler(published, makeRes());
+    expect(mockHeldHosted).toHaveBeenCalledWith('user-1', 'my-agent', 'default');
+  });
+
+  it('at the cap, passes the agent the person holds and writes it to the new pod', async () => {
+    mockCountHosted.mockResolvedValue(1);
+    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'pod-2' });
+    const res = makeRes();
+    await installHandler(makeReq('hosted'), res);
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(AgentInstallation.install).toHaveBeenCalledWith('my-agent', 'pod-1', expect.anything());
+  });
+
+  it('a held agent does not pass a cap the person is over', async () => {
+    mockCountHosted.mockResolvedValue(2);
+    mockHeldHosted.mockResolvedValue({ agentName: 'my-agent', instanceId: 'default', podId: 'pod-2' });
+    const res = makeRes();
+    await installHandler(makeReq('hosted'), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'hosted_cap_reached', used: 2, cap: 1 }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
   it('lets an admin past the cap', async () => {
     mockCountHosted.mockResolvedValue(5);
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'admin', role: 'admin' }));
@@ -251,6 +297,25 @@ describe('registry install — hosted runtime cap gate', () => {
       }));
       expect(require('../../../services/agentIdentityService').ensureAgentInPod)
         .toHaveBeenCalledWith(expect.anything(), 'pod-1', 'hosted', 'native');
+    });
+
+    it('asks about the engine the held agent runs on, not the instance default', async () => {
+      process.env.HOSTED_ENGINE = 'native';
+      mockCountHosted.mockResolvedValue(1);
+      mockPodHasOutsiderWritableGrant.mockResolvedValue(true);
+      AgentRegistry.getByName.mockResolvedValue({
+        agentName: 'my-agent', displayName: 'My agent', latestVersion: '1.0.0',
+        manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+      });
+      mockHeldHosted.mockResolvedValue({
+        agentName: 'my-agent', instanceId: 'default', podId: 'pod-2', config: { runtime: { runtimeType: 'hosted' } },
+      });
+      const res = makeRes();
+      await installHandler(makeReq('hosted'), res);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'outsider_grant_non_native_agent_join',
+      }));
+      expect(AgentInstallation.install).not.toHaveBeenCalled();
     });
 
     it('refuses the Durable Object before any installation or membership write', async () => {

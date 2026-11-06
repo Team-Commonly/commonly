@@ -56,6 +56,8 @@ const normalizeRuntimeIdentity = (agentName: any, instanceId: any) => ({
   instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
 });
 
+const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
+
 // AgentInstallation.instanceId predates the normalized intake path and may
 // still be stored with mixed casing. Keep identity normalization for callers,
 // but match legacy rows case-insensitively during a rotation.
@@ -125,10 +127,8 @@ const getRuntimeTokenHashesForAgent = async ({
     : [];
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { AgentInstallation } = require('../../models/AgentRegistry');
-  const installations = await AgentInstallation.find({
-    agentName: identity.agentName,
-    instanceId: identity.instanceId,
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('runtimeTokens').lean();
+  const installations = await AgentInstallation.find(installationIdentityFilter(identity.agentName, identity.instanceId))
+    .collation(RUNTIME_INSTALLATION_COLLATION).select('runtimeTokens').lean();
   const persistedInstallationTokens = (installations || []).flatMap((row: any) => row.runtimeTokens || []);
   return Array.from(new Set([
     ...userTokens,
@@ -171,7 +171,7 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { AgentInstallation } = require('../../models/AgentRegistry');
   await AgentInstallation.updateMany(
-    { agentName: identity.agentName, instanceId: identity.instanceId },
+    installationIdentityFilter(identity.agentName, identity.instanceId),
     { $set: { runtimeTokens: [] } },
   ).collation(RUNTIME_INSTALLATION_COLLATION);
 

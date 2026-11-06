@@ -99,12 +99,15 @@ const installRouter = express.Router();
 /**
  * The hosted beta cap (ADR-023 D3.1) as a 403 body, or null when the user has
  * room. One body for both places the route checks it, so a refusal reads the
- * same whichever check caught it.
+ * same whichever check caught it. An agent the person already holds, going into
+ * another room, is not a new agent, so at the cap it passes. Over the cap it
+ * does not, which also covers a cap of 0: /api/hosted/provision refuses an
+ * owner over the cap, so the row would only strand one call later.
  */
-const hostedCapRefusal = async (userId: unknown): Promise<Record<string, unknown> | null> => {
+const hostedCapRefusal = async (userId: unknown, holdsThisAgent: boolean): Promise<Record<string, unknown> | null> => {
   const { agentsPerUser } = HostedRuntime.hostedCaps();
   const used = await HostedRuntime.countHostedAgentsForUser(userId);
-  if (used < agentsPerUser) return null;
+  if (used < agentsPerUser || (holdsThisAgent && used === agentsPerUser)) return null;
   let holders: any[] = [];
   try {
     holders = await HostedRuntime.listHostedInstallationsForUser(userId);
@@ -322,7 +325,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       // row is written: a refused second hosted install used to leave that row
       // behind with no installation (QA walk, 2026-10-16).
       if (requestedRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
-        const refusal = await hostedCapRefusal(userId);
+        const held = await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId);
+        const refusal = await hostedCapRefusal(userId, Boolean(held));
         if (refusal) return res.status(403).json(refusal);
         hostedCapChecked = true;
       }
@@ -608,8 +612,18 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // even when the caller omits an explicit runtimeType.
     const effectiveRuntimeType = String(runtimeConfig.runtimeType || '').trim().toLowerCase()
       || String(AgentIdentityService.getAgentTypeConfig(safeAgentName)?.runtime || '').trim().toLowerCase();
-    const newHostedEngine = effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE
-      ? HostedEngine.engineForNewHostedInstall() : undefined;
+    // The same agent in another room stays on the engine it runs on. One on the
+    // Durable Object keeps its token, so a native row beside it would trip the
+    // one-runtime check below; one on native has no worker to answer a new
+    // Durable Object row. Read in effect, so an unfinished migration is not
+    // taken for an agent with no channel outside this process.
+    const heldHostedRow = effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE
+      ? await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId) : null;
+    let newHostedEngine;
+    if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
+      newHostedEngine = heldHostedRow
+        ? HostedEngine.hostedEngineInEffect(heldHostedRow) : HostedEngine.engineForNewHostedInstall();
+    }
     try {
       await assertAgentRuntimeMayJoinPod(podId, effectiveRuntimeType, newHostedEngine);
     } catch (joinError: any) {
@@ -637,7 +651,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // (moltbot/codex/...), this one is the per-user beta cap. Admins bypass
     // the cap the same way they bypass the entitlement.
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
-      const refusal = await hostedCapRefusal(userId);
+      const refusal = await hostedCapRefusal(userId, Boolean(heldHostedRow));
       if (refusal) return res.status(403).json(refusal);
     }
 
@@ -683,7 +697,15 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE) {
       delete installConfig.hosted;
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
-        installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
+        const held = HostedEngine.readHostedConfig(heldHostedRow);
+        installConfig.hosted = {
+          ...HostedEngine.nativeHostedConfigForInstall(
+            explicitDescription || (typeof held.about === 'string' ? held.about : undefined),
+          ),
+          // Started and stopped are the agent's state, not one room's: a
+          // stopped agent added to another pod stays stopped there too.
+          ...(heldHostedRow ? { provisionedAt: held.provisionedAt ?? null } : {}),
+        };
       }
     }
 

@@ -2048,7 +2048,8 @@
       "slow": "{{name}} 尚未接入。可以先 @ 它，启动后会处理消息。",
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
-      "statAgents": "托管智能体"
+      "statAgents": "托管智能体",
+      "openHeld": "打开 {{holder}}"
     },
     "preview": {
       "title": "你的智能体",

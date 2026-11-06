@@ -57,6 +57,13 @@ jest.mock('../../../models/AgentRegistry', () => ({
     findOne: (...args) => mockFindOne(...args),
     find: (...args) => mockFind(...args),
     updateOne: (...args) => mockUpdateOne(...args),
+    // Every held row of the identity, as the route's filter asks for.
+    updateMany: (filter, update) => ({
+      collation: () => Promise.all([...mockStore.values()]
+        .filter((row) => row.agentName === filter.agentName)
+        .map((row) => mockUpdateOne({ _id: row._id }, update))),
+    }),
+    distinct: () => ({ collation: async () => ['pod-1'] }),
   },
 }));
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockUserFindOne(...args) }));
@@ -165,10 +172,31 @@ describe('/api/hosted', () => {
   it('reports availability and caps without the URL or bearer', async () => {
     const res = await request(app).get('/api/hosted/availability');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ configured: true, engine: 'durable-object', caps: { agentsPerUser: 1, turnsPerDay: 200 } });
+    expect(res.body).toEqual({
+      configured: true, engine: 'durable-object', caps: { agentsPerUser: 1, turnsPerDay: 200 }, held: null, full: false,
+    });
     mockHosted.isConfigured.mockReturnValue(false);
     const off = await request(app).get('/api/hosted/availability');
     expect(off.body.configured).toBe(false);
+  });
+
+  it('names the held agent, for a caller at the cap only', async () => {
+    const agent = { agentName: 'scout', instanceId: 'default', podId: 'pod-1', displayName: 'Scout' };
+    mockHosted.listHostedInstallationsForUser.mockResolvedValue([agent]);
+    const res = await request(app).get('/api/hosted/availability');
+    expect(mockHosted.listHostedInstallationsForUser).toHaveBeenCalledWith('owner-1');
+    expect(res.body.held).toEqual(agent);
+
+    mockHosted.hostedCapsForOwner.mockResolvedValueOnce({ agentsPerUser: 2, turnsPerDay: 200 });
+    const room = await request(app).get('/api/hosted/availability');
+    expect(room.body.held).toBeNull();
+  });
+
+  it('keeps availability when the held lookup fails', async () => {
+    mockHosted.listHostedInstallationsForUser.mockRejectedValue(new Error('diagnostic timeout'));
+    const res = await request(app).get('/api/hosted/availability');
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ configured: true, held: null, full: false });
   });
 
   // TASK-268: the page states the caller's own plan line, not a global number.
@@ -602,7 +630,7 @@ describe('/api/hosted on the native engine', () => {
     expect(res.body.runtime).toEqual({ engine: 'native', ready: true, provisionedAt: PROVISIONED.toISOString() });
     expect(res.body.meter).toMatchObject({ used: 3, cap: 200 });
     // A native turn is a run: an event acked without one (a stand-down) is not a turn.
-    expect(mockHosted.meterAllowsTurn).toHaveBeenCalledWith('scout', 'default', expect.any(Number), { countRuns: true });
+    expect(mockHosted.meterAllowsTurn).toHaveBeenCalledWith('scout', 'default', expect.any(Number), { countRuns: true, ownerId: 'owner-1' });
     expect(mockHosted.getAgentStatus).not.toHaveBeenCalled();
   });
 

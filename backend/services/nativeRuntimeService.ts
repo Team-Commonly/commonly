@@ -2145,15 +2145,20 @@ export async function runAgent(
       const dayStart = new Date();
       dayStart.setUTCHours(0, 0, 0, 0);
       const runsToday = await AgentRunModel.countDocuments({
-        podId: installation.podId,
         agentName,
         instanceId,
         startedAt: { $gte: dayStart },
         trigger: { $ne: UNMETERED_TRIGGER },
-        // For a hosted install this cap is the person's plan line, so it
-        // leaves out the runs their meter leaves out (nativeTurnsToday). The
-        // per-user ceiling below counts every run.
-        ...(hostedNative ? { metered: { $ne: false } } : {}),
+        // For a hosted install this cap is the person's plan line, so it is
+        // their agent across its rooms and leaves out the runs their meter
+        // leaves out (nativeTurnsToday), or a third room would be a third
+        // day's turns. The per-user ceiling below counts every run.
+        ...(hostedNative
+          ? {
+            metered: { $ne: false },
+            ...(installation.installedBy ? { userId: String(installation.installedBy) } : {}),
+          }
+          : { podId: installation.podId }),
       });
       if (runsToday >= dailyRunCap) {
         console.warn(

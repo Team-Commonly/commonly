@@ -23,6 +23,7 @@ const User = require('../models/User');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
 const hostedRuntime = require('../services/hostedRuntimeService');
+const { installationIdentityFilter } = require('../services/agentInstallationIdentity');
 const { hostedEngineAvailable, isNativeRuntimeAvailable } = require('../services/nativeRuntimeService');
 const {
   HOSTED_ENGINE_NATIVE,
@@ -69,6 +70,20 @@ const getUserId = (req: any) => req.userId || req.user?.id || req.user?._id;
  * next provision mints again. Same spelling of native as the token issuer's
  * check. Returns false when the migration got there first.
  */
+/**
+ * The caller's rows of the identity `installation` belongs to. An agent has a
+ * row per room, and starting or stopping it means all of them: a stop written
+ * to one row left it answering in the others. Run it with this collation: an
+ * identity's rows can differ by case, and older ones can have no instance id.
+ */
+const IDENTITY_COLLATION = { locale: 'en', strength: 2 };
+const callersRowsOfIdentity = (installation: any, userId: unknown) => ({
+  ...installationIdentityFilter(installation.agentName, String(installation.instanceId || 'default').toLowerCase()),
+  installedBy: userId,
+  status: 'active',
+  'config.runtime.runtimeType': hostedRuntime.HOSTED_RUNTIME_TYPE,
+});
+
 const writeDurableObjectRecord = async (installation: any, hosted: Record<string, unknown>): Promise<boolean> => {
   const result = await AgentInstallation.updateOne(
     { _id: installation._id, 'config.hosted.engine': { $not: /^\s*native\s*$/i } },
@@ -127,7 +142,9 @@ const resolveOwnedHostedInstallation = async (req: any, source: Record<string, a
     const all: any[] = Array.isArray(owned) ? owned : [];
     const hostedRows = all.filter((row: any) => hostedRuntime.isHostedInstallation(row));
     const rows: any[] = hostedRows.length ? hostedRows : all;
-    if (rows.length === 1) [installation] = rows;
+    // One instance in several rooms is one agent, so there is nothing to pick.
+    const instances = new Set(rows.map((row: any) => String(row.instanceId || 'default').toLowerCase()));
+    if (instances.size === 1) [installation] = rows;
     else if (rows.length > 1) {
       installation = rows.find((row: any) => String(row.instanceId || '') === 'default') || null;
       if (!installation) {
@@ -187,7 +204,11 @@ const relayWorkerError = (res: express.Response, error: any) => {
  * Whether this instance can host, plus the caps — so the BYO page offers
  * "Run it here" only where it will work, instead of failing after install.
  * Caps are public knowledge (the install gate quotes them); the URL and
- * bearer are not returned.
+ * bearer are not returned. `held` names the caller's own agent when another
+ * one would be refused, so the page can say so before the click; an admin is
+ * never refused. `full` says the same with nobody to name, as under a cap of 0.
+ * Both are a courtesy, so a failed lookup leaves them empty and the install's
+ * 403 stays the answer.
  *
  * Only the Bring your own page calls this, on load, so it also records the
  * person's first visit to that page (write-once, fire-and-forget;
@@ -199,7 +220,18 @@ router.get('/availability', hostedRateLimit, auth, async (req: any, res: any) =>
   const engine = engineForNewHostedInstall();
   // The caller's own plan line (TASK-268), so the page states the limit they get.
   const caps = await hostedRuntime.hostedCapsForOwner(getUserId(req));
-  return res.json({ configured: engineAvailable(engine), engine, caps });
+  let held = null;
+  let full = false;
+  if (req.user?.role !== 'admin') {
+    try {
+      const agents = await hostedRuntime.listHostedInstallationsForUser(getUserId(req));
+      full = agents.length >= caps.agentsPerUser;
+      if (full && agents.length) [held] = agents;
+    } catch (error: any) {
+      console.warn('[hosted] held agent lookup failed:', error?.message || error);
+    }
+  }
+  return res.json({ configured: engineAvailable(engine), engine, caps, held, full });
 });
 
 // The new-pod starter needs the same engine check without recording a visit
@@ -285,16 +317,18 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
       // this route owns is written, so a migration's record (its state, the
       // persona) is never replaced by the copy read at the start.
       const hosted = readHostedConfig(installation);
-      await AgentInstallation.updateOne(
-        { _id: installation._id },
+      const rows = callersRowsOfIdentity(installation, userId);
+      await AgentInstallation.updateMany(
+        rows,
         { $set: { 'config.hosted.provisionedAt': hosted.provisionedAt || new Date() } },
-      );
+      ).collation(IDENTITY_COLLATION);
+      const startedPods = await AgentInstallation.distinct('podId', rows).collation(IDENTITY_COLLATION);
       // Live from here, and with no runtime token there is no first use to
       // complete "Connect your first agent" the way a BYO or Durable Object
       // agent's does (starterTaskService). QA 2026-10-16: the card sat pending
       // while the hosted agent answered. Never throws, never awaited.
       void completeConnectAgentStarterTask({
-        podIds: [installation.podId],
+        podIds: startedPods,
         agentLabel: agentUser.botMetadata?.displayName || installation.displayName || agentName,
       });
       return res.json({
@@ -367,10 +401,10 @@ router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) =>
       // Stopping is the record alone: an unprovisioned native-engine install
       // no longer routes to the runtime (hostedRunsNative). Engine, persona
       // and any migration record stay; only these two fields are written.
-      await AgentInstallation.updateOne(
-        { _id: installation._id },
+      await AgentInstallation.updateMany(
+        callersRowsOfIdentity(installation, getUserId(req)),
         { $set: { 'config.hosted.provisionedAt': null, 'config.hosted.deprovisionedAt': new Date() } },
-      );
+      ).collation(IDENTITY_COLLATION);
       return res.json({ deprovisioned: true, agentName, instanceId });
     }
     if (!requireConfigured(res, hostedEngineOf(installation))) return undefined;
@@ -412,7 +446,9 @@ router.get('/status', hostedRateLimit, auth, async (req: any, res: any) => {
       // and the runtime it needs is available (checked just above).
       const { provisionedAt } = readHostedConfig(installation);
       const { turnsPerDay } = await hostedRuntime.hostedCapsForOwner(getUserId(req));
-      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay, { countRuns: true });
+      const meter = await hostedRuntime.meterAllowsTurn(agentName, instanceId, turnsPerDay, {
+        countRuns: true, ownerId: String(getUserId(req)),
+      });
       return res.json({
         agentName,
         instanceId,
