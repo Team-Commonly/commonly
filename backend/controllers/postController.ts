@@ -343,6 +343,9 @@ exports.addComment = async (req: any, res: any) => {
             createdAt: comment.createdAt,
             thread: {
               postId: post._id,
+              // Null on a post with no pod: mentionPodId is then only a pod the
+              // commenter belongs to, and a wrapper seat takes no turn on it.
+              postPodId: post.podId || null,
               postContent: post.content,
               postUserId: post.userId,
               commentId: comment._id,

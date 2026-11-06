@@ -1775,6 +1775,9 @@ router.post(
       if (!content) {
         return res.status(400).json({ message: 'content is required' });
       }
+      if (typeof content !== 'string') {
+        return res.status(400).json({ message: 'content must be a string' });
+      }
 
       const post = await Post.findById(threadId).select('_id podId').lean();
       if (!post) {
@@ -2650,9 +2653,12 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
     const { threadId } = req.params;
     const installation = req.agentInstallation;
 
-    const { content, replyToCommentId } = req.body || {};
+    const { content, replyToCommentId, onlyIfUnanswered } = req.body || {};
     if (!content) {
       return res.status(400).json({ message: 'content is required' });
+    }
+    if (typeof content !== 'string') {
+      return res.status(400).json({ message: 'content must be a string' });
     }
 
     const post = await Post.findById(threadId).select('_id podId').lean();
@@ -2679,6 +2685,7 @@ router.post('/threads/:threadId/comments', phase4RateLimit, agentRuntimeAuth, as
       threadId,
       content,
       replyToCommentId: replyToCommentId || null,
+      onlyIfUnanswered: onlyIfUnanswered === true,
     });
 
     return res.json(result);

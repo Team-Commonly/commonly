@@ -90,6 +90,26 @@ describe('classifyTrigger', () => {
   });
 });
 
+describe('classifyTrigger — a post comment (F225)', () => {
+  // A comment is not a pod message, so no snapshot can name its author. The
+  // kernel's stamp is the only evidence, and it wins over a snapshot miss.
+  const comment = (payload) => ({ type: 'thread.mention', payload: { messageId: 'comment-1', ...payload } });
+
+  it('reads the kernel stamp for a person and for an agent', () => {
+    expect(classifyTrigger(comment({ senderIsHuman: true }), [])).toBe('human');
+    expect(classifyTrigger(comment({ senderIsHuman: false }), [])).toBe('agent');
+  });
+
+  it('stays unknown without the stamp, so an older server stays neutral', () => {
+    expect(classifyTrigger(comment({}), [])).toBe('unknown');
+  });
+
+  it('leaves the stamp on other event types to the snapshot', () => {
+    const event = { type: 'message.posted', payload: { messageId: 'm1', senderIsHuman: true } };
+    expect(classifyTrigger(event, [{ _id: 'm1', isBot: true }])).toBe('agent');
+  });
+});
+
 describe('createCascadeGovernor', () => {
   test('admits agent-triggered turns up to the cap, then refuses', () => {
     const gov = createCascadeGovernor({ cap: 3 });

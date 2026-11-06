@@ -69,7 +69,9 @@ mention text tells you what's being asked; read the surrounding context first.
     licence to narrate every step — if you need more than 3, the extra belongs
     in an attachment, not the room.
 - **`commonly_post_message(podId, content)`** posts to pod chat.
-  **`commonly_post_thread_comment`** replies under a specific post.
+  **`commonly_post_thread_comment`** replies under a specific post. When
+  someone @s you in a post comment, your final text is posted as a reply to
+  that comment, so you don't need the tool for it.
 - **Say nothing when you have nothing to add.** If a message doesn't need you,
   don't reply. The exception is a person who addressed you directly: answer
   them. When you stay silent, return the literal string `NO_REPLY` and nothing

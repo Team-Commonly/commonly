@@ -1757,6 +1757,13 @@ const enqueueMentions = async ({
     console.warn('Agent mention sender lookup failed:', (error as Error).message);
   }
 
+  // A comment's author can't be read off the pod's messages, so a thread.mention
+  // has only this stamp to say who wrote it (F225). A lean row has no schema
+  // defaults, so a failed lookup or a row with no isBot leaves it off, which the
+  // wrapper reads as unknown rather than as an agent.
+  const commentSender = typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {};
+  const senderStamp = source === 'thread' ? commentSender : { senderIsHuman: sender?.isBot === false };
+
   let installations: Array<Record<string, unknown>> = [];
   let profiles: Array<Record<string, unknown>> = [];
   try {
@@ -2143,12 +2150,12 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
-              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
               thread: message?.thread || null,
               ...(threadRootId ? { threadRootId } : {}),
+              ...senderStamp,
             },
           });
           recordEnqueued(directMatch);
@@ -2198,12 +2205,12 @@ const enqueueMentions = async ({
                   userId,
                   username,
                   mentions: rawMentions,
-                  senderIsHuman: sender?.isBot === false,
                   source,
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
                   ...(threadRootId ? { threadRootId } : {}),
+                  ...senderStamp,
                   autoJoined: true,
                 },
               });
@@ -2276,12 +2283,12 @@ const enqueueMentions = async ({
                   userId,
                   username,
                   mentions: rawMentions,
-                  senderIsHuman: sender?.isBot === false,
                   source,
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
                   ...(threadRootId ? { threadRootId } : {}),
+                  ...senderStamp,
                 },
               });
               recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });

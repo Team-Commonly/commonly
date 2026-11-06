@@ -306,6 +306,28 @@ describe('a provider content refusal', () => {
     expect(run.acks()[0].result).toEqual(REFUSED_ACK(null));
   });
 
+  test('a refused comment @ is acked as refused, and the pod is told, since the person was waiting', async () => {
+    const spawn = jest.fn(async () => { throw refusal(); });
+    const { handle, acks, notices } = setup({
+      events: [poisonEvent({
+        type: 'thread.mention',
+        payload: {
+          ...poisonEvent().payload,
+          messageId: 'comment-1',
+          thread: {
+            postId: 'post-1', postPodId: POD_ID, postContent: 'a post', commentId: 'comment-1', commentText: 'hi',
+          },
+        },
+      })],
+      spawn,
+    });
+    await drainMicrotasks();
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(acks()).toEqual([{ id: 'evt-poison', result: expect.objectContaining({ reason: 'provider-refused' }) }]);
+    expect(notices()).toHaveLength(1);
+  });
+
   test('a refused human broadcast gets no pod notice; its claim releases as upstream-refused, for the kernel to hand on', async () => {
     const event = poisonEvent({ type: 'message.posted' });
     event.payload.senderIsHuman = true;
