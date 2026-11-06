@@ -44,6 +44,7 @@ const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 // Services
 const AgentEventService = require('../../services/agentEventService');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const AgentMentionService = require('../../services/agentMentionService');
 
 // Utils
 const { hash } = require('../../utils/secret');
@@ -63,6 +64,7 @@ describe('Clawdbot E2E Integration Tests', () => {
   let authToken3;
   let testPod;
   let clawdbotAgent;
+  let enqueueAgentPost;
   let commonlyBotAgent;
 
   beforeAll(async () => {
@@ -167,12 +169,19 @@ describe('Clawdbot E2E Integration Tests', () => {
     });
   });
 
+  beforeEach(() => {
+    enqueueAgentPost = jest.spyOn(AgentMentionService, 'enqueueAgentPost');
+  });
+
   afterAll(async () => {
     await closePgDb();
     await closeMongoDb();
   });
 
   afterEach(async () => {
+    // The runtime post route doesn't wait for its mention enqueue. Let it land
+    // before the clear, or one test's post reaches the next test's poll.
+    await Promise.allSettled(enqueueAgentPost.mock.results.map(({ value }) => value));
     // Clear installation-related data between tests but keep users, pods, and registry
     await AgentInstallation.deleteMany({});
     await AgentEvent.deleteMany({});
