@@ -52,6 +52,7 @@ import { homedir } from 'os';
 import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
+  adapterFailure,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
@@ -450,10 +451,18 @@ export const buildArgs = ({
   prompt,
 ];
 
-/** The reply is the last assistant `message_end`'s text parts; tool calls are not text. */
+/**
+ * The reply is the last assistant `message_end`'s text parts; tool calls are not
+ * text. `finished` means pi ended the turn on an answer: `agent_end`, not retried,
+ * after an assistant message that stopped with `stop`. An overflow's `agent_end`
+ * says `willRetry: false` and then pi compacts and continues, so `agent_end` after
+ * an `error` or `length` stop doesn't count; the continuation's message decides.
+ */
 export const extractReply = (stdout) => {
   let text = '';
   let sawAssistant = false;
+  let finished = false;
+  let lastStop = null;
   const errors = [];
   for (const line of String(stdout).split('\n')) {
     if (!line.trim()) continue;
@@ -462,10 +471,33 @@ export const extractReply = (stdout) => {
     if (event?.type === 'message_end' && event.message?.role === 'assistant') {
       const parts = (event.message.content || []).filter((c) => c?.type === 'text').map((c) => c.text || '');
       if (parts.length) { text = parts.join('\n').trim(); sawAssistant = true; }
+      lastStop = event.message.stopReason;
+      finished = false;
     }
+    if (event?.type === 'agent_end') finished = event.willRetry !== true && lastStop === 'stop';
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
-  return { text, sawAssistant, errors };
+  return { text, sawAssistant, finished, errors };
+};
+
+// A turn that printed an interim message and then ended without finishing. A
+// crash keeps its cause, so a quota line in stderr or a refusal on the stream
+// still classifies. A signal (143, 129, or a null code) has neither: stderr then
+// holds pi's startup warnings, and a refusal on the stream may be one pi was
+// recovering from, like an overflow's 400.
+const stoppedTurnFailure = (reply, {
+  code, signal, stderr, credentials,
+}) => {
+  const killed = Boolean(signal) || code === 143 || code === 129;
+  const upstream = killed ? null : reply.upstream;
+  const failure = adapterFailure(
+    'pi',
+    reply.errors.join(' | ') || (killed ? '' : stderr.trim().slice(-600)) || upstream?.detail
+      || 'the turn stopped before it finished',
+    { credentials, exitCode: code, limit: 600 },
+  );
+  if (upstream) failure.status ??= upstream.status;
+  return failure;
 };
 
 /**
@@ -538,7 +570,7 @@ const runPi = ({
   });
   proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => { clearTimeout(timer); reject(err); });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimeout(timer);
     if (hookError) return reject(hookError);
     if (timedOut) return reject(new Error(`pi timed out after ${timeoutMs}ms`));
@@ -548,7 +580,16 @@ const runPi = ({
     // on the stream rather than on the exit code (TASK-096, measured 2026-09-22).
     const upstream = readUpstreamRefusal(stdout, { credentials });
     if (upstream) reply.upstream = upstream;
-    if (code !== 0 && !reply.sawAssistant) {
+    // Without `finished`, the text pi printed was an interim message, so posting
+    // it would answer with half a turn and acknowledge what it held. An error
+    // event fails the turn even after `finished`, which could otherwise read as
+    // silent. A tool-only turn that finished stays silent, whatever the exit.
+    if (code !== 0 && (!reply.finished || reply.errors.length)) {
+      if (reply.sawAssistant) {
+        return reject(stoppedTurnFailure(reply, {
+          code, signal, stderr, credentials,
+        }));
+      }
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
       return reject(new Error(`pi exited ${code}: ${tail}`));
     }

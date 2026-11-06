@@ -4423,3 +4423,22 @@ Two drafts of this repair got the route wrong. The first said `reprovision-all` 
 **Repair:** the quick rules now open with a dated deployment boundary that names the missing gateway and which installs lose their token. `CLAUDE.md` needs the same note and isn't changed here.
 
 **Lesson:** a retired component's rules keep working as instructions until the file that's loaded first says otherwise. When you park something, change the rules that tell people to use it, not only the deployment. Before making a step a close-out, check that the step has something to act on. Before calling a step a no-op, read what else it does, and before saying what it hits, read what it skips.
+
+## 105. A clean exit and a printed message taught the adapters a stopped turn had finished (2026-11-06, cto)
+
+*Origin: F247, following #3573 (F243).*
+
+Two comments carried the false model. pi's close handler treated any assistant message as a reply, so a turn stopped on its way to a tool posted its interim line. Claude's `claudeResultText` said a turn with no result event "gets the text of its assistant events", and named that shape "killed mid-stream, exit 0" without anyone having produced it. Each signal behaves differently per binary. Measured with the real binaries against a local stub model, a turn killed between messages:
+
+| Binary, as the adapter spawns it | SIGTERM | SIGHUP | SIGINT | Before the fix |
+|---|---|---|---|---|
+| pi 0.84.1 (node, same pid as the shebang) | 143 | 129 | dies by signal | every one posted the interim text |
+| claude 2.1.318 (native) | 143 | 129 | **0, no result event** | SIGINT posted the interim text, or read as silent |
+| qwen 0.26.2 (`cli-entry.js`, in process; `sandbox-exec` when public) | 130 | dies by signal | 130 | rejected |
+| opencode 1.19.4 (native `opencode.exe`) | dies by signal, or ignored for 15 s | ignored for 15 s | ignored for 15 s | rejected, after SIGKILL when ignored |
+
+Claude's SIGINT shape also moves with timing: within tens of ms of a request it can print `result/error_during_execution` with empty text, and from 100 ms on it prints no result at all. At 400 ms after spawn it exits 0 having printed nothing.
+
+**Repair:** a turn counts as finished on the harness's own completion event: a Claude `result`, or on pi an `agent_end` that isn't retried and follows an assistant message that stopped with `stop`. `agent_end` alone isn't enough: on a context overflow it says `willRetry: false`, then pi compacts and continues, so a kill during compaction is covered by the `stop` check. On a non-zero exit, an error event on pi's stream also fails the turn. Otherwise the turn rejects with "the turn stopped before it finished", or a crash's own cause, and the run loop keeps the messages it held. This differs from #3573 on purpose. Codex's text comes from its last-message file, while these two print every interim message, so text alone proves nothing. Exit 0 with text and no `agent_end` still posts on pi, because no signal reaches that path.
+
+**Lesson:** "killed" is not one thing. Test each signal at the process the adapter really spawns, while a tool has just run, because SIGTERM alone passed Claude and hid the exit-0 path. And a comment naming a failure shape should say whether it was measured.

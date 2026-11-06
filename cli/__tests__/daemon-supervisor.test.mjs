@@ -515,7 +515,10 @@ describe('tick', () => {
           const child = new EventEmitter();
           child.stdout = new EventEmitter();
           child.stderr = new EventEmitter();
-          setImmediate(() => child.emit('close', 0));
+          setImmediate(() => {
+            child.stdout.emit('data', Buffer.from('{"type":"result","result":""}\n'));
+            child.emit('close', 0);
+          });
           return child;
         },
       });
