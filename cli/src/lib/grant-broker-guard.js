@@ -18,10 +18,11 @@
  *
  * THE ADAPTER IS THE HOST-INDEPENDENT FACT, but sandbox support and broker
  * admission are separate: only ADAPTERS_WITH_GRANT_BROKER may receive the grant
- * broker (claude, codex, OpenCode since F175a, pi since F175c). pi is admitted
- * on a narrower rule (ADAPTERS_WITH_PUBLIC_ONLY_GRANT): a public seat in macOS
- * Seatbelt only, and every other pi declaration is `adapter_confines_public_only`,
- * which a named grant (F94) does not lift.
+ * broker (claude, codex, OpenCode since F175a, pi since F175c, Qwen and Goose
+ * since F175d). pi, Qwen and Goose are admitted on a narrower rule
+ * (ADAPTERS_WITH_PUBLIC_ONLY_GRANT): a public seat in a jail this host has (for
+ * pi, macOS Seatbelt only), and every other declaration is
+ * `adapter_confines_public_only`, which a named grant (F94) does not lift.
  *
  * ONE REASON THE SERVER DOES NOT HAVE: `sandbox_absent`. The server must ALLOW
  * an absent block (a daemon-provisioned seat's baseline is derived here and is
@@ -174,9 +175,9 @@ export const declaresGrantBroker = (environment, opts) => (
 
 /**
  * F175c: the one reason naming (F94) does not lift for an adapter on the grant
- * list. pi holds a grant only on a public seat confined by macOS Seatbelt, so
- * every pi declaration short of that is this reason, not a sandbox reason a
- * consent could waive. Same literal as the server's.
+ * list. pi, Qwen and Goose hold a grant only on a public seat in a jail, so
+ * every declaration of theirs short of that is this reason, not a sandbox
+ * reason a consent could waive. Same literal as the server's.
  */
 export const PUBLIC_ONLY_REASON = 'adapter_confines_public_only';
 
@@ -186,9 +187,10 @@ const publicOnlyReason = (environment, rule, platform) => {
   if (sandbox.mode === 'none' || effectiveSandboxTrust(sandbox.trust) !== 'public') return PUBLIC_ONLY_REASON;
   // D245: a public declaration on native Windows reads the same for every adapter.
   if (platform === 'win32') return 'sandbox_mode_unenforceable';
-  if (!rule.platforms.has(platform)) return PUBLIC_ONLY_REASON;
+  const modes = Object.hasOwn(rule, platform) ? rule[platform] : null;
+  if (!modes) return PUBLIC_ONLY_REASON;
   const mode = resolvePublicSandboxMode(sandbox, platform);
-  return typeof mode === 'string' && rule.modes.has(mode) ? null : PUBLIC_ONLY_REASON;
+  return typeof mode === 'string' && modes.has(mode) ? null : PUBLIC_ONLY_REASON;
 };
 
 /**
@@ -229,9 +231,11 @@ const detailFor = (reason, adapter, environment, platform = process.platform) =>
       + ` run the agent on macOS or Linux to use grants, ${drop}`;
   }
   if (reason === PUBLIC_ONLY_REASON) {
+    const jails = Object.keys(ADAPTERS_WITH_PUBLIC_ONLY_GRANT.get(adapter) || {});
+    const macOnly = jails.length === 1 && jails[0] === 'darwin';
     return `the seat runs the '${adapter}' adapter, which carries a grant only on a public seat confined by the`
-      + " macOS sandbox; declare sandbox.trust 'public' and run it on a Mac, or move it to an adapter that confines"
-      + ` this host, ${drop} (naming the agent on the grant does not lift this)`;
+      + `${macOnly ? ' macOS' : ''} sandbox; declare sandbox.trust 'public'${macOnly ? ' and run it on a Mac' : ''},`
+      + ` or move it to an adapter that confines this host, ${drop} (naming the agent on the grant does not lift this)`;
   }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`

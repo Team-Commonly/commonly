@@ -3,17 +3,18 @@ import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
-  PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
+  PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, bridgedGooseExtension, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
 import {
   PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS,
 } from '../src/lib/public-withheld-tools.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR } from '../src/lib/adapters/codex-broker-bridge.mjs';
 
 const childWith = (stdout, code = 0, stderr = '') => {
   const child = new EventEmitter();
@@ -411,4 +412,156 @@ test('a public bwrap seat gets its own files read-only, apart from the home it w
   expect(owned).toBeTruthy();
   expect(seen.recipe.startsWith(`${seatHome}/`)).toBe(false);
   expect(owned.startsWith(`${seatHome}/`)).toBe(false);
+});
+
+// F175d: Goose 1.54.0 fills a streamable_http header from its own environment
+// or from a literal in the recipe (measured), so neither keeps the token to one
+// file. The broker runs behind the stdio bridge, as one more recipe extension.
+describe('F175d: the grant broker reaches a public Goose seat through the stdio bridge', () => {
+  const broker = (over = {}) => ({
+    name: 'commonly-grant-broker',
+    transport: 'http',
+    url: '${COMMONLY_API_URL}/api/mcp/grants/g1',
+    headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+    ...over,
+  });
+  const publicCtx = () => ({
+    credentialFile: '/tmp/seat-token', instanceUrl: 'https://api.commonly.me',
+    runtimeToken: 'cm_agent_actual_token', publicSeat: true,
+    publicExtensions: [], mcpReadDirectories: [],
+  });
+  const withPreparedMcp = (fn) => async () => {
+    const root = mkdtempSync(join(tmpdir(), 'goose-public-f175d-'));
+    const home = join(root, 'mcp-home');
+    const pkgDir = join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    writeFileSync(join(pkgDir, 'src', 'index.js'), '');
+    writeFileSync(join(home, 'current'), '0.3.13\n');
+    writeFileSync(join(home, '.warm.lock'), 'warming\n');
+    const keyFile = join(root, 'provider-key');
+    writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
+    const prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    try {
+      await fn({ keyFile });
+    } finally {
+      if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = prior;
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const publicSpawn = async ({ keyFile, servers, stdout = reply('ok'), stderr = '', ...over }) => {
+    const ctx = baseCtx();
+    const seen = {};
+    const result = await goose.spawn('hello', {
+      ...ctx,
+      environment: { ...ctx.environment, mcp: servers,
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _platform: 'darwin',
+      _wrapArgvWithSeatbelt: (argv, options) => { seen.wrap = options; return argv; },
+      _spawnImpl: (_cmd, args, options) => {
+        seen.args = args;
+        seen.env = options.env;
+        seen.recipeText = readFileSync(args[args.indexOf('--recipe') + 1], 'utf8');
+        return childWith(stdout, 0, stderr);
+      },
+      ...over,
+    });
+    return { result, seen, ctx };
+  };
+
+  test('the entry becomes a recipe extension running our bridge, told a url, a template and a path', () => {
+    const ctx = publicCtx();
+    const bridged = bridgedGooseExtension(broker(), ctx);
+    expect(bridged).toEqual({
+      type: 'stdio', name: 'commonly-grant-broker', cmd: process.execPath, args: [BRIDGE_PATH],
+      envs: {
+        [BRIDGE_URL_VAR]: 'https://api.commonly.me/api/mcp/grants/g1',
+        [BRIDGE_HEADERS_VAR]: JSON.stringify({ Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' }),
+        COMMONLY_TOKEN_FILE: '/tmp/seat-token',
+      },
+    });
+    expect(JSON.stringify(bridged)).not.toContain('cm_agent_actual_token');
+  });
+
+  test('a public seat still refuses any other server, including an HTTP one that is not ours', () => {
+    expect(() => extensionArgs([{ name: 'remote', transport: 'http', url: 'https://api.commonly.me/mcp' }], publicCtx()))
+      .toThrow(/only the Commonly/);
+    expect(() => extensionArgs([broker({ url: 'https://evil.example/api/mcp/grants/g1' })], publicCtx()))
+      .toThrow(/only the Commonly/);
+    expect(() => extensionArgs([{ name: 'other', transport: 'stdio', command: ['node', 'x.js'] }], publicCtx()))
+      .toThrow(/only the Commonly/);
+    expect(() => extensionArgs([], publicCtx())).toThrow(/only the Commonly MCP extension/);
+  });
+
+  test('a broker never stands in for the Commonly extension', () => {
+    expect(() => extensionArgs([broker()], publicCtx())).toThrow(/only the Commonly MCP extension/);
+  });
+
+  test('a private seat never gets the bridge: the guard withholds it, and this is the second layer', () => {
+    const { publicSeat, publicExtensions, mcpReadDirectories, ...ctx } = publicCtx();
+    expect(() => extensionArgs([broker()], ctx)).toThrow(/cannot deliver without exposing credentials/);
+  });
+
+  test('the recipe holds the bridge beside Commonly, the jail reads the bridge file alone, and no token rides', withPreparedMcp(async ({ keyFile }) => {
+    const { seen, ctx } = await publicSpawn({ keyFile, servers: [commonlyMcpServer(), broker()] });
+    const recipe = JSON.parse(seen.recipeText);
+    expect(recipe.extensions.map((extension) => extension.name)).toEqual(['commonly', 'commonly-grant-broker']);
+    const bridge = recipe.extensions[1];
+    expect(bridge.cmd).toBe(process.execPath);
+    expect(bridge.args).toEqual([BRIDGE_PATH]);
+    expect(bridge.envs.OPENSSL_CONF).toBeTruthy();
+    expect(recipe.extensions[0].available_tools).toEqual(PUBLIC_GOOSE_TOOLS);
+    expect(seen.wrap.readOnlyDirectories).toContain(BRIDGE_PATH);
+    expect(seen.wrap.readOnlyDirectories).not.toContain(dirname(BRIDGE_PATH));
+    for (const text of [seen.args.join('\n'), seen.recipeText, JSON.stringify(seen.env)]) {
+      expect(text).not.toContain(ctx.runtimeToken);
+    }
+    expect(seen.env.COMMONLY_AGENT_TOKEN).toBeUndefined();
+  }));
+
+  test('a bwrap seat binds the bridge file read-only', withPreparedMcp(async ({ keyFile }) => {
+    let wrapOptions;
+    const ctx = baseCtx();
+    await goose.spawn('hello', {
+      ...ctx,
+      environment: { ...ctx.environment, mcp: [commonlyMcpServer(), broker()],
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'bwrap' },
+      },
+      _binaryPath: '/usr/bin/true',
+      _detectBwrap: () => ({ available: true }),
+      _wrapArgvWithBwrap: (argv, _environment, options) => { wrapOptions = options; return argv; },
+      _spawnImpl: () => childWith(reply('ok')),
+    });
+    expect(wrapOptions.readOnlyPaths).toContain(BRIDGE_PATH);
+  }));
+
+  test('a broker that fails to start costs the grant and not the turn', withPreparedMcp(async ({ keyFile }) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { result } = await publicSpawn({
+        keyFile,
+        servers: [commonlyMcpServer(), broker()],
+        stderr: "Failed to start extension 'commonly-grant-broker': HTTP 403\n",
+      });
+      expect(result.text).toBe('ok');
+    } finally {
+      warn.mockRestore();
+    }
+  }));
+
+  test('the Commonly extension failing to start still fails the turn', withPreparedMcp(async ({ keyFile }) => {
+    await expect(publicSpawn({
+      keyFile,
+      servers: [commonlyMcpServer(), broker()],
+      stderr: "Failed to start extension 'commonly': nope\n",
+    })).rejects.toThrow(/Failed to start extension 'commonly'/);
+  }));
 });

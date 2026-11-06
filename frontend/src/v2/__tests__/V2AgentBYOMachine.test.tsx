@@ -311,9 +311,9 @@ describe('BYO on-my-computer mode', () => {
     expect(screen.queryByTestId('byo-machine-refused')).toBeNull();
   });
 
-  // F175a: dsh and Hermes can't be sandboxed; pi, Goose and Qwen aren't on
-  // the grant list yet. Neither line hints that some computer would do.
-  test('a harness with no sandbox says connectors need one; one not on the grant list says not yet', async () => {
+  // F175a: dsh and Hermes can't be sandboxed. pi, Goose and Qwen hold a grant
+  // only as a public agent. Neither line hints that some computer would do.
+  test('a harness with no sandbox says connectors need one; a public-only one says so', async () => {
     mockGet({ catalog: CATALOG });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
@@ -328,7 +328,7 @@ describe('BYO on-my-computer mode', () => {
     // F175c: a machine reports no OS here, so pi's line says where it works.
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('pi can use connectors only as a public agent on a Mac.');
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'goose' } });
-    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work with Goose yet.');
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Goose can use connectors only as a public agent.');
     for (const id of ['claude', 'codex', 'opencode', '']) {
       fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: id } });
       expect(screen.queryByTestId('byo-no-connectors')).toBeNull();

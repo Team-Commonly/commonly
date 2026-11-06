@@ -158,12 +158,12 @@ describe('the connector line for a harness with no sandbox', () => {
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(line);
   });
 
-  test.each([MAC, LINUX])('Goose and Qwen say connectors don\'t work with them yet, on any computer (%s)', async (ua) => {
+  test.each([MAC, LINUX])('Goose and Qwen say connectors need a public agent, on any computer (%s)', async (ua) => {
     asBrowser(ua);
     await renderPage();
     for (const [runner, name] of [['goose', 'Goose'], ['qwen', 'Qwen Code']]) {
       fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
-      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(`Connectors don’t work with ${name} yet.`);
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(`${name} can use connectors only as a public agent.`);
     }
   });
 
@@ -185,6 +185,8 @@ describe('the connector line for a harness with no sandbox', () => {
       fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
       expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
     }
+    fireEvent.click(screen.getByTestId('byo-runner-goose'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
     fireEvent.click(screen.getByTestId('byo-runner-hermes'));
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Hermes runs without a sandbox');
   });
@@ -199,6 +201,6 @@ describe('the connector line for a harness with no sandbox', () => {
     fireEvent.click(screen.getByTestId('byo-runner-pi'));
     expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('连接器需要带沙箱的运行器。pi 运行时没有沙箱，所以用不了连接器。');
     fireEvent.click(screen.getByTestId('byo-runner-goose'));
-    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Goose 暂时还用不了连接器。');
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Goose 只有作为公开智能体时才能用连接器。');
   });
 });

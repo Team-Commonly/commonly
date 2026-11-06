@@ -19,9 +19,17 @@ import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { isOurGrantBroker } from '../grant-broker-guard.js';
+import { brokerBridgeEntry } from './broker-bridge-entry.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
 const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
+// What keeps a broker-holding seat off its credential is a list of denied
+// built-ins, so a version with a file-reading tool the list doesn't name could
+// reach it. A broker rides only a version that passed the grant proof
+// (qwen.grant-broker.public-smoke.test.mjs), compared exactly: no later patch
+// and no host override. Narrower than TESTED_QWEN_VERSIONS on purpose.
+export const GRANT_TESTED_QWEN_VERSIONS = Object.freeze(['0.26.2']);
 const ALLOW_UNTESTED_QWEN_VERSION_ENV = 'COMMONLY_QWEN_ALLOW_UNTESTED_VERSION';
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -93,6 +101,17 @@ const substitute = (value, ctx) => String(value).replace(/\$\{(COMMONLY_[A-Z_]+)
   COMMONLY_INSTANCE_URL: ctx.instanceUrl,
 }[name] || whole));
 
+/** The turn's servers: on a public seat, an unproven version loses the broker and keeps the turn. */
+export const withoutUnprovenBroker = (servers, { version, isPublic, instanceUrl }) => {
+  if (!isPublic || GRANT_TESTED_QWEN_VERSIONS.includes(version) || !Array.isArray(servers)) return servers;
+  return servers.filter((server) => {
+    if (!isOurGrantBroker(server, { instanceUrl })) return true;
+    // eslint-disable-next-line no-console
+    console.warn(`[qwen] grant broker ${server.name}: not on Qwen ${version || 'unknown'}, which hasn't passed the grant proof (${GRANT_TESTED_QWEN_VERSIONS.join(', ')}), so this turn runs without it.`);
+    return false;
+  });
+};
+
 export const buildQwenMcpConfig = (servers, ctx) => {
   const mcpServers = {};
   for (const server of servers || []) {
@@ -122,6 +141,9 @@ export const buildQwenMcpConfig = (servers, ctx) => {
       mcpServers[server.name] = {
         command: command[0], args, env,
         ...(server.cwd ? { cwd: server.cwd } : {}),
+        // `--exclude-tools` refuses these at the call and still lists them for
+        // the model (measured on 0.26.2), so the server entry drops them too.
+        ...(ctx.publicSeat ? { excludeTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
       };
       const versionDir = ctx.publicSeat && selectedMcpVersionDir(command);
       if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
@@ -129,6 +151,22 @@ export const buildQwenMcpConfig = (servers, ctx) => {
     }
     if (transport !== 'http' || typeof server.url !== 'string') {
       throw new Error(`Qwen MCP server ${server.name} has unsupported transport`);
+    }
+    // F175d: Qwen sends these headers literally (no `${VAR}`, no file), so the
+    // broker runs behind the stdio bridge. Public seats only: a private seat
+    // has no jail, so the guard withholds its broker, and an entry that reaches
+    // here anyway falls through to the refusal below.
+    if (ctx.publicSeat && isOurGrantBroker(server, { instanceUrl: ctx.instanceUrl })) {
+      const entry = brokerBridgeEntry(server, ctx);
+      if (entry.skip) {
+        // eslint-disable-next-line no-console
+        console.warn(`[qwen] grant broker ${server.name}: ${entry.skip}, so it is not wired for this spawn.`);
+        continue;
+      }
+      mcpServers[server.name] = { command: entry.command, args: entry.args, env: entry.env };
+      ctx.mcpReadDirectories?.push(entry.readPath);
+      ctx.bridgedBrokers?.push(server.name);
+      continue;
     }
     const httpUrl = substitute(server.url, ctx);
     const headers = Object.fromEntries(Object.entries(server.headers || {})
@@ -301,13 +339,18 @@ export default {
       const proxyWithBearer = { ...proxy, bearer: (await readFile(proxy.tokenFile, 'utf8')).trim() };
       const unavailableMcp = [];
       const mcpReadDirectories = [];
-      const mcp = buildQwenMcpConfig(ctx.environment?.mcp, {
+      const bridgedBrokers = [];
+      const turnServers = withoutUnprovenBroker(ctx.environment?.mcp, {
+        version, isPublic, instanceUrl: ctx.instanceUrl || '',
+      });
+      const mcp = buildQwenMcpConfig(turnServers, {
         credentialFile: credential?.path || '',
         instanceUrl: ctx.instanceUrl || '',
         runtimeToken: ctx.runtimeToken || '',
         publicSeat: isPublic,
         unavailableMcp,
         mcpReadDirectories,
+        bridgedBrokers,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
       await Promise.all([
@@ -325,6 +368,9 @@ export default {
         // F118: a public seat reads its memory but is not offered a write.
         memoryReadOnly: isPublic,
       });
+      const allowedTools = [
+        ...(Object.hasOwn(mcp.mcpServers, 'commonly') ? ['commonly'] : []), ...bridgedBrokers,
+      ].map((name) => `mcp__${name}__*`);
       const args = [
         '--bare', '--safe-mode', '--auth-type', 'openai', '-m', seatModel,
         '--mcp-config', mcpPath, '--exclude-tools', [
@@ -336,17 +382,20 @@ export default {
         // without it a public seat's commonly_post_message was declined
         // (D247 walk, 11-04). Public parity with Claude's --allowedTools
         // mcp__commonly__*; the withheld tools stay in --exclude-tools above.
-        ...(Object.hasOwn(mcp.mcpServers, 'commonly')
-          ? ['--allowed-tools', 'mcp__commonly__*'] : []),
+        // The broker parks every write for the owner itself (F175d).
+        ...(allowedTools.length ? ['--allowed-tools', allowedTools.join(',')] : []),
         '-o', 'stream-json', '-p', fullPrompt,
       ];
       let cmd = executable;
       let spawnArgs = args;
       if (isPublic && mode === 'bwrap') {
         if (!isAbsolute(executable)) throw new Error('public Qwen seats require an absolute qwen executable path');
+        // bwrap binds a symlink's target at the link's path, so npm's `.bin/qwen`
+        // would lose the `./cli.js` beside it. The real entry keeps its package.
+        const bwrapEntry = symlinkedBinary ? realpathSync(executable) : executable;
         const bwrap = (ctx._detectBwrap || detectBwrap)();
         if (!bwrap.available) throw new Error(`public Qwen seats require bwrap: ${bwrap.error}`);
-        [cmd, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([executable, ...args], {
+        [cmd, ...spawnArgs] = (ctx._wrapArgvWithBwrap || wrapArgvWithBwrap)([bwrapEntry, ...args], {
           ...ctx.environment,
           sandbox: {
             ...sandbox,
@@ -360,7 +409,7 @@ export default {
         }, {
           workspacePath: ctx.cwd,
           homePath: home,
-          readOnlyPaths: [tempDir, executable, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
+          readOnlyPaths: [tempDir, bwrapEntry, packageDir, process.execPath, ...mcpReadDirectories].filter(Boolean),
         });
       } else if (isPublic) {
         if ((ctx._platform || process.platform) !== 'darwin') {

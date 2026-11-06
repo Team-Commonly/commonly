@@ -3330,7 +3330,8 @@
     "noConnectors": "连接器需要带沙箱的运行器。{{tool}} 运行时没有沙箱，所以用不了连接器。",
     "noConnectorsYet": "{{tool}} 暂时还用不了连接器。",
     "noConnectorsWindows": "Windows 上暂时还用不了连接器。",
-    "connectorsMacPublicOnly": "{{tool}} 只有作为 Mac 上的公开智能体时才能用连接器。"
+    "connectorsMacPublicOnly": "{{tool}} 只有作为 Mac 上的公开智能体时才能用连接器。",
+    "connectorsPublicOnly": "{{tool}} 只有作为公开智能体时才能用连接器。"
   },
   "outsiderNarrowing": {
     "install": {

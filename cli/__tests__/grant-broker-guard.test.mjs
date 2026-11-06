@@ -183,6 +183,49 @@ describe('grant-broker admission for this adapter', () => {
     expect(confinementReason(environment, 'pi', platform)).toBe(expected);
   });
 
+  // F175d: Qwen and Goose confine only a public seat too, but on both hosts:
+  // Seatbelt on macOS and bubblewrap on Linux. A mode the host can't enforce
+  // gets the same reason, and so does every seat that isn't public, because a
+  // private seat on either runs with no jail at all.
+  describe.each(['qwen', 'goose'])('%s holds a grant only as a public seat', (adapter) => {
+    test.each([
+      ['a public seat on macOS', { sandbox: { trust: 'public' } }, 'darwin', null],
+      ['a public seat on Linux', { sandbox: { trust: 'public' } }, 'linux', null],
+      ['workspace mode on macOS', { sandbox: { mode: 'workspace', trust: 'public' } }, 'darwin', null],
+      ['read-only mode on macOS', { sandbox: { mode: 'read-only', trust: 'public' } }, 'darwin', null],
+      ['bwrap mode on Linux', { sandbox: { mode: 'bwrap', trust: 'public' } }, 'linux', null],
+      ['a legacy internal trust', { sandbox: { trust: 'internal' } }, 'darwin', null],
+      ['no sandbox block', {}, 'darwin', 'adapter_confines_public_only'],
+      ['a private seat', { sandbox: { trust: 'private' } }, 'darwin', 'adapter_confines_public_only'],
+      ['a workspace-trust seat', { sandbox: { trust: 'workspace' } }, 'darwin', 'adapter_confines_public_only'],
+      ['mode none', { sandbox: { mode: 'none', trust: 'public' } }, 'darwin', 'adapter_confines_public_only'],
+      ['bwrap declared on macOS, which has none', { sandbox: { mode: 'bwrap', trust: 'public' } }, 'darwin', 'adapter_confines_public_only'],
+      ['Seatbelt modes declared on Linux', { sandbox: { mode: 'workspace', trust: 'public' } }, 'linux', 'adapter_confines_public_only'],
+      ['a mode no adapter implements', { sandbox: { mode: 'firejail', trust: 'public' } }, 'linux', 'adapter_confines_public_only'],
+      ['native Windows', { sandbox: { trust: 'public' } }, 'win32', 'sandbox_mode_unenforceable'],
+      ['a host with no rule', { sandbox: { trust: 'public' } }, 'freebsd', 'adapter_confines_public_only'],
+    ])('%s', (_label, environment, platform, expected) => {
+      expect(confinementReason(environment, adapter, platform)).toBe(expected);
+    });
+
+    test('a grant that names the seat does not ride a private one', () => {
+      const named = { ...broker(), byoNamed: true };
+      const environment = { sandbox: { trust: 'private' }, mcp: [named] };
+      const out = withholdGrantBroker(environment, adapter, { ...opts, platform: 'darwin' });
+      expect(out.mcp).toEqual([]);
+    });
+
+    test('the remedy names the sandbox on both hosts, not a Mac alone', () => {
+      const onRefuse = jest.fn();
+      withholdGrantBroker({ sandbox: { trust: 'private' }, mcp: [broker()] }, adapter, {
+        ...opts, onRefuse, platform: 'linux',
+      });
+      const [refusal] = onRefuse.mock.calls[0];
+      expect(refusal.detail).toContain("sandbox.trust 'public'");
+      expect(refusal.detail).not.toMatch(/\bMac\b|macOS/);
+    });
+  });
+
   test('OpenCode is confined on macOS and Linux, and on no host on native Windows', () => {
     for (const platform of ['darwin', 'linux']) {
       expect(confinementReason({ sandbox: { trust: 'public' } }, 'opencode', platform)).toBeNull();
@@ -217,7 +260,7 @@ describe('withholding the broker, entry-level', () => {
     expect(refusal.decidedBy).toBe('daemon');
     expect(refusal.reason).toBe('adapter_cannot_confine');
     // The remedy names every adapter that can hold the broker, from the set.
-    expect(refusal.detail).toContain('claude, codex, opencode or pi');
+    expect(refusal.detail).toContain('claude, codex, opencode, pi, qwen or goose');
     expect(names).toEqual(['commonly-grant-broker']);
   });
 
@@ -314,10 +357,17 @@ describe('F94: a broker the server says names this seat', () => {
 
   test('never rides an adapter that is not approved for the broker', () => {
     const environment = { sandbox: { trust: 'public' }, mcp: [kernel, named] };
-    for (const adapter of ['dsh', 'hermes', 'goose']) {
+    for (const adapter of ['dsh', 'hermes']) {
       const out = withholdGrantBroker(environment, adapter, { ...opts, platform: 'darwin' });
       expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
     }
+  });
+
+  // F175d: on the broker list, but only confined, so naming lifts nothing here.
+  test.each(['qwen', 'goose'])('never rides an unconfined %s seat', (adapter) => {
+    const environment = { sandbox: { trust: 'private' }, mcp: [kernel, named] };
+    const out = withholdGrantBroker(environment, adapter, { ...opts, platform: 'darwin' });
+    expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
   });
 
   // F175c: pi carries a grant only confined, so naming lifts nothing for it.

@@ -244,9 +244,9 @@ describe('POST /api/grants naming a BYO agent', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
-  // F175c: pi holds a grant only on a public macOS seat; naming never lifts
-  // its refusal, and the naming message does not offer it.
-  test('a pi seat that is not public cannot be named', async () => {
+  // F175c, F175d: pi, Qwen and Goose hold a grant only on a public seat; naming
+  // never lifts that refusal, and the naming message does not offer them.
+  test('a seat on a public-only harness that is not public cannot be named', async () => {
     mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });
     const res = await withCatalog([ENTRY], () => mint());
     expect(res.status).toBe(403);

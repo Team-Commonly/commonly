@@ -3,11 +3,12 @@
 TASK-236 admits only Goose 1.54.0 with a prepared Commonly stdio MCP server,
 a declared model and provider whose `keyFile` is an absolute, regular 0600 file
 (the sandbox check needs the declaration; the spawn checks the file), and an
-enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
+enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations other than the grant broker, untested versions,
 disabled sandboxes and restricted-network declarations fail before launch.
 Public filesystem `read-outside` declarations are refused, so operator-supplied
 paths cannot expand the host read grants of the public process.
-Goose remains ineligible for Commonly's grant broker.
+A public seat may hold Commonly's grant broker (F175d), through the stdio bridge
+described in [byo-support-matrix.md](byo-support-matrix.md); a private seat may not.
 Public confinement must be declared explicitly with provider/model settings.
 Goose is excluded from automatic default sandbox derivation, which cannot
 supply those settings. Public MCP execution requires the selected prepared

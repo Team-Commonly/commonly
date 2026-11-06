@@ -1519,7 +1519,9 @@ describe('bootstrapAgentRecordFromEnv', () => {
     // withholdGrantBroker), not by a server-declared binding.
     expect(adapterRequiresServerBinding('opencode')).toBe(false);
     expect(adapterRequiresServerBinding('OpenCode ')).toBe(false);
+    // F175d: on the broker list like pi, and on pi's rule for the same reason.
     expect(adapterRequiresServerBinding('goose')).toBe(true);
+    expect(adapterRequiresServerBinding('qwen')).toBe(true);
     expect(adapterRequiresServerBinding('claude')).toBe(false);
     expect(adapterRequiresServerBinding('codex')).toBe(false);
     expect(adapterRequiresServerBinding('stub')).toBe(false);

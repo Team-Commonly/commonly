@@ -3334,7 +3334,8 @@
     "noConnectors": "Connectors need a sandboxed harness. {{tool}} runs without a sandbox, so it can’t use connectors.",
     "noConnectorsYet": "Connectors don’t work with {{tool}} yet.",
     "noConnectorsWindows": "Connectors don’t work on Windows yet.",
-    "connectorsMacPublicOnly": "{{tool}} can use connectors only as a public agent on a Mac."
+    "connectorsMacPublicOnly": "{{tool}} can use connectors only as a public agent on a Mac.",
+    "connectorsPublicOnly": "{{tool}} can use connectors only as a public agent."
   },
   "outsiderNarrowing": {
     "install": {
