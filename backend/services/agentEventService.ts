@@ -8,6 +8,7 @@ import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredM
 import { digestConversationFrame } from './digestFrame';
 import { prependGrantRemovalCue as prependGrantRemovalLines } from './grantRemovalCueService';
 import {
+  JOINABLE_ROW_AGE_MS,
   LIVE_MENTION_LIMIT,
   MAX_COALESCED,
   RUNNING_TURN_WINDOW_MS,
@@ -1918,8 +1919,9 @@ class AgentEventService {
       // here rather than inside runAgent keeps the terminal transition next
       // to the non-terminal state that created it.
       const runWithDigest = async () => {
-        // A hosted row is born claimed, so nothing joins it then. It can still
-        // go back to pending through a drain or a requeue, and be joined there.
+        // A hosted row is born claimed, so nothing joins it, and a claimed row
+        // is never joined again. One enqueued during a drain or a failed routing
+        // lookup is born pending, though, and is joined until this turn claims it.
         const turnPayload = withCoalesced(event.payload);
         const folded = await this.attachFoldedDigest(event).catch((digestErr: Error) => {
           console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
@@ -2042,10 +2044,13 @@ class AgentEventService {
     type: string;
     payload: Record<string, unknown>;
   }): Promise<{ joined?: EventDoc; payload?: Record<string, unknown> } | null> {
-    const scope = { agentName: agentName.toLowerCase(), instanceId, podId };
+    // Coerced to scalars before Mongo sees them: a caller may supply a runtime
+    // payload. isCoalescibleMention already kept non-scalars out of the payload.
+    const safePodId = String(podId);
+    const scope = { agentName: agentName.toLowerCase(), instanceId: String(instanceId), podId: safePodId };
     const live = await AgentEvent.find({
       ...scope,
-      type,
+      type: String(type),
       deliveryMode: { $ne: 'digest' },
       status: { $in: ['pending', 'delivered'] },
       ...samePlaceFilter(payload),
@@ -2056,17 +2061,18 @@ class AgentEventService {
     if (alreadyCarrying) return { joined: alreadyCarrying };
 
     const principal = async (userId: unknown): Promise<{ id: string; isBot: boolean } | null> => {
-      const user = await User.findById(userId).select('isBot botMetadata').lean() as {
+      const safeUserId = String(userId);
+      const user = await User.findById(safeUserId).select('isBot botMetadata').lean() as {
         isBot?: boolean; botMetadata?: { agentName?: string; instanceId?: string };
       } | null;
       if (!user) return null;
-      if (!user.isBot) return { id: String(userId), isBot: false };
+      if (!user.isBot) return { id: safeUserId, isBot: false };
       const install = await AgentInstallation.findOne({
         agentName: String(user.botMetadata?.agentName || '').toLowerCase(),
-        instanceId: user.botMetadata?.instanceId || 'default',
-        podId,
+        instanceId: String(user.botMetadata?.instanceId || 'default'),
+        podId: safePodId,
       }).select('installedBy').lean() as { installedBy?: unknown } | null;
-      return { id: String(install?.installedBy || userId), isBot: true };
+      return { id: String(install?.installedBy || safeUserId), isBot: true };
     };
     const sender = await principal(payload.userId);
     const sameAsker = (author: { id: string } | null): boolean => Boolean(sender && author && author.id === sender.id);
@@ -2092,6 +2098,14 @@ class AgentEventService {
             {
               _id: row._id,
               status: 'pending',
+              // Never claimed. A requeued row is pending too, and its old turn
+              // can still ack it unread; it also has fewer attempts left than a
+              // message of its own would.
+              attempts: 0,
+              // Young, so the message does not inherit an age it did not earn.
+              createdAt: { $gte: new Date(Date.now() - JOINABLE_ROW_AGE_MS) },
+              // An overflow retry is retired at its limit with no further turn.
+              'payload._contextOverflowRetryCount': { $exists: false },
               [`payload.coalesced.${MAX_COALESCED - 1}`]: { $exists: false },
             },
             { $push: { 'payload.coalesced': coalescedEntry(payload) } },
@@ -2099,7 +2113,19 @@ class AgentEventService {
           ).lean() as EventDoc | null;
           if (joined) {
             this.logEventLifecycle('coalesced', {
-              eventId: String(joined._id), agentName: scope.agentName, instanceId, podId: String(podId), type,
+              eventId: String(joined._id), agentName: scope.agentName, instanceId, podId: safePodId, type,
+            });
+            // The wake a row of its own would have sent. The row's first push
+            // can have found no socket, or a replay that failed or filled its
+            // page. A push is only a wake: list() still claims atomically.
+            getWebSocketService()?.pushEvent({
+              _id: joined._id,
+              agentName: joined.agentName,
+              instanceId: joined.instanceId,
+              podId: joined.podId,
+              type: joined.type,
+              payload: joined.payload,
+              createdAt: joined.createdAt,
             });
             return { joined };
           }
@@ -2110,7 +2136,9 @@ class AgentEventService {
     // Own row. It still names the turn ahead of it, so the reply it follows is
     // known to be written without this message. A pending row is not that turn:
     // a poller takes the two in one batch, unless it went out at enqueue. A
-    // delivered row past the window is a dead driver's.
+    // delivered row past the window is a dead driver's. A requeued row may
+    // still have a turn running, but nothing can tell that from one that died,
+    // so it gets no mark rather than a claim that may be false.
     const stillLive = await AgentEvent.find({
       _id: { $in: live.map((row) => row._id) },
       $or: [

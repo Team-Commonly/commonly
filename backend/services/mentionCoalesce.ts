@@ -1,11 +1,14 @@
 /**
  * The shape of ADR-018 D6.5: a second mention of one agent in one place.
  *
- * A mention joins an earlier row only while that row is pending, because a
- * claimed row's turn may be running and could not read it. Everything here is
- * pure; the reads and the compare-and-set live in AgentEventService.enqueueEvent,
- * the one place every runtime's mentions pass through.
+ * A mention joins an earlier row only before anything has claimed that row: a
+ * claimed row's turn may be running and could not read it, even after a requeue
+ * has put the row back to pending. Everything here is pure; the reads and the
+ * compare-and-set live in AgentEventService.enqueueEvent, the one place every
+ * runtime's mentions pass through.
  */
+
+import { Types } from 'mongoose';
 
 type Payload = Record<string, unknown>;
 
@@ -19,24 +22,54 @@ export const MAX_COALESCED = 8;
  * waiting to be requeued, and saying "while your turn was running" would be false.
  */
 export const RUNNING_TURN_WINDOW_MS = 10 * 60 * 1000;
+/**
+ * The oldest row a mention may join. A joined message shares the row's age, so
+ * this keeps it clear of what keys on createdAt: the 30-minute stranded close
+ * and the 168-hour retention delete. A row this old also has a slow reader, so
+ * an own row costs little.
+ */
+export const JOINABLE_ROW_AGE_MS = 10 * 60 * 1000;
 
 const asText = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 /**
+ * A username inside kernel-voice text. Registration applies no pattern, so a
+ * stranger's chosen text would otherwise sit inside a frame on someone else's
+ * message. Same rule as refusedItemRef in cli/src/lib/content-refusal.js.
+ */
+const asHandle = (value: unknown): string => (
+  asText(value).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) || 'unknown'
+);
+
+const isUserId = (value: unknown): boolean => (
+  (typeof value === 'string' && value !== '') || value instanceof Types.ObjectId
+);
+
+const isAbsentOrScalar = (value: unknown): boolean => (
+  value === undefined || value === null || typeof value === 'string' || typeof value === 'number'
+);
+
+/**
  * One person-or-agent message addressed to this agent. Kernel wakes reuse the
  * chat.mention type so deployed wrappers read them; they join nothing, and
- * samePlaceFilter keeps them from being joined.
+ * samePlaceFilter keeps them from being joined. A context-overflow retry is a
+ * row being replayed, not a new message: joined to another row it would drop
+ * its own joined messages and restart its retry count. Its id fields reach
+ * Mongo queries, and a caller may supply this payload, so non-scalars stay out.
  */
 export const isCoalescibleMention = (type: unknown, payload: Payload | undefined): boolean => (
   (type === 'chat.mention' || type === 'thread.mention')
   && Boolean(payload?.messageId)
-  && Boolean(payload?.userId)
+  && isUserId(payload?.userId)
+  && isAbsentOrScalar(payload?.threadRootId)
   && typeof payload?.rawContent === 'string'
   && typeof payload?.content === 'string'
   && !payload?.triggerAuthor
   && !payload?.welcomeWake
   && !payload?.assignedTaskWake
   && !payload?.boardWake
+  && payload?._contextOverflowRetryCount === undefined
+  && payload?.coalesced === undefined
 );
 
 /**
@@ -53,7 +86,7 @@ export const samePlaceFilter = (payload: Payload): Record<string, unknown> => {
     'payload.welcomeWake': null,
     'payload.assignedTaskWake': null,
     'payload.boardWake': null,
-    'payload.threadRootId': root === undefined || root === null ? null : root,
+    'payload.threadRootId': typeof root === 'string' || typeof root === 'number' ? root : null,
   };
 };
 
@@ -63,6 +96,7 @@ export const coalescedEntry = (payload: Payload): Payload => ({
   username: payload.username,
   rawContent: payload.rawContent,
   createdAt: payload.createdAt,
+  ...(payload.handoffCue ? { handoffCue: payload.handoffCue } : {}),
 });
 
 const entriesOf = (payload: Payload | undefined): Payload[] => (
@@ -89,9 +123,11 @@ export const withCoalesced = (payload: Payload | undefined): Payload | undefined
       + 'Read it with the message above and answer both. It may ask something different.]'
     : `[${entries.length} more messages for you here arrived before this turn started, so they are part of `
       + 'this turn. Read them with the message above and answer all of them. They may ask different things.]';
-  const blocks = entries.map((entry) => (
-    `[From @${asText(entry.username) || 'unknown'}, message ${asText(entry.messageId)}]\n${asText(entry.rawContent)}`
-  ));
+  const blocks = entries.map((entry) => [
+    `[From @${asHandle(entry.username)}, message ${asText(entry.messageId)}]`,
+    ...(entry.handoffCue ? [asText(entry.handoffCue)] : []),
+    asText(entry.rawContent),
+  ].join('\n'));
   return {
     ...payload,
     content: [`${asText(payload.content)}`, lead, ...blocks].join('\n\n'),
@@ -118,12 +154,12 @@ export const carriesOtherAuthors = (payload: unknown): boolean => {
 export const midTurnFrame = ({ earlier, sameAsker, username }: {
   earlier: Payload; sameAsker: boolean; username: unknown;
 }): string => {
-  const place = `your turn on message ${asText(earlier.messageId)} from @${asText(earlier.username) || 'unknown'}`;
+  const place = `your turn on message ${asText(earlier.messageId)} from @${asHandle(earlier.username)}`;
   return sameAsker
     ? `[This message reached you while ${place} was running. That turn could not see it. Check what you `
       + 'posted before you act. Do not answer twice, and do not retract or repost: if your reply covers this, '
       + 'return NO_REPLY; if this adds something, answer only that. If that turn posted nothing, answer normally.]'
-    : `[@${asText(username) || 'unknown'} wrote this while ${place} was running. That turn could not see it, `
+    : `[@${asHandle(username)} wrote this while ${place} was running. That turn could not see it, `
       + 'and this is a different person, so answer them. Check what you posted first so you do not repeat it. '
       + 'Return NO_REPLY only if that reply already answers them.]';
 };

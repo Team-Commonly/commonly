@@ -396,8 +396,9 @@ and `findPreviousTopLevel.pgmem.test.js`, which runs the query itself.
 replayed from the rows, and how the mark changes model behaviour is unwalked.
 
 > **Scope boundary.** This is about how many turns one agent spends on mentions
-> it has already received, not about who gets woken, so nothing here changes
-> addressing, D8, the cascade cap, the dampeners or the self-mention guard.
+> it has already received, not about who gets woken, so no rule of addressing,
+> D8, the cascade cap, the dampeners or the self-mention guard changes. Two of
+> their inputs do: see Limits for what the #508 count and the cascade price see.
 
 **Observed, 2026-11-05.** On a two-owner walk, a person and their own agent
 @mentioned the same agent within seconds, and it answered twice: an early
@@ -414,10 +415,17 @@ A hosted agent has no pending stage at all: its row is born claimed.
 **Decision.** At enqueue, in `AgentEventService`, where every runtime's mentions
 pass:
 
-1. **Row still pending: join.** A mention of the same agent in the same place, by
-   the same asker, joins the row as a structured entry (`payload.coalesced`). The
-   turn is one, and every delivery path renders the joined text into `content`
-   and `rawContent`.
+1. **Row never claimed and young: join.** A mention of the same agent in the same
+   place, by the same asker, joins the row as a structured entry
+   (`payload.coalesced`). The turn is one, and every delivery path renders the
+   joined text into `content` and `rawContent`. The compare-and-set requires
+   `status: 'pending'`, `attempts: 0` and a `createdAt` inside ten minutes.
+   `pending` alone is not enough: a requeued row is pending while its old turn
+   may still be running, and that turn can ack it unread, because a driver with
+   no nonce may ack a pending row. A joined message also shares the row's fate,
+   so a used row would hand it fewer attempts, and an old one a shorter life
+   (the 30-minute stranded close and 168-hour retention key on `createdAt`),
+   than a row of its own would get.
 2. **Row claimed: own row, marked.** The mention keeps its own durable row, and
    its `content` opens with an inline mark: that turn could not see this, check
    what you posted, and do not answer twice. On a polled agent the row is
@@ -455,8 +463,16 @@ The row's author prices the turn, so the cascade cap could refuse it with the
 person inside.
 
 **A place** is one `threadRootId`, or the main channel, and a DM pod is one
-place. Comment threads and kernel wakes that reuse `chat.mention` (assigned
-work, board, welcome) neither join nor are joined.
+place. Kernel wakes that reuse `chat.mention` (assigned work, board, welcome)
+neither join nor are joined. A comment-thread row is never a place: the filter
+skips any row with a `thread` object. An arriving comment mention is not refused
+for itself; it finds nothing because the lookup keeps to its own type,
+`thread.mention`, and every row of that type carries a `thread`.
+
+**A context-overflow retry stands alone.** It replays a row, so a payload with
+`_contextOverflowRetryCount` or `coalesced` keeps its own row: joining would
+drop what it carried and restart its retry count. Nothing joins a retry either,
+because a row at the retry limit is retired with no further turn.
 
 **A hosted turn gets no pre-start window, so two quick mentions cost two turns.**
 Its row is claimed at creation and its turn starts at once, so the second
@@ -467,17 +483,22 @@ seat. A hosted follow-up row is born claimed as well, and `status` is the only
 state that tells a turn not yet started from one running, so it cannot be joined
 safely. **Several mentions during one hosted turn therefore cost one marked turn
 each, in order, not one between them.** None is lost, because each is a row. A
-hosted row that returns to pending through a drain or a requeue is joined like
-any other, which is why the hosted turn still renders `payload.coalesced` and
+hosted row a drain or a requeue returns to pending has been claimed, so it is not
+joined. A row enqueued during a drain or a failed routing lookup is born pending
+and can be, which is why the hosted turn still renders `payload.coalesced` and
 why the two authority checks above stay in the native runtime.
 
 A polled row gets its join window from the poll interval, so the kernel does not
 hold claims either. A webhook row went out when it was created, so it is never
 joined, and a later mention is POSTed with the mark.
 
-**Failure direction.** Every lookup failure, lost compare-and-set and full row
-(eight joined messages) gives the mention its own row. Two turns are the
-acceptable failure; a lost mention is not.
+**Failure direction.** Every lookup failure, lost compare-and-set, row already
+claimed or too old, and full row (eight joined messages) gives the mention its
+own row. Two turns are the
+acceptable failure; a lost mention is not. A join also sends the socket push its
+own row would have sent, since the row's first push can have found no driver. A
+row that exhausts its retries posts the unanswered line for each person's message
+it carried, under the same suppression checks, each from that message's own time.
 
 **Limits, stated so they are not read past.** The report's exact timing, the
 first turn already running, still costs two turns on every runtime: the second
@@ -485,8 +506,15 @@ is marked, and is expected to be silent or short rather than a retraction. Only
 a driver change could reach into a running turn. The mark is a prompt, so its
 effect on model behaviour is unmeasured until a walk repeats. Joined mentions
 create no row, so the #508 dampener counts fewer of them, and the row cap is
-what bounds a burst inside one turn. Two mentions enqueued within the same
-instant can each miss the other and keep their own rows.
+what bounds a burst inside one turn. That is the one effect on a dampener: its
+rule is unchanged, and its count sees rows. Two mentions enqueued within the same
+instant can each miss the other and keep their own rows. A mention next to a
+requeued row gets an ordinary row with no mark: the old turn may be running, but
+nothing tells that from one that died, so it can cost a second answer. An owner's
+agent message joined to the owner's row prices as `human` under the cascade cap,
+because the wrapper prices a turn from its head message. Charging for it would
+need a CLI release, so it is accepted: each case needs a person's unclaimed row,
+and a row takes eight messages at most.
 
 Implementation: `backend/services/mentionCoalesce.ts`,
 `AgentEventService.coalesceMention`, and

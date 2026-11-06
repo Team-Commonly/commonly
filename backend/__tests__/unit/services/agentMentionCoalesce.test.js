@@ -145,6 +145,209 @@ describe('a polled target', () => {
     expect(events[0].payload.content).toContain('did the migration run?');
   });
 
+  // ADR-018 D6.5: a joined message has to be read by a turn that has not begun.
+  describe('only a row nothing has claimed, and that is young, takes a join', () => {
+    const backdate = (minutes) => AgentEvent.collection.updateMany(
+      { ...TARGET, podId: POD },
+      { $set: { createdAt: new Date(Date.now() - minutes * 60 * 1000) } },
+    );
+
+    test('a requeued row keeps its old turn: a mention stays its own row and survives that turn\'s nonce-less ack', async () => {
+      await mention({ content: '@codex a slow question' });
+      const { events: [turn] } = await claim();
+      await AgentEvent.updateOne({ _id: turn._id }, { $set: { deliveredAt: new Date(Date.now() - 20 * 60 * 1000) } });
+      await AgentEventService.garbageCollect({ requeueDeliveredMinutes: 10, requeueMaxAttempts: 3 });
+      expect((await AgentEvent.findById(turn._id).lean()).status).toBe('pending');
+
+      await mention({ content: '@codex a new question' });
+
+      // The openclaw extension acks with no deliveryId, and pending is ackable.
+      await AgentEventService.acknowledge(turn._id, TARGET.agentName, TARGET.instanceId, { outcome: 'posted' });
+      const { events } = await claim();
+      expect(events).toHaveLength(1);
+      expect(events[0].payload.rawContent).toContain('a new question');
+      expect(events[0].payload.arrivedMidTurn).toBeUndefined();
+    });
+
+    test('a row one delivery from the cap takes no join, so nothing rides its last attempts', async () => {
+      await mention({ content: '@codex near the cap' });
+      await AgentEvent.updateMany({ ...TARGET, podId: POD }, { $set: { attempts: 2 } });
+      await mention({ content: '@codex a new question' });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+    });
+
+    test('an old row takes no join, so a message does not inherit its age', async () => {
+      await mention({ content: '@codex from a while ago' });
+      await backdate(11);
+      await mention({ content: '@codex a new question' });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+    });
+
+    test('a row inside the age bound still takes a join', async () => {
+      await mention({ content: '@codex a few minutes ago' });
+      await backdate(9);
+      await mention({ content: '@codex a new question' });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].payload.coalesced).toHaveLength(1);
+    });
+  });
+
+  describe('a context-overflow retry', () => {
+    const carrying = (extra) => ({
+      messageId: '71',
+      userId: String(ALICE),
+      username: 'alice',
+      rawContent: 'head',
+      content: 'head',
+      ...extra,
+    });
+    const enqueue = (payload) => AgentEventService.enqueue({
+      ...TARGET, podId: POD, type: 'chat.mention', payload,
+    });
+
+    test.each([
+      ['its retry count', { _contextOverflowRetryCount: 1 }],
+      ['joined messages', { coalesced: [{ messageId: '72', userId: String(ALICE), rawContent: 'second' }] }],
+    ])('carrying %s it keeps its own row, so nothing it carried is dropped', async (_what, extra) => {
+      await mention({ content: '@codex a waiting message' });
+      await enqueue(carrying(extra));
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+      expect(rows[1].payload).toMatchObject(extra);
+    });
+
+    test('a retried row with joined messages reads them all on its next turn', async () => {
+      const payload = AgentEventService.buildContextOverflowRetryPayload(carrying({
+        coalesced: [{ messageId: '72', userId: String(ALICE), username: 'alice', rawContent: 'second' }],
+      }), { reason: 'context overflow' });
+      await mention({ content: '@codex a waiting message' });
+      await enqueue(payload);
+
+      const { events } = await claim();
+      const retry = events.find((event) => event.payload.messageId === '71');
+      expect(retry.payload.content).toContain('second');
+      expect(retry.payload._contextOverflowRetryCount).toBe(1);
+    });
+
+    // The retry limit acks the row with no further retry, and a row that
+    // overflowed once is the wrong place to add text.
+    test('nothing joins a retry: the row that overflowed could be retired with it', async () => {
+      await enqueue(carrying({ _contextOverflowRetryCount: 2 }));
+      await mention({ content: '@codex a new question' });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+    });
+  });
+
+  describe('a non-scalar never coalesces', () => {
+    const enqueue = (extra) => AgentEventService.enqueue({
+      ...TARGET,
+      podId: POD,
+      type: 'chat.mention',
+      payload: {
+        messageId: '66', username: 'x', rawContent: 'injected', content: 'injected', ...extra,
+      },
+    });
+
+    test('an operator object in threadRootId does not widen the place', async () => {
+      await mention({ content: '@codex in a thread', thread_root_id: 42 });
+      await enqueue({ userId: String(ALICE), threadRootId: { $ne: null } });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+    });
+
+    test('an operator object in userId does not resolve to someone\'s principal', async () => {
+      await mention({ content: '@codex from alice' });
+      await enqueue({ userId: { $eq: ALICE_AGENT } });
+
+      const rows = await targetRows();
+      expect(rows).toHaveLength(2);
+      expect(rows[0].payload.coalesced).toBeUndefined();
+    });
+  });
+
+  test('a join wakes a socket driver, because the row\'s first push may have found nobody', async () => {
+    // eslint-disable-next-line global-require
+    const ws = require('../../../services/agentWebSocketService');
+    const push = jest.spyOn(ws, 'pushEvent').mockReturnValue(true);
+    try {
+      await mention({ content: '@codex is staging up?' });
+      expect(push).toHaveBeenCalledTimes(1);
+      await mention({ content: '@codex and did the migration run?' });
+      expect(await targetRows()).toHaveLength(1);
+      expect(push).toHaveBeenCalledTimes(2);
+      expect(push.mock.calls[1][0].deliveryId).toBeUndefined();
+    } finally {
+      push.mockRestore();
+    }
+  });
+
+  test('the same message enqueued again wakes nobody: it is not a new mention', async () => {
+    // eslint-disable-next-line global-require
+    const ws = require('../../../services/agentWebSocketService');
+    const push = jest.spyOn(ws, 'pushEvent').mockReturnValue(true);
+    const payload = {
+      messageId: '79', userId: String(ALICE), username: 'alice', rawContent: 'hi', content: 'hi',
+    };
+    try {
+      await AgentEventService.enqueue({
+        ...TARGET, podId: POD, type: 'chat.mention', payload,
+      });
+      await AgentEventService.enqueue({
+        ...TARGET, podId: POD, type: 'chat.mention', payload,
+      });
+      expect(push).toHaveBeenCalledTimes(1);
+    } finally {
+      push.mockRestore();
+    }
+  });
+
+  test('an agent\'s owner is read from its install in this pod, not one elsewhere', async () => {
+    // A lower pod id too: an unscoped lookup walks the install index in pod order.
+    const OTHER_BOT = new mongoose.Types.ObjectId();
+    await AgentInstallation.collection.insertOne({
+      agentName: 'shared-bot',
+      instanceId: 'default',
+      podId: new mongoose.Types.ObjectId('000000000000000000000001'),
+      status: 'active',
+      installedBy: ALICE,
+      version: '1.0.0',
+      config: {},
+    });
+    await seedInstall('shared-bot', BOB);
+    await seedUser(OTHER_BOT, 'shared-bot', {
+      isBot: true, botMetadata: { agentName: 'shared-bot', instanceId: 'default' },
+    });
+    await Pod.collection.updateOne({ _id: POD }, { $push: { members: OTHER_BOT } });
+
+    await mention({ content: '@codex from alice' });
+    await mention({ from: OTHER_BOT, username: 'shared-bot', content: '@codex from the bot bob installed here' });
+
+    expect(await targetRows()).toHaveLength(2);
+  });
+
+  test('a joined agent message keeps its handoff cue', async () => {
+    await mention({ content: '@codex please review the deploy' });
+    await fromOwnAgent('@codex over to you for the smoke check');
+
+    const { events: [turn] } = await claim();
+    expect(turn.payload.content).toContain('@claude-code handed this to you');
+  });
+
   test('a person and their own agent, the reported pair, make one row, and that turn sees the agent\'s message', async () => {
     await mention({ content: '@codex please review the deploy' });
     const second = await fromOwnAgent('@codex the failing step is the smoke check');
@@ -586,9 +789,10 @@ describe('a hosted target, whose row is claimed at creation', () => {
     expect(prompts()[1]).not.toContain('could not see');
   });
 
-  // The one way a hosted row is pending. Without rendering at turn start, what
-  // joined it here would be acked unread.
-  test('a row returned to pending can be joined, and its rescued turn sees what joined', async () => {
+  // A hosted row is pending from birth when the drain or a failed routing
+  // lookup kept it off the lane. Without rendering at turn start, what joined
+  // it would be acked unread.
+  test('a row born pending can be joined, and the turn that rescues it sees what joined', async () => {
     const seen = await AgentEvent.create({
       ...TARGET,
       podId: POD,
@@ -607,6 +811,28 @@ describe('a hosted target, whose row is claimed at creation', () => {
     await waitFor(() => runAgent.mock.calls.length === 1);
     await flush();
     expect(prompts()[0]).toContain('joined while it waited');
+  });
+
+  test('a row a drain or requeue returned to pending is not joined: its message gets its own turn', async () => {
+    await AgentEvent.create({
+      ...TARGET,
+      podId: POD,
+      type: 'chat.mention',
+      status: 'pending',
+      attempts: 1,
+      payload: {
+        messageId: '61', userId: String(ALICE), username: 'alice', rawContent: 'first', content: 'first',
+      },
+    });
+    runAgent.mockResolvedValue(done);
+    await fromOwnAgent('@codex after the requeue');
+    await waitFor(() => runAgent.mock.calls.length === 1);
+    await flush();
+
+    const rows = await targetRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].payload.coalesced).toBeUndefined();
+    expect(prompts()[0]).toContain('after the requeue');
   });
 });
 
