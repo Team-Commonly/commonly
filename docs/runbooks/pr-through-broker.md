@@ -108,7 +108,7 @@ token with that App's id and key only:
    tile lists them from `GET /api/integrations/github-app/repositories`: what the
    person's own token can push to through a Connect installation, less what they
    already connected. The list is only a picker. It reads at most 3 pages of
-   installations, 10 installations and 3 pages of each, within 20 seconds, says
+   installations, 10 installations and 3 pages of each, stops starting new reads after 20 seconds, says
    so when cut short, and is limited to 10 reads a minute, because each spends
    the person's own GitHub quota. If GitHub won't list the installations at all
    it refuses `github_unreachable`. The connect is

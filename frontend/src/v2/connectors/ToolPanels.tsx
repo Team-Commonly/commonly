@@ -128,6 +128,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     revoke,
     removeHiddenConnection,
     disconnect,
+    setError,
   } = m;
   const renderManualRevokeNotice = (entry: ToolCatalogEntry | null) => {
     if (!manualRevokeNotice || !noticeMatchesEntry(entry)) return null;

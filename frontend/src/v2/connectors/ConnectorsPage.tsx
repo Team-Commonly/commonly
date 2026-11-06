@@ -462,7 +462,7 @@ const ConnectorsPage: React.FC = () => {
     }
     if (m.repositoryConnect) {
       return (
-        <ConnectorDrawer notices={noticeBlock} type="github" title={GITHUB_BRAND} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type="github" title={GITHUB_BRAND} onClose={() => { closeTools(); m.setError(null); }}>
           {tp.renderRepositoryConnect()}
         </ConnectorDrawer>
       );
@@ -505,7 +505,7 @@ const ConnectorsPage: React.FC = () => {
             <div className="v2-cx-pop__acts">{tp.renderEntryActions(toolEntry)}</div>
           </div>
         )}
-        {toolGranted(toolEntry) && toolEntry.repositoryConnect && (
+        {toolGranted(toolEntry) && toolEntry.available && toolEntry.repositoryConnect && (
           <div className="v2-cx-pop__acts">{tp.renderRepositoryConnectAction(toolEntry)}</div>
         )}
         <div className="v2-cx-list">
