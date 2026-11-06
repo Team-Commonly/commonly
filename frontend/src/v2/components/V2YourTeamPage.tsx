@@ -416,7 +416,8 @@ const V2YourTeamPage: React.FC = () => {
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
-    const visualState = a.connection && a.connection.state !== 'connected' ? 'idle' : state;
+    // An ask still waits on a seat that dropped off, so its card keeps the ring.
+    const visualState = state !== 'needsYou' && a.connection && a.connection.state !== 'connected' ? 'idle' : state;
     const statusText = a.connection && a.connection.state !== 'connected'
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
@@ -488,16 +489,16 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
-          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
-            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
-              {t('agentConnection.reconnect')}
-            </button>
-          ) : null}
-          {!needsReconnect && state === 'needsYou' && (
+          {state === 'needsYou' && (
             <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
+          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
+            <button type="button" className={`v2p-b ${state === 'needsYou' ? 'v2p-b-s' : 'v2p-b-p'} v2p-b-sm v2-team-card__answer`} onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+              {t('agentConnection.reconnect')}
+            </button>
+          ) : null}
           {!needsReconnect && <button
             type="button"
             className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk"

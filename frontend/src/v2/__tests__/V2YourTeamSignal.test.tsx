@@ -128,6 +128,25 @@ describe('Your Team (direction C)', () => {
     expect(screen.queryByRole('button', { name: 'Add a computer' })).toBeNull();
   });
 
+  test('an agent that dropped off with an ask waiting keeps the ring and Answer, so the head count can be acted on', async () => {
+    renderPage({ p1Agents: [{
+      name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'stale', lastSeenAt: minutesAgo(420) },
+    }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    const card = cardOf('Wren');
+    expect(screen.getByText(/1 needs you/)).toBeInTheDocument();
+    expect(card).toHaveClass('v2-team-card--needsYou');
+    const answer = within(card).getByRole('button', { name: 'Answer' });
+    const reconnect = within(card).getByRole('button', { name: 'Reconnect' });
+    // One filled button on a card: the ask comes first, and Reconnect steps back.
+    expect(answer).toHaveClass('v2p-b-p');
+    expect(reconnect).toHaveClass('v2p-b-s');
+    expect(reconnect).not.toHaveClass('v2p-b-p');
+    expect(answer.compareDocumentPosition(reconnect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('the agent waiting on you: ring, cobalt mark, `● needs you · <ask>`, Answer ink + Talk bordered — keyed on actorUserId, not a name', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
