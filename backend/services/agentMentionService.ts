@@ -941,11 +941,13 @@ const formatAuthorFrame = (
   messageId: string | undefined,
   name?: string,
   // The handle that routes here, '' when none does. Unset on a wake built
-  // before the pod's mention map is read, which falls back to the username.
+  // before the pod's mention map is read, which falls back to the username
+  // with no @: nothing checked that it reaches them.
   routedHandle?: string,
 ): string => {
   const handle = routedHandle ?? username;
-  const named = handle && handle !== name ? `${name}** (@${handle})` : `${name}**`;
+  const at = routedHandle ? '@' : '';
+  const named = handle && handle !== name ? `${name}** (${at}${handle})` : `${name}**`;
   const author = name ? named : `${username || 'unknown'}**`;
   const idPart = messageId ? ` (message ${messageId})` : '';
   const stamp = resolveWriteStamp(createdAt);

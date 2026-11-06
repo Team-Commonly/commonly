@@ -159,6 +159,16 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(PGMessage.findPreviousTopLevel).toHaveBeenCalledWith('pod-1', '79500', new Date(NOW.getTime() - 30 * 60 * 1000));
   });
 
+  test('a handle this wake could not check is shown without an @, since it may route to someone else', async () => {
+    setup();
+    User.findById.mockImplementation((id) => leanChain({ ...USERS[String(id)], displayName: 'Priya' }));
+    await send('how do I start?');
+
+    const [mention] = calls('chat.mention');
+    expect(mention.payload.content).toContain('raised by **Priya** (owner)');
+    expect(mention.payload.content).not.toContain('@owner');
+  });
+
   test('a second person in the room: nothing, because the line may be for them', async () => {
     setup({ members: [OWNER, SECOND_HUMAN, SEAT_A_BOT] });
     const res = await send('what do you both think?');
