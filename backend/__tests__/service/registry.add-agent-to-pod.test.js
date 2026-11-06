@@ -25,6 +25,8 @@ const DMService = require('../../services/dmService');
 const pgMirrorWrite = require('../../services/pgMirrorWrite');
 const { previewInstallNarrowing } = require('../../services/outsiderGrantNarrowingPreview');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
+const AgentMessageService = require('../../services/agentMessageService');
+const HostedEngine = require('../../services/hostedEngine');
 const registryRoutes = require('../../routes/registry');
 
 const SECRET = 'add-agent-to-pod-test';
@@ -593,6 +595,32 @@ describe('adding an existing agent to another pod', () => {
       await AgentInstallation.updateOne({ podId: home._id }, { $set: { 'config.hosted.provisionedAt': null } });
       expect((await add(owner, target._id)).status).toBe(200);
       expect((await row(target._id)).config.hosted.provisionedAt).toBeNull();
+    });
+
+    it('carries the stop into the new pod and posts no intro there', async () => {
+      await installHosted();
+      const stoppedAt = new Date('2026-11-06T12:00:00Z');
+      await AgentInstallation.updateOne({ podId: home._id }, {
+        $set: { 'config.hosted.provisionedAt': null, 'config.hosted.deprovisionedAt': stoppedAt },
+      });
+      const post = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      try {
+        expect((await add(owner, target._id)).status).toBe(200);
+        const added = await row(target._id);
+        expect(new Date(added.config.hosted.deprovisionedAt)).toEqual(stoppedAt);
+        expect(HostedEngine.hostedIsStopped(added)).toBe(true);
+        expect(post).not.toHaveBeenCalled();
+      } finally {
+        post.mockRestore();
+      }
+    });
+
+    it('has no stop to carry when it is running, and still counts as running', async () => {
+      await installHosted();
+      expect((await add(owner, target._id)).status).toBe(200);
+      const added = await row(target._id);
+      expect(added.config.hosted.deprovisionedAt).toBeUndefined();
+      expect(HostedEngine.hostedIsStopped(added)).toBe(false);
     });
 
     it('stays on the Durable Object when that is where it runs', async () => {

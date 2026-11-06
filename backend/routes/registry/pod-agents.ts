@@ -8,7 +8,7 @@ const AgentTemplate = require('../../models/AgentTemplate');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
-const { hostedRunsNative } = require('../../services/hostedEngine');
+const { hostedRunsNative, readHostedConfig } = require('../../services/hostedEngine');
 const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const { retireDmRowsWithAgent } = require('../../services/agentDmRowService');
 const Pod = require('../../models/Pod');
@@ -467,6 +467,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // machine-key action and Reconnect link on that field, not on connection.
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
+        // Its owner stopped it, which is an answer, not a missing status. A
+        // daemon seat sharing the identity is still running, so it goes on.
+        const hostedRecord = readHostedConfig(i);
+        if (!daemonBound && runtimeType === 'hosted' && hostedRecord.deprovisionedAt && !hostedRecord.provisionedAt) {
+          return { ...payload, connection: { state: 'stopped', lastSeenAt: null } };
+        }
         // The harness label moves to `adapter`, so the chat tag keeps naming it.
         // The poller's report (TASK-704) outranks a stale runtimeType declaration:
         // a seat declared codex that polls claude must not project codex here.

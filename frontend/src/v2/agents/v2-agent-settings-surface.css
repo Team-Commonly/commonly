@@ -132,6 +132,10 @@
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input:focus-visible + .tg { box-shadow: var(--v2-focus-ring); }
 .v2-agent-settings-page .v2-agent-wake-pods__interval select { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; }
+.v2-agent-settings-page .v2-agent-hosted-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 16px; }
+.v2-agent-settings-page .v2-agent-hosted-run__state { flex: 1 1 200px; margin: 0; font-size: 13px; color: var(--se); }
+.v2-agent-settings-page .v2-agent-hosted-run__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.v2-agent-settings-page .v2-agent-hosted-run__error { flex: 1 1 100%; margin: 0; font-size: 12.5px; color: var(--ink); }
 .v2-agent-settings-page .v2-agent-wake-pods__add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--d); font-size: 12.5px; }
 .v2-agent-settings-page .v2-agent-wake-pods__add .sel, .v2-agent-settings-page .v2-agent-wake-pods__add select { max-width: 100%; }
 .v2-agent-settings-page .v2-agent-wake-pods__add select { overflow: hidden; text-overflow: ellipsis; }

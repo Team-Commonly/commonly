@@ -129,6 +129,15 @@ export const nativeHostedConfigForInstall = (about?: string): Record<string, unk
 });
 
 /**
+ * True once an owner has stopped a hosted install and not started it again.
+ * A row that was never provisioned has no stop to report.
+ */
+export const hostedIsStopped = (installation: any): boolean => {
+  const { deprovisionedAt, provisionedAt } = readHostedConfig(installation);
+  return isHostedInstallation(installation) && Boolean(deprovisionedAt) && !provisionedAt;
+};
+
+/**
  * True for a provisioned hosted install whose turns run on the native
  * runtime. A deprovisioned one routes nowhere, as a stopped Durable Object
  * answered nothing.
