@@ -636,6 +636,7 @@ const publicPermissionProfileFlags = (
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
+  platform = process.platform,
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -673,7 +674,11 @@ const publicPermissionProfileFlags = (
     '"~/.ssh"="deny"',
     '"~/.aws"="deny"',
     '"~/.config"="deny"',
-    '"/private/tmp"="deny"',
+    // macOS's temp root, where other sessions' temp dirs live. Codex reads
+    // every key as a path for its own platform, and on Windows this one has
+    // no drive, so Codex refused the whole profile and no turn ever ran
+    // (byo-windows run 41996139905). Linux accepts it as a plain path.
+    ...(platform === 'win32' ? [] : ['"/private/tmp"="deny"']),
     `":workspace_roots"={"."="${workspaceAccess}",".commonly/**"="deny",".codex/**"="deny","*.env"="deny","*/*.env"="deny","*/*/*.env"="deny","**/.npmrc"="deny","**/.yarnrc*"="deny"}`,
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
@@ -791,6 +796,7 @@ const buildArgs = ({
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
   modelBaseUrl = null,
+  platform = process.platform,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -815,6 +821,7 @@ const buildArgs = ({
         commitAttributionEnv,
         mcpReadDirectories,
         codexHelperReadPaths,
+        platform,
       ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
@@ -1082,6 +1089,7 @@ export default {
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
         modelBaseUrl,
+        platform: ctx._platform || process.platform,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

@@ -173,6 +173,20 @@ describe('judgeSeatConfinement — a seat on a computer that runs agents without
     expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
   });
 
+  test('a foreground run with no machine is refused once it marks the seat, and naming can\'t lift it', async () => {
+    await bindSeat();
+    await User.updateOne({ _id: SEAT }, { $set: { 'botMetadata.machineId': null } });
+    await installRow({ runtime: { adapter: 'codex', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+
+    await User.updateOne({ _id: SEAT }, { $set: { 'botMetadata.hostUnconfined': true } });
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ code: 'grant_broker_unconfined', reason: 'sandbox_mode_unenforceable' }),
+      scope: 'seat',
+      hostUnconfined: true,
+    });
+  });
+
   test('refuses even a seat no projection holds (a refusal can only be added)', async () => {
     await bindSeat();
     await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: true } });

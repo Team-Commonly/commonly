@@ -40,9 +40,9 @@ describe('connectSnippet', () => {
     expect(connectSnippet({ ...base, os: 'windows' })).not.toMatch(/export /);
   });
 
-  // Codex keeps its own permission profile, which --unsandboxed doesn't change,
-  // so only Claude Code's Windows line carries the flag.
-  test('--adapter and --allow ride on the run line; --unsandboxed comes last, for Claude Code on Windows only', () => {
+  // Both Windows lines carry the flag. The page offers Codex's only in an
+  // invite-only pod (V2AgentBYOListenSnippet), and the CLI refuses any other.
+  test('--adapter and --allow ride on the run line; --unsandboxed comes last, on Windows only', () => {
     expect(connectSnippet({ ...base, os: 'unix', allow: 'write,web' }).split('\n')[3])
       .toBe('commonly agent run my-claude --adapter claude --allow write,web');
     expect(connectSnippet({ ...base, os: 'unix', adapter: 'codex' }).split('\n')[3])
@@ -51,7 +51,7 @@ describe('connectSnippet', () => {
     expect(connectSnippet({ ...base, os: 'windows', allow: 'write' }).split('\n')[3])
       .toBe('commonly agent run my-claude --adapter claude --allow write --unsandboxed');
     expect(connectSnippet({ ...base, os: 'windows', adapter: 'codex' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter codex');
+      .toBe('commonly agent run my-claude --adapter codex --unsandboxed');
   });
 });
 

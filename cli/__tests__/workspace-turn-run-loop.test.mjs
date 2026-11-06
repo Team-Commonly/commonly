@@ -37,7 +37,8 @@ const drain = async () => {
 
 let eventCount = 0;
 const runOneTurn = async ({
-  environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl,
+  environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl, codexUnconfined,
+  eventType = 'chat.mention', eventPayload = { content: 'read the repo' },
 }) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
@@ -45,8 +46,8 @@ const runOneTurn = async ({
     if (route === '/api/agents/runtime/events') {
       return {
         events: [{
-          _id: eventId, type: 'chat.mention', podId: 'pod-ws', agentName: 'workspace-stub',
-          payload: { content: 'read the repo' },
+          _id: eventId, type: eventType, podId: 'pod-ws', agentName: 'workspace-stub',
+          payload: eventPayload,
         }],
       };
     }
@@ -73,6 +74,7 @@ const runOneTurn = async ({
     log: (line) => logs.push(line),
     setTimeoutImpl: noopTimeout,
     detectBwrapImpl,
+    codexUnconfined,
   });
   await drain();
   stop();
@@ -231,5 +233,74 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
     expect(post.mock.calls.some(([route]) => /\/ack$/.test(route))).toBe(false);
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
     expect(posted(post)).toHaveLength(0);
+  });
+});
+
+describe('performRun: a Windows Codex run opted in on private pods (F187)', () => {
+  const originalPlatform = process.platform;
+  const seat = { model: 'm' };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly'), { recursive: true, force: true });
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+  });
+  afterEach(() => Object.defineProperty(process, 'platform', { value: originalPlatform }));
+  const run = (installations, extra = {}) => runOneTurn({
+    environment: seat, installations, adapterName: 'codex', codexUnconfined: true, ...extra,
+  });
+
+  test('every pod private: the turn reaches Codex with no sandbox block and no hostUnconfined', async () => {
+    const { ctx } = await run([privatePod]);
+    expect(ctx.environment.sandbox).toBeUndefined();
+    expect(ctx.environment.model).toBe('m');
+    expect(ctx.hostUnconfined).toBeUndefined();
+  });
+
+  test('a private ask on a pod turned open is answered with a refusal, not left to expire', async () => {
+    const { post } = await run([{ ...privatePod, joinPolicy: 'open' }], {
+      spawns: 0,
+      eventType: 'agent.ask',
+      eventPayload: { requestId: 'ask-1', from: 'other-seat', question: 'can you check this?', prompt: 'can you check this?' },
+    });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/asks/ask-1/respond', {
+      content: expect.stringContaining('this pod isn’t private'),
+    });
+  });
+
+  test('a failed pod read refuses no ask: it stays unacked and comes back', async () => {
+    const { post } = await run(new Error('offline'), {
+      spawns: 0,
+      eventType: 'agent.ask',
+      eventPayload: { requestId: 'ask-2', from: 'other-seat', question: 'can you check this?', prompt: 'can you check this?' },
+    });
+    expect(post.mock.calls.filter(([route]) => /\/asks\//.test(route))).toHaveLength(0);
+  });
+
+  test.each([
+    ['a pod turned open to join', [privatePod, { ...privatePod, joinPolicy: 'open' }]],
+    ['a pod turned publicly readable', [{ ...privatePod, publicRead: true }]],
+    ['a pod reports no visibility', [{ joinPolicy: 'invite-only' }]],
+  ])('%s: the turn is refused with nothing read, spawned or posted', async (_label, installations) => {
+    const { get, post, logs } = await run(installations, { spawns: 0 });
+    expect(logs.some((line) => /^turn refused, because /.test(line)
+      && /publicly readable or open to join/.test(line))).toBe(true);
+    // The person already passed the flag, so the refusal must not offer it again.
+    expect(logs.some((line) => /--unsandboxed/.test(line))).toBe(false);
+    expect(logs.some((line) => /runs as a public seat/.test(line))).toBe(false);
+    expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+    expect(post.mock.calls.filter(([route]) => /\/messages$/.test(route))).toHaveLength(0);
+  });
+
+  test('a failed read of its pods defers the turn: it never spawns unconfined on a guess', async () => {
+    const { post, logs } = await run(new Error('boom'), { spawns: 0 });
+    expect(logs.some((line) => /turn deferred, because its pods could not be read: boom/.test(line))).toBe(true);
+    expect(post.mock.calls.some(([route]) => /\/ack$/.test(route))).toBe(false);
+  });
+
+  test('without the opt-in, nothing here changes how a seat is placed', async () => {
+    const { ctx } = await runOneTurn({
+      environment: { model: 'm', sandbox: { trust: 'public' } }, installations: [privatePod], adapterName: 'codex',
+    });
+    expect(ctx.environment.sandbox).toEqual({ trust: 'public' });
   });
 });

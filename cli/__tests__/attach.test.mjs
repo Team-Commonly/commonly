@@ -565,7 +565,7 @@ describe('performAttach', () => {
       fs.writeFileSync(envPath, JSON.stringify({
         version: 1,
         workspace: { path: path.join(root, 'workspace') },
-        sandbox: { trust: 'public', mode },
+        sandbox: { trust: 'public', ...(mode ? { mode } : {}) },
       }));
       const client = makeClient();
       const error = await performAttach({
@@ -618,6 +618,24 @@ describe('performAttach', () => {
       expect(error.message).not.toContain('--unsandboxed');
       expect(error.message).not.toMatch(/macOS|Seatbelt|requested but unavailable/);
     }
+  });
+
+  // CTO review of #3501: a Codex env file naming workspace or read-only took
+  // the Codex-profile branch, which checked only the Codex version, and the
+  // agent was published before `agent run` refused it.
+  test.each([
+    ['no mode', undefined],
+    ['workspace', 'workspace'],
+    ['read-only', 'read-only'],
+  ])('on win32, a public Codex --env with %s refuses with the Codex line and WSL, before anything is published', async (_label, mode) => {
+    const { error, client } = await attachConfined({
+      adapterName: 'codex', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+    });
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain("A public agent needs a sandbox, which Codex can't enforce on Windows without its elevated setup");
+    expect(error.message).toContain('WSL 2');
+    expect(error.message).not.toContain('--unsandboxed');
+    expect(client.post).not.toHaveBeenCalled();
   });
 
   test('on darwin and linux, the Seatbelt and bwrap refusals keep their text', async () => {

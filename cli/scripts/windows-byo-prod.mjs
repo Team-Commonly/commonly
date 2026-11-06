@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 
 import { codexSystemConfig, walkAdapter } from './linux-byo-prod.mjs';
 import {
-  installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact,
+  installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact, unconfinedNoticeFrom,
 } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -65,7 +65,7 @@ export const windowsLineProblems = (lines, { agentName, adapter }) => {
   if (lines.length !== 4) return [`the page's Windows lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
   const problems = [];
   if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
-  const run = `commonly agent run ${agentName} --adapter ${adapter}${adapter === 'codex' ? '' : ' --unsandboxed'}`;
+  const run = `commonly agent run ${agentName} --adapter ${adapter} --unsandboxed`;
   if (lines[3] !== run) problems.push(`line 4 is not the ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
   return problems;
 };
@@ -252,6 +252,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply${/windows-ok/i.test(said) ? ' says windows-ok' : ' does not say windows-ok'}: ${JSON.stringify(said.slice(0, 300))}`);
+    log(`the CLI's sandbox line: ${unconfinedNoticeFrom(out) || 'none, so this seat did not say it runs unconfined'}`);
     log(`PASS: ${cliLabel} @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with `
       + `${ADAPTER_LABEL[adapter]}${adapter === 'codex'
         ? ', on an API key through the model gateway (provider set in the machine\'s system Codex config)' : ''}`);
