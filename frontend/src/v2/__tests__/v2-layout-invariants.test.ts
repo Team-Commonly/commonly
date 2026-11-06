@@ -301,7 +301,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
   });
   test('the BYO adapter choice wraps on a phone, so no adapter sits off screen', () => {
-    const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__os {');
+    const phone = mediaBlockContaining(read('../components/V2AgentBYO.css').replace(/\/\*[\s\S]*?\*\//g, ''), '.v2-feature--byo .v2-byo__os {');
     expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters { flex-wrap: wrap; }');
     expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters .v2-byo__link { flex: 1 1 auto; }');
     expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner"');
