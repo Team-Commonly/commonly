@@ -90,6 +90,19 @@ export const samePlaceFilter = (payload: Payload): Record<string, unknown> => {
   };
 };
 
+/**
+ * Whether a mention row's own message asked this agent something: the wrapper's
+ * "a person addressed this to you" rule (answersAPerson, cli/src/commands/agent.js),
+ * and a reply under the agent's message that @'d someone else asked them, not it.
+ * The agent still reads it; this only decides what it can open
+ * (AgentMessageService.personAskStillOpen).
+ */
+export const asksThisAgent = (payload: Payload | undefined): boolean => Boolean(payload)
+  && !payload?.adjacentReply
+  && !payload?.welcomeWake
+  && !payload?.triggerAuthor
+  && !(payload?.implicitReply && Array.isArray(payload?.mentions) && payload.mentions.length > 0);
+
 export const coalescedEntry = (payload: Payload): Payload => ({
   messageId: String(payload.messageId),
   userId: String(payload.userId),
@@ -97,6 +110,8 @@ export const coalescedEntry = (payload: Payload): Payload => ({
   rawContent: payload.rawContent,
   createdAt: payload.createdAt,
   ...(payload.handoffCue ? { handoffCue: payload.handoffCue } : {}),
+  // The flags that say so stay behind on the row this joins, so say it here.
+  ...(asksThisAgent(payload) ? {} : { notAnAsk: true }),
 });
 
 const entriesOf = (payload: Payload | undefined): Payload[] => (
