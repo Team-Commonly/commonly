@@ -38,7 +38,7 @@ const drain = async () => {
 let eventCount = 0;
 const runOneTurn = async ({
   environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl, codexUnconfined,
-  eventType = 'chat.mention', eventPayload = { content: 'read the repo' },
+  spawnError, eventType = 'chat.mention', eventPayload = { content: 'read the repo' },
 }) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
@@ -62,7 +62,8 @@ const runOneTurn = async ({
   });
   const post = jest.fn().mockResolvedValue({});
   createClient.mockReturnValue({ get, post });
-  const spawn = jest.fn().mockResolvedValue({ text: 'done', newSessionId });
+  const spawn = spawnError ? jest.fn().mockRejectedValue(spawnError)
+    : jest.fn().mockResolvedValue({ text: 'done', newSessionId });
   const logs = [];
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000',
@@ -163,6 +164,20 @@ describe('performRun workspace turn placement', () => {
       installations: [{ podId: 'pod-ws', publicRead: true, communityListed: true }],
     });
     expect(degraded.ctx.sessionId).toBeFalsy();
+  });
+
+  test('a refused public turn leaves the workspace thread it never resumed', async () => {
+    const environment = { sandbox: { trust: 'workspace' } };
+    await runOneTurn({ environment, installations: [privatePod], newSessionId: 'sess-ws' });
+
+    await runOneTurn({
+      environment,
+      installations: [{ podId: 'pod-ws', publicRead: true, communityListed: true }],
+      spawnError: new Error('codex turn failed: This content was flagged for possible cybersecurity risk.'),
+    });
+
+    const resumed = await runOneTurn({ environment, installations: [privatePod] });
+    expect(resumed.ctx.sessionId).toBe('sess-ws');
   });
 });
 

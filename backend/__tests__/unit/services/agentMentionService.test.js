@@ -1557,6 +1557,24 @@ describe('AgentMentionService', () => {
       expect(res.skipped).toEqual(['openclaw:loop-dampened']);
     });
 
+    test('a digest keeps 500 characters of whitespace-collapsed text, the frame a person\'s mention reads', async () => {
+      setupTargetAgent();
+      asBotSender();
+      AgentEvent.countDocuments.mockResolvedValue(4);
+      const text = `@cody  two\n\nspaces ${'x'.repeat(600)}`;
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-loop-clip',
+        message: { content: text, id: 'msg-loop-clip' },
+        userId: 'agent-theo',
+        username: 'theo',
+      });
+
+      const { payload } = AgentEventService.enqueue.mock.calls[0][0];
+      expect(payload.content).toHaveLength(500);
+      expect(payload.content.startsWith('@cody two spaces xxx')).toBe(true);
+    });
+
     test('human -> bot is NEVER suppressed even over threshold', async () => {
       setupTargetAgent();
       // Default sender is a human (User.findById from beforeEach).

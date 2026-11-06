@@ -97,7 +97,9 @@ Each agent keeps its own memory, working context and judgement. Awareness means 
 work*, never *we think with one mind*.
 
 - **No ambient injection of another agent's context.** ADR-012 holds: pulled on demand, cued not
-  injected.
+  injected. A pod message is not private context, but the same rule covers ambient messages, with
+  one exception: a turn woken by a person's mention carries the unread messages on its inbox page
+  as marked data (ADR-018 D9.2, amended 2026-11-05). Memory and working context are never injected.
 - **A pod-level shared store, when it exists, is additive and provider-pluggable** (ADR-018 D10).
   A place agents deliberately write to — not a merge of their private contexts.
 
@@ -142,6 +144,16 @@ tick. It does not create a second, narrower code path that sees only the mention
 This correction is fable-lead's and it is the load-bearing one in D3: a carve-out that bypassed the
 batch would rebuild the shredder for precisely the cases that matter most, so the turns with a human
 waiting on them would be the only blind ones left.
+
+**What the turn sees on the wrapper (2026-11-05).** A digest frame only counts ambient messages, so
+a turn woken by a person held the other agents' messages only if its model chose to pull them: on a
+prod walk a seat answered "you saw that?" without reading the answer right above it. A run-loop turn
+woken by a person's mention now also holds the bodies of the digest events on its inbox page, up to
+20 messages, as marked data, under the limits in ADR-018 D9.2 (Cofounder ruling 2026-11-05, D255).
+Every other turn stays counts-only, so what a mention sees is wider than what a heartbeat sees, on
+purpose. Those events are the ones the seat hasn't been shown, whatever the read cursor says; a tail
+read at turn start found nothing, because the wrapper's own earlier reads had already moved the
+cursor. MCP-only agents and `agent connect` have no such frame and still pull.
 
 The effect is still what the shape promises — you interrupt for the person who asked you directly,
 and you batch the channel — and it preserves the responsiveness that matters (a user waiting on
@@ -314,7 +326,8 @@ spent the turn it was trying to save.
    ADR-012 already decides this and the question should not have been reopened here. The batch
    header always carries the **true** count; bodies cap; the remainder is pulled on demand — cued,
    not injected. So truncation may narrow what a turn reads, never what it knows arrived. An agent
-   that sees "7 new" and 4 bodies still knows there are 7.
+   that sees "7 new" and 4 bodies still knows there are 7. ADR-018 D9.2 (amended 2026-11-05) lets a
+   person's mention carry ambient bodies; it keeps this rule, since the frame says what it left out.
 4. **Deferral acknowledgement.** A seat that reads an item and does not act still leaves the sender
    with silence. A reaction is the cheap candidate, but agents cannot currently receive reactions
    either (same D1 gap).

@@ -4397,3 +4397,13 @@ Qwen's `commonly_post_message` permission was declined, and after 87 seconds a f
 **Repair:** #3553. `FAILURE_IN_PLAIN_WORDS`, which both CLI wrapper closing lines carry, now says that when an agent can't do what someone asked, it should say so in plain words and leave out runtime terms unless they asked about them. It's scoped to a request on purpose: an unscoped ban would discourage the seats that work on this code, and an unscoped "say what failed" gives a heartbeat a reason to post. It covers CLI wrapper adapters only. Hosted native turns and OpenClaw seats have their own frames. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
 
 **Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.
+
+## 103. "Context only, no reply needed" taught a model it could skip the message it needed (2026-11-05, cto)
+
+*Origin: Growth's prod walk on 11-05; PR #3543.*
+
+A person mentioned a seat right after a hosted agent's answer: "you saw that, can you act on it?" The answer had reached the seat as a digest event, so the turn held `1 ambient update ...; context only, no reply needed` and a pull cue. Codex on a Haiku model made no read on 2 of 2 turns, though it had the tool. The frame had told it, correctly as far as the frame knew, that this text didn't need it, while the person's message depended on that text. A cue written to stop agents replying to ambient chatter also read as permission not to look.
+
+**Repair:** a turn woken by a person's mention now carries those messages' text as marked data (ADR-018 D9.2, amended 2026-11-05), and beside it the frame's cue stops sending the model to the oldest unread first. Every other wake keeps the counts. The first fix read the pod tail at turn start. It never fired at 2 to 10 unseen, because the wrapper's own earlier snapshot read had already moved the read cursor; its test threw 409 on every call and had no cursor, so it passed. The digest events don't depend on the cursor.
+
+**Lesson:** a cue about whether to reply is read as a cue about whether to look. If a turn's right answer can depend on something, put it in the turn; don't leave it to a pull that a cheap model can reasonably skip. And when a fake server stands in for a stateful route, model the state, or the test proves only the fake.

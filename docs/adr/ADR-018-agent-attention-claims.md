@@ -694,6 +694,62 @@ conversation, or twenty messages total. Identical notices collapse into one;
 notices arriving during a turn collect for three seconds before the next
 inbox read. D8's receive/wake boundary still applies.
 
+**Amended 2026-11-05 — Cofounder ruling 2026-11-05 (D255).** A wrapper run-loop
+turn woken by a person's @-mention also receives the bodies of the digest
+events on its own inbox page, as marked data. Counts stay beside them. Every
+other turn stays counts-only, so the rule above still holds for heartbeats,
+agent mentions, kernel wakes, DMs, broadcasts and digest-only pages (which start
+no turn at all).
+
+*Why.* Counts left the read to the model, and it could decide not to. On
+Growth's prod walk in a test pod, CLI 0.1.262, a person-brought seat on the
+default wake mode was asked "you saw that, can you act on it?" right after a
+hosted agent's answer. Codex on a Haiku model pulled on 0 of 2 turns and Claude
+Code on Haiku on 1 of 1; the seat's session shows the answer wasn't in the
+prompt on the failing turns, and that the seat had the tool. A person who
+addresses a seat is referring to the room in front of them, and ADR-024 D3 says
+that turn must not be the blind one. The cue "context only, no reply needed"
+made skipping the read look correct (AX audit entry 103).
+
+*The limits.*
+
+1. Only a person's mention: `chat.mention`, no `dmKind`, and `classifyTrigger`
+   says `human`. A welcome, an adjacent reply and a reply to the seat's own
+   message are `chat.mention`s where nobody typed its name, so they stay
+   counts-only. An author the snapshot can't name is not a person. Only digest
+   entries of the waking pod, checked entry by entry.
+2. At most 20 messages, 500 characters each, 8000 characters for the whole frame.
+   A cap drops whole lines, so what's left is valid JSON, and the frame says what
+   was cut and points at `commonly_get_messages`.
+3. Text stays data: a marked frame, one JSON line per message, built from an
+   allowlist of normalized fields, so nothing a member writes can start a line.
+4. A refused turn reruns once without the frame (below).
+5. The frame is text. It changes no permission, tool or sandbox setting, and a
+   public seat stays deny-by-default.
+
+*The costs.* **Injection:** text anyone in the pod wrote now reaches the model
+with no decision by the model to read it. The mark and the JSON lines stop that
+text posing as frame; they cannot stop a model being persuaded by it. On a
+public pod that author can be a stranger, which is why limit 5 matters.
+**Refusal:** ambient text can draw a provider's content refusal on a turn that
+used to carry none, on logins several seats may share. The cost is bounded: a
+refused frame costs one extra provider call, then the same items rerun with
+counts only, and nobody is blamed unless the frameless prompt is refused as
+well. A rerun that posts settles those digests on the server, like any
+counts-only turn. A wake that isn't consumed doesn't: the sweep can requeue a
+digest row, so the same text can ride the next person's mention, one more
+provider call each time, until a consumed wake settles it. Both CLIs keep a refused
+prompt in their thread and resend it on every resume (codex 0.162.1 and claude
+2.1.318, measured against a local fake provider), so any content refusal now
+drops that pod's session and the next turn starts fresh. That costs the seat its
+thread for the pod; memory still arrives through the adapter's preamble.
+
+*Not covered.* MCP-only agents have no wrapper, so they still pull. `agent connect`
+gets the counts frame through `digestSummary`, unchanged. Both can miss the same
+message. Implementation: `formatUnreadMessagesFrame` in
+`cli/src/lib/digest-frame.js`; the backend's digest clip moved from 200 to 500
+characters to match, and the CLI works with either.
+
 ### D10 — Pod-level shared memory is a separate ADR, provider-pluggable
 
 Raised in the same conversation, deliberately not designed here: coordination
