@@ -42,7 +42,7 @@ const { configWriteRefusal, runtimeKeepingType } = require('../../services/confi
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
 const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
-const { isHostedInstallation } = require('../../services/hostedRuntimeService');
+const { isHostedInstallation, resumeCapRefusal } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
 // Serialize this route's IDENTITY.md read/modify/write operations per account.
@@ -473,6 +473,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     };
     if (rowsEntering.length && await holdsToken()) {
       return refuseTokenHeld();
+    }
+    if (status === 'active') {
+      const installers = new Set<string>(installationsToUpdate
+        .filter((entry: any) => isHostedInstallation(entry) && entry.status !== 'active')
+        .map((entry: any) => String(entry.installedBy)));
+      for (const installer of installers) {
+        // eslint-disable-next-line no-await-in-loop
+        const refusal = await resumeCapRefusal(installer, name.toLowerCase(), normalizedInstanceId);
+        if (refusal) return res.status(403).json(refusal);
+      }
     }
     const rowsToRestore = rowsEntering.map((entry: any) => ({
       key: { agentName: entry.agentName, podId: entry.podId, instanceId: entry.instanceId },

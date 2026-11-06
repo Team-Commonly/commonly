@@ -329,7 +329,8 @@ export const relabelIdentityDmRows = async (
  * those are. The status write only reaches rows its caller installed, and a
  * paused agent should go quiet in a guest's DM as well. Only a running or paused
  * row moves. A resume applies what a row of its own would meet: it doesn't start
- * an in-process row beside a token, or one a grant now keeps out of its pod.
+ * an in-process row beside a token, one a grant now keeps out of its pod, or a
+ * hosted row past its owner's cap.
  * The pods come from the rows now at `status`, so a retry after a failed profile
  * write catches up, and a row retired meanwhile stays out.
  */
@@ -342,17 +343,20 @@ export const setIdentityDmRowsStatus = async (
   const { configRunsInProcess, hostedEngineInEffect } = require('./hostedEngine');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { assertAgentRuntimeMayJoinPod, runtimeTypeFromConfig } = require('./outsiderGrantAgentJoinPolicy');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { isHostedInstallation, resumeCapRefusal } = require('./hostedRuntimeService');
   const { installations, dmPodTypes } = await identityRows(agentName, instanceId, KEPT_ROWS);
   const rowIds = installations.filter((installation) => dmPodTypes.has(String(installation.podId))).map((row) => row._id);
   const from = status === 'paused' ? 'active' : 'paused';
-  const moving: Array<{ _id: unknown; podId: unknown; config?: unknown }> = await AgentInstallation.find({
+  const moving: Array<{ _id: unknown; podId: unknown; config?: unknown; installedBy?: unknown }> = await AgentInstallation.find({
     _id: { $in: rowIds }, status: from,
-  }).select('podId config').lean();
+  }).select('podId config installedBy').lean();
   const tokenHeld = status === 'active' && moving.length
     ? await identityHoldsRuntimeToken(agentName, instanceId)
     : false;
-  const mayResume = async (row: { podId: unknown; config?: unknown }): Promise<boolean> => {
+  const mayResume = async (row: { podId: unknown; config?: unknown; installedBy?: unknown }): Promise<boolean> => {
     if (tokenHeld && configRunsInProcess(row.config)) return false;
+    if (isHostedInstallation(row) && await resumeCapRefusal(row.installedBy, agentName, instanceId)) return false;
     try {
       await assertAgentRuntimeMayJoinPod(row.podId, runtimeTypeFromConfig(row.config), hostedEngineInEffect({ config: row.config }));
       return true;

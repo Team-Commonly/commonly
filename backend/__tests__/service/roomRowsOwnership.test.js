@@ -333,6 +333,143 @@ describe('an agent-room row and who owns the agent', () => {
       expect(await statusIn(roomId)).toBe('stale');
     });
 
+    describe('at the hosted cap', () => {
+      const HOSTED = { runtime: { runtimeType: 'hosted' } };
+      const hostHere = (podId) => AgentInstallation.collection.updateOne(
+        { agentName: NAME, podId }, { $set: { config: HOSTED } },
+      );
+      const fillCap = async () => {
+        const elsewhere = await pod('Elsewhere', [owner._id]);
+        await AgentInstallation.collection.insertOne({
+          agentName: 'another-agent',
+          instanceId: 'default',
+          podId: elsewhere._id,
+          installedBy: owner._id,
+          version: '1.0.0',
+          status: 'active',
+          config: HOSTED,
+        });
+      };
+
+      beforeEach(() => { process.env.HOSTED_AGENTS_PER_USER = '1'; });
+      afterEach(async () => {
+        delete process.env.HOSTED_AGENTS_PER_USER;
+        await AgentInstallation.deleteMany({ agentName: 'another-agent' });
+      });
+
+      it('a resume that would be one agent too many is refused', async () => {
+        await hostHere(home._id);
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await fillCap();
+
+        const res = await setStatus(owner, home._id, 'active');
+        expect(res.status).toBe(403);
+        expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 1, cap: 1 });
+        expect(res.body.holders).toHaveLength(1);
+        expect(await statusIn(home._id)).toBe('paused');
+      });
+
+      it('an agent still running elsewhere is refused once the owner is over the cap', async () => {
+        await hostHere(home._id);
+        const second = await pod('Second', [owner._id]);
+        await seedRow(owner._id, second._id, { config: HOSTED, status: 'paused' });
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await AgentInstallation.collection.updateOne(
+          { agentName: NAME, podId: second._id }, { $set: { status: 'active' } },
+        );
+        await fillCap();
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(403);
+        expect(await statusIn(home._id)).toBe('paused');
+      });
+
+      it('a cap of 0 refuses every resume', async () => {
+        await hostHere(home._id);
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        process.env.HOSTED_AGENTS_PER_USER = '0';
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(403);
+        expect(await statusIn(home._id)).toBe('paused');
+      });
+
+      it('an admin installer is exempt, as on an install', async () => {
+        await hostHere(home._id);
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await fillCap();
+        await User.updateOne({ _id: owner._id }, { $set: { role: 'admin' } });
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+        expect(await statusIn(home._id)).toBe('active');
+        await User.updateOne({ _id: owner._id }, { $unset: { role: 1 } });
+      });
+
+      it('the count is the installer\'s, not the caller\'s', async () => {
+        await hostHere(home._id);
+        const admin = await person();
+        await User.updateOne({ _id: admin._id }, { $set: { role: 'admin' } });
+        await Pod.updateOne({ _id: home._id }, { $addToSet: { members: admin._id } });
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await fillCap();
+        expect((await setStatus(admin, home._id, 'active')).status).toBe(403);
+
+        await AgentInstallation.deleteMany({ agentName: 'another-agent' });
+        const adminPod = await pod('Admin', [admin._id]);
+        await AgentInstallation.collection.insertOne({
+          agentName: 'another-agent',
+          instanceId: 'default',
+          podId: adminPod._id,
+          installedBy: admin._id,
+          version: '1.0.0',
+          status: 'active',
+          config: HOSTED,
+        });
+        expect((await setStatus(admin, home._id, 'active')).status).toBe(200);
+      });
+
+      it('a hosted DM comes back with its agent on an ordinary resume', async () => {
+        await hostHere(home._id);
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, room._id, { config: HOSTED });
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        expect(await statusIn(room._id)).toBe('paused');
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+        expect(await statusIn(home._id)).toBe('active');
+        expect(await statusIn(room._id)).toBe('active');
+      });
+
+      it('a resume with room under the cap goes through', async () => {
+        await hostHere(home._id);
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+        expect(await statusIn(home._id)).toBe('active');
+      });
+
+      it('an agent still running elsewhere is not a new one', async () => {
+        await hostHere(home._id);
+        const second = await pod('Second', [owner._id]);
+        await seedRow(owner._id, second._id, { config: HOSTED });
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await AgentInstallation.collection.updateOne(
+          { agentName: NAME, podId: second._id }, { $set: { status: 'active' } },
+        );
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+        expect(await statusIn(home._id)).toBe('active');
+      });
+
+      it('a resume through a connected row leaves a hosted DM paused', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, room._id, { status: 'paused', config: HOSTED });
+        expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
+        await fillCap();
+
+        expect((await setStatus(owner, home._id, 'active')).status).toBe(200);
+        expect(await statusIn(home._id)).toBe('active');
+        expect(await statusIn(room._id)).toBe('paused');
+      });
+    });
+
     it('a guest pausing their own DM moves only that row', async () => {
       const roomId = await openDm(guest);
       const otherRoom = await openDm(owner);

@@ -195,6 +195,36 @@ export const findHeldHostedInstallation = async (
     .find((row: any) => hostedIdentityKey(row.agentName, row.instanceId) === wanted) || null;
 };
 
+/**
+ * The cap refusal for resuming this agent, or null. The cap counts running rows,
+ * so a paused agent holds no place: pause one, start another, resume the first.
+ * The same rule as an install: an agent the person still runs elsewhere isn't a
+ * new one at the cap, though it is over it, and an admin installer is exempt.
+ */
+export const resumeCapRefusal = async (
+  userId: any, agentName: string, instanceId: string,
+): Promise<Record<string, unknown> | null> => {
+  const { agentsPerUser } = hostedCaps();
+  const used = await countHostedAgentsForUser(userId);
+  if (used < agentsPerUser) return null;
+  if (used === agentsPerUser && await findHeldHostedInstallation(userId, agentName, instanceId)) return null;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
+  const installer = await User.findById(userId).select('role').lean();
+  if (installer?.role === 'admin') return null;
+  return {
+    code: 'hosted_cap_reached',
+    message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
+    used,
+    cap: agentsPerUser,
+    holders: await listHostedInstallationsForUser(userId).catch((error: any) => {
+      // Keep the cap response authoritative if diagnostics are unavailable.
+      console.warn('[hosted] cap holder lookup failed:', error?.message || error);
+      return [];
+    }),
+  };
+};
+
 /** `config.autoJoinSource` on the row a DM writes so the agent can answer there. */
 export const AGENT_ROOM_AUTO_JOIN_SOURCE = 'agent-room-create';
 
@@ -433,6 +463,7 @@ module.exports = {
   countHostedAgentsForUser,
   listHostedInstallationsForUser,
   findHeldHostedInstallation,
+  resumeCapRefusal,
   AGENT_ROOM_AUTO_JOIN_SOURCE,
   resolveHostedOwner,
   retireHostedRoomRows,
