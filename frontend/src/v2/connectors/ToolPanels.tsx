@@ -378,8 +378,8 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     </a>
   );
 
-  // The page's own access notice travels into every drawer, so a panel for the
-  // same install page adds nothing to it but a second copy of the warning.
+  // The page's own access notice stays up behind a popover and travels into
+  // every drawer, so a panel for the same install page would only repeat it.
   const renderGithubWarning = (entry: ToolCatalogEntry) => (
     entry.accessPage === accessNoticePage ? null : <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
   );

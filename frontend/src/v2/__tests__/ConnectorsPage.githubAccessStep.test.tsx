@@ -139,9 +139,9 @@ describe('connected, with the App not installed yet (next=access)', () => {
     const popover = await findPopover('GitHub');
     expect(await within(popover).findByRole('link', { name: "Open GitHub's connected apps" })).toHaveAttribute('href', revokePage);
     expect(window.location.search).toBe('');
-    // The notice sits in this drawer, so the entry's own copy of the warning stays out.
+    // The page's notice carries the warning, so the popover leaves its own copy out.
     expect(screen.getAllByText(en.connectors.hostedMcpAccessNext)).toHaveLength(1);
-    expect(within(popover).getByText(en.connectors.hostedMcpAccessNext)).toBeInTheDocument();
+    expect(within(popover).queryByText(en.connectors.hostedMcpAccessNext)).toBeNull();
     expect(within(popover).queryByRole('link', { name: 'Choose what GitHub can reach' })).toBeNull();
   });
 
