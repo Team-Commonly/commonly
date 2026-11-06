@@ -1546,6 +1546,25 @@ export const answersInChannel = (entry) => {
     && payload.source !== 'dm' && !payload.dmKind;
 };
 
+// Growth's wake-mode walk, 2026-11-06: a person's direct @ ended in NO_REPLY in
+// 5 of 12 runs, some after the seat had read the answer, and the batch's closing
+// line offered silence on every turn. A turn that answers a person drops that
+// exit: NO_REPLY stays only as the way to end after a reply posted through a
+// tool, so the wrapper doesn't post a second one. It needs the sender known to
+// be human, so an agent's @ and a message off the snapshot keep the old line. A
+// seat whose peer holds the claim keeps it too: the peer is answering them. So
+// do two chat.mention wakes where nobody typed the seat's name: an adjacent
+// reply and a new member's welcome, whose kernel frames offer NO_REPLY.
+const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
+  + 'is short, is that you can\'t help, or repeats what another agent said. Do not leave them without a reply.]';
+const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
+  + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
+
+export const answersAPerson = (entry) => (
+  entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame
+  && !entry.event.payload?.adjacentReply && !entry.event.payload?.welcomeWake
+);
+
 const extractPrompt = (event) => {
   const p = event.payload || {};
   if (PROMPT_EVENT_TYPES.has(event.type)) {
@@ -2930,7 +2949,9 @@ export const performRun = ({
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest');
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest');
-    const bodies = wakeEntries.slice(0, BODY_LIMIT).map((entry, index) => {
+    const shownEntries = wakeEntries.slice(0, BODY_LIMIT);
+    const answersPerson = shownEntries.some(answersAPerson);
+    const bodies = shownEntries.map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
       const prefix = [
         `Event ${index + 1}/${wakeEntries.length}: ${entry.event.type}`,
@@ -2941,14 +2962,15 @@ export const performRun = ({
           + '[This item is read-only context: a peer won its binding claim. Do not act on it.]\n'
         : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
+      const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
-        ? `\n[After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({
+        ? `\n[After ${answersAPerson(entry) ? 'your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
-      return `${prefix}\n${claimContext}${body}${channelLine}${checkpoint}`;
+      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
@@ -2956,7 +2978,7 @@ export const performRun = ({
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
         + 'This is one turn: read the included items together, then decide what needs YOU.]',
-      'After tool-side work is committed (including any reply posted through a tool), or an intentional NO_REPLY, checkpoint that item with its supplied IDs. '
+      `After tool-side work is committed (including any reply posted through a tool)${answersPerson ? ',' : ', or an intentional NO_REPLY,'} checkpoint that item with its supplied IDs. `
         + 'Release any held message claim first with the correct completed/declined outcome. '
         + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
         + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
@@ -2966,8 +2988,12 @@ export const performRun = ({
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
-      'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
-        + FINAL_TEXT_IS_POSTED,
+      answersPerson
+        ? 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
+          + 'For anything else here, post only an action or a materially useful response. '
+          + FINAL_TEXT_ANSWERS_A_PERSON
+        : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
+          + FINAL_TEXT_IS_POSTED,
     ].join('\n\n');
   };
 
@@ -3253,6 +3279,7 @@ export const performRun = ({
     // determine its admission or count as the trigger that woke the seat.
     const wakingEntries = activeEntries.filter((entry) => entry.event.deliveryMode !== 'digest');
     const triggers = wakingEntries.map((entry) => classifyTrigger(entry.event, preSpawn));
+    wakingEntries.forEach((entry, index) => { entry.trigger = triggers[index]; });
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
