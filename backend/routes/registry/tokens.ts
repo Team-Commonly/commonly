@@ -279,7 +279,7 @@ const runsInProcess = async (agentUser: any, installation: any): Promise<boolean
   // Every row that isn't uninstalled.
   return Boolean(await AgentInstallation.exists({
     status: { $ne: 'uninstalled' },
-    $and: [{ $or: pairs }, IN_PROCESS_RUNTIME],
+    $and: [{ $or: pairs.map(({ agentName, instanceId }) => installationIdentityFilter(agentName, instanceId)) }, IN_PROCESS_RUNTIME],
   }, { collation: RUNTIME_INSTALLATION_COLLATION }));
 };
 

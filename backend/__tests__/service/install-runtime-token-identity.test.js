@@ -1182,6 +1182,19 @@ describe('installing an in-process runtime on an identity that holds a token', (
       .set('Authorization', `Bearer ${ownerToken}`)
       .send(body);
 
+    it('count an in-process row stored with no instance', async () => {
+      await byoSeat('legacy-native-seat');
+      await AgentInstallation.updateOne({ agentName: 'legacy-native-seat', podId: firstPod._id }, {
+        $unset: { instanceId: 1 }, $set: { 'config.runtime.runtimeType': 'native' },
+      });
+
+      const res = await mintUserToken(firstPod._id, 'legacy-native-seat');
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('in_process_agent_no_token');
+      expect(await holdsUserToken('legacy-native-seat')).toBe(false);
+    });
+
     it.each(['paused', 'stale', 'error'])('count an in-process row marked %s', async (status) => {
       await byoSeat('issuer-seat');
       await inProcessRow('issuer-seat', { podId: privatePod._id, status });
