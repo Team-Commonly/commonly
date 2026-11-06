@@ -203,6 +203,20 @@ describe('addComment says which pod the post belongs to', () => {
     expect(String(mention.message.thread.postPodId)).toBe(String(pod._id));
   });
 
+  test('the mention names the saved comment, which is what a wrapper seat answers on', async () => {
+    const user = await makeUser();
+    const pod = await Pod.create({ name: 'p', type: 'chat', createdBy: user._id, members: [user._id] });
+    const post = await Post.create({ userId: user._id, content: 'x', podId: pod._id, comments: [] });
+    const mention = await commentOn(post, user);
+    const [saved] = (await Post.findById(post._id).lean()).comments;
+    expect(mention.message.thread.commentId).toBeDefined();
+    expect(String(mention.message.thread.commentId)).toBe(String(saved._id));
+    // payload.messageId means a Postgres chat row to its readers, so a comment
+    // doesn't set one.
+    expect(mention.message._id).toBeUndefined();
+    expect(mention.message.id).toBeUndefined();
+  });
+
   test('a post with no pod stamps none, though the mention still picks a pod', async () => {
     const user = await makeUser();
     const pod = await Pod.create({ name: 'p', type: 'chat', createdBy: user._id, members: [user._id] });
