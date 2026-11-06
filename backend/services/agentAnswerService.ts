@@ -189,6 +189,14 @@ export const answerStaysTopLevel = async ({
 /** The most deliveries one pod's turn can hold: the runner renews 50 at a time. */
 const MAX_TURN_DELIVERIES = 50;
 
+/**
+ * How long an acked wake still speaks for the turn. A model can send a post and
+ * commonly_checkpoint_event side by side, and the ack can land first (F292: one
+ * second apart, on a pi seat). Long enough for that, short enough that the next
+ * turn's post isn't judged by the last turn's ack.
+ */
+export const JUST_ACKED_MS = 5 * 1000;
+
 const threadRootOf = (payload: unknown): number | null => {
   const root = Number((payload as { threadRootId?: unknown } | null)?.threadRootId);
   return Number.isSafeInteger(root) && root > 0 ? root : null;
@@ -212,7 +220,8 @@ const threadRootOf = (payload: unknown): number | null => {
  * the model to name the thread. Unrelated work in a turn is the same limit:
  * only `progress`, `fyi` and the caller's own opt-out (mainChannel on the CAP
  * route) say a post is not the answer. So is a post after the event is acked,
- * including one after a mid-turn checkpoint. And a held row need not be the
+ * including one after a mid-turn checkpoint, though a wake acked in the last
+ * JUST_ACKED_MS still gets a say in the agreement. And a held row need not be the
  * running turn's: a carried or crashed row in thread N files a plain post from
  * a turn that holds nothing else in this pod, until the row is acked or ages out.
  *
@@ -246,13 +255,28 @@ export const threadOfRunningTurn = async ({
     }).sort({ createdAt: -1, _id: -1 }).select('type payload').limit(MAX_TURN_DELIVERIES)
       .maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
       .lean();
-    const roots = new Set(held.map((event) => (
+    const wakeRoot = (event: { type?: string; payload?: unknown }): number | null => (
       WAKE_TYPES.includes(String(event.type)) ? threadRootOf(event.payload) : null
-    )));
+    );
+    const roots = new Set(held.map(wakeRoot));
     const [root] = [...roots];
     if (roots.size !== 1 || root == null) return null;
     const pod = await Pod.findOne({ _id: { $eq: String(podId) } }).select('type').lean();
     if (!pod || isPersonalPodType(pod.type)) return null;
+    // Only a disagreement counts: an ack alone still files nothing, as above.
+    // `createdAt` is what the index can use: an ack can't be newer than this
+    // unless its wake sat for hours, and then it says nothing about this turn.
+    const justAcked: Array<{ type?: string; payload?: unknown }> = await AgentEvent.find({
+      agentName: { $eq: String(agentName).toLowerCase() },
+      instanceId: { $eq: String(instanceId || 'default') },
+      status: 'acked',
+      podId: { $eq: String(podId) },
+      deliveryMode: { $ne: 'digest' },
+      createdAt: { $gte: new Date(Date.now() - WAKE_LOOKUP_WINDOW_MS) },
+      updatedAt: { $gte: new Date(Date.now() - JUST_ACKED_MS) },
+    }).select('type payload').limit(MAX_TURN_DELIVERIES).maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
+      .lean();
+    if (justAcked.some((event) => wakeRoot(event) !== root)) return null;
     return await resolveThreadRoot({ podId: String(podId), threadRootId: root });
   } catch (error) {
     console.warn('[agent-answer] running-turn thread check failed; leaving the post as sent:', (error as Error).message);
