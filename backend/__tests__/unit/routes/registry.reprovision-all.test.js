@@ -39,7 +39,9 @@ describe('POST /admin/installations/reprovision-all', () => {
     const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true, attempted: 2, succeeded: 2, failed: 0, skipped: 2 });
+    expect(res.body).toMatchObject({
+      success: true, attempted: 2, succeeded: 0, failed: 0, skipped: 2, 
+    });
     expect(res.body.items[0]).toMatchObject({ skipped: true, skipReason: 'keeps_its_own_token' });
     expect(restartAgentRuntime).not.toHaveBeenCalled();
   });

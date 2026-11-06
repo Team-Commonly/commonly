@@ -109,6 +109,13 @@ describe('reprovision and tokens', () => {
     expect(installation.save).toHaveBeenCalled();
   });
 
+  it('an unknown name carrying a gateway runtime keeps its token, since no provisioner path would hand a new one over', async () => {
+    const installation = install('liz-custom', { runtimeType: 'moltbot' });
+    const result = await reprovisionInstallation({ installation, force: true });
+    expect(result).toMatchObject({ skipped: true, skipReason: 'unknown_runtime' });
+    untouched(installation);
+  });
+
   it('a gateway row keeps its token when a wrapper shares its identity, since a revoke reaches every copy', async () => {
     siblings({ config: { runtime: { runtimeType: 'moltbot' } } }, { config: { runtime: { host: 'byo' } } });
     const installation = install('openclaw', { runtimeType: 'moltbot' });

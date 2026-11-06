@@ -73,11 +73,12 @@ const reprovisionInstallation = async ({
     skipReason,
   });
   if (keepsItsOwnToken(installation, runtimeType)) return skipped('keeps_its_own_token');
+  if (!runtimeType) return skipped('unknown_runtime');
   await assertAgentRuntimeMayJoinPod(podId, runtimeType, hostedEngineInEffect(installation));
 
   // A revoke reaches every install of this identity, not only this row.
   const sameIdentity = await AgentInstallation.find({
-    agentName: name, instanceId: normalizedInstanceId, status: 'active',
+    agentName: name, instanceId: normalizedInstanceId, status: { $in: ['active', 'paused'] },
   }).collation({ locale: 'en', strength: 2 }).select('config').lean();
   if (sameIdentity.some((row: any) => keepsItsOwnToken(row, runtimeType))) {
     return skipped('shares_identity_with_external_seat');

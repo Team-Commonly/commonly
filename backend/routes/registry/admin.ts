@@ -220,14 +220,14 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
       });
     }
 
-    const succeeded = items.filter((item) => item.success).length;
-    const failed = items.length - succeeded;
+    const skippedCount = items.filter((item) => item.skipped).length;
+    const failed = items.filter((item) => !item.success).length;
     return res.json({
       success: failed === 0,
       attempted: items.length,
-      succeeded,
+      succeeded: items.length - failed - skippedCount,
       failed,
-      skipped: items.filter((item) => item.skipped).length,
+      skipped: skippedCount,
       items,
     });
   } catch (error) {
