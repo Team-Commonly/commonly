@@ -151,6 +151,14 @@ describe('native posts carry the message contract (D245)', () => {
   });
 });
 
+describe('the hosted prompt says how a failure should read (F111, D247)', () => {
+  test('in plain words, leaving out runtime terms unless they were asked about', () => {
+    const prompt = hostedNativeSystemPrompt('Scout');
+    expect(prompt).toContain('say in plain words what didn\'t work and what they can do next');
+    expect(prompt).toContain('without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them');
+  });
+});
+
 describe('the hosted posting instructions cue the contract inline (D245)', () => {
   test('names the six kinds and the one-line summary next to the post instruction', () => {
     const prompt = hostedNativeSystemPrompt('Scout');

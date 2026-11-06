@@ -297,7 +297,11 @@ export const hostedNativeSystemPrompt = (
     + 'needed, do not post.\n'
     + '\n'
     + 'Only claim what you actually did. If a task needs a tool you do not have (for example, '
-    + `${orList(missing)}), say so plainly instead of describing a result you did not observe.`
+    + `${orList(missing)}), say so plainly instead of describing a result you did not observe. `
+    // D247 walk: a failing seat told the pod about checkpoints and re-serving. The
+    // CLI wrapper's turn frame says the same (FAILURE_IN_PLAIN_WORDS in agent.js).
+    + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them.'
   );
 };
 
