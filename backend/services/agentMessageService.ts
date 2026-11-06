@@ -206,6 +206,13 @@ interface PostMessageOptions {
   // hosted turn posts when it failed with nothing posted. Each one answers its
   // own ask, so the shared-pod duplicate guard does not apply to it.
   failureNotice?: boolean;
+  // Server-set, never model-set and never read from metadata (F56): a person's
+  // own words addressed this native or hosted turn and it hasn't answered yet. Its reply
+  // answers that ask, so the duplicate guard does not apply. With
+  // `failureNotice`, neither does the run cap: asks that land together fail
+  // together, and a person who sees three lines for five asks got silence on two.
+  // The cap still bounds an ordinary reply, and an agent's ask gets neither.
+  personWaiting?: boolean;
   // Server-set, never model-set and never read from metadata (F180): the
   // approval card proposeAction posts for a parked action. A consent surface
   // must never be crowded out, so neither the duplicate guard (a second card
@@ -1067,6 +1074,7 @@ class AgentMessageService {
       answeringMessageId,
       authorKind = null,
       failureNotice = false,
+      personWaiting = false,
       approvalCard = false,
       threadIsDeliberate = false,
     } = options;
@@ -1562,7 +1570,7 @@ class AgentMessageService {
       // An approval card (F180) is exempt for a sharper reason: a second card
       // for the same tool repeats the first's text by construction, and a
       // dropped card fails the parked call.
-      const duplicate = (isOneToOne || failureNotice === true || approvalCard === true)
+      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
@@ -1626,7 +1634,9 @@ class AgentMessageService {
       // `isOneToOne` is the const read once above, shared with the duplicate check.
       // An approval card is not the seat holding the floor: it is the server
       // asking the owner to decide (F180), so the run cap does not apply.
-      const runCap = (isOneToOne || approvalCard === true) ? 0 : AgentMessageService.resolveConsecutiveRunCap();
+      const failureForPerson = failureNotice === true && personWaiting === true;
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson)
+        ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
         if (run >= runCap) {
@@ -1692,10 +1702,12 @@ class AgentMessageService {
     // agent its first task" (starterTaskService). Fire-and-forget: a board
     // write never delays or fails a post, and it never throws.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    void require('./starterTaskService').completeFirstTaskOnAnswer({
-      podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
-      agentLabel: displayName || agentName, content: sanitizedContent,
-    });
+    if (failureNotice !== true) {
+      void require('./starterTaskService').completeFirstTaskOnAnswer({
+        podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
+        agentLabel: displayName || agentName, content: sanitizedContent,
+      });
+    }
 
     const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
     return {

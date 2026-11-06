@@ -368,8 +368,10 @@ describe('a hosted turn the guard stops, or that fails', () => {
 
       expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
       expect(savedRun.metered).toBe(false);
-      // Bridged, so not even the fixed line goes out.
-      expect(posted()).toEqual([]);
+      // The reply stays held back. The fixed line carries nothing from the turn,
+      // and noOutboundRelay keeps it out of the bridge (F56).
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
     });
 
     // CodeRabbit on 67496fac9: a decline is not a held-back reply. In a bridged
@@ -415,7 +417,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(result.status).toBe('failed');
       expect(savedRun.errorMessage).toMatch(/ended without a reply: its post was refused\.$/);
       expect(chatBodies).toHaveLength(3);
-      expect(posted()).toEqual([]);
+      // The refused post stays refused. The person gets the fixed line, kept out of the bridge.
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls.at(-1)[0].noOutboundRelay).toBe(true);
     });
 
     // The extra call can itself be stopped. Then every web result left is set
@@ -618,6 +622,72 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([]);
   });
 
+  describe('F56: a reply the floor cap refused', () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    const postCall = { id: 'p1', type: 'function', function: { name: 'commonly_post_message', arguments: JSON.stringify({ content: 'Here you go.' }) } };
+
+    test('a person who gets no reply gets the fixed line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.noActionReason).toBeUndefined();
+      expect(savedRun.metered).toBe(false);
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+      const line = AgentMessageService.postMessage.mock.calls[1][0];
+      expect(line).toMatchObject({ failureNotice: true, personWaiting: true });
+    });
+
+    test('an agent\'s @ stays a decline', async () => {
+      const User = require('../../../models/User');
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: true }) }) }));
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) }));
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(posted()).toEqual(['Here you go.']);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
+    test('the plain-text fallback gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [reply('Here you go.')];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.finalMessage).toBeUndefined();
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+    });
+
+    test('a refused offer card gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(call('o1', 'commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(posted()).toEqual(['Connect a local agent with the command below.', HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(true);
+    });
+
+    test('a welcome wake quoting a person is not a person waiting', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const wake = { ...mention, payload: { ...mention.payload, welcomeWake: true } };
+      const result = await runAgent(hostedInstall(), wake);
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
+    test('only the first post of a turn answers the person', async () => {
+      const again = { ...postCall, id: 'p2' };
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: true, message: { id: 'm1' } })
+        .mockResolvedValueOnce({ success: true, message: { id: 'm2' } });
+      chatReplies = [toolCalls(postCall, again), reply('')];
+      await runAgent(hostedInstall(), mention);
+      expect(AgentMessageService.postMessage.mock.calls.map(([args]) => args.personWaiting)).toEqual([true, false]);
+    });
+  });
+
   test('an agent\'s @ past the cap stays quiet', async () => {
     const User = require('../../../models/User');
     AgentRun.countDocuments.mockResolvedValueOnce(100000);
@@ -710,14 +780,40 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
-    test('a silent turn (no text, no post) ends succeeded and posts nothing', async () => {
+    // F56: an empty completion on a person's @ is a failed turn, not a decline.
+    test('a person who gets an empty completion gets the fixed line', async () => {
       chatReplies = [reply('')];
 
       const result = await runAgent(hostedInstall(), mention);
 
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(savedRun.metered).toBe(false);
+      expect(savedRun.emptyCompletion).toBe(true);
+    });
+
+    test('an empty completion nobody is waiting on stays silent and is counted', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      chatReplies = [reply('')];
+
+      const result = await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, boardWake: true } });
+
       expect(result.status).toBe('succeeded');
       expect(posted()).toEqual([]);
       expect(savedRun.metered).toBeUndefined();
+      expect(savedRun.emptyCompletion).toBe(true);
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/empty completion #\d+ since start: maya-agent/);
+      warn.mockRestore();
+    });
+
+    test('a NO_REPLY is not counted as an empty completion', async () => {
+      AgentMessageService.postMessage.mockResolvedValue({ skipped: true });
+      chatReplies = [reply('NO_REPLY')];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(savedRun.emptyCompletion).toBeUndefined();
     });
 
     test('a failed greeting posts nothing, though it costs no turn', async () => {
@@ -742,14 +838,15 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBeUndefined();
     });
 
-    test('a pod bridged mid-turn after a page read gets no fixed line', async () => {
+    test('a pod bridged mid-turn after a page read gets the fixed line, kept out of the bridge', async () => {
       // The bridge is added once the page is in the turn.
       mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);
       chatReplies = [toolCalls(fetchCall('c1', CLEAN_URL)), guardStop];
 
       await runAgent(hostedInstall(), mention);
 
-      expect(posted()).toEqual([]);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].noOutboundRelay).toBe(true);
       expect(savedRun.metered).toBe(false);
     });
 

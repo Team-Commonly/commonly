@@ -807,6 +807,11 @@ interface DispatchContext {
    */
   floorHeld?: boolean;
   /**
+   * F56: a person's own words addressed this turn and no reply has reached the
+   * pod yet. Cleared by the first post that lands.
+   */
+  personWaiting?: boolean;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -894,6 +899,23 @@ interface DispatchResult {
   /** Ephemeral image input for the next model call; never stored on AgentRun. */
   imagePngBase64?: string;
 }
+
+/**
+ * F56: an offer card lands or doesn't like any other post, so it reports the
+ * same way. A refused or skipped card never reads as posted to the person
+ * waiting on it.
+ */
+const offerPostResult = (
+  ctx: DispatchContext,
+  result: { success?: boolean; skipped?: boolean; refused?: boolean; reason?: string } | null | undefined,
+): { content: Record<string, unknown>; error?: string } => {
+  if (result?.refused) {
+    if (result.reason === 'consecutive_run_cap') ctx.floorHeld = true;
+    return { content: { ok: false, posted: false, reason: result.reason }, error: 'message_post_refused' };
+  }
+  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  return { content: { ok: true, posted: !result?.skipped, result } };
+};
 
 /**
  * Wake the agents a stored post names, or the agent-dm peer, as the runtime
@@ -1027,9 +1049,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
+        if (result?.success && !result.skipped) ctx.personWaiting = false;
         if (result?.refused && result.reason === 'consecutive_run_cap') {
           // The shared guidance offers an attachment, which a web-tainted turn
           // cannot make, and only another speaker clears the cap. Say only that.
@@ -1094,10 +1118,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        return { content: { ok: true, posted: true, result } };
+        return offerPostResult(ctx, result);
       }
 
       case 'commonly_offer_local_agent': {
@@ -1163,10 +1188,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
-        return { content: { ok: true, posted: true, result } };
+        return offerPostResult(ctx, result);
       }
 
       case 'commonly_create_task': {
@@ -1603,6 +1629,21 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
 const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|an)\s+(claude code|codex|local agent)\b/i;
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
+
+// F56: since this process started. AgentRun.emptyCompletion is the durable count.
+let emptyCompletionCount = 0;
+
+/**
+ * F56 and F234: a person's own words addressed this turn, so someone is waiting
+ * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
+ */
+const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boolean> => {
+  if (!wasDirectlyAddressed(trigger)) return false;
+  const payload = (trigger.payload || {}) as Record<string, unknown>;
+  if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
+    || payload.boardWake === true || payload.welcomeWake === true) return false;
+  return triggerTextIsHumanWritten(trigger);
+};
 
 // Any reply this run, not just a card, answers the connect request.
 export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
@@ -2056,11 +2097,7 @@ export async function runAgent(
   // line isn't an answer, and that field would close the first-task card on it.
   // A failed post doesn't change the stop.
   const tellAddressedPerson = async (content: string): Promise<void> => {
-    if (!hostedNative || !wasDirectlyAddressed(trigger)) return;
-    const payload = (trigger.payload || {}) as Record<string, unknown>;
-    if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
-      || payload.boardWake === true || payload.welcomeWake === true) return;
-    if (!await triggerTextIsHumanWritten(trigger)) return;
+    if (!hostedNative || !await personAddressedThisTurn(trigger)) return;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentMessageService = require('./agentMessageService');
@@ -2074,6 +2111,7 @@ export async function runAgent(
         installationConfig: cfg,
         metadata: { source: 'native-runtime', runFailed: true },
         failureNotice: true,
+        personWaiting: true,
         kind: 'error',
         threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
       });
@@ -2340,6 +2378,11 @@ export async function runAgent(
     answeringMessageId: claimMessageId || undefined,
     answeringThreadRootId: threadRootOfTrigger(trigger.payload),
   };
+
+  // F56: read once. Neither the reply nor the failed-turn line is an answer to an
+  // agent, a sweep or a wake that only quotes a person.
+  const personAsked = await personAddressedThisTurn(trigger);
+  dispatchCtx.personWaiting = personAsked;
   // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
   // fetch makes neither lookup (its own user, the trigger's sender).
   const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
@@ -2942,13 +2985,15 @@ export async function runAgent(
             threadRootId: dispatchCtx.answeringThreadRootId ?? null,
             runId,
             runPodId: String(podId),
+            personWaiting: Boolean(dispatchCtx.personWaiting),
           });
           fanOutAgentPost({ podId, agentName, instanceId }, postResult);
+          if (postResult?.refused && postResult.reason === 'consecutive_run_cap') dispatchCtx.floorHeld = true;
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
           // not a user-visible final message; retaining textOut here would
           // complete the claim and swallow the human wake a second time.
-          if (!postResult?.skipped) finalMessage = textOut;
+          if (!postResult?.skipped && !postResult?.refused) finalMessage = textOut;
         } catch (postErr) {
           // The reply did not reach the pod, so the run did not answer: it
           // fails, and a hosted one gets the fixed handling below.
@@ -2966,6 +3011,16 @@ export async function runAgent(
           + 'its extra call returned nothing.';
       }
 
+      // F56: an empty completion is not a NO_REPLY. Nobody has ruled how a
+      // wake nobody is waiting on should read it, so it stays silent and is
+      // counted until there is a measured case.
+      if (!textOut && !postedViaTool && run.status === 'running') {
+        run.emptyCompletion = true;
+        emptyCompletionCount += 1;
+        console.warn(`[native-runtime] empty completion #${emptyCompletionCount} since start:`
+          + ` ${agentName} trigger=${String(trigger.type)} rounds=${run.turns.length} personAsked=${personAsked}`);
+      }
+
       run.status = run.status === 'running' ? 'succeeded' : run.status;
       break;
     }
@@ -2975,6 +3030,18 @@ export async function runAgent(
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
   }
 
+  // F56: the run cap refused the only reply a person was waiting on, or the
+  // model ended on an empty completion. For a wake nobody is waiting on those
+  // are declines; for this person they are silence.
+  if (hostedNative && personAsked && (dispatchCtx.floorHeld || run.emptyCompletion) && run.status === 'succeeded'
+    && !postedViaTool && !finalMessage) {
+    run.status = 'failed';
+    run.errorKind = 'tool_error';
+    run.errorMessage = dispatchCtx.floorHeld
+      ? 'The reply was refused: the agent already held the floor in this pod.'
+      : 'The model ended the turn on an empty completion.';
+  }
+
   // A hosted turn that failed (a guard stop or an error) and posted nothing
   // costs the person no turn. Model failures name the model, with a safe reason
   // on native turns; other hosted failures keep the fixed line. A turn
@@ -2982,8 +3049,11 @@ export async function runAgent(
   // never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
+    // A native agent's line carries the provider's reason, so a tainted turn
+    // can't post it in a bridged pod. A hosted line is our own fixed text, and
+    // noOutboundRelay keeps it in Commonly (F56).
     if (wasDirectlyAddressed(trigger)
-      && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
+      && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
@@ -3003,6 +3073,7 @@ export async function runAgent(
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           failureNotice: true,
+          personWaiting: personAsked,
           kind: 'error',
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
@@ -3099,7 +3170,8 @@ export async function runAgent(
     finalMessage,
     errorKind: run.errorKind,
     errorMessage: run.errorMessage,
-    ...(dispatchCtx.floorHeld && !postedViaTool ? { noActionReason: 'consecutive_run_cap' } : {}),
+    ...(dispatchCtx.floorHeld && !postedViaTool && run.status !== 'failed'
+      ? { noActionReason: 'consecutive_run_cap' } : {}),
   };
 }
 
