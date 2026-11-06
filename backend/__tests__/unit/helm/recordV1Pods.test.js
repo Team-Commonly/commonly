@@ -18,11 +18,15 @@ describe('RECORD_V1_PODS', () => {
     (file) => { expect(read(file)).toMatch(WIRING); },
   );
 
-  test('dev turns records on for the Sharpen and Connectors boards only', () => {
+  // Test pods for the record's scope walk. They come off the list after it, and
+  // this line with them.
+  const WALK_PODS = ['6aed93b81db11f40f525d197', '6aed934d1db11f40f525c579', '6aed934d1db11f40f525c57e', '6aed9356333cb62cbe78866a'];
+
+  test('dev turns records on for the Sharpen and Connectors boards and the walk pods only', () => {
     const dev = read('values-dev.yaml');
     const value = dev.match(/^ {4}recordV1Pods: "([^"]*)"$/m);
     expect(value).not.toBeNull();
-    expect(value[1].split(',')).toEqual(['6a8f6dc7a1dccf2e02f31015', '6a692a1be833c668acdb84cf']);
+    expect(value[1].split(',')).toEqual(['6a8f6dc7a1dccf2e02f31015', '6a692a1be833c668acdb84cf', ...WALK_PODS]);
     expect(value[1]).not.toContain('*');
   });
 

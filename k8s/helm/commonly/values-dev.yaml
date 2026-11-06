@@ -171,7 +171,8 @@ backend:
 
     # Record-v1 lines for our own team boards first (D244 dogfood, 11-04):
     # Sharpen and Connectors. Lines start when this deploys; there is no backfill.
-    recordV1Pods: "6a8f6dc7a1dccf2e02f31015,6a692a1be833c668acdb84cf"
+    # The last four are test pods for the F217 scope walk, removed after it.
+    recordV1Pods: "6a8f6dc7a1dccf2e02f31015,6a692a1be833c668acdb84cf,6aed93b81db11f40f525d197,6aed934d1db11f40f525c579,6aed934d1db11f40f525c57e,6aed9356333cb62cbe78866a"
 
     # Kernel work-sweep kill switch (#1080). Commented out = sweep runs.
     # Set to "true" and roll to stop the sweep rescuing lapsed leases and
