@@ -39,6 +39,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   getUserId,
   isGlobalAdminUser,
+  normalizeInstanceId,
   resolveInstallation,
   resolveRuntimeInstanceId,
   serializeRuntimeTokens,
@@ -539,14 +540,23 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/tokens', tokenRouteLimit, au
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (!installation || installation.status === 'uninstalled') {
+    // A revoke reaches the whole identity, so an instance the caller named is the
+    // one it acts on, never the pod's only row, which resolveInstallation falls to.
+    const namedInstance = req.query.instanceId !== undefined && normalizeInstanceId(req.query.instanceId) !== instanceId;
+    const missing = !installation || namedInstance;
+    if (missing || (installation.status === 'uninstalled' && !isGlobalAdmin)) {
       return res.status(404).json({ error: 'Agent not installed in this pod' });
     }
 
     const { agentName } = installation;
     if (!isGlobalAdmin) {
-      const check = await ownsIdentityCountingPaused(userId, agentName, instanceId);
-      if (!check.owned) return res.status(403).json({ code: check.failure, error: runtimeCredentialRefusal[check.failure] });
+      // The revoke clears every alias, so a row under any of them counts here.
+      const checks = await Promise.all(AgentIdentityService.identityNames(agentName).map(
+        (alias: string) => ownsIdentityCountingPaused(userId, alias, instanceId),
+      ));
+      const refused = checks.find((check: any) => !check.owned && check.failure !== 'owner_installation_missing')
+        || (checks.some((check: any) => check.owned) ? null : checks[0]);
+      if (refused) return res.status(403).json({ code: refused.failure, error: runtimeCredentialRefusal[refused.failure as string] });
     }
 
     const agentUsername = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(name), instanceId);

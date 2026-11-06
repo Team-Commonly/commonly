@@ -731,6 +731,13 @@ class AgentIdentityService {
     return LEGACY_AGENT_MAP[normalized] || normalized;
   }
 
+  /** Every name an identity's rows can sit under, its legacy aliases included. */
+  static identityNames(agentNameOrType: string): string[] {
+    const type = AgentIdentityService.resolveAgentType(agentNameOrType);
+    const aliases = Object.keys(LEGACY_AGENT_MAP).filter((alias) => LEGACY_AGENT_MAP[alias] === type);
+    return Array.from(new Set([agentNameOrType.toLowerCase(), type, ...aliases]));
+  }
+
   static buildAgentUsername(agentType: string, instanceId: string): string {
     return buildAgentUsername(agentType, instanceId);
   }

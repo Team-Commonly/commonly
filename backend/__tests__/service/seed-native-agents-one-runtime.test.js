@@ -215,5 +215,24 @@ describe('seedNativeAgents and the one-runtime check', () => {
 
     const others = await Promise.all(seeded.filter((name) => name !== CONFLICT).map(demoRow));
     expect(others.every(Boolean)).toBe(true);
+    expect(await demoRow(CONFLICT)).toBeNull();
+  });
+
+  it('takes the row back when the read after the write fails', async () => {
+    const realExists = User.exists.bind(User);
+    let reads = 0;
+    jest.spyOn(User, 'exists').mockImplementation((filter, ...rest) => {
+      if (String(filter?.username).includes(CONFLICT) && filter?.$or) {
+        reads += 1;
+        if (reads > 1) return Promise.reject(new Error('read failed'));
+      }
+      return realExists(filter, ...rest);
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    await seedNativeAgents();
+
+    expect(reads).toBeGreaterThan(1);
+    expect(await demoRow(CONFLICT)).toBeNull();
   });
 });

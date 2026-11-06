@@ -102,14 +102,17 @@ export const declaredExemptRuntime = (
 
 const identityKey = (row: StaleRow): string => `${row.agentName}::${String(row.instanceId || 'default')}`;
 
-/** The rows whose identity holds a token, each identity asked once. */
+/** The rows whose identity holds a token, each identity asked once. One that can't be read counts as holding one. */
 const rowsHoldingToken = async (rows: StaleRow[]): Promise<StaleRow[]> => {
   const holds = new Map<string, boolean>();
   for (const row of rows) {
     const key = identityKey(row);
     if (!holds.has(key)) {
       // eslint-disable-next-line no-await-in-loop
-      holds.set(key, await identityHoldsRuntimeToken(row.agentName, String(row.instanceId || 'default')));
+      holds.set(key, await identityHoldsRuntimeToken(row.agentName, String(row.instanceId || 'default')).catch((err: unknown) => {
+        console.error(`[revive-native] could not read ${key}:`, (err as { message?: string })?.message || err);
+        return true;
+      }));
     }
   }
   return rows.filter((row) => holds.get(identityKey(row)));

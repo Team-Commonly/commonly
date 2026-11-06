@@ -378,6 +378,42 @@ describe('revive-native-installations', () => {
       expect(warn.mock.calls.some(([line]) => String(line).includes('taking back late'))).toBe(true);
     });
 
+    it('takes the row back when the read after the write fails', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('late-read', 'native', 'stale', staleAt);
+      const realExists = User.exists.bind(User);
+      let reads = 0;
+      jest.spyOn(User, 'exists').mockImplementation((filter, ...rest) => {
+        if (String(filter?.username).includes('late-read')) {
+          reads += 1;
+          if (reads > 1) return Promise.reject(new Error('read failed'));
+        }
+        return realExists(filter, ...rest);
+      });
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(reads).toBeGreaterThan(1);
+      expect(result.tokenHeld).toHaveLength(1);
+      expect(await statusOf('late-read')).toEqual([{ status: 'stale', staleSince: staleAt }]);
+    });
+
+    it('counts a token on a row stored with no instance', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      await AgentInstallation.collection.insertOne({
+        agentName: 'held', podId: new mongoose.Types.ObjectId(), version: '1.0.0', installedBy, status: 'paused',
+        runtimeTokens: [{ tokenHash: 'legacy', label: 'test', createdAt: new Date() }],
+        config: { runtime: { runtimeType: 'webhook' } },
+      });
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(result.revived).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+    });
+
     it('a dry run asks once, so a later token changes nothing it reports', async () => {
       await make('scout', 'native', 'stale', new Date(Date.now() - 3 * DAY_MS));
       const realExists = User.exists.bind(User);

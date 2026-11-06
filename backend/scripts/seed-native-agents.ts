@@ -459,7 +459,13 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
     return;
   }
 
-  if (await holdsToken()) {
+  // What this just wrote comes back on a failed read too: nothing else re-checks
+  // an active row, so an unread identity can't be left running.
+  const heldAfterWrite = await holdsToken().catch((err: unknown) => {
+    console.error(`[native-seed]   could not re-read ${appLabel}:`, (err as { message?: string })?.message || err);
+    return true;
+  });
+  if (heldAfterWrite) {
     await takeBackInstallation(installKey, previousRow);
     logSkip();
     return;

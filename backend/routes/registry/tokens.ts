@@ -196,9 +196,7 @@ const revokeAgentUserToken = async (agentUserId: unknown): Promise<void> => {
   });
 };
 
-const identityNames = (agentName: string): string[] => Array.from(new Set([
-  agentName.toLowerCase(), AgentIdentityService.resolveAgentType(agentName),
-]));
+const identityNames = (agentName: string): string[] => AgentIdentityService.identityNames(agentName);
 
 /** Every bearer an identity holds. Its User, memory and installations stay. */
 export const revokeEveryIdentityToken = async (agentName: string, instanceId: string): Promise<void> => {

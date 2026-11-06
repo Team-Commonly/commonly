@@ -80,6 +80,11 @@ describe('installing an in-process runtime on an identity that holds a token', (
     return Boolean(user?.apiTokenHash);
   };
 
+  const holdsTokenOnBot = async (agentName, instanceId = 'default') => {
+    const user = await botUser(agentName, instanceId);
+    return (user?.agentRuntimeTokens || []).length > 0;
+  };
+
   const giveUserToken = async (agentName, instanceId = 'default') => {
     const updated = await User.updateOne(
       { isBot: true, 'botMetadata.instanceId': instanceId, username: new RegExp(agentName) },
@@ -860,6 +865,62 @@ describe('installing an in-process runtime on an identity that holds a token', (
 
         expect(refused.status).toBe(409);
         expect(refused.body.revoke.method).toBe('DELETE');
+        const row = await AgentInstallation.findOne({ agentName: 'late-seat', podId: firstPod._id }).lean();
+        expect(row.status).toBe('paused');
+      });
+
+      it('does not fall to the pod\'s only row when another instance is named', async () => {
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const res = await request(app)
+          .delete(`/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens?instanceId=gone`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+
+        expect(res.status).toBe(404);
+        expect(await holdsTokenOnBot('stopped-seat')).toBe(true);
+      });
+
+      it('lets an admin clear a token off an uninstalled row', async () => {
+        await stoppedRow('stopped-seat', { status: 'uninstalled' });
+        await giveUserToken('stopped-seat');
+        await User.updateOne({ _id: owner._id }, { $set: { role: 'admin' } });
+
+        const res = await request(app)
+          .delete(`/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+
+        expect(res.status).toBe(200);
+        expect(await holdsTokenOnBot('stopped-seat')).toBe(false);
+      });
+
+      it('counts another installer\'s row under an alias of the name', async () => {
+        const other = await User.create({ username: 'alias-installer', email: 'alias-installer@test.com', password: 'password123' });
+        await inProcessRow('commonly-summarizer', { status: 'paused' });
+        await inProcessRow('commonly-bot', { podId: privatePod._id, status: 'paused', installedBy: other._id });
+        await AgentIdentityService.getOrCreateAgentUser('commonly-bot', { instanceId: 'default' });
+        await giveUserToken('commonly-bot');
+
+        const res = await request(app)
+          .delete(`/api/registry/pods/${firstPod._id}/agents/commonly-summarizer/tokens`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('another_installer');
+      });
+
+      it('clears a copy under the legacy alias when the canonical name is revoked', async () => {
+        const legacyToken = { tokenHash: 'legacy-copy', label: 'test', createdAt: new Date() };
+        await inProcessRow('commonly-bot', { status: 'paused' });
+        await inProcessRow('commonly-summarizer', { podId: privatePod._id, status: 'paused', runtimeTokens: [legacyToken] });
+
+        const res = await request(app)
+          .delete(`/api/registry/pods/${firstPod._id}/agents/commonly-bot/tokens`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+
+        expect(res.status).toBe(200);
+        const row = await AgentInstallation.findOne({ agentName: 'commonly-summarizer' }).lean();
+        expect(row.runtimeTokens).toHaveLength(0);
       });
 
       it('refuses someone who is not in the pod', async () => {
@@ -1214,6 +1275,7 @@ describe('installing an in-process runtime on an identity that holds a token', (
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('in_process_agent_no_token');
+      expect(await holdsUserToken('claude-code')).toBe(false);
     });
 
     it('still give a user token to a bring-your-own identity', async () => {

@@ -29,6 +29,8 @@
  * agent-config routes) applies it too, admins exempt.
  */
 
+import { installationIdentityFilter } from './agentInstallationIdentity';
+
 export type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
 
 export type OwnershipCheck =
@@ -125,7 +127,9 @@ export const identityHoldsRuntimeToken = async (agentName: string, instanceId: s
     $or: [{ 'agentRuntimeTokens.0': { $exists: true } }, { apiTokenHash: { $type: 'string' } }],
   });
   if (botHolds) return true;
-  const sibling = await AgentInstallation.findOne({ agentName, instanceId, 'runtimeTokens.0': { $exists: true } })
+  const sibling = await AgentInstallation.findOne({
+    ...installationIdentityFilter(agentName, instanceId), 'runtimeTokens.0': { $exists: true },
+  })
     .collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   return Boolean(sibling);
 };
