@@ -1630,6 +1630,9 @@ const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
 
+// F56: since this process started. AgentRun.emptyCompletion is the durable count.
+let emptyCompletionCount = 0;
+
 /**
  * F56 and F234: a person's own words addressed this turn, so someone is waiting
  * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
@@ -3008,6 +3011,16 @@ export async function runAgent(
           + 'its extra call returned nothing.';
       }
 
+      // F56: an empty completion is not a NO_REPLY. Nobody has ruled how a
+      // wake nobody is waiting on should read it, so it stays silent and is
+      // counted until there is a measured case.
+      if (!textOut && !postedViaTool && run.status === 'running') {
+        run.emptyCompletion = true;
+        emptyCompletionCount += 1;
+        console.warn(`[native-runtime] empty completion #${emptyCompletionCount} since start:`
+          + ` ${agentName} trigger=${String(trigger.type)} rounds=${run.turns.length} personAsked=${personAsked}`);
+      }
+
       run.status = run.status === 'running' ? 'succeeded' : run.status;
       break;
     }
@@ -3017,13 +3030,16 @@ export async function runAgent(
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
   }
 
-  // F56: the run cap refused the only reply a person was waiting on. That's a
-  // decline for a wake nobody is waiting on, and silence for this person.
-  if (hostedNative && personAsked && dispatchCtx.floorHeld && run.status === 'succeeded'
+  // F56: the run cap refused the only reply a person was waiting on, or the
+  // model ended on an empty completion. For a wake nobody is waiting on those
+  // are declines; for this person they are silence.
+  if (hostedNative && personAsked && (dispatchCtx.floorHeld || run.emptyCompletion) && run.status === 'succeeded'
     && !postedViaTool && !finalMessage) {
     run.status = 'failed';
     run.errorKind = 'tool_error';
-    run.errorMessage = 'The reply was refused: the agent already held the floor in this pod.';
+    run.errorMessage = dispatchCtx.floorHeld
+      ? 'The reply was refused: the agent already held the floor in this pod.'
+      : 'The model ended the turn on an empty completion.';
   }
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
@@ -3033,8 +3049,11 @@ export async function runAgent(
   // never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
+    // A native agent's line carries the provider's reason, so a tainted turn
+    // can't post it in a bridged pod. A hosted line is our own fixed text, and
+    // noOutboundRelay keeps it in Commonly (F56).
     if (wasDirectlyAddressed(trigger)
-      && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
+      && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
