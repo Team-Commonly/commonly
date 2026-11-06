@@ -358,6 +358,60 @@ const nextSteps = (starts) => ({
 const ADD = { id: 'add-first-task', label: 'Add to board', action: 'add-first-task', title: 'Fix login', sourceRef: 'https://github.com/acme/widget/issues/10' };
 const BRING_OWN = { id: 'bring-your-own', label: 'Bring your own', href: BYO_HREF };
 
+describe('V2Thread — the welcome records that it rendered (TASK-787)', () => {
+  const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+    && body?.step === 'welcome-shown');
+
+  beforeEach(() => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+  });
+
+  test('the first render pings once, with the fixed step and nothing from the pod', async () => {
+    renderThread([welcome]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+    expect(pings()[0][1]).toEqual({ step: 'welcome-shown' });
+  });
+
+  test('a later message and a remount in the same load do not ping again', async () => {
+    const sendSpy = renderThread([welcome]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: POD_START }));
+    await waitFor(() => expect(sendSpy).toHaveBeenCalled());
+    cleanup();
+    renderThread([welcome]);
+    expect(pings()).toHaveLength(1);
+  });
+
+  test('a welcome only someone else owns does not count: an invited person never had it', () => {
+    renderThread([welcome], jest.fn(), { pod: { ...OWN_POD, createdBy: 'someone-else' } });
+    expect(startsGroup()).toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+
+  test('an own pod with no welcome does not ping', () => {
+    renderThread([message('m1', 'u1', 'maya', 'hello', 1)]);
+    expect(pings()).toHaveLength(0);
+  });
+
+  test("starts that aren't the welcome's do not count", () => {
+    renderThread([message('m1', 'scout-1', 'scout', 'Add this?', 1, {
+      payload: { kind: 'starts', starts: [{ id: 'start-pod', label: POD_START }] },
+    })]);
+    expect(startsGroup()).toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+
+  test('a welcome with no start left to show renders no offer and does not ping', () => {
+    renderThread([
+      { ...welcome, payload: { kind: 'starts', starts: [{ id: 'connect-agent', label: CONNECT }] } },
+      message('mine', 'u1', 'maya', CONNECT, 4),
+    ]);
+    expect(screen.queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+});
+
 describe("V2Thread — a new pod's first task", () => {
   const axios = jest.requireMock('axios').default;
   beforeEach(() => {

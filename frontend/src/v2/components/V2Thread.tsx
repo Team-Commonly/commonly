@@ -199,6 +199,10 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
   );
 };
 
+// Scout's welcome is the message offering one of these. Older welcomes carry no
+// ask start, so the connect start identifies them too.
+const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
+
 interface V2ThreadProps {
   detail: UseV2PodDetailResult;
   podsState?: UseV2PodsResult;
@@ -495,16 +499,19 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
   // Only rows that render with their starts count: a flat message or a thread
   // root. A reply folded into a thread card renders without starts.
-  const byoOfferShown = useMemo(() => threadView.some((item) => {
+  const renderedStarts = useMemo(() => threadView.flatMap((item) => {
     // A folded claim run carries no starts, so only a flat message or a root can offer one.
-    if (item.kind === 'claims') return false;
+    if (item.kind === 'claims') return [];
     const id = item.kind === 'message' ? String(item.message.id) : item.rootId;
-    return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
+    return startsByMessageId.get(id) || [];
   }), [threadView, startsByMessageId]);
+  const byoOfferShown = renderedStarts.some((start) => start.id === 'open-byo');
+  const welcomeShown = viewerOwnsPod && renderedStarts.some(isWelcomeStart);
   useEffect(() => {
-    // Write-once onboarding mark (User.onboarding.byoOfferShownAt).
+    // Write-once onboarding marks (User.onboarding.byoOfferShownAt, .welcomeShownAt).
     if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
-  }, [byoOfferShown, api, viewerId]);
+    if (welcomeShown && viewerId) recordByoStepOnce(api, 'welcome-shown', viewerId);
+  }, [byoOfferShown, welcomeShown, api, viewerId]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -1330,12 +1337,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [agents]);
   // Staging walk 2026-11-02: until the pod's creator sends anything after
   // Scout's welcome, the composer names the agent who just spoke, with an
-  // example, instead of the pod. Older welcomes carry no ask start, so the
-  // connect start identifies them too.
+  // example, instead of the pod.
   const welcomeAgentName = useMemo(() => {
     if (!viewerOwnsPod || !viewerId) return null;
     const index = messages.findIndex((message) => message.payload?.kind === 'starts'
-      && message.payload.starts?.some((start) => start.id === ASK_START_ID || start.id === 'connect-agent'));
+      && message.payload.starts?.some(isWelcomeStart));
     if (index < 0 || messages.slice(index + 1).some((later) => later.user_id === viewerId)) return null;
     const raw = messages[index].user?.username || '';
     return agentDisplayNames.get(raw) || agentDisplayNames.get(raw.toLowerCase()) || raw || null;

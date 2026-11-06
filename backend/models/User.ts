@@ -247,6 +247,8 @@ export interface IUser extends Document {
     inviteCardDismissedAt?: Date;
     /** First Bring your own start mounted in a thread. */
     byoOfferShownAt?: Date;
+    /** First render of Scout's welcome, with a start open, in a pod they created. */
+    welcomeShownAt?: Date;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -514,6 +516,7 @@ const userSchema = new Schema<IUser>({
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
+    welcomeShownAt: { type: Date },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },

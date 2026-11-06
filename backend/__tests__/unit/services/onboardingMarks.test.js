@@ -342,7 +342,7 @@ describe('markByoDaemonRegistered (TASK-661)', () => {
 });
 
 describe('markSurface', () => {
-  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
+  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
     markSurface('u1', mark);
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
     const [filter, update] = mockUpdateOne.mock.calls[0];
@@ -351,7 +351,7 @@ describe('markSurface', () => {
     expect(update.$set[`onboarding.${mark}`]).toBeInstanceOf(Date);
   });
 
-  test('refuses any field outside the three surface marks, and no person means no write', () => {
+  test('refuses any field outside the surface marks, and no person means no write', () => {
     markSurface('u1', 'podOpenedAt');
     markSurface('u1', 'isAdmin');
     markSurface('', 'inviteCardShownAt');

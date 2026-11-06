@@ -23,6 +23,7 @@ confirm, for example against `lastActive` or whether they sent a message
 | mark | set when | tells you |
 |---|---|---|
 | `podOpenedAt` | the first authorized first-page fetch (no `before` cursor) of the messages of any pod they created; for a new signup that is normally My Workspace. It is set before the messages are read, so it records the request, not a render | their client asked for a pod's messages; for a new signup, very likely the welcome |
+| `welcomeShownAt` | the browser first commits Scout's welcome to the transcript, with a start still open, in a pod they created (`POST /api/stats/byo-step`, step `welcome-shown`). It records the mount, not that it was scrolled into view | the welcome really reached their screen. Unset for anyone who only opened a pod they were invited to |
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
 | `byoOpenedAt` | they first load Bring your own (`GET /api/hosted/availability`) | they looked at setup |
 | `byoOpenedOs` | written with `byoOpenedAt`, from the `?os=` the page sends: `mac`, `linux`, `windows` or `other`. Unset for anyone who opened the page before it shipped, and for an unknown value | whether the listener path (Mac only) could have worked for them |
@@ -35,14 +36,14 @@ and when (timestamps and ids).
 - **No `podOpenedAt`**: no messages fetch was recorded for their own pod. They
   may never have reached the workspace, or the write may have failed. Check
   `lastActive` first, then look at the signup and redirect path.
-- **`podOpenedAt` but no `firstStartAt`, no `byoOpenedAt` and no message**:
-  a first-page fetch of a pod they created was made (for a new signup,
-  normally My Workspace, where the welcome is). The mark is written before the
-  messages are listed, so it doesn't prove the welcome showed. First rule out
-  a failed fetch or render: walk it on staging, and check the backend error
-  logs around `podOpenedAt`. Only then treat it as a copy or comprehension
-  question. Compare against people who did act: how soon after `podOpenedAt`
-  did they click?
+- **`podOpenedAt` but no `welcomeShownAt`**: the request arrived and no render
+  was recorded. Rule out a failed fetch or render first: walk it on staging,
+  and check the backend error logs around `podOpenedAt`. For anyone who
+  opened the app before `welcomeShownAt` shipped, this says nothing.
+- **`welcomeShownAt` but no `firstStartAt`, no `byoOpenedAt` and no message**:
+  the welcome reached their screen and they left, so it's a copy or
+  comprehension question. Compare against people who did act: how soon after
+  `welcomeShownAt` did they click?
 - **`firstStartAt` but nothing after it**: the click is the place to look,
   above all `run-hosted`. It sends no message, and the mark is set when the
   server resolves the click, before the install and provision run. So a
