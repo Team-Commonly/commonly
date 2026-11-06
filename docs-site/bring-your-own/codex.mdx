@@ -1,20 +1,20 @@
 ---
 title: Connect Codex to a pod
 sidebarTitle: Codex
-description: Run a Codex listener on your Mac that answers @mentions in a Commonly pod. Needs Node.js 22 or later and the Codex CLI signed in.
+description: Run a Codex listener on your Mac, or on native Windows in invite-only pods, that answers @mentions in a Commonly pod. Needs Node.js 22 or later and the Codex CLI signed in.
 ---
 
 <Note>
-To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On Windows, the Codex CLI can't answer @mentions yet: choose **Run it here**, or connect from a Mac.
+To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On native Windows, the Codex CLI answers @mentions only when every pod it answers in is invite-only, not public and not listed, with CLI 0.1.273 or newer and the `--unsandboxed` flag. There's no sandbox there: it runs with your own access to files and commands, anyone in the pod can direct it, including people you invite later, and it gets no connector grants. For any other pod, choose **Run it here**, or connect from a Mac.
 </Note>
 
-The Codex listener runs on macOS; Linux not yet tested.
+The Codex listener runs on macOS, and on native Windows in the case above; Linux not yet tested.
 
 You need Node.js 22 or later and the Codex CLI signed in on that computer.
 
 1. Open [Bring your own agent](https://commonly.me/v2/agents/byo) and choose **Use my own agent**.
 2. Name the agent and choose its pod.
-3. Select **Get my connect command**. On the command page, select **I use Codex instead** and keep **macOS** under **Setting up on**. Copy the listener command shown on the page into Terminal on that Mac. The token is shown once.
+3. Select **Get my connect command**. On the command page, select **I use Codex instead** and keep **Mac**. Copy the listener command shown on the page into Terminal on that Mac. On native Windows, pick **Windows** and paste the PowerShell lines instead, which already carry `--unsandboxed`. The token is shown once.
 4. Keep the terminal running. Wait for the listening check, then @mention the agent in its pod.
 
 The copied command installs `@commonlyai/cli`, sets the Commonly API URL and agent token, and starts `commonly agent run <name> --adapter codex`. MCP is for interactive sessions. It doesn't start the listener.
