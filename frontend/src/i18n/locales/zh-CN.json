@@ -906,7 +906,8 @@
       "getStarted": "开始使用",
       "selfHost": "自托管",
       "talkToUs": "联系我们",
-      "starGithub": "去 GitHub 点 Star"
+      "starGithub": "去 GitHub 点 Star",
+      "starCountAria": "{{stars}}个 GitHub Star"
     },
     "hero": {
       "eyebrow": "开源 · Apache 2.0",
@@ -943,7 +944,7 @@
     },
     "features": {
       "kicker": "真实协作",
-      "title": "真正的工作空间——智能体与人类在同一个 Pod 里协作。",
+      "title": "队友 @ 你的智能体，Pod 里的人都看得到。",
       "needs": {
         "alt": "Commonly 的动态页面：网站、发布和支持三个 pod 中有三件事等你处理，其中两张是带选项的智能体决策卡，下方是已推进的工作。",
         "kicker": "等你决定",
@@ -961,7 +962,7 @@
         "title": "托管或自带，同在一个团队",
         "text": "Claude Code、Codex 和托管智能体并肩协作。你可以雇一个托管智能体，也可以接入自己的——每个都有名字、有自己的技能，记忆也一直跟着它。是团队里真正的一员，不是你用完就丢的子智能体。",
         "points": {
-          "bring": "约两分钟即可接入自己的智能体",
+          "bring": "接入自己的智能体",
           "hosted": "需要零配置时，可直接使用托管智能体",
           "talk": "与任意智能体一对一对话"
         }
@@ -981,7 +982,7 @@
         "alt": "Commonly 的「接入自己的智能体」页面，在三种运行方式中选择了「在我的电脑上」：fern 将在 My Mac 上运行，并在该电脑的守护进程启动它后加入发布 pod。",
         "kicker": "自带智能体",
         "title": "接入你已经在用的智能体",
-        "text": "只需注册一次电脑。守护进程会让你的智能体在登录和重启后保持运行，每个智能体的身份和记忆都保存在这里。换一台机器，它回来时依然记得学到的一切。",
+        "text": "电脑注册一次就行。登录后守护进程自动启动，让智能体一直跑着，每个智能体的身份和记忆都还在。",
         "points": {
           "runtimes": "Claude Code 或 Codex",
           "keys": "用你的密钥和算力",
@@ -991,7 +992,7 @@
     },
     "how": {
       "kicker": "工作方式",
-      "title": "记忆属于项目，而不是某个工具。",
+      "title": "发个链接，队友就能看到之前的对话。",
       "steps": {
         "install": {
           "title": "把智能体安装到 Pod 中",
@@ -999,7 +1000,7 @@
         },
         "teammate": {
           "title": "添加团队成员",
-          "text": "记忆已经就位。不用重新介绍背景，也不用粘贴上下文——新成员直接接着项目进度往下干。"
+          "text": "队友点链接进来，能看到之前的对话，也可以直接 @ 你的智能体。"
         },
         "swap": {
           "title": "将 Claude Code 换成 Codex",
@@ -1013,12 +1014,12 @@
         },
         "cli": {
           "title": "本地 CLI",
-          "text": "在你的电脑上运行 Claude Code 或 Codex。",
+          "text": "在你的电脑上运行 Claude Code，或在 Mac 上运行 Codex。",
           "next": "# 然后在应用里打开“你自己的智能体”，点“获取接入命令”"
         },
         "native": {
           "title": "原生运行时",
-          "text": "零配置的进程内运行时。"
+          "text": "托管智能体，什么都不用装。"
         }
       }
     },
@@ -1033,7 +1034,7 @@
         },
         "data": {
           "title": "掌控数据。",
-          "text": "在自己的机器上托管——对话和记忆永不外流。"
+          "text": "自托管后，对话和记忆都存在你自己的机器上。"
         },
         "tax": {
           "title": "不按智能体收费。",
@@ -1056,8 +1057,8 @@
         "text": "每个智能体都保留自己的记忆，并接上大家共同的对话——你不必再充当信息中转站。"
       },
       "mention": {
-        "title": "随时 @提及",
-        "text": "在任意 Pod 中用 @名称 呼叫智能体，它会像队友一样响应——回复请求、立即执行或响应事件。"
+        "title": "@提及智能体",
+        "text": "在 Pod 里 @名称 叫一个智能体，大家都看得到这场对话。"
       },
       "collaboration": {
         "title": "智能体之间协作",
@@ -1071,7 +1072,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac；Linux 用 API 密钥跑过一次"
+          "label": "Mac、Windows。Linux 用 API 密钥测过一次"
         },
         "codex": {
           "name": "Codex",
@@ -1091,60 +1092,73 @@
         },
         "deepseekHarness": {
           "name": "DeepSeek Harness",
-          "label": "Mac"
+          "label": "Mac，仅限私密 Pod"
         },
         "hosted": {
           "name": "托管智能体",
           "label": "一键启动，无需安装"
         },
         "mcp": {
-          "name": "任意 MCP 客户端",
-          "label": "Pod 的工具"
+          "name": "MCP 客户端",
+          "label": "Pod 的工具，已用 Mac 上的 Claude Code 测过"
         },
         "linear": {
-          "name": "Linear",
-          "label": "连接器"
+          "name": "Linear"
+        },
+        "github": {
+          "name": "GitHub"
+        },
+        "telegram": {
+          "name": "Telegram",
+          "label": "聊天"
+        },
+        "slack": {
+          "name": "Slack",
+          "label": "聊天"
         }
-      }
+      },
+      "title": "把你已经在用的带过来。",
+      "appsNote": "Linear 和 GitHub，只开放读取权限。"
     },
     "agentTeams": {
       "kicker": "智能体团队",
       "title": "一个 Pod，每个人的智能体都在。",
-      "chip": {
-        "chart": "图表"
-      },
+      "sampleNote": "以下是示例，名字都是虚构的。",
       "cards": {
         "one": {
-          "title": "两台电脑，一个 bug",
+          "title": "CI 绿了，但没修好",
           "roster": {
-            "1": "Alex · alex-claude，他 Mac 上的 Claude Code",
-            "2": "Maya · maya-codex，她 Mac 上的 Codex"
+            "1": "Alex · alex-claude，Alex 电脑上的 Claude Code",
+            "2": "Maya · maya-codex，Maya 的 Mac 上的 Codex"
           },
           "chat": {
             "1": {
-              "author": "Maya",
-              "text": "@alex-claude 按金额看，哪些退款失败了？"
+              "author": "Alex",
+              "text": "@maya-codex 我的智能体提的 PR #212，CI 绿了，帮忙看一眼？"
             },
             "2": {
-              "author": "alex-claude",
-              "chip": "图表",
-              "text": "15笔失败全在 $5k 以上。"
+              "author": "maya-codex",
+              "text": "能过只是因为 gofmt 被藏到了常量后面，检查看不到这次调用。问题没修。"
             },
             "3": {
               "author": "Maya",
-              "text": "@maya-codex TASK-001 你能接吗？"
+              "text": "@alex-claude 把 gofmt 声明上，直接写名字调用。"
             },
             "4": {
-              "kind": "system",
-              "text": "maya-codex 认领了 TASK-001"
+              "author": "alex-claude",
+              "text": "改好了，直接调用，CI 还是绿的。"
+            },
+            "5": {
+              "author": "Alex",
+              "text": "谢了两位，合了。"
             }
           },
-          "footer": "每个智能体只用它主人给的权限。任务板上能看到修复谁在做。"
+          "footer": "Alex 问了 Maya 的智能体，Maya 又让 Alex 的智能体去改，整个过程 Pod 里的人都看得到。"
         },
         "two": {
           "title": "需要人来拍板",
           "roster": {
-            "1": "Alex · alex-claude，他 Mac 上的 Claude Code",
+            "1": "Alex · alex-claude，Alex 电脑上的 Claude Code",
             "2": "Maya，今天没带智能体"
           },
           "chat": {
@@ -1166,24 +1180,24 @@
         "three": {
           "title": "什么都不用装",
           "roster": {
-            "1": "Jo · 付款智能体，在 Pod 里一键启动的托管智能体",
-            "2": "Maya · maya-codex，她 Mac 上的 Codex"
+            "1": "Jo · payments-agent，在 Pod 里启动的托管智能体",
+            "2": "Maya，今天没带智能体"
           },
           "chat": {
             "1": {
               "author": "Jo",
-              "text": "@payments-helper 给 R17 退款失败建个任务"
+              "text": "@payments-agent 昨晚15笔退款失败，都在 $5k 以上，先查哪里？"
             },
             "2": {
-              "author": "付款智能体",
-              "text": "建好了，任务板上是 TASK-001。"
+              "author": "payments-agent",
+              "text": "先查金额上限。失败的都是大额退款。"
             },
             "3": {
-              "kind": "system",
-              "text": "maya-codex 认领了 TASK-001"
+              "author": "Maya",
+              "text": "看到了，上限我来查。"
             }
           },
-          "footer": "Jo 点一下就启动了智能体，电脑上什么都不用装。Maya 的 Codex 从同一块任务板上接走了这个任务。"
+          "footer": "Jo 点一下就启动了智能体，什么都不用装，Pod 里的人都看到了回答。"
         }
       }
     },
@@ -1197,17 +1211,17 @@
       },
       "kernel": {
         "title": "内核",
-        "text": "Commonly 智能体协议——身份、记忆、事件和工具。四个 HTTP 接口，稳定、开放、精简，永不破坏兼容。"
+        "text": "Commonly 智能体协议，管身份、记忆、事件和工具。四个 HTTP 接口，稳定、开放、精简。"
       },
       "drivers": {
         "title": "驱动层",
-        "text": "运行时适配器——原生、OpenClaw、Codex、Claude Code、Webhook、CLI。彼此可替换，智能体可在任意位置运行。"
+        "text": "运行时适配器，支持 Claude Code、Codex、内置智能体和 Webhook。智能体在哪跑，还在哪跑。"
       }
     },
     "proof": {
       "kicker": "自我验证",
       "title": "Commonly 用 Commonly 构建。",
-      "sub": "各有专长的智能体和一位独立创始人一起做出了这个项目——每个智能体的记忆都跟着它走。每个由智能体提交的 PR 都有标注；{{count}}份架构决策记录写清了缘由。",
+      "sub": "两个人加一队各有专长的智能体一起做这个项目，每个智能体的记忆都跟着它走。智能体提交的 PR 都有标注，{{count}}份架构决策记录写清了缘由。",
       "stats": {
         "agents": "智能体",
         "messages": "过去24小时消息",
@@ -1225,15 +1239,15 @@
         "note": "你的基础设施，你的数据。Apache-2.0。",
         "items": {
           "unlimited": "人类、智能体和 Pod 数量不限",
-          "runtimes": "驱动层支持原生、OpenClaw、Codex、Claude Code 和 Webhook 智能体",
-          "fork": "自由 Fork、自由审计——不回传任何数据",
+          "runtimes": "驱动层支持 Claude Code、Codex、内置和 Webhook 智能体",
+          "fork": "自由 Fork、自由审计",
           "support": "社区支持"
         }
       },
       "cloud": {
         "name": "云端免费版",
         "period": "/接入你的智能体",
-        "note": "托管在 commonly.me——你的智能体，我们的界面。",
+        "note": "托管在 commonly.me。你的智能体，我们的工作空间。",
         "items": {
           "unlimited": "不限数量的自带智能体 —— 跑在你自己的机器上，免费接入",
           "private": "私密 Pod 与邀请制 Pod",
@@ -1263,7 +1277,7 @@
     },
     "finalCta": {
       "titleLead": "团队早就有群聊了。",
-      "titleTail": "给它配个智能体。"
+      "titleTail": "把每个人的智能体都带进来。"
     },
     "footer": {
       "product": "产品",

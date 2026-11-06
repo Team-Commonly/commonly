@@ -4541,9 +4541,9 @@ describe('TASK-167 row B — trusted, wedge and In action onto Signal', () => {
     expect(landingTsx).toContain('v2-landing__section v2-landing__section--features');
     const phone = mediaAt(landing, '@media (max-width: 680px) {');
     expect(phone).toContain('.v2-landing__section { padding-top: 0; padding-bottom: 64px; }');
-    // 24 here plus the wedge's 24 below is the board's 48 at 390, and the
-    // features rule has to sit after the section rule to win on source order.
-    expect(phone.indexOf('.v2-landing__section--features { padding-top: 24px; }'))
+    // 24 here plus the wedge's 24 is the 48 under the wedge at 390. Agent teams
+    // is the first section there, and its rule sits after the section rule.
+    expect(phone.indexOf('#agent-teams { padding-top: 24px; }'))
       .toBeGreaterThan(phone.indexOf('.v2-landing__section { padding-top: 0;'));
     expect(phone).toContain('.v2-landing__section-head { margin-bottom: 32px; }');
     const h2 = selectorRuleBody(landing, '.v2-landing__h2 {');
@@ -4785,31 +4785,52 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
 
   test('an agent-team card is one bordered box, with its footer pinned to the bottom', () => {
     expect(topLevelRuleBody(landing, '.v2-landing__team-cards')).toContain(
-      'grid-template-columns: repeat(3, minmax(0, 1fr))',
+      'grid-template-columns: repeat(2, minmax(0, 1fr))',
     );
     const card = topLevelRuleBody(landing, '.v2-landing__team-card');
     expect(card).toContain('border: 1px solid var(--v2-border)');
     expect(card).toContain('border-radius: var(--v2-radius)');
     expect(card).toContain('flex-direction: column');
     expect(topLevelRuleBody(landing, '.v2-landing__team-footer')).toContain('margin: auto 0 0');
-    // Three cards in one row, and one column once the tablet switch applies.
+    // Two cards in a row under the feature, and one column once the tablet switch applies.
     expect(mediaAt(landing, '@media (max-width: 900px)')).toContain(
       '.v2-landing__team-cards { grid-template-columns: minmax(0, 1fr); }',
     );
   });
 
-  test('the works-with chips wrap inside their container instead of running past it', () => {
-    // CodeRabbit (PR #2956): the chip list is the element that has to wrap. Removing
-    // flex-wrap would let the set run past a narrow phone container without a failing test.
-    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('flex-wrap: wrap');
+  test('the works-with tiles reflow inside their container instead of running past it', () => {
+    // A fixed four-column grid would squeeze the tiles past a narrow phone, so the
+    // list must step down to two columns.
+    expect(topLevelRuleBody(landing, '.v2-landing__works-list')).toContain('repeat(4, minmax(0, 1fr))');
+    expect(landing).toMatch(
+      /@media \(max-width: 900px\) \{\n {2}\.v2-landing__works-list \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/,
+    );
   });
 
-  test('the star count is absent until GitHub answers and never takes the link name', () => {
-    expect(landingTsx).toContain('{starLabel && <span className="v2-landing__star-count"');
-    expect(landingTsx).toContain(
-      "href={REPO} target=\"_blank\" rel=\"noreferrer\">{t('landing.actions.starGithub')}</a>",
-    );
-    expect(topLevelRuleBody(landing, '.v2-landing__star-count')).toContain('font-variant-numeric: tabular-nums');
+  test('the star count is absent until GitHub answers and takes the colour of what holds it', () => {
+    expect(landingTsx).toContain('if (!label) return null;');
+    expect(landingTsx.match(/<StarCount label=\{starLabel\} \/>/g)).toHaveLength(4);
+    const count = topLevelRuleBody(landing, '.v2-landing__star-count');
+    expect(count).toContain('font-variant-numeric: tabular-nums');
+    expect(count).toContain('color: inherit');
+  });
+
+  test('card one is the full-row feature, chat on the right, and the phone stays one stack', () => {
+    expect(landingTsx).toContain("id === 'one' ? ' v2-landing__team-card--feature' : ''");
+    expect(topLevelRuleBody(landing, '.v2-landing__team-cards')).toContain('repeat(2, minmax(0, 1fr))');
+    expect(landing).toContain('.v2-landing__team-card--feature { grid-column: 1 / -1; }');
+    const wide = blockContaining(landing, '@media (min-width: 901px)', 'grid-template-areas');
+    expect(wide).toMatch(/"title chat"\s+"roster chat"\s+"footer chat"/);
+    expect(wide).toContain('grid-template-columns: minmax(0, 5fr) minmax(0, 7fr)');
+    // The grid is desktop-only: outside that block the card keeps its column.
+    expect(landing.replace(wide, '')).not.toContain('grid-template-areas');
+  });
+
+  test('the sample line keeps its reserved height and carries its words in both locales', () => {
+    expect(topLevelRuleBody(landing, '.v2-landing__team-sample')).toContain('min-height: 20px');
+    for (const locale of ['en.json', 'zh-CN.json']) {
+      expect(JSON.parse(read(`../../i18n/locales/${locale}`)).landing.agentTeams.sampleNote).not.toBe('');
+    }
   });
 
   test('the team-card title keeps its weight, leading and tracking', () => {
@@ -4826,7 +4847,7 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
       expect(json.landing.useCases).toBeUndefined();
       expect(Object.keys(json.landing.agentTeams.cards)).toEqual(['one', 'two', 'three']);
       expect(Object.keys(json.landing.worksWith.items)).toEqual([
-        'claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp', 'linear',
+        'claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp', 'linear', 'github', 'telegram', 'slack',
       ]);
     }
   });
@@ -5052,7 +5073,7 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
 
     const en = JSON.parse(read('../../i18n/locales/en.json'));
     expect(`${en.landing.finalCta.titleLead} ${en.landing.finalCta.titleTail}`)
-      .toBe('Your team already has a chat. Give it an agent.');
+      .toBe("Your team already has a chat. Bring everyone's agents.");
     const zh = JSON.parse(read('../../i18n/locales/zh-CN.json'));
     expect(Object.keys(zh.landing.finalCta)).toEqual(['titleLead', 'titleTail']);
   });
@@ -6480,5 +6501,24 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-run-trace h1')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-run-trace h2')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
+  });
+});
+
+describe('the landing stylesheet parses as written', () => {
+  // The build keeps a stray `}` with only a warning, and the browser then
+  // reads it into the next selector and loses that whole rule.
+  test('every brace closes one that was opened', () => {
+    const css = fs
+      .readFileSync(path.join(__dirname, '../landing/v2-landing.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/"[^"\n]*"|'[^'\n]*'/g, '');
+    let depth = 0;
+    let lowest = 0;
+    for (const char of css) {
+      if (char === '{') depth += 1;
+      if (char === '}') depth -= 1;
+      lowest = Math.min(lowest, depth);
+    }
+    expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
 });

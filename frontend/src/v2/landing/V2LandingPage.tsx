@@ -41,16 +41,88 @@ const ADR_COUNT = 33;
 // count at build time. The TASK-167 row D test counts docs/adr/ADR-*.md and
 // compares it with the constant above, so the PR that adds an ADR is the one
 // that fails.
-/** Works-with entries that were walked end to end (facts sheet rows 6, 9, 13). Logos are name chips: the repo has no agent marks. */
-const WORKS_WITH_AGENTS = ['claudeCode', 'codex', 'opencode', 'qwenCode', 'pi', 'deepseekHarness', 'hosted', 'mcp'] as const;
-const WORKS_WITH_APPS = ['linear'] as const;
+/** Works-with entries that were walked end to end (docs/agents/byo-support-matrix.md, docs/design/landing-works-with-provenance.md). */
+const WORKS_WITH_AGENTS = ['claudeCode', 'codex', 'opencode', 'qwenCode', 'deepseekHarness', 'hosted', 'mcp'] as const;
+const WORKS_WITH_APPS = ['linear', 'github', 'telegram', 'slack'] as const;
+type WorksWithKey = (typeof WORKS_WITH_AGENTS)[number] | (typeof WORKS_WITH_APPS)[number];
+// One line per logo, so any one can be removed. Hosted agent draws our own mark.
+// `mono` is a one-colour file drawn in ink by CSS; `tone` is a two-tone file drawn in
+// ink and ground, so its inner shape survives; a pair is the vendor's own file for
+// each ground. Source, date, licence and the vendor's rule for every mark:
+// docs/design/landing-works-with-provenance.md (worksWithLogos.test.ts checks both).
+type WorksLogo = { mono: string } | { tone: string } | { onLight: string; onDark: string };
+const WORKS_WITH_LOGOS: Partial<Record<WorksWithKey, WorksLogo>> = {
+  claudeCode: { mono: '/logos/works-with/claude-code-mark.svg' },
+  codex: { onLight: '/logos/works-with/openai-blossom-black.svg', onDark: '/logos/works-with/openai-blossom-white.svg' },
+  opencode: { onLight: '/logos/works-with/opencode-logo-light-square.svg', onDark: '/logos/works-with/opencode-logo-dark-square.svg' },
+  qwenCode: { mono: '/logos/works-with/qwen-code-logo.svg' },
+  deepseekHarness: { onLight: '/logos/works-with/deepseek-harness-favicon.svg', onDark: '/logos/works-with/deepseek-harness-favicon-dark.svg' },
+  mcp: { onLight: '/logos/works-with/mcp-mark-black.svg', onDark: '/logos/works-with/mcp-mark-white.svg' },
+  linear: { onLight: '/logos/works-with/linear-logo-dark.svg', onDark: '/logos/works-with/linear-logo-light.svg' },
+  github: { onLight: '/logos/works-with/github-invertocat-black.svg', onDark: '/logos/works-with/github-invertocat-white.svg' },
+  telegram: { tone: '/logos/works-with/telegram-t-logo.svg' },
+  slack: { mono: '/logos/works-with/slack-logo.svg' },
+};
 const TEAM_CARDS = ['one', 'two', 'three'] as const;
+
+/** Commonly's own mark (design-system/assets/commonly-mark.svg): a hosted agent runs on Commonly. */
+const CommonlyMark: React.FC = () => (
+  <svg className="v2-landing__works-logo" viewBox="0 0 64 64" width={28} height={28} aria-hidden="true">
+    <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" fill="none" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+    <circle cx="25" cy="32" r="2.4" fill="currentColor" />
+    <circle cx="32" cy="32" r="2.4" fill="currentColor" />
+    <circle cx="39" cy="32" r="2.4" fill="currentColor" />
+  </svg>
+);
+
+const WorksItem: React.FC<{ id: WorksWithKey }> = ({ id }) => {
+  const { t } = useTranslation();
+  const logo = WORKS_WITH_LOGOS[id];
+  const note = t(`landing.worksWith.items.${id}.label`, { defaultValue: '' });
+  return (
+    <li className="v2-landing__works-item">
+      {id === 'hosted' && <CommonlyMark />}
+      {/* The name beside it is the accessible name, so every image is decorative. */}
+      {logo && 'mono' in logo && (
+        <img className="v2-landing__works-logo v2-landing__works-logo--mono" src={logo.mono} alt="" width={28} height={28} loading="lazy" />
+      )}
+      {logo && 'tone' in logo && (
+        <img className="v2-landing__works-logo v2-landing__works-logo--tone" src={logo.tone} alt="" width={28} height={28} loading="lazy" />
+      )}
+      {logo && 'onLight' in logo && (
+        <>
+          <img className="v2-landing__works-logo v2-landing__works-logo--on-light" src={logo.onLight} alt="" width={28} height={28} loading="lazy" />
+          <img className="v2-landing__works-logo v2-landing__works-logo--on-dark" src={logo.onDark} alt="" width={28} height={28} loading="lazy" />
+        </>
+      )}
+      <span className="v2-landing__works-text">
+        <span className="v2-landing__works-name">{t(`landing.worksWith.items.${id}.name`)}</span>
+        {/* Linear and GitHub share the Apps row's one note instead. */}
+        {note && <span className="v2-landing__works-note">{note}</span>}
+      </span>
+    </li>
+  );
+};
+
+/** The repo's live star count. Absent, with its mark, until GitHub answers. */
+const StarCount: React.FC<{ label: string | null }> = ({ label }) => {
+  const { t } = useTranslation();
+  if (!label) return null;
+  const name = t('landing.actions.starCountAria', { stars: label });
+  return (
+    <span className="v2-landing__star-count" data-testid="star-count" role="img" aria-label={name} title={name}>
+      <svg data-testid="star-mark" viewBox="0 0 16 16" width={14} height={14} fill="currentColor" aria-hidden="true">
+        <path d="M8 1.2 10.1 5.5l4.7.7-3.4 3.3.8 4.7L8 12l-4.2 2.2.8-4.7L1.2 6.2l4.7-.7L8 1.2Z" />
+      </svg>
+      {label}
+    </span>
+  );
+};
 
 /** Locale entries are keyed by position ("1", "2", …), so the copy stays flat strings. */
 type TeamChatLine = {
   kind?: 'system';
   author?: string;
-  chip?: string;
   text: string;
   options?: Record<string, string>;
 };
@@ -65,7 +137,7 @@ const TeamCard = ({ id }: { id: (typeof TEAM_CARDS)[number] }) => {
   const roster = t(`${base}.roster`, { returnObjects: true }) as Record<string, string>;
   const chat = t(`${base}.chat`, { returnObjects: true }) as Record<string, TeamChatLine>;
   return (
-    <article className="v2-landing__team-card">
+    <article className={`v2-landing__team-card${id === 'one' ? ' v2-landing__team-card--feature' : ''}`}>
       <h3 className="v2-landing__team-title">{t(`${base}.title`)}</h3>
       <ul className="v2-landing__team-roster">
         {Object.entries(roster).map(([key, line]) => <li key={key}>{line}</li>)}
@@ -76,7 +148,6 @@ const TeamCard = ({ id }: { id: (typeof TEAM_CARDS)[number] }) => {
         ) : (
           <p key={key} className="v2-landing__team-msg">
             {line.author && <span className="v2-landing__team-author">{line.author}</span>}
-            {line.chip && <span className="v2-landing__team-chip">{line.chip}</span>}
             <span className="v2-landing__team-text">{line.text}</span>
             {line.options && (
               <span className="v2-landing__team-options">
@@ -460,14 +531,14 @@ const V2LandingPage: React.FC = () => {
           <span className="v2-landing__brand-name">{t('common.brandName')}</span>
         </div>
         <nav className="v2-landing__nav" aria-label={t('landing.nav.primary')}>
-          <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#agent-teams">{t('landing.nav.agentTeams')}</a>
+          <a className="v2-landing__navlink" href="#features">{t('landing.nav.features')}</a>
           <a className="v2-landing__navlink" href="#pricing">{t('landing.nav.pricing')}</a>
           {/* The star ask sits in the nav and the open-source section, not only the
               final CTA: most repo visitors leave without starring. */}
           <a className="v2-landing__navlink" href={REPO} target="_blank" rel="noreferrer">
             {t('landing.actions.starGithub')}
-            {starLabel && <span className="v2-landing__star-count" data-testid="star-count">{` · ${starLabel}`}</span>}
+            <StarCount label={starLabel} />
           </a>
           {!isAuthenticated && (
             <Link className="v2-landing__navlink" to="/v2/login">{t('landing.nav.signIn')}</Link>
@@ -525,6 +596,8 @@ const V2LandingPage: React.FC = () => {
                   rel="noreferrer"
                 >
                   {t('landing.actions.selfHost')}
+                  {/* The nav's count is gone at phone width, so this is the proof above the fold there. */}
+                  <StarCount label={starLabel} />
                 </a>
               </div>
 
@@ -645,6 +718,42 @@ const V2LandingPage: React.FC = () => {
             <StaggerWords text={t('landing.wedge.title')} />
           </p>
           <p className="v2-landing__wedge-sub" data-reveal>{t('landing.wedge.copy')}</p>
+        </section>
+
+        {/* Multiplayer leads the page: who is in the pod comes before any feature tour. */}
+        {/* ---- Agent teams: three examples, sample names only ---- */}
+        <section className="v2-landing__section" id="agent-teams">
+          <div className="v2-landing__section-head" data-reveal>
+            <div className="v2-landing__kicker">{t('landing.agentTeams.kicker')}</div>
+            <h2 className="v2-landing__h2">{t('landing.agentTeams.title')}</h2>
+            <p className="v2-landing__team-sample" data-testid="team-sample-note">{t('landing.agentTeams.sampleNote')}</p>
+          </div>
+          <div className="v2-landing__team-cards" data-reveal data-reveal-stagger>
+            {TEAM_CARDS.map((id) => <TeamCard key={id} id={id} />)}
+          </div>
+        </section>
+
+        {/* ---- Works with: only the connectors and agents we have walked ---- */}
+        <section className="v2-landing__section" id="works-with">
+          <div className="v2-landing__section-head" data-reveal>
+            <div className="v2-landing__kicker">{t('landing.worksWith.kicker')}</div>
+            <h2 className="v2-landing__h2">{t('landing.worksWith.title')}</h2>
+          </div>
+          <div className="v2-landing__works" data-reveal>
+            <div className="v2-landing__works-group">
+              <div className="v2-landing__works-label">{t('landing.worksWith.agents')}</div>
+              <ul className="v2-landing__works-list">
+                {WORKS_WITH_AGENTS.map((key) => <WorksItem key={key} id={key} />)}
+              </ul>
+            </div>
+            <div className="v2-landing__works-group">
+              <div className="v2-landing__works-label">{t('landing.worksWith.apps')}</div>
+              <ul className="v2-landing__works-list">
+                {WORKS_WITH_APPS.map((key) => <WorksItem key={key} id={key} />)}
+              </ul>
+              <p className="v2-landing__works-apps-note">{t('landing.worksWith.appsNote')}</p>
+            </div>
+          </div>
         </section>
 
         {/* ---- In action ---- */}
@@ -775,7 +884,7 @@ const V2LandingPage: React.FC = () => {
               <div className="v2-landing__cta-row">
                 <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
                   {t('landing.actions.starGithub')}
-                  {starLabel && <span className="v2-landing__star-count" data-testid="star-count">{` · ${starLabel}`}</span>}
+                  <StarCount label={starLabel} />
                 </a>
               </div>
             </div>
@@ -810,48 +919,6 @@ const V2LandingPage: React.FC = () => {
               <div className="v2-landing__card-title">{t('landing.benefits.collaboration.title')}</div>
               <p className="v2-landing__card-text">{t('landing.benefits.collaboration.text')}</p>
             </div>
-          </div>
-        </section>
-
-        {/* ---- Works with: only the connectors and agents we have walked ---- */}
-        <section className="v2-landing__section" id="works-with">
-          <div className="v2-landing__section-head" data-reveal>
-            <div className="v2-landing__kicker">{t('landing.worksWith.kicker')}</div>
-          </div>
-          <div className="v2-landing__works" data-reveal>
-            <div className="v2-landing__works-group">
-              <div className="v2-landing__works-label">{t('landing.worksWith.agents')}</div>
-              <ul className="v2-landing__works-list">
-                {WORKS_WITH_AGENTS.map((key) => (
-                  <li key={key} className="v2-landing__works-item">
-                    <span className="v2-landing__works-name">{t(`landing.worksWith.items.${key}.name`)}</span>
-                    <span className="v2-landing__works-note">{t(`landing.worksWith.items.${key}.label`)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="v2-landing__works-group">
-              <div className="v2-landing__works-label">{t('landing.worksWith.apps')}</div>
-              <ul className="v2-landing__works-list">
-                {WORKS_WITH_APPS.map((key) => (
-                  <li key={key} className="v2-landing__works-item">
-                    <span className="v2-landing__works-name">{t(`landing.worksWith.items.${key}.name`)}</span>
-                    <span className="v2-landing__works-note">{t(`landing.worksWith.items.${key}.label`)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        {/* ---- Agent teams: three examples, sample names only ---- */}
-        <section className="v2-landing__section" id="agent-teams">
-          <div className="v2-landing__section-head" data-reveal>
-            <div className="v2-landing__kicker">{t('landing.agentTeams.kicker')}</div>
-            <h2 className="v2-landing__h2">{t('landing.agentTeams.title')}</h2>
-          </div>
-          <div className="v2-landing__team-cards" data-reveal data-reveal-stagger>
-            {TEAM_CARDS.map((id) => <TeamCard key={id} id={id} />)}
           </div>
         </section>
 
@@ -995,7 +1062,10 @@ const V2LandingPage: React.FC = () => {
           </h2>
           <div className="v2-landing__cta-row">
             <Link className="v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}</Link>
-            <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">{t('landing.actions.starGithub')}</a>
+            <a className="v2-landing__btn v2-landing__btn--ghost" href={REPO} target="_blank" rel="noreferrer">
+              {t('landing.actions.starGithub')}
+              <StarCount label={starLabel} />
+            </a>
           </div>
         </section>
       </main>

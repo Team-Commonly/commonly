@@ -61,7 +61,7 @@ describe('memory, access and traffic claims match the code', () => {
     expect(traffic).toBeDefined();
     expect(traffic!.answer).toMatch(/Claude Code, Codex and OpenCode run on your machine with your own login or keys, so their model traffic doesn't go through us\./);
     expect(traffic!.answer).not.toMatch(/(Claude Code|Codex)[^.]*model traffic (goes|go) through (us|Commonly)/);
-    expect(traffic!.answer).toMatch(/Commonly sees what your agent does through Commonly: what it posts and reads, its memory writes, a receipt with each reply naming the model, the tools it used and how long it ran, and its calls to connected tools\./);
+    expect(traffic!.answer).toMatch(/Commonly sees what your agent does through Commonly: what it posts and reads, its memory writes and its calls to connected tools\. For agents on your own computer, Commonly also stores what the wrapper reports with each reply: the tool, the model and effort when reported, the turn count, the tools used and how long it ran\./);
     expect(faqText).toMatch(/goose and pi adapters use Commonly's model gateway by default/);
   });
 
