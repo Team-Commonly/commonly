@@ -51,8 +51,8 @@ describe('Self-serve account deletion', () => {
   const opening = async (subject) => {
     await chain();
     return mockPg.query(
-      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, 'data.decidedBy', $2, $2, $3)",
-      [`c1:${'a'.repeat(64)}`, subject, 'b'.repeat(32)],
+      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, 'data.decidedBy', $2, $3, $4)",
+      [`c1:${'a'.repeat(64)}`, subject, subject, 'b'.repeat(32)],
     );
   };
   const openingsOf = async (subject) => (await mockPg.query('SELECT 1 FROM record_openings WHERE subject = $1', [subject])).rows.length;
@@ -91,8 +91,8 @@ describe('Self-serve account deletion', () => {
     const other = await makeUser();
     await opening(String(user._id));
     await mockPg.query(
-      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 2, $1, 'data.doneBy', $2, $2, $3)",
-      [`c1:${'c'.repeat(64)}`, String(other._id), 'd'.repeat(32)],
+      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 2, $1, 'data.doneBy', $2, $3, $4)",
+      [`c1:${'c'.repeat(64)}`, String(other._id), String(other._id), 'd'.repeat(32)],
     );
     const self = await deletion(app, issueSessionToken(user));
     expect(self.status).toBe(204);
