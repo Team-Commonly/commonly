@@ -24,6 +24,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const { RUNNING_TURN_WINDOW_MS } = require('../../../services/mentionCoalesce');
+const { JUST_ACKED_MS } = require('../../../services/agentAnswerService');
 
 const AGENT = { agentName: 'codex', instanceId: 'd141' };
 
@@ -118,6 +119,16 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     ...AGENT, podId: pod._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(), ...fields,
   });
 
+  // Oldest first, so they fill the page ahead of anything created after them.
+  const agreeingAcks = (root, count) => Array.from({ length: count }, (_, i) => ({
+    ...AGENT,
+    podId: pod._id,
+    type: 'chat.mention',
+    status: 'acked',
+    payload: { threadRootId: root.id },
+    createdAt: new Date(Date.now() - 60 * 1000 + i),
+  }));
+
   // What the CAP route sends for a plain post.
   const capPost = (fields = {}, inPod = pod) => AgentMessageService.postMessage({
     ...AGENT, podId: inPod._id, content: `reply ${Math.random()}`, inferAnswerThread: true, ...fields,
@@ -180,6 +191,61 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
           createdAt: new Date(now - index),
           payload: { messageId: String(root.id + index + 1), threadRootId: root.id },
         })),
+      ]);
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a wake in the same thread acked a moment ago agrees', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.create({
+        ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: { threadRootId: root.id },
+      });
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a top-level ask acked before this turn says nothing about it', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      const { insertedId } = await AgentEvent.collection.insertOne({
+        ...AGENT,
+        podId: pod._id,
+        type: 'chat.mention',
+        status: 'acked',
+        payload: {},
+        createdAt: new Date(Date.now() - 60 * 1000),
+        updatedAt: new Date(Date.now() - JUST_ACKED_MS - 1000),
+      });
+      expect(insertedId).toBeDefined();
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a top-level digest row acked beside the wake says nothing about it', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.create({
+        ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', deliveryMode: 'digest', payload: {},
+      });
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a top-level wake that failed a moment ago says nothing about it', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.create({
+        ...AGENT, podId: pod._id, type: 'chat.mention', status: 'failed', payload: {},
+      });
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a top-level ask another agent or pod just acked says nothing about it', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      const otherPod = await makePod();
+      await AgentEvent.create([
+        { ...AGENT, instanceId: 'other', podId: pod._id, type: 'chat.mention', status: 'acked', payload: {} },
+        { agentName: 'other', instanceId: AGENT.instanceId, podId: pod._id, type: 'chat.mention', status: 'acked', payload: {} },
+        { ...AGENT, podId: otherPod._id, type: 'chat.mention', status: 'acked', payload: {} },
       ]);
       expect(await rootOf(await capPost())).toBe(root.id);
     });
@@ -275,6 +341,85 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       await threadedWake();
       await deliver();
       await AgentEvent.updateMany({ ...AGENT }, { $set: { status: 'acked' } });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    // F292, on a pi seat: the model sent a plain answer to a top-level ask and
+    // commonly_checkpoint_event side by side. The checkpoint landed first, so
+    // the only delivery left was the thread mention waiting behind the ask.
+    it('THE REPRO: a post beside the checkpoint that acked a top-level ask', async () => {
+      await threadedWake();
+      await wake(await say('@d141 and a separate question'));
+      const delivered = await deliver();
+      const ask = delivered.find((event) => !event.payload.threadRootId);
+      // A real ask waits before its ack, so only the ack can say it's recent.
+      await AgentEvent.collection.updateOne(
+        { _id: ask._id }, { $set: { createdAt: new Date(Date.now() - 60 * 1000) } },
+      );
+      await AgentEventService.acknowledge(ask._id, AGENT.agentName, AGENT.instanceId, null, ask.payload.deliveryId);
+      expect((await AgentEvent.findById(ask._id).lean()).status).toBe('acked');
+
+      expect(await rootOf(await capPost({ kind: 'answer' }))).toBeNull();
+    });
+
+    it('a top-level ask that sat for hours and was acked just now still disagrees', async () => {
+      await threadedWake();
+      await deliver();
+      await AgentEvent.collection.insertOne({
+        ...AGENT,
+        podId: pod._id,
+        type: 'chat.mention',
+        status: 'acked',
+        payload: {},
+        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('a heartbeat acked a moment ago that carries the thread is still not a wake', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.create({
+        ...AGENT, podId: pod._id, type: 'heartbeat', status: 'acked', payload: { threadRootId: root.id },
+      });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('more acks than the read can hold: a disagreement past the page still counts', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.insertMany([
+        ...agreeingAcks(root, 51),
+        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: {}, createdAt: new Date() },
+      ]);
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('exactly a page of acks that agree: every row was read, so the post files', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.insertMany(agreeingAcks(root, 50));
+      expect(await rootOf(await capPost())).toBe(root.id);
+    });
+
+    it('a failed read of what was just acked: the post still lands, in the channel', async () => {
+      await threadedWake();
+      await deliver();
+      const real = AgentEvent.find.bind(AgentEvent);
+      jest.spyOn(AgentEvent, 'find').mockImplementation((query, ...rest) => {
+        if (query?.status === 'acked') throw new Error('operation exceeded time limit');
+        return real(query, ...rest);
+      });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('a heartbeat acked a moment ago: the post may be about either', async () => {
+      await threadedWake();
+      await deliver();
+      await AgentEvent.create({
+        ...AGENT, podId: pod._id, type: 'heartbeat', status: 'acked', payload: {},
+      });
       expect(await rootOf(await capPost())).toBeNull();
     });
 
