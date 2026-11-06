@@ -62,7 +62,7 @@ export const cantAnswerNotice = (error) => {
   if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) return null;
   // A crashed claude turn keeps assistant and tool JSON lines in its tail, and
   // those are the model's words, or a tool's.
-  const text = String(error?.message ?? '').split(' | {"type":')[0];
+  const text = String(error?.message ?? '').split(/(?:^|: | \| |\n)\{"type":/)[0];
   // Before the allowance check: a 401 is settled, whatever else its body says.
   if (matches(LOGIN_FAILED_WORDINGS, text)) return { cause: 'login', text: LOGIN_NOTICE };
   if (matches(WONT_START_WORDINGS, text)) return { cause: 'wont-start', text: WONT_START_NOTICE };

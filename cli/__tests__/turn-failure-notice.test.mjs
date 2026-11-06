@@ -88,6 +88,14 @@ describe('cantAnswerNotice', () => {
     expect(cantAnswerNotice(new Error(`claude exited with code 1: warning | ${tail}`))).toBeNull();
   });
 
+  test.each([
+    ['with nothing on stderr', 'claude exited with code 1: {"type":"assistant","text":"out of credits"}'],
+    ['after a plain first line', 'claude exited with code 1: warn\n{"type":"assistant","text":"Budget has been exceeded!"}'],
+    ['after stderr', 'claude exited with code 1: warn | {"type":"user","text":"refusing a Claude login"}'],
+  ])('a crashed turn\'s JSON tail posts nothing %s', (_name, message) => {
+    expect(cantAnswerNotice(new Error(message))).toBeNull();
+  });
+
   test('a budget in another sense posts nothing and keeps its backoff', () => {
     expect(cantAnswerNotice(new Error('codex turn failed: thinking budget has been exceeded'))).toBeNull();
   });
