@@ -1058,6 +1058,50 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(await screen.findByText('your team')).toBeInTheDocument();
     });
 
+    test('Add to pod still reports the pod after the refresh remounts the Wake list', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url === '/api/pods'
+        ? Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] }) : base(url, ...rest)));
+      axios.post.mockResolvedValue({ data: { success: true } });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      expect(axios.post.mock.calls[0][0]).toBe('/api/registry/agents/maya-claude/pods/pod-2?instanceId=default');
+      await screen.findByRole('button', { name: 'Add to pod' });
+      expect(screen.getByText('Added to Design.')).toBeInTheDocument();
+    });
+
+    test('Add to pod falls back to the agent name when no display name is set', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url === '/api/registry/pods/pod-1/agents/maya-claude') {
+          return Promise.resolve({ data: { agent: { name: 'maya-claude', instanceId: 'default', displayName: '', runtime: { runtimeType: 'webhook' } } } });
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockRejectedValueOnce({ response: { data: { code: 'agent_not_active' } } });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByText("Couldn't add maya-claude to that pod. Try again.")).toBeInTheDocument();
+    });
+
     test.each([['connected', 'Connected'], ['available', 'Ready on Commonly'], ['revoked', 'Disconnected: key revoked'], ['never', 'Not connected yet'], ['stale', 'Not seen in']])(
       'a %s agent says so on a phone, because no row reports a healthy state',
       async (state, label) => {

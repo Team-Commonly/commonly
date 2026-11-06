@@ -60,6 +60,8 @@ const V2AgentSettingsPage: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
+  // Held here, not in the Wake list: the refresh after an add swaps the page for its loading state.
+  const [addedPod, setAddedPod] = useState<{ identity: string; name: string } | null>(null);
   const [connection, setConnection] = useState<AgentConnection | null>(null);
   const connectionState = connection?.state ?? null;
   // The key panel opens by itself for anything the owner must see or answer; a failed skills read opens
@@ -367,7 +369,16 @@ const V2AgentSettingsPage: React.FC = () => {
         <div className="v2-agent-settings-page__col">
           {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
           {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
-          <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+          <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod}
+            onRemoved={(...removed) => { setAddedPod(null); onRemoved(...removed); }}
+            displayName={displayName}
+            addedPod={addedPod?.identity === `${agentName}:${instanceId}` ? addedPod.name : null}
+            onAdded={(name) => {
+              // After the refresh, so the note doesn't blink while the page reloads.
+              const added = { identity: `${agentName}:${instanceId}`, name };
+              void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))))
+                .finally(() => setAddedPod(added));
+            }} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
             <h2 id="agent-identity-access" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityAccess')}</h2>
             <div className="list">

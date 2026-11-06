@@ -5,6 +5,7 @@ import axios from '../../utils/axiosConfig';
 import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
+import V2AgentAddToPod from './V2AgentAddToPod';
 
 interface InstallationSettings {
   podId: string;
@@ -45,7 +46,10 @@ const V2AgentWakePods: React.FC<{
   instanceId: string;
   updatePod: (podId: string, patch: AgentPodWakePatch) => Promise<unknown>;
   onRemoved?: (podId: string, wasLastPod: boolean) => void;
-}> = ({ agentName, instanceId, updatePod, onRemoved }) => {
+  onAdded?: (podName: string) => void;
+  addedPod?: string | null;
+  displayName?: string;
+}> = ({ agentName, instanceId, updatePod, onRemoved, onAdded, addedPod, displayName }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
   const [busyPod, setBusyPod] = useState<string | null>(null);
@@ -61,6 +65,8 @@ const V2AgentWakePods: React.FC<{
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
   // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
   const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
+  // Bumped after an add, so the table re-reads the row the server made.
+  const [reloads, setReloads] = useState(0);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -117,7 +123,7 @@ const V2AgentWakePods: React.FC<{
     };
     void load();
     return () => { active = false; };
-  }, [base, query, identity, t]);
+  }, [base, query, identity, t, reloads]);
 
   // Saves per pod go out one at a time, newest pick last. The message-wake
   // radios stay enabled while a save is in flight (disabling them dropped
@@ -343,7 +349,14 @@ const V2AgentWakePods: React.FC<{
             </tbody>
           </table>
         ) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
+        <V2AgentAddToPod agentName={agentName} displayName={displayName || agentName} query={query}
+          installedPodIds={installations.map((entry) => entry.podId)}
+          onAdded={(podName) => {
+            setReloads((count) => count + 1);
+            onAdded?.(podName);
+          }} />
       </div>
+      {addedPod && <p className="v2-agent-wake-pods__hint" role="status">{t('agentSettings.addToPod.added', { pod: addedPod })}</p>}
     </div>
   );
 };
