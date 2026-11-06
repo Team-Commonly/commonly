@@ -435,7 +435,7 @@ const V2AgentSettingsPage: React.FC = () => {
                   </>
                 )}
               </div>}
-              <AgentControlLoader agentName={agentName} instanceId={instanceId} hideWhenConnected
+              <AgentControlLoader agentName={agentName} instanceId={instanceId} actionsOnly
                 refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
               <V2AgentListingRow key={`listing:${agentName}:${instanceId}`} agentName={installation?.name || agentName} instanceId={installation?.instanceId || instanceId} />
               <V2AgentConnectorsRow key={`grants:${agentName}:${instanceId}`} name={agentName} instanceId={instanceId} />

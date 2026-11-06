@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
+import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 
 interface InstallationSettings {
   podId: string;
@@ -58,6 +59,8 @@ const V2AgentWakePods: React.FC<{
   // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
+  // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
+  const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -216,6 +219,12 @@ const V2AgentWakePods: React.FC<{
   const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
     .filter((value) => value >= floorFor(entry));
   const overCap = turnCap !== null && heartbeatTurns > turnCap;
+  const heartbeatNote = hostedHeartbeat && (hostedHeartbeat.runsPerDay > 0
+    ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
+    : t('agentSettings.heartbeatHostedOff'));
+  const wakeNote = heartbeatNote
+    ? t('agentSettings.wakeNote', { mentions: t('agentSettings.mentionsAlwaysWake'), heartbeat: heartbeatNote })
+    : t('agentSettings.mentionsAlwaysWake');
 
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
@@ -227,9 +236,15 @@ const V2AgentWakePods: React.FC<{
       <h2 className="gtitle">
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
         {t('agentSettings.wakeTitle')}
-        <span className="info" tabIndex={0} aria-label={t('agentSettings.mentionsAlwaysWake')}>
+        <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote}
+          onClick={() => setWakeNoteOpen((open) => !open)} onBlur={() => setWakeNoteOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setWakeNoteOpen((open) => !open);
+          }}>
           <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></svg>
-          <span className="tip" role="tooltip">{t('agentSettings.mentionsAlwaysWake')}</span>
+          <span className="tip" role="tooltip">{wakeNote}</span>
         </span>
         <span className="v2-agent-wake-pods__cap">
           {turnCap === null
@@ -238,11 +253,6 @@ const V2AgentWakePods: React.FC<{
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
-      {hostedHeartbeat && <p className="v2-agent-wake-pods__hint">
-        {hostedHeartbeat.runsPerDay > 0
-          ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
-          : t('agentSettings.heartbeatHostedOff')}
-      </p>}
       {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
         {installations.length ? (
@@ -308,9 +318,10 @@ const V2AgentWakePods: React.FC<{
                               <option value="off">{t('agentSettings.heartbeatOff')}</option>
                               {[...new Set([...intervalsFor(entry), entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
-                                  <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
+                                  <option value={value} key={value}>{t('agentSettings.minutesShort', { minutes: value })}</option>
                                 ))}
                             </select>
+                            <V2AgentSettingsIcon name="chev" />
                           </label>
                           {dirty && <button type="button" className="b b-g b-sm" disabled={busyPod === entry.podId}
                             onClick={() => { void save(entry, { heartbeatEnabled: !off, heartbeatMinutes: minutes }); }}>

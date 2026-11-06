@@ -269,6 +269,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(header).toContain('align-items: flex-start');
   });
 
+  test('Agent settings: the wake select fits its value and its chevron passes clicks through', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval select')).toContain('field-sizing: content');
+    expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i')).toContain('pointer-events: none');
+  });
+
+  test('Agent settings: hover opens the note only where a pointer hovers, so a second tap can close it', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const hoverOnly = surface.indexOf('@media (hover: hover)');
+    expect(hoverOnly).toBeGreaterThan(-1);
+    expect(surface.indexOf('.v2-agent-settings-page .info:hover .tip')).toBeGreaterThan(hoverOnly);
+  });
+
   test('agent Settings phone rows keep the value cell visible, beside the label on one line', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));

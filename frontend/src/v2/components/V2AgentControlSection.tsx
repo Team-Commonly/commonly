@@ -10,18 +10,18 @@ interface Props {
   podId: string;
   runtimeType?: string;
   connection: AgentConnection;
-  /** Settings reports a healthy connection in its header, so the row renders only when it has more to say. */
-  hideWhenConnected?: boolean;
+  /** Settings reports the connection in its head, so the row renders only when it offers an action. */
+  actionsOnly?: boolean;
 }
 
 // Owner/admin-only: the parent must obtain these props from an authenticated
 // roster read after its server-gated Settings access check.
-const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, runtimeType, connection, hideWhenConnected }) => {
+const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, runtimeType, connection, actionsOnly }) => {
   const { t } = useTranslation();
   const needsReconnect = connection.state === 'revoked' || connection.state === 'stale';
   const canRegenerateMachineKey = runtimeType === 'wrapper' && connection.state === 'connected';
-  // A connected wrapper keeps the row: its machine-key regeneration lives only here.
-  if (hideWhenConnected && connection.state === 'connected' && !canRegenerateMachineKey) return null;
+  // A connected wrapper keeps the row: its machine-key regeneration lives here.
+  if (actionsOnly && !needsReconnect && !canRegenerateMachineKey) return null;
   return (
     <div className="lrow" data-testid="agent-control-section">
       <span className="lb">{t('agentSettings.connection')}</span>
@@ -48,8 +48,8 @@ export const AgentControlLoader: React.FC<{
   instanceId: string;
   refreshNonce?: number;
   onConnectionState?: (state: AgentConnection['state'] | null, connection?: AgentConnection | null) => void;
-  hideWhenConnected?: boolean;
-}> = ({ agentName, instanceId, refreshNonce, onConnectionState, hideWhenConnected }) => {
+  actionsOnly?: boolean;
+}> = ({ agentName, instanceId, refreshNonce, onConnectionState, actionsOnly }) => {
   const { t } = useTranslation();
   const [status, setStatus] = useState<(Props & { podId: string }) | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -96,9 +96,9 @@ export const AgentControlLoader: React.FC<{
     return () => { active = false; window.clearInterval(interval); };
   }, [agentName, instanceId, refreshNonce, onConnectionState]);
 
-  if (status) return <V2AgentControlSection {...status} hideWhenConnected={hideWhenConnected} />;
+  if (status) return <V2AgentControlSection {...status} actionsOnly={actionsOnly} />;
   // While the first read is in flight there is nothing to report yet.
-  if (hideWhenConnected && !unavailable) return null;
+  if (actionsOnly && !unavailable) return null;
   return <div className="lrow" data-testid="agent-control-section">
     <span className="lb">{t('agentSettings.connection')}</span>
     <span className="vl" role={unavailable ? 'alert' : 'status'}>
