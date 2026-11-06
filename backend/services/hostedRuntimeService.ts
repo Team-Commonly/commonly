@@ -32,6 +32,7 @@
  */
 import { AgentInstallation } from '../models/AgentRegistry';
 import AgentEvent from '../models/AgentEvent';
+import { installationIdentityFilter } from './agentInstallationIdentity';
 
 export const HOSTED_RUNTIME_TYPE = 'hosted';
 
@@ -194,6 +195,89 @@ export const findHeldHostedInstallation = async (
     .find((row: any) => hostedIdentityKey(row.agentName, row.instanceId) === wanted) || null;
 };
 
+/** `config.autoJoinSource` on the row a DM writes so the agent can answer there. */
+export const AGENT_ROOM_AUTO_JOIN_SOURCE = 'agent-room-create';
+
+const IDENTITY_COLLATION = { locale: 'en', strength: 2 };
+
+const identityRows = (agentName: string, instanceId: string, extra: Record<string, unknown>) => (
+  AgentInstallation.find({
+    ...installationIdentityFilter(String(agentName).toLowerCase(), String(instanceId || 'default').toLowerCase()),
+    ...extra,
+  }).collation(IDENTITY_COLLATION)
+);
+
+export interface HostedOwner {
+  ownerId: unknown;
+  // False when every row the owner has of this agent is uninstalled.
+  live: boolean;
+}
+
+/**
+ * Who owns a hosted agent, as seen by the person opening a DM with it: a person
+ * who installed it themselves, on a row that is not a DM's. An agent can be
+ * hosted by several people under one identity, so `requesterId`'s own row comes
+ * first, then the row of someone hosting it in a pod they share, then the
+ * oldest. A DM's own row never names an owner, and neither does a row an agent
+ * wrote for itself. Null when no person owns it.
+ */
+export const resolveHostedOwner = async (
+  agentName: string, instanceId: string, requesterId: unknown,
+): Promise<HostedOwner | null> => {
+  const rows = await identityRows(agentName, instanceId, {
+    'config.autoJoinSource': { $ne: AGENT_ROOM_AUTO_JOIN_SOURCE },
+  }).select('installedBy podId status config.runtime').sort({ _id: 1 }).lean();
+  const hosted = (Array.isArray(rows) ? rows : []).filter((row: any) => row.installedBy && isHostedInstallation(row));
+  if (!hosted.length) return null;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Pod = require('../models/Pod');
+  const people = await User.find({
+    _id: { $in: hosted.map((row: any) => row.installedBy) }, isBot: { $ne: true },
+  }).select('_id').lean();
+  const personIds = new Set(people.map((person: any) => String(person._id)));
+  const owned = hosted.filter((row: any) => personIds.has(String(row.installedBy)));
+  if (!owned.length) return null;
+  const standing = owned.filter((row: any) => row.status !== 'uninstalled');
+  const pool: any[] = standing.length ? standing : owned;
+  const shared = await Pod.find({ _id: { $in: pool.map((row) => row.podId) }, members: requesterId })
+    .select('_id').lean();
+  const sharedIds = new Set(shared.map((pod: any) => String(pod._id)));
+  const row = pool.find((candidate) => String(candidate.installedBy) === String(requesterId))
+    || pool.find((candidate) => sharedIds.has(String(candidate.podId)))
+    || pool[0];
+  return { ownerId: row.installedBy, live: standing.length > 0 };
+};
+
+/**
+ * Ends the DM rows of a hosted agent once its owner has no other row of it, so
+ * removing an agent stops it answering and frees the owner's slot. Those rows
+ * are the owner's and sit in rooms the owner is not in, so nothing else would
+ * reach them. Runs after the owner's row is removed. Never throws: the removal
+ * has happened by then, and reassign-hosted-room-owners finishes the job.
+ */
+export const retireHostedRoomRows = async (
+  agentName: string, instanceId: string, ownerId: unknown,
+): Promise<number> => {
+  try {
+    if (!ownerId) return 0;
+    const rows = await identityRows(agentName, instanceId, { installedBy: ownerId, status: 'active' })
+      .select('config.runtime config.autoJoinSource').lean();
+    const hosted = (Array.isArray(rows) ? rows : []).filter((row: any) => isHostedInstallation(row));
+    const inRoomsOnly = hosted.every((row: any) => row.config?.autoJoinSource === AGENT_ROOM_AUTO_JOIN_SOURCE);
+    if (!hosted.length || !inRoomsOnly) return 0;
+    await AgentInstallation.updateMany(
+      { _id: { $in: hosted.map((row: any) => row._id) } },
+      { $set: { status: 'uninstalled' } },
+    );
+    return hosted.length;
+  } catch (error) {
+    console.warn('[hosted] ending the DM rows of a removed agent failed:', (error as Error).message);
+    return 0;
+  }
+};
+
 const utcDayStart = (now = new Date()): Date => new Date(Date.UTC(
   now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
 ));
@@ -349,6 +433,9 @@ module.exports = {
   countHostedAgentsForUser,
   listHostedInstallationsForUser,
   findHeldHostedInstallation,
+  AGENT_ROOM_AUTO_JOIN_SOURCE,
+  resolveHostedOwner,
+  retireHostedRoomRows,
   turnsToday,
   nativeTurnsToday,
   meterAllowsTurn,

@@ -10,6 +10,7 @@ const PodAsset = require('../models/PodAsset');
 const Integration = require('../models/Integration');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentProfile = require('../models/AgentProfile');
+const { retireHostedRoomRows } = require('./hostedRuntimeService');
 
 // Same gate as podController: the PG mirror exists only when PG is configured.
 let PGPod: any;
@@ -28,12 +29,13 @@ export const deletePodCascade = async (podId: string): Promise<void> => {
   // them again. The helper counts active installs, so an agent installed in
   // another pod keeps its token.
   const installedAgents = await AgentInstallation.find({ podId })
-    .select('agentName instanceId').lean();
+    .select('agentName instanceId installedBy').lean();
   await AgentInstallation.updateMany({ podId }, { $set: { status: 'uninstalled' } });
   const identities = new Map<string, { agentName: string; instanceId: string }>();
   for (const row of installedAgents || []) {
     const instanceId = row.instanceId || 'default';
     identities.set(`${row.agentName}:${instanceId}`, { agentName: row.agentName, instanceId });
+    await retireHostedRoomRows(row.agentName, instanceId, row.installedBy);
   }
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { revokeRuntimeTokensAfterLastUninstall } = require('../routes/registry/tokens');
