@@ -123,7 +123,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
 const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
-// (TASK-545). Parallel reads live here because only this CLI has a subagent
+// (TASK-545). Parallel reads live here because the cue names this CLI's Agent
 // tool; codex is passed row slicing and the background-process cue. A public
 // seat is passed none: its argv allows Read and the MCP under dontAsk, so it
 // has no subagent to spawn or shell to background from, and it answers

@@ -1807,3 +1807,70 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
     expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
   });
 });
+
+describe('codex adapter — a public seat runs with Commonly\'s tools only', () => {
+  const builtinFlags = [
+    'web_search="disabled"',
+    'features.multi_agent=false',
+    'features.multi_agent_v2.max_concurrent_threads_per_session=1',
+    'features.goals=false',
+  ];
+  const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+
+  const zeroDepth = 'agents.max_depth=0';
+
+  const spawnSeat = async ({ sandbox, sessionId = null, version = '0.162.1' }) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const root = await mkdtemp(join(tmpdir(), 'commonly-codex-builtins-'));
+    try {
+      await codex.spawn('hi', {
+        sessionId,
+        cwd: root,
+        environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}) },
+        env: { ...process.env, CODEX_HOME: join(root, 'operator') },
+        agentName: 'builtins-test-agent',
+        _publicCodexHome: join(root, 'public'),
+        _codexVersion: version,
+        _spawnImpl: impl,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+    return calls[0].args;
+  };
+
+  test.each(['workspace', 'read-only'])('a new %s turn turns the built-ins off', async (mode) => {
+    const args = await spawnSeat({ sandbox: { trust: 'public', mode } });
+    expect(configFlags(args)).toEqual(expect.arrayContaining(builtinFlags));
+    expect(configFlags(args).some((flag) => flag.includes('view_image'))).toBe(false);
+    // Codex parses these only after `exec`.
+    expect(args.indexOf('exec')).toBeLessThan(args.indexOf(builtinFlags[0]));
+  });
+
+  test('a resumed turn turns them off too', async () => {
+    const args = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, sessionId: 'thread-1' });
+    expect(args.slice(args.indexOf('exec'), args.indexOf('exec') + 3)).toEqual(['exec', 'resume', 'thread-1']);
+    expect(configFlags(args)).toEqual(expect.arrayContaining(builtinFlags));
+  });
+
+  test.each([
+    ['0.149.1', true],
+    ['0.149.2', true],
+    ['0.150.0', true],
+    ['0.162.1', true],
+    ['1.0.0', true],
+    ['0.149.0', false],
+    ['0.133.0', false],
+    [null, false],
+    ['unknown', false],
+  ])('agent depth 0 goes to a Codex that takes it: %s', async (version, sent) => {
+    const flags = configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, version }));
+    expect(flags.includes(zeroDepth)).toBe(sent);
+    expect(flags).toEqual(expect.arrayContaining(builtinFlags));
+  });
+
+  test('a private seat keeps Codex\'s built-ins', async () => {
+    const flags = configFlags(await spawnSeat({ sandbox: null }));
+    for (const flag of [...builtinFlags, zeroDepth]) expect(flags).not.toContain(flag);
+  });
+});
