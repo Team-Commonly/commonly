@@ -736,7 +736,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           ),
           // Started and stopped are the agent's state, not one room's: a
           // stopped agent added to another pod stays stopped there too.
-          ...(heldHostedRow ? { provisionedAt: held.provisionedAt ?? null } : {}),
+          ...(heldHostedRow ? {
+            provisionedAt: held.provisionedAt ?? null,
+            ...(held.deprovisionedAt ? { deprovisionedAt: held.deprovisionedAt } : {}),
+          } : {}),
         };
       }
     }
@@ -1084,7 +1087,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'
         && ((podDoc.members?.length || 0) >= 2 || isOwnWorkspace)
-        && !(greetsItself && firstContactFired);
+        && !(greetsItself && firstContactFired)
+        // A stopped agent can't answer the "ping me" the intro ends on.
+        && !HostedEngine.hostedIsStopped(installation);
       if (introWorthy) {
         // Task #62 follow-up: the intro post passes `displayName` to
         // AgentMessageService.postMessage, which forwards it to
