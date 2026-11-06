@@ -96,6 +96,7 @@ const V2AgentWakePods: React.FC<{
     setError(null);
     // A re-read of the same agent keeps its rows on screen until the new ones land.
     if (readIdentity.current !== identity) {
+      readIdentity.current = null;
       setLoading(true);
       setInstallations([]);
       setRuntimeNarrowing(null);
@@ -114,6 +115,7 @@ const V2AgentWakePods: React.FC<{
           runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
         }>(`${base}?${query}`);
         if (!active) return;
+        readIdentity.current = identity;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
         committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
@@ -128,7 +130,6 @@ const V2AgentWakePods: React.FC<{
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
       } finally {
         if (active) {
-          readIdentity.current = identity;
           setLoadedIdentity(identity);
           setLoading(false);
         }

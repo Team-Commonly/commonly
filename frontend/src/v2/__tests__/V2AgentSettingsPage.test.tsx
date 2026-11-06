@@ -1160,6 +1160,36 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
     });
 
+    test('an add after a failed first read shows the list loading, not an empty list', async () => {
+      const base = fleet({ state: 'connected' });
+      let added = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.includes('/manage-settings?')) {
+          if (!added) return Promise.reject(new Error('down'));
+          return new Promise((resolve) => { setTimeout(() => resolve(base(url.split('?')[0], ...rest)), 20); });
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText('Could not load settings.')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await waitFor(() => expect(document.querySelector('.v2-agent-wake-pods__loading')).toBeInTheDocument());
+      await waitFor(() => expect(document.querySelectorAll('.v2-agent-wake-pods__pod')).toHaveLength(1));
+    });
+
     test('the header keeps the connection when an add moves the writable pod', async () => {
       const base = fleet({ state: 'connected' });
       let moved = false;
