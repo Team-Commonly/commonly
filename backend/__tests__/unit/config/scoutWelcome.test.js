@@ -50,6 +50,51 @@ describe('Scout welcome locale', () => {
     const { scoutApp } = require('../../../config/native-agents/scout');
     expect(scoutApp.systemPrompt).toContain('For "Show me what you can do", answer in two or three short sentences');
     expect(scoutApp.systemPrompt).toContain('For "Connect an agent I already use", find out which tool they run');
-    expect(scoutApp.systemPrompt).toContain('For "Start a pod for a project", ask what the project is');
+    expect(scoutApp.systemPrompt).toContain('For "Start a pod for a project", if they have not named a project, do not ask what it is');
+  });
+
+  // Growth, 2026-11-06: 8 people clicked a start and 5 of those chats ended with
+  // Scout waiting on them. Three never answered "What's the project?".
+  describe('the start-pod first move', () => {
+    // eslint-disable-next-line global-require
+    const { scoutApp, SCOUT_FIRST_TASK, SCOUT_AGENT_OFFER } = require('../../../config/native-agents/scout');
+    const prompt = scoutApp.systemPrompt;
+
+    it('puts one task on the board instead of asking', () => {
+      expect(SCOUT_FIRST_TASK).toBe('Read your repo and say what to do first');
+      expect(prompt).toContain(`Call commonly_create_task once with the title "${SCOUT_FIRST_TASK}"`);
+      expect(prompt).not.toContain('ask what the project is if');
+      expect(scoutApp.tools).toContain('commonly_create_task');
+    });
+
+    it('offers their own agent, then the pod, in one fixed line', () => {
+      expect(SCOUT_AGENT_OFFER).toBe("I can't open repos, but your agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.");
+      expect(prompt).toContain(`"${SCOUT_AGENT_OFFER}"`);
+    });
+
+    it('fits the reply budget with the task clause in front', () => {
+      expect(`I put "${SCOUT_FIRST_TASK}" on your board. ${SCOUT_AGENT_OFFER}`.length).toBeLessThanOrEqual(200);
+    });
+
+    it('still proposes the pod once a project is named, and keeps its locale rule', () => {
+      expect(prompt).toContain('Once they name a project, propose create_pod with a short name for it');
+      expect(prompt).toContain('Set create_pod params.locale to the person\'s language');
+    });
+
+    it('claims the task only when the tool said so', () => {
+      expect(prompt).toContain('Say the task is on their board only if commonly_create_task returned ok');
+      const hardRules = prompt.slice(prompt.lastIndexOf('ROLE-SPECIFIC HARD RULES:'));
+      expect(hardRules).toContain('Never say a task is on the board unless commonly_create_task returned ok');
+    });
+
+    it('does not add the task twice', () => {
+      expect(prompt).toContain('If your earlier messages show that task is already on the board, skip the call');
+    });
+
+    it('makes the same offer at any "I can\'t" moment, with Run it here as the fallback', () => {
+      expect(prompt).toContain('Any time you have to say you can\'t do something their own agent could');
+      expect(prompt).toContain('"Run it here" is the fallback, not the first offer');
+      expect(prompt).toContain('never offer it as the way to read one');
+    });
   });
 });

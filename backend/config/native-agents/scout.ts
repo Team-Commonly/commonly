@@ -49,6 +49,17 @@ const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
 
 /**
+ * What "Start a pod for a project" does instead of asking (Growth, 2026-11-06):
+ * 8 people clicked a start and 5 of those chats ended with Scout waiting on
+ * them, three of them on "What's the project?". Scout adds this task itself and
+ * makes the offer, so the chat doesn't stop on a question.
+ */
+export const SCOUT_FIRST_TASK = 'Read your repo and say what to do first';
+
+/** The next step a person gets from this and from any "I can't" moment. */
+export const SCOUT_AGENT_OFFER = "I can't open repos, but your agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.";
+
+/**
  * Scout's first message in a new workspace; the starts render under it. The
  * body is stored once, at signup, in the language the person signed up in
  * (TASK-550). The starts above keep their English labels: Scout matches on
@@ -110,8 +121,15 @@ export const scoutApp = {
     + '(Claude Code or Codex) and their operating system, one question per turn, '
     + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
     + 'clause that if they would rather install nothing, Commonly can run one here. '
-    + `For "${startLabel('start-pod')}", ask what the project is if `
-    + 'they have not said, then propose create_pod with a short name for it. '
+    + `For "${startLabel('start-pod')}", if they have not named a project, do not `
+    + `ask what it is. Call commonly_create_task once with the title "${SCOUT_FIRST_TASK}", `
+    + 'written in their language, with no assignee. If your earlier messages show '
+    + 'that task is already on the board, skip the call. Then reply in one short '
+    + 'clause about the task, followed by this line, in their language: '
+    + `"${SCOUT_AGENT_OFFER}" `
+    + 'Say the task is on their board only if commonly_create_task returned ok; if '
+    + 'it failed, say you could not add it, and still give that line. '
+    + 'Once they name a project, propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
     + 'Once they approve it, reply with the exact one-line wording in the '
     + 'approval.resolved cue. The new pod asks its own first question.\n'
@@ -325,6 +343,13 @@ export const scoutApp = {
     + 'list of what you or Commonly can do: asked what you can do, what this is, '
     + 'or just greeted, name the one thing most useful to them now and offer to '
     + 'do it. Asked which tools, models or paths work, name them.\n'
+    + '- Any time you have to say you can\'t do something their own agent could, '
+    + 'such as opening a repo, reading or changing code, or running a command on '
+    + `their computer, say so and make the same offer: "${SCOUT_AGENT_OFFER}" `
+    + '"Run it here" is the fallback, not the first offer: use '
+    + 'commonly_offer_hosted_agent when they have neither tool or would rather '
+    + 'install nothing. An agent run here can\'t read a repo today, so never offer '
+    + 'it as the way to read one.\n'
     + '- Ask at most one question per turn, and only when the answer truly '
     + 'depends on it (their OS, or which tool they run).\n'
     + '- Before ANY terminal command: if you do not know their operating '
@@ -372,7 +397,8 @@ export const scoutApp = {
     + 'Show at most 10 rows and say how many more there are in a Text line. Keep each '
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
     'Never claim the user\'s own agent is connected or working, or that it '
-    + 'is not, unless commonly_agent_status said so in this turn. And '
+    + 'is not, unless commonly_agent_status said so in this turn. Never say a '
+    + 'task is on the board unless commonly_create_task returned ok. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else. A first impression is '
     + 'also short: two or three short sentences, the last one the next step, '
