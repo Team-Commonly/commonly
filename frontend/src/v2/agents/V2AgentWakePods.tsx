@@ -10,6 +10,7 @@ import V2AgentAddToPod from './V2AgentAddToPod';
 interface InstallationSettings {
   podId: string;
   podName: string;
+  podType?: string;
   status: string;
   wakeOnMessage: boolean;
   humanOnly: boolean;
@@ -19,6 +20,13 @@ interface InstallationSettings {
   /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
   hostedHeartbeat?: HostedHeartbeat | null;
 }
+
+// An agent's private pods all carry its name, so the row says which one it is.
+const PERSONAL_POD_KINDS: Record<string, 'direct' | 'admin'> = {
+  'agent-room': 'direct',
+  'agent-dm': 'direct',
+  'agent-admin': 'admin',
+};
 
 // Message wake is one choice of three, shown together: the human-only
 // filter used to appear only after "Wake on messages" was ticked (D173).
@@ -232,6 +240,11 @@ const V2AgentWakePods: React.FC<{
     ? t('agentSettings.wakeNote', { mentions: t('agentSettings.mentionsAlwaysWake'), heartbeat: heartbeatNote })
     : t('agentSettings.mentionsAlwaysWake');
 
+  const podKindLabel = (entry: InstallationSettings): string | null => {
+    const kind = PERSONAL_POD_KINDS[entry.podType || ''];
+    return kind ? t(`podsSidebar.workspace.${kind}`) : null;
+  };
+
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
   }
@@ -275,11 +288,12 @@ const V2AgentWakePods: React.FC<{
             <tbody>
               {installations.map((entry) => (
                 <tr className="v2-agent-wake-pods__pod" key={entry.podId} data-open={openPods[entry.podId] ? 'true' : undefined}>
-                  <td>
+                  <td data-personal={podKindLabel(entry) ? 'true' : undefined}>
                     <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
+                    {podKindLabel(entry) && <span className="v2-agent-wake-pods__kind">{podKindLabel(entry)}</span>}
                     <span className="v2-agent-wake-pods__mode">{t(`agentSettings.messageWakeShort_${messageWakeChoice(entry)}`)}</span>
                     <button type="button" className="v2-agent-wake-pods__fold" aria-expanded={!!openPods[entry.podId]}
-                      aria-label={entry.podName}
+                      aria-label={[entry.podName, podKindLabel(entry)].filter(Boolean).join(', ')}
                       onClick={() => setOpenPods((current) => ({ ...current, [entry.podId]: !current[entry.podId] }))}>
                       <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
                     </button>

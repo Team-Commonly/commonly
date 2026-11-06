@@ -1079,6 +1079,118 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(screen.getByText('Added to Design.')).toBeInTheDocument();
     });
 
+    test('a Name with no display name reads as the agent, not as "default"', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url === '/api/registry/pods/pod-1/agents/maya-claude'
+        ? Promise.resolve({ data: { agent: {
+          name: 'maya-claude', instanceId: 'default', displayName: '', runtime: { runtimeType: 'webhook' },
+        } } })
+        : base(url, ...rest)));
+      renderPage();
+      const label = await screen.findByText('Name', { selector: '.lb' });
+      const row = label.closest('.lrow');
+      expect(within(row).getByText('maya-claude')).toBeInTheDocument();
+      expect(within(row).queryByText('default')).toBeNull();
+    });
+
+    test('private pods named after the agent say which one they are', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/manage-settings')
+        ? Promise.resolve({ data: { writablePodId: 'pod-1', installations: [
+          { podId: 'pod-1', podName: 'Maya', podType: 'agent-room', status: 'active' },
+          { podId: 'pod-2', podName: 'Maya', podType: 'agent-admin', status: 'active' },
+          { podId: 'pod-3', podName: 'Workspace', podType: 'chat', status: 'active' },
+        ] } })
+        : base(url, ...rest)));
+      renderPage();
+      const rows = await screen.findAllByRole('link', { name: 'Maya' });
+      expect(rows).toHaveLength(2);
+      expect(rows[0].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^direct$/);
+      expect(rows[1].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
+      expect(screen.getByRole('button', { name: 'Maya, direct' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Maya, admin' })).toBeInTheDocument();
+      const team = screen.getByRole('link', { name: 'Workspace' });
+      expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
+    });
+
+    test('the header keeps the connection while an add re-reads the settings', async () => {
+      const base = fleet({ state: 'connected' });
+      let rosterReads = 0;
+      let added = false;
+      let releaseKeys = () => {};
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        // A resolved mock lands before React renders the reload, and with no reload
+        // there's no second roster read. The keys read is a network call in the app.
+        if (url === '/api/credentials' && added) {
+          return new Promise((resolve) => { releaseKeys = () => resolve(base(url, ...rest)); });
+        }
+        if (url === '/api/registry/pods/pod-1/agents') {
+          rosterReads += 1;
+          // The read after the add never lands, as on a slow connection.
+          if (rosterReads > 1) return new Promise(() => {});
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Loading agent settings…');
+      releaseKeys();
+      await screen.findByText('Added to Design.');
+      await waitFor(() => expect(rosterReads).toBeGreaterThan(1));
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 1 pod');
+    });
+
+    test('the header keeps the connection when an add moves the writable pod', async () => {
+      const base = fleet({ state: 'connected' });
+      let moved = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.endsWith('/manage-settings')) {
+          return base(url, ...rest).then(({ data }) => ({ data: moved ? {
+            ...data,
+            writablePodId: 'pod-2',
+            installations: [...data.installations, { podId: 'pod-2', podName: 'Design', status: 'active' }],
+          } : data }));
+        }
+        // The roster read after the move never lands, so only a kept status can show.
+        if (url === '/api/registry/pods/pod-2/agents') return new Promise(() => {});
+        return base(url.replace('/pods/pod-2/', '/pods/pod-1/'), ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        moved = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/api/registry/pods/pod-2/agents')).toBe(true));
+      await waitFor(() => expect(document.querySelector('.st')).not.toBeNull());
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
+    });
+
     test('Add to pod falls back to the agent name when no display name is set', async () => {
       const base = fleet({ state: 'connected' });
       axios.get.mockImplementation((url, ...rest) => {

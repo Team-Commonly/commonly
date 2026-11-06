@@ -56,7 +56,7 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.installations).toEqual([expect.objectContaining({
-      podId: String(podA._id), status: 'active', wakeOnMessage: true, humanOnly: true, boardWake: false,
+      podId: String(podA._id), podType: 'chat', status: 'active', wakeOnMessage: true, humanOnly: true, boardWake: false,
       heartbeatEnabled: false, heartbeatMinutes: 60,
     })]);
     expect(response.body.activePodCount).toBe(2);
