@@ -19,7 +19,7 @@ jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   identityHoldsRuntimeToken: () => Promise.resolve(false),
 }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOneAndUpdate: jest.fn() },
+  AgentInstallation: { findOneAndUpdate: jest.fn(), updateOne: jest.fn() },
   AgentRegistry: { findOne: jest.fn() },
 }));
 
@@ -85,6 +85,24 @@ describe('personaHireService.hirePersona', () => {
         content: expect.stringContaining('Recorder'),
       }),
     );
+  });
+
+  it('stamps the person who re-hires onto a row left uninstalled', async () => {
+    AgentInstallation.findOneAndUpdate.mockResolvedValue({ _id: 'install-1', status: 'uninstalled' });
+    await hirePersona({ agentName: 'recorder', userId: 'user-42', podId: 'pod-9' });
+    expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
+      { _id: 'install-1' }, { $set: { installedBy: 'user-42' } },
+    );
+  });
+
+  it.each([
+    ['a new row', null],
+    ['an active row', { _id: 'install-1', status: 'active' }],
+    ['a paused row', { _id: 'install-1', status: 'paused' }],
+  ])('leaves the installer alone on %s', async (_label, previous) => {
+    AgentInstallation.findOneAndUpdate.mockResolvedValue(previous);
+    await hirePersona({ agentName: 'recorder', userId: 'user-42', podId: 'pod-9' });
+    expect(AgentInstallation.updateOne).not.toHaveBeenCalled();
   });
 
   it('refuses an unverified persona — verified IS the hireable switch', async () => {

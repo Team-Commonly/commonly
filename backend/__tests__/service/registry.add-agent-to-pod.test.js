@@ -583,6 +583,152 @@ describe('adding an existing agent to another pod', () => {
     });
   });
 
+  describe('reinstalling into a pod that has an uninstalled row', () => {
+    const webhook = { runtime: { runtimeType: 'webhook' } };
+    const mentionRow = {
+      status: 'uninstalled', config: { heartbeat: { enabled: false }, autoJoinSource: 'mention-resolution' },
+    };
+
+    it('stamps the owner who adds the agent, on the same row', async () => {
+      await installByo();
+      const { insertedId } = await seedRow(stranger._id, target._id, mentionRow);
+      const res = await add(owner, target._id);
+      expect(res.status).toBe(200);
+      const back = await row(target._id);
+      expect(back._id).toEqual(insertedId);
+      expect(back.status).toBe('active');
+      expect(back.installedBy).toEqual(owner._id);
+    });
+
+    it('stamps the owner who reinstalls through /install', async () => {
+      await installByo();
+      const { insertedId } = await seedRow(stranger._id, target._id, mentionRow);
+      const res = await install(owner, target._id, webhook);
+      expect(res.status).toBe(200);
+      const back = await row(target._id);
+      expect(back._id).toEqual(insertedId);
+      expect(back.installedBy).toEqual(owner._id);
+    });
+
+    it('stamps a member who reinstalls a published agent, as a first install would', async () => {
+      await installByo();
+      await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
+      await seedRow(owner._id, target._id, { status: 'uninstalled' });
+      expect((await install(stranger, target._id, webhook)).status).toBe(200);
+      expect((await row(target._id)).installedBy).toEqual(stranger._id);
+    });
+
+    it.each(['paused', 'stale', 'error'])('keeps the installer of a row left %s, which nobody uninstalled', async (status) => {
+      await installByo();
+      await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
+      await seedRow(owner._id, target._id, { status });
+      expect((await install(stranger, target._id, webhook)).status).toBe(200);
+      expect((await row(target._id)).installedBy).toEqual(owner._id);
+    });
+
+    it('keeps the name on a DM row, which is not a pod install', async () => {
+      await installByo();
+      await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
+      const room = await pod('Room', [stranger._id, owner._id], { type: 'agent-room' });
+      await seedRow(owner._id, room._id, { status: 'uninstalled' });
+      expect((await install(stranger, room._id, webhook)).status).toBe(200);
+      expect((await row(room._id)).installedBy).toEqual(owner._id);
+    });
+  });
+
+  describe('who counts as another owner on /install', () => {
+    const webhook = { runtime: { runtimeType: 'webhook' } };
+
+    it('does not count a mention row or a guest\'s DM row', async () => {
+      await installByo();
+      const elsewhere = await pod('Elsewhere', [stranger._id]);
+      const room = await pod('Their room', [stranger._id, owner._id], { type: 'agent-room' });
+      await seedRow(stranger._id, elsewhere._id, { config: { autoJoinSource: 'mention-resolution' } });
+      await seedRow(stranger._id, room._id);
+      const res = await install(owner, target._id, webhook);
+      expect(res.status).toBe(200);
+      expect((await row(target._id)).installedBy).toEqual(owner._id);
+    });
+
+    it('counts a row that names another owner, whatever its status', async () => {
+      await installByo();
+      const elsewhere = await pod('Elsewhere', [stranger._id]);
+      await seedRow(stranger._id, elsewhere._id, { status: 'uninstalled' });
+      const res = await install(owner, target._id, webhook);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('agent_name_taken');
+      expect(await row(target._id)).toBeNull();
+    });
+
+    it('counts another owner behind a mixed-case row', async () => {
+      await installByo({}, { instanceId: 'another' });
+      const elsewhere = await pod('Elsewhere', [stranger._id]);
+      await seedRow(stranger._id, elsewhere._id, { instanceId: 'Legacy-Case' });
+      const res = await install(owner, target._id, webhook, { instanceId: 'legacy-case' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('agent_name_taken');
+    });
+
+    it('still refuses someone who is not the publisher, before any row is read', async () => {
+      await installByo();
+      const res = await install(stranger, target._id, webhook);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('agent_name_taken');
+      expect(await row(target._id)).toBeNull();
+    });
+  });
+
+  it('lists only the other pods the caller can see on /install too', async () => {
+    await installByo();
+    await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
+    const theirs = await pod('Theirs', [stranger._id]);
+    await seedRow(stranger._id, theirs._id);
+
+    const res = await install(owner, target._id, { runtime: { runtimeType: 'webhook' } });
+    expect(res.status).toBe(200);
+    expect(res.body.otherPods.map(String)).toEqual([String(home._id)]);
+  });
+
+  describe('rows stored before instance ids were normalized', () => {
+    const seedAgent = () => installByo({}, { instanceId: 'another' });
+
+    it('finds an owner whose row has a mixed-case instance id', async () => {
+      await seedAgent();
+      await seedRow(owner._id, home._id, { instanceId: 'Legacy-Case' });
+      const res = await add(owner, target._id, { instanceId: 'legacy-case' });
+      expect(res.status).toBe(200);
+      expect(res.body.installation.instanceId).toBe('legacy-case');
+    });
+
+    it('finds an owner whose row has no instance id, as the default instance', async () => {
+      await seedAgent();
+      await seedRow(owner._id, home._id, { instanceId: null });
+      expect((await add(owner, target._id)).status).toBe(200);
+    });
+
+    it('copies the runtime from a mixed-case sibling', async () => {
+      await seedAgent();
+      await seedRow(owner._id, home._id, { instanceId: 'legacy-case', config: {} });
+      const elsewhere = await pod('Elsewhere', [stranger._id]);
+      await seedRow(stranger._id, elsewhere._id, {
+        instanceId: 'LEGACY-case',
+        config: { autoJoinSource: 'mention-resolution', runtime: { runtimeType: 'webhook', host: 'byo' } },
+      });
+      expect((await add(owner, target._id, { instanceId: 'legacy-case' })).status).toBe(200);
+      expect((await row(target._id, NAME, 'legacy-case')).config.runtime).toMatchObject({ runtimeType: 'webhook' });
+    });
+
+    it('still sees another owner behind a mixed-case row', async () => {
+      await seedAgent();
+      await seedRow(owner._id, home._id, { instanceId: 'legacy-case' });
+      const elsewhere = await pod('Elsewhere', [stranger._id]);
+      await seedRow(stranger._id, elsewhere._id, { instanceId: 'Legacy-Case' });
+      const res = await add(owner, target._id, { instanceId: 'legacy-case' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('agent_name_taken');
+    });
+  });
+
   it('leaves /install answering a duplicate the way it did', async () => {
     await installByo();
     const res = await install(owner, home._id, { runtime: { runtimeType: 'webhook' } });

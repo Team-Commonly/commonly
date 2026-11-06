@@ -98,7 +98,7 @@ export const identityIsDormant = async (agentName: string, instanceId: string): 
   return Boolean(await statusRow('uninstalled')) && !(await statusRow('active'));
 };
 
-const RESTORED_FIELDS = ['status', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite'];
+const RESTORED_FIELDS = ['status', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite', 'installedBy'];
 
 /**
  * Undo an installation write, as the issuer takes a token back after its own
