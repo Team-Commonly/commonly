@@ -1486,6 +1486,29 @@ describe('codex adapter — the public Codex home on Linux', () => {
     })).rejects.toThrow(/contains the agent's own Codex home/);
     expect(calls).toHaveLength(0);
   });
+
+  // Codex parses every filesystem key as a path for the platform it runs on.
+  // `/private/tmp` (the macOS temp root) has no drive on Windows, so Codex
+  // refused the whole profile there and every turn exited before the model:
+  // "filesystem path `/private/tmp` must be absolute, use `~/...`, or start
+  // with `:`" (byo-windows run 41996139905).
+  test('a Windows seat gets no macOS path in its profile; Mac and Linux keep the /private/tmp deny', async () => {
+    const win = filesystemFlag(await publicSpawn(fakeHome, { platform: 'win32', cwd: project }));
+    expect(win).not.toContain('/private/tmp');
+    // Every key Codex reads as a path is home-relative, a :special, or relative.
+    const keys = [...win.slice('permissions.commonly_public.filesystem='.length).matchAll(/"([^"]+)"=/g)].map((m) => m[1]);
+    expect(keys.filter((key) => key.startsWith('/'))).toEqual([]);
+    expect(win).toContain('"~/.commonly"="deny"');
+    expect(win).toContain('"~/.ssh"="deny"');
+    for (const platform of ['darwin', 'linux']) {
+      // eslint-disable-next-line no-await-in-loop
+      const flag = filesystemFlag(await publicSpawn(fakeHome, { platform, cwd: project }));
+      expect(flag).toContain('"/private/tmp"="deny"');
+      // The same denies otherwise (Linux adds its helper-binary read grants after these).
+      const denies = (f) => f.split('":workspace_roots"')[0];
+      expect(denies(flag).replace('"/private/tmp"="deny",', '')).toBe(denies(win));
+    }
+  });
 });
 
 describe('codexNativeBinary — the binary `codex` on PATH runs', () => {

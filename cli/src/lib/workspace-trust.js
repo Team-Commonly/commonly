@@ -133,10 +133,30 @@ export const workspaceTurnPlacement = ({
   };
 };
 
+/**
+ * Where one turn of a Windows Codex seat runs when the person opted in to
+ * running it unsandboxed (windows-unsandboxed.js). A pod can turn public after
+ * the run starts, so its rooms are re-read before every turn, as for a
+ * `workspace` seat. With every pod confirmed private, the turn has no sandbox
+ * block and Codex runs unconfined. Anything else, a failed read included, is
+ * placed `public`, which host-check.js always refuses on native Windows, so
+ * strangers can never reach an unconfined shell.
+ */
+export const unconfinedTurnPlacement = ({ environment, installations, cwd } = {}) => {
+  const { sandbox: _sandbox, ...unsandboxed } = environment || {};
+  if (allPodsConfirmedPrivate(installations)) return { environment: unsandboxed, cwd, reason: null };
+  return {
+    environment: { ...unsandboxed, sandbox: { trust: 'public' } },
+    cwd,
+    reason: installations === null ? 'its pods could not be read' : PUBLIC_POD_REASON,
+  };
+};
+
 export default {
   podIsConfirmedPrivate,
   allPodsConfirmedPrivate,
   workspaceStartDirRefusal,
   firstRunWorkspace,
   workspaceTurnPlacement,
+  unconfinedTurnPlacement,
 };

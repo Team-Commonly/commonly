@@ -65,10 +65,10 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // The command that makes the agent LISTEN, for bash/zsh or for PowerShell.
 // PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
 // only in that window. Install line and run line are the same on both, except
-// that on native Windows `agent run` refuses Claude Code without --unsandboxed:
-// there is no sandbox there, and the flag is the person choosing to run without
-// one. Codex keeps its own permission profile, which the flag doesn't change,
-// so its line carries no flag.
+// that on native Windows `agent run` refuses without --unsandboxed: there is no
+// sandbox there, and the flag is the person choosing to run without one. For
+// Codex the CLI also requires every pod to be invite-only, so the page offers
+// this line only in such a pod (listenerRunsOn).
 export const connectSnippet = ({
   os, apiUrl, token, agentName, adapter, allow = '',
 }: {
@@ -85,7 +85,7 @@ export const connectSnippet = ({
   return [
     CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' && adapter !== 'codex' ? ' --unsandboxed' : ''}`,
+    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 // D247: OpenCode can't start from the page's key: a public OpenCode seat needs
@@ -218,9 +218,12 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // Claude Code and Codex keep the OS rules above. No other harness answers from
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
-const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
+// Codex on Windows has no sandbox, so a public pod refuses it. Before a pod is
+// known there's nothing to refuse yet, so only a pod that isn't private rules it
+// out: `podPrivate` is undefined until then.
+const listenerRunsOn = (os: SetupOs, adapter: string, podPrivate?: boolean): boolean => {
   if (adapter === 'claude') return true;
-  if (adapter === 'codex') return os === 'mac' || os === 'windows';
+  if (adapter === 'codex') return os === 'mac' || (os === 'windows' && podPrivate !== false);
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -322,7 +325,8 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
+  const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
+  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter, repoPod ? podIsConfirmedPrivate(repoPod) : undefined);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
   // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
@@ -335,7 +339,6 @@ const V2AgentBYO: React.FC = () => {
   useEffect(() => {
     setWorkInRepo(false); setAllowWrite(false); setAllowWeb(false);
   }, [issued?.token]);
-  const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
   const repoChoiceAvailable = listenAdapter === 'claude'
     && setupOs !== 'windows'
     && podIsConfirmedPrivate(repoPod);
@@ -1941,7 +1944,8 @@ const V2AgentBYO: React.FC = () => {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
                 : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
-                : t(listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
+                : t(listenAdapter === 'codex' && setupOs === 'windows' ? 'agentByo.listen.unavailableCodexWindows'
+                    : listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
                     : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                   tool: listenTool,
@@ -1955,17 +1959,14 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
-            {/* Directly above the lines it explains. Claude Code's last line
-                carries --unsandboxed; Codex keeps its own profile and no flag. */}
+            {/* Directly above the lines it explains: both last lines carry --unsandboxed. */}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
-                {listenAdapter === 'codex' ? t('agentByo.listen.windowsCodex') : (
-                  <Trans
-                    i18nKey="agentByo.listen.windowsNote"
-                    values={{ name: issued.agentName }}
-                    components={{ cmd: <code /> }}
-                  />
-                )}
+                <Trans
+                  i18nKey={listenAdapter === 'codex' ? 'agentByo.listen.windowsCodex' : 'agentByo.listen.windowsNote'}
+                  values={{ name: issued.agentName }}
+                  components={{ cmd: <code /> }}
+                />
               </p>
             )}
             {listenerAvailable && (

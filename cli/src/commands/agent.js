@@ -77,7 +77,9 @@ import {
   providerRefusal,
   WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
-import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
+import {
+  firstRunWorkspace, podIsConfirmedPrivate, unconfinedTurnPlacement, workspaceTurnPlacement,
+} from '../lib/workspace-trust.js';
 import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
@@ -102,7 +104,8 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
-  UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
+  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostUnconfinedForRun, runOptedInUnsandboxed,
+  unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
@@ -1312,6 +1315,19 @@ export const performAttach = async ({
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
     const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter, platform });
+    // A public Codex seat on native Windows refuses whatever mode it names
+    // (CTO ruling 2026-11-05, host-check.js). Checked once, before any mode
+    // branch, so the Codex-profile branch below can't publish an agent that
+    // `agent run` would only refuse (CTO review of #3501).
+    if (adapterName === 'codex') {
+      // Attach starts nothing, so only a public seat stops here, in the words
+      // that don't offer the flag. A seat with no sandbox block still needs the
+      // person's opt-in at `agent run`.
+      const codexRefusal = hostSandboxRefusal({
+        environment, adapterName, platform, hostUnconfined: true, optedIn: true,
+      });
+      if (codexRefusal) throw new Error(codexRefusal);
+    }
     // D245: native Windows has neither sandbox, so its refusal names Windows
     // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
     // refuses there, as before; only the words differ.
@@ -1582,10 +1598,15 @@ export const runMemoryImport = async ({
 // line carries it, and it says where the note goes once the agent has posted.
 // Walked 11-06: a seat offered an export feature that wasn't found, so a next
 // step has to be one it knows exists.
-const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
+const SAY_A_FAILURE = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
   + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
-  + 'Only point them to a feature or option you know exists. '
+  + 'Only point them to a feature or option you know exists. ';
+const FAILURE_IN_PLAIN_WORDS = SAY_A_FAILURE
   + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
+// A comment drops final text only after a threaded reply to that comment, so
+// a tool post anywhere else would not save a second post (review of #3567).
+const FAILURE_ON_COMMENT = SAY_A_FAILURE
+  + 'If you already replied to this comment, reply to it again with the failure note: final text after such a reply is dropped.';
 
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
@@ -1629,10 +1650,12 @@ const roomQuestionLine = (pod, entries) => {
 // A person who @'d the seat is not offered silence, only the tool's exit.
 const FINAL_TEXT_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. If you have nothing to add, or already replied with '
-  + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary.';
+  + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary. '
+  + FAILURE_ON_COMMENT;
 const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. '
-  + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary.';
+  + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary. '
+  + FAILURE_ON_COMMENT;
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with
@@ -1851,6 +1874,9 @@ export const performRun = ({
   // D245: the user's own Windows opt-in for this run; reaches the adapter's
   // spawn context only (never the environment).
   hostUnconfined = false,
+  // F187: this Windows Codex run was opted in with every pod confirmed private.
+  // Each turn is placed by unconfinedTurnPlacement, which re-reads them.
+  codexUnconfined = false,
   workspacePath = null,
   intervalMs = 5000,
   log = () => {},
@@ -2159,7 +2185,7 @@ export const performRun = ({
   };
   const placeTurn = async () => {
     await refreshSeatEnvironment();
-    if (seatEnvironment?.sandbox?.trust !== 'workspace') {
+    if (seatEnvironment?.sandbox?.trust !== 'workspace' && !codexUnconfined) {
       return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
     let installations = null;
@@ -2173,17 +2199,22 @@ export const performRun = ({
       installations = null;
       readError = err;
     }
-    const placement = workspaceTurnPlacement({
-      environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
-    });
+    const placement = codexUnconfined
+      ? unconfinedTurnPlacement({ environment: seatEnvironment, installations, cwd: agentCwd })
+      : workspaceTurnPlacement({
+        environment: seatEnvironment, workspacePath: agentCwd, installations, scratchDir: scratchCwd,
+      });
     if (placement.reason !== lastPlacementReason) {
-      log(placement.reason
-        ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
-        : `every pod is confirmed private again; turns read ${agentCwd}`);
+      // An unconfined Codex turn has no public fallback: the refusal below says what happened.
+      if (!codexUnconfined || !placement.reason) {
+        log(placement.reason
+          ? `this turn runs as a public seat in ${scratchCwd}, because ${placement.reason}`
+          : `every pod is confirmed private again; turns ${codexUnconfined ? 'run' : `read ${agentCwd}`}`);
+      }
       lastPlacementReason = placement.reason;
     }
     if (!existsSync(placement.cwd)) mkdirSync(placement.cwd, { recursive: true });
-    const where = `${placement.environment.sandbox.trust}:${placement.cwd}`;
+    const where = `${placement.environment.sandbox?.trust || 'unconfined'}:${placement.cwd}`;
     return { ...placement, readError, binding: sessionBinding ? `${sessionBinding}:${where}` : where };
   };
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
@@ -2537,6 +2568,7 @@ export const performRun = ({
         environment: placement.environment,
         adapterName: adapter.name,
         hostUnconfined,
+        optedIn: codexUnconfined,
         ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
       });
       if (turnRefusal && placement.readError) {
@@ -2549,6 +2581,18 @@ export const performRun = ({
       }
       if (turnRefusal) {
         log(`turn refused, because ${placement.reason}: ${turnRefusal.replace(/\n\s*/g, ' ')}`);
+        // Asked privately, nobody else can pick this up, and the asker would
+        // otherwise wait out the ask's 24-hour expiry.
+        if (event.type === 'agent.ask' && event.payload?.requestId) {
+          try {
+            await client.post(
+              `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
+              { content: 'I can’t take this ask: this pod isn’t private, so I can’t run for it on my computer.' },
+            );
+          } catch (err) {
+            if (err?.status !== 409 || err?.body?.code !== 'already_responded') throw err;
+          }
+        }
         return {
           outcome: 'no_action',
           refused: { reason: 'delivery-refused' },
@@ -4988,7 +5032,7 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
-    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants.')
+    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
     .action(async (name, opts) => {
       if (opts.unsandboxed) {
         const flagRefusal = unsandboxedFlagRefusal();
@@ -5041,16 +5085,59 @@ Docs:
       // marker is read only by the seats that daemon spawns). Nothing from the
       // server decides this, and the environment never carries it: the seat
       // keeps its trust and tool policy, and only the OS jail is skipped.
+      const optedIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
       const hostUnconfined = hostUnconfinedForRun({
-        optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
+        optedIn,
         adapterName: record.adapter,
         environment: record.environment,
       });
       if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
 
+      // Codex has no policy to fall back on, so its opt-in reaches only a seat
+      // whose every pod is confirmed private, and this run's environment, never
+      // the saved record, loses its sandbox block. A read that fails stays
+      // refused: nothing here may assume a pod is private.
+      let codexUnconfined = false;
+      if (optedIn && record.adapter === 'codex' && process.platform === 'win32') {
+        const seatClient = createClient({ instance: record.instanceUrl, token: record.runtimeToken });
+        let installations = null;
+        try {
+          const identity = await seatClient.get('/api/agents/runtime/installations');
+          installations = identity?.installations;
+        } catch (err) {
+          console.error(`${stamp()} [${name}] could not read whether this agent's pods are private, so it did not start: ${err.message}`);
+          process.exit(1);
+        }
+        codexUnconfined = codexUnconfinedForRun({
+          optedIn, adapterName: record.adapter, environment: record.environment, installations,
+        });
+        // An unconfined Codex can read this run's token and call the grant
+        // broker itself, past the local guard, so the server has to refuse it.
+        // No report, no run: "gets no connector grants" rests on this call.
+        if (codexUnconfined) {
+          try {
+            await seatClient.post('/api/agents/runtime/host-unconfined', {});
+          } catch (err) {
+            console.error(`${stamp()} [${name}] could not tell the server this agent has no sandbox, so it did not start: ${err.message}`);
+            process.exit(1);
+          }
+        }
+      }
+      if (codexUnconfined) console.warn(`${stamp()} [${name}] ${CODEX_UNSANDBOXED_NOTICE}`);
+      let runEnvironment = record.environment;
+      if (codexUnconfined && runEnvironment) {
+        const { sandbox: _sandbox, ...unsandboxed } = runEnvironment;
+        runEnvironment = unsandboxed;
+      }
+
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter, hostUnconfined });
+      const hostRefusal = hostSandboxRefusal({
+        environment: runEnvironment,
+        adapterName: record.adapter,
+        hostUnconfined: hostUnconfined || codexUnconfined,
+        optedIn,
+      });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -5117,7 +5204,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       await prepareMcpBeforeFirstPoll({
-        environment: record.environment,
+        environment: runEnvironment,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
 
@@ -5138,8 +5225,9 @@ Docs:
         displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
-        environment: record.environment || null,
+        environment: runEnvironment || null,
         hostUnconfined,
+        codexUnconfined,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),

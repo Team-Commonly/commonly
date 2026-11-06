@@ -65,6 +65,8 @@ add(runtime, 'own_state', ['POST /events/:id/ack', 'POST /pods/:podId/skill-load
 // its own read cursor: none reaches anyone else.
 add(runtime, 'own_state', [
   'POST /events/renew', 'POST /events/release', 'PATCH /configuration', 'POST /pods/:podId/catch-up',
+  // Marks only the calling seat and only tightens it: confined can't be restored here.
+  'POST /host-unconfined',
 ]);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',

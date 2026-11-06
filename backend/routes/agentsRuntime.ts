@@ -539,6 +539,21 @@ router.post('/observation', phase4RateLimit, daemonAuth('agents:adopt'), async (
   }
 });
 
+// A foreground run on a host with no sandbox says so here, because no daemon is
+// reporting for it, and an unconfined agent can read this run's token and call
+// the grant broker itself. Set-only on purpose: that same token must never be
+// able to lift the refusal, so nothing on this route clears it. It only ever
+// adds a refusal, so a seat can set it on itself alone and nothing else.
+router.post('/host-unconfined', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+  try {
+    await User.updateOne({ _id: req.agentUser._id }, { $set: { 'botMetadata.hostUnconfined': true } });
+    return res.json({ hostUnconfined: true });
+  } catch (error) {
+    console.error('Host report failed:', (error as Error).message);
+    return res.status(503).json({ code: 'host_report_unavailable' });
+  }
+});
+
 router.patch('/configuration', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     return await patchAgentRuntimeConfiguration(req, res);

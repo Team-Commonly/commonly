@@ -449,18 +449,32 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^By default, on macOS/);
     });
 
-    // --unsandboxed doesn't change Codex (it keeps its own permission profile),
-    // so its line has no flag and the note is the Codex line alone.
-    test('Codex on Windows: the PowerShell listener command without --unsandboxed, and only the Codex note', async () => {
+    // Codex has no policy without a sandbox, so the page says what the flag
+    // costs, and offers the line only in an invite-only pod.
+    test('Codex on Windows in an invite-only pod: the PowerShell line with --unsandboxed, and what that costs', async () => {
       setUserAgent(WINDOWS);
-      await issueToken('codex');
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
-      expect(listener()?.textContent).not.toContain('--unsandboxed');
+      await issueToken('codex', PRIVATE_POD);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex --unsandboxed$/);
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
-      expect(screen.getByTestId('byo-listen-windows').textContent)
-        .toBe('Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.');
+      const note = screen.getByTestId('byo-listen-windows');
+      expect(note).toHaveTextContent(/nothing confines/);
+      expect(note).toHaveTextContent(/anyone in this pod, people you invite later included, can direct it/);
+      expect(note).toHaveTextContent(/no connector grants/);
+      expect(note.querySelector('code')).toHaveTextContent('--unsandboxed');
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+    });
+
+    test.each([
+      ['open to join', { ...PRIVATE_POD, joinPolicy: 'open' }],
+      ['joinPolicy not reported', { publicRead: false, communityListed: false }],
+    ])('Codex on Windows in a pod %s: no command to paste, and the page says why', async (_label, pod) => {
+      setUserAgent(WINDOWS);
+      await issueToken('codex', pod);
+      expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
+      expect(screen.getByTestId('byo-listen-wont-answer')).toBeInTheDocument();
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/can run only in an invite-only pod/);
     });
 
     // No listener is now Codex on Linux.
