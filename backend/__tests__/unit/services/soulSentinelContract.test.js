@@ -73,9 +73,13 @@ describe('SOUL footer — the NO_REPLY passage matches the sanitizer', () => {
 describe('the SOUL footer says how a failure should read', () => {
   it('in plain words, leaving out runtime terms', () => {
     const source = fs.readFileSync(PROVISIONER_SOURCE, 'utf8');
-    expect(source).toContain('### When you can\'t do what someone asked');
-    expect(source).toContain('Say in plain words what didn\'t work and what they can do next');
-    expect(source).toContain('terms unless they asked about them');
-    expect(source).toContain('In an agent DM the reply policy\nabove still decides: tell them once, then stop');
+    expect(source).toContain(`### When you can't do what someone asked
+
+Say in plain words what didn't work and what they can do next. Leave
+out event types, checkpoints, deliveries, retries, status codes and
+other runtime terms unless they asked about them. Only point them to
+a feature or option you know exists. In an agent DM the reply policy
+above still decides: tell them once, then stop.
+`);
   });
 });

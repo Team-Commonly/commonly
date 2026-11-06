@@ -1356,7 +1356,8 @@ describe('performRun', () => {
   describe('a comment @ (thread.mention)', () => {
     const COMMENT_ROUTE = '/api/agents/runtime/threads/post-1/comments';
     const FAILURE_LINE = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-      + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+      + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+      + 'Only point them to a feature or option you know exists. '
       + 'If you already replied to this comment, reply to it again with the failure note: final text after such a reply is dropped.';
     const FINAL_TEXT_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
       + 'Do not also post it to pod chat. If you have nothing to add, or already replied with '
@@ -1800,7 +1801,8 @@ describe('performRun', () => {
   const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
     + 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+    + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+    + 'Only point them to a feature or option you know exists. '
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
   const firstPromptFor = async (events) => {
@@ -1861,13 +1863,14 @@ describe('performRun', () => {
     + 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
     + 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+    + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+    + 'Only point them to a feature or option you know exists. '
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
 
-  const promptWithMessages = async (events, messages, { claimHolder } = {}) => {
+  const promptWithMessages = async (events, messages, { claimHolder, pod } = {}) => {
     createClient.mockReturnValue({
-      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages } : { events })),
+      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages, ...pod } : { events })),
       post: jest.fn(async (url) => {
         if (!url.endsWith('/claim')) return {};
         return claimHolder ? { claimed: false, claimedBy: claimHolder } : { claimed: true, expiresAt: 'later' };
@@ -1888,6 +1891,78 @@ describe('performRun', () => {
   };
   const mention = (id, payload = {}) => makeEvent({
     _id: `evt-${id}`, payload: { content: '@seat what is the status?', messageId: id, ...payload },
+  });
+
+  describe('a question put to the room', () => {
+    const WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
+      + 'if you can\'t help with it, end with NO_REPLY.';
+    const ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
+      + 'answer it, even if the answer is that you can\'t help.';
+    const openQuestion = (payload = {}) => makeEvent({
+      _id: 'evt-open', type: 'message.posted', payload: { content: 'can anyone export this?', messageId: 'm1', ...payload },
+    });
+    const human = [{ _id: 'm1', isBot: false }];
+    const withPeers = { otherAgentsInPod: true, peopleInPod: 1 };
+    const alone = { otherAgentsInPod: false, peopleInPod: 1 };
+
+    test('with another agent here, a seat that can\'t help may stay out of it', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human, { pod: withPeers });
+      expect(prompt).toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('alone, the seat answers, even that it can\'t help', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human, { pod: alone });
+      expect(prompt).toContain(ALONE);
+      expect(prompt).not.toContain(WITH_PEERS);
+    });
+
+    test('several people and another agent keep the peers line', async () => {
+      const prompt = await promptWithMessages(
+        [openQuestion()], human, { pod: { otherAgentsInPod: true, peopleInPod: 3 } },
+      );
+      expect(prompt).toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a lone seat among several people gets neither line: it may be for one of them', async () => {
+      const prompt = await promptWithMessages(
+        [openQuestion()], human, { pod: { otherAgentsInPod: false, peopleInPod: 3 } },
+      );
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test.each([
+      ['a new member\'s welcome', { welcomeWake: true }],
+      ['a reply to this seat\'s turn', { adjacentReply: true }],
+      ['a reply to this seat\'s message', { repliesToYourMessage: true }],
+      ['its own thread or task', { addressed: true }],
+      ['a DM', { dmKind: 'agent-agent' }],
+    ])('%s is owed an answer, so it gets neither line', async (_label, payload) => {
+      const prompt = await promptWithMessages([openQuestion(payload)], human, { pod: withPeers });
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('an older server reports nothing, so neither line is added', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human);
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a heartbeat alone is not told to answer anything', async () => {
+      const prompt = await promptWithMessages(
+        [makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: {} })], [], { pod: alone },
+      );
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a person\'s direct @ gets neither line, even with another agent here', async () => {
+      const prompt = await promptWithMessages([mention('m1')], human, { pod: withPeers });
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
   });
 
   test('a person\'s direct @ is not offered silence', async () => {

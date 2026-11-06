@@ -1598,8 +1598,11 @@ export const runMemoryImport = async ({
 // would also eat a pod that is discussing these words. It speaks only to a
 // request it can't meet, so it gives a heartbeat no reason to post. Every closing
 // line carries it, and it says where the note goes once the agent has posted.
+// Walked 11-06: a seat offered an export feature that wasn't found, so a next
+// step has to be one it knows exists.
 const SAY_A_FAILURE = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. ';
+  + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+  + 'Only point them to a feature or option you know exists. ';
 const FAILURE_IN_PLAIN_WORDS = SAY_A_FAILURE
   + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 // A comment drops final text only after a threaded reply to that comment, so
@@ -1618,6 +1621,34 @@ const FAILURE_ON_COMMENT = SAY_A_FAILURE
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
   + FAILURE_IN_PLAIN_WORDS;
+
+// Who owes an open question an answer depends on who else is here. Walked 11-06:
+// "can anyone…" drew an "I can't" from a seat nobody addressed. With another
+// agent here, that seat should step aside, and a person's message it declines
+// can go to a peer. One person alone with one seat is talking to it, and silence
+// is the worst answer a new person can get. A lone seat among several people
+// isn't told either way: the line may be for one of them (ADR-018 D6.4). With
+// several people and another agent, the peers line still holds. No line at all
+// when the server doesn't report the pod, or when an item is owed an answer
+// whatever the room looks like: a welcome, a reply to this seat, its own thread
+// or task, a DM.
+// A heartbeat isn't told to answer: nobody asked it anything this turn.
+const ROOM_QUESTION_WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
+  + 'if you can\'t help with it, end with NO_REPLY.';
+const ROOM_QUESTION_ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
+  + 'answer it, even if the answer is that you can\'t help.';
+const itemIsNotToTheRoom = ({ event: { payload } }) => Boolean(
+  payload?.welcomeWake || payload?.adjacentReply || payload?.dmKind
+  || payload?.repliesToYourMessage === true || payload?.addressed === true,
+);
+const roomQuestionLine = (pod, entries) => {
+  if (!pod || entries.some(itemIsNotToTheRoom)) return '';
+  if (pod.otherAgentsInPod) return ` ${ROOM_QUESTION_WITH_PEERS}`;
+  if (pod.peopleInPod === 1 && entries.some((entry) => entry.event.type !== 'heartbeat')) {
+    return ` ${ROOM_QUESTION_ALONE}`;
+  }
+  return '';
+};
 
 // The same line for a comment @ (F225), whose final text goes to the comment.
 // A person who @'d the seat is not offered silence, only the tool's exit.
@@ -3171,7 +3202,7 @@ export const performRun = ({
   // pull, rather than being silently consumed here.
   // `unreadBodiesPodId` is set only for a turn a person's mention woke (ADR-018
   // D9.2): the unread messages this page carried go in as marked data.
-  const buildInboxPrompt = (entries, inboxCount = entries.length, { unreadBodiesPodId = null } = {}) => {
+  const buildInboxPrompt = (entries, inboxCount = entries.length, { pod = null, unreadBodiesPodId = null } = {}) => {
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
@@ -3241,7 +3272,8 @@ export const performRun = ({
             + 'For anything else here, post only an action or a materially useful response. '
             + FINAL_TEXT_ANSWERS_A_PERSON
           : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
-            + FINAL_TEXT_IS_POSTED),
+            + FINAL_TEXT_IS_POSTED
+            + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
 
@@ -3625,13 +3657,18 @@ export const performRun = ({
       }
     }
 
+    // Null until the server says: a failed read or an older server is unknown,
+    // not "alone" and not "with peers".
+    let podAttendance = null;
     const snapshotMessages = async () => {
       try {
-        const { messages = [] } = await client.get(
+        const { messages = [], otherAgentsInPod, peopleInPod } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
+        podAttendance = typeof otherAgentsInPod === 'boolean' ? { otherAgentsInPod, peopleInPod } : null;
         return messages;
       } catch {
+        podAttendance = null;
         return null;
       }
     };
@@ -3811,7 +3848,7 @@ export const performRun = ({
           },
         },
         eventPodId,
-        prompt: buildInboxPrompt([entry], 1),
+        prompt: buildInboxPrompt([entry], 1, { pod: podAttendance }),
         preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
@@ -3819,9 +3856,9 @@ export const performRun = ({
       });
     };
 
-    const plainPrompt = buildInboxPrompt(entries, inboxCount);
+    const plainPrompt = buildInboxPrompt(entries, inboxCount, { pod: podAttendance });
     const turnPrompt = personMentioned
-      ? buildInboxPrompt(entries, inboxCount, { unreadBodiesPodId: eventPodId })
+      ? buildInboxPrompt(entries, inboxCount, { pod: podAttendance, unreadBodiesPodId: eventPodId })
       : plainPrompt;
 
     let turnResult;

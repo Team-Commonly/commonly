@@ -11,7 +11,7 @@ jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: j
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   req.agentUser = { _id: 'bot-1' };
-  req.agentInstallations = [{ podId: 'pod-1', status: 'active' }];
+  req.agentInstallations = [{ podId: 'pod-1', status: 'active', agentName: 'seat', instanceId: 'default' }];
   req.agentAuthorizedPodIds = ['pod-1'];
   next();
 });
@@ -39,9 +39,9 @@ jest.mock('../../../services/globalModelConfigService', () => ({}));
 jest.mock('../../../services/socialPolicyService', () => ({}));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
@@ -52,6 +52,9 @@ const express = require('express');
 const request = require('supertest');
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
+const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const router = require('../../../routes/agentsRuntime');
 
 const app = express();
@@ -85,6 +88,57 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
       hasMore: true,
     });
     expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
+  });
+
+  describe('who else is in the pod', () => {
+    const lean = (rows) => ({ select: () => ({ lean: async () => rows }) });
+    const installs = (...rows) => AgentInstallation.find.mockReturnValue(lean(rows));
+    const self = { agentName: 'seat', instanceId: 'default' };
+    const read = () => request(app).get('/api/agents/runtime/pods/pod-1/messages');
+
+    beforeEach(() => {
+      AgentMessageService.getRecentMessages.mockResolvedValue([]);
+      Pod.findById.mockReturnValue(lean({ members: ['u1', 'u2', 'bot-1'] }));
+      User.countDocuments.mockResolvedValue(2);
+    });
+
+    test('the caller alone has no peers, and people are counted', async () => {
+      installs(self);
+      const res = await read();
+      expect(res.body).toMatchObject({ otherAgentsInPod: false, peopleInPod: 2 });
+      expect(User.countDocuments).toHaveBeenCalledWith({
+        _id: { $in: ['u1', 'u2', 'bot-1'] }, isBot: { $ne: true },
+      });
+    });
+
+    test('commonly-bot is not a peer', async () => {
+      installs(self, { agentName: 'commonly-bot', instanceId: 'default' });
+      expect((await read()).body.otherAgentsInPod).toBe(false);
+    });
+
+    test('another agent is, and so is another instance of this one', async () => {
+      installs(self, { agentName: 'other' });
+      expect((await read()).body.otherAgentsInPod).toBe(true);
+      installs(self, { agentName: 'seat', instanceId: 'second' });
+      expect((await read()).body.otherAgentsInPod).toBe(true);
+    });
+
+    test('an older page or a thread read does not look', async () => {
+      const older = await request(app)
+        .get(`/api/agents/runtime/pods/pod-1/messages?before=${encodeURIComponent(cursor)}`);
+      const thread = await request(app).get('/api/agents/runtime/pods/pod-1/messages?threadRootId=12');
+      expect(AgentInstallation.find).not.toHaveBeenCalled();
+      expect(older.body).toEqual({ messages: [], hasMore: false });
+      expect(thread.body).toEqual({ messages: [], hasMore: false });
+    });
+
+    test('a failed lookup leaves both out and still returns the messages', async () => {
+      installs(self);
+      User.countDocuments.mockRejectedValueOnce(new Error('mongo down'));
+      const res = await read();
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ messages: [], hasMore: false });
+    });
   });
 
   test('reports end-of-history when the extra row is absent', async () => {

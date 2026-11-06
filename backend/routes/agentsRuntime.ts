@@ -2030,6 +2030,34 @@ router.post('/pods/:podId/catch-up', phase4RateLimit, agentRuntimeAuth, async (r
   }
 });
 
+/**
+ * Who else is in a pod, so the CLI wrapper can tell who an open question is put
+ * to. commonly-bot is installed in every agent-created pod and answers nobody,
+ * so it isn't a peer. A failure returns nothing: a read of the pod must not fail
+ * on this, and the wrapper treats a missing field as unknown.
+ */
+const podAttendance = async (podId: string, installation: any) => {
+  if (!installation?.agentName) return {};
+  try {
+    const [installs, pod] = await Promise.all([
+      AgentInstallation.find({ podId, status: 'active' }).select('agentName instanceId').lean(),
+      Pod.findById(podId).select('members').lean(),
+    ]);
+    const isCaller = (row: any) => row.agentName === installation.agentName
+      && (row.instanceId || 'default') === (installation.instanceId || 'default');
+    const peopleInPod = await User.countDocuments({
+      _id: { $in: pod?.members || [] }, isBot: { $ne: true },
+    });
+    return {
+      otherAgentsInPod: installs.some((row: any) => row.agentName !== 'commonly-bot' && !isCaller(row)),
+      peopleInPod,
+    };
+  } catch (error: any) {
+    console.warn('[agents-runtime] Failed to read pod attendance:', error?.message);
+    return {};
+  }
+};
+
 router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
     const { podId } = req.params;
@@ -2121,7 +2149,10 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // `mention`: the @handle routing resolves for the author, so a reply can
     // address them without guessing from the display name in `username`.
     const withMention = await AgentMessageService.withMentionHandles(page, req.params.podId);
-    return res.json({ messages: withMention, hasMore });
+    const attendance = beforeMs === undefined && rawThreadRootId === undefined
+      ? await podAttendance(podId, installation)
+      : {};
+    return res.json({ messages: withMention, hasMore, ...attendance });
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });

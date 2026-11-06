@@ -4398,6 +4398,8 @@ Qwen's `commonly_post_message` permission was declined, and after 87 seconds a f
 
 **Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.
 
+**Walked 2026-11-06, Qwen on CLI 0.1.270:** the runtime words from the first walk were gone, and three things showed up. A seat cited a 404. Asked to say what the person can do next, a seat twice sent them to a pod export feature that a look through the v2 frontend didn't find: an instruction to offer a next step gets one, whether or not it exists. An open "can anyone…" drew an "I can't" from a seat nobody addressed, in a pod where it was the only agent. All three copies of the rule now name status codes and limit a next step to what the seat knows exists. On the CLI wrapper, an open question also depends on who's in the pod: with another agent, a seat that can't help ends with `NO_REPLY`, and one person alone with one seat gets an answer. An item owed an answer, like a welcome or a reply to the seat, gets neither line. A rule about failing has to say who the failure is owed to.
+
 ## 103. "Context only, no reply needed" taught a model it could skip the message it needed (2026-11-05, cto)
 
 *Origin: Growth's prod walk on 11-05; PR #3543.*
