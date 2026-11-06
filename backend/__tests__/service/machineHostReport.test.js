@@ -77,7 +77,7 @@ const seatOn = async (owner, machine) => {
   return { agentName, podId, token };
 };
 
-const deliveredEvent = (seat, type = 'chat.mention') => AgentEvent.create({
+const deliveredEvent = async (seat, type = 'chat.mention', payload = null) => AgentEvent.create({
   agentName: seat.agentName,
   instanceId: 'default',
   podId: seat.podId,
@@ -86,7 +86,16 @@ const deliveredEvent = (seat, type = 'chat.mention') => AgentEvent.create({
   attempts: 1,
   deliveredAt: new Date(),
   deliveryNonce: 'd'.repeat(32),
-  payload: { messageId: '41', content: '@seat hello' },
+  payload: payload || { messageId: '41', content: '@seat hello', userId: String((await person())._id) },
+});
+
+const agentSender = async () => User.create({
+  username: `a-${new mongoose.Types.ObjectId().toString().slice(-8)}`,
+  email: `${new mongoose.Types.ObjectId()}@agents.commonly.local`,
+  password: 'Password123!',
+  isBot: true,
+  botType: 'agent',
+  botMetadata: { agentName: 'other', instanceId: 'default' },
 });
 
 const ack = (seat, event, outcome) => request(app)
@@ -193,6 +202,51 @@ describe('a machine records when one of its agents first answered a person', () 
     await ack(seat, await deliveredEvent(seat), 'no_action');
     await ack(seat, await deliveredEvent(seat, 'heartbeat'), 'posted');
     expect((await row(machine._id)).firstAnswerAt).toBeNull();
+  });
+
+  // enqueueDmEvent sends an agent's DM as chat.mention, so the event type alone
+  // says nothing about who is waiting.
+  it('does not stamp on a mention an agent sent', async () => {
+    const { machine, seat } = await setup();
+    const sender = await agentSender();
+    await ack(seat, await deliveredEvent(seat, 'chat.mention', {
+      messageId: '42', content: 'hello', userId: String(sender._id), dmKind: 'agent-agent',
+    }), 'posted');
+    expect((await row(machine._id)).firstAnswerAt).toBeNull();
+  });
+
+  it('does not stamp on a kernel wake, whoever the row names', async () => {
+    const { machine, seat } = await setup();
+    const owner = await person();
+    for (const flag of [{ assignedTaskWake: true }, { boardWake: true }, { triggerAuthor: 'kernel' }]) {
+      // eslint-disable-next-line no-await-in-loop
+      await ack(seat, await deliveredEvent(seat, 'chat.mention', {
+        messageId: '43', content: 'a row moved', userId: String(owner._id), ...flag,
+      }), 'posted');
+    }
+    expect((await row(machine._id)).firstAnswerAt).toBeNull();
+  });
+
+  it('does not stamp when the sender is missing or is not a person it can find', async () => {
+    const { machine, seat } = await setup();
+    await ack(seat, await deliveredEvent(seat, 'chat.mention', { messageId: '44', content: 'hi' }), 'posted');
+    await ack(seat, await deliveredEvent(seat, 'chat.mention', {
+      messageId: '45', content: 'hi', userId: String(new mongoose.Types.ObjectId()),
+    }), 'posted');
+    expect((await row(machine._id)).firstAnswerAt).toBeNull();
+  });
+
+  it('stamps when an agent\'s row also carries a person\'s message', async () => {
+    const { machine, seat } = await setup();
+    const sender = await agentSender();
+    const waiting = await person();
+    await ack(seat, await deliveredEvent(seat, 'chat.mention', {
+      messageId: '46',
+      content: 'hello',
+      userId: String(sender._id),
+      coalesced: [{ messageId: '47', userId: String(waiting._id), createdAt: new Date().toISOString() }],
+    }), 'posted');
+    expect((await row(machine._id)).firstAnswerAt).toBeInstanceOf(Date);
   });
 
   it('keeps the first answer: a later one does not move the stamp', async () => {

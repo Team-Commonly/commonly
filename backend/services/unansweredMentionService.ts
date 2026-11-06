@@ -50,6 +50,32 @@ const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageI
 };
 
 /**
+ * The messages on this row that a person sent. Empty for a wake from the
+ * kernel (assigned work, a board change) and for an agent's message: nobody
+ * is waiting on those. The event type can't say this, because an agent's DM
+ * arrives as chat.mention too.
+ */
+export async function messagesFromPeople(
+  event: RetiredEvent,
+): Promise<ReturnType<typeof carriedMessages>> {
+  const payload = (event.payload || {}) as Record<string, unknown>;
+  if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true || payload.boardWake === true) {
+    return [];
+  }
+  const people: ReturnType<typeof carriedMessages> = [];
+  for (const message of carriedMessages(event)) {
+    const senderId = typeof message.userId === 'string' || typeof message.userId === 'number'
+      ? String(message.userId) : '';
+    if (/^[a-f0-9]{24}$/i.test(senderId)) {
+      // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
+      const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
+      if (sender && !sender.isBot) people.push(message);
+    }
+  }
+  return people;
+}
+
+/**
  * Posts the unanswered-mention line for an event the requeue cap just retired,
  * for each person waiting on it. Returns whether a line was posted.
  *
@@ -63,19 +89,7 @@ const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageI
  */
 export async function noteUnansweredMention(event: RetiredEvent): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
-  if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true || payload.boardWake === true) {
-    return false;
-  }
-  const waiting: ReturnType<typeof carriedMessages> = [];
-  for (const message of carriedMessages(event)) {
-    const senderId = typeof message.userId === 'string' || typeof message.userId === 'number'
-      ? String(message.userId) : '';
-    if (/^[a-f0-9]{24}$/i.test(senderId)) {
-      // eslint-disable-next-line no-await-in-loop -- a row carries at most nine messages
-      const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
-      if (sender && !sender.isBot) waiting.push(message);
-    }
-  }
+  const waiting = await messagesFromPeople(event);
   if (waiting.length === 0) return false;
 
   const agentName = AgentIdentityService.resolveAgentType(String(event.agentName || ''));

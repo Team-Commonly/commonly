@@ -2277,7 +2277,7 @@
     },
     "machines": {
       "title": "Daemon machines",
-      "summary": "Machines running the daemon: {{total}}. Answered counts the machines where an agent has replied to a person, through an @mention or a DM, since machines began recording replies. A foreground commonly agent run registers no machine, so it isn’t counted.",
+      "summary": "Registered machines: {{total}}, online or not. Answered counts the machines where an agent has reported a reply to a person, through an @mention or a DM, since machines began recording replies. A foreground commonly agent run registers no machine, so it isn’t counted.",
       "table": {
         "platform": "Platform",
         "machines": "Machines",
