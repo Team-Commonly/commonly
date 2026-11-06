@@ -4,6 +4,11 @@ The authenticated BYO page posts fixed event names to `POST /api/stats/byo-step`
 The endpoint stores `userId`, `step`, and server time in `byo_telemetry`.
 Commands, keys, names, and clipboard contents are never sent.
 
+One step on this endpoint writes no row: `welcome-shown` (TASK-787) isn't a Bring
+your own step, so its only record is `users.onboarding.welcomeShownAt`. A count of
+it in `byo_telemetry` is always zero; read the User row
+([`new-signup-stall.md`](../runbooks/new-signup-stall.md)).
+
 Setup OS and listener eligibility (TASK-714) are not stored in `byo_telemetry`.
 `seat-created` and every step also send `setupOs` and `listenerAvailable`, the
 copy steps add a `copyType`, and the server writes those to the person's User

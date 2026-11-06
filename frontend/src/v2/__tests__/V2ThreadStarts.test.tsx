@@ -5,7 +5,7 @@
 // person's own message. A start goes away only once this person has sent it,
 // so nothing else in the pod (a join row, Scout's follow-ups, another member)
 // can take the offer away before it is seen.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   cleanup,
   fireEvent, render, screen, waitFor, within,
@@ -92,8 +92,11 @@ const message = (id, userId, username, content, minute, extra = {}) => ({
 
 const OWN_POD = { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: 'u1' };
 
-const Harness = ({ initial, sendSpy, onOpenInvite = undefined, pod = OWN_POD }) => {
+const Harness = ({ initial, sendSpy, onOpenInvite = undefined, pod = OWN_POD, arriving = undefined }) => {
   const [messages, setMessages] = useState(initial);
+  useEffect(() => {
+    if (arriving) setMessages((current) => [...current, arriving]);
+  }, [arriving]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
     const sent = message(`sent-${args[0]}`, 'u1', 'maya', args[0], 30);
@@ -371,6 +374,25 @@ describe('V2Thread — the welcome records that it rendered (TASK-787)', () => {
     renderThread([welcome]);
     await waitFor(() => expect(pings()).toHaveLength(1));
     expect(pings()[0][1]).toEqual({ step: 'welcome-shown' });
+  });
+
+  test('the ask start identifies a welcome by itself', async () => {
+    renderThread([{ ...welcome, payload: { kind: 'starts', starts: [{ id: 'ask-scout', label: 'Show me what you can do' }] } }]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+  });
+
+  test('a welcome that arrives after the first render still pings', async () => {
+    const tree = (arriving) => (
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <Harness initial={[]} sendSpy={jest.fn()} arriving={arriving} />
+        </MemoryRouter>
+      </AuthContext.Provider>
+    );
+    const { rerender } = render(tree(undefined));
+    expect(pings()).toHaveLength(0);
+    rerender(tree(welcome));
+    await waitFor(() => expect(pings()).toHaveLength(1));
   });
 
   test('a later message and a remount in the same load do not ping again', async () => {
