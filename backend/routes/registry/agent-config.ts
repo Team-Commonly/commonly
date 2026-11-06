@@ -29,7 +29,9 @@ const {
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const {
   identityHoldsRuntimeToken,
+  ownsIdentityCountingPaused,
   ownsRuntimeIdentity,
+  relabelIdentityDmRows,
   RUNTIME_TOKEN_HELD,
   takeBackInstallation,
   webhookUrlRefusal,
@@ -298,15 +300,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // A display name belongs to the portable User principal. Check every
     // installed projection, including paused ones: runtime-token ownership
     // intentionally looks only at active rows and would reject a paused seat
-    // even when this caller is its sole installer.
+    // even when this caller is its sole installer. A DM's row isn't an
+    // installation here either (services/runtimeIdentityOwnership).
     if (displayName !== undefined && !isInstanceAdmin) {
-      const missingInstaller = peerInstallations.some((entry: any) => !entry.installedBy);
-      const anotherInstaller = peerInstallations.some(
-        (entry: any) => entry.installedBy && entry.installedBy.toString() !== userId.toString(),
-      );
-      if (missingInstaller || anotherInstaller) {
+      const ownership = await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId);
+      if (!ownership.owned) {
         return res.status(403).json({
-          code: missingInstaller ? 'unknown_installer' : 'another_installer',
+          code: ownership.failure,
           error: 'Only the sole installer or an instance admin can rename this agent identity',
         });
       }
@@ -320,11 +320,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     }
 
     let accessiblePodIds = [podId.toString()];
+    const dmPeerPodIds = new Set<string>();
     if (peerByPod.size > 1) {
       const peerPodIds = Array.from(peerByPod.keys()).filter(Boolean);
       const peerPods = await Pod.find({ _id: { $in: peerPodIds } })
-        .select('_id members createdBy')
+        .select('_id members createdBy type')
         .lean();
+      peerPods.filter((entry: any) => AgentIdentityService.DM_POD_TYPES_GUARD?.has(String(entry.type)))
+        .forEach((entry: any) => dmPeerPodIds.add(entry._id.toString()));
       accessiblePodIds = peerPods
         .filter((entry: any) => isInstanceAdmin || userHasPodAccess(entry, userId))
         .map((entry: any) => entry._id.toString());
@@ -361,8 +364,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
     }
     // A rename changes the portable User label seen in every pod. Refuse it
-    // unless the same request will update every non-uninstalled projection.
-    if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
+    // unless the same request will update every non-uninstalled projection. A
+    // DM's row is its opener's, so only its label moves, once this write goes
+    // through (relabelIdentityDmRows).
+    const renameLeavesARow = Array.from(peerByPod.entries()).some(
+      ([entryPodId, entry]: any[]) => !dmPeerPodIds.has(entryPodId) && !installationsToUpdate.includes(entry),
+    );
+    if (displayName !== undefined && renameLeavesARow) {
       return res.status(409).json({
         code: 'identity_rename_scope_incomplete',
         error: 'This identity has installations outside your writable pods',
@@ -405,7 +413,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         .map((entry: any) => entry.installedBy?.toString?.())
         .filter(Boolean)));
       const ownerInstallations = await AgentInstallation.find({
-        $or: [{ podId: { $in: writablePodIds } }, { installedBy: { $in: installerIds } }],
+        $or: [{ podId: { $in: [...writablePodIds, ...dmPeerPodIds] } }, { installedBy: { $in: installerIds } }],
         status: 'active',
       });
       const nameTaken = ownerInstallations.some((entry: any) => (
@@ -488,6 +496,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (rowsToRestore.length && await holdsToken()) {
         await Promise.all(rowsToRestore.map(({ key, previous }: any) => takeBackInstallation(key, previous)));
         return res.status(409).json(RUNTIME_TOKEN_HELD);
+      }
+      if (effectiveDisplayName) {
+        const dmPodIds = await relabelIdentityDmRows(name.toLowerCase(), normalizedInstanceId, effectiveDisplayName);
+        if (dmPodIds.length) {
+          await AgentProfile.updateMany(
+            { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },
+            { $set: { name: effectiveDisplayName } },
+            { runValidators: true },
+          );
+        }
       }
       // The card's sentence is the shared User's, so it follows only when this
       // write reached every installation of the identity, as a rename must.
