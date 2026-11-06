@@ -117,6 +117,15 @@ test('an agent attenuating a bound grant is recorded as the agent, with the pare
   expect(lines[1].data).toMatchObject({ parentGrantId: parent.grantId, issuedBy: AGENT });
 });
 
+test('a child\'s connection opens for the grant\'s owner, never the agent that attenuated it', async () => {
+  const parent = await service.mintGrant(input({ ownerId: OWNER }));
+  await service.attenuateGrant({ parentGrantId: parent.grantId, issuer: { type: 'agent', id: AGENT } });
+  await chainLines();
+  const { openings } = mockChains.get(`${POD}|TASK-1`);
+  const opening = openings[1].find((row) => row.field === 'data.scope.connectionId');
+  expect(opening).toMatchObject({ subject: OWNER, value: 'connection' });
+});
+
 test('an unbound mint has no task chain and writes nothing', async () => {
   await service.mintGrant(input({ binding: undefined }));
   await flushRecordWrites();

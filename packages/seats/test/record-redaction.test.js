@@ -162,3 +162,29 @@ test('a plain line written by a seat keeps its id and verifies as it always did'
   assert.equal(JSON.parse(plain).data.decidedBy, 'u-ben');
   assert.deepEqual(Object.keys(verifyRecord(text([plain]))).sort(), ['entries', 'errors', 'head', 'ok', 'settled']);
 });
+
+test('a salt is a string: an array that prints like one is refused by the writer and the reader', () => {
+  const salted = toolLine(null, 1, SALT);
+  assert.deepEqual(verifyRecord(text([salted])).errors, []);
+  assert.throws(() => toolLine(null, 1, [SALT]), /salt must be 32 lowercase hex/);
+  assert.throws(() => commitId('u-ben', [SALT]), /salt must be 32 lowercase hex/);
+  const entry = JSON.parse(salted);
+  const array = canonicalLine({ ...entry, salt: [SALT] });
+  assert.deepEqual(verifyRecord(text([array])).errors.map((e) => e.detail), ['salt']);
+});
+
+test('an opening whose salt is an array is malformed, and is not checked as an opening', () => {
+  const token = commitId('u-ben', SALT);
+  const opened = openLine(committed(null, 1, token), { [token]: { id: 'u-ben', salt: [SALT] } });
+  assert.deepEqual(verifyRecord(text([opened])).errors.map((e) => e.detail), ['openings']);
+});
+
+test('a line with openings that cannot be serialized is reported, and the check carries on', () => {
+  const token = commitId('u-ben', SALT);
+  const one = committed(null, 1, token);
+  const opened = JSON.stringify({ ...JSON.parse(one), openings: { [token]: { id: 'u-ben', salt: SALT } } }).replace('"tc-1"', '1e999');
+  const two = toolLine(one, 2);
+  const result = verifyRecord(text([opened, two]));
+  assert.equal(result.errors.filter((e) => e.seq === 1 && e.reason === 'not_canonical').length, 1);
+  assert.equal(result.entries, 2);
+});

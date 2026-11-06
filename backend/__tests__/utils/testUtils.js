@@ -196,7 +196,7 @@ const setupPgDb = async () => {
         commitment CHAR(67) NOT NULL,
         field VARCHAR(96) NOT NULL,
         subject VARCHAR(128) NOT NULL,
-        value VARCHAR(255) NOT NULL,
+        value TEXT NOT NULL,
         salt CHAR(32) NOT NULL,
         PRIMARY KEY (chain_id, commitment)
       )

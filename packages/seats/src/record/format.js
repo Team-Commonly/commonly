@@ -129,13 +129,14 @@ const KIND_SHAPE = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/;
 const isTimestamp = (value) => typeof value === 'string' && RFC3339_UTC.test(value) && !Number.isNaN(Date.parse(value));
 // Section 8: 128 random bits make a line's hash a commitment nobody can guess at.
 const SALT = /^[0-9a-f]{32}$/;
+const isSalt = (value) => typeof value === 'string' && SALT.test(value);
 const LINE_HASH = /^[0-9a-f]{64}$/;
 // Section 9: an id held beside the line. It is a valid id token, so every
 // writer check and every older reader takes it as an opaque id.
 const COMMITMENT = /^c1:[0-9a-f]{64}$/;
 export const isCommitment = (value) => typeof value === 'string' && COMMITMENT.test(value);
 const isOpenings = (value) => isPlainObject(value) && Object.entries(value).every(([token, opening]) => isCommitment(token)
-  && isPlainObject(opening) && isText(opening.id) && SALT.test(String(opening.salt)) && Object.keys(opening).length === 2);
+  && isPlainObject(opening) && isText(opening.id) && isSalt(opening.salt) && Object.keys(opening).length === 2);
 // Every string on a line, at any depth: where a commitment can sit.
 const idTokens = (value, found = new Set()) => {
   if (typeof value === 'string') found.add(value);
@@ -205,7 +206,7 @@ export const isArgsDigest = (value) => typeof value === 'string' && ARGS_DIGEST.
  * test a guess at the id without the salt, which is kept beside the record.
  */
 export const commitId = (id, salt) => {
-  if (!SALT.test(String(salt))) fail('salt must be 32 lowercase hex characters');
+  if (!isSalt(salt)) fail('salt must be 32 lowercase hex characters');
   return `c1:${hashLine(`seats.record/commitment/v1\n${salt}\n${id}`)}`;
 };
 
@@ -555,7 +556,7 @@ export const appendEntry = (prevLine, fields = {}, { runActor = null } = {}) => 
   if (!RUN_ID.test(String(fields.runId))) fail('runId must be 6-64 characters of [A-Za-z0-9_-]');
   optionalText(fields.taskId, 'taskId');
   optionalText(fields.podId, 'podId');
-  if (fields.salt !== undefined && !SALT.test(String(fields.salt))) fail('salt must be 32 lowercase hex characters');
+  if (fields.salt !== undefined && !isSalt(fields.salt)) fail('salt must be 32 lowercase hex characters');
   if (fields.taskId && !fields.podId) fail('a taskId needs a podId: task ids repeat across pods');
   const ts = fields.ts instanceof Date ? fields.ts.toISOString() : fields.ts;
   if (!isTimestamp(ts)) fail('ts must be an RFC 3339 UTC timestamp');
@@ -599,7 +600,7 @@ const envelopeProblem = (entry) => {
   if (actorProblem(entry.actor)) return 'actor';
   if (!isPlainObject(entry.data)) return 'data';
   if (entry.prev !== null && !(typeof entry.prev === 'string' && LINE_HASH.test(entry.prev))) return 'prev';
-  if (entry.salt !== undefined && !SALT.test(String(entry.salt))) return 'salt';
+  if (entry.salt !== undefined && !isSalt(entry.salt)) return 'salt';
   if (entry.redaction !== undefined && !isRedaction(entry.redaction)) return 'redaction';
   if (entry.openings !== undefined && !isOpenings(entry.openings)) return 'openings';
   return null;
@@ -684,7 +685,10 @@ export const verifyRecord = (input) => {
     }
     if (marker) prevHash = marker.hash;
     else if (openings === undefined) prevHash = hashLine(line);
-    else prevHash = hashLine(canonicalLine(stored));
+    else {
+      // What can't be serialized was reported as not_canonical above.
+      try { prevHash = hashLine(canonicalLine(stored)); } catch { prevHash = hashLine(line); }
+    }
     expected = seq + 1;
   }
   if (torn !== null) report(expected, 'torn');

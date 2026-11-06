@@ -81,7 +81,9 @@ const redactEntry = (stored: Entry, viewerId: string): { entry: Entry; fields: s
     hideActor();
     data.decidedBy = hide(data.decidedBy, 'data.decidedBy');
   } else if (kind === 'grant.issued') {
-    const own = data.issuedBy === viewerId || entry.actor?.id === viewerId || entry.actor?.owner === viewerId;
+    // Only a person minting a root grant is known to own its connection: a child
+    // can rest on anyone's, whoever attenuated it.
+    const own = entry.actor?.type === 'human' && data.issuedBy === viewerId && !data.parentGrantId;
     hideActor();
     data.issuedBy = hide(data.issuedBy, 'data.issuedBy');
     // The audience stays: the grant read gives every member effectiveAudience,
@@ -152,14 +154,16 @@ export const buildRecordView = (stored: string[], viewerId: string, openings: Ch
     const { salt, ...parsed } = JSON.parse(line) as Entry & { salt?: string };
     const { entry, fields } = redactEntry(parsed, viewerId);
     const rows = bySeq.get(index + 1) || [];
-    const opened = rows.filter((row) => opensTo(row, entry.kind || '', viewerId));
+    // A commitment that left with held-back data takes its opening with it.
+    const served = JSON.stringify(entry);
+    const opened = rows.filter((row) => opensTo(row, entry.kind || '', viewerId) && served.includes(row.commitment.trim()));
     unopened += rows.length - opened.length;
     if (fields.length === 0 && hashShown) {
       lines.push(attachOpenings(line, opened));
     } else {
       const hash = salt ? format.hashLine(line) : null;
-      const served = format.canonicalLine({ ...entry, prev: hashShown ? entry.prev : null, redaction: { fields, hash } });
-      lines.push(attachOpenings(served, opened));
+      const held = format.canonicalLine({ ...entry, prev: hashShown ? entry.prev : null, redaction: { fields, hash } });
+      lines.push(attachOpenings(held, opened));
       redacted += 1;
       if (hash === null) unlinked += 1;
       hashShown = hash !== null;

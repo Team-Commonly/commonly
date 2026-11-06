@@ -304,8 +304,7 @@ const V2TaskRecord: React.FC = () => {
     }
     return parts.filter(Boolean).join(' · ');
   };
-  const hasHidden = lines.some((line) => line.redaction || (line.actor && isHiddenId(line.actor.id))
-    || mentionsHidden(line.data));
+  const hasHidden = lines.some((line) => line.redaction || mentionsHidden(line.actor) || mentionsHidden(line.data));
   const runId = lines[0]?.runId;
   const fileBase = `${taskId}.record`;
   const [open, setOpen] = useState<Set<number>>(() => new Set());

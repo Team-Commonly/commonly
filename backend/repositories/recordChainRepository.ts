@@ -54,6 +54,9 @@ export const MAX_PAGE_LINES = 1000;
  */
 export type ChainPage = { after?: number; limit?: number };
 
+/** The seq a page really starts after. Anything that pairs lines to seqs uses this. */
+export const pageAfter = (page: ChainPage = {}): number => Math.max(0, Math.trunc(Number(page.after) || 0));
+
 /** Thrown when no PostgreSQL is configured; a reader must not answer "empty". */
 export class RecordStoreUnavailableError extends Error {
   constructor() {
@@ -162,7 +165,7 @@ export async function readChain(
   page: ChainPage = {},
 ): Promise<StoredChain | null> {
   const store = requirePool(db);
-  const after = Math.max(0, Math.trunc(Number(page.after) || 0));
+  const after = pageAfter(page);
   const limit = Math.min(MAX_PAGE_LINES, Math.max(1, Math.trunc(Number(page.limit) || MAX_PAGE_LINES)));
   const chain = (await store.query(
     'SELECT id, run_id, head_seq, head_hash FROM record_chains WHERE pod_id = $1 AND task_id = $2',

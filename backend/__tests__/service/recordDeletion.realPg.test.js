@@ -141,6 +141,42 @@ real('deleting an account from a real record', () => {
     expect(verifyRecord(after.text)).toMatchObject({ ok: true, errors: [] });
   });
 
+  it('a connection id past 255 characters goes on the record, reads back, and goes with its owner', async () => {
+    const { creator, ben, pod } = await seed();
+    const connectionId = `conn-${'x'.repeat(300)}`;
+    const { appended } = await appendRecord({ podId: String(pod._id) }, 'long', [lines.grantIssuedLine({
+      grantId: 'g-long', connectionId, tools: ['sentry.write'], writeMode: 'write', audience: [], target: { kind: 'pod', id: String(pod._id) }, ownerId: String(ben._id),
+    }, { type: 'human', id: String(ben._id) })]);
+    expect(appended).toBe(1);
+    expect((await read(pod, creator)).text).toContain(connectionId);
+    expect((await pool.query('SELECT 1 FROM record_openings WHERE value = $1', [connectionId])).rowCount).toBe(1);
+    expect((await deleteBen(ben)).status).toBe(204);
+    const after = await read(pod, creator);
+    expect(after.text).not.toContain(connectionId);
+    expect(verifyRecord(after.text)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it('a child grant\'s connection goes with the grant\'s owner, not the agent that attenuated it', async () => {
+    const { creator, ben, ana, pod } = await seed();
+    await appendRecord({ podId: String(pod._id) }, 'child', [lines.grantIssuedLine({
+      grantId: 'g-child', parentGrantId: 'g-1', connectionId: 'conn-child', tools: ['sentry.write'], writeMode: 'read', audience: [], target: { kind: 'pod', id: String(pod._id) }, ownerId: String(ben._id),
+    }, { type: 'agent', id: String(new User()._id), owner: String(ana._id) })]);
+    expect((await read(pod, creator)).text).toContain('conn-child');
+    expect((await deleteBen(ben)).status).toBe(204);
+    expect((await read(pod, creator)).text).not.toContain('conn-child');
+  });
+
+  it('an admin delete a pending self-deletion refuses leaves every id in place', async () => {
+    const { ben } = await seed();
+    const admin = await person('admin');
+    await User.updateOne({ _id: admin._id }, { role: 'admin' });
+    const before = (await pool.query('SELECT 1 FROM record_openings WHERE subject = $1', [String(ben._id)])).rowCount;
+    expect(before).toBeGreaterThan(0);
+    await User.updateOne({ _id: ben._id }, { $set: { accountDeletionRequestedAt: new Date() } });
+    await request(app).delete(`/api/admin/users/${ben._id}`).set(as(admin)).expect(409);
+    expect((await pool.query('SELECT 1 FROM record_openings WHERE subject = $1', [String(ben._id)])).rowCount).toBe(before);
+  });
+
   it('the sweep also clears a line written after the account went, because its receipt stays', async () => {
     const { creator, ben, pod } = await seed();
     expect((await deleteBen(ben)).status).toBe(204);

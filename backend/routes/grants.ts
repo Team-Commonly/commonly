@@ -831,23 +831,28 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
     ]);
     // A pod grant is returned only while the caller can still view its pod: an owner
     // who has left a private pod does not see that pod's grants.
-    const visiblePods = new Map<string, string[]>();
+    const visiblePods = new Map<string, NonNullable<Awaited<ReturnType<typeof loadPod>>>>();
     for (const [podId, pod] of pods) {
-      if (pod && await DMService.canViewPod(userId, pod)) visiblePods.set(podId, memberIdsOf(pod));
+      if (pod && await DMService.canViewPod(userId, pod)) visiblePods.set(podId, pod);
     }
     return res.json({ grants: grants
       .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
-      .map((grant) => ({
-        ...projectGrant(
+      .map((grant) => {
+        const pod = grant.target.kind === 'pod' ? visiblePods.get(grant.target.id) : undefined;
+        const projected = projectGrant(
           grant,
-          grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+          grant.target.kind === 'seat' ? grant.audience : memberIdsOf(pod || null),
           userId,
           confinements.get(grant.grantId),
-        ),
-        // The owner's own read only, the key the catalogue already gives this
-        // person: Change access has to reopen on the grant's own repository.
-        connectionId: grant.connectionId,
-      })) });
+        );
+        return {
+          // An admin can revoke someone's grant, and an open pod doesn't name them.
+          ...(pod ? maskGrantPeople(projected, pod, userId) : projected),
+          // The owner's own read only, the key the catalogue already gives this
+          // person: Change access has to reopen on the grant's own repository.
+          connectionId: grant.connectionId,
+        };
+      }) });
   } catch (error) {
     return handleError(res, error);
   }

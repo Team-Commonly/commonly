@@ -389,22 +389,34 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
       // target document itself so a claim appearing after the reads above
       // cannot lose its recoverable owner during billing preflight or cleanup.
       beginWrite();
-      // Before the row goes, so a failed removal can be retried. Their record
-      // lines stay and still verify (ADR-033 D7).
-      await deleteOpeningsFor(String(target._id));
-      const deleted = await User.findOneAndDelete({
-        _id: target._id, accountDeletionRequestedAt: { $exists: false },
+      const changed = () => mutationResponse(409, {
+        error: 'Account changed or self-deletion is pending. Refresh before trying again.',
+        code: 'ACCOUNT_CHANGED',
       });
-      if (!deleted) {
-        return mutationResponse(409, {
-          error: 'Account changed or self-deletion is pending. Refresh before trying again.',
-          code: 'ACCOUNT_CHANGED',
-        });
+      // Self-deletion's own claim. A refused delete touches nothing, and a receipt
+      // written under this claim can't tell a self-deletion its billing preflight
+      // passed, because that deletion has to win this claim first.
+      const claimedAt = new Date();
+      const claimed = await User.updateOne(
+        { _id: target._id, accountDeletionRequestedAt: { $exists: false } },
+        { $set: { accountDeletionRequestedAt: claimedAt } },
+      );
+      if (claimed.matchedCount !== 1) return changed();
+      // The receipt goes before the row, so a crash from here on still reaches the
+      // sweep, which also re-clears any id a late line brings back.
+      try {
+        await AccountDeletion.updateOne({ _id: target._id }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+      } catch (error) {
+        await User.updateOne({ _id: target._id, accountDeletionRequestedAt: claimedAt }, { $unset: { accountDeletionRequestedAt: 1 } });
+        throw error;
       }
-      // Only now: a receipt on a live row would tell a racing self-deletion its
-      // billing preflight had passed. The sweep re-clears any id a late line
-      // brings back, from an agent or a grant that outlived this person.
-      await AccountDeletion.updateOne({ _id: target._id }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+      const deleted = await User.findOneAndDelete({ _id: target._id, accountDeletionRequestedAt: claimedAt });
+      if (!deleted) return changed();
+      // Their record lines stay and still verify (ADR-033 D7). The person is gone
+      // by now, so a failure here is the sweep's to finish, not the caller's.
+      await deleteOpeningsFor(String(target._id)).catch((error: Error) => {
+        console.warn('[admin] record ids left for the sweep:', error.name);
+      });
       return mutationResponse(200, { message: 'User deleted successfully' });
     });
     return res.status(result.status).json(result.body);

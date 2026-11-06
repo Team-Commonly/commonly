@@ -130,6 +130,36 @@ describe('Self-serve account deletion', () => {
     expect(await openingsOf(String(owner._id))).toBe(0);
   });
 
+  it('an admin delete a pending self-deletion refuses takes none of the person\'s ids, and if billing then fails they keep them (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    await opening(String(user._id));
+    await User.updateOne({ _id: user._id }, { $set: { accountDeletionRequestedAt: new Date() } });
+    const refused = await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('ACCOUNT_CHANGED');
+    expect(await openingsOf(String(user._id))).toBe(1);
+    expect(await AccountDeletion.exists({ _id: user.id })).toBeNull();
+    await sweepAccountDeletions();
+    expect(await openingsOf(String(user._id))).toBe(1);
+  });
+
+  it('an admin delete that crashes after the row goes still leaves the sweep a receipt (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    await opening(String(user._id));
+    const find = jest.spyOn(User, 'findOneAndDelete').mockImplementationOnce(async function deleteThenDie(filter) {
+      expect(await AccountDeletion.exists({ _id: user._id })).toBeTruthy();
+      find.mockRestore();
+      await User.findOneAndDelete(filter);
+      throw new Error('process died here');
+    });
+    await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(await User.findById(user.id)).toBeNull();
+    await sweepAccountDeletions();
+    expect(await openingsOf(String(user._id))).toBe(0);
+  });
+
   it('an admin delete leaves a receipt, and the sweep then removes the person\'s files (F265)', async () => {
     const admin = await makeUser({ role: 'admin' });
     const user = await makeUser();

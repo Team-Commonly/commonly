@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS record_openings (
   -- The path the commitment sits at on the line, which decides who may read it.
   field VARCHAR(96) NOT NULL,
   subject VARCHAR(128) NOT NULL,
-  value VARCHAR(255) NOT NULL,
+  -- An id or a connection id, and connection ids have no length limit.
+  value TEXT NOT NULL,
   salt CHAR(32) NOT NULL,
   PRIMARY KEY (chain_id, commitment)
 );

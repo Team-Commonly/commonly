@@ -470,6 +470,13 @@ describe('a redacted view (F265)', () => {
     expect(document.body.textContent).toContain(AGENT);
   });
 
+  test('says why when the only hidden id on a record is an agent\'s owner', async () => {
+    wire(() => Promise.resolve(`${line(1, 'tool.update', { id: AGENT, type: 'agent', owner: COMMITTED }, { toolCallId: 'tc', status: 'completed' })}\n`));
+    setup();
+    await screen.findByRole('heading', { level: 2 });
+    expect(screen.getByText(/names here are hidden/)).toBeInTheDocument();
+  });
+
   test('an older line\'s placeholder nested in a scope shows as hidden too, never as the word redacted', async () => {
     wire(() => Promise.resolve(`${hidden(1, 'grant.issued', { id: 'redacted', type: 'human' }, {
       grantId: 'g', issuedBy: 'redacted', scope: { audience: ['redacted'], connectionId: 'redacted' },

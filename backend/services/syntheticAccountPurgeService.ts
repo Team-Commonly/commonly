@@ -146,6 +146,9 @@ const purgeSyntheticAccountsUnlocked = async (
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
   }).select('_id username email isBot createdAt').lean();
   report.examined = candidates.length;
+  // The scheduler doesn't wait for migrations, and a failed write keeps the
+  // admin lock for recovery, so a missing table has to stop the purge here.
+  if (pool && candidates.length > 0) await pool.query('SELECT 1 FROM record_openings LIMIT 0');
 
   for (const human of candidates) {
     if (!isSyntheticAccount(human)) continue; // the query and the predicate must both agree

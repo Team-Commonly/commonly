@@ -227,14 +227,17 @@ commitment has to be in the hash from the start.
 - **Deleting** removes the person's rows on all three paths that delete a human User:
   `deleteOwnAccount`, the admin delete and the synthetic purge. Each leaves a cleanup receipt, and
   every sweep round removes the rows again, so an id a late line brings back goes on the next round.
+  The admin delete takes self-deletion's claim on the row first, then writes the receipt, then removes
+  the row and the ids. A refusal so touches nothing, and a crash after the claim still reaches the sweep.
   That covers an agent that outlives its owner: `botMetadata.ownerUserId` stays on it, and its next
   line commits the id again until the sweep. Don't unset it: `agentIdentityService` reads a missing
   owner as free to claim, and stamps the next caller as owner of the agent and its memory. A receipt
   also has the sweep remove the account's uploads and pod memberships, on every path.
   `recordDeletion.realPg.test.js` deletes through the route and re-verifies on real stores.
 - **A connection's subject is the grant's `ownerId`,** so a child grant from an agent is forgotten
-  with the person whose connection it is. A grant from before `ownerId` falls back to the issuer: the
-  agent's owner, or the agent itself if it has none, and that opening then outlives the person.
+  with the person whose connection it is. A person who mints a root grant owns the connection. Any
+  other grant from before `ownerId` has no owner to forget it with, so its line holds the commitment
+  and no opening is written: nobody reads that id, and nobody is guessed at.
 - **After deletion,** the commitment stays and nothing a reader holds can test a guess against it.
   An unopened commitment means withheld or deleted, never changed, and the record page says so.
 - **On an open pod** a joiner gets the stored bytes verbatim and a whole check, so a view of these

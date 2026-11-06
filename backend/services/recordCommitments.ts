@@ -48,10 +48,7 @@ export const commitRecordLine = <T extends Input>(input: T): { input: T; opening
   const original = input.actor;
   // An agent's own id isn't a person's; its owner is, and policies and the
   // system have no one to forget.
-  // A connection is forgotten with the person it belongs to. A child grant's
-  // issuer is an agent, who may own nothing, so the grant's own owner comes first.
   const { connectionOwner: grantOwner, ...line } = input;
-  const connectionOwner = grantOwner || (original?.type === 'agent' ? original.owner || original.id : original?.id);
   let actor = original;
   if (original) {
     actor = { ...original };
@@ -61,7 +58,11 @@ export const commitRecordLine = <T extends Input>(input: T): { input: T; opening
       actor.onBehalfOf = { ...original.onBehalfOf, id: person(original.onBehalfOf.id, 'actor.onBehalfOf.id') as string };
     }
   }
-  const issuedBy = data.issuedBy as string | undefined;
+  // A connection is forgotten with the person it belongs to: the grant's owner,
+  // or the person who minted a root grant. An agent's owner isn't that person,
+  // and an agent or the system is no one to forget it with.
+  const minter = original === undefined ? data.issuedBy : original?.type === 'human' && original.id;
+  const connectionOwner = grantOwner || (data.parentGrantId ? null : minter);
   ['doneBy', 'decidedBy', 'issuedBy'].forEach((key) => {
     if (key in data) data[key] = person(data[key], `data.${key}`);
   });
@@ -70,9 +71,11 @@ export const commitRecordLine = <T extends Input>(input: T): { input: T; opening
   const scope = data.scope as { audience?: unknown[]; connectionId?: unknown } | undefined;
   if (scope) {
     if (Array.isArray(scope.audience)) scope.audience = scope.audience.map((id, index) => person(id, `data.scope.audience.${index}`));
-    const owner = connectionOwner || issuedBy;
-    if (typeof scope.connectionId === 'string' && scope.connectionId && owner) {
-      scope.connectionId = commit(scope.connectionId, 'data.scope.connectionId', owner);
+    if (typeof scope.connectionId === 'string' && scope.connectionId) {
+      // With no one to forget it with, the id is never kept beside the line.
+      scope.connectionId = connectionOwner
+        ? commit(scope.connectionId, 'data.scope.connectionId', connectionOwner as string)
+        : format.commitId(scope.connectionId, newSalt());
     }
   }
   return {

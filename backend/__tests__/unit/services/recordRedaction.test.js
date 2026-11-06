@@ -3,7 +3,7 @@
  * the person each one names, and the reader's own tamper check still passes.
  * Real format code, real line hashes; only the store is a fake.
  */
-const { appendEntry, canonicalLine, hashLine, verifyRecord, readRecord } = require('../../../vendor/seats/src/record/format');
+const { appendEntry, canonicalLine, commitId, hashLine, verifyRecord, readRecord } = require('../../../vendor/seats/src/record/format');
 const { buildRecordView, isOpenPod, personIdFor, REDACTED_ID } = require('../../../services/recordRedaction');
 const { readRecordView, toOtlp, newLineSalt } = require('../../../services/recordService');
 
@@ -80,6 +80,67 @@ describe('personIdFor', () => {
 });
 
 describe('buildRecordView', () => {
+  describe('a kind whose data is held back', () => {
+    const SALT = 'f'.repeat(32);
+    const token = commitId(EVE, SALT);
+    const opening = (field, subject = EVE) => ({
+      seq: 1, commitment: token, field, subject, value: EVE, salt: SALT,
+    });
+    // No kind held back today lets a writer put an id in its data, and a later
+    // kind might: this is the line such a kind would store.
+    const stored = (data, actor = { type: 'system', id: 'commonly' }) => [canonicalLine({
+      ...JSON.parse(appendEntry(null, {
+        ...ENV, ts: new Date((clock += 7)).toISOString(), kind: 'session.opened', actor, data: { method: 'new', sessionId: 's-1' }, salt: newLineSalt(),
+      })),
+      data,
+    })];
+
+    test('a commitment that went with the data takes its opening with it, for the person it names too', () => {
+      const view = buildRecordView(stored({ decidedBy: token }), EVE, [opening('data.decidedBy')]);
+      const [line] = view.lines;
+      expect(JSON.parse(line)).not.toHaveProperty('openings');
+      expect(line).not.toContain(EVE);
+      expect(verifyRecord(view.jsonl).errors).toEqual([]);
+      expect(view.unopened).toBe(1);
+    });
+
+    test('an audience entry on such a line stays closed, though audiences open on a grant', () => {
+      const view = buildRecordView(stored({ scope: { audience: [token] } }), BEN, [opening('data.scope.audience.0')]);
+      expect(view.jsonl).not.toContain(EVE);
+      expect(verifyRecord(view.jsonl).errors).toEqual([]);
+    });
+
+    test('a commitment still on the served line keeps its opening', () => {
+      const view = buildRecordView(stored({ note: 'x' }, { type: 'human', id: token }), EVE, [opening('actor.id')]);
+      expect(readRecord(view.jsonl)[0].actor.id).toBe(EVE);
+      expect(verifyRecord(view.jsonl).errors).toEqual([]);
+    });
+  });
+
+  describe('a plain grant line\'s connection id', () => {
+    const plain = (data, actor) => [appendEntry(null, {
+      ...ENV, ts: new Date((clock += 7)).toISOString(), kind: 'grant.issued', actor, salt: newLineSalt(),
+      data: {
+        grantId: 'g-2', scope: { connectionId: 'conn-1', tools: ['sentry.resolve_issue'], writeMode: 'write', audience: [AGENT.id] }, target: { kind: 'pod', id: POD }, ...data,
+      },
+    })];
+    const connectionFor = (line, viewer) => readRecord(buildRecordView(line, viewer).jsonl)[0].data.scope.connectionId;
+
+    test('a person who minted a root grant owns the connection, and reads it', () => {
+      expect(connectionFor(plain({ issuedBy: BEN }, { type: 'human', id: BEN }), BEN)).toBe('conn-1');
+    });
+
+    test('an agent\'s child grant may rest on someone else\'s connection, so neither it nor its owner reads the id', () => {
+      const child = plain({ issuedBy: AGENT.id, parentGrantId: 'g-1' }, AGENT);
+      expect(connectionFor(child, AGENT.id)).toBe(REDACTED_ID);
+      expect(connectionFor(child, ANA)).toBe(REDACTED_ID);
+    });
+
+    test('a person issuing a child doesn\'t establish the connection is theirs', () => {
+      expect(connectionFor(plain({ issuedBy: BEN, parentGrantId: 'g-1' }, { type: 'human', id: BEN }), BEN)).toBe(REDACTED_ID);
+    });
+  });
+
   test('no approver or credential-owner id reaches a reader they do not name, in any field', () => {
     const view = served(chain(), EVE);
     expect(view.jsonl).not.toContain(BEN);

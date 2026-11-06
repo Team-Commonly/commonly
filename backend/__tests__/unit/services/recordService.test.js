@@ -45,6 +45,17 @@ describe('recordService', () => {
     else process.env.RECORD_V1_PODS = env;
   });
 
+  it.each([[1.9, 2], [-3, 1], [Number.NaN, 1]])('matches a page\'s openings to its lines at the cursor readChain used: after %s starts at seq %s', async (after, firstSeq) => {
+    const ref = { podId: POD };
+    const human = { type: 'human', id: 'b'.repeat(24) };
+    await record.appendRecord(ref, 'e1', [{ kind: 'grant.revoked', actor: human, data: { grantIds: ['g-1'], reason: 'manual' } }]);
+    await record.appendRecord(ref, 'e2', [{ kind: 'grant.revoked', actor: human, data: { grantIds: ['g-2'], reason: 'manual' } }]);
+    const chain = await repository.readChain(ref);
+    repository.readChain.mockImplementationOnce(async () => ({ ...chain, lines: chain.lines.slice(firstSeq - 1), nextAfter: null }));
+    const { jsonl } = await record.readRecordExport(ref, undefined, { after });
+    readRecord(jsonl).forEach((entry) => expect(entry.actor.id).toBe(human.id));
+  });
+
   it('salts every server line with its own 128 random bits, so a hash can stand in for a held-back line (F265)', async () => {
     const ref = { podId: POD };
     await record.appendRecord(ref, 'e1', [

@@ -13,7 +13,7 @@
  */
 import { createHash, randomBytes } from 'crypto';
 import {
-  appendToChain, MAX_PAGE_LINES, readChain, RecordStoreUnavailableError,
+  appendToChain, MAX_PAGE_LINES, pageAfter, readChain, RecordStoreUnavailableError,
   type ChainOpening, type ChainPage, type ChainRef,
 } from '../repositories/recordChainRepository';
 import { commitRecordLine } from './recordCommitments';
@@ -261,12 +261,13 @@ export type RecordExport = {
 export async function readRecordExport(ref: ChainRef, db?: Store, page: ChainPage = {}): Promise<RecordExport> {
   const chain = await readChain(ref, db, page);
   if (!chain) return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null };
+  const after = pageAfter(page);
   return {
     runId: chain.runId,
     entries: chain.headSeq,
     head: chain.headHash,
     jsonl: chain.lines.map((line, index) => {
-      const seq = (page.after ?? 0) + index + 1;
+      const seq = after + index + 1;
       return `${attachOpenings(line, (chain.openings || []).filter((row) => row.seq === seq))}\n`;
     }).join(''),
     nextAfter: chain.nextAfter,
@@ -310,7 +311,7 @@ export async function readRecordView(
     view = buildRecordView(stored, String(viewerId), openings);
     rememberView(key, { view, chain });
   }
-  const after = page.after ?? 0;
+  const after = pageAfter(page);
   const lines = view.lines.slice(after, after + (page.limit ?? MAX_PAGE_LINES));
   const last = after + lines.length;
   return {

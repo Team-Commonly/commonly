@@ -352,6 +352,20 @@ describe('GET /api/grants/:grantId/calls', () => {
       expect(asOwner.body).toMatchObject({ grantedBy: OWNER, revokedBy: OWNER });
     });
 
+    test('the owner\'s own list names whoever revoked a grant only as the pod read does', async () => {
+      await RoomGrant.create(grant({ revokedAt: new Date(), revokedBy: MEMBER }));
+      const list = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+      expect(list.status).toBe(200);
+      expect(list.body.grants[0]).toMatchObject({ revokedBy: null, grantedBy: OWNER, installationId: 'install-1' });
+      expect(list.body.grants[0].connectionId).toBeDefined();
+    });
+
+    test('the owner still reads their own revocation on that list', async () => {
+      await RoomGrant.create(grant({ revokedAt: new Date(), revokedBy: OWNER }));
+      const list = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+      expect(list.body.grants[0].revokedBy).toBe(OWNER);
+    });
+
     test('the connection is held back with the person: a hosted grant\'s installationId is the connection row', async () => {
       const row = await RoomGrant.create(grant());
       const asMember = await request(app).get(`/api/grants/${row.grantId}`).set('x-test-user', MEMBER);

@@ -3,7 +3,7 @@
  * deleting it leaves every chain verifying. The real writer, the real emitters'
  * line builders, and an in-memory store with the repository's contract.
  */
-const { canonicalLine, commitId, hashLine, isCommitment, readRecord, verifyRecord } = require('../../../vendor/seats/src/record/format');
+const { appendEntry, canonicalLine, commitId, hashLine, isCommitment, readRecord, verifyRecord } = require('../../../vendor/seats/src/record/format');
 const { commitRecordLine } = require('../../../services/recordCommitments');
 const lines = require('../../../services/brokerRecordLines');
 const { taskTransitionLine } = require('../../../services/taskRecordService');
@@ -90,10 +90,23 @@ describe('commitRecordLine', () => {
     openings.forEach((row) => expect(commitId(row.value, row.salt)).toBe(row.commitment));
   });
 
-  test('a connection is forgotten with the person it belongs to, an agent issuer\'s owner included', () => {
+  test('a connection is forgotten with the person it belongs to', () => {
     const owned = (issuer) => commitRecordLine(lines.grantIssuedLine(grant, issuer)).openings.find((row) => row.field === 'data.scope.connectionId');
     expect(owned({ type: 'human', id: BEN })).toMatchObject({ subject: BEN, value: 'conn-ben' });
-    expect(owned(agent).subject).toBe(ANA);
+  });
+
+  test.each([
+    ['an agent that has an owner', grant, agent],
+    ['an agent with no owner', grant, { type: 'agent', id: AGENT }],
+    ['the system', grant, { type: 'system', id: 'commonly' }],
+    ['no known actor', grant, null],
+    ['a person issuing a child of an unbound grant', { ...grant, parentGrantId: 'g-0' }, { type: 'human', id: BEN }],
+  ])('a connection whose owner isn\'t known is committed with no opening: %s', (_name, shape, issuer) => {
+    const { input, openings } = commitRecordLine(lines.grantIssuedLine(shape, issuer));
+    expect(isCommitment(input.data.scope.connectionId)).toBe(true);
+    expect(JSON.stringify(input)).not.toContain('conn-ben');
+    expect(openings.filter((row) => row.field === 'data.scope.connectionId')).toEqual([]);
+    expect(JSON.stringify(openings)).not.toContain('conn-ben');
   });
 
   test('a child grant\'s connection belongs to the grant\'s owner, not the agent that issued it, and the hint is never stored', () => {
@@ -222,6 +235,31 @@ describe('a joiner on an open pod', () => {
     const view = buildRecordView([legacy], EVE);
     expect(view.jsonl).not.toContain(BEN);
     expect(verifyRecord(view.jsonl).errors).toEqual([]);
+  });
+
+  test('after an unsalted held-back line, a committed line stays closed and its hash resumes the chain', () => {
+    const { input, openings } = commitRecordLine(lines.resolvedCallLines(call, true, BEN, 'card-1').find((line) => line.kind === 'permission.decided'));
+    const fields = {
+      runId: 'srv-task-0000000001', podId: POD, taskId: 'TASK-1', ts: '2026-11-06T12:00:00.000Z', kind: input.kind, actor: input.actor,
+    };
+    const legacy = appendEntry(null, { ...fields, data: { ...input.data, decidedBy: BEN }, actor: { type: 'human', id: BEN } });
+    const successor = appendEntry(legacy, { ...fields, data: input.data, salt: '1'.repeat(32) });
+    const after = appendEntry(successor, {
+      ...fields, kind: 'tool.update', actor: { type: 'agent', id: AGENT }, data: { toolCallId: 'tc-1', status: 'completed' }, salt: '2'.repeat(32),
+    });
+    expect(JSON.parse(legacy)).not.toHaveProperty('salt');
+    const rows = openings.map((row) => ({ ...row, seq: 2 }));
+    const view = buildRecordView([legacy, successor, after], EVE, rows);
+
+    expect(view.jsonl).not.toContain(BEN);
+    expect(view.lines.join('')).not.toContain('"openings"');
+    expect(view).toMatchObject({ unlinked: 1, unopened: rows.length, headShown: true });
+    const [held, resumed, last] = view.lines.map((line) => JSON.parse(line));
+    expect(held.redaction.hash).toBeNull();
+    expect(resumed.redaction.hash).toBe(hashLine(successor));
+    expect(last.prev).toBe(hashLine(successor));
+    const check = verifyRecord(view.jsonl);
+    expect(check).toMatchObject({ errors: [], head: hashLine(after), unlinked: [1] });
   });
 });
 
