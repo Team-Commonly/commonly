@@ -996,7 +996,7 @@ describe('AgentMentionService', () => {
         const content = await frame();
         expect(content).toContain('MCP: `commonly_request_decision`');
         expect(content).toContain('2–4 options');
-        expect(content).toContain('@human for a named ruler');
+        expect(content).toContain('@handle for a named ruler');
         expect(content).toContain('if unavailable, ask the intended human');
         expect(content).toMatch(/do not duplicate .*chat ask/);
       });
