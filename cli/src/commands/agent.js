@@ -1506,7 +1506,7 @@ export const runMemoryImport = async ({
 // would also eat a pod that is discussing these words. It speaks only to a
 // request it can't meet, so it gives a heartbeat no reason to post. Every closing
 // line carries it, and it says where the note goes once the agent has posted.
-const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
   + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
   + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 

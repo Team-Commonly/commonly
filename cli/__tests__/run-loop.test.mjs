@@ -1431,7 +1431,7 @@ describe('performRun', () => {
   // rather than imported, so rewording the line is a deliberate test change.
   const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
-    + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+    + 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
@@ -1491,7 +1491,7 @@ describe('performRun', () => {
     + 'For anything else here, post only an action or a materially useful response. '
     + 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
-    + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+    + 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
