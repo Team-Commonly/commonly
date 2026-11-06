@@ -367,7 +367,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect"><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title="Connect" hint={t('connect.intro')}><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"

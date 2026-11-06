@@ -3908,7 +3908,7 @@ body.modern-ui.v2-canvas {
      enumerated exceptions (`:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled)`),
      which silently swallowed every state the list had not anticipated: the
      not-yet row that IS available (ToolPanels.tsx) lost
-     "install the GitHub App first" / "read, or read and write", and a stranger
+     "install the GitHub App first" / "Read, or read and write", and a stranger
      saw a "not granted" kicker with no reason under it (eng lead 73726).
      Default is now SHOW; if one row ever needs its detail hidden on phones, hide
      that named case here rather than re-introducing an exception list. */

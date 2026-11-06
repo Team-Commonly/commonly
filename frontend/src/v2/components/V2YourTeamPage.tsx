@@ -195,8 +195,8 @@ const V2YourTeamPage: React.FC = () => {
   const [opening, setOpening] = useState<string | null>(null);
   const [internalOpen, setInternalOpen] = useState(false);
 
-  // Invite gate for hosted agents (unchanged behaviour): the redeem line is
-  // the only path to Hire an agent while the account is not entitled.
+  // Invite gate for hosted agents: while the account is not entitled, Hire opens
+  // the redeem form, and the head's hint says why.
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -520,6 +520,8 @@ const V2YourTeamPage: React.FC = () => {
         titleClassName={HEAD_TITLE_CLASS}
         title={t('yourTeam.title')}
         metaClassName={HEAD_META_CLASS}
+        hint={isEntitled ? undefined : t('yourTeam.redeem.gated')}
+        hintLabel={t('common.aboutPage', { title: t('yourTeam.title') })}
         meta={loading
           ? t('yourTeam.loading')
           : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
@@ -536,35 +538,25 @@ const V2YourTeamPage: React.FC = () => {
       />
       <div className="v2-feature__scroll v2-team__body">
 
-      {!isEntitled && (
+      {!isEntitled && redeemOpen && (
         <div className="v2-team__notice">
-          {redeemOpen ? (
-            <form className="v2-team__redeem" onSubmit={handleRedeem}>
-              <input
-                className="v2-team__redeem-input"
-                type="text"
-                placeholder={t('yourTeam.redeem.placeholder')}
-                value={redeemCode}
-                onChange={(e) => setRedeemCode(e.target.value)}
-                autoFocus
-              />
-              <button type="submit" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
-                {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
-              </button>
-              <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
-                {t('yourTeam.actions.cancel')}
-              </button>
-              {redeemError && <span className="v2-team__redeem-error" role="alert">{redeemError}</span>}
-            </form>
-          ) : (
-            <span>
-              {t('yourTeam.redeem.gated')}
-              {' '}
-              <button type="button" className="v2-team__link" onClick={() => setRedeemOpen(true)}>
-                {t('yourTeam.redeem.haveCode')}
-              </button>
-            </span>
-          )}
+          <form className="v2-team__redeem" onSubmit={handleRedeem}>
+            <input
+              className="v2-team__redeem-input"
+              type="text"
+              placeholder={t('yourTeam.redeem.placeholder')}
+              value={redeemCode}
+              onChange={(e) => setRedeemCode(e.target.value)}
+              autoFocus
+            />
+            <button type="submit" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
+              {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
+            </button>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
+              {t('yourTeam.actions.cancel')}
+            </button>
+            {redeemError && <span className="v2-team__redeem-error" role="alert">{redeemError}</span>}
+          </form>
         </div>
       )}
       {redeemed && <div className="v2-team__notice v2-team__notice--ok">{t('yourTeam.redeem.success')}</div>}

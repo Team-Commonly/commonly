@@ -2412,7 +2412,6 @@
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
       "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.",
-      "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },
     "empty": {
@@ -2786,7 +2785,7 @@
     "changeAccess": "Change access",
     "connect": "Connect",
     "connectError": "Could not begin connecting. Try again in a moment.",
-    "connectOwn": "connect your own {{label}} account",
+    "connectOwn": "Connect your own {{label}} account",
     "chooseAccess": "Choose what {{label}} can reach",
     "connection": "connection",
     "counts": "Call counts",
@@ -2814,7 +2813,7 @@
     "granting": "Granting…",
     "repoConnect": {
       "action": "Connect a repository",
-      "note": "connect a repository first",
+      "note": "Connect a repository first",
       "loading": "Reading your repositories…",
       "readFailed": "Could not read your repositories from GitHub.",
       "needsGithub": "Connect your GitHub account first. Commonly reads which repositories you can push to from it.",
@@ -2863,7 +2862,7 @@
     "grantPodPostingNarrowed": "{{agents}} can post only in one of their pods while that pod has connector access.",
     "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "openProviderSettings": "Open provider settings",
-    "noConnection": "install the GitHub App first · an admin does this once",
+    "noConnection": "Install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
     "noTools": "no tools on the allow-list",
     "nobody": "no agent",
@@ -2914,7 +2913,7 @@
     "reasonGrantNotFound": "the grant no longer exists",
     "owner": "owner",
     "readInTesting": "read in testing",
-    "readOrWrite": "read, or read and write",
+    "readOrWrite": "Read, or read and write",
     "refused": "refused",
     "repository": "repository",
     "revoke": "Revoke",
@@ -2943,8 +2942,8 @@
     "keyAgentNotInPodUnnamed": "This key's agent isn't in this pod.",
     "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}",
     "operatorKey": {
-      "note": "add a key for one of your agents",
-      "noAgents": "no agent of yours to add a key for yet",
+      "note": "Add a key for one of your agents",
+      "noAgents": "No agent of yours to add a key for yet",
       "agent": "agent",
       "key": "key",
       "submit": "Add key",
@@ -2962,7 +2961,7 @@
         "keyStoreFailed": "Could not save the key. Try again.",
         "generic": "Could not add the key. Try again."
       },
-      "agentsUnavailable": "couldn't read your agents just now · reload to try again"
+      "agentsUnavailable": "Couldn't read your agents just now · reload to try again"
     },
     "chooseKey": "Choose a key",
     "byo": {

@@ -362,7 +362,7 @@ export const useToolConnectors = (
     const modes = entryGrantModes(entry);
     return modes.length === 1
       ? modeLabel(modes[0])
-      : t('tools.readOrWrite', { defaultValue: 'read, or read and write' });
+      : t('tools.readOrWrite', { defaultValue: 'Read, or read and write' });
   };
 
   const usedRecently = (grant: ToolGrant): boolean => {
