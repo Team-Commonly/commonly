@@ -257,8 +257,8 @@ describe('per-agent Wake and Pods settings', () => {
   });
 
   it('zh-CN reads the same counts on both lines, with its one plural form', () => {
-    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 1, cap: 30 })).toBe('心跳1 / 30次/天');
-    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 24, cap: 30 })).toBe('心跳24 / 30次/天');
+    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 1, cap: 30 })).toBe('心跳1次/天 · 上限30轮/天');
+    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 24, cap: 30 })).toBe('心跳24次/天 · 上限30轮/天');
     expect(i18n.t('agentSettings.heartbeatTurnsNoCap', { lng: 'zh-CN', count: 24 })).toBe('心跳24次/天 · 上限不可用');
   });
 
