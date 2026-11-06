@@ -716,8 +716,8 @@ const formatPodContextFrame = (podId: string): string =>
   `At a genuine HUMAN fork, use the card tool ` +
   `(MCP: \`commonly_request_decision\`): give 2–4 options; mark one ` +
   `recommended, ` +
-  `include context; add @handle for a named ruler. It posts the card; ` +
-  `if unavailable, ask the intended human with a plain @handle question; do not ` +
+  `include context; add the named ruler's real @handle. It posts the card; ` +
+  `if unavailable, ask the intended human with a plain question at their real @handle; do not ` +
   `duplicate chat ask. For ` +
   `merge press or ordinary ` +
   `answer, @mention their handle. A bare name reaches no one: human attention ` +

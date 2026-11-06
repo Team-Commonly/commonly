@@ -799,7 +799,7 @@ describe('agent-facing tone contract', () => {
 
   it('routes genuine forks to the decision card instead of chat', () => {
     expect(desc).toContain('commonly_request_decision');
-    expect(desc).toContain('@human in the question');
+    expect(desc).toContain('real @handle in the question');
     expect(desc).toMatch(/do not duplicate the ask in chat/i);
     expect(desc).toMatch(/interactive card/);
   });
