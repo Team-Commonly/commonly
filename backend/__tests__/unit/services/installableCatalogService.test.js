@@ -237,6 +237,14 @@ describe('installable catalog service', () => {
     }));
     expect(JSON.stringify(catalog)).not.toMatch(/pem-material|ghs_secret|conn-object-id/);
 
+    // F221: the self-serve step is offered only where Commonly Connect can sign.
+    process.env.GITHUB_CONNECT_APP_ID = 'connect-1';
+    process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = 'pem';
+    const withConnect = await catalogFor(userId);
+    delete process.env.GITHUB_CONNECT_APP_ID;
+    delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;
+    expect(withConnect.installables.find((entry) => entry.list === 'tools').repositoryConnect).toBe(true);
+
     delete process.env.GITHUB_APP_ID;
     delete process.env.GITHUB_APP_PRIVATE_KEY;
     mockInstallables([], [githubTool()]);

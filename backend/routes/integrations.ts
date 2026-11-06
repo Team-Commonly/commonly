@@ -53,7 +53,7 @@ const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGran
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { isGithubAppConfigured } from '../services/githubAppNames';
-import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, proveConnectRepository } from '../services/githubConnectProof';
+import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, listConnectRepositories, proveConnectRepository } from '../services/githubConnectProof';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 import { Types } from 'mongoose';
 import {
@@ -497,6 +497,39 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
     return res.status(201).json({ integration });
   } catch (error) {
     console.error('Error creating Commonly Connect repository connection:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// The picker for the route above: what the caller's own token could connect,
+// less what they already have. Listing proves nothing; the POST still does.
+router.get('/github-app/repositories', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!isGithubAppConfigured('connect')) {
+      return res.status(503).json({ error: 'github_app_not_configured', message: 'Commonly Connect is not configured on this instance' });
+    }
+    const listed = await listConnectRepositories({ userId });
+    const own = await Integration.find({
+      type: 'github-app', createdBy: userId, status: 'connected', revokedAt: null, 'config.app': 'connect',
+    }).select('config.repoKey').lean() as Array<{ config?: { repoKey?: string } }>;
+    const connected = new Set(own.map((row) => String(row.config?.repoKey || '')));
+    return res.json({
+      repositories: listed.repositories
+        .filter(({ owner, repo }) => !connected.has(`${owner}/${repo}`.toLowerCase())),
+      truncated: listed.truncated,
+    });
+  } catch (error) {
+    if (error instanceof GithubConnectProofError) {
+      return res.status(error.statusCode).json({
+        error: error.code,
+        message: error.message,
+        ...(error.code === 'github_connect_required'
+          ? { connect: `/api/integrations/connect/hosted-mcp/${GITHUB_MCP_ENTRY_ID}/start` } : {}),
+      });
+    }
+    console.error('Error listing Commonly Connect repositories:', error);
     return res.status(500).json({ message: 'Server error' });
   }
 });

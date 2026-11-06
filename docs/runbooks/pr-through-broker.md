@@ -104,7 +104,12 @@ token with that App's id and key only:
    This stores the person's Commonly Connect user token.
 2. **Install Commonly Connect** on their account or org, and pick the
    repositories (the install page is `github.com/apps/<slug>/installations/new`).
-3. **Connect a repository:** `POST /api/integrations/github-app/repositories`
+3. **Connect a repository:** the GitHub tile's **Connect a repository** step
+   lists them from `GET /api/integrations/github-app/repositories`: what the
+   person's own token can push to through a Connect installation, less what they
+   already connected. The list is only a picker, capped at 10 installations and
+   3 pages of each, and it says so when cut short. The connect is
+   `POST /api/integrations/github-app/repositories`
    with `{ installationId, owner, repo }`. The server reads
    `GET /user/installations` and `GET /user/installations/{id}/repositories`
    with the person's own user token, and creates the connection only when the

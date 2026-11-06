@@ -25,6 +25,9 @@ export const GITHUB_MCP_ENTRY_ID = 'github-mcp';
 const MAX_PAGES = 10;
 const PAGE_SIZE = 100;
 const GITHUB_TIMEOUT_MS = 8000;
+/** The picker's bound: at most 3 + 10 × 3 requests in one page load. */
+const LIST_MAX_INSTALLATIONS = 10;
+const LIST_MAX_PAGES = 3;
 
 export type GithubConnectProofRefusalCode =
   | 'github_connect_required'
@@ -177,6 +180,78 @@ const canPush = (repository: RepositoryEntry): boolean => {
   return permissions?.push === true || permissions?.maintain === true || permissions?.admin === true;
 };
 
+const openUserToken = async (deps: GithubConnectProofDeps, userId: string): Promise<string> => {
+  const row = await deps.loadUserTokenRow(userId);
+  if (!row) throw connectRequired('connect your GitHub account to Commonly first');
+  let token: string;
+  try {
+    ({ token } = await deps.credentialFor(row));
+  } catch {
+    throw connectRequired('your GitHub connection needs to be connected again');
+  }
+  if (!token) throw connectRequired('your GitHub connection needs to be connected again');
+  return token;
+};
+
+export interface ConnectableRepository {
+  installationId: string;
+  owner: string;
+  repo: string;
+}
+
+/**
+ * What `userId` could connect, for the app's picker: repositories of Connect
+ * installations their own token can see, that they can push to. It offers, and
+ * proves nothing: the connect route still runs `proveConnectRepository`. A
+ * listing GitHub cut short, or one past the caps, comes back `truncated`.
+ */
+export const listConnectRepositories = async (
+  input: { userId: string },
+  overrides: Partial<GithubConnectProofDeps> = {},
+): Promise<{ repositories: ConnectableRepository[]; truncated: boolean }> => {
+  const deps: GithubConnectProofDeps = { ...defaultGithubConnectProofDeps(), ...overrides };
+  const token = await openUserToken(deps, input.userId);
+  const appId = deps.connectAppId();
+  const repositories: ConnectableRepository[] = [];
+  if (!appId) return { repositories, truncated: false };
+  let truncated = false;
+
+  const installations: InstallationEntry[] = [];
+  for (let page = 1; page <= LIST_MAX_PAGES; page += 1) {
+    const body = await getJson(deps, token, `/user/installations?per_page=${PAGE_SIZE}&page=${page}`) as {
+      installations?: unknown;
+    } | null;
+    if (!body && page > 1) truncated = true;
+    const list = Array.isArray(body?.installations) ? body?.installations as InstallationEntry[] : [];
+    installations.push(...list);
+    if (list.length < PAGE_SIZE) break;
+    if (page === LIST_MAX_PAGES) truncated = true;
+  }
+
+  const usable = installations.filter((entry) => String(entry?.app_id ?? '') === appId
+    && !entry.suspended_at && /^\d{1,20}$/.test(String(entry?.id ?? '')));
+  if (usable.length > LIST_MAX_INSTALLATIONS) truncated = true;
+  for (const installation of usable.slice(0, LIST_MAX_INSTALLATIONS)) {
+    const installationId = String(installation.id);
+    for (let page = 1; page <= LIST_MAX_PAGES; page += 1) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by the caps above, and GitHub's limit is per token
+      const body = await getJson(
+        deps, token, `/user/installations/${installationId}/repositories?per_page=${PAGE_SIZE}&page=${page}`,
+      ) as { repositories?: unknown } | null;
+      if (!body) truncated = true;
+      const list = Array.isArray(body?.repositories) ? body?.repositories as RepositoryEntry[] : [];
+      list.filter(canPush).forEach((repository) => {
+        const owner = String(repository?.owner?.login ?? '');
+        const repo = String(repository?.name ?? '');
+        if (owner && repo) repositories.push({ installationId, owner, repo });
+      });
+      if (list.length < PAGE_SIZE) break;
+      if (page === LIST_MAX_PAGES) truncated = true;
+    }
+  }
+  return { repositories, truncated };
+};
+
 /**
  * Prove that `userId` can reach `owner/repo` through Connect installation
  * `installationId`, and return GitHub's spelling of both. Throws
@@ -194,15 +269,7 @@ export const proveConnectRepository = async (
   overrides: Partial<GithubConnectProofDeps> = {},
 ): Promise<ProvenConnectRepository> => {
   const deps: GithubConnectProofDeps = { ...defaultGithubConnectProofDeps(), ...overrides };
-  const row = await deps.loadUserTokenRow(input.userId);
-  if (!row) throw connectRequired('connect your GitHub account to Commonly first');
-  let token: string;
-  try {
-    ({ token } = await deps.credentialFor(row));
-  } catch {
-    throw connectRequired('your GitHub connection needs to be connected again');
-  }
-  if (!token) throw connectRequired('your GitHub connection needs to be connected again');
+  const token = await openUserToken(deps, input.userId);
 
   const installation = await findInstallation(deps, token, input.installationId);
   const appId = deps.connectAppId();

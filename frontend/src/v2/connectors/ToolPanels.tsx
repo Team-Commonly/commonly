@@ -58,6 +58,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   const {
     manualRevokeNotice,
     isGranter,
+    catalog,
     seats,
     trail,
     trailError,
@@ -66,6 +67,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     draft,
     setDraft,
     githubAppSetup,
+    repositoryConnect,
+    setRepositoryConnect,
+    readConnectableRepositories,
+    openRepositoryConnect,
+    submitRepositoryConnect,
     setGithubAppSetup,
     staleAfterChange,
     confirmRevoke,
@@ -424,6 +430,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           </button>
         )}
         {renderDisconnect(entry, 'row')}
+        {entry.available && entry.repositoryConnect && (
+          <button type="button" className="v2-connector-row__action" onClick={openRepositoryConnect}>
+            {t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}
+          </button>
+        )}
         {canInstallGithubApp && (
           <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
             {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
@@ -531,6 +542,64 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               {busy ? t('tools.installingGitHubApp', { defaultValue: 'Installing…' }) : t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setGithubAppSetup(null)}>
+              {t('tools.cancel', { defaultValue: 'Cancel' })}
+            </button>
+          </div>
+          {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
+        </section>
+      </aside>
+    );
+  };
+
+  // F221: a person connects a repository of their own. GitHub comes first: the
+  // list and the proof both read that person's token, and the hosted GitHub
+  // entry holds both the sign-in and the page that installs the App.
+  const renderRepositoryConnect = () => {
+    if (!repositoryConnect) return null;
+    const { status, repositories, truncated, selected } = repositoryConnect;
+    const githubEntry = catalog.find((entry) => entry.entryId === 'github-mcp');
+    return (
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}>
+        <section className="v2-connector-aside__card">
+          <h2>{t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}</h2>
+          {status === 'loading' && <p role="status">{t('tools.repoConnect.loading', { defaultValue: 'Reading your repositories…' })}</p>}
+          {status === 'failed' && <p role="alert">{t('tools.repoConnect.readFailed', { defaultValue: "Couldn't read your repositories from GitHub." })}</p>}
+          {status === 'needsGithub' && <p>{t('tools.repoConnect.needsGithub', { defaultValue: 'Connect your GitHub account first. Commonly reads which repositories you can push to from it.' })}</p>}
+          {status === 'ready' && repositories.length === 0 && (
+            <p>
+              {t('tools.repoConnect.none', { defaultValue: 'No repository to connect yet. Install Commonly Connect on your account or org and pick the repositories.' })}
+              {githubEntry?.accessPage && <> {renderAccessLink(githubEntry)}</>}
+            </p>
+          )}
+          {status === 'ready' && repositories.length > 0 && (
+            <div className="v2-tools__form">
+              <label className="v2-tools__field">
+                <span>{t('tools.repository', { defaultValue: 'repository' })}</span>
+                <select className="v2-connectors__select" value={selected} onChange={(event) => setRepositoryConnect({ ...repositoryConnect, selected: event.target.value })}>
+                  <option value="" disabled>{t('tools.repoConnect.choose', { defaultValue: 'Choose a repository' })}</option>
+                  {repositories.map(({ owner, repo }) => <option key={`${owner}/${repo}`} value={`${owner}/${repo}`}>{owner}/{repo}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
+          {truncated && <p className="v2-tools__hint">{t('tools.repoConnect.truncated', { defaultValue: 'This list may be incomplete.' })}</p>}
+          <div className="v2-connector-aside__actions">
+            {status === 'ready' && repositories.length > 0 && (
+              <button type="button" className="v2-connector-aside__primary" disabled={busy || !selected} onClick={() => { void submitRepositoryConnect(); }}>
+                {busy ? t('tools.repoConnect.connecting', { defaultValue: 'Connecting…' }) : t('tools.connect', { defaultValue: 'Connect' })}
+              </button>
+            )}
+            {status === 'needsGithub' && githubEntry && (
+              <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void connectHostedMcp(githubEntry); }}>
+                {t('tools.repoConnect.connectGithub', { defaultValue: 'Connect GitHub' })}
+              </button>
+            )}
+            {status !== 'loading' && (
+              <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void readConnectableRepositories(); }}>
+                {t('tools.repoConnect.checkAgain', { defaultValue: 'Check again' })}
+              </button>
+            )}
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setRepositoryConnect(null)}>
               {t('tools.cancel', { defaultValue: 'Cancel' })}
             </button>
           </div>
@@ -840,5 +909,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderRepositoryConnect, renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

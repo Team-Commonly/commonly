@@ -347,6 +347,75 @@ describe('self-serve Commonly Connect repository connection', () => {
   });
 });
 
+describe('F221: the picker for a person\'s own repositories', () => {
+  const list = (user) => request(app).get('/api/integrations/github-app/repositories').set('x-test-user', String(user._id));
+  const names = (res) => res.body.repositories.map((row) => `${row.owner}/${row.repo}`);
+
+  test('lists what the caller can push to on Connect installations, in GitHub\'s spelling', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const res = await list(alice);
+    expect(res.status).toBe(200);
+    expect(res.body.repositories).toEqual([
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' },
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Gadget' },
+    ]);
+    expect(res.body.truncated).toBe(false);
+  });
+
+  test('every request carries the caller\'s own token, and creates nothing', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    await list(bob);
+    expect(new Set(mockGithub.requests.map((row) => row.token))).toEqual(new Set(['bob-user-token']));
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
+  });
+
+  test('leaves out what the caller already connected, and only that', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(names(await list(alice))).toEqual(['Outside-Team/Gadget']);
+    expect(names(await list(bob))).toEqual(['Outside-Team/Widget', 'Outside-Team/Gadget']);
+  });
+
+  test('with no GitHub user token it points at the connect flow, without calling GitHub', async () => {
+    const res = await list(alice);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'github_connect_required', connect: '/api/integrations/connect/hosted-mcp/github-mcp/start' });
+    expect(hostedVendorFetch).not.toHaveBeenCalled();
+  });
+
+  test('refuses github_app_not_configured when the Connect key is absent, before any GitHub call', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;
+    const res = await list(alice);
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('github_app_not_configured');
+    expect(hostedVendorFetch).not.toHaveBeenCalled();
+  });
+
+  test('skips a suspended installation', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.byToken['alice-user-token'].installations[0].suspended_at = '2026-11-01T00:00:00Z';
+    expect((await list(alice)).body.repositories).toEqual([]);
+  });
+
+  test('a listing GitHub cuts short, or one past the caps, says truncated', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.byToken['alice-user-token'].repositories[INSTALL] = Array.from({ length: 150 }, (_, i) => repo(`Outside-Team/R${i}`));
+    mockGithub.failPage = 2;
+    const cut = await list(alice);
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.repositories).toHaveLength(100);
+
+    mockGithub.failPage = null;
+    mockGithub.byToken['alice-user-token'].repositories[INSTALL] = Array.from({ length: 400 }, (_, i) => repo(`Outside-Team/R${i}`));
+    const capped = await list(alice);
+    expect(capped.body.truncated).toBe(true);
+    expect(capped.body.repositories).toHaveLength(300);
+  });
+});
+
 describe('L2 / M1: the proof reads every page, refuses what it cannot read, and records the repository id', () => {
   test('stores GitHub\'s repository id with the connection', async () => {
     await giveUserToken(alice, 'alice-user-token');

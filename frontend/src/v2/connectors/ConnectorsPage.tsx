@@ -146,7 +146,7 @@ const ConnectorsPage: React.FC = () => {
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
-  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected || orphanGroup);
+  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || m.repositoryConnect || toolEntry || m.selected || orphanGroup);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -184,6 +184,7 @@ const ConnectorsPage: React.FC = () => {
     m.setSelectedId(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const closeChannels = useCallback(() => {
@@ -212,6 +213,7 @@ const ConnectorsPage: React.FC = () => {
     closeChannels();
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
     m.setSelectedId(null);
     setOrphanKey(null);
     if (toolHasDrawer(entry)) {
@@ -231,6 +233,7 @@ const ConnectorsPage: React.FC = () => {
     setToolKey(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
     m.setConfirmRevoke(null);
     if (group.length === 1) {
       setOrphanKey(null);
@@ -457,6 +460,13 @@ const ConnectorsPage: React.FC = () => {
         </ConnectorDrawer>
       );
     }
+    if (m.repositoryConnect) {
+      return (
+        <ConnectorDrawer notices={noticeBlock} type="github" title={GITHUB_BRAND} onClose={closeTools}>
+          {tp.renderRepositoryConnect()}
+        </ConnectorDrawer>
+      );
+    }
     if (!toolEntry) {
       if (orphanKey && orphanGroup) {
         return (
@@ -528,7 +538,7 @@ const ConnectorsPage: React.FC = () => {
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
-    !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
+    !m.draft && !m.selected && !m.githubAppSetup && !m.repositoryConnect ? m.error : null
   );
   // A refused connect that may have left a grant live at the provider. The
   // callback error leads errorText, so this always sits beside its own notice.

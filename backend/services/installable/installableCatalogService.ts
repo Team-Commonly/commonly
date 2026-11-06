@@ -15,6 +15,7 @@ const {
   HOSTED_MCP_ENTRIES, findHostedMcpEntry,
 }: typeof import('../../integrations/hostedMcp/entries') = require('../../integrations/hostedMcp/entries');
 const { isHostedMcpEntryHidden } = require('../../integrations/hostedMcp/visibility');
+const { isGithubAppConfigured }: typeof import('../githubAppNames') = require('../githubAppNames');
 const {
   isHostedMcpClientConfigured,
 }: typeof import('../hostedMcpIntakeService') = require('../hostedMcpIntakeService');
@@ -196,6 +197,8 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       ...(hostedEntry?.credentialMode === 'operator_key' ? { credentialMode: 'operator_key' } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
+      // A person connects their own repository at /github-app/repositories.
+      ...(meta.connectionType === 'github-app' && isGithubAppConfigured('connect') ? { repositoryConnect: true } : {}),
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },
