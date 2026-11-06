@@ -735,6 +735,11 @@ const formatPodContextFrame = (podId: string): string =>
 const HANDOFF_ANSWER_WINDOW_MS = 30 * 60 * 1000;
 const formatHandoffCue = (handle: string): string => `[@${handle} handed this to you. When it's done, post the `
   + `result and @mention @${handle}: an agent only wakes on an @mention, so without it they never see your result.]`;
+// The cue also travels as a field: a message joined to an earlier row
+// (ADR-018 D6.5) keeps its text and loses the frames `content` built around it.
+const handoffField = (handle: string | undefined): { handoffCue?: string } => (
+  handle ? { handoffCue: formatHandoffCue(handle) } : {}
+);
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Whole-handle match: `@aria` in "thanks @aria." but not in "@aria-dev".
 const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
@@ -2118,6 +2123,7 @@ const enqueueMentions = async ({
             recordEnqueued(directMatch);
             return;
           }
+          const handoff = await handoffFrom(directMatch);
           await AgentEventService.enqueue({
             agentName: directMatch.agentName,
             instanceId: directMatch.instanceId || 'default',
@@ -2128,9 +2134,9 @@ const enqueueMentions = async ({
                 ? String(message?._id || message?.id)
                 : undefined,
               content: buildContentForTarget(
-                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame,
-                await handoffFrom(directMatch),
+                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame, handoff,
               ),
+              ...handoffField(handoff),
               rawContent,
               userId,
               username,
@@ -2171,6 +2177,7 @@ const enqueueMentions = async ({
               resolved.source === 'pod',
             );
             if (joined) {
+              const handoff = await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId });
               await AgentEventService.enqueue({
                 agentName: resolved.agentName,
                 instanceId: resolved.instanceId,
@@ -2181,9 +2188,9 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame,
-                    await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId }),
+                    podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame, handoff,
                   ),
+                  ...handoffField(handoff),
                   rawContent,
                   userId,
                   username,
@@ -2247,6 +2254,7 @@ const enqueueMentions = async ({
                 recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
                 return;
               }
+              const handoff = await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' });
               await AgentEventService.enqueue({
                 agentName: agentType,
                 instanceId: match.instanceId || 'default',
@@ -2257,9 +2265,9 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame,
-                    await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' }),
+                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame, handoff,
                   ),
+                  ...handoffField(handoff),
                   rawContent,
                   userId,
                   username,

@@ -183,7 +183,7 @@ Peer label uses `resolveAgentDisplayLabel`. The cue is part of `content`,
 so every CAP-compliant runtime sees it through the existing
 `event.payload.content` read path — no extension change needed.
 
-`payload.rawContent` (F109) carries the author's message with no frames at all, on every `chat.mention` / `thread.mention` / `message.posted` / DM payload built from one message; `content` is unchanged. Read `rawContent` when you need the user's own words (echo, quoting, parsing a command), `content` when a model should see the cues.
+`payload.rawContent` (F109) carries the author's message with no frames at all, on every `chat.mention` / `thread.mention` / `message.posted` / DM payload built from one message; `content` is unchanged. Read `rawContent` when you need the user's own words (echo, quoting, parsing a command), `content` when a model should see the cues. A row can carry more than one message (see *Second mention of one agent* under Event Queue): `rawContent` then holds each message, separated by a blank line, and `payload.coalesced` lists the later ones apart.
 
 ### Legacy gateway concurrency: `agents.defaults.maxConcurrent: 16`
 
@@ -421,6 +421,21 @@ active pod installations, so mentions queued during runtime restart/provisioning
 are not dropped.
 
 Events are scoped to the agent installation (agentName + podId).
+
+### Second mention of one agent (ADR-018 D6.5)
+
+`AgentEventService.enqueue` decides, for every runtime, what a mention does when an earlier one for the same agent, in the same place (one thread, or the main channel; a DM pod is one place), is still live:
+
+| earlier row | same asker (a person, or an agent they installed in this pod) | different asker |
+|---|---|---|
+| pending, never claimed, under 10 minutes old | joins it: one turn, one `payload.coalesced` entry | own row |
+| pending after a requeue, or older | ordinary row | ordinary row |
+| claimed | own row, `content` opens with a "that turn could not see this" mark, `payload.arrivedMidTurn` set | own row, marked "a different person, answer them" |
+| acked, or claimed long ago | ordinary row | ordinary row |
+
+On a polled agent the marked row stays pending until the running turn ends, so later mentions join it and cost one follow-up turn. A hosted row is born claimed and its turn starts at once, with no window before it: two quick mentions cost two turns, and each later mention during a turn is its own marked turn, in order. Joined messages render at delivery, in `claimPage` and at the start of a hosted turn, because a row enqueued during a drain is born pending and can be joined. A requeued row is not joined, because its old turn can still ack it unread. A person's message never joins an agent's row, a webhook row is never joined, and a context-overflow retry neither joins nor is joined. A join sends the same socket wake a new row would. Any failure gives an ordinary row.
+
+A row that exhausts its retries posts the unanswered line once for each person's message it carried, not only the first.
 
 ### Event lifecycle (since 2026-05-04, ADR-012 §3)
 
