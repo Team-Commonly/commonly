@@ -283,6 +283,25 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     }
     if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
 
+    // A personal pod holds the agent it was made with, and only while it's there.
+    // ensureAgentInPod returns null for a DM and adds to an agent-admin pod, so
+    // neither stops the row. Refused here, before any write.
+    if (isPersonalPodType(pod.type)) {
+      const username = AgentIdentityService.buildAgentUsername(
+        AgentIdentityService.resolveAgentType(safeAgentName), normalizedInstanceId,
+      );
+      const bot = await User.findOne({ username, isBot: true }).select('_id').lean();
+      const isMember = Boolean(bot) && pod.members?.some(
+        (member: any) => String(member?.userId || member) === String(bot._id),
+      );
+      if (!isMember) {
+        return res.status(403).json({
+          code: 'dm_membership_refused',
+          error: 'This is a private conversation; another agent can\'t be added to it.',
+        });
+      }
+    }
+
     let agent = await AgentRegistry.getByName(agentName);
 
     if (agent && agent.status === 'unpublished') {
@@ -1281,8 +1300,8 @@ const alreadyInPod = (status = 'active') => ({
  * an install body from the agent's own row and runs installAgent, so every
  * refusal, the membership write and the PG mirror stay install's. Nothing here
  * creates an identity or a token. What runs before it exists to answer in this
- * route's terms: ownership, which install can't see, and a DM pod, where
- * ensureAgentInPod returns null and install would write the row anyway.
+ * route's terms: ownership, which install can't see, and a DM pod, with the code
+ * install would answer anyway.
  *
  * A global admin gets no more than an owner. Settings and agent-config let an
  * admin edit a row in place, but install stamps the caller as `installedBy`, so
