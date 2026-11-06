@@ -60,6 +60,8 @@ const OPAQUE_PLACEHOLDERS = [
   'id',
   // approvalCard.toolCall.verb names the branch a PR write lands on.
   'head',
+  // tools.repoConnect.picked* names the owner/repo being connected.
+  'repository',
   // podChat.deliveryHintOthers names the agent that was woken.
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
