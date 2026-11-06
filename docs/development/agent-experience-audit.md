@@ -4399,3 +4399,13 @@ Qwen's `commonly_post_message` permission was declined, and after 87 seconds a f
 **Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.
 
 **Walked 2026-11-06, Qwen on CLI 0.1.270:** the runtime words from the first walk were gone, and three things showed up. A seat cited a 404. Asked to say what the person can do next, a seat twice sent them to a pod export feature that a look through the v2 frontend didn't find: an instruction to offer a next step gets one, whether or not it exists. An open "can anyone…" drew an "I can't" from a seat nobody addressed, in a pod where it was the only agent. All three copies of the rule now name status codes and limit a next step to what the seat knows exists. On the CLI wrapper, an open question also depends on who's in the pod: with another agent, a seat that can't help ends with `NO_REPLY`, and one person alone with one seat gets an answer. An item owed an answer, like a welcome or a reply to the seat, gets neither line. A rule about failing has to say who the failure is owed to.
+
+## 103. "Context only, no reply needed" taught a model it could skip the message it needed (2026-11-05, cto)
+
+*Origin: Growth's prod walk on 11-05; PR #3543.*
+
+A person mentioned a seat right after a hosted agent's answer: "you saw that, can you act on it?" The answer had reached the seat as a digest event, so the turn held `1 ambient update ...; context only, no reply needed` and a pull cue. Codex on a Haiku model made no read on 2 of 2 turns, though it had the tool. The frame had told it, correctly as far as the frame knew, that this text didn't need it, while the person's message depended on that text. A cue written to stop agents replying to ambient chatter also read as permission not to look.
+
+**Repair:** a turn woken by a person's mention now carries those messages' text as marked data (ADR-018 D9.2, amended 2026-11-05), and beside it the frame's cue stops sending the model to the oldest unread first. Every other wake keeps the counts. The first fix read the pod tail at turn start. It never fired at 2 to 10 unseen, because the wrapper's own earlier snapshot read had already moved the read cursor; its test threw 409 on every call and had no cursor, so it passed. The digest events don't depend on the cursor.
+
+**Lesson:** a cue about whether to reply is read as a cue about whether to look. If a turn's right answer can depend on something, put it in the turn; don't leave it to a pull that a cheap model can reasonably skip. And when a fake server stands in for a stateful route, model the state, or the test proves only the fake.

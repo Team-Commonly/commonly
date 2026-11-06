@@ -15,6 +15,11 @@
  * run with `--refusal-handoff <agent>`, @mentions that agent to take it. The
  * line repeats nothing else from the request: the flagged text stays out of
  * the pod.
+ *
+ * Two later rules (2026-11-05, ADR-018 D9.2). A turn that carried unread message
+ * bodies reruns once without them before any item is refused, since ambient text
+ * may have drawn the refusal. And a refusal drops the pod's session: both CLIs
+ * keep the refused prompt in their thread and would resend it on every resume.
  */
 import { classifySpawnFailure, SPAWN_FAILURE_CLASS } from './spawn-retry.js';
 

@@ -35,13 +35,14 @@ import {
 } from '../lib/spawn-credential.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
-import { formatDigestFrame } from '../lib/digest-frame.js';
+import { formatDigestFrame, formatUnreadMessagesFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
 import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
   getSessionEntry,
   setSession,
+  clearSession,
   clearSessions,
   wasEventHandled,
   recordHandledEvent,
@@ -137,6 +138,7 @@ import {
 import { CANT_ANSWER_NOTICE_WINDOW_MS, cantAnswerNotice } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
+  isPersonMention,
   CASCADE_DEFAULTS,
   CASCADE_ENV_VARS,
   CLAIMABLE_EVENT_TYPES,
@@ -2476,6 +2478,11 @@ export const performRun = ({
       return await runTurnBody({ ...args, turn });
     } catch (error) {
       turn.finish('reply_lost');
+      // codex and claude both keep a refused prompt in the thread, and send it
+      // again on every resume (measured 2026-11-05 on codex 0.162.1 and claude
+      // 2.1.318), so one refusal would refuse every later turn in this pod. The
+      // next turn starts fresh; memory reaches it through the adapter's preamble.
+      if (isContentRefusal(error) && turn.resumedSession) clearSession(agentName, args.eventPodId);
       throw error;
     }
   };
@@ -2840,6 +2847,7 @@ export const performRun = ({
       // Supervised or plain, a failure is thrown exactly as the adapter's own
       // would be, so the run loop's classification and retry apply unchanged.
       const spawnStartedAt = Date.now();
+      turn.resumedSession = Boolean(spawnCtx.sessionId);
       try {
         result = await turn.run(adapter, spawnPrompt, spawnCtx);
       } catch (spawnError) {
@@ -3190,7 +3198,9 @@ export const performRun = ({
   // the next turn shows it. Additional pending
   // events stay in the kernel queue and are cued in the header for a later
   // pull, rather than being silently consumed here.
-  const buildInboxPrompt = (entries, inboxCount = entries.length, pod = null) => {
+  // `unreadBodiesPodId` is set only for a turn a person's mention woke (ADR-018
+  // D9.2): the unread messages this page carried go in as marked data.
+  const buildInboxPrompt = (entries, inboxCount = entries.length, { pod = null, unreadBodiesPodId = null } = {}) => {
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
@@ -3223,7 +3233,14 @@ export const performRun = ({
       return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
-    const digestFrame = formatDigestFrame(digestEntries.map((entry) => entry.event), rollup);
+    const digestEvents = digestEntries.map((entry) => entry.event);
+    const unreadFrame = unreadBodiesPodId
+      ? formatUnreadMessagesFrame(digestEvents, rollup, {
+        podId: unreadBodiesPodId,
+        excludeMessageIds: wakeEntries.map((entry) => entry.event.payload?.messageId),
+      })
+      : null;
+    const digestFrame = formatDigestFrame(digestEvents, rollup, { bodiesBelow: Boolean(unreadFrame) });
     const omitted = Math.max(0, inboxCount - entries.length);
     return [
       `[Inbox batch: ${inboxCount} new event${inboxCount === 1 ? '' : 's'} in this pod. `
@@ -3239,6 +3256,7 @@ export const performRun = ({
           + 'They are unread and still queued, and come in a later turn. Don\'t answer as if you saw them.]']
         : []),
       ...(digestFrame ? [digestFrame] : []),
+      ...(unreadFrame ? [unreadFrame] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
@@ -3789,6 +3807,7 @@ export const performRun = ({
 
     const actionEntries = wakingEntries.filter((entry) => !entry.result && !entry.pastCap);
     if (actionEntries.length === 0) return { entries };
+    const personMentioned = actionEntries.some((entry) => isPersonMention(entry.event, entry.trigger));
 
     const claimKeepers = actionEntries
       .map((entry) => entry.claimKeeper)
@@ -3827,13 +3846,18 @@ export const performRun = ({
           },
         },
         eventPodId,
-        prompt: buildInboxPrompt([entry], 1, podAttendance),
+        prompt: buildInboxPrompt([entry], 1, { pod: podAttendance }),
         preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
         trigger,
       });
     };
+
+    const plainPrompt = buildInboxPrompt(entries, inboxCount, { pod: podAttendance });
+    const turnPrompt = personMentioned
+      ? buildInboxPrompt(entries, inboxCount, { pod: podAttendance, unreadBodiesPodId: eventPodId })
+      : plainPrompt;
 
     let turnResult;
     let deferredError = null;
@@ -3842,7 +3866,7 @@ export const performRun = ({
         turnResult = await runTurn({
           event: batchEvent,
           eventPodId,
-          prompt: buildInboxPrompt(entries, inboxCount, podAttendance),
+          prompt: turnPrompt,
           preSpawnIds,
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,
@@ -3868,6 +3892,32 @@ export const performRun = ({
         }
       } catch (err) {
         if (!isContentRefusal(err)) throw err;
+        // Ambient text anyone wrote can draw the refusal, and no waking item
+        // should pay for that. So the same items run once more with counts
+        // only. A posted wake still settles those digests on the server, the
+        // same as any counts-only turn.
+        let refused = true;
+        if (turnPrompt !== plainPrompt) {
+          log('[inbox.batch] the model provider refused a turn that carried unread messages (content_refused); '
+            + 'running it once more without them');
+          try {
+            const before = await snapshotMessages();
+            turnResult = await runTurn({
+              event: batchEvent,
+              eventPodId,
+              prompt: plainPrompt,
+              preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
+              snapshotMessages,
+              claimKeeper: compositeClaimKeeper,
+              trigger,
+            });
+            for (const entry of actionEntries) entry.result = turnResult;
+            refused = false;
+          } catch (rerunErr) {
+            if (!isContentRefusal(rerunErr)) throw rerunErr;
+          }
+        }
+        if (!refused) return { entries };
         if (actionEntries.length === 1) {
           actionEntries[0].result = contentRefusedResult();
         } else {
