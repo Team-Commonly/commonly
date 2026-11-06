@@ -101,6 +101,7 @@ test.each(['hosted', 'native'])('a %s 503 persists failure and posts the model w
   } else {
     expect(message.content).toContain(model);
     expect(message.content).toContain('HTTP 503');
+    expect(message.content).toContain('Please try again.');
   }
   expect(message.content).not.toContain(privateReason);
   expect(message.content).not.toContain('cloudflare');

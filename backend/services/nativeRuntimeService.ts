@@ -220,6 +220,14 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
 
+// What a hosted agent posts when a person addressed it and no turns are left.
+// Before F234 the turn just ended, and the person read that as a broken agent.
+// Fixed text. It names no owner: the per-user ceiling is the owner's, across all
+// their agents, so the agent may have used none of them and the asker may not
+// be the owner.
+export const HOSTED_TURNS_USED_LINE = 'There are no turns left today, so I can\'t answer this one. '
+  + 'They reset at midnight UTC.';
+
 // --- helpers ---------------------------------------------------------------
 
 type PlainConfig = Record<string, any>;
@@ -2041,6 +2049,39 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // F234: a hosted turn stopped before it ran still owes a waiting person a word.
+  // Kernel wakes arrive as chat.mention too, and nobody is waiting on those; the
+  // sweep would repeat the line all day. An agent's @ gets nothing, as it did
+  // before: that is the loop the cap exists to end. No answeringMessageId: this
+  // line isn't an answer, and that field would close the first-task card on it.
+  // A failed post doesn't change the stop.
+  const tellAddressedPerson = async (content: string): Promise<void> => {
+    if (!hostedNative || !wasDirectlyAddressed(trigger)) return;
+    const payload = (trigger.payload || {}) as Record<string, unknown>;
+    if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
+      || payload.boardWake === true || payload.welcomeWake === true) return;
+    if (!await triggerTextIsHumanWritten(trigger)) return;
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentMessageService = require('./agentMessageService');
+      await AgentMessageService.postMessage({
+        agentName,
+        instanceId,
+        podId,
+        content,
+        messageType: 'text',
+        displayName,
+        installationConfig: cfg,
+        metadata: { source: 'native-runtime', runFailed: true },
+        failureNotice: true,
+        kind: 'error',
+        threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
+      });
+    } catch (postErr) {
+      console.warn('[native-runtime] stopped-turn line not posted:', (postErr as Error).message);
+    }
+  };
+
   // A first-contact greeting is not one of the person's turns: it fires once
   // per person and agent (AgentFirstContact), before they have asked anything,
   // so neither count below spends it (QA walk, 2026-10-16: the greeting cost 1
@@ -2081,6 +2122,7 @@ export async function runAgent(
           `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
           + `in pod ${podId} — declining until UTC midnight`,
         );
+        await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
@@ -2126,9 +2168,11 @@ export async function runAgent(
             `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
             + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
           );
+          await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
           return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
         }
       } catch (err) {
+        await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
         return failedResult(
           '',
           'user_ceiling_check_failed',
@@ -2333,6 +2377,7 @@ export async function runAgent(
     run.completedAt = new Date();
     await run.save();
     emitStop();
+    await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
     return failedResult(runId, 'config', run.errorMessage);
   }
 

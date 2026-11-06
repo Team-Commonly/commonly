@@ -72,7 +72,7 @@ const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
-const { runAgent, HOSTED_RUN_FAILED_LINE } = require('../../../services/nativeRuntimeService');
+const { runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const OWNER = '507f1f77bcf86cd799439099';
@@ -594,6 +594,53 @@ describe('a hosted turn the guard stops, or that fails', () => {
 
     expect(guardChecks()).toHaveLength(0);
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  // F234: a stop before the turn ran used to end in silence.
+  test('a person who addresses an agent past its daily cap is told, in plain words', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), mention);
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    const notice = AgentMessageService.postMessage.mock.calls[0][0];
+    expect(notice).toMatchObject({ failureNotice: true, kind: 'error' });
+    // It isn't an answer, so it can't close the first-task card.
+    expect(notice).not.toHaveProperty('answeringMessageId');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['a board wake', { boardWake: true }],
+    ['an assigned-work wake', { triggerAuthor: 'kernel', assignedTaskWake: true }],
+    ['a welcome wake', { welcomeWake: true }],
+  ])('%s past the cap stays quiet, because nobody is waiting on it', async (_label, flags) => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, ...flags } });
+    expect(posted()).toEqual([]);
+  });
+
+  test('an agent\'s @ past the cap stays quiet', async () => {
+    const User = require('../../../models/User');
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: true }) }) }));
+    await runAgent(hostedInstall(), mention);
+    User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) }));
+    expect(posted()).toEqual([]);
+  });
+
+  test('a person who addresses an agent past the per-user ceiling is told too', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
+    const result = await runAgent(hostedInstall(), mention);
+    expect(result).toMatchObject({ status: 'failed', errorKind: 'user_ceiling' });
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+  });
+
+  test('a heartbeat past its cap stays quiet', async () => {
+    // The heartbeat hold counts first, on trigger: 'heartbeat'; it has to pass for
+    // this to reach the cap.
+    AgentRun.countDocuments.mockImplementation((query) => Promise.resolve(query.trigger === 'heartbeat' ? 0 : 100000));
+    await runAgent(hostedInstall(), { type: 'heartbeat', eventId: 'hb', payload: {} });
+    expect(AgentRun.countDocuments.mock.calls.some(([query]) => query.trigger !== 'heartbeat')).toBe(true);
+    expect(posted()).toEqual([]);
   });
 
   test('a model error names the model in plain words, keeps the reason on the run, and uses no turn', async () => {
