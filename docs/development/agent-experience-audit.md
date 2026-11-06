@@ -4378,13 +4378,12 @@ A person granted their agent GitHub through the grant broker, then revoked the g
 
 **Lesson:** a prohibition that names one field reads as permission for its sibling. When two fields reach the same storage effect, name the effect, and name every field that causes it.
 
-
 ## 101. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
 
 *Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
 
-Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. The frame around its event carries two of them (`Event 1/1: first_contact`, the checkpoint instructions). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
+Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. What the seat is handed carries all three: the event line names the event type, the checkpoint instructions sit beside it, and the kernel's author frame says an unacked event is re-served (`formatAuthorFrame`). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
 
-**Repair:** the line every wrapper-posted turn already carries, `FINAL_TEXT_IS_POSTED`, now says to describe a failure in plain words and not to name runtime terms unless the person asked. It reaches every adapter because they all read the same frame. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
+**Repair:** #3553. The line every CLI wrapper turn closes on, `FINAL_TEXT_IS_POSTED`, now says that when an agent can't do what someone asked, it should say so in plain words and leave out runtime terms unless they asked about them. It's scoped to a request on purpose: an unscoped ban would discourage the seats that work on this code, and an unscoped "say what failed" gives a heartbeat a reason to post. It covers CLI wrapper adapters only. Hosted native turns and OpenClaw seats have their own frames. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
 
 **Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.

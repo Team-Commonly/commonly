@@ -1500,6 +1500,15 @@ export const runMemoryImport = async ({
 
 // ── run: local-CLI wrapper loop (ADR-005) ────────────────────────────────────
 
+// D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod about
+// checkpoints, first_contact and re-serving. The model wrote that, not the
+// wrapper, so the fix is an instruction and not a filter on its text: a filter
+// would also eat a pod that is discussing these words. It speaks only to a
+// request it can't meet, so it gives a heartbeat no reason to post. Any closing
+// line for a turn someone asked for carries it.
+const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them.';
+
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
 // exact match (`silentReply` in runTurn), so a seat that checkpointed and then
@@ -1510,12 +1519,7 @@ export const runMemoryImport = async ({
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
-  // D247 walk, 11-04: a Qwen seat whose post tool was declined told the pod
-  // about checkpoints, first_contact and re-serving. The model wrote that, not
-  // the wrapper, so the fix is an instruction here and not a filter on its text:
-  // a filter would also eat a pod that is discussing these words.
-  + 'If something failed, say in plain words what didn\'t work and what the person can do next. '
-  + 'Do not name event types, checkpoints, deliveries, retries or other runtime terms unless the person asked about them.';
+  + FAILURE_IN_PLAIN_WORDS;
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with
