@@ -155,7 +155,7 @@ describe('the hosted prompt says how a failure should read (F111, D247)', () => 
   test('in plain words, leaving out runtime terms unless they were asked about', () => {
     const prompt = hostedNativeSystemPrompt('Scout');
     expect(prompt).toContain('say in plain words what didn\'t work and what they can do next');
-    expect(prompt).toContain('without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them');
+    expect(prompt).toContain('without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them');
   });
 });
 

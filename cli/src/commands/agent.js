@@ -1580,8 +1580,12 @@ export const runMemoryImport = async ({
 // would also eat a pod that is discussing these words. It speaks only to a
 // request it can't meet, so it gives a heartbeat no reason to post. Every closing
 // line carries it, and it says where the note goes once the agent has posted.
+// Walked 11-06: a seat offered an export feature that wasn't found, so a next
+// step has to be one it knows exists, and an open question drew an "I can't"
+// from a seat nobody addressed, so FINAL_TEXT_IS_POSTED sends that to NO_REPLY.
 const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+  + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+  + 'Only point them to a feature or option you know exists. '
   + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
@@ -1594,7 +1598,8 @@ const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
-  + FAILURE_IN_PLAIN_WORDS;
+  + FAILURE_IN_PLAIN_WORDS
+  + ' A question put to the room isn\'t asked of you: if you can\'t help with it, end with NO_REPLY.';
 
 // The same line for a comment @ (F225), whose final text goes to the comment.
 // A person who @'d the seat is not offered silence, only the tool's exit.

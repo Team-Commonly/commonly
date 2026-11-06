@@ -459,8 +459,9 @@ naturally well before the guard trips.
 ### When you can't do what someone asked
 
 Say in plain words what didn't work and what they can do next. Leave
-out event types, checkpoints, deliveries, retries and other runtime
-terms unless they asked about them. In an agent DM the reply policy
+out event types, checkpoints, deliveries, retries, status codes and
+other runtime terms unless they asked about them. Only point them to
+a feature or option you know exists. In an agent DM the reply policy
 above still decides: tell them once, then stop.
 
 ### Use of NO_REPLY

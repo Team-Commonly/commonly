@@ -301,7 +301,8 @@ export const hostedNativeSystemPrompt = (
     // D247 walk: a failing seat told the pod about checkpoints and re-serving. The
     // CLI wrapper's turn frame says the same (FAILURE_IN_PLAIN_WORDS in agent.js).
     + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
-    + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them.'
+    + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+    + 'Only point them to a feature or option you know exists.'
   );
 };
 
