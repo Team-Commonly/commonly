@@ -25,7 +25,7 @@ const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
   'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
-  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
+  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens', 'bytes', 'shown',
   // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).
   'stars',
   // harness.answeredIn: a reply's measured duration in seconds (D247).
@@ -58,6 +58,8 @@ const OPAQUE_PLACEHOLDERS = [
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
   'id',
+  // approvalCard.toolCall.verb names the branch a PR write lands on.
+  'head',
   // podChat.deliveryHintOthers names the agent that was woken.
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).

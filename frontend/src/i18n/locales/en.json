@@ -1731,6 +1731,19 @@
       "name": "Tool call",
       "loading": "Loading the exact tool call…",
       "unavailable": "Can't show what you'd approve — refresh before deciding.",
+      "yes": "Yes",
+      "no": "No",
+      "file": {
+        "size": "{{bytes}} bytes",
+        "cut": "Only the start is shown. This file is {{bytes}} bytes.",
+        "notShown": "Not shown. This file is {{bytes}} bytes."
+      },
+      "notice": {
+        "contentsCut": "Not all of this is shown: {{shown}} of {{total}} bytes of file contents. Approving commits all of it.",
+        "messageCut": "The commit message is cut short. Approving records all {{total}} characters.",
+        "bodyCut": "The body is cut short: {{shown}} of {{total}} characters. Approving sends all of it.",
+        "pushContents": "A push shows commit ids and size, not its contents. Approving pushes all of it."
+      },
       "ownerOnly": "Arguments are visible to the approval owner only.",
       "ran": "Approved — tool call ran.",
       "failed": "Approved — tool call failed ({{code}}).",
@@ -1742,7 +1755,10 @@
         "mergePullRequest": "Merge pull request #{{number}}",
         "createIssue": "Open an issue",
         "commentOnIssue": "Comment on issue #{{number}}",
-        "closeIssue": "Close issue #{{number}}"
+        "closeIssue": "Close issue #{{number}}",
+        "createPullRequest": "Open a pull request",
+        "commitFiles": "Commit to {{head}}",
+        "pushBranch": "Push to {{head}}"
       },
       "label": {
         "repository": "Repository",
@@ -1754,7 +1770,19 @@
         "commitMessage": "Commit message",
         "title": "Title",
         "body": "Body",
-        "labels": "Labels"
+        "labels": "Labels",
+        "base": "Base branch",
+        "branch": "Branch",
+        "lands": "Where it lands",
+        "bodyLength": "Body length",
+        "draft": "Draft",
+        "fileCount": "Files",
+        "file": "File",
+        "branchExists": "Existing branch",
+        "parentCommit": "Parent commit",
+        "baseCommit": "Base commit",
+        "newCommit": "New commit",
+        "bundleSize": "Bundle size"
       },
       "exactArgs": "Exact arguments"
     },
