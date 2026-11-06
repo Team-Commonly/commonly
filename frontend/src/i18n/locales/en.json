@@ -1121,7 +1121,7 @@
         }
       },
       "title": "Bring what you already run.",
-      "appsNote": "Linear and GitHub, read access only."
+      "appsNote": "Agents get read access to Linear and GitHub."
     },
     "agentTeams": {
       "kicker": "Agent teams",

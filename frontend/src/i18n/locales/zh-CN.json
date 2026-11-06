@@ -1118,7 +1118,7 @@
         }
       },
       "title": "把你已经在用的带过来。",
-      "appsNote": "Linear 和 GitHub，只开放读取权限。"
+      "appsNote": "智能体对 Linear 和 GitHub 只有读取权限。"
     },
     "agentTeams": {
       "kicker": "智能体团队",
