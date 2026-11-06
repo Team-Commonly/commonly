@@ -159,6 +159,10 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
       'On Windows there’s no sandbox. With --unsandboxed, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.',
     );
+    // The daemon opt-in reaches Codex too, so a person installing it for Claude Code is told.
+    expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
+      'Codex can: in an invite-only pod it runs with your own access to files and commands, and anyone in that pod, people you invite later included, can direct it.',
+    );
   });
 
   test('on a Mac the daemon block has no Windows line', async () => {

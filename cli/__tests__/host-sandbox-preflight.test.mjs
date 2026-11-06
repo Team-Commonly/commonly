@@ -163,6 +163,12 @@ describe('hostSandboxRefusal', () => {
     })).not.toBeNull();
   });
 
+  test('a seat with no sandbox block that passed the flag and still fails is not told to add the flag', () => {
+    const message = hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'win32', optedIn: true });
+    expect(message).toContain('publicly readable or open to join');
+    expect(message).not.toContain('--unsandboxed');
+  });
+
   test('without the opt-in, a Codex seat on native Windows refuses and names the flag, the pod it needs and what it costs', () => {
     for (const environment of [connectPage, null, { sandbox: { mode: 'none' } }]) {
       const message = hostSandboxRefusal({ environment, adapterName: 'codex', platform: 'win32' });

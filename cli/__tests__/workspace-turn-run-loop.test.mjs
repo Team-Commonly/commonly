@@ -263,6 +263,8 @@ describe('performRun: a Windows Codex run opted in on private pods (F187)', () =
     const { get, post, logs } = await run(installations, { spawns: 0 });
     expect(logs.some((line) => /^turn refused, because /.test(line)
       && /publicly readable or open to join/.test(line))).toBe(true);
+    // The person already passed the flag, so the refusal must not offer it again.
+    expect(logs.some((line) => /--unsandboxed/.test(line))).toBe(false);
     expect(logs.some((line) => /runs as a public seat/.test(line))).toBe(false);
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
     expect(post.mock.calls.filter(([route]) => /\/messages$/.test(route))).toHaveLength(0);

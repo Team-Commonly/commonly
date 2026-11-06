@@ -117,7 +117,8 @@ export const hostSandboxRefusal = ({
     // No public trust: `agent run` removed the block for this run after
     // confirming every pod private, or the seat never had one. Either way it
     // would run unconfined, which only the person's own opt-in allows.
-    return hostUnconfined === true ? null : CODEX_WINDOWS_MESSAGE;
+    if (hostUnconfined === true) return null;
+    return optedIn === true ? CODEX_WINDOWS_PUBLIC_MESSAGE : CODEX_WINDOWS_MESSAGE;
   }
   if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);

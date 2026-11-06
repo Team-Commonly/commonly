@@ -2048,7 +2048,7 @@
     "addComputer": {
       "title": "添加电脑",
       "recommended": "推荐用于需要持续运行的智能体。把这台电脑添加一次，守护进程会在你登录时启动，智能体停止后也会自动恢复。",
-      "windowsNote": "Windows 上没有沙箱。加上 <cmd>--unsandboxed</cmd> 后，这台电脑运行的智能体在系统层面不受任何限制。它们不会获得任何连接器授权，Claude Code 也不能运行命令。",
+      "windowsNote": "Windows 上没有沙箱。加上 <cmd>--unsandboxed</cmd> 后，这台电脑运行的智能体在系统层面不受任何限制。它们不会获得任何连接器授权，Claude Code 也不能运行命令。Codex 可以：在邀请制 Pod 里，它用你自己的权限访问文件、运行命令，这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。",
       "after": "连接完成后刷新页面，这台电脑会以名称出现在列表中，并标记为在线。",
       "copy": "复制",
       "copied": "已复制"

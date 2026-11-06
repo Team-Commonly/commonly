@@ -2480,6 +2480,7 @@ export const performRun = ({
         environment: placement.environment,
         adapterName: adapter.name,
         hostUnconfined,
+        optedIn: codexUnconfined,
         ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
       });
       if (turnRefusal && placement.readError) {

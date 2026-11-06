@@ -19,9 +19,12 @@ Foreground and daemon spawn through the same adapter and the same host check
 (`cli/src/lib/sandbox/host-check.js`, `hostSandboxRefusal`). A refusal on one
 is a refusal on the other. The host check applies only to a seat that declares
 a confined trust. Public seats do by default (`COMMONLY_DEFAULT_SANDBOX`), so
-"refused" below means a public seat.
+"refused" below means a public seat. Codex on native Windows is the exception:
+there the check applies whatever the seat declares, and a seat with no sandbox
+block is refused too, unless the person opted in and every pod is confirmed
+private.
 
-Last reviewed 2026-11-05, against main `e903e6ad6`.
+Last reviewed 2026-11-05, against main `9984c06df`.
 
 ## Claude Code
 
