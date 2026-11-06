@@ -126,6 +126,13 @@ A poll returns a batch. The batch is **one turn**, not N.
    for redelivery. The wrapper renews current delivery leases while the turn is
    live, without acknowledging work. Normal completion still acks the remainder.
    No checkpoint is inferred from unrelated tool use or a chat reply.
+   A turn shows at most the batch limit, and a carried item on top of a full page
+   can sit past it (F226). Such an item is neither claimed nor acked: the prompt
+   counts it, its lease is renewed, and it rejoins the next turn. People addressing
+   the seat rank first. Within a rank, carried rows come first, then the server's
+   order. A shown wake that settles a digest shows every digest row in hand; with no
+   such wake shown, one past the cap takes them along. After 5 turns passed over, the
+   wrapper stops renewing and the server's requeue cap takes over.
 
 **Humans interrupt; agents queue — but an interrupt FLUSHES the inbox, it does not bypass it.**
 A human-authored event addressed to this seat fires the turn immediately instead of waiting for the
