@@ -368,10 +368,11 @@ describe('F221: the picker for a person\'s own repositories', () => {
   });
 
   it('says which rows are public, and treats a row GitHub does not mark as private', async () => {
-    const { private: unmarked, ...noFlag } = repo('Outside-Team/Unmarked');
-    expect(unmarked).toBe(true);
-    view.repositories[INSTALL] = [{ ...repo('Outside-Team/Open'), private: false }, noFlag];
     await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    const unmarked = repo('Outside-Team/Unmarked');
+    delete unmarked.private;
+    view.repositories[INSTALL] = [{ ...repo('Outside-Team/Open'), private: false }, unmarked];
     const res = await list(alice);
     expect(res.body.repositories.map((row) => [row.repo, row.private])).toEqual([['Open', false], ['Unmarked', true]]);
   });

@@ -1175,6 +1175,15 @@ describe('Connectors page: tools', () => {
     expect(within(after).queryByRole('button', { name: 'Connect' })).toBeNull();
   });
 
+  it('a live GitHub grant carries the install warning on its reach link', async () => {
+    const entry = { ...linearEntry, entryId: 'github-mcp', accessPage: 'https://github.com/apps/commonly-connect/installations/new' };
+    mockTools({ entries: [entry], grants: [grantLinear] });
+    renderPage();
+    const { aside } = await openRow('Linear', 'View Linear in Launch pod');
+    const link = within(aside).getByRole('link', { name: 'Choose what Linear can reach' });
+    expect(link.closest('.v2-cx-warning')).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+  });
+
   // A live grant takes the entry off the offer, so the page moves to the grant's
   // details. Only the granter, who owns the connection, is sent there.
   it('a live hosted grant keeps the reach link on its details for the granter only', async () => {
@@ -1692,7 +1701,7 @@ describe('F221: connecting your own repository', () => {
     expect(link).toHaveAttribute('href', hostedGithub.accessPage);
     const warning = link.closest('.v2-cx-warning');
     expect(warning).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
-    expect(warning).toHaveTextContent('Commonly Connect can reach every repository on that account or org');
+    expect(warning).toHaveTextContent('Commonly Connect can reach every repository on the account or org you install it on');
   });
 
   it('warns beside the install link on the offer, and only for GitHub', async () => {
@@ -1718,7 +1727,14 @@ describe('F221: connecting your own repository', () => {
 
   it('names the one repository it picked by itself', async () => {
     const step = await openStep({ listed: { repositories: [repos[1]], truncated: false } });
-    expect(await within(step).findByRole('status')).toHaveTextContent("You're connecting Outside-Team/Gadget, a public repository.");
+    expect(await within(step).findByText("You're connecting Outside-Team/Gadget, a public repository.")).toBeInTheDocument();
+  });
+
+  it('does not call a row public when the field is missing', async () => {
+    const { private: _dropped, ...unmarked } = repos[1];
+    const step = await openStep({ listed: { repositories: [unmarked], truncated: false } });
+    expect(await within(step).findByText("You're connecting Outside-Team/Gadget, a private repository.")).toBeInTheDocument();
+    expect(within(step).getByRole('option', { name: 'Outside-Team/Gadget (private)' })).toBeInTheDocument();
   });
 
   it('a member with a live grant can still connect another repository', async () => {

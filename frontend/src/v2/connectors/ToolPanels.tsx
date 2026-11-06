@@ -593,18 +593,18 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                   <option value="" disabled>{t('tools.repoConnect.choose', { defaultValue: 'Choose a repository' })}</option>
                   {repositories.map(({ owner, repo, private: isPrivate }) => (
                     <option key={`${owner}/${repo}`} value={`${owner}/${repo}`}>
-                      {isPrivate
-                        ? t('tools.repoConnect.optionPrivate', { defaultValue: '{{repository}} (private)', repository: `${owner}/${repo}` })
-                        : t('tools.repoConnect.optionPublic', { defaultValue: '{{repository}} (public)', repository: `${owner}/${repo}` })}
+                      {isPrivate === false
+                        ? t('tools.repoConnect.optionPublic', { defaultValue: '{{repository}} (public)', repository: `${owner}/${repo}` })
+                        : t('tools.repoConnect.optionPrivate', { defaultValue: '{{repository}} (private)', repository: `${owner}/${repo}` })}
                     </option>
                   ))}
                 </select>
               </label>
               {picked && (
                 <p className="v2-tools__hint" role="status">
-                  {picked.private
-                    ? t('tools.repoConnect.pickedPrivate', { defaultValue: "You're connecting {{repository}}, a private repository.", repository: selected })
-                    : t('tools.repoConnect.pickedPublic', { defaultValue: "You're connecting {{repository}}, a public repository.", repository: selected })}
+                  {picked.private === false
+                    ? t('tools.repoConnect.pickedPublic', { defaultValue: "You're connecting {{repository}}, a public repository.", repository: selected })
+                    : t('tools.repoConnect.pickedPrivate', { defaultValue: "You're connecting {{repository}}, a private repository.", repository: selected })}
                 </p>
               )}
             </div>
@@ -881,7 +881,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           {/* The granter is the connection's owner (the hosted mint refuses anyone
               else), so the page they reach is the one that bounds this grant. */}
           {!dead && isGranter(grant) && entry?.connectionType === 'hosted-mcp' && entry.available && entry.accessPage && (
-            <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
+            entry.entryId === 'github-mcp'
+              ? <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+              : <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
           )}
           {staleAfterChange?.oldGrantId === grant.grantId && (
             <div className="v2-connector-aside__actions" role="alert">

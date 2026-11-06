@@ -2592,7 +2592,7 @@
     "hostedMcpAppInstalledConnected": "{{provider}} App 已安装，{{provider}} 已连接。",
     "hostedMcpAppInstalledFinish": "{{provider}} App 已安装。在 {{provider}} 卡片上点「连接」完成设置。",
     "hostedMcpAccessNext": "在 GitHub 上选择“Only select repositories”。",
-    "hostedMcpAccessAll": "GitHub 的安装页默认选中 All repositories。如果不改，Commonly Connect 就能访问这个账号或组织下的所有仓库，包括以后新建的仓库。公开仓库始终可以读取。",
+    "hostedMcpAccessAll": "GitHub 的安装页默认选中“All repositories”。如果不改，Commonly Connect 就能访问所安装账号或组织下的所有仓库，包括以后新建的。公开仓库无论怎么选都能读取。",
     "hostedMcpAccessOpen": "打开 {{provider}}",
     "hostedMcpReachNone": "{{provider}} 已连接，但这个账号看不到任何项目，所以搜索结果为空。请在 {{provider}} 里添加项目，或者连接一个有项目的账号。",
     "hostedMcpManualRevoke": "你之前的 {{provider}} 账号可能仍保留对 Commonly 的授权。请在 {{provider}} 切换到那个账号，再在那里移除 Commonly。",

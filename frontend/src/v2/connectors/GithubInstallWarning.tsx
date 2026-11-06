@@ -17,7 +17,7 @@ const GithubInstallWarning: React.FC<GithubInstallWarningProps> = ({ children, r
       <strong>{t('connectors.hostedMcpAccessNext', { defaultValue: "On GitHub, choose 'Only select repositories'." })}</strong>
       <p>
         {t('connectors.hostedMcpAccessAll', {
-          defaultValue: "GitHub's install page opens on All repositories. Leave it there and Commonly Connect can reach every repository on that account or org, including new ones. Public repos are always readable.",
+          defaultValue: "GitHub's install page opens on All repositories. Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones. Public repos are readable either way.",
         })}
       </p>
       <p>{children}</p>
