@@ -16,7 +16,7 @@ import {
  * to the default model with no system prompt. Returns null when the agent has
  * no install with a runtime (BYO wrappers), which keeps today's behaviour.
  */
-const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
+export const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
 export const resolveInstallInheritance = async (
   agentName: string,
   instanceId: string,

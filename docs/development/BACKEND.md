@@ -210,6 +210,7 @@ Agent registry endpoints (pod-native installs):
 | GET    | /api/registry/agents/:name                 | Get agent details                   |
 | GET    | /api/registry/presets                      | List suggested agent presets (including Social curator presets) + gateway capability/API requirement readiness, default skill bundles with setup status, recommended env vars, built-in skill inventory, and Dockerfile package capability snapshot |
 | POST   | /api/registry/install                      | Install agent into a pod            |
+| POST   | /api/registry/agents/:name/pods/:podId     | Owner adds their running agent to another pod (`instanceId` query, body `{ confirmNarrowing? }`); see below the table |
 | GET    | /api/registry/pods/:podId/agents            | List installed agents in a pod      |
 | GET    | /api/registry/pods/:podId/agents/:name      | Get one installed agent instance (`instanceId` query) |
 | GET    | /api/registry/openclaw/bundled-skills        | List bundled gateway skills (`/app/skills`) |
@@ -246,6 +247,13 @@ Provisioning note:
 - Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so gateway-backed instances do not overwrite each other when multiple instances are installed.
 - Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
 - Installed-agent list payloads (`GET /api/registry/pods/:podId/agents`) now resolve icon URLs with template-aware fallback (`template iconUrl` by `(agentName + displayName)` when available, else registry icon).
+
+Adding an existing agent to another pod (`POST /api/registry/agents/:name/pods/:podId?instanceId=`):
+- For the settings page, not a new install: the server reads config and scopes from the caller's own row, so the only input is `{ confirmNarrowing?: true }`. It builds an install body and runs the `/install` handler, so the success body, membership write, PG mirror and every install refusal are the same.
+- Caller owns a row of the agent (`installedBy`) that names an owner, and is a member or creator of the target pod. A DM row or a `mention-resolution` row names whoever opened it, so it doesn't count; a DM row is copied only when it is the last row and the caller is the registry publisher. A global admin gets nothing extra, because install stamps the caller as `installedBy`.
+- Not copied: `heartbeat`, `autoJoinSource`, `wakeOnMessage`, `boardWake`, `welcomeWake`, `digestWake` (each pod's own) and `hosted` (install rebuilds it from the agent's engine).
+- Refusals before install: 403 `not_agent_owner`, 403 `pod_membership_required`, 403 `dm_membership_refused`, 409 `agent_not_active`, 409 `agent_already_in_pod` (with the row's `status`), 409 `agent_source_has_no_runtime`, 404 `Pod not found`.
+- Nothing needs starting: runtime auth reads every active installation of the identity on each call, so a polling agent reaches the new pod on its next poll, with no new token. A stopped hosted agent stays stopped.
 
 ### Chat Profile Sync
 
