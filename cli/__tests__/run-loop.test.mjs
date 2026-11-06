@@ -1433,7 +1433,7 @@ describe('performRun', () => {
     + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
     + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
-    + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
+    + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
   const firstPromptFor = async (events) => {
     createClient.mockReturnValue({
@@ -1493,7 +1493,7 @@ describe('performRun', () => {
     + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
     + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
-    + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
+    + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
 
   const promptWithMessages = async (events, messages, { claimHolder } = {}) => {

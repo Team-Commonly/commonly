@@ -1504,11 +1504,11 @@ export const runMemoryImport = async ({
 // checkpoints, first_contact and re-serving. The model wrote that, not the
 // wrapper, so the fix is an instruction and not a filter on its text: a filter
 // would also eat a pod that is discussing these words. It speaks only to a
-// request it can't meet, so it gives a heartbeat no reason to post. Any closing
-// line for a turn someone asked for carries it.
+// request it can't meet, so it gives a heartbeat no reason to post. Every closing
+// line carries it, and it says where the note goes once the agent has posted.
 const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
   + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
-  + 'If you already posted in this turn, post that through the tool as well: final text after a tool post is dropped.';
+  + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
