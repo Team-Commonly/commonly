@@ -16,7 +16,7 @@ import { Writable } from 'stream';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { GRANT_BROKER_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
+import { GRANT_BROKER_PUBLIC_ONLY_REFUSAL } from '../src/lib/adapters/pi-mcp-client.mjs';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMock, spawn: jest.fn() }));
@@ -224,7 +224,7 @@ describe('spawn', () => {
     expect(wired).not.toContain('sh');
   });
 
-  test('a granted pi seat is not handed the broker at all — no entry, and no bridge started for one', async () => {
+  test('a granted private pi seat is not handed the broker at all — no entry, and no bridge started for one', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
@@ -252,7 +252,7 @@ describe('spawn', () => {
       expect(calls[0].args).not.toContain('/x/bridge.mjs');
       expect(calls[0].args[calls[0].args.indexOf('-e') + 1]).toMatch(/pi-shell-env\.mjs$/);
       expect(JSON.stringify(calls[0].opts.env)).not.toContain('cm_agent_secret');
-      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(1);
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_PUBLIC_ONLY_REFUSAL))).toHaveLength(1);
     } finally {
       warn.mockRestore();
     }
@@ -420,13 +420,14 @@ describe('helpers', () => {
     expect(resolveMcpServers([{ name: 'c' }], {})).toEqual([]);
   });
 
-  test('the grant broker is refused to a pi seat by its path, not by its name', () => {
+  test('the grant broker is refused to a private pi seat by its path, not by its name', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const tokenHeader = { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' };
     try {
-      // TASK-063's daemon-side half: pi confines on no host, so
-      // the broker's reach is refused here as well as at the server's
-      // projection. The broker as `grantBrokerServer` builds it:
+      // The daemon-side half of the server's refusal: a private pi turn is not
+      // confined (F175c carries the broker on a public turn only), so the
+      // broker's reach is refused here as well as at the server's projection.
+      // The broker as `grantBrokerServer` builds it:
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // The same path under a name that means nothing to the predicate.
       expect(resolveMcpServers([{ name: 'commonly', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/other', headers: tokenHeader }], ctx)).toEqual([]);
@@ -436,7 +437,7 @@ describe('helpers', () => {
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/API/MCP/GRANTS/g1', headers: tokenHeader }], ctx)).toEqual([]);
       // All three refusals state the reason the server gives, so the
       // log line and the grant read can be read side by side.
-      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(3);
+      expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_PUBLIC_ONLY_REFUSAL))).toHaveLength(3);
       // CONTROL: the name alone refuses nothing. An entry CALLED
       // `commonly-grant-broker` on a path that is not the broker's is carried,
       // so this cannot decay into a name match.

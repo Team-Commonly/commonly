@@ -22,15 +22,19 @@ import type { IRoomGrant, IRoomGrantByoConsent } from '../models/RoomGrant';
 import { LIMITED_USE_ENTRIES, isLimitedUseTool } from './limitedUseConnectors';
 import { ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import { judgeSeatConfinement } from './seatGrantConfinement';
-import { CONFINING_ADAPTERS } from './grantBrokerConfinement';
+import { CONFINING_ADAPTERS, PUBLIC_ONLY_GRANT_ADAPTERS, PUBLIC_ONLY_REASON } from './grantBrokerConfinement';
 import { harnessCatalogEntry } from '../config/harnessCatalog';
 
 /**
- * "Claude Code, Codex or OpenCode": the harnesses that can hold a grant, by
- * their catalogue names, from the one list the confinement check reads.
+ * "Claude Code, Codex or OpenCode": the harnesses an agent can be NAMED on a
+ * grant from, by their catalogue names, from the one list the confinement
+ * check reads. pi is left out (F175c): it holds a grant only on a public seat,
+ * which needs no naming, and naming lifts nothing for it.
  */
 export const grantHarnessNames = (): string => {
-  const names = [...CONFINING_ADAPTERS.keys()].map((id) => harnessCatalogEntry(id)?.label || id);
+  const names = [...CONFINING_ADAPTERS.keys()]
+    .filter((id) => !PUBLIC_ONLY_GRANT_ADAPTERS.has(id))
+    .map((id) => harnessCatalogEntry(id)?.label || id);
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
 };
 
@@ -119,11 +123,12 @@ export const namingLiftsFor = async (grant: object | NamingFields, agentUserId: 
 
 /**
  * Naming lifts a refusal about the seat's sandbox. It never lifts an adapter
- * that is not approved for the broker (the daemon applies the same rule), nor
+ * that is not approved for the broker, nor one approved only on a public seat
+ * (pi, F175c: `adapter_confines_public_only`; the daemon applies the same rule), nor
  * a machine with no enforceable sandbox (`hostUnconfined`, checked by callers).
  */
 export const namingLiftsRefusal = (refusal: { reason?: unknown } | null | undefined): boolean => (
-  Boolean(refusal) && refusal?.reason !== 'adapter_cannot_confine'
+  Boolean(refusal) && refusal?.reason !== 'adapter_cannot_confine' && refusal?.reason !== PUBLIC_ONLY_REASON
 );
 
 type SandboxState = IRoomGrantByoConsent['agents'][number]['sandbox'];

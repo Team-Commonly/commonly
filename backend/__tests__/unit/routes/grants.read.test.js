@@ -499,7 +499,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     const res = await read(row.grantId);
     expect(res.status).toBe(200);
     expect(res.body.grantBrokerRefusal).toMatchObject({
-      code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'adapter_cannot_confine',
+      code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'adapter_confines_public_only',
     });
     expect(res.body.grantBrokerRefusal.detail).toMatch(/adapter/i);
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
@@ -559,7 +559,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // rather than about the pi install being missing.
     await Machine.updateOne({ machineId }, { $set: { ownerUserId: installer._id } });
     const rehomed = await read(row.grantId);
-    expect(rehomed.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(rehomed.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(rehomed.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -592,7 +592,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // installations, the unbound case starts reporting this refusal instead.
     const { row } = await seedSeatGrant({ adapter: 'pi' });
     const res = await read(row.grantId);
-    expect(res.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(res.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -621,7 +621,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // resolution failing or a missing installation on the branch.
     const installed = await seedSeatGrant({ adapter: 'pi' });
     const judged = await read(installed.row.grantId);
-    expect(judged.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(judged.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(judged.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -656,7 +656,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     const res = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
     expect(res.status).toBe(200);
     const listed = res.body.grants.find((entry) => entry.grantId === row.grantId);
-    expect(listed.grantBrokerRefusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+    expect(listed.grantBrokerRefusal).toMatchObject({ reason: 'adapter_confines_public_only' });
     expect(listed.grantBrokerRefusalScope).toBe('seat');
   });
 

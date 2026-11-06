@@ -54,10 +54,22 @@ export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAU
 
 // Adapters that may receive a room grant: each confines a public seat AND keeps
 // the per-spawn credential out of its own tools' reach (OpenCode: F175a, its
-// external_directory deny with the credential outside --dir). Narrower than the
-// sandbox sets above on purpose, and mirrored by the server's
-// CONFINING_ADAPTERS (backend/services/grantBrokerConfinement.ts).
-export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex', 'opencode']);
+// external_directory deny with the credential outside --dir; pi: F175c, a
+// public turn with no built-in tool, and the credential file deleted once pi
+// has loaded its extensions). Narrower than the sandbox sets above on purpose,
+// and mirrored by the server's CONFINING_ADAPTERS
+// (backend/services/grantBrokerConfinement.ts).
+export const ADAPTERS_WITH_GRANT_BROKER = new Set(['claude', 'codex', 'opencode', 'pi']);
+
+// F175c: adapters in the set above that hold a grant ONLY on a confined public
+// seat, and only in the modes and on the hosts listed. pi confines in macOS
+// Seatbelt alone (adapters/pi.js assertSandboxSupported) and is never handed a
+// default sandbox, so a pi seat that declares nothing runs unconfined. Naming
+// the agent on the grant (F94) does not lift this, unlike the sandbox refusals
+// of the other three. Mirrored by the server's PUBLIC_ONLY_GRANT_ADAPTERS.
+export const ADAPTERS_WITH_PUBLIC_ONLY_GRANT = new Map([
+  ['pi', Object.freeze({ platforms: new Set(['darwin']), modes: new Set(['workspace', 'read-only']) })],
+]);
 
 /**
  * The sandbox an unconfigured seat gets.

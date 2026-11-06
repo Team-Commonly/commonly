@@ -227,7 +227,10 @@ describe('GET /assigned — grant broker confinement', () => {
   // the broker — which is the pi half of TASK-063. Once #1764 lands, pi can
   // speak the HTTP transport the broker uses, so this is what makes that
   // reachable-but-confined rather than reachable-and-bare.
-  it('withholds the broker from a pi seat, which confines on no host', async () => {
+  // F175c: pi holds a grant only on a declared public seat. A pi seat that
+  // declares nothing is never defaulted into a sandbox, so it is refused here,
+  // with the reason naming does not lift.
+  it('withholds the broker from a pi seat that declares no sandbox', async () => {
     await seed(undefined, { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' });
     const row = await assigned();
     expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
@@ -235,8 +238,15 @@ describe('GET /assigned — grant broker confinement', () => {
     expect(row.grantBrokerRefusal).toMatchObject({
       code: GRANT_BROKER_REFUSAL_CODE,
       decidedBy: 'server',
-      reason: 'adapter_cannot_confine',
+      reason: 'adapter_confines_public_only',
     });
+  });
+
+  it('projects the broker to a public pi seat', async () => {
+    await seed({ trust: 'public' }, { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
   });
 
   // 2026-10-09: the denylist became an allowlist. An adapter nobody has shown to confine fails

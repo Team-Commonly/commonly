@@ -18,7 +18,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { closeSync, readFileSync } from 'node:fs';
+import { closeSync, readFileSync, rmSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import {
   MCP_PACKAGE, PIPE_READER_VERSION, describeMcpCommand, versionOlderThan,
 } from '../mcp-server-version.js';
@@ -26,29 +27,36 @@ import {
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY } from '../credential-file.js';
 
 /**
- * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
- * pi is not approved to confine a granter's authority (a public pi runs in
- * Seatbelt since F113b, but grant-broker confinement is claude and codex only),
- * so a grant broker must not reach a pi seat by ANY route: not the server's projection (the backend refuses it there
- * too), and not an older backend that still projects it, which is this layer's
- * job. Keyed on the PATH and not on the entry's `name`, because the name is
- * whatever the declaration says while the path is the broker's. A url that does
- * not parse is not this predicate's business — the origin rule in
- * `pi.js resolveMcpServers` refuses those before they are carried.
+ * The grant broker's path. Keyed on the PATH and not on the entry's `name`,
+ * because the name is whatever the declaration says while the path is the
+ * broker's. A url that does not parse is not this predicate's business — the
+ * origin rule in `pi.js resolveMcpServers` refuses those before they are
+ * carried.
+ *
+ * F175c: a pi turn carries the broker only when it is confined, which for pi
+ * means a public seat in the macOS Seatbelt jail (F113b). Every other pi turn
+ * refuses it here as well as at the server's projection and in the daemon's
+ * guard — this layer is what holds on deploy skew, when the row names no
+ * adapter for the server to key on, and in a backend older than the rule.
  */
 export const GRANT_BROKER_PATH = '/api/mcp/grants/';
 
 /**
- * The reason string BOTH halves of this refusal use, verbatim from the server's
- * typed refusal (`backend/services/grantBrokerConfinement.ts`: code
- * `grant_broker_unconfined`, reason `adapter_cannot_confine`). wren's ruling
- * (69829): "Same reason string on both halves" — so a daemon log line and the
- * server's `grantBrokerRefusal` field can be read side by side, and neither
- * layer grows a vocabulary the other one does not have. Mirrored rather than
- * imported: this package does not depend on the backend, so the literal is
- * pinned by a test instead.
+ * The reason strings BOTH halves of this refusal use, verbatim from the
+ * server's typed refusal (`backend/services/grantBrokerConfinement.ts`: code
+ * `grant_broker_unconfined`). wren's ruling (69829): "Same reason string on
+ * both halves" — so a daemon log line and the server's `grantBrokerRefusal`
+ * field can be read side by side, and neither layer grows a vocabulary the
+ * other one does not have. Mirrored rather than imported: this package does not
+ * depend on the backend, so the literals are pinned by a test instead.
+ *
+ * `adapter_cannot_confine` is the adapter-wide refusal the other unproven
+ * adapters get. pi's own is `adapter_confines_public_only` (F175c): pi carries a
+ * grant on a public macOS seat and refuses it on every other one, and naming the
+ * agent on the grant (F94) does not lift it.
  */
 export const GRANT_BROKER_REFUSAL = 'grant_broker_unconfined: adapter_cannot_confine';
+export const GRANT_BROKER_PUBLIC_ONLY_REFUSAL = 'grant_broker_unconfined: adapter_confines_public_only';
 
 /**
  * Is this url the instance's grant broker? Path-keyed, and the comparison is
@@ -549,6 +557,47 @@ export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 
  * pi at all; pi's own `--exclude-tools` removes the same names as a second
  * layer.
  */
+/**
+ * Delete this spawn's credential directory from inside pi, before the session
+ * exists (F175c). The factory that calls this is awaited before pi creates the
+ * session, so the delete precedes every prompt by construction, which the
+ * parent's delete at pi's first JSON line cannot promise: that one runs on the
+ * parent's event loop, and a locally declared stdio server on a public seat
+ * could read the file for a prompt in the gap.
+ *
+ * The directory comes on the fd 3 list, on the broker entry, because the list is
+ * written by the adapter alone and consumed by the read. It is honoured only on
+ * a confined broker entry, and it is not an environment variable: a private pi
+ * turn passes the launcher's environment through, and an ambient value must
+ * never be able to name a directory to delete.
+ *
+ * pi logs a factory that throws and carries on without it, so a throw here would
+ * reach the prompt with the file on disk. A failed delete stops the process
+ * instead, and the adapter reports the line below as the turn's error.
+ */
+export const removeSpawnCredential = (servers, {
+  rm = rmSync,
+  exit = process.exit,
+  write = (line) => process.stderr.write(line),
+} = {}) => {
+  const dirs = new Set((Array.isArray(servers) ? servers : [])
+    .filter((s) => s?.confined === true && isHttpServer(s) && isGrantBrokerUrl(s.url)
+      && s.credentialDir !== undefined)
+    .map((s) => s.credentialDir));
+  for (const dir of dirs) {
+    try {
+      if (typeof dir !== 'string' || !isAbsolute(dir)) throw new Error('the path is not absolute');
+      rm(dir, { recursive: true, force: true });
+    } catch (error) {
+      write(`[commonly-pi-bridge] could not delete this turn's connector credential (${dir}): `
+        + `${error?.message || error}; stopping before any prompt runs\n`);
+      exit(1);
+      return false;
+    }
+  }
+  return true;
+};
+
 export const registrableTools = (tools, server) => {
   const withheld = new Set(Array.isArray(server?.withheldTools) ? server.withheldTools : []);
   return withheld.size ? tools.filter((tool) => !withheld.has(tool?.name)) : tools;
@@ -557,12 +606,12 @@ export const registrableTools = (tools, server) => {
 export const readServers = (raw) => {
   if (!raw) return [];
   try {
-    // The broker is dropped here as well as in pi.js (same reason string, see
-    // GRANT_BROKER_REFUSAL): this is the last layer before a client is started,
-    // and the two filters have to agree or a server reaches the bridge as an
-    // entry the adapter would not have carried.
+    // A broker entry is kept only with the adapter's `confined: true` mark,
+    // which pi.js sets on a public turn alone (the same reason string, see
+    // GRANT_BROKER_PUBLIC_ONLY_REFUSAL): this is the last layer before a client
+    // is started, and the two filters have to agree or a server reaches the
+    // bridge as an entry the adapter would not have carried.
     return JSON.parse(raw).filter((s) => s?.name
-      && (isStdioServer(s) || (isHttpServer(s) && !isGrantBrokerUrl(s.url))));
+      && (isStdioServer(s) || (isHttpServer(s) && (!isGrantBrokerUrl(s.url) || s.confined === true))));
   } catch { return []; }
 };
-

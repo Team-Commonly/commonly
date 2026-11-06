@@ -19,7 +19,7 @@
 
 import { Type } from 'typebox';
 import {
-  connectMcp, registrableTools, takeServers, toPiResult,
+  connectMcp, registrableTools, removeSpawnCredential, takeServers, toPiResult,
 } from './pi-mcp-client.mjs';
 
 export default async function commonlyMcpBridge(pi) {
@@ -34,30 +34,38 @@ export default async function commonlyMcpBridge(pi) {
     process.stderr.write('[commonly-pi-bridge] no server list on fd 3 — this seat has no commonly_* tools\n');
   }
   const clients = [];
-  for (const server of servers) {
-    const client = connectMcp(server);
-    clients.push(client);
-    try {
-      await client.initialize();
-      // A public seat's entries name the tools it is not offered.
-      const tools = registrableTools(await client.listTools(), server);
-      for (const tool of tools) {
-        pi.registerTool({
-          name: tool.name,
-          label: tool.name,
-          description: tool.description || tool.name,
-          // The server's JSON schema, passed through: pi validates against it as-is.
-          parameters: Type.Unsafe(tool.inputSchema || { type: 'object', properties: {} }),
-          async execute(_toolCallId, params) {
-            return toPiResult(await client.callTool(tool.name, params));
-          },
-        });
-      }
-    } catch (error) {
-      process.stderr.write(`[commonly-pi-bridge] ${server.name}: ${error.message}\n`);
-    }
-  }
+  // Armed before the loop: a failed credential delete below exits the process,
+  // and that must not leave a started server running.
   const shutdown = () => { for (const client of clients) client.close(); };
   process.on('exit', shutdown);
   if (typeof pi.on === 'function') pi.on('session_shutdown', shutdown);
+  try {
+    for (const server of servers) {
+      const client = connectMcp(server);
+      clients.push(client);
+      try {
+        await client.initialize();
+        // A public seat's entries name the tools it is not offered.
+        const tools = registrableTools(await client.listTools(), server);
+        for (const tool of tools) {
+          pi.registerTool({
+            name: tool.name,
+            label: tool.name,
+            description: tool.description || tool.name,
+            // The server's JSON schema, passed through: pi validates against it as-is.
+            parameters: Type.Unsafe(tool.inputSchema || { type: 'object', properties: {} }),
+            async execute(_toolCallId, params) {
+              return toPiResult(await client.callTool(tool.name, params));
+            },
+          });
+        }
+      } catch (error) {
+        process.stderr.write(`[commonly-pi-bridge] ${server.name}: ${error.message}\n`);
+      }
+    }
+  } finally {
+    // Every server has read the credential by now, and pi has not created the
+    // session: it awaits this factory first. See removeSpawnCredential.
+    removeSpawnCredential(servers);
+  }
 }

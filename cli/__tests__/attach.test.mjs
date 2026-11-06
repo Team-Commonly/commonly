@@ -1491,7 +1491,11 @@ describe('bootstrapAgentRecordFromEnv', () => {
   });
 
   test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {
+    // F175c: pi is on the broker list but holds a grant only when public, and
+    // the broker's per-call check reads the adapter off the row, so its run
+    // path still needs the server to declare it.
     expect(adapterRequiresServerBinding('pi')).toBe(true);
+    expect(adapterRequiresServerBinding(' PI ')).toBe(true);
     // F175a: OpenCode joined the broker set, so like claude its run path is
     // judged by the grant-broker gates (`/grant-brokers?adapter=` and
     // withholdGrantBroker), not by a server-declared binding.

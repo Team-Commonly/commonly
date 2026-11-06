@@ -244,6 +244,17 @@ describe('POST /api/grants naming a BYO agent', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
+  // F175c: pi holds a grant only on a public macOS seat; naming never lifts
+  // its refusal, and the naming message does not offer it.
+  test('a pi seat that is not public cannot be named', async () => {
+    mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });
+    const res = await withCatalog([ENTRY], () => mint());
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('byo_adapter_unsupported');
+    expect(res.body.message).toBe('Only a Claude Code, Codex or OpenCode agent can be named on a grant.');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test('a Limited Use connector (Calendar) cannot name a BYO agent', async () => {
     connection.config.entryId = 'google-calendar';
     const res = await withCatalog([CALENDAR], () => mint({ tools: ['google-calendar.list_events'] }));

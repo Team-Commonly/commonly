@@ -17,10 +17,11 @@
  * hand-written token file). Both halves emit the same `code`.
  *
  * THE ADAPTER IS THE HOST-INDEPENDENT FACT, but sandbox support and broker
- * admission are separate. OpenCode enforces a public sandbox locally; until
- * the server allowlist admits its proven modes, only `claude` and `codex` may
- * receive the grant broker. `pi` is also withheld because it refuses a declared
- * sandbox rather than honouring it.
+ * admission are separate: only ADAPTERS_WITH_GRANT_BROKER may receive the grant
+ * broker (claude, codex, OpenCode since F175a, pi since F175c). pi is admitted
+ * on a narrower rule (ADAPTERS_WITH_PUBLIC_ONLY_GRANT): a public seat in macOS
+ * Seatbelt only, and every other pi declaration is `adapter_confines_public_only`,
+ * which a named grant (F94) does not lift.
  *
  * ONE REASON THE SERVER DOES NOT HAVE: `sandbox_absent`. The server must ALLOW
  * an absent block (a daemon-provisioned seat's baseline is derived here and is
@@ -73,7 +74,7 @@
  * a foreign server cannot be drawn in by its spelling.
  */
 import { isGrantBrokerUrl } from './adapters/pi-mcp-client.mjs';
-import { ADAPTERS_WITH_GRANT_BROKER } from './default-environment.js';
+import { ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_PUBLIC_ONLY_GRANT } from './default-environment.js';
 import { effectiveSandboxTrust } from './environment.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './sandbox/mode.js';
 
@@ -172,12 +173,33 @@ export const declaresGrantBroker = (environment, opts) => (
 );
 
 /**
+ * F175c: the one reason naming (F94) does not lift for an adapter on the grant
+ * list. pi holds a grant only on a public seat confined by macOS Seatbelt, so
+ * every pi declaration short of that is this reason, not a sandbox reason a
+ * consent could waive. Same literal as the server's.
+ */
+export const PUBLIC_ONLY_REASON = 'adapter_confines_public_only';
+
+const publicOnlyReason = (environment, rule, platform) => {
+  const sandbox = environment?.sandbox;
+  if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return PUBLIC_ONLY_REASON;
+  if (sandbox.mode === 'none' || effectiveSandboxTrust(sandbox.trust) !== 'public') return PUBLIC_ONLY_REASON;
+  // D245: a public declaration on native Windows reads the same for every adapter.
+  if (platform === 'win32') return 'sandbox_mode_unenforceable';
+  if (!rule.platforms.has(platform)) return PUBLIC_ONLY_REASON;
+  const mode = resolvePublicSandboxMode(sandbox, platform);
+  return typeof mode === 'string' && rule.modes.has(mode) ? null : PUBLIC_ONLY_REASON;
+};
+
+/**
  * Why this daemon cannot confine a seat running `adapter` with this
  * environment — or `null` when confinement is enforced and the broker may ride.
  * The reason vocabulary mirrors the server's, plus `sandbox_absent`.
  */
 export const confinementReason = (environment, adapter, platform = process.platform) => {
   if (!ADAPTERS_WITH_GRANT_BROKER.has(adapter)) return 'adapter_cannot_confine';
+  const publicOnly = ADAPTERS_WITH_PUBLIC_ONLY_GRANT.get(adapter);
+  if (publicOnly) return publicOnlyReason(environment, publicOnly, platform);
 
   const sandbox = environment?.sandbox;
   if (sandbox === null || typeof sandbox !== 'object' || Array.isArray(sandbox)) return 'sandbox_absent';
@@ -204,6 +226,11 @@ const detailFor = (reason, adapter, environment, platform = process.platform) =>
   if (reason === 'sandbox_mode_unenforceable' && platform === 'win32') {
     return 'native Windows has no sandbox Commonly can enforce, so no agent on this computer gets connector grants;'
       + ` run the agent on macOS or Linux to use grants, ${drop}`;
+  }
+  if (reason === PUBLIC_ONLY_REASON) {
+    return `the seat runs the '${adapter}' adapter, which carries a grant only on a public seat confined by the`
+      + " macOS sandbox; declare sandbox.trust 'public' and run it on a Mac, or move it to an adapter that confines"
+      + ` this host, ${drop} (naming the agent on the grant does not lift this)`;
   }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
@@ -254,7 +281,7 @@ export const withholdGrantBroker = (environment, adapter, {
   // only; the broker checks the naming on every call. Never on native Windows,
   // and never for an adapter not approved for the broker.
   const rides = (server) => server?.byoNamed === true
-    && reason !== 'adapter_cannot_confine' && platform !== 'win32';
+    && reason !== 'adapter_cannot_confine' && reason !== PUBLIC_ONLY_REASON && platform !== 'win32';
   const isWithheld = (server) => isOurGrantBroker(server, { instanceUrl }) && !rides(server);
   if (!environment.mcp.some(isWithheld)) return environment;
 
@@ -303,6 +330,7 @@ export const mergeGrantBrokers = (environment, servers) => {
 
 export default {
   GRANT_BROKER_REFUSAL_CODE,
+  PUBLIC_ONLY_REASON,
   ENFORCING_MODES,
   isOurGrantBroker,
   declaresGrantBroker,

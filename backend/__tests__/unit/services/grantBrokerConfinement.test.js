@@ -8,6 +8,8 @@ const {
   LEGACY_SANDBOX_TRUST,
   GRANT_BROKER_REFUSAL_CODE,
   CONFINING_ADAPTERS,
+  PUBLIC_ONLY_GRANT_ADAPTERS,
+  PUBLIC_ONLY_REASON,
   RUNTIME_KINDS,
   PUBLIC_HOST_MODES,
   effectiveSandboxTrust,
@@ -33,14 +35,17 @@ describe('grant broker confinement predicate', () => {
   // refusing seats a host would have confined.
   it('pins the host-independent sets to what the adapters implement', () => {
     // 2026-10-09: the denylist became an allowlist of adapters that prove they confine,
-    // keyed to the modes each enforces. pi is refused because it is absent, not listed.
-    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex', 'opencode']);
+    // keyed to the modes each enforces. An adapter is refused because it is absent, not listed.
+    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex', 'opencode', 'pi']);
     expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
     // F175a: OpenCode enforces Seatbelt workspace/read-only on macOS and bwrap
     // on Linux (cli adapters/opencode.js refuses a public seat on any other).
     expect([...CONFINING_ADAPTERS.get('opencode')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
-    expect(CONFINING_ADAPTERS.has('pi')).toBe(false);
+    // F175c: pi confines only a public seat, in macOS Seatbelt (no bwrap path).
+    expect([...CONFINING_ADAPTERS.get('pi')].sort()).toEqual(['read-only', 'workspace']);
+    expect([...PUBLIC_ONLY_GRANT_ADAPTERS]).toEqual(['pi']);
+    expect(PUBLIC_ONLY_REASON).toBe('adapter_confines_public_only');
     for (const unconfined of ['dsh', 'hermes', 'goose', 'qwen']) expect(CONFINING_ADAPTERS.has(unconfined)).toBe(false);
     // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what install paths write;
     // runtimeType values outside this set are adapter-shaped and judged.
@@ -118,15 +123,21 @@ describe('grant broker confinement predicate', () => {
       .toMatchObject({ reason: 'sandbox_trust_not_public' });
   });
 
-  // The adapter is a host-independent fact: pi's assertNoSandboxDeclared
-  // (cli/src/lib/adapters/pi.js) throws only when a sandbox is DECLARED, so a
-  // pi seat that declares nothing spawns unconfined and nothing ever derives
-  // one. The adapter decides, which is why it is checked before the
-  // declaration — a pi seat is refused whether or not it declares a sandbox.
+  // The adapter is a host-independent fact. pi (F175c) is confined only on a
+  // declared public seat and is never handed a default sandbox, so a pi seat
+  // that declares nothing spawns unconfined: for pi an absent block is a
+  // refusal, and every pi refusal is the one naming does not lift.
   it.each([
-    ['a pi seat with no sandbox block', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
-    ['a pi seat declaring a confined mode', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, 'adapter_cannot_confine'],
-    ['a pi seat with no environment at all', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
+    ['a pi seat with no sandbox block', undefined, { adapter: 'pi' }, 'adapter_confines_public_only'],
+    ['a pi seat with no environment at all', undefined, { adapter: 'pi' }, 'adapter_confines_public_only'],
+    ['a private pi seat', { sandbox: { trust: 'private' } }, { adapter: 'pi' }, 'adapter_confines_public_only'],
+    ['a pi seat with mode none', { sandbox: { mode: 'none', trust: 'public' } }, { adapter: 'pi' }, 'adapter_confines_public_only'],
+    ['a pi seat declaring bwrap, which pi does not implement', { sandbox: { mode: 'bwrap', trust: 'public' } }, { adapter: 'pi' }, 'adapter_confines_public_only'],
+    ['a public pi seat with no mode — the host resolves it', { sandbox: { trust: 'public' } }, { adapter: 'pi' }, null],
+    ['a public pi workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, null],
+    ['a public pi read-only seat', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'pi' }, null],
+    ['a legacy internal trust on pi', { sandbox: { trust: 'internal' } }, { adapter: 'pi' }, null],
+    ['a goose seat, which is not on the grant list', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'goose' }, 'adapter_cannot_confine'],
     // F175a: OpenCode is admitted on its three modes and nowhere else.
     ['an OpenCode seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'opencode' }, null],
     ['an OpenCode workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'opencode' }, null],
@@ -142,16 +153,16 @@ describe('grant broker confinement predicate', () => {
     // The daemon normalises the declared adapter before it spawns
     // (`daemon-supervisor.js` does `trim().toLowerCase()`), so these names still
     // reach pi; comparing the raw value let both past the refusal (Vera 69817).
-    ['an upper-case adapter name', undefined, { adapter: 'PI' }, 'adapter_cannot_confine'],
-    ['a padded adapter name', undefined, { adapter: ' pi ' }, 'adapter_cannot_confine'],
-    ['a padded upper-case adapter name', undefined, { adapter: 'PI ' }, 'adapter_cannot_confine'],
+    ['an upper-case adapter name', undefined, { adapter: 'PI' }, 'adapter_confines_public_only'],
+    ['a padded adapter name', undefined, { adapter: ' pi ' }, 'adapter_confines_public_only'],
+    ['a padded upper-case adapter name', undefined, { adapter: 'PI ' }, 'adapter_confines_public_only'],
     ['a normalised name that is not pi', undefined, { adapter: ' claude ' }, null],
     // TASK-175: the adapter is `runtime.adapter` OR `runtime.runtimeType`. A
     // hand-attached pi seat writes {runtimeType: 'pi', host: 'byo'} and no
     // adapter key (cli/src/commands/agent.js:664, :688), so reading `adapter`
     // alone admitted exactly the seat this rule exists to refuse.
-    ['a pi seat tagged only by runtimeType (the hand-attached shape)', undefined, { runtimeType: 'pi', host: 'byo' }, 'adapter_cannot_confine'],
-    ['a pi runtimeType in another case', undefined, { runtimeType: 'PI' }, 'adapter_cannot_confine'],
+    ['a pi seat tagged only by runtimeType (the hand-attached shape)', undefined, { runtimeType: 'pi', host: 'byo' }, 'adapter_confines_public_only'],
+    ['a pi runtimeType in another case', undefined, { runtimeType: 'PI' }, 'adapter_confines_public_only'],
     ['a codex seat tagged only by runtimeType remains broker-confined', { sandbox: { mode: 'workspace', trust: 'public' } }, { runtimeType: 'codex', host: 'byo' }, null],
     ['a declared adapter wins over a pi runtimeType, as it does in the daemon', undefined, { adapter: 'claude', runtimeType: 'pi', host: 'byo' }, null],
     ['a claude-code runtimeType', undefined, { runtimeType: 'claude-code', host: 'byo' }, null],
