@@ -189,6 +189,7 @@ export interface ConnectableRepository {
   installationId: string;
   owner: string;
   repo: string;
+  private: boolean;
 }
 
 /** F221: the step that connects one of the person's own repositories. */

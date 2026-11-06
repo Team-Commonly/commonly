@@ -20,6 +20,7 @@ import ConnectorDrawer, { ConnectorDrawerPresence } from './ConnectorDrawer';
 import ConnectorLogo from './ConnectorLogo';
 import ConnectorPopover from './ConnectorPopover';
 import ConnectorTile from './ConnectorTile';
+import GithubInstallWarning from './GithubInstallWarning';
 import type { TileDot } from './ConnectorTile';
 import './connectors.css';
 
@@ -552,12 +553,18 @@ const ConnectorsPage: React.FC = () => {
   const callbackNotice = c.hostedMcpCallbackNotice;
   const noticeBlock = (
     <>
-      {callbackNotice && (
+      {callbackNotice && callbackNotice.kind === 'access' && (
+        <GithubInstallWarning role="status">
+          <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
+            {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
+          </a>
+        </GithubInstallWarning>
+      )}
+      {callbackNotice && callbackNotice.kind !== 'access' && (
         <p className="v2-cx-note" role="status">
           {callbackNotice.kind === 'reach'
             ? t('connectors.hostedMcpReachNone', { provider: callbackNotice.provider })
-            : callbackNotice.kind === 'installed'
-            ? (callbackNotice.connected
+            : callbackNotice.connected
               ? t('connectors.hostedMcpAppInstalledConnected', {
                 defaultValue: '{{provider}} App installed. {{provider}} is connected.',
                 provider: callbackNotice.provider,
@@ -565,20 +572,7 @@ const ConnectorsPage: React.FC = () => {
               : t('connectors.hostedMcpAppInstalledFinish', {
                 defaultValue: '{{provider}} App installed. Press Connect on {{provider}} to finish.',
                 provider: callbackNotice.provider,
-              }))
-            : (
-              <>
-                {/* GitHub's install page preselects "All repositories" and always
-                    reads public repos, so the notice names the choice to make there. */}
-                {t('connectors.hostedMcpAccessNext', {
-                  defaultValue: "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
-                  provider: callbackNotice.provider,
-                })}{' '}
-                <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
-                  {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
-                </a>
-              </>
-            )}
+              })}
         </p>
       )}
       {errorText && (

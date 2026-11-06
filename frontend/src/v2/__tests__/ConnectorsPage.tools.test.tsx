@@ -1645,8 +1645,8 @@ describe('F221: connecting your own repository', () => {
     ...linearEntry, installableId: 'github-mcp', label: 'GitHub MCP', entryId: 'github-mcp', repositoryConnect: true, accessPage: 'https://github.com/apps/connect/installations/new', connections: [],
   };
   const repos = [
-    { installationId: '7001', owner: 'Outside-Team', repo: 'Widget' },
-    { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' },
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Widget', private: true },
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget', private: false },
   ];
   const openStep = async ({ listed, refused, entries = [appEntry, hostedGithub] }) => {
     const route = (url) => {
@@ -1690,6 +1690,35 @@ describe('F221: connecting your own repository', () => {
     const step = await openStep({ listed: { repositories: [], truncated: false } });
     const link = await within(step).findByRole('link');
     expect(link).toHaveAttribute('href', hostedGithub.accessPage);
+    const warning = link.closest('.v2-cx-warning');
+    expect(warning).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
+    expect(warning).toHaveTextContent('Commonly Connect can reach every repository on that account or org');
+  });
+
+  it('warns beside the install link on the offer, and only for GitHub', async () => {
+    mockTools({ entries: [hostedGithub, { ...linearEntry, accessPage: 'https://linear.example/access' }], grants: [], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const github = await openToolPopover('GitHub MCP');
+    expect(within(github).getByRole('link', { name: 'Choose what GitHub MCP can reach' }).closest('.v2-cx-warning')).not.toBeNull();
+    const linear = await openToolPopover('Linear');
+    expect(within(linear).queryByText("On GitHub, choose 'Only select repositories'.")).toBeNull();
+  });
+
+  it('labels each row and names the picked repository, public or private', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: false } });
+    const select = await within(step).findByLabelText('repository');
+    expect(within(select).getByRole('option', { name: 'Outside-Team/Widget (private)' })).toHaveValue('Outside-Team/Widget');
+    expect(within(select).getByRole('option', { name: 'Outside-Team/Gadget (public)' })).toHaveValue('Outside-Team/Gadget');
+    expect(within(step).queryByRole('status')).toBeNull();
+    fireEvent.change(select, { target: { value: 'Outside-Team/Gadget' } });
+    expect(within(step).getByRole('status')).toHaveTextContent("You're connecting Outside-Team/Gadget, a public repository.");
+    fireEvent.change(select, { target: { value: 'Outside-Team/Widget' } });
+    expect(within(step).getByRole('status')).toHaveTextContent("You're connecting Outside-Team/Widget, a private repository.");
+  });
+
+  it('names the one repository it picked by itself', async () => {
+    const step = await openStep({ listed: { repositories: [repos[1]], truncated: false } });
+    expect(await within(step).findByRole('status')).toHaveTextContent("You're connecting Outside-Team/Gadget, a public repository.");
   });
 
   it('a member with a live grant can still connect another repository', async () => {

@@ -143,6 +143,7 @@ interface RepositoryEntry {
   name?: unknown;
   full_name?: unknown;
   owner?: { login?: unknown };
+  private?: unknown;
   permissions?: { admin?: unknown; maintain?: unknown; push?: unknown };
 }
 
@@ -198,6 +199,7 @@ export interface ConnectableRepository {
   installationId: string;
   owner: string;
   repo: string;
+  private: boolean;
 }
 
 /**
@@ -251,7 +253,8 @@ export const listConnectRepositories = async (
       list.filter(canPush).forEach((repository) => {
         const owner = String(repository?.owner?.login ?? '');
         const repo = String(repository?.name ?? '');
-        if (owner && repo) repositories.push({ installationId, owner, repo });
+        // A row GitHub doesn't mark public is not called public.
+        if (owner && repo) repositories.push({ installationId, owner, repo, private: repository?.private !== false });
       });
       if (list.length < PAGE_SIZE) break;
       if (page === LIST_MAX_PAGES) truncated = true;

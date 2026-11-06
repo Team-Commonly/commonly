@@ -7,6 +7,7 @@ import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeT
 import { ActGlyph } from '../icons/glyphs';
 import { PlatformGlyph } from '../icons/platforms';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
+import GithubInstallWarning from './GithubInstallWarning';
 import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   shortAge,
@@ -497,7 +498,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
         {renderLinearWriteNote(entry)}
         {renderReachNote(entry, entry.connections)}
         {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
-        {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
+        {isHosted && entry.available && entry.accessPage && (entry.entryId === 'github-mcp'
+          ? <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+          : <p className="v2-cx-note">{renderAccessLink(entry)}</p>)}
         {renderManualRevokeNotice(entry)}
       </>
     );
@@ -566,6 +569,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     if (!repositoryConnect) return null;
     const { status, repositories, truncated, selected } = repositoryConnect;
     const githubEntry = catalog.find((entry) => entry.entryId === 'github-mcp');
+    // The list can hold public repositories, and a single row comes picked, so
+    // the step names what Connect will connect.
+    const picked = repositories.find(({ owner, repo }) => `${owner}/${repo}` === selected);
     return (
       <aside className="v2-connectors__aside v2-tools__aside" aria-label={t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}>
         <section className="v2-connector-aside__card">
@@ -574,10 +580,10 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           {status === 'failed' && <p role="alert">{t('tools.repoConnect.readFailed', { defaultValue: 'Could not read your repositories from GitHub.' })}</p>}
           {status === 'needsGithub' && <p>{t('tools.repoConnect.needsGithub', { defaultValue: 'Connect your GitHub account first. Commonly reads which repositories you can push to from it.' })}</p>}
           {status === 'ready' && repositories.length === 0 && (
-            <p>
-              {t('tools.repoConnect.none', { defaultValue: 'No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.' })}
-              {githubEntry?.accessPage && <> {renderAccessLink(githubEntry)}</>}
-            </p>
+            <>
+              <p>{t('tools.repoConnect.none', { defaultValue: 'No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.' })}</p>
+              {githubEntry?.accessPage && <GithubInstallWarning>{renderAccessLink(githubEntry)}</GithubInstallWarning>}
+            </>
           )}
           {status === 'ready' && repositories.length > 0 && (
             <div className="v2-tools__form">
@@ -585,9 +591,22 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 <span>{t('tools.repository', { defaultValue: 'repository' })}</span>
                 <select className="v2-connectors__select" value={selected} onChange={(event) => setRepositoryConnect({ ...repositoryConnect, selected: event.target.value })}>
                   <option value="" disabled>{t('tools.repoConnect.choose', { defaultValue: 'Choose a repository' })}</option>
-                  {repositories.map(({ owner, repo }) => <option key={`${owner}/${repo}`} value={`${owner}/${repo}`}>{owner}/{repo}</option>)}
+                  {repositories.map(({ owner, repo, private: isPrivate }) => (
+                    <option key={`${owner}/${repo}`} value={`${owner}/${repo}`}>
+                      {isPrivate
+                        ? t('tools.repoConnect.optionPrivate', { defaultValue: '{{repository}} (private)', repository: `${owner}/${repo}` })
+                        : t('tools.repoConnect.optionPublic', { defaultValue: '{{repository}} (public)', repository: `${owner}/${repo}` })}
+                    </option>
+                  ))}
                 </select>
               </label>
+              {picked && (
+                <p className="v2-tools__hint" role="status">
+                  {picked.private
+                    ? t('tools.repoConnect.pickedPrivate', { defaultValue: "You're connecting {{repository}}, a private repository.", repository: selected })
+                    : t('tools.repoConnect.pickedPublic', { defaultValue: "You're connecting {{repository}}, a public repository.", repository: selected })}
+                </p>
+              )}
             </div>
           )}
           {truncated && <p className="v2-tools__hint">{t('tools.repoConnect.truncated', { defaultValue: 'This list may be incomplete.' })}</p>}

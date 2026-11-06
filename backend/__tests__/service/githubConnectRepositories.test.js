@@ -94,7 +94,7 @@ let nextRepoId = 1000;
 const repo = (fullName, permissions = { push: true, pull: true }, id = (nextRepoId += 1)) => {
   const [login, name] = fullName.split('/');
   return {
-    id, name, full_name: fullName, owner: { login }, permissions,
+    id, name, full_name: fullName, owner: { login }, permissions, private: true,
   };
 };
 const filler = (count) => Array.from({ length: count }, (_, i) => repo(`Outside-Team/filler-${i}`));
@@ -361,10 +361,19 @@ describe('F221: the picker for a person\'s own repositories', () => {
     const res = await list(alice);
     expect(res.status).toBe(200);
     expect(res.body.repositories).toEqual([
-      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' },
-      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Gadget' },
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget', private: true },
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Gadget', private: true },
     ]);
     expect(res.body.truncated).toBe(false);
+  });
+
+  it('says which rows are public, and treats a row GitHub does not mark as private', async () => {
+    const { private: unmarked, ...noFlag } = repo('Outside-Team/Unmarked');
+    expect(unmarked).toBe(true);
+    view.repositories[INSTALL] = [{ ...repo('Outside-Team/Open'), private: false }, noFlag];
+    await giveUserToken(alice, 'alice-user-token');
+    const res = await list(alice);
+    expect(res.body.repositories.map((row) => [row.repo, row.private])).toEqual([['Open', false], ['Unmarked', true]]);
   });
 
   test('every request carries the caller\'s own token, and creates nothing', async () => {
