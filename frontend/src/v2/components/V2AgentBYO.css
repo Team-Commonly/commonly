@@ -69,8 +69,9 @@
   .v2-feature--byo .v2-byo__cta-row { flex-direction: column; align-items: stretch; }
   /* a column makes the note's 220px flex-basis a height: size it to its text */
   .v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: none; }
-  .v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }
-  .v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center; height: 44px; font-size: 14px; }
+  /* The adapters do not fit one phone row, and nothing shows that a row scrolls, so they wrap. */
+  .v2-feature--byo .v2-byo__os { display: flex; flex-wrap: wrap; align-self: stretch; overflow: visible; }
+  .v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1 1 auto; justify-content: center; height: 44px; font-size: 14px; }
   .v2-feature--byo .v2-byo__command { padding-right: 14px; }
   .v2-feature--byo .v2-byo__copy { position: static; width: 100%; height: 44px; margin-top: 10px; font-size: 14px; }
   .v2-feature--byo .v2-byo__more > summary { min-height: 48px; padding: 8px 16px 8px 12px; }

@@ -300,6 +300,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(hint).toContain('text-align: left');
     expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
   });
+  test('the BYO adapter choice wraps on a phone, so no adapter sits off screen', () => {
+    const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__os {');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os { display: flex; flex-wrap: wrap;');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1 1 auto;');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
