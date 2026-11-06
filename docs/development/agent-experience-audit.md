@@ -4510,3 +4510,11 @@ A seat in a pod wrote "growth-t002" for someone everyone else saw as Priya, and 
 Read messages now carry `displayName`, and the wake gives the author's name and handle, plus a list of members in a pod with two or more agents. Those frames take free text, so they use an allowlist: on review, a denylist let through invisible characters, lookalike brackets, a forged second entry and a tool name, the last of which silently dropped the frame on a native turn.
 
 Lesson: a field's name doesn't say what it holds for every kind of row, and text a person chose stays theirs when the kernel repeats it.
+
+## 112. A wake named everyone except the agent it woke (2026-11-06, F296)
+
+**What taught the false model.** A wake carried the pod, the author, the rules for replying and the message, and never said which agent was reading it. A seat with saved memory could usually work it out. A fresh one couldn't.
+
+**What it cost.** Jonah wrote "@milo add a test, then ask @ada to check it". Both seats woke with the same 5,221 characters, and the only place either name appeared was the message itself, plus a claim notice on Milo's side. Ada took the ask and wrote "I haven't pinged @ada". Milo wrote "@milo can't add it". Each read its own handle as someone else.
+
+**The rule.** Don't assume a reader knows who it is. In a pod with two or more agents, a mention wake now says so in a `[You: ...]` frame, built per target. A contact alias's first wake and the adjacent reply wake don't carry it yet, since neither has the target's install to hand. Anything that fans one message out to several readers has to ask what differs between their copies, because the shared text can't carry it.

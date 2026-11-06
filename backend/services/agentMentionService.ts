@@ -935,6 +935,27 @@ const formatMemberList = async (
     + 'to ask a teammate named in a message, @ their handle.]';
 };
 
+/**
+ * Nothing else in a wake says which agent it reached. Given "@milo add a test,
+ * then ask @ada", a fresh seat can't tell which name is its own: Ada took the
+ * ask and wrote about @ada as someone else, and Milo wrote to @milo (F296).
+ */
+const formatSelfFrame = (
+  target: MentionTarget,
+  installations: Array<Record<string, unknown>>,
+  mentionMap: Map<string, MentionTarget>,
+): string => {
+  const installation = installations.find((row) => sameTarget(
+    { agentName: String(row.agentName), instanceId: String(row.instanceId || 'default') },
+    target,
+  ));
+  const name = frameName({ displayName: installation?.displayName as string | undefined });
+  const handle = routedMentionHandle(mentionMap, target);
+  if (!handle) return '';
+  const who = name && name !== handle ? `**${name}** (@${handle})` : `@${handle}`;
+  return `[You: you are ${who}. A message that says @${handle} means you.]`;
+};
+
 const formatAuthorFrame = (
   username: string | undefined,
   createdAt: unknown,
@@ -1091,15 +1112,17 @@ const isCollaborativePod = (
 // unconditional and was missing from this table until the wake path was
 // routed through here — the table is the thing people read to decide
 // what a given event type carries, so it is kept exhaustive:
-//   chat.mention + non-specialist + collab → [Pod] [Author] [Who?] [CollabPod] [Collab] [Reply] [Handoff?] body
+//   chat.mention + non-specialist + collab → [Pod] [Author] [You?] [Who?] [CollabPod] [Collab] [Reply] [Handoff?] body
 //   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] [Handoff?] body
-//   chat.mention + specialist              → [Pod] [Author] [Who?] [Reply] [Handoff?] body
-//   thread.mention + non-specialist        → [Pod] [Author] [Who?] [Collab] [Handoff?] body
-//   thread.mention + specialist            → [Pod] [Author] [Who?] [Handoff?] body
+//   chat.mention + specialist              → [Pod] [Author] [You?] [Who?] [Reply] [Handoff?] body
+//   thread.mention + non-specialist        → [Pod] [Author] [You?] [Who?] [Collab] [Handoff?] body
+//   thread.mention + specialist            → [Pod] [Author] [You?] [Who?] [Handoff?] body
 //   message.posted + non-specialist        → [Pod] [Author] [Collab] [Wake] body
 //   message.posted + specialist            → [Pod] [Author] [Wake] body
 // [Handoff?] is present only when an agent hands work to another agent for
 // the first time in a chain (formatHandoffCue); never on message.posted.
+// [You?] names the target (formatSelfFrame): pods with two or more agents, not
+// the reply wake or a contact alias's first wake, where the install isn't read.
 // [Who?] is the member list (formatMemberList): pods with two or more agents and
 // at most 12 members, and not on the reply wake built before the map is read.
 // Never on message.posted: that traffic is ambient and nobody asked this agent.
@@ -1123,6 +1146,7 @@ interface AuthorFrame {
   name?: string;
   handle?: string;
   memberList?: string;
+  self?: string;
 }
 
 const buildContentForTarget = (
@@ -1147,6 +1171,7 @@ const buildContentForTarget = (
   frames.push(formatAuthorFrame(
     author.username, author.createdAt, author.messageId, author.name, author.handle,
   ));
+  if (author.self) frames.push(author.self);
   if (author.memberList && eventType !== 'message.posted') frames.push(author.memberList);
   if (
     eventType === 'chat.mention'
@@ -2093,6 +2118,10 @@ const enqueueMentions = async ({
       console.warn('[mention-context] member list failed:', (error as Error).message);
     }
   }
+  const authorFor = (target: MentionTarget): AuthorFrame => ({
+    ...authorFrame,
+    self: collaborativePod ? formatSelfFrame(target, installations, mentionMap) : '',
+  });
 
   const senderAgentName = sender?.isBot ? sender.botMetadata?.agentName?.toLowerCase() : null;
   const senderInstanceId = sender?.isBot ? (sender.botMetadata?.instanceId || 'default') : null;
@@ -2260,7 +2289,7 @@ const enqueueMentions = async ({
                 ? String(message?._id || message?.id)
                 : undefined,
               content: buildContentForTarget(
-                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame, handoff,
+                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFor(directMatch), handoff,
               ),
               ...handoffField(handoff),
               rawContent,
@@ -2393,7 +2422,8 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame, handoff,
+                    podId, rawContent, eventType, agentType, collaborativePod,
+                    authorFor({ agentName: agentType, instanceId: match.instanceId || 'default' }), handoff,
                   ),
                   ...handoffField(handoff),
                   rawContent,
@@ -2471,7 +2501,7 @@ const enqueueMentions = async ({
                 'chat.mention',
                 target.agentName,
                 collaborativePod,
-                authorFrame,
+                authorFor(target),
               ),
               rawContent,
               userId,
