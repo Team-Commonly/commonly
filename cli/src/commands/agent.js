@@ -130,6 +130,7 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
+import { CANT_ANSWER_NOTICE_WINDOW_MS, cantAnswerNotice } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   CASCADE_DEFAULTS,
@@ -742,6 +743,12 @@ const PROMPT_EVENT_TYPES = new Set([
 // event that exists to introduce the seat rather than to answer anyone, so it
 // is the only one worth holding back.
 const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
+// Someone asked this seat for an answer: by type, by the server's stamp, or by
+// replying to it. A batch turn carries the same answer for its items.
+const someoneIsWaiting = (event) => ADDRESSED_EVENT_TYPES.has(event.type)
+  || event.payload?.addressed === true
+  || event.payload?.repliesToYourMessage === true
+  || event.payload?.someoneWaiting === true;
 
 // How long a fresh seat's greeting waits for a person before it runs alone.
 // One poll lost the race on the 0.1.257 walk (2026-11-05): the mention landed
@@ -2369,6 +2376,48 @@ export const performRun = ({
     }
   };
 
+  // A failure only a person can fix, or only time can, leaves a mention
+  // unanswered for as long as it lasts, so each pod with someone waiting is told
+  // why, at most once per cause per pod per hour (persisted, so a restart does
+  // not re-post). A later pod the failed turn stopped before reaching is told
+  // too: a key or an allowance fails every pod alike, and its own turn could be
+  // 45 minutes away. A notice that fails to post is logged and tried at the next
+  // failure; the retry goes ahead either way.
+  const noticeCantAnswer = async (error, waitingEvents) => {
+    const notice = cantAnswerNotice(error);
+    if (!notice || modelUnavailableFailure(error)) return;
+    const waitingPods = new Set(waitingEvents
+      .filter(someoneIsWaiting)
+      .map((event) => event.podId || podId)
+      .filter(Boolean));
+    for (const waitingPod of waitingPods) {
+      const key = `cant-answer:${notice.cause}:${waitingPod}`;
+      try {
+        // eslint-disable-next-line no-continue
+        if (!noticeDue(agentName, key, CANT_ANSWER_NOTICE_WINDOW_MS)) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const delivery = await deliverChatReply({
+          client,
+          podId: waitingPod,
+          text: notice.text,
+          limit: chatCharLimit,
+          maxChunks: maxChatChunks,
+          uploadName: `${agentName}-cant-answer.md`,
+          log: (line) => log(`[inbox.batch] ${line}`),
+        });
+        if (delivery.skipped || delivery.refused) {
+          log(`[inbox.batch] pod ${waitingPod} was not told why this agent can't answer: `
+            + `${delivery.reason || 'the notice was not posted'}`);
+        } else {
+          recordNotice(agentName, key);
+          log(`[inbox.batch] told pod ${waitingPod} why this agent can't answer (${notice.cause})`);
+        }
+      } catch (noticeError) {
+        log(`[inbox.batch] pod ${waitingPod} was not told why this agent can't answer: ${noticeError.message}`);
+      }
+    }
+  };
+
   const runTurnBody = async ({
     event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
   }) => {
@@ -2963,6 +3012,8 @@ export const performRun = ({
     // any other wake it is terminal. The free-text detail stays in the seat
     // log and the event ack; the kernel records the class.
     if (!delivered && upstream) {
+      // pi exits 0 on a refused route, so no failure reaches the retry path.
+      await noticeCantAnswer(new Error(describeUpstreamRefusal(upstream)), [event]);
       return {
         outcome: 'no_action',
         refused: {
@@ -3590,6 +3641,7 @@ export const performRun = ({
         ...actionEntries[0].event.payload,
         batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
         hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
+        someoneWaiting: entries.some((entry) => !entry.pastCap && someoneIsWaiting(entry.event)),
       },
     };
     // One item, run as its own turn. Used only after the provider refused a
@@ -3606,6 +3658,7 @@ export const performRun = ({
             ...entry.event.payload,
             batchEventIds: [String(entry.event._id)],
             hasHeartbeat: entry.event.type === 'heartbeat',
+            someoneWaiting: someoneIsWaiting(entry.event),
           },
         },
         eventPodId,
@@ -3959,6 +4012,7 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
+            await noticeCantAnswer(err, [...failedEvents, ...untriedAfter(groupIndex)]);
           };
           let batch;
           try {
