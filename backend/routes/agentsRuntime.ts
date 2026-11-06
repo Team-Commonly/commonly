@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
+import { describeSkippedPost } from '../services/skippedPostGuidance';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -1749,7 +1750,7 @@ router.post(
         installationConfig: installation.config || null,
       });
 
-      return res.json(result);
+      return res.json({ ...describeSkippedPost(result), ...result });
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
       // A message-store outage is retryable (TASK-503): 503, not 500.
@@ -2532,6 +2533,8 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       }
     }
     return res.json({
+      // First, so a model reading the JSON top down meets this before `success`.
+      ...describeSkippedPost(result),
       ...result,
       mentionNotices,
       ...(mentionNotices.length > 0

@@ -27,6 +27,7 @@
 
 import { Types } from 'mongoose';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
+import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
@@ -901,23 +902,6 @@ interface DispatchResult {
 }
 
 /**
- * F56: an offer card lands or doesn't like any other post, so it reports the
- * same way. A refused or skipped card never reads as posted to the person
- * waiting on it.
- */
-const offerPostResult = (
-  ctx: DispatchContext,
-  result: { success?: boolean; skipped?: boolean; refused?: boolean; reason?: string } | null | undefined,
-): { content: Record<string, unknown>; error?: string } => {
-  if (result?.refused) {
-    if (result.reason === 'consecutive_run_cap') ctx.floorHeld = true;
-    return { content: { ok: false, posted: false, reason: result.reason }, error: 'message_post_refused' };
-  }
-  if (result?.success && !result.skipped) ctx.personWaiting = false;
-  return { content: { ok: true, posted: !result?.skipped, result } };
-};
-
-/**
  * Wake the agents a stored post names, or the agent-dm peer, as the runtime
  * route does for an external agent's post. postMessage stores the row and
  * wakes no one, so without this a hosted lead's @handoff reached nobody (F62).
@@ -942,6 +926,48 @@ const fanOutAgentPost = (
       instanceId || 'default',
     ),
   }).catch((error: Error) => console.warn('[native-runtime] post fan-out failed:', error.message));
+};
+
+/**
+ * What a posting tool tells the model and the run. Every tool that posts through
+ * postMessage ends here, so none can answer `posted: true` over a post that
+ * wrote no row, and an offer card reports like any other post (F56).
+ */
+const postToolResult = (
+  ctx: DispatchContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  result: any,
+): DispatchResult => {
+  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  if (result?.refused && result.reason === 'consecutive_run_cap') {
+    // The shared guidance offers an attachment, which a web-tainted turn
+    // cannot make, and only another speaker clears the cap. Say only that.
+    ctx.floorHeld = true;
+    return {
+      content: {
+        ok: false,
+        posted: false,
+        reason: result.reason,
+        guidance: `Not posted: you have already sent ${result.consecutive} messages in a row here `
+          + 'with nobody else speaking. Wait for someone else to speak. This turn ends now.',
+      },
+      error: 'message_post_refused',
+    };
+  }
+  if (result?.refused) {
+    return { content: { ok: false, posted: false, reason: result.reason, result }, error: 'message_post_refused' };
+  }
+  // A skip wrote no row (F253). A duplicate is a failed post, so the run does
+  // not count it as an answer; a NO_REPLY stays the decline it is.
+  const skip = describeSkippedPost(result);
+  if (skip) {
+    const heldBack = isHeldBackPost(result);
+    return {
+      content: { ok: !heldBack, ...skip, result },
+      ...(heldBack ? { error: 'message_post_refused' } : {}),
+    };
+  }
+  return { content: { ok: true, posted: true, result } };
 };
 
 /**
@@ -1053,26 +1079,7 @@ export async function dispatchTool(
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        if (result?.success && !result.skipped) ctx.personWaiting = false;
-        if (result?.refused && result.reason === 'consecutive_run_cap') {
-          // The shared guidance offers an attachment, which a web-tainted turn
-          // cannot make, and only another speaker clears the cap. Say only that.
-          ctx.floorHeld = true;
-          return {
-            content: {
-              ok: false,
-              posted: false,
-              reason: result.reason,
-              guidance: `Not posted: you have already sent ${result.consecutive} messages in a row here `
-                + 'with nobody else speaking. Wait for someone else to speak. This turn ends now.',
-            },
-            error: 'message_post_refused',
-          };
-        }
-        if (result?.refused) {
-          return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
-        }
-        return { content: { ok: true, posted: true, result } };
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_offer_hosted_agent': {
@@ -1122,7 +1129,7 @@ export async function dispatchTool(
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        return offerPostResult(ctx, result);
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_offer_local_agent': {
@@ -1192,7 +1199,7 @@ export async function dispatchTool(
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
-        return offerPostResult(ctx, result);
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_create_task': {

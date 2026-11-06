@@ -99,6 +99,46 @@ describe('commonly_offer_hosted_agent', () => {
     expect(posted.payload.starts[0].href).toMatch(/^\/v2\/[^/\\]/);
   });
 
+  describe('when the post did not land (F253)', () => {
+    const toolResult = () => JSON.parse(axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool').content);
+    const offer = () => axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_hosted_agent', { content: REPLY }))
+      .mockResolvedValueOnce(says('Here is the same point again, reworded.'));
+
+    test('a held-back repeat reads as not posted, and the run does not count it as an answer', async () => {
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: true, skipped: true, reason: 'duplicate_recent', duplicate: { id: 7 } });
+      offer();
+      await runAgent(scoutInstall, ask);
+      expect(toolResult()).toEqual(expect.objectContaining({ ok: false, posted: false }));
+      expect(toolResult().guidance).toMatch(/^Not posted/);
+      // The final text is the fallback, because nothing landed.
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+      expect(AgentMessageService.postMessage.mock.calls[1][0]).toMatchObject({
+        content: 'Here is the same point again, reworded.',
+        metadata: { source: 'native-runtime', fallback: true },
+      });
+    });
+
+    test('any other refusal names its reason at the top of the result', async () => {
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: false, refused: true, reason: 'pod_paused' });
+      offer();
+      await runAgent(scoutInstall, ask);
+      expect(toolResult()).toEqual(expect.objectContaining({ ok: false, posted: false, reason: 'pod_paused' }));
+    });
+
+    test('a run-cap refusal ends the turn, as it does for commonly_post_message', async () => {
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 });
+      offer();
+      await runAgent(scoutInstall, ask);
+      // "This turn ends now": no further model call and no fallback post.
+      expect(axios.post).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test('the offer names the message it answers, from the event', async () => {
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_offer_hosted_agent', { content: REPLY }))
