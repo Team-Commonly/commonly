@@ -15,7 +15,7 @@ const ThreadUserState = require('../models/pg/ThreadUserState') as {
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
+const { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -433,11 +433,12 @@ const resolveContactAlias = async (
   return null;
 };
 
-// Pull a non-member agent into the pod via mention-driven autoJoin.
+// Pull an agent into the pod via mention-driven autoJoin, or reach one with a
+// running row here. A row that isn't running stays as it is, with no wake.
 // Runs the §3.7 co-pod-member rule (with the §3.2 admin-binding carve-
 // out — i.e. if the resolution came from pod.contacts, that's the
 // authorization signal). Idempotent on (agentName, instanceId, podId).
-// Returns true on success, false on auth-refused.
+// Returns true on success, false when refused.
 const autoJoinAgentToPod = async (
   agentName: string,
   instanceId: string,
@@ -474,23 +475,38 @@ const autoJoinAgentToPod = async (
     return false;
   }
 
-  // This auto-join creates a row without a native runtime declaration. Refuse
-  // before either the installation or membership write in a protected pod.
-  await assertAgentRuntimeMayJoinPod(podId, undefined);
+  // A row already here keeps its status and config: upsert would set it active
+  // and replace the config, so a mention could un-pause an agent.
+  const existing = await AgentInstallation.rowInPod(agentName, podId, instanceId) as { status?: string } | null;
+  const keepsRow = !!existing && existing.status !== 'uninstalled';
+  if (keepsRow && existing.status !== 'active') {
+    console.warn(`[mention-autojoin] refused — ${agentName}:${instanceId} is ${existing.status} in pod=${podId}`);
+    return false;
+  }
+  if (keepsRow && alreadyMember) return true;
 
-  // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
-  // in agents are reactive, not scheduled). Idempotent.
-  await AgentInstallation.upsert(agentName, podId, {
-    version: '1.0.0',
-    config: {
-      heartbeat: { enabled: false },
-      autoJoinSource: 'mention-resolution',
-    } as unknown as Map<string, unknown>,
-    scopes: ['context:read', 'summaries:read', 'messages:write'],
-    installedBy: senderUserId,
-    instanceId,
-    displayName: agentName,
-  });
+  if (keepsRow) {
+    // The row declares its runtime, so this asks about that one.
+    await assertInstalledAgentMayJoinPod(podId, agentName, instanceId);
+  } else {
+    // This auto-join creates a row without a native runtime declaration. Refuse
+    // before either the installation or membership write in a protected pod.
+    await assertAgentRuntimeMayJoinPod(podId, undefined);
+
+    // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
+    // in agents are reactive, not scheduled). Idempotent.
+    await AgentInstallation.upsert(agentName, podId, {
+      version: '1.0.0',
+      config: {
+        heartbeat: { enabled: false },
+        autoJoinSource: 'mention-resolution',
+      } as unknown as Map<string, unknown>,
+      scopes: ['context:read', 'summaries:read', 'messages:write'],
+      installedBy: senderUserId,
+      instanceId,
+      displayName: agentName,
+    });
+  }
 
   // Add to pod.members if not already.
   try {
