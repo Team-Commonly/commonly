@@ -174,6 +174,7 @@ This is a deliberate trade: the wrapper trusts `$HOME`. If the user runs `common
   - only a successfully completed model turn resets the failure streak. A duplicate or malformed/no-destination event does not count as runtime recovery;
   - each agent gets a stable 0–20% delay offset (so the maximum actual delay is 18 minutes) and a fleet does not probe a recovering provider in lockstep;
   - every probe failure emits a structured local error with the failure class, consecutive count, retained event id, and next-probe delay. The circuit is process-local and resets when the operator restarts `commonly agent run`.
+  - events held across the circuit wait are carried in memory and renewed. A stop hands them back to the server as pending (`POST /events/release`, nonce-bound), so the restarted run answers them on its first poll instead of waiting 10–20 minutes for the requeue sweep (F189, 2026-11-05). The server refuses a release once the event has been delivered twice the requeue cap; that event stays delivered and the sweep retires it, so a poison event cannot loop across restarts. See [`docs/cli/inbox-checkpoints.md`](../cli/inbox-checkpoints.md#held-events-and-stopping-f189-f182).
 
   Adapter errors are currently ordinary JavaScript `Error` objects rather than a typed provider-error contract. Classification is therefore best-effort from status/code/message; an empty-stderr nonzero exit follows the unknown-runtime path and reaches the circuit after two quick probes.
 
