@@ -512,7 +512,7 @@ describe('every claimed event this tick left unsettled goes back on a stop', () 
     expect(server.status(ID.batch_digest)).toBe('pending');
   });
 
-  test('a digest-only group the loop already passed goes back when a later group\'s turn is stopped', async () => {
+  test('a digest-only group sorted behind a stopped turn goes back with it', async () => {
     const server = inbox();
     server.add(ID.other_digest, 'ambient elsewhere', { podId: 'pod-other', deliveryMode: 'digest' });
     server.add(ID.wake_c, 'a real ask');
@@ -527,13 +527,30 @@ describe('every claimed event this tick left unsettled goes back on a stop', () 
     expect(server.releases.flat()).toEqual([ID.other_digest]);
   });
 
+  test('a digest-only group is still held when the tick ends, so a stop after it hands the group back', async () => {
+    const server = inbox();
+    server.add(ID.other_digest, 'ambient elsewhere', { podId: 'pod-other', deliveryMode: 'digest' });
+    server.add(ID.wake_c, 'a real ask');
+    const first = startRun({ spawn: jest.fn().mockResolvedValue({ text: 'answered' }) });
+    await drainMicrotasks();
+    expect(ackedIds(server)).toEqual([ID.wake_c]);
+    expect(server.releases).toEqual([]);
+
+    await first.handle.stop();
+    expect(server.releases.flat()).toEqual([ID.other_digest]);
+  });
+
   test('a stale ack that ends the run hands back the later groups of its page', async () => {
     const server = inbox({ staleAcks: [ID.stale_ask] });
     server.add(ID.stale_ask, 'private consult', {
       type: 'agent.ask',
       payload: { requestId: 'ask/2', fromAgent: 'planner', fromInstanceId: 'default', question: 'private consult' },
     });
-    server.add(ID.wake_c, 'waits behind the ask');
+    // A second ask, because a person's wake would be sorted ahead of the first.
+    server.add(ID.wake_c, 'waits behind the ask', {
+      type: 'agent.ask',
+      payload: { requestId: 'ask/3', fromAgent: 'planner', fromInstanceId: 'default', question: 'waits behind the ask' },
+    });
     const first = startRun({ spawn: jest.fn().mockResolvedValue({ text: 'done' }) });
     await drainMicrotasks();
     expect(first.scheduled).toHaveLength(0);

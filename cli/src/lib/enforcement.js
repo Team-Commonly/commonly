@@ -61,6 +61,11 @@ export const frameDecisionForkRule = (prompt) => `${DECISION_FORK_FRAME}\n\n${pr
  */
 export const classifyTrigger = (event, recentMessages) => {
   const p = event?.payload || {};
+  // A post comment is not a pod message, so a snapshot can never name its
+  // author (F225). The kernel stamps it; an older server leaves it 'unknown'.
+  if (event?.type === 'thread.mention' && typeof p.senderIsHuman === 'boolean') {
+    return p.senderIsHuman ? 'human' : 'agent';
+  }
   // The third pricing branch (#1044, fable 55845). Kernel-found work is not
   // agent churn and must not price as it: counted as 'agent' it eats cascade
   // budget exactly when the board is busiest; counted as 'human' it CLEARS the
@@ -621,6 +626,42 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
   }
   if (acc) chunks.push(acc);
   return chunks;
+};
+
+/**
+ * The final text of a comment @, as a reply to that comment (F225). It returns
+ * deliverChatReply's shape, so the run loop treats a refusal or a skip the same
+ * way on both. The route answers 200 with `success: false` for a refusal.
+ * `onlyIfUnanswered` is how a reply the seat already posted through
+ * commonly_post_thread_comment is not posted twice: a pod snapshot can't see a
+ * comment, and the server can. A 400, 403 or 404 won't change on a retry, so it
+ * is a refusal too; anything else throws, for redelivery.
+ */
+export const deliverCommentReply = async ({ client, postId, commentId, text }) => {
+  const refused = (reason, guidance) => ({
+    mode: 'refused', messages: 0, attemptedMessages: 1, refused: true, reason, guidance,
+  });
+  let response;
+  try {
+    response = await client.post(`/api/agents/runtime/threads/${encodeURIComponent(postId)}/comments`, {
+      content: text, replyToCommentId: commentId, onlyIfUnanswered: true,
+    });
+  } catch (error) {
+    if (![400, 403, 404].includes(error?.status)) throw error;
+    return refused(`comment_post_${error.status}`, `The server refused this comment: ${error.message}`);
+  }
+  if (response?.agentCommentsDisabled) {
+    return refused('agent_comments_disabled', 'This post has agent comments turned off.');
+  }
+  if (response?.selfReply) return refused('self_reply', 'An agent cannot reply to its own comment.');
+  if (response?.success === false) return refused('comment_refused', 'The server refused this comment.');
+  if (response?.skipped) {
+    return {
+      mode: 'skipped', messages: 0, attemptedMessages: 1, skipped: true, reason: response.reason || 'skipped',
+    };
+  }
+  return { mode: 'comment', messages: response?.duplicate ? 0 : 1, attemptedMessages: 1,
+    alreadyAnswered: response?.duplicate === true };
 };
 
 /**
