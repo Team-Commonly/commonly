@@ -30,12 +30,13 @@ export interface RoomGrantTaskBinding { taskId: string; podId: string; endsOn: R
  * F94: the granter's consent, recorded at mint, that the named agents run
  * outside Commonly (on the granter's own computer) and that whatever they read
  * through this grant can leave through them. `sandbox` is what the server knew
- * of each agent's confinement at mint.
+ * of each agent's confinement at mint. `byo-pr-v1` also covers the PR writes
+ * of a `prWrite` grant: each one sent only after the granter approves it.
  */
 export interface IRoomGrantByoConsent {
   by: string;
   at: Date;
-  version: 'byo-v1';
+  version: 'byo-v1' | 'byo-pr-v1';
   agents: Array<{ userId: string; sandbox: 'confined' | 'unconfined' | 'unknown' }>;
 }
 
@@ -164,7 +165,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       type: new Schema({
         by: { type: String, required: true },
         at: { type: Date, required: true },
-        version: { type: String, enum: ['byo-v1'], required: true },
+        version: { type: String, enum: ['byo-v1', 'byo-pr-v1'], required: true },
         agents: {
           type: [new Schema({
             userId: { type: String, required: true },

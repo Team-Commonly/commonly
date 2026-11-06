@@ -207,7 +207,10 @@ export const checkByoNaming = async (input: {
     });
   }
   if (input.consented !== true) return { refusal: 'byo_consent_required' };
-  return { refusal: null, consent: { by: input.granterId, at: new Date(), version: 'byo-v1', agents } };
+  // The form's words differ when the grant holds pull-request access, so the
+  // record says which ones the person agreed to.
+  const version = input.prWrite === true ? 'byo-pr-v1' : 'byo-v1';
+  return { refusal: null, consent: { by: input.granterId, at: new Date(), version, agents } };
 };
 
 export interface ByoCandidate {

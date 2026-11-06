@@ -132,6 +132,23 @@ beforeEach(async () => {
 });
 
 describe('GET /api/grants?connectionOwner=me', () => {
+  test('says which grants hold pull-request access, so Change access can keep it', async () => {
+    const plain = await RoomGrant.create(grant());
+    const withPr = await RoomGrant.create(grant({ prWrite: true }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'ffffffffffffffffffffff01', installationId: 'conn-1', createdBy: OWNER },
+    ] }) }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    const row = (grantId) => res.body.grants.find((item) => item.grantId === grantId);
+    expect(row(withPr.grantId).prWrite).toBe(true);
+    expect(row(plain.grantId)).not.toHaveProperty('prWrite');
+    expect(row(withPr.grantId).connectionId).toBe(withPr.connectionId);
+  });
+
   test('includes grants backed by both an external installation id and a hosted connection row id', async () => {
     const hostedId = 'eeeeeeeeeeeeeeeeeeeeee01';
     const githubGrant = await RoomGrant.create(grant());
@@ -170,7 +187,7 @@ describe('GET /api/grants?connectionOwner=me', () => {
     });
     const revoked = res.body.grants.find((row) => row.grantId === owned[0].grantId);
     expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
-    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
+    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS, 'connectionId'].sort().join())).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('conn-other');
   });
 
