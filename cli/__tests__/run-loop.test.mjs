@@ -1917,7 +1917,15 @@ describe('performRun', () => {
       expect(prompt).not.toContain(WITH_PEERS);
     });
 
-    test('with other people here, the line may be for them, so neither is added', async () => {
+    test('several people and another agent keep the peers line', async () => {
+      const prompt = await promptWithMessages(
+        [openQuestion()], human, { pod: { otherAgentsInPod: true, peopleInPod: 3 } },
+      );
+      expect(prompt).toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a lone seat among several people gets neither line: it may be for one of them', async () => {
       const prompt = await promptWithMessages(
         [openQuestion()], human, { pod: { otherAgentsInPod: false, peopleInPod: 3 } },
       );

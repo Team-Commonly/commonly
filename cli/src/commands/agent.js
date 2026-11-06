@@ -1626,10 +1626,12 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // "can anyone…" drew an "I can't" from a seat nobody addressed. With another
 // agent here, that seat should step aside, and a person's message it declines
 // can go to a peer. One person alone with one seat is talking to it, and silence
-// is the worst answer a new person can get. With other people here the line may
-// be for them (ADR-018 D6.4), so neither line is added. Nor when the server
-// doesn't report the pod, or when an item is owed an answer whatever the room
-// looks like: a welcome, a reply to this seat, its own thread or task, a DM.
+// is the worst answer a new person can get. A lone seat among several people
+// isn't told either way: the line may be for one of them (ADR-018 D6.4). With
+// several people and another agent, the peers line still holds. No line at all
+// when the server doesn't report the pod, or when an item is owed an answer
+// whatever the room looks like: a welcome, a reply to this seat, its own thread
+// or task, a DM.
 // A heartbeat isn't told to answer: nobody asked it anything this turn.
 const ROOM_QUESTION_WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
   + 'if you can\'t help with it, end with NO_REPLY.';
