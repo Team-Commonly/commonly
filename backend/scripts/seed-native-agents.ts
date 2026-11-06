@@ -20,6 +20,8 @@ import { AgentRegistry, AgentInstallation } from '../models/AgentRegistry';
 import { FIRST_PARTY_APPS } from '../config/native-agents/apps';
 import type { NativeAgentDefinition } from '../config/native-agents/apps';
 import { normalizeAvatarUrl } from '../services/avatarService';
+import { configRunsInProcess } from '../services/hostedEngine';
+import { identityHoldsRuntimeToken, takeBackInstallation } from '../services/runtimeIdentityOwnership';
 
 // Lazy requires keep this file import-safe even if dependent services move
 // and avoid pulling the full Mongoose model graph into typecheck.
@@ -377,6 +379,23 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
     return;
   }
 
+  // 2b. One runtime per agent identity (services/runtimeIdentityOwnership),
+  //     asked before and after the write, as the install routes ask. An app
+  //     already active in process isn't entering, so it keeps refreshing. A
+  //     boot takes no credential back, a dormant identity's included: the app
+  //     is skipped and logged until someone revokes the token.
+  const installKey = { agentName: app.agentName, podId: podObjectId, instanceId: 'default' };
+  const previousRow = await AgentInstallation.findOne(installKey).lean() as Record<string, unknown> | null;
+  const entersInProcess = !(previousRow?.status === 'active' && configRunsInProcess(previousRow.config));
+  const holdsToken = async () => entersInProcess && identityHoldsRuntimeToken(app.agentName, 'default');
+  const logSkip = () => console.warn(
+    `[native-seed]   skipping install for ${appLabel}: the identity holds a token, so it can't run in process as well`,
+  );
+  if (await holdsToken()) {
+    logSkip();
+    return;
+  }
+
   // 3. Provision the agent User doc (so messages posted by this agent
   //    render with the right displayName/icon).
   let agentUser: { _id: mongoose.Types.ObjectId } | null = null;
@@ -437,6 +456,12 @@ async function seedOneApp(app: NativeAgentDefinition): Promise<void> {
       `[native-seed]   failed to upsert installation for ${appLabel}:`,
       (err as { message?: string })?.message || err,
     );
+    return;
+  }
+
+  if (await holdsToken()) {
+    await takeBackInstallation(installKey, previousRow);
+    logSkip();
     return;
   }
 

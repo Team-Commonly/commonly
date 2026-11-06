@@ -18,6 +18,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { outsiderGrantPodRefusal } = require('../../services/outsiderGrantPodEligibility');
 const { hirePersona, perUserInstanceId } = require('../../services/personaHireService');
+const { heldTokenOnRowRefusal } = require('../../services/runtimeIdentityOwnership');
 const { FIRST_PARTY_APPS } = require('../../config/native-agents/apps');
 const { buildInstallationConfig } = require('../../scripts/seed-native-agents');
 
@@ -701,6 +702,277 @@ describe('installing an in-process runtime on an identity that holds a token', (
       expect(row.status).toBe('paused');
     });
 
+    describe('a stopped row whose identity holds a token', () => {
+      const AgentCredential = require('../../models/AgentCredential');
+      const agentWebSocketService = require('../../services/agentWebSocketService');
+
+      const stoppedRow = async (agentName, overrides = {}) => {
+        const row = await inProcessRow(agentName, { status: 'paused', ...overrides });
+        await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId: 'default' });
+        return row;
+      };
+
+      const follow = ({ method, path }, token = ownerToken) => (
+        request(app)[method.toLowerCase()](path).set('Authorization', `Bearer ${token}`)
+      );
+
+      const memberUser = async (username, overrides = {}) => {
+        const user = await User.create({
+          username, email: `${username}@test.com`, password: 'password123', ...overrides,
+        });
+        return { user, token: jwt.sign({ id: user._id.toString() }, JWT_SECRET) };
+      };
+
+      it('names a revoke the installer can follow, then returns the row to active', async () => {
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        expect(refused.status).toBe(409);
+        expect(refused.body.code).toBe('runtime_token_held');
+        expect(refused.body.revoke.method).toBe('DELETE');
+
+        const revoked = await follow(refused.body.revoke);
+        expect(revoked.status).toBe(200);
+
+        const res = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        expect(res.status).toBe(200);
+        expect((await AgentInstallation.findOne({ agentName: 'stopped-seat' }).lean()).status).toBe('active');
+      });
+
+      it('keeps the identity: the bot user and the row outlive the revoke', async () => {
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+        const before = await botUser('stopped-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        await follow(refused.body.revoke);
+
+        const after = await botUser('stopped-seat');
+        expect(String(after._id)).toBe(String(before._id));
+        expect(after.agentRuntimeTokens).toHaveLength(0);
+        expect(await AgentInstallation.countDocuments({ agentName: 'stopped-seat' })).toBe(1);
+      });
+
+      it.each(['stale', 'error'])('works on a row marked %s', async (status) => {
+        await stoppedRow('stopped-seat', { status });
+        await giveUserToken('stopped-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+
+        expect((await follow(refused.body.revoke)).status).toBe(200);
+      });
+
+      it('clears a user token too', async () => {
+        await stoppedRow('stopped-seat');
+        await User.mintApiTokenIfAbsent((await botUser('stopped-seat'))._id);
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        await follow(refused.body.revoke);
+
+        expect(await holdsUserToken('stopped-seat')).toBe(false);
+      });
+
+      it('clears a token held only on an installation', async () => {
+        await stoppedRow('stopped-seat', {
+          runtimeTokens: [{ tokenHash: 'installation-only', label: 'test', createdAt: new Date() }],
+        });
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        await follow(refused.body.revoke);
+
+        const res = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        expect(res.status).toBe(200);
+      });
+
+      it('records a legacy token as revoked and disconnects the identity', async () => {
+        const disconnect = jest.spyOn(agentWebSocketService, 'disconnectIdentity').mockImplementation(() => {});
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active' });
+        await follow(refused.body.revoke);
+
+        const record = await AgentCredential.findOne({ tokenHash: 'hash-stopped-seat' }).lean();
+        expect(record.status).toBe('revoked');
+        expect(disconnect).toHaveBeenCalledWith('stopped-seat', 'default');
+      });
+
+      it('addresses the instance the row is on', async () => {
+        await inProcessRow('stopped-seat', { status: 'paused', instanceId: 'second' });
+        await AgentIdentityService.getOrCreateAgentUser('stopped-seat', { instanceId: 'second' });
+        await giveUserToken('stopped-seat', 'second');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', {
+          status: 'active', instanceId: 'second',
+        });
+        expect(refused.body.revoke.path).toContain('instanceId=second');
+        expect((await follow(refused.body.revoke)).status).toBe(200);
+
+        const res = await patchAgent(ownerToken, firstPod._id, 'stopped-seat', { status: 'active', instanceId: 'second' });
+        expect(res.status).toBe(200);
+      });
+
+      it('with a second installer, offers no revoke and refuses the route; an admin may', async () => {
+        const { user: other } = await memberUser('second-installer');
+        await stoppedRow('shared-seat');
+        await inProcessRow('shared-seat', { podId: privatePod._id, status: 'paused', installedBy: other._id });
+        await giveUserToken('shared-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'shared-seat', { status: 'active' });
+        expect(refused.status).toBe(409);
+        expect(refused.body.code).toBe('runtime_token_held');
+        expect(refused.body.revoke).toBeUndefined();
+        expect(refused.body.error).toContain('admin');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/shared-seat/tokens`;
+        const attempt = await follow({ method: 'DELETE', path });
+        expect(attempt.status).toBe(403);
+        expect(attempt.body.code).toBe('another_installer');
+        expect((await botUser('shared-seat')).agentRuntimeTokens).toHaveLength(1);
+
+        expect((await follow({ method: 'DELETE', path }, adminToken)).status).toBe(200);
+        expect((await botUser('shared-seat')).agentRuntimeTokens).toHaveLength(0);
+      });
+
+      it('offers an instance admin the revoke on a shared identity', async () => {
+        const { user: other } = await memberUser('second-installer');
+        await stoppedRow('shared-seat');
+        await inProcessRow('shared-seat', { podId: privatePod._id, status: 'paused', installedBy: other._id });
+        await giveUserToken('shared-seat');
+
+        const refused = await patchAgent(adminToken, firstPod._id, 'shared-seat', { status: 'active' });
+
+        expect(refused.status).toBe(409);
+        expect(refused.body.revoke.method).toBe('DELETE');
+      });
+
+      it('names the same revoke when the check after the save refuses', async () => {
+        await stoppedRow('late-seat');
+        const realSave = AgentInstallation.prototype.save;
+        jest.spyOn(AgentInstallation.prototype, 'save').mockImplementation(async function save(...args) {
+          const saved = await realSave.apply(this, args);
+          await giveUserToken('late-seat');
+          return saved;
+        });
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'late-seat', { status: 'active' });
+
+        expect(refused.status).toBe(409);
+        expect(refused.body.revoke.method).toBe('DELETE');
+      });
+
+      it('refuses someone who is not in the pod', async () => {
+        const { token } = await memberUser('outside-user');
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`;
+
+        const res = await follow({ method: 'DELETE', path }, token);
+
+        expect(res.status).toBe(403);
+        expect(res.body.error).toBe('Access denied');
+        expect((await botUser('stopped-seat')).agentRuntimeTokens).toHaveLength(1);
+      });
+
+      it('names the stored spelling when the request spells the agent in capitals', async () => {
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const refused = await patchAgent(ownerToken, firstPod._id, 'Stopped-Seat', { status: 'active' });
+
+        expect(refused.body.revoke.path).toContain('/agents/stopped-seat/tokens');
+      });
+
+      it('lets a member who installed the row through when they did not create the pod', async () => {
+        const { user, token } = await memberUser('row-installer');
+        await Pod.updateOne({ _id: firstPod._id }, { $push: { members: user._id } });
+        await stoppedRow('stopped-seat', { installedBy: user._id });
+        await giveUserToken('stopped-seat');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`;
+
+        expect((await follow({ method: 'DELETE', path }, token)).status).toBe(200);
+      });
+
+      it('reaches the rows and the bot user of a legacy agent name', async () => {
+        const legacyToken = { tokenHash: 'legacy-copy', label: 'test', createdAt: new Date() };
+        await inProcessRow('commonly-summarizer', { status: 'paused' });
+        await inProcessRow('commonly-bot', { podId: privatePod._id, status: 'paused', runtimeTokens: [legacyToken] });
+        await AgentIdentityService.getOrCreateAgentUser('commonly-bot', { instanceId: 'default' });
+        await giveUserToken('commonly-bot');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/commonly-summarizer/tokens`;
+
+        expect((await follow({ method: 'DELETE', path })).status).toBe(200);
+        const row = await AgentInstallation.findOne({ agentName: 'commonly-bot' }).lean();
+        expect(row.runtimeTokens).toHaveLength(0);
+        const record = await AgentCredential.findOne({ tokenHash: 'hash-commonly-bot' }).lean();
+        expect(record.status).toBe('revoked');
+      });
+
+      it('lets the pod creator through when they are no longer a member', async () => {
+        await Pod.updateOne({ _id: firstPod._id }, { $set: { members: [] } });
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`;
+
+        expect((await follow({ method: 'DELETE', path })).status).toBe(200);
+      });
+
+      it('answers 404 when the pod has no row for the agent', async () => {
+        const path = `/api/registry/pods/${firstPod._id}/agents/never-installed/tokens`;
+
+        expect((await follow({ method: 'DELETE', path })).status).toBe(404);
+      });
+
+      it('clears an installation token when the identity has no bot user', async () => {
+        await inProcessRow('userless-seat', {
+          status: 'paused',
+          runtimeTokens: [{ tokenHash: 'installation-only', label: 'test', createdAt: new Date() }],
+        });
+        const path = `/api/registry/pods/${firstPod._id}/agents/userless-seat/tokens`;
+
+        expect((await follow({ method: 'DELETE', path })).status).toBe(200);
+
+        const row = await AgentInstallation.findOne({ agentName: 'userless-seat' }).lean();
+        expect(row.runtimeTokens).toHaveLength(0);
+      });
+
+      it('encodes the path it names', () => {
+        const { revoke, error } = heldTokenOnRowRefusal({
+          podId: 'pod 1', agentName: 'a/b', instanceId: 'c&d', mayRevoke: true,
+        });
+
+        expect(revoke.path).toBe('/api/registry/pods/pod%201/agents/a%2Fb/tokens?instanceId=c%26d');
+        expect(error).toContain('Revoke its tokens');
+      });
+
+      it('refuses a pod member who did not install the row', async () => {
+        const { user, token } = await memberUser('pod-member');
+        await Pod.updateOne({ _id: firstPod._id }, { $push: { members: user._id } });
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`;
+
+        expect((await follow({ method: 'DELETE', path }, token)).status).toBe(403);
+        expect((await botUser('stopped-seat')).agentRuntimeTokens).toHaveLength(1);
+      });
+
+      it('answers 404 for an uninstalled row', async () => {
+        await stoppedRow('stopped-seat', { status: 'uninstalled' });
+        await giveUserToken('stopped-seat');
+
+        const path = `/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`;
+
+        expect((await follow({ method: 'DELETE', path })).status).toBe(404);
+        expect((await botUser('stopped-seat')).agentRuntimeTokens).toHaveLength(1);
+      });
+    });
+
     it('refuses before it saves anything', async () => {
       await byoSeat('held-seat');
       await giveUserToken('held-seat');
@@ -912,6 +1184,36 @@ describe('installing an in-process runtime on an identity that holds a token', (
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('in_process_agent_no_token');
       expect(await holdsUserToken('user-late-seat')).toBe(false);
+    });
+
+    it('refuse the provision route with the code the other issuers use', async () => {
+      await inProcessRow('claude-code');
+
+      const res = await request(app)
+        .post(`/api/registry/pods/${firstPod._id}/agents/claude-code/provision`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('in_process_agent_no_token');
+    });
+
+    it('refuse the provision route the same way when the user token is refused', async () => {
+      await inProcessRow('claude-code', { config: { runtime: { runtimeType: 'webhook' } } });
+      const realMint = User.mintApiTokenIfAbsent.bind(User);
+      jest.spyOn(User, 'mintApiTokenIfAbsent').mockImplementation(async (...args) => {
+        await inProcessRow('claude-code', { podId: privatePod._id });
+        return realMint(...args);
+      });
+
+      const res = await request(app)
+        .post(`/api/registry/pods/${firstPod._id}/agents/claude-code/provision`)
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ includeUserToken: true });
+      jest.restoreAllMocks();
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('in_process_agent_no_token');
     });
 
     it('still give a user token to a bring-your-own identity', async () => {

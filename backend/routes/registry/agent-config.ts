@@ -28,11 +28,11 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const {
+  heldTokenOnRowRefusal,
   identityHoldsRuntimeToken,
   ownsIdentityCountingPaused,
   ownsRuntimeIdentity,
   relabelIdentityDmRows,
-  RUNTIME_TOKEN_HELD,
   takeBackInstallation,
   webhookUrlRefusal,
 } = require('../../services/runtimeIdentityOwnership');
@@ -462,8 +462,16 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     };
     const rowsEntering = installationsToUpdate.filter(entersInProcess);
     const holdsToken = () => identityHoldsRuntimeToken(name.toLowerCase(), normalizedInstanceId);
+    const refuseTokenHeld = async () => {
+      const agentName = name.toLowerCase();
+      const mayRevoke = isInstanceAdmin
+        || (await ownsIdentityCountingPaused(userId, agentName, normalizedInstanceId)).owned;
+      return res.status(409).json(heldTokenOnRowRefusal({
+        podId: String(podId), agentName, instanceId: normalizedInstanceId, mayRevoke,
+      }));
+    };
     if (rowsEntering.length && await holdsToken()) {
-      return res.status(409).json(RUNTIME_TOKEN_HELD);
+      return refuseTokenHeld();
     }
     const rowsToRestore = rowsEntering.map((entry: any) => ({
       key: { agentName: entry.agentName, podId: entry.podId, instanceId: entry.instanceId },
@@ -495,7 +503,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
       if (rowsToRestore.length && await holdsToken()) {
         await Promise.all(rowsToRestore.map(({ key, previous }: any) => takeBackInstallation(key, previous)));
-        return res.status(409).json(RUNTIME_TOKEN_HELD);
+        return refuseTokenHeld();
       }
       if (effectiveDisplayName) {
         const dmPodIds = await relabelIdentityDmRows(name.toLowerCase(), normalizedInstanceId, effectiveDisplayName);
