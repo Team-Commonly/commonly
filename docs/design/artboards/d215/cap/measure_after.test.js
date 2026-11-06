@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
-const { assertLanded, BASE } = require('./lib');
+const { assertLanded, parseFixtures, fixtureRoute, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
 
@@ -22,6 +22,53 @@ test('both sides skip a closed fold, and the frame skips the reveal-only popover
   const frameSide = src.slice(src.indexOf('async function artboard'), src.indexOf('const METRICS'));
   assert.match(frameSide, /details:not\(\[open\]\)/);
   assert.match(frameSide, /\.tip,\.pop,/);
+});
+
+// A stand-in for a Playwright route that records which way the request left.
+const routed = (method, url) => {
+  const calls = [];
+  return {
+    calls,
+    request: () => ({ method: () => method, url: () => url }),
+    fulfill: async (o) => { calls.push(['fulfill', o.body]); },
+    fallback: async () => { calls.push(['fallback']); },
+    continue: async () => { calls.push(['continue']); },
+    abort: async () => { calls.push(['abort']); },
+  };
+};
+
+test('a fixture answers only a GET on its exact path', async () => {
+  const handler = fixtureRoute([{ path: '/api/pods', body: '[]' }]);
+  const hit = routed('GET', 'https://commonly.me/api/pods?x=1');
+  await handler(hit);
+  assert.deepStrictEqual(hit.calls, [['fulfill', '[]']]);
+  const other = routed('GET', 'https://commonly.me/api/pods/1');
+  await handler(other);
+  assert.deepStrictEqual(other.calls, [['fallback']]);
+});
+
+// Routes run last-registered first. A continue() here would send a POST past the abort guard in open(),
+// which is how a measuring run wrote to prod on 2026-11-06.
+test('a non-GET is never sent by the fixture route, even on a fixture path', async () => {
+  const handler = fixtureRoute([{ path: '/api/stats/byo-step', body: '{}' }]);
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+    const r = routed(method, 'https://commonly.me/api/stats/byo-step');
+    await handler(r);
+    assert.deepStrictEqual(r.calls, [['fallback']]);
+  }
+});
+
+test('open() registers the fixture route after the abort guard, so the guard still sees what it passes on', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'lib.js'), 'utf8');
+  const guard = src.indexOf("return r.abort(); });");
+  const fixture = src.indexOf('fixtureRoute(fixtures));');
+  assert.ok(guard > -1 && fixture > guard, 'the guard must be registered first');
+});
+
+test('a malformed D215_FIXTURES entry throws, and none means no fixtures', () => {
+  assert.deepStrictEqual(parseFixtures(undefined), []);
+  assert.deepStrictEqual(parseFixtures(''), []);
+  assert.throws(() => parseFixtures('no-equals-sign'), /D215_FIXTURES needs/);
 });
 
 test('no argument measures the artboard', () => {

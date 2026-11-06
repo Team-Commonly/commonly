@@ -2,9 +2,29 @@
 // COMMONLY_TOKEN (required): a session token for the account to measure as. Read from env only; never logged.
 // COMMONLY_URL (optional): instance origin, default https://commonly.me.
 // PLAYWRIGHT_CHROMIUM (optional): a chromium executable; default is Playwright's bundled browser.
+// D215_FIXTURES (optional): /api/path=file.json;/api/other=file2.json. A GET whose path is exactly
+// /api/path (query ignored) is answered from that file, for state that is account data, not UI.
 // Every non-GET /api request is aborted, so a measuring run cannot change state.
 
+const fs = require('fs');
+
 const BASE = (process.env.COMMONLY_URL || 'https://commonly.me').replace(/\/$/, '');
+
+function parseFixtures(spec) {
+  return (spec || '').split(';').filter(Boolean).map((kv) => {
+    const at = kv.indexOf('=');
+    if (at < 1) throw new Error(`D215_FIXTURES needs /api/path=file.json, got ${kv}`);
+    return { path: kv.slice(0, at), body: fs.readFileSync(kv.slice(at + 1), 'utf8') };
+  });
+}
+
+// Playwright runs the last registered route first, so this one must not continue(): that would send
+// the request and skip the guard behind it. fallback() hands everything it doesn't answer to the guard.
+const fixtureRoute = (fixtures) => (r) => {
+  const req = r.request();
+  const hit = req.method() === 'GET' && fixtures.find((f) => new URL(req.url()).pathname === f.path);
+  return hit ? r.fulfill({ status: 200, contentType: 'application/json', body: hit.body }) : r.fallback();
+};
 
 async function open(w = 1440, h = 900, mobile = false) {
   const token = process.env.COMMONLY_TOKEN;
@@ -15,6 +35,8 @@ async function open(w = 1440, h = 900, mobile = false) {
   const b = await chromium.launch(launch);
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, colorScheme: 'light', isMobile: mobile, hasTouch: mobile });
   await ctx.route('**/api/**', r => { const m = r.request().method(); if (m === 'GET' || m === 'OPTIONS') return r.continue(); return r.abort(); });
+  const fixtures = parseFixtures(process.env.D215_FIXTURES);
+  if (fixtures.length) await ctx.route('**/api/**', fixtureRoute(fixtures));
   const p = await ctx.newPage();
   await p.goto(BASE + '/v2', { waitUntil: 'domcontentloaded' });
   await p.evaluate(t => localStorage.setItem('token', t), token);
@@ -50,4 +72,4 @@ async function go(p, route) {
   assertLanded(route, p.url());
 }
 
-module.exports = { open, go, assertLanded, pathOf, BASE };
+module.exports = { open, go, assertLanded, pathOf, parseFixtures, fixtureRoute, BASE };

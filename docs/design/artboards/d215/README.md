@@ -38,6 +38,8 @@ node cap/measure_after.js
 COMMONLY_TOKEN=… D215_POD=<pod id> D215_AGENT=<name>/default node cap/measure_after.js prod --only chat,board
 ```
 
+Roster, memory notes and machines are account data, so a page can miss its target only because of who ran it. `D215_FIXTURES=/api/path=file.json;/api/other=file2.json` serves those GETs as the frame draws them. Name the fixtures when you report a score. The byo route opens the machine start, the state the frame draws, which needs a machine on the account or a fixture for `/api/machines`.
+
 ## Caveats
 
 - The artboard and prod modes use different exclusion lists. The artboard mode skips the mock's own control classes, while the prod mode uses the counter that produced the before numbers, minus memory note text (so the memory `185` was counted with it and the target without). Read a near-miss with that in mind.

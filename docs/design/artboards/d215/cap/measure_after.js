@@ -14,6 +14,7 @@
 //   D215_POD          id of a pod with a long chat history and a busy board
 //   D215_AGENT        agent route segment, e.g. "<name>/default"
 //   D215_SIDEBAR_POD  optional; pod opened for the 1440 sidebar shot (defaults to D215_POD)
+//   D215_FIXTURES     optional; serves account data as the frame draws it (see lib.js)
 //   --only a,b        optional; limit to these surfaces (chat, board, settings, ...)
 // It exits 1 when any surface misses its target. It prints counts only, never page text.
 //
@@ -250,7 +251,8 @@ async function prod(only) {
     ['agent-memory', () => `/v2/agents/${agent}/memory`],
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
-    ['byo', () => '/v2/agents/byo'],
+    // The frame draws the machine start, the same state frame-diff scores.
+    ['byo', () => '/v2/agents/byo?mode=machine'],
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
