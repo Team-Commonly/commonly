@@ -606,6 +606,12 @@
     position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
   }
 }
+/* An open hint shows the pencil for any pointer. The rest rule's opacity: 0
+   lifts only on hover, focus or a coarse pointer, and a stylus or a mouse
+   that has moved off the line has none of those. */
+@media (max-width: 760px) {
+  .v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint--open) button.v2-pod-header__rename-open { opacity: 1; }
+}
 /* With a mouse the pencil sits left of the "i", so reaching it leaves the hint
    and closes it. Hovering the line keeps it. */
 @media (max-width: 760px) and (hover: hover) {
