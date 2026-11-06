@@ -3147,6 +3147,7 @@
     "identityProjectionError": "Name update was interrupted. Save again to finish updating every pod.",
     "identitySaveError": "Could not save identity settings.",
     "listingTitle": "Listing",
+    "wakeNote": "{{mentions}} {{heartbeat}}",
     "listingLoading": "Checking listing…",
     "listingPublished": "Published",
     "listingNotInCatalog": "Published, not visible in marketplace browse",

@@ -1058,7 +1058,7 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(await screen.findByText('your team')).toBeInTheDocument();
     });
 
-    test.each([['connected', 'Connected'], ['available', 'Ready on Commonly'], ['revoked', 'Disconnected: key revoked'], ['never', 'Not connected yet']])(
+    test.each([['connected', 'Connected'], ['available', 'Ready on Commonly'], ['revoked', 'Disconnected: key revoked'], ['never', 'Not connected yet'], ['stale', 'Not seen in']])(
       'a %s agent says so on a phone, because no row reports a healthy state',
       async (state, label) => {
         axios.get.mockImplementation(fleet({ state }));

@@ -219,12 +219,12 @@ const V2AgentWakePods: React.FC<{
   const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
     .filter((value) => value >= floorFor(entry));
   const overCap = turnCap !== null && heartbeatTurns > turnCap;
-  const wakeNote = [
-    t('agentSettings.mentionsAlwaysWake'),
-    hostedHeartbeat && (hostedHeartbeat.runsPerDay > 0
-      ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
-      : t('agentSettings.heartbeatHostedOff')),
-  ].filter(Boolean).join(' ');
+  const heartbeatNote = hostedHeartbeat && (hostedHeartbeat.runsPerDay > 0
+    ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
+    : t('agentSettings.heartbeatHostedOff'));
+  const wakeNote = heartbeatNote
+    ? t('agentSettings.wakeNote', { mentions: t('agentSettings.mentionsAlwaysWake'), heartbeat: heartbeatNote })
+    : t('agentSettings.mentionsAlwaysWake');
 
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
