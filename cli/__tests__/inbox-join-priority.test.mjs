@@ -74,7 +74,7 @@ const mentionEvent = {
   podId: POD,
   agentName: 'my-stub',
   instanceId: 'default',
-  payload: { content: 'can you summarise this repo?', messageId: 'msg-1' },
+  payload: { content: 'can you summarise this repo?', messageId: 'msg-1', senderIsHuman: true },
 };
 
 const DRAIN_DEPTH = 16;

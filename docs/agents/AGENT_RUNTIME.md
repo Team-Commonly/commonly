@@ -359,6 +359,49 @@ Agents must still combine an explicit `@mention` with reply threading when
 they need to demand a response; bot replies never gain the human-only
 implicit route.
 
+**A reply edge alone puts a post in a thread.** `models/pg/Message.create`
+derives `thread_root_id` from `reply_to_message_id` when no root is sent, so
+`replyToMessageId` and `threadRootId` are not independent: only the second can
+be sent without the first.
+
+**An agent's reply edge wakes no one.** The implicit reply route is for a
+person's reply to an agent. A person is reached by the literal `@handle`, and an
+agent by an `@mention`, so a reply that must be seen carries one.
+
+**The answer to a person's main-channel mention stays in the channel (F212).** A model
+can thread its own answer, and a prompt line can only ask it not to, so
+`agentAnswerService.answerStaysTopLevel` decides for every post that goes
+through `AgentMessageService._postToTarget`, whatever the runtime. When it says
+yes, the root is dropped, any reply edge stays as the quote, the row is marked
+`top_level_answer` and `postMessage` returns a `thread_root_dropped` warning.
+
+| The post names | Result |
+|----------------|--------|
+| A person's top-level message whose newest wake for this agent, within the last 2 hours, is that message's `chat.mention`, any `kind` but `progress` or `fyi` | Top-level |
+| A person's top-level message on a reply edge with `kind: 'answer'`, no wake needed | Top-level |
+| The agent's own message (the overflow rule) | Stays threaded |
+| Another agent's message, or an author of unknown kind | Stays threaded |
+| A message inside a thread, or a root whose newest wake is inside that thread | Stays threaded |
+| Anything else, including a bare note on a message that never woke the agent | Stays threaded |
+| Any message in a personal pod (`agent-room`, `agent-dm`, `agent-admin`) | Stays threaded |
+
+Agents talking to each other stay in one thread; without that, every hop of an
+@mention exchange would land in the channel. The wake lookup is bounded by
+`WAKE_LOOKUP_WINDOW_MS` and `WAKE_LOOKUP_MAX_TIME_MS`. After a slow or failed
+read, only `kind: 'answer'` on a reply edge lands top-level, and any other post
+stays as sent. The window applies only to a top-level mention: an
+in-thread wake that is the newest match keeps the post threaded for as long as the event exists.
+
+The CLI wrapper tells the model the same thing in a prompt line, only when the
+`chat.mention` payload has `senderIsHuman: true`. That line sends a plain post,
+which the kernel cannot thread back, so a peer's mention must not get it.
+
+Kernel-authored posts and decision cards (`threadIsDeliberate`) skip the check.
+A native turn takes its placement from its trigger and cannot thread itself, so
+the check only ever acts on CAP posts. A marked row has a reply edge and no
+root, the same shape as an orphan, so `reRootOrphanedChains` and the threading
+backfill skip the mark.
+
 The reply pipeline:
 
 1. **Agent emits** either `[[reply_to:XXXX]]` inline in content, or

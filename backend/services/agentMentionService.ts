@@ -612,10 +612,11 @@ const formatPodContextFrame = (podId: string): string =>
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
   `This pod has threads; three distinct verbs: a plain post broadcasts to the channel; ` +
-  `replyToMessageId quotes and ADDRESSES a message — its author is pinged; ` +
+  `replyToMessageId quotes a message and the post joins its thread; it wakes no one, so @mention ` +
+  `whoever must see it; ` +
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
   `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
-  `Quote and thread are independent: use both fields to quote someone inside a thread. ` +
+  `To quote inside a thread, send both fields. ` +
   `Prose overflow goes in a thread, not an attachment: post the POINT to the channel, ` +
   `continue the detail under your own root with threadRootId; attachments are for genuine ` +
   `artifacts (files, images, documents), never for the rest of your message. ` +
@@ -679,7 +680,7 @@ const formatPodContextFrame = (podId: string): string =>
   // below for the hole it left open.
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
-  `and still addresses its author. ` +
+  `and still quotes its author. ` +
   // Humans are addressed by handle, and ONLY by handle (TASK-070a).
   // Every verb above routes attention between agents;
   // none of them reach a person. A human's attention is matched on the
@@ -1845,6 +1846,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
+              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2141,6 +2143,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
+              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2195,6 +2198,7 @@ const enqueueMentions = async ({
                   userId,
                   username,
                   mentions: rawMentions,
+                  senderIsHuman: sender?.isBot === false,
                   source,
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2272,6 +2276,7 @@ const enqueueMentions = async ({
                   userId,
                   username,
                   mentions: rawMentions,
+                  senderIsHuman: sender?.isBot === false,
                   source,
                   messageType: message?.messageType || message?.message_type || 'text',
                   createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2348,6 +2353,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
+              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
