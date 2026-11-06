@@ -135,7 +135,7 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
-import { CANT_ANSWER_NOTICE_WINDOW_MS, cantAnswerNotice } from '../lib/turn-failure-notice.js';
+import { CANT_ANSWER_NOTICE_WINDOW_MS, CUT_OFF_NOTICE, cantAnswerNotice } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -765,6 +765,46 @@ const someoneIsWaiting = (event) => ADDRESSED_EVENT_TYPES.has(event.type)
   || event.payload?.addressed === true
   || event.payload?.repliesToYourMessage === true
   || event.payload?.someoneWaiting === true;
+
+// The first message in `messages` that this seat posted and `earlierIds` doesn't
+// hold. The server stamps each message with `self` when it knows who is asking.
+// Trust that over any local guess: the wrapper cannot derive its own bot username
+// reliably (the server applies LEGACY_AGENT_MAP and an owner-scoped instanceId),
+// and a wrong guess double-posts.
+const findOwnPost = (messages, earlierIds) => {
+  const serverKnowsSelf = messages.some((m) => typeof m.self === 'boolean');
+  for (const m of messages) {
+    // A new human-authored message must NEVER count: it is either a human
+    // typing mid-turn, or the agent misusing an operator CLI profile / human
+    // token (the 2026-07-22 as-operator attribution incident) — in both cases
+    // the wrapper still delivers the reply under the agent's own identity.
+    //
+    // With `self`, only THIS agent's own post counts. Without it (an older
+    // server), fall back to the legacy any-bot test — which drops this agent's
+    // reply whenever another agent answers first (#757).
+    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && (serverKnowsSelf ? m.self === true : true)) {
+      return {
+        id: String(m._id || m.id),
+        author: m.username || 'unknown',
+        basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
+        threadRootId: m.thread_root_id ?? null,
+      };
+    }
+  }
+  return null;
+};
+
+// This seat's newest post in `tail` that came after the last row `knownIds` holds,
+// or null when that can't be shown. `knownIds` is a 10-message snapshot, so a row
+// missing from it may only be older, and just "not in the set" would count an old
+// post as new. With no known row in the tail, nothing marks where the turn began.
+// An older server has no `self`, so a peer's post can't be told from this seat's.
+const newestOwnPostSince = (tail, knownIds) => {
+  const lastKnown = tail.findLastIndex((m) => knownIds.has(String(m._id || m.id)));
+  if (lastKnown === -1) return null;
+  const ownPost = findOwnPost(tail.slice(lastKnown + 1).reverse(), knownIds);
+  return ownPost?.basis === 'self' ? ownPost : null;
+};
 
 // How long a fresh seat's greeting waits for a person before it runs alone.
 // One poll lost the race on the 0.1.257 walk (2026-11-05): the mention landed
@@ -2480,6 +2520,7 @@ export const performRun = ({
       return await runTurnBody({ ...args, turn });
     } catch (error) {
       turn.finish('reply_lost');
+      failedTurn = args;
       // codex and claude both keep a refused prompt in the thread, and send it
       // again on every resume (measured 2026-11-05 on codex 0.162.1 and claude
       // 2.1.318), so one refusal would refuse every later turn in this pod. The
@@ -2557,6 +2598,60 @@ export const performRun = ({
       } catch (noticeError) {
         log(`[inbox.batch] pod ${waitingPod} was not told why this agent can't answer: ${noticeError.message}`);
       }
+    }
+  };
+
+  // F256: a turn that threw after it posted, whose event the server no longer
+  // holds. The usual way there is a child that checkpointed after part one of an
+  // answer and was then killed, so nothing will retry it and the person holds a
+  // promise of more. Only `lostEvents` reach here, so a turn that ended cleanly
+  // never does, and neither does one whose event is retried or handed back.
+  // No window of its own: an event is lost once, and in a shared pod the server's
+  // duplicate guard already bounds a fixed line to one per 30 minutes.
+  // A turn only agents woke gets no line: "ask me again" isn't for them, and in
+  // an agent-dm the line would wake the peer into a paid turn.
+  const noticeCutOff = async (lostEvents) => {
+    const turnArgs = failedTurn;
+    failedTurn = null;
+    const waiting = lostEvents.filter((event) => event.deliveryMode !== 'digest'
+      && (someoneIsWaiting(event) || PERSON_WAITING_EVENT_TYPES.has(event.type)));
+    if (!turnArgs || turnArgs.trigger === 'agent' || waiting.length === 0) return;
+    const { eventPodId } = turnArgs;
+    const target = commentTargetOf(waiting[0]);
+    try {
+      let delivery;
+      if (target) {
+        // The only comment read is capped and carries no `self` stamp, so it can't
+        // prove this seat replied, and this has no own-post check.
+        // It stands on the prompt instead: a person's direct @ isn't offered
+        // silence, so their item checkpoints only after a reply. That holds only
+        // for a known person, which an 'unknown' comment isn't.
+        if (turnArgs.trigger !== 'human') return;
+        delivery = await deliverCommentReply({
+          client, ...target, text: CUT_OFF_NOTICE, onlyIfUnanswered: false,
+        });
+      } else {
+        const tail = turnArgs.preSpawnIds ? await turnArgs.snapshotMessages(50) : null;
+        // Nothing of this seat's in the pod means no half answer to explain: a
+        // deliberate silence checkpoints too, and a requeue takes a row as well.
+        const ownPost = tail && newestOwnPostSince(tail, turnArgs.preSpawnIds);
+        if (!ownPost) return;
+        delivery = await deliverChatReply({
+          client,
+          podId: eventPodId,
+          text: CUT_OFF_NOTICE,
+          limit: chatCharLimit,
+          maxChunks: maxChatChunks,
+          threadRootId: ownPost.threadRootId === null ? null : String(ownPost.threadRootId),
+          log: (line) => log(`[inbox.batch] ${line}`),
+        });
+      }
+      if (delivery.skipped || delivery.refused) {
+        log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: `
+          + `${delivery.reason || 'the notice was not posted'}`);
+      } else log(`[inbox.batch] told pod ${eventPodId} this agent was cut off before it finished`);
+    } catch (noticeError) {
+      log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: ${noticeError.message}`);
     }
   };
 
@@ -2901,32 +2996,8 @@ export const performRun = ({
     if (preSpawnIds) {
       const postSpawn = await snapshotMessages();
       if (postSpawn) {
-        // The server stamps each message with `self` when it knows who is
-        // asking. Trust that over any local guess: the wrapper cannot derive
-        // its own bot username reliably (the server applies LEGACY_AGENT_MAP
-        // and an owner-scoped instanceId), and a wrong guess double-posts.
-        const serverKnowsSelf = postSpawn.some((m) => typeof m.self === 'boolean');
-        for (const m of postSpawn) {
-          if (preSpawnIds.has(String(m._id || m.id))) continue;
-          // A new human-authored message must NEVER suppress the echo: it is
-          // either a human typing mid-turn, or the agent misusing an operator
-          // CLI profile / human token (the 2026-07-22 as-operator attribution
-          // incident) — in both cases the wrapper still delivers the reply
-          // under the agent's own identity.
-          if (!m.isBot) continue;
-          // With `self`, only THIS agent's own post suppresses. Without it (an
-          // older server), fall back to the legacy any-bot test — which drops
-          // this agent's reply whenever another agent answers first (#757).
-          if (serverKnowsSelf ? m.self === true : true) {
-            agentPostedItself = true;
-            suppressedBy = {
-              id: String(m._id || m.id),
-              author: m.username || 'unknown',
-              basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
-            };
-            break;
-          }
-        }
+        suppressedBy = findOwnPost(postSpawn, preSpawnIds);
+        agentPostedItself = Boolean(suppressedBy);
       }
     }
     const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
@@ -3228,7 +3299,7 @@ export const performRun = ({
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
-        ? `\n[After ${answersAPerson(entry) ? 'your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
+        ? `\n[After ${answersAPerson(entry) ? 'all of your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
@@ -3250,7 +3321,8 @@ export const performRun = ({
       `After tool-side work is committed (including any reply posted through a tool)${answersPerson ? ',' : ', or an intentional NO_REPLY,'} checkpoint that item with its supplied IDs. `
         + 'Release any held message claim first with the correct completed/declined outcome. '
         + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
-        + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
+        + 'Never checkpoint unfinished work: an answer in several posts is finished only after its last post. '
+        + 'Only a successful checkpoint prevents replay after timeout. '
         + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,
       ...(heldBack > 0
@@ -3382,6 +3454,8 @@ export const performRun = ({
   // The current batch's items past the cap. Kept out here because the tick needs
   // them when the turn throws, and a throw returns no entries.
   let pastCapEvents = [];
+  // The arguments of the turn that just threw, for noticeCutOff.
+  let failedTurn = null;
   let heldRenewTimer = null;
   const clearHeldRenewal = () => {
     if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
@@ -3472,15 +3546,19 @@ export const performRun = ({
         + 'to the server\'s requeue (redelivered in ~10–20 min)',
       );
     }
-    // A stopping run carries nothing and renews nothing: extending the lease
-    // of a process on its way out only delays the replacement's redelivery.
-    // Its carry is handed back to the server when the tick ends instead
-    // (F189), so the next run answers it on its first poll.
+    // A stopping run carries nothing, because its carry is handed back to the
+    // server when the tick ends (F189), so the next run answers it on its first
+    // poll. It renews only the failed turn's own events, to learn which of them
+    // it still holds: that hand-back follows at once, so the replacement doesn't
+    // wait on the longer lease.
     if (!running) {
       heldRetry = [...heldRetry, ...carry];
       heldRetryFailures.clear();
       pastCapCarries.clear();
-      return { held: [], released, handedBack: carry };
+      const confirmed = await renewHeldDeliveries(failedEvents);
+      return {
+        held: [], released, handedBack: carry, lost: failedEvents.filter((event) => !stillHeld(event, confirmed)),
+      };
     }
     const confirmed = carry.length ? await renewHeldDeliveries(carry) : null;
     // The stop landed during that renewal, after the limits were applied.
@@ -3500,7 +3578,9 @@ export const performRun = ({
         + '(checkpointed, requeued or retired) — not retried',
       );
     }
-    return { held, released, handedBack: [] };
+    return {
+      held, released, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
+    };
   };
 
   // F189/F182: hand claimed events this run will never run back to the
@@ -3609,6 +3689,7 @@ export const performRun = ({
 
   const handleEventBatch = async (events, inboxCount = events.length) => {
     pastCapEvents = [];
+    failedTurn = null;
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
       throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
@@ -3660,10 +3741,10 @@ export const performRun = ({
     // Null until the server says: a failed read or an older server is unknown,
     // not "alone" and not "with peers".
     let podAttendance = null;
-    const snapshotMessages = async () => {
+    const snapshotMessages = async (limit = 10) => {
       try {
         const { messages = [], otherAgentsInPod, peopleInPod } = await client.get(
-          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
+          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit },
         );
         podAttendance = typeof otherAgentsInPod === 'boolean' ? { otherAgentsInPod, peopleInPod } : null;
         return messages;
@@ -4248,6 +4329,7 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
+            await noticeCutOff(hold.lost);
             await noticeCantAnswer(err, [...failedEvents, ...untriedAfter(groupIndex)]);
           };
           let batch;

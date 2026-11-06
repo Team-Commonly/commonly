@@ -55,6 +55,12 @@ export const WONT_START_NOTICE = 'I can’t answer right now: the tool I run on 
 export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI account I run on has used up its allowance. '
   + `It needs to reset, or whoever runs me needs to add more. ${AGAIN}`;
 
+// A turn that had posted, whose event the server had settled, and that then
+// stopped. The event won't come back, so this is all the person hears. Hedged,
+// because a kill can land after the last word: a checkpoint says the seat
+// finished an item, and part one of an answer has been enough to earn one.
+export const CUT_OFF_NOTICE = 'I got cut off before I could finish that, so please ask me again if anything is missing.';
+
 export const codexVersionNotice = (required) => 'I can’t answer right now: the computer I run on needs '
   + `Codex ${required} or newer. Whoever runs me needs to upgrade it and start me again. ${AGAIN}`;
 

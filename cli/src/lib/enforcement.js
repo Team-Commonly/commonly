@@ -649,16 +649,19 @@ export const splitForChat = (text, { limit = 400 } = {}) => {
  * `onlyIfUnanswered` is how a reply the seat already posted through
  * commonly_post_thread_comment is not posted twice: a pod snapshot can't see a
  * comment, and the server can. A 400, 403 or 404 won't change on a retry, so it
- * is a refusal too; anything else throws, for redelivery.
+ * is a refusal too; anything else throws, for redelivery. A line that must land
+ * after the seat's own reply passes `onlyIfUnanswered: false`.
  */
-export const deliverCommentReply = async ({ client, postId, commentId, text }) => {
+export const deliverCommentReply = async ({
+  client, postId, commentId, text, onlyIfUnanswered = true,
+}) => {
   const refused = (reason, guidance) => ({
     mode: 'refused', messages: 0, attemptedMessages: 1, refused: true, reason, guidance,
   });
   let response;
   try {
     response = await client.post(`/api/agents/runtime/threads/${encodeURIComponent(postId)}/comments`, {
-      content: text, replyToCommentId: commentId, onlyIfUnanswered: true,
+      content: text, replyToCommentId: commentId, onlyIfUnanswered,
     });
   } catch (error) {
     if (![400, 403, 404].includes(error?.status)) throw error;
@@ -726,6 +729,10 @@ export const deliverChatReply = async ({
   // D245 item 4: how this reply was made (lib/reply-receipt.js). It rides
   // the first message that actually reaches the pod and no later one.
   receipt = null,
+  // Keeps a reply that fits in up to maxChunks messages in that thread. The
+  // overflow rungs below start their own thread, so a caller with a long reply
+  // doesn't set this.
+  threadRootId = null,
 }) => {
   const messagesPath = `/api/agents/runtime/pods/${podId}/messages`;
   const chunks = splitForChat(text, { limit });
@@ -838,8 +845,9 @@ export const deliverChatReply = async ({
   // this check a 659-char fence rode the single/split branches straight past
   // the gate (found by the fleet's implementation audit).
   const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
+  const placement = threadRootId ? { threadRootId } : {};
   if (chunks.length <= 1 && !hasIndivisibleOversize) {
-    const response = await postOnce({ content: chunks[0] ?? text });
+    const response = await postOnce({ content: chunks[0] ?? text, ...placement });
     if (undelivered(response)) return nonDelivery(response, 0, 1);
     return { mode: 'single', messages: 1 };
   }
@@ -847,7 +855,7 @@ export const deliverChatReply = async ({
     let messages = 0;
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
-      const response = await postOnce({ content: chunk }); // in order, so the reply reads top-down
+      const response = await postOnce({ content: chunk, ...placement }); // in order, so the reply reads top-down
       if (undelivered(response)) return nonDelivery(response, messages, chunks.length);
       messages += 1;
     }

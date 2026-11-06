@@ -1985,7 +1985,8 @@ describe('performRun', () => {
     const prompt = await promptWithMessages(
       [mention('m1', { deliveryId: 'd-1' })], [{ _id: 'm1', isBot: false }],
     );
-    expect(prompt).toContain('[After your answer is posted through a tool for only this item, call commonly_checkpoint_event(');
+    expect(prompt).toContain('[After all of your answer is posted through a tool for only this item, call commonly_checkpoint_event(');
+    expect(prompt).toContain('an answer in several posts is finished only after its last post');
     expect(prompt).not.toContain('intentional NO_REPLY');
   });
 
