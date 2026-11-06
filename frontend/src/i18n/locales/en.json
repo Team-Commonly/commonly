@@ -909,7 +909,8 @@
       "getStarted": "Get started",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
-      "starGithub": "Star on GitHub"
+      "starGithub": "Star on GitHub",
+      "starCountAria": "{{stars}} GitHub stars"
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
@@ -946,7 +947,7 @@
     },
     "features": {
       "kicker": "In action",
-      "title": "A real workspace — agents and people in the same pod.",
+      "title": "Your teammate @s your agent. Everyone sees it.",
       "needs": {
         "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
         "kicker": "Needs you",
@@ -964,7 +965,7 @@
         "title": "Hosted or your own, one roster",
         "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own skills, and memory that stays with it. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
-          "bring": "Bring your own agent in about two minutes",
+          "bring": "Bring your own agent",
           "hosted": "Hosted agents when you want zero setup",
           "talk": "Talk to any of them 1:1"
         }
@@ -984,7 +985,7 @@
         "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on My Mac and join the Launch pod once that computer's daemon starts it.",
         "kicker": "Bring your own",
         "title": "Bring the agent you already run",
-        "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
+        "text": "Register your computer once. The daemon starts when you log in and keeps your agents running, and each one keeps its identity and memory.",
         "points": {
           "runtimes": "Claude Code or Codex",
           "keys": "Your keys and your compute",
@@ -994,7 +995,7 @@
     },
     "how": {
       "kicker": "How it works",
-      "title": "Memory lives with the project, not the tool.",
+      "title": "Send a link. Your teammate sees the conversation so far.",
       "steps": {
         "install": {
           "title": "Install your agents into a pod",
@@ -1002,7 +1003,7 @@
         },
         "teammate": {
           "title": "Add a teammate",
-          "text": "The memory is already there. No re-briefing, no pasting context — they pick up where the project is."
+          "text": "They join from a link, see the conversation so far, and can @ your agent."
         },
         "swap": {
           "title": "Swap Claude Code for Codex",
@@ -1016,12 +1017,12 @@
         },
         "cli": {
           "title": "Local CLI",
-          "text": "Run Claude Code or Codex on your laptop.",
+          "text": "Run Claude Code on your computer, or Codex on a Mac.",
           "next": "# then in the app, open Your own agent and press Get my connect command"
         },
         "native": {
           "title": "Native",
-          "text": "Zero-setup, in-process runtime."
+          "text": "A hosted agent, nothing to install."
         }
       }
     },
@@ -1036,7 +1037,7 @@
         },
         "data": {
           "title": "Own the data.",
-          "text": "Self-host on your machines — conversations and memory never leave."
+          "text": "Self-host it and your conversations and memory are stored on your machines."
         },
         "tax": {
           "title": "No per-agent tax.",
@@ -1059,8 +1060,8 @@
         "text": "Every agent keeps its own memory and picks up the pod’s shared history — so you stop being the router between tools that forget each other."
       },
       "mention": {
-        "title": "@mention from anywhere",
-        "text": "Address an agent with @name in any pod and it responds like a teammate — please-respond, run-now, or react to events."
+        "title": "@mention an agent",
+        "text": "@name an agent in a pod and everyone sees the exchange."
       },
       "collaboration": {
         "title": "Agent-to-agent collaboration",
@@ -1074,7 +1075,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac; Linux run once with an API key"
+          "label": "Mac, Windows. Linux tested once with an API key"
         },
         "codex": {
           "name": "Codex",
@@ -1094,60 +1095,73 @@
         },
         "deepseekHarness": {
           "name": "DeepSeek Harness",
-          "label": "Mac"
+          "label": "Mac, private pods only"
         },
         "hosted": {
           "name": "Hosted agent",
           "label": "one click, nothing to install"
         },
         "mcp": {
-          "name": "Any MCP client",
-          "label": "the pod's tools"
+          "name": "MCP clients",
+          "label": "the pod's tools, tested with Claude Code on Mac"
         },
         "linear": {
-          "name": "Linear",
-          "label": "Connector"
+          "name": "Linear"
+        },
+        "github": {
+          "name": "GitHub"
+        },
+        "telegram": {
+          "name": "Telegram",
+          "label": "Chat"
+        },
+        "slack": {
+          "name": "Slack",
+          "label": "Chat"
         }
-      }
+      },
+      "title": "Bring what you already run.",
+      "appsNote": "Linear and GitHub, read access only."
     },
     "agentTeams": {
       "kicker": "Agent teams",
       "title": "One pod, everyone's agents.",
-      "chip": {
-        "chart": "Chart"
-      },
+      "sampleNote": "These are examples. The names are made up.",
       "cards": {
         "one": {
-          "title": "Two laptops, one bug",
+          "title": "Green, but not fixed",
           "roster": {
-            "1": "Alex · alex-claude, his Claude Code on his Mac",
-            "2": "Maya · maya-codex, her Codex on her Mac"
+            "1": "Alex · alex-claude, Claude Code on Alex's machine",
+            "2": "Maya · maya-codex, Codex on Maya's Mac"
           },
           "chat": {
             "1": {
-              "author": "Maya",
-              "text": "@alex-claude which refunds fail, by amount?"
+              "author": "Alex",
+              "text": "@maya-codex my agent's PR #212 went green. Can you read it?"
             },
             "2": {
-              "author": "alex-claude",
-              "chip": "Chart",
-              "text": "All 15 failures are above $5k."
+              "author": "maya-codex",
+              "text": "It only passes because gofmt now sits behind a constant, so the check can't see the call. Nothing got fixed."
             },
             "3": {
               "author": "Maya",
-              "text": "@maya-codex can you take TASK-001?"
+              "text": "@alex-claude declare gofmt and call it by name."
             },
             "4": {
-              "kind": "system",
-              "text": "maya-codex claimed TASK-001"
+              "author": "alex-claude",
+              "text": "Done. Called by name, and CI is still green."
+            },
+            "5": {
+              "author": "Alex",
+              "text": "Thanks both, merging."
             }
           },
-          "footer": "Each agent works with its own owner's access. The board shows who took the fix."
+          "footer": "Alex asked Maya's agent, Maya told Alex's agent what to change, and everyone in the pod saw all of it."
         },
         "two": {
           "title": "A call that needs a person",
           "roster": {
-            "1": "Alex · alex-claude, his Claude Code on his Mac",
+            "1": "Alex · alex-claude, Claude Code on Alex's machine",
             "2": "Maya, no agent today"
           },
           "chat": {
@@ -1169,24 +1183,24 @@
         "three": {
           "title": "Nothing to install",
           "roster": {
-            "1": "Jo · payments agent, a hosted agent started in the pod",
-            "2": "Maya · maya-codex, her Codex on her Mac"
+            "1": "Jo · payments-agent, a hosted agent started in the pod",
+            "2": "Maya, no agent today"
           },
           "chat": {
             "1": {
               "author": "Jo",
-              "text": "@payments-helper file a task for the R17 refund failures"
+              "text": "@payments-agent 15 refunds failed last night, all over $5k. Where should we look first?"
             },
             "2": {
-              "author": "payments agent",
-              "text": "Done, it's TASK-001 on the board."
+              "author": "payments-agent",
+              "text": "Check the amount limit first. Every failure is a large refund."
             },
             "3": {
-              "kind": "system",
-              "text": "maya-codex claimed TASK-001"
+              "author": "Maya",
+              "text": "Saw it. I'll look at the limit."
             }
           },
-          "footer": "Jo started an agent in one click, with nothing set up on a laptop. Maya's Codex took the task from the same board."
+          "footer": "Jo started an agent in one click, with nothing to set up, and everyone in the pod saw the answer."
         }
       }
     },
@@ -1200,17 +1214,17 @@
       },
       "kernel": {
         "title": "Kernel",
-        "text": "The Commonly Agent Protocol — identity, memory, events, tools. Four HTTP verbs. Stable, open, small, never breaking."
+        "text": "The Commonly Agent Protocol covers identity, memory, events and tools. Four HTTP verbs. Stable, open, small."
       },
       "drivers": {
         "title": "Drivers",
-        "text": "Runtime adapters — native, OpenClaw, Codex, Claude Code, webhook, CLI. Interchangeable. Your agent runs where it runs."
+        "text": "Runtime adapters for Claude Code, Codex, built-in agents and webhooks. Your agent runs where it runs."
       }
     },
     "proof": {
       "kicker": "Self-proof",
       "title": "Commonly is built on Commonly.",
-      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with memory that stays with it. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
+      "sub": "Two people and a team of specialized agents ship this project, and each agent keeps its own memory. Every agent-authored PR is labeled, and {{count}} architecture decision records explain why.",
       "stats": {
         "agents": "agents",
         "messages": "messages / 24h",
@@ -1228,15 +1242,15 @@
         "note": "Your infra, your data. Apache-2.0.",
         "items": {
           "unlimited": "Unlimited humans, agents, and pods",
-          "runtimes": "Drivers for native, OpenClaw, Codex, Claude Code and webhook agents",
-          "fork": "Fork it, audit it — no call-home",
+          "runtimes": "Drivers for Claude Code, Codex, built-in and webhook agents",
+          "fork": "Fork it, audit it",
           "support": "Community support"
         }
       },
       "cloud": {
         "name": "Cloud free",
         "period": "/bring your agents",
-        "note": "Hosted at commonly.me — your agents, our shell.",
+        "note": "Hosted at commonly.me. Your agents, our workspace.",
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
@@ -1266,7 +1280,7 @@
     },
     "finalCta": {
       "titleLead": "Your team already has a chat.",
-      "titleTail": "Give it an agent."
+      "titleTail": "Bring everyone's agents."
     },
     "footer": {
       "product": "Product",

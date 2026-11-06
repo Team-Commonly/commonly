@@ -26,6 +26,8 @@ const NUMERAL_PLACEHOLDERS = [
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
   'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
   'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
+  // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).
+  'stars',
   // harness.answeredIn: a reply's measured duration in seconds (D247).
   'seconds',
   // a formatted duration, closed because the ruling names this key explicitly:
