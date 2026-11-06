@@ -228,6 +228,27 @@ describe('a provider content refusal', () => {
     expect(spawn.mock.calls[2][0]).toContain('[A person addressed this to you directly');
   });
 
+  test('an item run alone doesn\'t keep an attendance its own read couldn\'t report', async () => {
+    const spawn = jest.fn(async (prompt) => {
+      if (prompt.includes('169.254.169.254')) throw refusal();
+      return { text: 'NO_REPLY' };
+    });
+    const run = setup({ events: [poisonEvent(), normalEvent()], spawn });
+    const read = run.mockGet.getMockImplementation();
+    let messageReads = 0;
+    run.mockGet.mockImplementation(async (route, ...rest) => {
+      if (!String(route).endsWith('/messages')) return read(route, ...rest);
+      messageReads += 1;
+      if (messageReads > 1) throw new Error('read failed');
+      return { ...(await read(route, ...rest)), otherAgentsInPod: true, peopleInPod: 1 };
+    });
+    await drainMicrotasks();
+    run.handle.stop();
+
+    expect(spawn.mock.calls[0][0]).toContain('Another agent is in this pod');
+    expect(spawn.mock.calls[2][0]).not.toContain('Another agent is in this pod');
+  });
+
   test('a mixed batch whose ordinary item then fails for another reason leaves it unacked for redelivery', async () => {
     const spawn = jest.fn(async (prompt) => {
       if (prompt.includes('169.254.169.254')) throw refusal();
