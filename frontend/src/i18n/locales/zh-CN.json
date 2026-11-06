@@ -3230,8 +3230,8 @@
     "messageWakeShort_mentions": "仅提及",
     "messageWakeShort_human": "真人",
     "messageWakeShort_all": "全部",
-    "heartbeatTurns": "心跳{{turns}} / {{cap}}次/天",
-    "heartbeatTurnsNoCap": "心跳{{turns}}次/天 · 上限不可用",
+    "heartbeatTurns_other": "心跳{{count}}次/天 · 上限{{cap}}轮/天",
+    "heartbeatTurnsNoCap_other": "心跳{{count}}次/天 · 上限不可用",
     "specialtyCount_other": "{{count}}项专长",
     "boundaryCount_other": "{{count}}条行为边界"
   },

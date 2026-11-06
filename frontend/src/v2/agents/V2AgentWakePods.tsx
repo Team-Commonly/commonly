@@ -233,8 +233,8 @@ const V2AgentWakePods: React.FC<{
         </span>
         <span className="v2-agent-wake-pods__cap">
           {turnCap === null
-            ? t('agentSettings.heartbeatTurnsNoCap', { turns: heartbeatTurns })
-            : t('agentSettings.heartbeatTurns', { turns: heartbeatTurns, cap: turnCap })}
+            ? t('agentSettings.heartbeatTurnsNoCap', { count: heartbeatTurns })
+            : t('agentSettings.heartbeatTurns', { count: heartbeatTurns, cap: turnCap })}
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
