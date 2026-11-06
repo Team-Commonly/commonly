@@ -220,10 +220,12 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
 
-// What a hosted agent posts when someone addressed it and its day's turns are
-// gone. Before F234 the turn just ended, and the person read that as a broken
-// agent. Fixed text, and it posts only to a person who asked: a heartbeat stays quiet.
-export const HOSTED_TURNS_USED_LINE = 'I\'ve used today\'s turns, so I can\'t answer this one. '
+// What a hosted agent posts when a person addressed it and no turns are left.
+// Before F234 the turn just ended, and the person read that as a broken agent.
+// Fixed text. It names no owner: the per-user ceiling is the owner's, across all
+// their agents, so the agent may have used none of them and the asker may not
+// be the owner.
+export const HOSTED_TURNS_USED_LINE = 'There are no turns left today, so I can\'t answer this one. '
   + 'They reset at midnight UTC.';
 
 // --- helpers ---------------------------------------------------------------
@@ -2047,10 +2049,18 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
-  // F234: a hosted turn stopped before it ran still owes the person who addressed
-  // the agent a word. A failed post doesn't change the stop.
+  // F234: a hosted turn stopped before it ran still owes a waiting person a word.
+  // Kernel wakes arrive as chat.mention too, and nobody is waiting on those; the
+  // sweep would repeat the line all day. An agent's @ gets nothing, as it did
+  // before: that is the loop the cap exists to end. No answeringMessageId: this
+  // line isn't an answer, and that field would close the first-task card on it.
+  // A failed post doesn't change the stop.
   const tellAddressedPerson = async (content: string): Promise<void> => {
     if (!hostedNative || !wasDirectlyAddressed(trigger)) return;
+    const payload = (trigger.payload || {}) as Record<string, unknown>;
+    if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
+      || payload.boardWake === true || payload.welcomeWake === true) return;
+    if (!await triggerTextIsHumanWritten(trigger)) return;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentMessageService = require('./agentMessageService');
@@ -2065,7 +2075,6 @@ export async function runAgent(
         metadata: { source: 'native-runtime', runFailed: true },
         failureNotice: true,
         kind: 'error',
-        answeringMessageId: String((trigger.payload as { messageId?: unknown } | null)?.messageId || '') || undefined,
         threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
       });
     } catch (postErr) {
