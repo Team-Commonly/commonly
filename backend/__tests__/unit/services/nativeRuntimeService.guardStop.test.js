@@ -72,7 +72,7 @@ const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
-const { runAgent, HOSTED_RUN_FAILED_LINE } = require('../../../services/nativeRuntimeService');
+const { runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const OWNER = '507f1f77bcf86cd799439099';
@@ -594,6 +594,28 @@ describe('a hosted turn the guard stops, or that fails', () => {
 
     expect(guardChecks()).toHaveLength(0);
     expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+  });
+
+  // F234: a stop before the turn ran used to end in silence.
+  test('a person who addresses an agent past its daily cap is told, in plain words', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), mention);
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({ failureNotice: true, kind: 'error' });
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('a person who addresses an agent past the per-user ceiling is told too', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
+    const result = await runAgent(hostedInstall(), mention);
+    expect(result).toMatchObject({ status: 'failed', errorKind: 'user_ceiling' });
+    expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+  });
+
+  test('a heartbeat past its cap stays quiet', async () => {
+    AgentRun.countDocuments.mockResolvedValueOnce(100000);
+    await runAgent(hostedInstall(), { type: 'heartbeat', eventId: 'hb', payload: {} });
+    expect(posted()).toEqual([]);
   });
 
   test('a model error names the model in plain words, keeps the reason on the run, and uses no turn', async () => {

@@ -220,6 +220,12 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
 
+// What a hosted agent posts when someone addressed it and its day's turns are
+// gone. Before F234 the turn just ended, and the person read that as a broken
+// agent. Fixed text, and it posts only to a person who asked: a heartbeat stays quiet.
+export const HOSTED_TURNS_USED_LINE = 'I\'ve used today\'s turns, so I can\'t answer this one. '
+  + 'They reset at midnight UTC.';
+
 // --- helpers ---------------------------------------------------------------
 
 type PlainConfig = Record<string, any>;
@@ -2041,6 +2047,32 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // F234: a hosted turn stopped before it ran still owes the person who addressed
+  // the agent a word. A failed post doesn't change the stop.
+  const tellAddressedPerson = async (content: string): Promise<void> => {
+    if (!hostedNative || !wasDirectlyAddressed(trigger)) return;
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentMessageService = require('./agentMessageService');
+      await AgentMessageService.postMessage({
+        agentName,
+        instanceId,
+        podId,
+        content,
+        messageType: 'text',
+        displayName,
+        installationConfig: cfg,
+        metadata: { source: 'native-runtime', runFailed: true },
+        failureNotice: true,
+        kind: 'error',
+        answeringMessageId: String((trigger.payload as { messageId?: unknown } | null)?.messageId || '') || undefined,
+        threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
+      });
+    } catch (postErr) {
+      console.warn('[native-runtime] stopped-turn line not posted:', (postErr as Error).message);
+    }
+  };
+
   // A first-contact greeting is not one of the person's turns: it fires once
   // per person and agent (AgentFirstContact), before they have asked anything,
   // so neither count below spends it (QA walk, 2026-10-16: the greeting cost 1
@@ -2081,6 +2113,7 @@ export async function runAgent(
           `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
           + `in pod ${podId} — declining until UTC midnight`,
         );
+        await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
@@ -2126,9 +2159,11 @@ export async function runAgent(
             `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
             + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
           );
+          await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
           return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
         }
       } catch (err) {
+        await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
         return failedResult(
           '',
           'user_ceiling_check_failed',
@@ -2333,6 +2368,7 @@ export async function runAgent(
     run.completedAt = new Date();
     await run.save();
     emitStop();
+    await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
     return failedResult(runId, 'config', run.errorMessage);
   }
 
