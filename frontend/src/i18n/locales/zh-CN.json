@@ -1729,10 +1729,10 @@
         "notShown": "未显示。这个文件共{{bytes}}字节。"
       },
       "notice": {
-        "contentsCut": "这里没有显示全部内容：文件内容共{{total}}字节，已显示{{shown}}字节。批准后会提交全部内容。",
-        "messageCut": "提交信息到这里被截断了。批准后会记录全部{{total}}个字符。",
-        "bodyCut": "正文到这里被截断了：共{{total}}个字符，已显示{{shown}}个。批准后会发送全部内容。",
-        "pushContents": "推送只显示提交 ID 和大小，不显示具体内容。批准后会推送全部内容。"
+        "contentsCut": "文件内容没有显示完：共{{total}}字节，这里只显示了{{shown}}字节。批准后会全部提交。",
+        "messageCut": "提交信息没有显示完。批准后会完整记录，共{{total}}个字符。",
+        "bodyCut": "正文没有显示完：共{{total}}个字符，这里只显示了{{shown}}个。批准后会全部发送。",
+        "pushContents": "这里只显示提交 ID 和大小，看不到具体内容。批准后会推送全部内容。"
       },
       "ownerOnly": "参数仅对批准负责人可见。",
       "ran": "已批准 — 工具调用已执行。",
@@ -1765,14 +1765,14 @@
         "branch": "分支",
         "lands": "写入位置",
         "bodyLength": "正文长度",
-        "draft": "草稿",
+        "draft": "草稿 PR",
         "fileCount": "文件数",
         "file": "文件",
         "branchExists": "已有分支",
         "parentCommit": "父提交",
         "baseCommit": "基准提交",
         "newCommit": "新提交",
-        "bundleSize": "Bundle 大小"
+        "bundleSize": "推送包大小"
       },
       "exactArgs": "原始参数"
     },

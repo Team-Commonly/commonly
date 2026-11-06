@@ -1740,8 +1740,8 @@
       },
       "notice": {
         "contentsCut": "Not all of this is shown: {{shown}} of {{total}} bytes of file contents. Approving commits all of it.",
-        "messageCut": "The commit message is cut here. Approving records all {{total}} characters.",
-        "bodyCut": "The body is cut here: {{shown}} of {{total}} characters. Approving sends all of it.",
+        "messageCut": "The commit message is cut short. Approving records all {{total}} characters.",
+        "bodyCut": "The body is cut short: {{shown}} of {{total}} characters. Approving sends all of it.",
         "pushContents": "A push shows commit ids and size, not its contents. Approving pushes all of it."
       },
       "ownerOnly": "Arguments are visible to the approval owner only.",
