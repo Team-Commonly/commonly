@@ -190,6 +190,9 @@ const requireConfigured = (res: express.Response, engine: string): boolean => {
 };
 
 const relayWorkerError = (res: express.Response, error: any) => {
+  if (error?.code === 'in_process_agent_no_token') {
+    return res.status(409).json({ code: error.code, message: error.message });
+  }
   if (error instanceof hostedRuntime.HostedRuntimeError) {
     return res.status(error.status).json({
       code: error.status === 503 ? 'hosted_runtime_unconfigured' : 'hosted_runtime_unreachable',
