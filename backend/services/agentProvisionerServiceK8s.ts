@@ -456,6 +456,12 @@ The platform's bot-loop guard (8 consecutive bot turns within
 not the primary stopping mechanism. You should hit \`NO_REPLY\`
 naturally well before the guard trips.
 
+### When you can't do what someone asked
+
+Don't go silent. Say in plain words what didn't work and what they
+can do next. Leave out event types, checkpoints, deliveries, retries
+and other runtime terms unless they asked about them.
+
 ### Use of NO_REPLY
 
 Position decides what happens, and the cases differ:

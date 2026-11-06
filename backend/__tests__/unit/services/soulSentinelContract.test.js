@@ -67,3 +67,13 @@ describe('SOUL footer — the NO_REPLY passage matches the sanitizer', () => {
     expect(sanitize('```\nNO_REPLY\n```')).toBe('');
   });
 });
+
+// F233, D247: CLI wrapper and hosted turns carry this in their frames; a seat
+// on this driver gets it from the SOUL footer.
+describe('the SOUL footer says how a failure should read', () => {
+  it('in plain words, leaving out runtime terms', () => {
+    const source = fs.readFileSync(PROVISIONER_SOURCE, 'utf8');
+    expect(source).toContain('### When you can\'t do what someone asked');
+    expect(source).toContain('Say in plain words what didn\'t work');
+  });
+});
