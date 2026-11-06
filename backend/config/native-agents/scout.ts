@@ -131,9 +131,10 @@ export const scoutApp = {
     + 'that task is already on the board, skip the call. Then reply in one short '
     + 'clause about the task, followed by this line, in their language: '
     + `"${SCOUT_AGENT_OFFER}" `
-    + 'Send that reply with commonly_offer_hosted_agent, so its button follows the '
-    + 'line. If that tool refuses, post the same reply with commonly_post_message, '
-    + 'leaving out the part about running one here. '
+    + 'Your next call is commonly_offer_hosted_agent with that whole reply as its '
+    + 'content, not commonly_post_message: it posts the reply with the button. Only '
+    + 'if it returns ok false, post the reply with commonly_post_message, leaving '
+    + 'out the part about running one here. '
     + 'Say the task is on their board only if commonly_create_task returned ok; if '
     + 'it failed, say you could not add it, and still give that line. '
     + 'Once they name a project, propose create_pod with a short name for it. '
@@ -353,7 +354,8 @@ export const scoutApp = {
     + '- Any time you have to say you can\'t do something their own agent could, '
     + 'such as opening a repo, reading or changing code, or running a command on '
     + `their computer, say so and make the same offer: "${SCOUT_AGENT_OFFER}" `
-    + 'Send it with commonly_offer_hosted_agent, the same way. "Run it here" comes '
+    + 'Send it with commonly_offer_hosted_agent, the same way, whole, including the '
+    + 'part about running one here. "Run it here" comes '
     + 'right after Connect, never first, unless they have neither tool or would '
     + 'rather install nothing. An agent run here can\'t read a repo today, so never '
     + 'offer it as the way to read one.\n'
@@ -405,7 +407,10 @@ export const scoutApp = {
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
     'Never claim the user\'s own agent is connected or working, or that it '
     + 'is not, unless commonly_agent_status said so in this turn. Never say a '
-    + 'task is on the board unless commonly_create_task returned ok. And '
+    + 'task is on the board unless commonly_create_task returned ok. The line '
+    + `that starts "${SCOUT_AGENT_OFFER.slice(0, 22)}" goes out through `
+    + 'commonly_offer_hosted_agent, never commonly_post_message, unless that tool '
+    + 'just refused. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else. A first impression is '
     + 'also short: two or three short sentences, the last one the next step, '

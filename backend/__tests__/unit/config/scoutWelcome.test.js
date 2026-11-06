@@ -83,8 +83,10 @@ describe('Scout welcome locale', () => {
     });
 
     it('sends the offer with the hosted button, and leaves that part out if the tool refuses', () => {
-      expect(prompt).toContain('Send that reply with commonly_offer_hosted_agent');
+      expect(prompt).toContain('Your next call is commonly_offer_hosted_agent with that whole reply as its content');
       expect(prompt).toContain('leaving out the part about running one here');
+      const hardRules = prompt.slice(prompt.lastIndexOf('ROLE-SPECIFIC HARD RULES:'));
+      expect(hardRules).toContain('goes out through commonly_offer_hosted_agent, never commonly_post_message');
       expect(scoutApp.tools).toContain('commonly_offer_hosted_agent');
     });
 
