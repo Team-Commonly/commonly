@@ -369,6 +369,16 @@ describe('/api/hosted', () => {
     expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 2, cap: 1, holders: [] });
   });
 
+  it('says why when the identity runs in process, rather than a bare 500', async () => {
+    mockFindOne.mockResolvedValue(makeInstallation());
+    mockIssueToken.mockRejectedValueOnce(Object.assign(new Error('Commonly runs this agent'), {
+      code: 'in_process_agent_no_token', status: 409,
+    }));
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ code: 'in_process_agent_no_token', message: 'Commonly runs this agent' });
+  });
+
   it('mints server-side with owner lineage, provisions, records, and never returns the token', async () => {
     const installation = makeInstallation();
     mockFindOne.mockResolvedValue(installation);
