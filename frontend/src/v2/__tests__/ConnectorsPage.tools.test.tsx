@@ -1176,11 +1176,19 @@ describe('Connectors page: tools', () => {
   });
 
   it('a live GitHub grant carries the install warning on its reach link', async () => {
-    const entry = { ...linearEntry, entryId: 'github-mcp', accessPage: 'https://github.com/apps/commonly-connect/installations/new' };
-    mockTools({ entries: [entry], grants: [grantLinear] });
+    const tool = 'github-mcp.list_issues';
+    const entry = {
+      ...linearEntry,
+      installableId: 'github-mcp',
+      entryId: 'github-mcp',
+      label: 'GitHub MCP',
+      accessPage: 'https://github.com/apps/commonly-connect/installations/new',
+      tools: [{ name: tool, requiredWriteMode: 'read', irreversible: false }],
+    };
+    mockTools({ entries: [entry], grants: [{ ...grantLinear, tools: [tool] }] });
     renderPage();
-    const { aside } = await openRow('Linear', 'View Linear in Launch pod');
-    const link = within(aside).getByRole('link', { name: 'Choose what Linear can reach' });
+    const { aside } = await openRow('GitHub MCP', 'View GitHub MCP in Launch pod');
+    const link = within(aside).getByRole('link', { name: 'Choose what GitHub MCP can reach' });
     expect(link.closest('.v2-cx-warning')).toHaveTextContent("On GitHub, choose 'Only select repositories'.");
   });
 

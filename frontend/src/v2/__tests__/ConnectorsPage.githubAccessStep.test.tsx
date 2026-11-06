@@ -115,6 +115,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
     expect(notice).toHaveTextContent(
       'Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones.',
     );
+    expect(notice).toHaveTextContent('Public repos are readable either way.');
     const link = within(notice).getByRole('link', { name: fill(en.connectors.hostedMcpAccessOpen) });
     expect(link).toHaveTextContent('Open GitHub');
     expect(link).toHaveAttribute('href', accessPage);
@@ -150,6 +151,7 @@ describe('connected, with the App not installed yet (next=access)', () => {
       const notice = (await screen.findByText('Only select repositories', { exact: false })).closest('.v2-cx-warning');
       expect(notice).toHaveTextContent('在 GitHub 上选择“Only select repositories”。');
       expect(notice).toHaveTextContent('Commonly Connect 就能访问你安装到的账号或组织下的所有仓库');
+      expect(notice).toHaveTextContent('公开仓库无论怎么选都能读取。');
       expect(within(notice).getByRole('link', { name: '打开 GitHub' })).toHaveAttribute('href', accessPage);
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });

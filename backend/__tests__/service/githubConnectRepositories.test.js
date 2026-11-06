@@ -446,7 +446,7 @@ describe('F221: the picker for a person\'s own repositories', () => {
     await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
     mockGithub.byToken['alice-user-token'].installations[0].id = 7999;
     mockGithub.byToken['alice-user-token'].repositories['7999'] = [repo('Outside-Team/Widget')];
-    expect((await list(alice)).body.repositories).toEqual([{ installationId: '7999', owner: 'Outside-Team', repo: 'Widget' }]);
+    expect((await list(alice)).body.repositories).toEqual([{ installationId: '7999', owner: 'Outside-Team', repo: 'Widget', private: true }]);
   });
 
   test('skips a suspended installation', async () => {
