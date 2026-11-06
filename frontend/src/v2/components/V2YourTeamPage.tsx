@@ -213,13 +213,13 @@ const V2YourTeamPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      await axios.post('/api/auth/redeem-invitation', { code }, { headers });
+      await axios.post('/api/auth/redeem-invitation', { invitationCode: code }, { headers });
       setRedeemed(true);
       setRedeemOpen(false);
       setRedeemCode('');
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setRedeemError(msg || t('yourTeam.errors.redeemFailed'));
+    } catch {
+      // The server's text is English only, so the translated line stands for every refusal.
+      setRedeemError(t('yourTeam.errors.redeemFailed'));
     } finally {
       setRedeeming(false);
     }
