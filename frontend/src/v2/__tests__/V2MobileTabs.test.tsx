@@ -37,6 +37,17 @@ describe('V2MobileTabs', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/v2');
   });
 
+  test('Connectors lights Settings, the tab it sits under on a phone', () => {
+    render(
+      <MemoryRouter initialEntries={['/v2/connectors']}>
+        <V2MobileTabs needsYouCount={0} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+    expect(document.querySelectorAll('.v2-mobile-tabs__item--active')).toHaveLength(1);
+  });
+
   test('at zero there is no badge and no count in the name', () => {
     render(
       <MemoryRouter initialEntries={['/v2']}>
