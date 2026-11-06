@@ -26,6 +26,9 @@ jest.setTimeout(30000);
 // eslint-disable-next-line global-require
 require('./utils/mongoCleanup').installMongoMemoryServerCleanup();
 
+// eslint-disable-next-line global-require
+require('./utils/supertestLoopback').installSupertestLoopback();
+
 if (process.env.INTEGRATION_TEST) {
   // Connect to real services — expects Docker Compose dev stack running:
   //   ./dev.sh up   (starts mongo on :27017 and postgres on :5432)
