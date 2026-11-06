@@ -420,6 +420,35 @@ describe('adding an existing agent to another pod', () => {
       expect(res.body).toMatchObject({ code: 'agent_already_in_pod', status: 'active' });
     });
 
+    it('finds a legacy mixed-case row already active there', async () => {
+      await seedRow(owner._id, target._id, { instanceId: 'Default' });
+      const res = await add(owner, target._id);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'agent_already_in_pod', status: 'active' });
+      expect(await AgentInstallation.countDocuments({ agentName: NAME, podId: target._id })).toBe(1);
+    });
+
+    it('finds a legacy row with no instanceId', async () => {
+      await seedRow(owner._id, target._id, { instanceId: null });
+      expect((await add(owner, target._id)).status).toBe(409);
+      expect(await AgentInstallation.countDocuments({ agentName: NAME, podId: target._id })).toBe(1);
+    });
+
+    it('brings back a legacy mixed-case row rather than adding one beside it', async () => {
+      const { insertedId } = await seedRow(owner._id, target._id, { instanceId: 'Default', status: 'uninstalled' });
+      expect((await add(owner, target._id)).status).toBe(200);
+      const rows = await AgentInstallation.find({ agentName: NAME, podId: target._id }).lean();
+      expect(rows.map((entry) => [String(entry._id), entry.status])).toEqual([[String(insertedId), 'active']]);
+    });
+
+    it('install finds a legacy mixed-case row of a named instance', async () => {
+      await seedRow(owner._id, target._id, { instanceId: 'Lab' });
+      const res = await install(owner, target._id, { runtime: { runtimeType: 'webhook' } }, { instanceId: 'lab' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Agent already installed in this pod');
+      expect(await AgentInstallation.countDocuments({ agentName: NAME, podId: target._id })).toBe(1);
+    });
+
     it('does not undo a pause in the target pod', async () => {
       await seedRow(owner._id, target._id, { status: 'paused' });
       const res = await add(owner, target._id);

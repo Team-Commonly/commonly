@@ -65,7 +65,9 @@ router.get('/', credentialRateLimit, auth, async (req: AuthReq, res: express.Res
       // same credential id and a later revoke remains visible in Settings.
       const installations = await AgentInstallation.find({ agentName, instanceId })
         .select('installedBy runtimeTokens').lean();
-      const ownerUserId = installations[0]?.installedBy || req.user?.id;
+      // Past the check above a caller who isn't an admin owns the identity, and
+      // the first row here can be a guest's DM.
+      const ownerUserId = caller?.role === 'admin' ? installations[0]?.installedBy || req.user?.id : req.user?.id;
       type EmbeddedToken = { tokenHash?: string; label?: string; createdAt?: Date; lastUsedAt?: Date };
       const embedded: EmbeddedToken[] = [...(agent.agentRuntimeTokens || []),
         ...installations.flatMap((entry: { runtimeTokens?: EmbeddedToken[] }) => entry.runtimeTokens || [])];

@@ -409,11 +409,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     }
 
     const existingInPod = await AgentInstallation.findOne({
-      agentName: agentName.toLowerCase(),
+      ...installationIdentityFilter(agentName.toLowerCase(), normalizedInstanceId),
       podId,
-      instanceId: normalizedInstanceId,
       status: 'active',
-    });
+    }, null, { collation: IDENTITY_COLLATION });
 
     const copyMemory = async () => {
       if (req.body.memoryFrom !== undefined) {
@@ -914,10 +913,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
     const previousRow = installsInProcess
       ? await AgentInstallation.findOne({
-        agentName: { $eq: installationKey.agentName },
+        ...installationIdentityFilter(installationKey.agentName, normalizedInstanceId),
         podId: { $eq: podId },
-        instanceId: { $eq: normalizedInstanceId },
-      })
+      }, null, { collation: IDENTITY_COLLATION })
       : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
@@ -1318,8 +1316,8 @@ installRouter.post('/agents/:name/pods/:podId', logAgentInstallRefusal('/api/reg
       return res.status(403).json({ code: 'dm_membership_refused', error: 'A DM is between its two members; an agent can\'t be added to one.' });
     }
     const here = await AgentInstallation.findOne({
-      agentName, podId, instanceId, status: { $ne: 'uninstalled' },
-    }).select('status').lean();
+      ...installationIdentityFilter(agentName, instanceId), podId, status: { $ne: 'uninstalled' },
+    }, null, { collation: IDENTITY_COLLATION }).select('status').lean();
     if (here) return res.status(409).json(alreadyInPod(here.status));
 
     const { source, fromProjection } = resolved;
