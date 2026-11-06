@@ -43,6 +43,8 @@ jest.mock('../../../models/User', () => ({
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
+  ownsIdentityCountingPaused: jest.fn().mockResolvedValue({ owned: true }),
+  relabelIdentityDmRows: jest.fn().mockResolvedValue([]),
 }));
 
 const Pod = require('../../../models/Pod');

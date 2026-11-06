@@ -245,6 +245,7 @@ export interface IAgentInstallationRegistry extends Document {
 export interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
+  rowInPod(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<IAgentInstallationRegistry | null>;
   install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string; stampInstaller?: boolean }): Promise<IAgentInstallationRegistry>;
   upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
   uninstall(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<mongoose.UpdateWriteOpResult>;
@@ -338,6 +339,22 @@ AgentInstallationSchema.statics.getInstalledAgents = function (podId: Types.Obje
   return this.find({ podId, status: 'active' }).lean();
 };
 
+/**
+ * The row a write in this pod lands on. A legacy row can be mixed-case or have
+ * no instanceId, and the unique index wouldn't stop a second row beside it, so
+ * an active row decides, and otherwise the oldest. `_id` orders the read:
+ * without it the order is whichever index the planner took. Everything that
+ * picks a row asks here, so a rollback's snapshot is of the row install changes.
+ */
+AgentInstallationSchema.statics.rowInPod = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
+  const inPod = await this.find(
+    { ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId: { $eq: podId } },
+    null,
+    { collation: IDENTITY_COLLATION, sort: { _id: 1 } },
+  );
+  return inPod.find((row: { status?: string }) => row.status === 'active') || inPod[0] || null;
+};
+
 AgentInstallationSchema.statics.isInstalled = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
   const installation = await this.findOne({
     ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId, status: 'active',
@@ -389,12 +406,7 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   const {
     version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
   } = options;
-  // A legacy row can be mixed-case or have no instanceId, and the unique index
-  // wouldn't stop a second row beside it. An active one decides, if there are two.
-  const inPod = await this.find(
-    { ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId }, null, { collation: IDENTITY_COLLATION },
-  );
-  const existing = inPod.find((row: { status?: string }) => row.status === 'active') || inPod[0];
+  const existing: any = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
     if (stampInstaller && existing.status === 'uninstalled') existing.installedBy = installedBy;
@@ -426,7 +438,10 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
  *
  * Atomically created via findOneAndUpdate with upsert+setOnInsert so
  * concurrent autoJoin attempts can't race a duplicate row past the
- * unique index on (agentName, podId, instanceId).
+ * unique index on (agentName, podId, instanceId). A row already here, legacy
+ * spelling included, is updated by id; with none, the upsert stays on the exact
+ * key, because the server retries a lost insert race only for a plain equality
+ * on the unique index's own fields.
  */
 AgentInstallationSchema.statics.upsert = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
@@ -440,7 +455,8 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   const {
     version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
   } = options;
-  const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
+  const here = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
+  const filter = here ? { _id: { $eq: here._id } } : { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {
     $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {

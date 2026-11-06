@@ -912,10 +912,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
 
     const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
     const previousRow = installsInProcess
-      ? await AgentInstallation.findOne({
-        ...installationIdentityFilter(installationKey.agentName, normalizedInstanceId),
-        podId: { $eq: podId },
-      }, null, { collation: IDENTITY_COLLATION })
+      ? await AgentInstallation.rowInPod(agentName, podId, normalizedInstanceId)
       : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,

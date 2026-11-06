@@ -311,6 +311,46 @@ describe('installing an in-process runtime on an identity that holds a token', (
       expect(res.body.code).toBe('runtime_token_held');
     });
 
+    it('with two stopped rows in a pod, takes back the one it brought back', async () => {
+      await byoSeat('two-rows');
+      const row = (instanceId, status) => ({
+        agentName: 'two-rows', instanceId, podId: privatePod._id, installedBy: owner._id, status, version: '1.0.0',
+        config: { runtime: { runtimeType: 'webhook' } },
+      });
+      await AgentInstallation.collection.insertMany([row('default', 'paused'), row('Default', 'uninstalled')]);
+      // The rollback's read and the install's own must agree however a read orders them.
+      const realFind = AgentInstallation.find.bind(AgentInstallation);
+      const reversed = jest.spyOn(AgentInstallation, 'find').mockImplementation((filter, projection, options) => {
+        const read = realFind(filter, projection, options);
+        return options?.collation && filter?.agentName === 'two-rows'
+          ? read.then((rows) => [...rows].reverse()) : read;
+      });
+
+      // The key arrives after the route's first check, so the write has to be undone.
+      const realInstall = AgentInstallation.install.bind(AgentInstallation);
+      const installing = jest.spyOn(AgentInstallation, 'install').mockImplementation(async (...args) => {
+        const installed = await realInstall(...args);
+        await giveUserToken('two-rows');
+        return installed;
+      });
+
+      let res;
+      try {
+        res = await install({
+          agentName: 'two-rows', podId: privatePod._id.toString(), config: { runtime: { runtimeType: 'hosted' } }, scopes: [],
+        });
+      } finally {
+        reversed.mockRestore();
+        installing.mockRestore();
+      }
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('runtime_token_held');
+      const rows = await AgentInstallation.find({ agentName: 'two-rows', podId: privatePod._id }).sort({ _id: 1 }).lean();
+      expect(rows.map((entry) => [entry.instanceId, entry.status]))
+        .toEqual([['default', 'paused'], ['Default', 'uninstalled']]);
+    });
+
     it('refuses a manifest-declared native install that sends no type', async () => {
       const manifest = {
         name: 'declared-native',

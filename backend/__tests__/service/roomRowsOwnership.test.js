@@ -14,14 +14,21 @@ const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const AgentCredential = require('../../models/AgentCredential');
+const AgentMemory = require('../../models/AgentMemory');
+const AgentProfile = require('../../models/AgentProfile');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const {
   describeRuntimeIdentityBlockers, identityHoldsRuntimeToken, ownsRuntimeIdentity, willSolelyInstallRuntimeIdentity,
 } = require('../../services/runtimeIdentityOwnership');
+const AgentIdentityService = require('../../services/agentIdentityService');
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 const credentialRoutes = require('../../routes/credentials');
 const agentBindingRoutes = require('../../routes/agentBinding');
+const agentMemoryRoutes = require('../../routes/agentMemoryView');
+
+const { hash } = require('../../utils/secret');
+const socketConfig = require('../../config/socket');
 
 const SECRET = 'room-rows-ownership-test';
 
@@ -79,6 +86,7 @@ describe('an agent-room row and who owns the agent', () => {
     app.use('/api/agents/runtime', agentsRuntimeRoutes);
     app.use('/api/credentials', credentialRoutes);
     app.use('/api/agent-binding', agentBindingRoutes);
+    app.use('/api/agent-memory', agentMemoryRoutes);
   });
 
   afterAll(async () => {
@@ -94,7 +102,7 @@ describe('an agent-room row and who owns the agent', () => {
     NAME = `room-rows-agent-${seq}`;
     await Promise.all([
       AgentInstallation.deleteMany({}), AgentRegistry.deleteMany({}), Pod.deleteMany({}),
-      User.deleteMany({}), AgentCredential.deleteMany({}),
+      User.deleteMany({}), AgentCredential.deleteMany({}), AgentMemory.deleteMany({}), AgentProfile.deleteMany({}),
     ]);
     owner = await person();
     guest = await person();
@@ -273,6 +281,465 @@ describe('an agent-room row and who owns the agent', () => {
       const room = await seedRoom(guest);
       await seedRow(undefined, room._id);
       expect(await ownsRuntimeIdentity(owner._id, NAME, 'default')).toEqual({ owned: true });
+    });
+  });
+
+  describe('the memory view', () => {
+    const readMemory = (user) => request(app).get(`/api/agent-memory/${NAME}/default/editable`)
+      .set('Authorization', bearer(user));
+    const readIndex = (user) => request(app).get(`/api/agent-memory/${NAME}/default`)
+      .set('Authorization', bearer(user));
+
+    beforeEach(async () => {
+      await AgentMemory.create({
+        agentName: NAME, instanceId: 'default', content: 'private note',
+        sections: { long_term: { content: 'private note', visibility: 'private', byteSize: 12 } },
+      });
+    });
+
+    it('a guest\'s DM row leaves the owner their view', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      const res = await readMemory(owner);
+      expect(res.status).toBe(200);
+      expect(res.body.sections.long_term.content).toBe('private note');
+    });
+
+    it('a paused DM row of a guest leaves the owner their view too', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id, { status: 'paused' });
+      expect((await readMemory(owner)).status).toBe(200);
+    });
+
+    it('the owner\'s index lists their own pods and DM, and not a guest\'s DM', async () => {
+      const mine = await seedRoom(owner);
+      const theirs = await seedRoom(guest);
+      await seedRow(owner._id, home._id);
+      await seedRow(owner._id, mine._id);
+      await seedRow(guest._id, theirs._id);
+      const res = await readIndex(owner);
+      expect(res.status).toBe(200);
+      expect(res.body.pods.map((entry) => entry.id).sort()).toEqual([String(home._id), String(mine._id)].sort());
+    });
+
+    it('the owner\'s index leaves out an agent-dm they can\'t see', async () => {
+      const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, dm._id);
+      const res = await readIndex(owner);
+      expect(res.body.pods.map((entry) => entry.id)).toEqual([String(home._id)]);
+    });
+
+    it('the owner\'s index still lists a pod they have since left', async () => {
+      const left = await pod('Left', [third._id]);
+      await seedRow(owner._id, home._id);
+      await seedRow(owner._id, left._id);
+      const res = await readIndex(owner);
+      expect(res.body.pods.map((entry) => entry.id).sort()).toEqual([String(home._id), String(left._id)].sort());
+    });
+
+    it('an admin\'s index still lists every pod', async () => {
+      const admin = await User.create({ username: `mem-admin-${seq}`, email: `mem-admin-${seq}@test.invalid`, password: 'password123', role: 'admin' });
+      const room = await seedRoom(guest);
+      await seedRow(owner._id, home._id);
+      await seedRow(guest._id, room._id);
+      const res = await readIndex(admin);
+      expect(res.body.viewerRole).toBe('admin');
+      expect(res.body.pods.map((entry) => entry.id).sort()).toEqual([String(home._id), String(room._id)].sort());
+    });
+
+    it('a guest whose DM row is the only row is refused', async () => {
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      const res = await readMemory(guest);
+      expect(res.status).toBe(403);
+      expect(res.body.sections).toBeUndefined();
+    });
+
+    it('a guest is refused the index as well, so they get no owner role', async () => {
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      const res = await readIndex(guest);
+      expect(res.status).toBe(403);
+      expect(res.body.viewerRole).toBeUndefined();
+    });
+
+    it('a guest beside the owner\'s install is refused', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      expect((await readMemory(guest)).status).toBe(403);
+    });
+
+    it('with rooms left, the publisher reads through their own DM and a guest does not', async () => {
+      await seedRegistry(owner._id);
+      await seedRow(owner._id, (await seedRoom(owner))._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      expect((await readMemory(owner)).status).toBe(200);
+      expect((await readMemory(guest)).status).toBe(403);
+    });
+
+    it('a publisher with no DM of their own has nothing to stand on', async () => {
+      await seedRegistry(owner._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+
+    it('someone else\'s paused install still refuses an installer', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id, { status: 'paused' });
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+
+    it('that paused install stays out of the token rule, which reads active rows', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id, { status: 'paused' });
+      expect(await ownsRuntimeIdentity(owner._id, NAME, 'default')).toEqual({ owned: true });
+    });
+
+
+    it('a paused install of one\'s own does not reach another installer\'s active agent', async () => {
+      await seedRow(owner._id, home._id, { status: 'paused' });
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id);
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+
+    it('a sole installer whose only row is paused keeps their view', async () => {
+      await seedRow(owner._id, home._id, { status: 'paused' });
+      expect((await readMemory(owner)).status).toBe(200);
+    });
+
+    it('someone else\'s uninstalled row refuses no one', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id, { status: 'uninstalled' });
+      expect((await readMemory(owner)).status).toBe(200);
+    });
+
+    it('an agent-admin row still counts against the owner', async () => {
+      await seedRow(owner._id, home._id);
+      const admin = await Pod.create({ name: 'Admin', type: 'agent-admin', createdBy: third._id, members: [third._id] });
+      await seedRow(third._id, admin._id);
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+
+    it('an agent-dm row counts for and against no one', async () => {
+      const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, dm._id);
+      expect((await readMemory(owner)).status).toBe(200);
+      expect((await readMemory(third)).status).toBe(403);
+    });
+
+    it('a pod row with no recorded installer still refuses the owner', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(undefined, (await pod('Old', [third._id]))._id);
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+
+    it('a row with a mixed-case instance id still counts', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id, { instanceId: 'Default' });
+      expect((await readMemory(owner)).status).toBe(403);
+    });
+  });
+
+  describe('renaming an agent', () => {
+    const rename = (user, podId) => request(app).patch(`/api/registry/pods/${podId}/agents/${NAME}`)
+      .set('Authorization', bearer(user)).send({ displayName: 'Renamed' });
+    const botName = () => User.findOne({ 'botMetadata.agentName': NAME }).lean()
+      .then((bot) => bot?.botMetadata?.displayName);
+
+    beforeEach(async () => {
+      await User.create({
+        username: AgentIdentityService.buildAgentUsername(NAME, 'default'), email: `${NAME}@agents.test`,
+        password: 'password123', isBot: true, botType: 'agent',
+        botMetadata: { agentName: NAME, instanceId: 'default', displayName: 'Before' },
+      });
+    });
+
+    it('a guest\'s DM row doesn\'t stop the owner', async () => {
+      await seedRow(owner._id, home._id, { displayName: 'Before' });
+      await seedRow(guest._id, (await seedRoom(guest))._id, { displayName: 'Before' });
+      const res = await rename(owner, home._id);
+      expect(res.status).toBe(200);
+      expect(await botName()).toBe('Renamed');
+    });
+
+    it('a paused DM row of a guest doesn\'t stop the owner either', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id, { status: 'paused' });
+      expect((await rename(owner, home._id)).status).toBe(200);
+    });
+
+    it('an agent-dm row doesn\'t stop the owner', async () => {
+      await seedRow(owner._id, home._id);
+      const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+      await seedRow(third._id, dm._id);
+      expect((await rename(owner, home._id)).status).toBe(200);
+    });
+
+    it('with rooms left, the publisher renames from their own DM', async () => {
+      await seedRegistry(owner._id);
+      const room = await seedRoom(owner);
+      await seedRow(owner._id, room._id);
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      expect((await rename(owner, room._id)).status).toBe(200);
+    });
+
+    it('a guest whose DM row is the only row is refused', async () => {
+      const room = await seedRoom(guest);
+      await seedRow(guest._id, room._id);
+      const res = await rename(guest, room._id);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('owner_installation_missing');
+      expect(await botName()).toBe('Before');
+    });
+
+    it('a guest beside the owner\'s install is refused as before', async () => {
+      await seedRow(owner._id, home._id);
+      const room = await seedRoom(guest);
+      await seedRow(guest._id, room._id);
+      const res = await rename(guest, room._id);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('another_installer');
+    });
+
+    it('someone else\'s paused install still refuses an installer', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id, { status: 'paused' });
+      const res = await rename(owner, home._id);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('another_installer');
+    });
+
+    it('a sole installer whose only row is paused can still rename', async () => {
+      await seedRow(owner._id, home._id, { status: 'paused' });
+      expect((await rename(owner, home._id)).status).toBe(200);
+    });
+
+    it('a pod row with no recorded installer reads unknown_installer, ahead of another installer', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(third._id, (await pod('Theirs', [third._id]))._id);
+      await seedRow(undefined, (await pod('Old', [third._id]))._id);
+      const res = await rename(owner, home._id);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('unknown_installer');
+    });
+
+    it('an agent-admin row still counts', async () => {
+      await seedRow(owner._id, home._id);
+      const admin = await Pod.create({ name: 'Admin', type: 'agent-admin', createdBy: third._id, members: [third._id] });
+      await seedRow(third._id, admin._id);
+      expect((await rename(owner, home._id)).body.code).toBe('another_installer');
+    });
+
+    describe('the label on DM rows', () => {
+      const labelOf = async (podId, extra = {}) => (
+        await AgentInstallation.findOne({ agentName: NAME, podId, ...extra }).lean()
+      ).displayName;
+      const before = { displayName: 'Before' };
+
+      it('a guest\'s DM row takes the new name', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(guest._id, room._id, before);
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect(await labelOf(room._id)).toBe('Renamed');
+        const row = await AgentInstallation.findOne({ agentName: NAME, podId: room._id }).lean();
+        expect(String(row.installedBy)).toBe(String(guest._id));
+      });
+
+      it('the agent posts under the new name in the guest\'s DM', async () => {
+        const RAW = `cm_agent_${NAME}`;
+        await User.updateOne({ 'botMetadata.agentName': NAME }, {
+          $set: { agentRuntimeTokens: [{ tokenHash: hash(RAW), label: 'test', createdAt: new Date() }] },
+        });
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(guest._id, room._id, before);
+        const bot = await User.findOne({ 'botMetadata.agentName': NAME }).select('_id').lean();
+        await Pod.updateOne({ _id: room._id }, { $addToSet: { members: bot._id } });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        const emit = jest.fn();
+        const live = jest.spyOn(socketConfig, 'getIO').mockReturnValue({ to: () => ({ emit }) });
+        try {
+          const posted = await request(app).post(`/api/agents/runtime/pods/${room._id}/messages`)
+            .set('Authorization', `Bearer ${RAW}`).send({ content: 'hello there' });
+          expect(posted.status).toBe(200);
+        } finally {
+          live.mockRestore();
+        }
+        const [, message] = emit.mock.calls.find(([event]) => event === 'newMessage');
+        expect(message.username).toBe('Renamed');
+      });
+
+      it('an agent-dm row, a paused one, and a stopped one that can come back all take it', async () => {
+        const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+        const paused = await seedRoom(guest);
+        const stopped = await seedRoom(third);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(third._id, dm._id, before);
+        await seedRow(guest._id, paused._id, { ...before, status: 'paused' });
+        await seedRow(third._id, stopped._id, { ...before, status: 'uninstalled' });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect([await labelOf(dm._id), await labelOf(paused._id), await labelOf(stopped._id)])
+          .toEqual(['Renamed', 'Renamed', 'Renamed']);
+      });
+
+      it('a legacy mixed-case DM row takes it', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(guest._id, room._id, { ...before, instanceId: 'Default' });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect(await labelOf(room._id)).toBe('Renamed');
+      });
+
+      it('the DM\'s agent profile takes it', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(guest._id, room._id, before);
+        await AgentProfile.create({
+          agentId: `${NAME}:default`, agentName: NAME, instanceId: 'default', podId: room._id,
+          name: 'Before', purpose: 'Test', createdBy: guest._id,
+        });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect((await AgentProfile.findOne({ podId: room._id }).lean()).name).toBe('Renamed');
+      });
+
+      it('another identity\'s rows keep their names, in the same DM and in another instance', async () => {
+        const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(third._id, dm._id, before);
+        await seedRow(third._id, dm._id, { ...before, agentName: `${NAME}-other` });
+        await seedRow(guest._id, room._id, { ...before, instanceId: 'nova' });
+        await AgentProfile.create({
+          agentId: `${NAME}-other:default`, agentName: `${NAME}-other`, instanceId: 'default', podId: dm._id,
+          name: 'Other', purpose: 'Test', createdBy: third._id,
+        });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect(await labelOf(dm._id)).toBe('Renamed');
+        const other = await AgentInstallation.findOne({ agentName: `${NAME}-other` }).lean();
+        expect(other.displayName).toBe('Before');
+        expect(await labelOf(room._id, { instanceId: 'nova' })).toBe('Before');
+        expect((await AgentProfile.findOne({ agentName: `${NAME}-other` }).lean()).name).toBe('Other');
+      });
+
+      it('an uninstalled pod row keeps its name: only DM rows are written past the caller\'s own', async () => {
+        const gone = await pod('Gone', [third._id]);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(third._id, gone._id, { ...before, status: 'uninstalled' });
+        expect((await rename(owner, home._id)).status).toBe(200);
+        expect(await labelOf(gone._id)).toBe('Before');
+      });
+
+      it('a refused rename leaves DM rows alone', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(guest._id, room._id, before);
+        await seedRow(third._id, (await pod('Theirs', [third._id]))._id, before);
+        expect((await rename(owner, home._id)).status).toBe(403);
+        expect(await labelOf(room._id)).toBe('Before');
+      });
+
+      it('an incomplete rename leaves DM rows alone', async () => {
+        const room = await seedRoom(guest);
+        await seedRow(owner._id, home._id, before);
+        await seedRow(owner._id, (await pod('Left', [third._id]))._id, before);
+        await seedRow(guest._id, room._id, before);
+        expect((await rename(owner, home._id)).status).toBe(409);
+        expect(await labelOf(room._id)).toBe('Before');
+      });
+
+      it('a name another agent shows in that DM is refused, and nothing moves', async () => {
+        const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: third._id, members: [third._id] });
+        await seedRow(owner._id, home._id, before);
+        await seedRow(third._id, dm._id, before);
+        await seedRow(third._id, dm._id, { agentName: `${NAME}-other`, displayName: 'Renamed' });
+        const res = await rename(owner, home._id);
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('agent_display_name_taken');
+        expect(await labelOf(dm._id)).toBe('Before');
+      });
+    });
+
+    it('a sole installer\'s row in a pod they can\'t reach still leaves the rename incomplete', async () => {
+      await seedRow(owner._id, home._id);
+      await seedRow(owner._id, (await pod('Left', [third._id]))._id);
+      const res = await rename(owner, home._id);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('identity_rename_scope_incomplete');
+    });
+  });
+
+  describe('legacy keys found while an admin lists credentials', () => {
+    let admin;
+    const listAsAdmin = () => request(app).get('/api/credentials').set('Authorization', bearer(admin))
+      .query({ agentName: NAME, instanceId: 'default' });
+    const legacyKey = { runtimeTokens: [{ tokenHash: 'admin-hash', label: 'old', createdAt: new Date() }] };
+    const recordedOwner = async () => {
+      const credential = await AgentCredential.findOne({ tokenHash: 'admin-hash' }).lean();
+      return String(credential.ownerUserId);
+    };
+
+    beforeEach(async () => {
+      admin = await User.create({ username: `admin-${seq}`, email: `admin-${seq}@test.invalid`, password: 'password123', role: 'admin' });
+      await User.collection.insertOne({
+        username: NAME, email: `${NAME}@agents.test`, isBot: true, botMetadata: { agentName: NAME, instanceId: 'default' },
+      });
+    });
+
+    it('go to the pod row\'s installer when a guest\'s DM row is read first', async () => {
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      await seedRow(owner._id, (await pod('Later', [owner._id]))._id, legacyKey);
+      expect((await listAsAdmin()).status).toBe(200);
+      expect(await recordedOwner()).toBe(String(owner._id));
+      const guestRows = await request(app).get('/api/credentials').set('Authorization', bearer(guest));
+      expect(guestRows.body).toEqual([]);
+    });
+
+    it('go to the pod row\'s installer when an agent-dm row is read first', async () => {
+      const dm = await Pod.create({ name: 'DM', type: 'agent-dm', createdBy: guest._id, members: [guest._id] });
+      await seedRow(guest._id, dm._id);
+      await seedRow(owner._id, (await pod('Later', [owner._id]))._id, legacyKey);
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(owner._id));
+    });
+
+    it('go to a paused pod row\'s installer', async () => {
+      await seedRow(guest._id, (await seedRoom(guest))._id);
+      await seedRow(owner._id, (await pod('Later', [owner._id]))._id, { status: 'paused', ...legacyKey });
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(owner._id));
+    });
+
+    it('go to the admin when only DM rows are left', async () => {
+      await seedRow(guest._id, (await seedRoom(guest))._id, legacyKey);
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(admin._id));
+    });
+
+    it('go to the admin when the pod row has no recorded installer', async () => {
+      await seedRow(undefined, home._id, legacyKey);
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(admin._id));
+    });
+
+    it('pass over a pod row with no recorded installer for one that has one', async () => {
+      await seedRow(undefined, (await pod('Old', [third._id]))._id);
+      await seedRow(owner._id, (await pod('Later', [owner._id]))._id, legacyKey);
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(owner._id));
+    });
+
+    it('go to the admin when the only pod row is uninstalled', async () => {
+      await seedRow(guest._id, (await pod('Gone', [guest._id]))._id, { status: 'uninstalled', ...legacyKey });
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(admin._id));
+    });
+
+    it('skip an uninstalled pod row', async () => {
+      await seedRow(guest._id, (await pod('Gone', [guest._id]))._id, { status: 'uninstalled' });
+      await seedRow(owner._id, (await pod('Later', [owner._id]))._id, legacyKey);
+      await listAsAdmin();
+      expect(await recordedOwner()).toBe(String(owner._id));
     });
   });
 });

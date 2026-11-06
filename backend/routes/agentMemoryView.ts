@@ -33,7 +33,11 @@ const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PGMessage = require('../models/pg/Message');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+const { DM_POD_TYPES_GUARD, resolveAgentDisplayLabel } = require('../services/agentIdentityService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const DMService = require('../services/dmService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { ownsIdentityCountingPaused } = require('../services/runtimeIdentityOwnership');
 const {
   getLastAgentMemoryWrite, BOOKKEEPING_SECTIONS,
   stampSectionsForWrite, decorateSectionsWithProvenance,
@@ -125,11 +129,8 @@ const memoryOwnerAccess = async (req: AuthReq, res: Res) => {
   if (!isAdmin) {
     // Memory is one envelope per identity, not per pod installation. A paused
     // install must not grant access to another installer's active agent memory.
-    const installs = await AgentInstallation.find({
-      agentName, instanceId, status: { $ne: 'uninstalled' },
-    }).select('installedBy').lean();
-    const anotherOwner = installs.some((install: { installedBy?: unknown }) => String(install.installedBy) !== userId);
-    if (!installs.length || anotherOwner) {
+    const ownership = await ownsIdentityCountingPaused(userId, agentName, instanceId);
+    if (!ownership.owned) {
       res.status(403).json({ error: 'Forbidden' }); return null;
     }
   }
@@ -249,13 +250,22 @@ router.get('/:agentName/:instanceId?', auth, async (req: AuthReq, res: Res) => {
     // activity + the agent's own last message there, sorted most-active first. ──
     const installs = await AgentInstallation.find({ agentName, instanceId, status: { $ne: 'uninstalled' } })
       .select('podId').lean();
-    const podIds = Array.from(new Set((installs as Array<{ podId?: unknown }>)
+    const installedPodIds = Array.from(new Set((installs as Array<{ podId?: unknown }>)
       .map((i) => (i?.podId ? String(i.podId) : '')).filter(Boolean)));
     let pods: unknown[] = [];
-    if (podIds.length) {
-      const podDocs = await Pod.find({ _id: { $in: podIds } }).select('name type').lean();
+    if (installedPodIds.length) {
+      const podDocs = await Pod.find({ _id: { $in: installedPodIds } }).select('name type members').lean();
       const nameById = new Map((podDocs as Array<{ _id: unknown; name?: string; type?: string }>)
         .map((p) => [String(p._id), { name: p.name || 'pod', type: p.type || '' }]));
+      // Someone else's DM with this agent isn't the owner's to list: a DM's row
+      // doesn't count in the check above, so it can sit under this view.
+      const closedDms = new Set<string>();
+      await Promise.all((podDocs as Array<{ _id: unknown; type?: string; members?: unknown[] }>).map(async (pod) => {
+        if (DM_POD_TYPES_GUARD.has(String(pod.type)) && !await DMService.canViewPod(getUserId(req), pod)) {
+          closedDms.add(String(pod._id));
+        }
+      }));
+      const podIds = installedPodIds.filter((podId) => !closedDms.has(podId));
       let lastActiveById = new Map<string, unknown>();
       let lastMsgById = new Map<string, { content: string; createdAt: unknown }>();
       try {
