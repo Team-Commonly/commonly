@@ -35,7 +35,7 @@ import {
 } from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
 import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemovalCueService';
-import { prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
+import { grantHoldsPrWrite, prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
 import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 
@@ -105,11 +105,12 @@ interface AuthenticatedRequest extends express.Request {
 /**
  * What the page may see of a grant (tools plan §6): the
  * explicit list and nothing else. `connectionId` and `brokerId` are the
- * broker's business; the raw `audience` snapshot still names agents who have
- * left, so only the effective audience goes out.
+ * broker's business, except that the owner's own list adds `connectionId` (see
+ * GET /); the raw `audience` snapshot still names agents who have left, so only
+ * the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
-  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent'> & { audience?: string[]; connectionId?: string };
+  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent' | 'prWrite'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (
   grant: GrantRow,
@@ -123,6 +124,7 @@ const projectGrant = (
   tools: [...(grant.tools || [])],
   connector: grantConnector(grant.tools),
   writeMode: grant.writeMode,
+  ...(grantHoldsPrWrite(grant) ? { prWrite: true } : {}),
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
   // F94: the granter's own agents running outside Commonly that this grant
@@ -813,12 +815,17 @@ router.get('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: exp
     }
     return res.json({ grants: grants
       .filter((grant) => grant.target.kind !== 'pod' || visiblePods.has(grant.target.id))
-      .map((grant) => projectGrant(
-        grant,
-        grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
-        userId,
-        confinements.get(grant.grantId),
-      )) });
+      .map((grant) => ({
+        ...projectGrant(
+          grant,
+          grant.target.kind === 'seat' ? grant.audience : visiblePods.get(grant.target.id) || [],
+          userId,
+          confinements.get(grant.grantId),
+        ),
+        // The owner's own read only, the key the catalogue already gives this
+        // person: Change access has to reopen on the grant's own repository.
+        connectionId: grant.connectionId,
+      })) });
   } catch (error) {
     return handleError(res, error);
   }

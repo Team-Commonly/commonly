@@ -170,6 +170,7 @@ describe('naming a BYO seat', () => {
     expect(res.status).toBe(201);
     const row = await RoomGrant.findOne({ grantId: res.body.grantId }).lean();
     expect(row).toMatchObject({ prWrite: true, writeMode: 'write-with-confirm', byoAgents: [BYO] });
+    expect(row.byoConsent.version).toBe('byo-pr-v1');
   });
 
   test('any other write still refuses byo_read_only', async () => {

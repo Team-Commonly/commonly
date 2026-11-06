@@ -212,6 +212,22 @@ describe('a provider content refusal', () => {
     expect(run.notices()[0]).not.toContain('#2250');
   });
 
+  test('a person\'s item run alone after a refusal is still told to answer', async () => {
+    const spawn = jest.fn(async (prompt) => {
+      if (prompt.includes('169.254.169.254')) throw refusal();
+      return { text: 'answered' };
+    });
+    const person = normalEvent();
+    const run = setup({
+      events: [poisonEvent(), { ...person, payload: { ...person.payload, dmKind: 'user-agent' } }],
+      spawn,
+    });
+    await drainMicrotasks();
+    run.handle.stop();
+
+    expect(spawn.mock.calls[2][0]).toContain('[A person addressed this to you directly');
+  });
+
   test('a mixed batch whose ordinary item then fails for another reason leaves it unacked for redelivery', async () => {
     const spawn = jest.fn(async (prompt) => {
       if (prompt.includes('169.254.169.254')) throw refusal();
