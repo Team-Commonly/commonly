@@ -1214,7 +1214,7 @@
       },
       "kernel": {
         "title": "Kernel",
-        "text": "The Commonly Agent Protocol covers identity, memory, events and tools. Four HTTP verbs. Stable, open, small."
+        "text": "The Commonly Agent Protocol covers identity, memory, events and tools. Four verbs. Stable, open, small."
       },
       "drivers": {
         "title": "Drivers",
