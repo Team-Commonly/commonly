@@ -132,7 +132,8 @@ interface SummaryEnqueueOptions {
 
 interface SenderRow {
   isBot?: boolean;
-  botMetadata?: { agentName?: string; instanceId?: string };
+  displayName?: string;
+  botMetadata?: { agentName?: string; instanceId?: string; displayName?: string };
 }
 
 // #508 mutual bot<->bot @mention loop dampener.
@@ -892,12 +893,60 @@ const resolveWriteStamp = (createdAt: unknown): string | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 };
 
+// A display name is free text up to 80 characters and a frame is the kernel's
+// own voice, on other people's messages too. So only what a name is made of gets
+// in, which keeps out invisible characters, lookalike brackets, a second list
+// entry, a tool name and a #PR. The cut stays under a full SHA's 40 characters.
+const FRAME_NAME_CHARS = 32;
+const frameName = (user: SenderRow | null | undefined): string => {
+  const label = user?.isBot ? resolveAgentDisplayLabel(user, '') : user?.displayName;
+  const kept = String(label ?? '').replace(/[^\p{L}\p{M}\p{N} .'’-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!/[\p{L}\p{N}]/u.test(kept)) return '';
+  return Array.from(kept).slice(0, FRAME_NAME_CHARS).join('').trim();
+};
+
+// Past this a list is a cost on every wake, and part of one would read as all.
+const MEMBER_LIST_MAX = 12;
+
+/**
+ * A seat sees handles and people see names, so it wrote "growth-t002" for Priya,
+ * and a teammate named without an @ was never reached (F295).
+ */
+const formatMemberList = async (
+  memberIds: Set<string>,
+  mentionMap: Map<string, MentionTarget>,
+): Promise<string> => {
+  if (memberIds.size < 2 || memberIds.size > MEMBER_LIST_MAX) return '';
+  const rows = await User.find({ _id: { $in: Array.from(memberIds) } })
+    .select('username displayName isBot botMetadata')
+    .lean() as Array<SenderRow & { _id: unknown; username?: string }>;
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  const labels = Array.from(memberIds).flatMap((id) => {
+    const row = byId.get(id);
+    if (!row) return [];
+    const name = frameName(row);
+    const handle = mentionHandleForUser(mentionMap, row);
+    if (!handle) return name ? [name] : [];
+    return [name && name !== handle ? `${name} (@${handle})` : `@${handle}`];
+  });
+  if (labels.length < 2) return '';
+  return `[Who is here: ${labels.join(', ')}. Use a person's name when you write about them. `
+    + 'Names are self-chosen, so only the handle says who someone is, and only an @handle reaches them: '
+    + 'to ask a teammate named in a message, @ their handle.]';
+};
+
 const formatAuthorFrame = (
   username: string | undefined,
   createdAt: unknown,
   messageId: string | undefined,
+  name?: string,
+  // The handle that routes here, '' when none does. Unset on a wake built
+  // before the pod's mention map is read, which falls back to the username.
+  routedHandle?: string,
 ): string => {
-  const author = username || 'unknown';
+  const handle = routedHandle ?? username;
+  const named = handle && handle !== name ? `${name}** (@${handle})` : `${name}**`;
+  const author = name ? named : `${username || 'unknown'}**`;
   const idPart = messageId ? ` (message ${messageId})` : '';
   const stamp = resolveWriteStamp(createdAt);
   const timing = stamp
@@ -911,7 +960,7 @@ const formatAuthorFrame = (
       + `you whether it is new or a redelivery. Treat it as possibly already handled: call `
       + `commonly_get_messages before you reply, before you pick up work, and before you `
       + `post a finding as new.`;
-  return `[Trigger: this turn was raised by **${author}**${idPart}, ${timing}]`;
+  return `[Trigger: this turn was raised by **${author}${idPart}, ${timing}]`;
 };
 
 // Agents whose runtime IS a code specialist shouldn't be told to consult
@@ -1040,15 +1089,18 @@ const isCollaborativePod = (
 // unconditional and was missing from this table until the wake path was
 // routed through here — the table is the thing people read to decide
 // what a given event type carries, so it is kept exhaustive:
-//   chat.mention + non-specialist + collab → [Pod] [Author] [CollabPod] [Collab] [Reply] [Handoff?] body
+//   chat.mention + non-specialist + collab → [Pod] [Author] [Who?] [CollabPod] [Collab] [Reply] [Handoff?] body
 //   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] [Handoff?] body
-//   chat.mention + specialist              → [Pod] [Author] [Reply] [Handoff?] body
-//   thread.mention + non-specialist        → [Pod] [Author] [Collab] [Handoff?] body
-//   thread.mention + specialist            → [Pod] [Author] [Handoff?] body
+//   chat.mention + specialist              → [Pod] [Author] [Who?] [Reply] [Handoff?] body
+//   thread.mention + non-specialist        → [Pod] [Author] [Who?] [Collab] [Handoff?] body
+//   thread.mention + specialist            → [Pod] [Author] [Who?] [Handoff?] body
 //   message.posted + non-specialist        → [Pod] [Author] [Collab] [Wake] body
 //   message.posted + specialist            → [Pod] [Author] [Wake] body
 // [Handoff?] is present only when an agent hands work to another agent for
 // the first time in a chain (formatHandoffCue); never on message.posted.
+// [Who?] is the member list (formatMemberList): pods with two or more agents and
+// at most 12 members, and not on the reply wake built before the map is read.
+// Never on message.posted: that traffic is ambient and nobody asked this agent.
 //
 // F245: a wake inside a thread names the thread. The root rode only in
 // `payload.threadRootId`, which a wrapper never shows the model, so a seat could
@@ -1061,6 +1113,16 @@ const formatThreadAnswerCue = (threadRootId: number): string => (
   + 'Do not count on a plain post to land there: it does only when this thread is all your turn holds.]'
 );
 
+interface AuthorFrame {
+  username?: string;
+  createdAt?: unknown;
+  messageId?: string;
+  threadRootId?: number | null;
+  name?: string;
+  handle?: string;
+  memberList?: string;
+}
+
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
@@ -1071,7 +1133,7 @@ const buildContentForTarget = (
   // fabricated-stamp path reachable by accident. All four call sites
   // pass it today, so requiring it costs nothing now and turns a future
   // omission into a compile error instead of a silent "unknown".
-  author: { username?: string; createdAt?: unknown; messageId?: string; threadRootId?: number | null },
+  author: AuthorFrame,
   // The handle of the agent that handed this over, when this mention is the
   // first handoff in an agent-to-agent chain (see formatHandoffCue).
   handoffFrom?: string,
@@ -1080,7 +1142,10 @@ const buildContentForTarget = (
   // First after pod context, and unconditional: every event type and
   // every runtime needs to know who spoke and when. The four cues below
   // are all conditional on shape; this one never is.
-  frames.push(formatAuthorFrame(author.username, author.createdAt, author.messageId));
+  frames.push(formatAuthorFrame(
+    author.username, author.createdAt, author.messageId, author.name, author.handle,
+  ));
+  if (author.memberList && eventType !== 'message.posted') frames.push(author.memberList);
   if (
     eventType === 'chat.mention'
     && collaborativePod
@@ -1525,7 +1590,7 @@ const enqueueWakeOnMessage = async ({
   installations: Array<Record<string, unknown>>;
   sender: SenderRow | null;
   excludeKeys: Set<string> | null;
-  authorFrame: { username: string; createdAt: unknown; messageId: string | undefined; threadRootId: number | null };
+  authorFrame: AuthorFrame;
   resolvedBotUserIds?: Map<string, string>;
   replyToMessageId?: string | null;
   // A person @mentioned one or more agents in this message. Those agents got
@@ -1755,7 +1820,7 @@ const enqueueMentions = async ({
   // rather than checked, and the frame would assert a fabricated write
   // time as ground truth. Absent stays absent; formatAuthorFrame says
   // so out loud.
-  const authorFrame = {
+  const authorFrame: AuthorFrame = {
     username,
     createdAt: message?.createdAt || message?.created_at,
     messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
@@ -1791,7 +1856,8 @@ const enqueueMentions = async ({
   // triggers an infinite chat.mention → reply → chat.mention loop.
   let sender: SenderRow | null = null;
   try {
-    sender = await User.findById(userId).select('isBot botMetadata').lean() as SenderRow | null;
+    sender = await User.findById(userId).select('isBot displayName botMetadata').lean() as SenderRow | null;
+    authorFrame.name = frameName(sender);
   } catch (error) {
     // Non-fatal: missing sender just means we can't suppress self-mentions,
     // which is a strictly weaker invariant than the one we had before.
@@ -2017,6 +2083,14 @@ const enqueueMentions = async ({
     console.warn('[mention-context] pod lookup failed:', (error as Error).message);
   }
   const collaborativePod = isCollaborativePod(podType, installations);
+  if (sender) authorFrame.handle = mentionHandleForUser(mentionMap, { ...sender, username });
+  if (collaborativePod) {
+    try {
+      authorFrame.memberList = await formatMemberList(podMemberIds, mentionMap);
+    } catch (error) {
+      console.warn('[mention-context] member list failed:', (error as Error).message);
+    }
+  }
 
   const senderAgentName = sender?.isBot ? sender.botMetadata?.agentName?.toLowerCase() : null;
   const senderInstanceId = sender?.isBot ? (sender.botMetadata?.instanceId || 'default') : null;
@@ -2476,8 +2550,8 @@ const enqueueDmEvent = async ({
   // conversational frame (ADR-012 §9). For human senders, botMetadata is
   // empty and the cue falls back to username + "(human)".
   const sender = await User.findById(userId)
-    .select('_id isBot username botMetadata')
-    .lean() as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
+    .select('_id isBot username displayName botMetadata')
+    .lean() as { _id: unknown; isBot?: boolean; username?: string; displayName?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
   // Bot senders are allowed in agent-dm (the whole point) but still blocked
   // in agent-admin/agent-room — those are operator-driven personal surfaces;
   // a bot posting there shouldn't auto-route to itself.
@@ -2666,7 +2740,8 @@ const enqueueDmEvent = async ({
     const senderInstanceLabel = (senderMeta.instanceId && senderMeta.instanceId !== 'default')
       ? senderMeta.instanceId
       : '';
-    const senderDisplay = resolveAgentDisplayLabel(sender, sender?.username || username || 'peer').trim();
+    const senderDisplay = (!sender?.isBot && frameName(sender))
+      || resolveAgentDisplayLabel(sender, sender?.username || username || 'peer').trim();
     // senderHandle filters 'default' the same way as senderDisplay above —
     // otherwise an agent on the literal 'default' instanceId would render as
     // "@default (DisplayName)", which is meaningless.

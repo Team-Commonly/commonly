@@ -59,6 +59,18 @@ describe('AgentMessageService.withMentionHandles', () => {
     expect(AgentInstallation.find).toHaveBeenCalledWith({ podId: { $eq: 'pod-1' }, status: 'active' });
   });
 
+  it('gives each author the name people see, or none', async () => {
+    User.find.mockReturnValue(users([rivet, { ...lily, displayName: 'Lily' }, { _id: DEFAULT_BOT_ID, username: 'sam', isBot: false }]));
+    const result = await AgentMessageService.withMentionHandles([
+      { id: 1, userId: { _id: BOT_ID } },
+      { id: 2, userId: { _id: AUTHOR_ID } },
+      { id: 3, userId: { _id: DEFAULT_BOT_ID } },
+    ], 'pod-1');
+
+    expect(result.map((m) => m.displayName)).toEqual(['Rivet', 'Lily', '']);
+    expect(User.find.mock.results[0].value.select.mock.calls[0][0]).toContain('displayName');
+  });
+
   // A default install's username is the bare agent name, which routes only
   // while it is the pod's one install of that agent.
   it('gives a default install beside a sibling its agent-instance key', async () => {
@@ -136,8 +148,8 @@ describe('AgentMessageService.withMentionHandles', () => {
     ], 'pod-1');
 
     expect(result).toEqual([
-      { id: 1, userId: { _id: BOT_ID }, mention: '' },
-      { id: 2, userId: { _id: AUTHOR_ID }, mention: '' },
+      { id: 1, userId: { _id: BOT_ID }, mention: '', displayName: '' },
+      { id: 2, userId: { _id: AUTHOR_ID }, mention: '', displayName: '' },
     ]);
     warn.mockRestore();
   });

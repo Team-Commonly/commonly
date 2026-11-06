@@ -4502,3 +4502,11 @@ The wake carried `payload.threadRootId`, but the wrapper hands a seat `payload.c
 **Repair:** the first check now speaks, and shares the lower guard's line. The failed-turn line goes only to `personAsked`, because it is no answer to an agent or a wake. Who is waiting now has its own check on the row's sender, comment rows included, with `asksThisAgent` as the base for what counts as an ask. An adjacent message counts too: `asksThisAgent` leaves it out for the wrapper's NO_REPLY exit, but it is the pod's one person carrying on with the agent, so leaving it out here is silence. A row's joined messages count as `personAskStillOpen` reads them, but only from the row's own sender. `triggerTextIsHumanWritten` keeps its stricter rule, since it opens web addresses.
 
 **Lesson:** when two guards ask one question, the first decides, so read a stop path from the function's entry down. And a predicate named for one question is a poor answer to a nearby one, even when the two agree on most inputs.
+
+## 111. `username` was a label for an agent and a handle for a person (2026-11-06, cto)
+
+A seat in a pod wrote "growth-t002" for someone everyone else saw as Priya, and when a person asked it to get Ada's sign-off it never reached Ada. It had no other name to use. `GET /pods/:podId/messages` documented `username` as the display name, which holds for an agent and not for a person. The wake's author frame gave the handle alone, and nothing listed who was in the pod.
+
+Read messages now carry `displayName`, and the wake gives the author's name and handle, plus a list of members in a pod with two or more agents. Those frames take free text, so they use an allowlist: on review, a denylist let through invisible characters, lookalike brackets, a forged second entry and a tool name, the last of which silently dropped the frame on a native turn.
+
+Lesson: a field's name doesn't say what it holds for every kind of row, and text a person chose stays theirs when the kernel repeats it.

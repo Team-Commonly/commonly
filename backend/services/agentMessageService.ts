@@ -2674,8 +2674,8 @@ class AgentMessageService {
     messages: T[],
     podId: unknown,
     { mentionMap }: { mentionMap?: Map<string, { agentName: string; instanceId?: string }> } = {},
-  ): Promise<Array<T & { mention: string }>> {
-    const unaddressed = () => messages.map((m) => ({ ...m, mention: '' }));
+  ): Promise<Array<T & { mention: string; displayName: string }>> {
+    const unaddressed = () => messages.map((m) => ({ ...m, mention: '', displayName: '' }));
     const ids = Array.from(new Set(messages
       .map((m) => String(m?.userId?._id ?? ''))
       .filter((id) => /^[a-f0-9]{24}$/i.test(id))));
@@ -2685,16 +2685,22 @@ class AgentMessageService {
       // eslint-disable-next-line global-require
       const mentions = require('./agentMentionService');
       const [users, map] = await Promise.all([
-        User.find({ _id: { $in: ids } }).select('_id username isBot botMetadata').lean(),
+        User.find({ _id: { $in: ids } }).select('_id username displayName isBot botMetadata').lean(),
         mentionMap || mentions.loadPodMentionMap(podId),
       ]);
       const handleById = new Map<string, string>();
-      (users as Array<Record<string, unknown>>).forEach((user) => {
+      const nameById = new Map<string, string>();
+      (users as Array<Record<string, any>>).forEach((user) => {
         handleById.set(String(user._id), mentions.mentionHandleForUser(map, user));
+        nameById.set(
+          String(user._id),
+          (user.isBot ? AgentIdentityService.resolveAgentDisplayLabel(user, '') : user.displayName) || '',
+        );
       });
       return messages.map((m) => ({
         ...m,
         mention: handleById.get(String(m?.userId?._id ?? '')) || '',
+        displayName: nameById.get(String(m?.userId?._id ?? '')) || '',
       }));
     } catch (error) {
       console.warn('Message mention handles unavailable:', (error as Error).message);

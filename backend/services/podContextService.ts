@@ -415,7 +415,7 @@ class PodContextService {
     let members: Array<{ name: string; mention: string; isAgent: boolean; self: boolean }> = [];
     if (memberIds.length) {
       const memberDocs = await User.find({ _id: { $in: memberIds } })
-        .select('_id username isBot botMetadata')
+        .select('_id username displayName isBot botMetadata')
         .lean();
       const usersById = new Map((memberDocs as Array<Record<string, unknown>>)
         .map((user) => [toObjectIdString(user._id), user]));
@@ -424,7 +424,7 @@ class PodContextService {
         return {
           name: user?.isBot
             ? resolveAgentDisplayLabel(user, (user.username as string) || 'agent')
-            : (user ? ((user.username as string) || 'member') : 'Deleted user'),
+            : (user ? ((user.displayName as string) || (user.username as string) || 'member') : 'Deleted user'),
           // The @handle mention routing resolves, next to the display name.
           mention: mentions.mentionHandleForUser(mentionMap, user || null),
           isAgent: !!user?.isBot,
