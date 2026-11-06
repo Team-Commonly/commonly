@@ -1580,9 +1580,14 @@ export const runMemoryImport = async ({
 // would also eat a pod that is discussing these words. It speaks only to a
 // request it can't meet, so it gives a heartbeat no reason to post. Every closing
 // line carries it, and it says where the note goes once the agent has posted.
-const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
-  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. '
+const SAY_A_FAILURE = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
+  + 'without event types, checkpoints, deliveries, retries or other runtime terms unless they asked about them. ';
+const FAILURE_IN_PLAIN_WORDS = SAY_A_FAILURE
   + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
+// A comment drops final text only after a threaded reply to that comment, so
+// a tool post anywhere else would not save a second post (review of #3567).
+const FAILURE_ON_COMMENT = SAY_A_FAILURE
+  + 'If you already replied to this comment, reply to it again with the failure note: final text after such a reply is dropped.';
 
 // TASK-293, and the rule AX entry 43 earned: a frame that says "otherwise
 // return NO_REPLY" must also say what the otherwise costs. Silence here is an
@@ -1601,11 +1606,11 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 const FINAL_TEXT_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. If you have nothing to add, or already replied with '
   + 'commonly_post_thread_comment, end with NO_REPLY alone, with no summary. '
-  + FAILURE_IN_PLAIN_WORDS;
+  + FAILURE_ON_COMMENT;
 const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to this comment unless it is exactly NO_REPLY. '
   + 'Do not also post it to pod chat. '
   + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary. '
-  + FAILURE_IN_PLAIN_WORDS;
+  + FAILURE_ON_COMMENT;
 
 // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
 // top-level message, and the seat answered through commonly_post_message with
