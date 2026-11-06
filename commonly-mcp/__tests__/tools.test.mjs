@@ -875,6 +875,12 @@ describe('attention claims (ADR-018)', () => {
 
 
 describe('per-event inbox checkpoint', () => {
+  test('tells a seat outside the wrapper prompt when a reply is finished', () => {
+    const { description } = byName.commonly_checkpoint_event;
+    expect(description).toContain('finished only after the last one');
+    expect(description).toContain('never send this in the same step as a post');
+  });
+
   afterEach(() => jest.restoreAllMocks());
   test('requires both event ID and delivery nonce before sending anything', async () => {
     const fetchSpy = installFetch(async () => okResponse({ success: true }));
