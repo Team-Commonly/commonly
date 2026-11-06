@@ -1,6 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 import { declaredRuntimeIdentity } from '../utils/runtimeIdentity';
-import { installationIdentityFilter } from '../services/agentInstallationIdentity';
+import { IDENTITY_COLLATION, installationIdentityFilter } from '../services/agentInstallationIdentity';
 
 export type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
 export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
@@ -339,7 +339,9 @@ AgentInstallationSchema.statics.getInstalledAgents = function (podId: Types.Obje
 };
 
 AgentInstallationSchema.statics.isInstalled = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
-  const installation = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId, status: 'active' });
+  const installation = await this.findOne({
+    ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId, status: 'active',
+  }, null, { collation: IDENTITY_COLLATION });
   return !!installation;
 };
 
@@ -387,7 +389,12 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   const {
     version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
   } = options;
-  const existing = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId });
+  // A legacy row can be mixed-case or have no instanceId, and the unique index
+  // wouldn't stop a second row beside it. An active one decides, if there are two.
+  const inPod = await this.find(
+    { ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId }, null, { collation: IDENTITY_COLLATION },
+  );
+  const existing = inPod.find((row: { status?: string }) => row.status === 'active') || inPod[0];
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
     if (stampInstaller && existing.status === 'uninstalled') existing.installedBy = installedBy;

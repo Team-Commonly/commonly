@@ -48,6 +48,40 @@ describe('reactivating an installation', () => {
     expect(await stored()).toMatchObject({ status: 'active', installedBy: original });
   });
 
+  it('brings back a legacy mixed-case row instead of writing a second one', async () => {
+    await seed('uninstalled');
+    await AgentInstallation.updateOne({ ...key, podId }, { $set: { instanceId: 'Default' } });
+    await AgentInstallation.install(key.agentName, podId, options());
+    const rows = await AgentInstallation.find({ agentName: key.agentName, podId }).lean();
+    expect(rows.map((row) => [row.instanceId, row.status])).toEqual([['Default', 'active']]);
+  });
+
+  it('refuses when a legacy mixed-case row is active, even with an old row beside it', async () => {
+    await seed('uninstalled');
+    await AgentInstallation.collection.insertOne({
+      ...key, instanceId: 'Default', podId, installedBy: original, status: 'active', version: '1.0.0', config: {},
+    });
+    await expect(AgentInstallation.install(key.agentName, podId, options())).rejects.toThrow('Agent already installed');
+    expect(await AgentInstallation.countDocuments({ agentName: key.agentName, podId, status: 'active' })).toBe(1);
+  });
+
+  it('says a legacy mixed-case row is installed', async () => {
+    await seed('active');
+    await AgentInstallation.updateOne({ ...key, podId }, { $set: { instanceId: 'Default' } });
+    expect(await AgentInstallation.isInstalled(key.agentName, podId, 'default')).toBe(true);
+  });
+
+  it('takes back the legacy mixed-case row it brought back', async () => {
+    await seed('uninstalled');
+    await AgentInstallation.updateOne({ ...key, podId }, { $set: { instanceId: 'Default' } });
+    const previous = await AgentInstallation.findOne({ agentName: key.agentName, podId });
+    await AgentInstallation.install(key.agentName, podId, options({ stampInstaller: true }));
+    await takeBackInstallation({ ...key, podId }, previous);
+    const rows = await AgentInstallation.find({ agentName: key.agentName, podId }).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'uninstalled', installedBy: original });
+  });
+
   it('puts the installer back when the install is taken back', async () => {
     await seed('uninstalled');
     const previous = await AgentInstallation.findOne({ ...key, podId });
