@@ -1316,35 +1316,22 @@ describe('bootstrapAgentRecordFromEnv', () => {
     })).rejects.toThrow(/No supported agent CLI found on PATH/);
   });
 
-  test('an explicit OpenCode bootstrap requires the server to declare that adapter for the selected install', async () => {
-    const declared = makeFactory({
-      agentName: 'smoke-agent',
-      instanceId: 'default',
-      installations: [{
-        podId: 'pod-main', podType: 'chat', instanceId: 'default', status: 'active',
-        type: 'installation', runtimeAdapter: 'OpenCode',
-      }],
-    });
+  test('F175a: an explicit OpenCode bootstrap is judged by the grant-broker gates, not a declared binding', async () => {
+    // OpenCode joined ADAPTERS_WITH_GRANT_BROKER, so like claude and codex it no
+    // longer needs the server to declare the adapter before an env-token seat
+    // runs: the run path asks /grant-brokers?adapter=opencode and withholds
+    // the broker itself. pi (below) still needs the declaration.
     const record = await bootstrapAgentRecordFromEnv({
       name: 'smoke-agent',
       env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
-      clientFactory: declared,
+      clientFactory: makeFactory({
+        ...identityResponse,
+        installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
+      }),
       adapterRegistry: makeRegistry({ opencodeFound: true }),
       adapterOverride: 'opencode',
     });
     expect(record.adapter).toBe('opencode');
-
-    const undeclared = makeFactory({
-      ...identityResponse,
-      installations: identityResponse.installations.map((row) => ({ ...row, runtimeAdapter: null })),
-    });
-    await expect(bootstrapAgentRecordFromEnv({
-      name: 'smoke-agent',
-      env: { COMMONLY_AGENT_TOKEN: 'cm_agent_abc123', COMMONLY_API_URL: 'https://api.example.test' },
-      clientFactory: undeclared,
-      adapterRegistry: makeRegistry({ opencodeFound: true }),
-      adapterOverride: 'opencode',
-    })).rejects.toThrow(/sign in with commonly login, then run commonly agent attach opencode --pod pod-main --name smoke-agent \[--env <environment\.yaml>\]/);
   });
 
   test('TASK-317: a reported CLI on the installation never counts as a declared adapter', () => {
@@ -1363,7 +1350,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
 
   test('an older server without runtimeAdapter projection says to upgrade instead of re-attaching', async () => {
     const refusal = serverAdapterBindingRefusal({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       installations: identityResponse.installations,
       podId: 'pod-main',
@@ -1419,7 +1406,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const get = jest.fn(async () => ({ installations: identityResponse.installations }));
     const clientFactory = jest.fn(() => ({ get }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'default',
@@ -1448,7 +1435,7 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const response = installations === undefined ? {} : { installations };
     const clientFactory = jest.fn(() => ({ get: jest.fn(async () => response) }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'default',
@@ -1470,12 +1457,12 @@ describe('bootstrapAgentRecordFromEnv', () => {
     const clientFactory = jest.fn(() => ({
       get: jest.fn(async () => ({
         installations: [{
-          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' OpenCode ',
+          podId: 'pod-main', instanceId: 'writer', type: 'installation', runtimeAdapter: ' Goose ',
         }],
       })),
     }));
     const binding = await checkAttachedAdapterBinding({
-      adapterName: 'opencode',
+      adapterName: 'goose',
       agentName: 'smoke-agent',
       podId: 'pod-main',
       instanceId: 'writer',
@@ -1494,7 +1481,12 @@ describe('bootstrapAgentRecordFromEnv', () => {
 
   test('the server-binding rule follows the grant-broker allowlist, with stub exempt', () => {
     expect(adapterRequiresServerBinding('pi')).toBe(true);
-    expect(adapterRequiresServerBinding('opencode')).toBe(true);
+    // F175a: OpenCode joined the broker set, so like claude its run path is
+    // judged by the grant-broker gates (`/grant-brokers?adapter=` and
+    // withholdGrantBroker), not by a server-declared binding.
+    expect(adapterRequiresServerBinding('opencode')).toBe(false);
+    expect(adapterRequiresServerBinding('OpenCode ')).toBe(false);
+    expect(adapterRequiresServerBinding('goose')).toBe(true);
     expect(adapterRequiresServerBinding('claude')).toBe(false);
     expect(adapterRequiresServerBinding('codex')).toBe(false);
     expect(adapterRequiresServerBinding('stub')).toBe(false);

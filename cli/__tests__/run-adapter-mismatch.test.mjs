@@ -30,10 +30,10 @@ await jest.unstable_mockModule('os', () => {
 });
 await jest.unstable_mockModule('../src/lib/api.js', () => ({ createClient: createClientMock }));
 await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
-  getAdapter: (name) => (['claude', 'codex', 'pi', 'opencode', 'stub'].includes(name)
+  getAdapter: (name) => (['claude', 'codex', 'pi', 'opencode', 'goose', 'stub'].includes(name)
     ? { name, detect: async () => true }
     : null),
-  listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'stub'],
+  listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'goose', 'stub'],
   listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
@@ -120,8 +120,10 @@ describe('agent run --adapter against an existing token file', () => {
     expect(JSON.parse(fs.readFileSync(tokenPath, 'utf8')).adapter).toBe('claude');
   });
 
-  test('OpenCode refuses a connect-page installation that has no server adapter binding', async () => {
-    saveAgentToken('byo-test', { ...record('opencode'), instanceId: 'connect-page' });
+  // F175a moved OpenCode into the grant-broker set, which (like claude and
+  // codex) no longer needs a server adapter binding; goose still does.
+  test('an adapter outside the broker set refuses a connect-page installation that has no server adapter binding', async () => {
+    saveAgentToken('byo-test', { ...record('goose'), instanceId: 'connect-page' });
     const get = jest.fn().mockResolvedValue({
       installations: [{
         type: 'installation',
@@ -141,8 +143,17 @@ describe('agent run --adapter against an existing token file', () => {
     expect(createClientMock).toHaveBeenCalledTimes(1);
     expect(get).toHaveBeenCalledWith('/api/agents/runtime/installations');
     const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(stderr).toContain("Adapter 'opencode' is not declared for this Commonly installation");
-    expect(stderr).toContain('commonly login, then run commonly agent attach opencode --pod pod-1 --name byo-test [--env <environment.yaml>]');
+    expect(stderr).toContain("Adapter 'goose' is not declared for this Commonly installation");
+    expect(stderr).toContain('commonly login, then run commonly agent attach goose --pod pod-1 --name byo-test [--env <environment.yaml>]');
+  });
+
+  test('OpenCode, now in the broker set, runs past the binding check with no server adapter binding', async () => {
+    saveAgentToken('byo-test', { ...record('opencode'), instanceId: 'connect-page' });
+    createClientMock.mockImplementation(() => { throw new Error('agent run reached its poll loop'); });
+
+    await expect(run()).rejects.toThrow('agent run reached its poll loop');
+    const stderr = errorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(stderr).not.toContain('is not declared for this Commonly installation');
   });
 
   test('a failed installations read reports the read failure separately from a binding refusal', async () => {

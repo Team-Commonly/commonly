@@ -5,7 +5,8 @@
 // gets its own Mac lines; the rest say what can answer instead.
 jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import i18n, { i18nReady } from '../../i18n';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO, { opencodeKeySnippet, opencodeSnippet } from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -120,5 +121,70 @@ describe('every harness on the add page', () => {
     expect(screen.getByTestId('byo-runner-refused')).toHaveTextContent(line);
     expect(screen.getByTestId('byo-runner-refused').textContent).not.toMatch(/--|sandbox|trust|Error/);
     expect(screen.queryByRole('button', { name: INSTALL_BUTTON })).toBeNull();
+  });
+});
+
+// F175a: a harness that can't be sandboxed says so, plainly, instead of the
+// page leaving connectors unmentioned.
+describe('the connector line for a harness with no sandbox', () => {
+  const asBrowser = (userAgent) => jest.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(userAgent);
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36';
+  const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36';
+  const WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
+  test.each([
+    ['dsh', 'Connectors need a sandboxed harness. DeepSeek Harness runs without a sandbox, so it can’t use connectors.'],
+    ['hermes', 'Connectors need a sandboxed harness. Hermes runs without a sandbox, so it can’t use connectors.'],
+  ])('%s gets the line on any computer', async (runner, line) => {
+    asBrowser(MAC);
+    await renderPage();
+    fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(line);
+  });
+
+  test.each([MAC, LINUX])('pi, Goose and Qwen say connectors don\'t work with them yet, on any computer (%s)', async (ua) => {
+    asBrowser(ua);
+    await renderPage();
+    for (const [runner, name] of [['pi', 'pi'], ['goose', 'Goose'], ['qwen', 'Qwen Code']]) {
+      fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(`Connectors don’t work with ${name} yet.`);
+    }
+  });
+
+  test('reverse: every harness that can hold a grant gets no line', async () => {
+    asBrowser(MAC);
+    await renderPage();
+    for (const runner of ['claude', 'codex', 'opencode']) {
+      fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
+      expect(screen.queryByTestId('byo-no-connectors')).toBeNull();
+    }
+  });
+
+  // CodeRabbit (#3487): on native Windows the CLI gives no seat a grant
+  // broker, Claude Code and Codex included, so the page says so there.
+  test('on Windows, Claude Code and Codex say connectors don\'t work there yet; not on a Mac', async () => {
+    asBrowser(WINDOWS);
+    await renderPage();
+    for (const runner of ['claude', 'codex']) {
+      fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Connectors don’t work on Windows yet.');
+    }
+    fireEvent.click(screen.getByTestId('byo-runner-hermes'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('Hermes runs without a sandbox');
+  });
+
+  test('reads in Chinese under zh-CN', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    asBrowser(LINUX);
+    await renderPage();
+    fireEvent.click(screen.getByTestId('byo-runner-hermes'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('连接器需要带沙箱的运行器。Hermes 运行时没有沙箱，所以用不了连接器。');
+    fireEvent.click(screen.getByTestId('byo-runner-pi'));
+    expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent('pi 暂时还用不了连接器。');
   });
 });

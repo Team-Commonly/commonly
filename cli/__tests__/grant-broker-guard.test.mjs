@@ -125,9 +125,19 @@ describe('grant-broker admission for this adapter', () => {
     // else in this table exercises that (Wren 71662).
     ['a legacy internal trust with no declared mode', 'claude', { sandbox: { trust: 'internal' } }, null],
     ['read-only for codex', 'codex', { sandbox: { mode: 'read-only', trust: 'public' } }, null],
-    ['OpenCode workspace is not yet admitted for the broker', 'opencode', { sandbox: { mode: 'workspace', trust: 'public' } }, 'adapter_cannot_confine'],
-    ['OpenCode bwrap is not yet admitted for the broker', 'opencode', { sandbox: { mode: 'bwrap', trust: 'public' } }, 'adapter_cannot_confine'],
-    ['OpenCode without a sandbox declaration is still not admitted for the broker', 'opencode', {}, 'adapter_cannot_confine'],
+    // F175a: OpenCode is admitted on the modes its adapter enforces for a
+    // public seat (adapters/opencode.js refuses any other), and withheld on
+    // every declaration that leaves it unconfined.
+    ['OpenCode workspace', 'opencode', { sandbox: { mode: 'workspace', trust: 'public' } }, null],
+    ['OpenCode read-only', 'opencode', { sandbox: { mode: 'read-only', trust: 'public' } }, null],
+    ['OpenCode derived public baseline', 'opencode', { sandbox: { trust: 'public' } }, null],
+    ['OpenCode without a sandbox declaration', 'opencode', {}, 'sandbox_absent'],
+    ['OpenCode mode none', 'opencode', { sandbox: { mode: 'none', trust: 'public' } }, 'sandbox_mode_none'],
+    ['OpenCode on a private trust', 'opencode', { sandbox: { mode: 'workspace', trust: 'private' } }, 'sandbox_trust_not_public'],
+    ['OpenCode on a mode no adapter enforces', 'opencode', { sandbox: { mode: 'firejail', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['an OpenCode name in another case is the same adapter only once normalised', 'OpenCode', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
+    ['dsh, which runs no sandbox', 'dsh', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
+    ['hermes, which runs no sandbox', 'hermes', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['pi, which refuses a declared sandbox and derives none', 'pi', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['an adapter this daemon cannot confine', 'mystery', { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
     ['no adapter at all', null, { sandbox: { trust: 'public' } }, 'adapter_cannot_confine'],
@@ -154,6 +164,16 @@ describe('grant-broker admission for this adapter', () => {
     }
     expect(confinementReason({ sandbox: { mode: 'bwrap', trust: 'public' } }, 'codex', 'linux')).toBeNull();
   });
+
+  test('OpenCode is confined on macOS and Linux, and on no host on native Windows', () => {
+    for (const platform of ['darwin', 'linux']) {
+      expect(confinementReason({ sandbox: { trust: 'public' } }, 'opencode', platform)).toBeNull();
+    }
+    expect(confinementReason({ sandbox: { mode: 'bwrap', trust: 'public' } }, 'opencode', 'linux')).toBeNull();
+    expect(confinementReason({ sandbox: { trust: 'public' } }, 'opencode', 'win32')).toBe('sandbox_mode_unenforceable');
+    expect(confinementReason({ sandbox: { mode: 'workspace', trust: 'public' } }, 'opencode', 'win32'))
+      .toBe('sandbox_mode_unenforceable');
+  });
 });
 
 describe('withholding the broker, entry-level', () => {
@@ -178,7 +198,8 @@ describe('withholding the broker, entry-level', () => {
     expect(refusal.code).toBe('grant_broker_unconfined');
     expect(refusal.decidedBy).toBe('daemon');
     expect(refusal.reason).toBe('adapter_cannot_confine');
-    expect(refusal.detail).toContain('claude or codex');
+    // The remedy names every adapter that can hold the broker, from the set.
+    expect(refusal.detail).toContain('claude, codex or opencode');
     expect(names).toEqual(['commonly-grant-broker']);
   });
 
@@ -217,12 +238,22 @@ describe('withholding the broker, entry-level', () => {
     expect(onRefuse).not.toHaveBeenCalled();
   });
 
-  test('OpenCode withholds the broker until server confinement admission is added', () => {
+  test('F175a: a confined OpenCode seat keeps the broker, an unconfined one does not', () => {
     const confined = { sandbox: { trust: 'public' }, mcp: [kernel, broker()] };
     const onRefuse = jest.fn();
-    const out = withholdGrantBroker(confined, 'opencode', { ...opts, onRefuse });
-    expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
-    expect(onRefuse.mock.calls[0][0].reason).toBe('adapter_cannot_confine');
+    expect(withholdGrantBroker(confined, 'opencode', { ...opts, onRefuse, platform: 'darwin' })).toBe(confined);
+    expect(withholdGrantBroker(confined, 'opencode', { ...opts, onRefuse, platform: 'linux' })).toBe(confined);
+    expect(onRefuse).not.toHaveBeenCalled();
+    for (const [environment, platform, reason] of [
+      [{ mcp: [kernel, broker()] }, 'darwin', 'sandbox_absent'],
+      [{ sandbox: { mode: 'none', trust: 'public' }, mcp: [kernel, broker()] }, 'darwin', 'sandbox_mode_none'],
+      [confined, 'win32', 'sandbox_mode_unenforceable'],
+    ]) {
+      const refused = jest.fn();
+      const out = withholdGrantBroker(environment, 'opencode', { ...opts, onRefuse: refused, platform });
+      expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+      expect(refused.mock.calls[0][0].reason).toBe(reason);
+    }
   });
   // F175b wires the broker into codex. The bridge is delivery; this is the
   // gate: a codex seat with no confinement never receives it to wire.
@@ -265,7 +296,9 @@ describe('F94: a broker the server says names this seat', () => {
 
   test('never rides an adapter that is not approved for the broker', () => {
     const environment = { sandbox: { trust: 'public' }, mcp: [kernel, named] };
-    const out = withholdGrantBroker(environment, 'opencode', { ...opts, platform: 'darwin' });
-    expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+    for (const adapter of ['pi', 'dsh', 'hermes']) {
+      const out = withholdGrantBroker(environment, adapter, { ...opts, platform: 'darwin' });
+      expect(out.mcp.map((server) => server.name)).toEqual(['commonly']);
+    }
   });
 });

@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { hostedMcpErrorNotice } from '../components/hostedMcpErrorNotice';
 import { safeProviderRevokePage } from '../utils/safeProviderRevokePage';
+import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   USED_RECENTLY_MS,
   MODE_RANK,
@@ -330,7 +331,7 @@ export const useToolConnectors = (
       byo_not_agent: t('tools.byo.errors.notAgent'),
       byo_agent_not_owned: t('tools.byo.errors.notOwned'),
       byo_unconfined_host: t('tools.byo.errors.unconfinedHost'),
-      byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported'),
+      byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported', { harnesses: grantHarnessNames(t) }),
     };
     return code && Object.prototype.hasOwnProperty.call(labels, code) ? labels[code] : null;
   };

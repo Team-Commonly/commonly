@@ -1740,6 +1740,22 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
   });
 
+  // F175a: a harness that can't hold a grant names the ones that can.
+  it('an agent on a harness with no sandbox is offered disabled, naming the harnesses that can', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' })]);
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText('Connectors need a sandboxed harness: only Claude Code, Codex or OpenCode agents can be named.'))
+      .toBeInTheDocument();
+  });
+
+  it('a mint refused for its harness reads in the page\'s words, naming the full set', async () => {
+    const form = await openAdd([candidate()]);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'byo_adapter_unsupported', message: 'raw' } } });
+    fireEvent.click(consentBox(form));
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByText('Only a Claude Code, Codex or OpenCode agent can be named on a grant.')).toBeInTheDocument();
+  });
+
   it('an agent the roster hides still appears so it can be named', async () => {
     const form = await openAdd([candidate()], { p1: [scout], p2: [] });
     expect(within(form).getByRole('checkbox', { name: 'claude-code' })).toBeInTheDocument();

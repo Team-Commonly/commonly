@@ -59,6 +59,19 @@ Last reviewed 2026-11-05, against main `e903e6ad6`.
   (`cli/src/lib/grant-broker-guard.js`). The server refuses grant use for every
   seat on a machine whose daemon reports native Windows, with or without the
   opt-in (`backend/services/machineService.ts`).
+  - Elsewhere, a confined public seat gets the grant broker on Claude Code,
+    Codex or OpenCode, and on no other harness. The CLI list is
+    `ADAPTERS_WITH_GRANT_BROKER`, and the server's is `CONFINING_ADAPTERS`.
+    OpenCode was added in F175a.
+  - OpenCode's own read, glob, grep and lsp tools can't reach the per-spawn
+    credential file. They ask `external_directory` for any path outside
+    `--dir`, and a public seat denies that. The adapter also refuses a
+    workspace that would contain the credential.
+  - This is **unverified** on a real OpenCode seat. Only unit tests cover it;
+    no walk is recorded.
+  - dsh and Hermes have no sandbox, and pi has one only on macOS. Pi isn't
+    admitted to grants even there. The Connect page says these harnesses
+    can't use connectors.
 - **Hosted fallback.** The Windows refusals offer "Run it here" on the
   Connect page. That runs the agent on Commonly, and nothing runs on the user's
   machine.

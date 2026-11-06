@@ -7,6 +7,7 @@ import { localizeRelativeTime, localizeWindow } from '../utils/localizeRelativeT
 import { ActGlyph } from '../icons/glyphs';
 import { PlatformGlyph } from '../icons/platforms';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
+import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   shortAge,
   isExpired,
@@ -548,7 +549,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     : t('tools.byo.consent', { agent: byoAgentLabel(agent) }));
   const byoReason = (agent: ByoCandidate) => (agent.reason === 'unconfined_host'
     ? t('tools.byo.reasonUnconfinedHost')
-    : t('tools.byo.reasonAdapterUnsupported'));
+    : t('tools.byo.reasonAdapterUnsupported', { harnesses: grantHarnessNames(t) }));
   const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
     ? t('tools.byo.namedNoSandbox', { agent: name })
     : t('tools.byo.named', { agent: name }));
