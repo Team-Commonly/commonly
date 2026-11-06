@@ -15,6 +15,8 @@ const {
   HOSTED_MCP_ENTRIES, findHostedMcpEntry,
 }: typeof import('../../integrations/hostedMcp/entries') = require('../../integrations/hostedMcp/entries');
 const { isHostedMcpEntryHidden } = require('../../integrations/hostedMcp/visibility');
+const { isGithubAppConfigured }: typeof import('../githubAppNames') = require('../githubAppNames');
+const { GITHUB_MCP_ENTRY_ID }: typeof import('../githubConnectProof') = require('../githubConnectProof');
 const {
   isHostedMcpClientConfigured,
 }: typeof import('../hostedMcpIntakeService') = require('../hostedMcpIntakeService');
@@ -156,6 +158,11 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
     return isHostedMcpEntryHidden(meta.entryId, process.env, userId) || !entry || !isHostedMcpClientConfigured(entry);
   };
   const rows = allRows.filter((row) => !isHidden(row));
+  // A person connects their own repository at /github-app/repositories, which
+  // reads their hosted GitHub sign-in, so it needs that entry offered to them.
+  // Both GitHub rows carry it: a member with no connection sees only the hosted one.
+  const repositoryConnect = isGithubAppConfigured('connect')
+    && rows.some((row) => metas[row.installableId].entryId === GITHUB_MCP_ENTRY_ID);
   const hiddenRows = allRows.filter(isHidden);
   const hiddenEntryIds = hiddenRows.map((row) => metas[row.installableId].entryId);
   const hiddenIntegrations = hiddenEntryIds.length ? await Integration.find({
@@ -196,6 +203,8 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       ...(hostedEntry?.credentialMode === 'operator_key' ? { credentialMode: 'operator_key' } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
+      ...(repositoryConnect && (meta.connectionType === 'github-app' || meta.entryId === GITHUB_MCP_ENTRY_ID)
+        ? { repositoryConnect: true } : {}),
       available: readiness.available,
       ...(readiness.available ? {} : { unavailableReason: readiness.reason }),
       broker: { id: String(component?.name || '') },

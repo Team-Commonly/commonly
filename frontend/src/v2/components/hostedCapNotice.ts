@@ -5,12 +5,13 @@ import type { TFunction } from 'i18next';
 // capped. The holders come from the server; nothing here guesses a name.
 export interface HostedCapBody {
   cap?: number;
-  holders?: Array<{ agentName?: string }>;
+  holders?: Array<{ agentName?: string; displayName?: string }>;
 }
 
 export const hostedCapNotice = (t: TFunction, body: HostedCapBody | undefined, fallbackCap = 1): string => {
   const cap = body?.cap ?? fallbackCap;
-  const holder = body?.holders?.find((row) => row.agentName)?.agentName;
+  const held = body?.holders?.find((row) => row.agentName);
+  const holder = held?.displayName || held?.agentName;
   return holder
     ? t('agentByo.errors.hostedCapHeld', { holder, cap })
     : t('agentByo.errors.hostedCap', { cap });

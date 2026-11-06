@@ -901,11 +901,10 @@ describe('AgentMentionService', () => {
         expect(content).toContain('if it starts one, post');
       });
 
-      test('says a reply inside a thread still addresses its author', async () => {
+      test('says a reply inside a thread still quotes its author', async () => {
         // Without this the rule reads as three mutually exclusive branches,
-        // and an agent concludes it must choose between quoting and
-        // threading. The two fields are independent.
-        expect(await frame()).toContain('A reply inside a thread is allowed and still addresses its author');
+        // and an agent concludes it must choose between quoting and threading.
+        expect(await frame()).toContain('A reply inside a thread is allowed and still quotes its author');
       });
 
       // The MECHANICS half had no reader at all until now, and the control
@@ -925,7 +924,11 @@ describe('AgentMentionService', () => {
       test('names all three verbs in the live frame', async () => {
         const content = await frame();
         expect(content).toContain('a plain post broadcasts to the channel');
-        expect(content).toContain('replyToMessageId quotes and ADDRESSES a message');
+        expect(content).toContain('replyToMessageId quotes a message');
+        // F212: a reply edge files the post in a thread on its own, so the
+        // verbs are not independent and the frame must not say they are.
+        expect(content).toContain('the post joins its thread');
+        expect(content).not.toContain('Quote and thread are independent');
         // NOT a bare `toContain('threadRootId')` — the name appears again
         // later in the same frame ("continue the detail under your own root
         // with threadRootId"), so the bare form stays green when the clause
@@ -934,10 +937,11 @@ describe('AgentMentionService', () => {
         expect(content).toContain('continues a thread');
       });
 
-      test('states that replyToMessageId pings the author it addresses', async () => {
-        // An agent that believes a quote is silent uses it for asides, and
-        // the person quoted is woken every time.
-        expect(await frame()).toContain('its author is pinged');
+      test('states that an agent\'s reply wakes no one and an @mention is what reaches them', async () => {
+        // The implicit reply route is for a person's reply only, and a person
+        // is matched on the literal @handle, so an agent relying on the quote
+        // reaches nobody. Executed in answerStaysTopLevel.realPg.test.js.
+        expect(await frame()).toContain('it wakes no one, so @mention whoever must see it');
       });
 
       test('states that threadRootId does NOT ping, and never claims it does', async () => {
@@ -992,7 +996,7 @@ describe('AgentMentionService', () => {
         const content = await frame();
         expect(content).toContain('MCP: `commonly_request_decision`');
         expect(content).toContain('2–4 options');
-        expect(content).toContain('@human for a named ruler');
+        expect(content).toContain("add the named ruler's real @handle");
         expect(content).toContain('if unavailable, ask the intended human');
         expect(content).toMatch(/do not duplicate .*chat ask/);
       });
@@ -1551,6 +1555,24 @@ describe('AgentMentionService', () => {
       }));
       expect(res.enqueued).toEqual([]);
       expect(res.skipped).toEqual(['openclaw:loop-dampened']);
+    });
+
+    test('a digest keeps 500 characters of whitespace-collapsed text, the frame a person\'s mention reads', async () => {
+      setupTargetAgent();
+      asBotSender();
+      AgentEvent.countDocuments.mockResolvedValue(4);
+      const text = `@cody  two\n\nspaces ${'x'.repeat(600)}`;
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-loop-clip',
+        message: { content: text, id: 'msg-loop-clip' },
+        userId: 'agent-theo',
+        username: 'theo',
+      });
+
+      const { payload } = AgentEventService.enqueue.mock.calls[0][0];
+      expect(payload.content).toHaveLength(500);
+      expect(payload.content.startsWith('@cody two spaces xxx')).toBe(true);
     });
 
     test('human -> bot is NEVER suppressed even over threshold', async () => {

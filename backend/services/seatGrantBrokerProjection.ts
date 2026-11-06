@@ -21,7 +21,8 @@
  * servers and a typed refusal instead (TASK-063 — fail closed rather than hand
  * a seat a capability it cannot be held to). F94: a grant that names the seat
  * (its owner's own agent, with consent) lifts a sandbox refusal, never
- * `adapter_cannot_confine` (`namingLiftsRefusal`).
+ * `adapter_cannot_confine` nor `adapter_confines_public_only`
+ * (`namingLiftsRefusal`).
  *
  * Delivery is not authority. Every broker call re-reads the grant and refuses a
  * revoked or expired one (`toolBrokerService` → `assertGrantUsable`), and

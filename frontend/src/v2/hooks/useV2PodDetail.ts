@@ -138,6 +138,7 @@ export interface V2Message {
       callId?: string;
       tool?: string;
       canonicalArgs?: Record<string, unknown>;
+      summary?: Record<string, unknown>;
       argsDigest?: string;
     };
   } | null;

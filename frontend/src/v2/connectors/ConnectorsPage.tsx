@@ -20,6 +20,7 @@ import ConnectorDrawer, { ConnectorDrawerPresence } from './ConnectorDrawer';
 import ConnectorLogo from './ConnectorLogo';
 import ConnectorPopover from './ConnectorPopover';
 import ConnectorTile from './ConnectorTile';
+import GithubInstallWarning from './GithubInstallWarning';
 import type { TileDot } from './ConnectorTile';
 import './connectors.css';
 
@@ -51,7 +52,7 @@ const ConnectorsPage: React.FC = () => {
   const navigate = useNavigate();
   const c = useChannelConnectors();
   const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke, c.podListFailed);
-  const tp = useToolPanels(m);
+  const tp = useToolPanels(m, c.hostedMcpCallbackNotice?.kind === 'access' ? c.hostedMcpCallbackNotice.accessPage : null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [pop, setPop] = useState<Pop | null>(null);
@@ -146,7 +147,7 @@ const ConnectorsPage: React.FC = () => {
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
-  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected || orphanGroup);
+  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || m.repositoryConnect || toolEntry || m.selected || orphanGroup);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -184,6 +185,7 @@ const ConnectorsPage: React.FC = () => {
     m.setSelectedId(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const closeChannels = useCallback(() => {
@@ -212,6 +214,7 @@ const ConnectorsPage: React.FC = () => {
     closeChannels();
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
     m.setSelectedId(null);
     setOrphanKey(null);
     if (toolHasDrawer(entry)) {
@@ -231,6 +234,7 @@ const ConnectorsPage: React.FC = () => {
     setToolKey(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
+    m.setRepositoryConnect(null);
     m.setConfirmRevoke(null);
     if (group.length === 1) {
       setOrphanKey(null);
@@ -457,6 +461,13 @@ const ConnectorsPage: React.FC = () => {
         </ConnectorDrawer>
       );
     }
+    if (m.repositoryConnect) {
+      return (
+        <ConnectorDrawer notices={noticeBlock} type="github" title={GITHUB_BRAND} onClose={() => { closeTools(); m.setError(null); }}>
+          {tp.renderRepositoryConnect()}
+        </ConnectorDrawer>
+      );
+    }
     if (!toolEntry) {
       if (orphanKey && orphanGroup) {
         return (
@@ -495,6 +506,9 @@ const ConnectorsPage: React.FC = () => {
             <div className="v2-cx-pop__acts">{tp.renderEntryActions(toolEntry)}</div>
           </div>
         )}
+        {toolGranted(toolEntry) && toolEntry.available && toolEntry.repositoryConnect && (
+          <div className="v2-cx-pop__acts">{tp.renderRepositoryConnectAction(toolEntry)}</div>
+        )}
         <div className="v2-cx-list">
           {liveGrants.map(tp.renderRow)}
           {deadGrants.length > 0 && (
@@ -528,7 +542,7 @@ const ConnectorsPage: React.FC = () => {
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
-    !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
+    !m.draft && !m.selected && !m.githubAppSetup && !m.repositoryConnect ? m.error : null
   );
   // A refused connect that may have left a grant live at the provider. The
   // callback error leads errorText, so this always sits beside its own notice.
@@ -539,12 +553,18 @@ const ConnectorsPage: React.FC = () => {
   const callbackNotice = c.hostedMcpCallbackNotice;
   const noticeBlock = (
     <>
-      {callbackNotice && (
+      {callbackNotice && callbackNotice.kind === 'access' && (
+        <GithubInstallWarning role="status">
+          <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
+            {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
+          </a>
+        </GithubInstallWarning>
+      )}
+      {callbackNotice && callbackNotice.kind !== 'access' && (
         <p className="v2-cx-note" role="status">
           {callbackNotice.kind === 'reach'
             ? t('connectors.hostedMcpReachNone', { provider: callbackNotice.provider })
-            : callbackNotice.kind === 'installed'
-            ? (callbackNotice.connected
+            : callbackNotice.connected
               ? t('connectors.hostedMcpAppInstalledConnected', {
                 defaultValue: '{{provider}} App installed. {{provider}} is connected.',
                 provider: callbackNotice.provider,
@@ -552,20 +572,7 @@ const ConnectorsPage: React.FC = () => {
               : t('connectors.hostedMcpAppInstalledFinish', {
                 defaultValue: '{{provider}} App installed. Press Connect on {{provider}} to finish.',
                 provider: callbackNotice.provider,
-              }))
-            : (
-              <>
-                {/* GitHub's install page preselects "All repositories" and always
-                    reads public repos, so the notice names the choice to make there. */}
-                {t('connectors.hostedMcpAccessNext', {
-                  defaultValue: "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
-                  provider: callbackNotice.provider,
-                })}{' '}
-                <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
-                  {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
-                </a>
-              </>
-            )}
+              })}
         </p>
       )}
       {errorText && (
@@ -732,6 +739,7 @@ const ConnectorsPage: React.FC = () => {
             {!phone && showChannels && (
               <section className="v2-cx-group" aria-label={t('connectors.channelsGroup', { defaultValue: 'Channels' })}>
                 <h2 className="v2-cx-group__title">
+                  <svg className="v2-cx-group__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" /></svg>
                   {t('connectors.channelsGroup', { defaultValue: 'Channels' })}
                   {offToggle('channels', offChannels.length)}
                 </h2>
@@ -753,6 +761,7 @@ const ConnectorsPage: React.FC = () => {
             {!phone && showTools && (
               <section className="v2-cx-group" aria-label={t('tools.title', { defaultValue: 'Tools' })}>
                 <h2 className="v2-cx-group__title">
+                  <svg className="v2-cx-group__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" /></svg>
                   {t('tools.title', { defaultValue: 'Tools' })}
                   {offToggle('tools', offTools.length + orphanHidden.length)}
                 </h2>

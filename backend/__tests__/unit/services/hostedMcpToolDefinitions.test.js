@@ -1,3 +1,4 @@
+const { isWriteUnknown } = require('../../../services/brokerWriteOutcome');
 /**
  * The `call` half of a hosted-MCP tool: one JSON-RPC request, and the credential
  * fetched inside it.
@@ -778,6 +779,130 @@ describe('hosted-MCP results are bounded', () => {
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
     expect(toolCalls(deps).map(([, init]) => JSON.parse(init.body).method)).toEqual(['tools/list']);
+  });
+
+  describe('a deadline that fires', () => {
+    const hangingOn = (method) => {
+      const deps = makeDeps();
+      const answer = deps.fetcher;
+      deps.fetcher = jest.fn(async (url, init) => {
+        if (init.method === 'DELETE' || JSON.parse(init.body).method !== method) return answer(url, init);
+        return new Promise((_, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      });
+      return deps;
+    };
+    const settle = async (deps) => {
+      jest.useFakeTimers();
+      try {
+        const pending = definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((error) => error);
+        await jest.advanceTimersByTimeAsync(HOSTED_MCP_CALL_TIMEOUT_MS + 1);
+        return await pending;
+      } finally {
+        jest.useRealTimers();
+      }
+    };
+
+    it('during tools/call: the request went out, so it may have landed', async () => {
+      const error = await settle(hangingOn('tools/call'));
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('after the vendor answered: its answer stands', async () => {
+      const deps = makeDeps();
+      const answer = deps.fetcher;
+      deps.fetcher = jest.fn(async (url, init) => {
+        if (init.method === 'DELETE' || JSON.parse(init.body).method !== 'tools/call') return answer(url, init);
+        // The refusal arrives first, and the deadline fires while it is closed.
+        return new Response(new ReadableStream({
+          cancel: () => new Promise((resolve) => { init.signal.addEventListener('abort', resolve); }),
+        }), { status: 401 });
+      });
+      const error = await settle(deps);
+      expect(error).toMatchObject({ code: 'credential_rejected' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('a reset during tools/call, with no deadline, may have landed too', async () => {
+      const deps = makeDeps({ fetcher: jest.fn(async () => { throw new Error('socket hang up'); }) });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a reset during initialize sent no call', async () => {
+      const deps = makeDeps();
+      deps.fetcher = jest.fn(async () => { throw new Error('socket hang up'); });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('a vendor error reply during tools/call is an answer', async () => {
+      const deps = makeDeps({ fetcher: jest.fn(async () => new Response(null, { status: 500 })) });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_error' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('during initialize: no call went out, so it is an ordinary failure', async () => {
+      const error = await settle(hangingOn('initialize'));
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+  });
+
+  describe('a reply lost after the session opened', () => {
+    const callWith = (reply) => {
+      const deps = makeDeps({ fetcher: jest.fn(async () => reply()) });
+      return definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((error) => error);
+    };
+    const json = { 'content-type': 'application/json' };
+
+    it.each([502, 504])('a gateway %s on tools/call may have landed', async (status) => {
+      const error = await callWith(() => new Response('bad gateway', { status }));
+      expect(error).toMatchObject({ code: 'provider_error', details: { vendorStatus: status } });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a body that breaks after the headers may have landed', async () => {
+      const error = await callWith(() => new Response(new ReadableStream({
+        pull(controller) { controller.error(new Error('connection reset')); },
+      }), { status: 200, headers: json }));
+      expect(error).toMatchObject({ code: 'provider_error', details: { failure: 'missing_rpc_reply' } });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a reply that is not JSON may have landed', async () => {
+      // The SDK wraps its own parse failure, so this one reads as a missing reply.
+      const error = await callWith(() => new Response('{"jsonrpc":', { status: 200, headers: json }));
+      expect(error).toMatchObject({ code: 'provider_error', details: { failure: 'missing_rpc_reply' } });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a parse failure classified as invalid_json may have landed', async () => {
+      const error = await callWith(() => new Response(new ReadableStream({
+        pull(controller) { controller.error(new SyntaxError('bad frame')); },
+      }), { status: 200, headers: json }));
+      expect(error).toMatchObject({ code: 'provider_error', details: { failure: 'invalid_json' } });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a vendor error on tools/call is its answer', async () => {
+      const error = await callWith(() => new Response('nope', { status: 503 }));
+      expect(error).toMatchObject({ code: 'provider_error', details: { vendorStatus: 503 } });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('a 502 during initialize sent no call', async () => {
+      const deps = makeDeps();
+      deps.fetcher = jest.fn(async () => new Response('bad gateway', { status: 502 }));
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_error', details: { vendorStatus: 502 } });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
   });
 
   it('keeps the deadline armed while the body is read, so a trickling reply ends the call', async () => {

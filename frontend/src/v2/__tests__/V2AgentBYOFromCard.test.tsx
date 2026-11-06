@@ -45,7 +45,7 @@ const authValue = {
 
 const pods = [
   { _id: 'aaa111', name: 'Workspace', type: 'chat', createdBy: { _id: 'u1' } },
-  { _id: 'bbb222', name: 'Launch', type: 'chat', createdBy: { _id: 'u1' } },
+  { _id: 'bbb222', name: 'Launch', type: 'chat', createdBy: { _id: 'u1' }, joinPolicy: 'invite-only', publicRead: false, communityListed: false },
 ];
 
 beforeEach(() => {

@@ -6,7 +6,7 @@
 
 import {
   describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog,
-  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact,
+  pasteScript, prodInputs, prodOutcome, publishedOutcome, redact, unconfinedNoticeFrom,
 } from '../scripts/windows-byo-verdict.mjs';
 
 const PAGE = [
@@ -159,6 +159,12 @@ describe('the prod walk', () => {
     });
     expect(outcome.reply).toBeNull();
     expect(outcome.problems).toContain('no reply from the agent after the @mention');
+  });
+
+  test('the walk finds the line that says a seat runs unconfined, and reports none when it is absent', () => {
+    const line = '[win] unsandboxed (opted in): Windows has no sandbox Codex can use here';
+    expect(unconfinedNoticeFrom(`polling\r\n${line}\r\nready\r\n`)).toBe(line);
+    expect(unconfinedNoticeFrom('polling\nready\n')).toBeNull();
   });
 });
 

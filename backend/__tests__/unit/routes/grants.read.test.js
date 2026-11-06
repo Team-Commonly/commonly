@@ -132,6 +132,23 @@ beforeEach(async () => {
 });
 
 describe('GET /api/grants?connectionOwner=me', () => {
+  test('says which grants hold pull-request access, so Change access can keep it', async () => {
+    const plain = await RoomGrant.create(grant());
+    const withPr = await RoomGrant.create(grant({ prWrite: true }));
+    Integration.find.mockImplementation(() => ({ select: () => ({ lean: async () => [
+      { _id: 'ffffffffffffffffffffff01', installationId: 'conn-1', createdBy: OWNER },
+    ] }) }));
+    Pod.findById.mockImplementation((id) => ({ select: () => ({ lean: async () => (
+      { _id: id, type: 'public', members: [OWNER, SEAT] }
+    ) }) }));
+
+    const res = await request(app).get('/api/grants?connectionOwner=me').set('x-test-user', OWNER);
+    const row = (grantId) => res.body.grants.find((item) => item.grantId === grantId);
+    expect(row(withPr.grantId).prWrite).toBe(true);
+    expect(row(plain.grantId)).not.toHaveProperty('prWrite');
+    expect(row(withPr.grantId).connectionId).toBe(withPr.connectionId);
+  });
+
   test('includes grants backed by both an external installation id and a hosted connection row id', async () => {
     const hostedId = 'eeeeeeeeeeeeeeeeeeeeee01';
     const githubGrant = await RoomGrant.create(grant());
@@ -170,7 +187,7 @@ describe('GET /api/grants?connectionOwner=me', () => {
     });
     const revoked = res.body.grants.find((row) => row.grantId === owned[0].grantId);
     expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
-    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
+    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS, 'connectionId'].sort().join())).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('conn-other');
   });
 
@@ -482,7 +499,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     const res = await read(row.grantId);
     expect(res.status).toBe(200);
     expect(res.body.grantBrokerRefusal).toMatchObject({
-      code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'adapter_cannot_confine',
+      code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'adapter_confines_public_only',
     });
     expect(res.body.grantBrokerRefusal.detail).toMatch(/adapter/i);
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
@@ -542,7 +559,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // rather than about the pi install being missing.
     await Machine.updateOne({ machineId }, { $set: { ownerUserId: installer._id } });
     const rehomed = await read(row.grantId);
-    expect(rehomed.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(rehomed.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(rehomed.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -575,7 +592,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // installations, the unbound case starts reporting this refusal instead.
     const { row } = await seedSeatGrant({ adapter: 'pi' });
     const res = await read(row.grantId);
-    expect(res.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(res.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -604,7 +621,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     // resolution failing or a missing installation on the branch.
     const installed = await seedSeatGrant({ adapter: 'pi' });
     const judged = await read(installed.row.grantId);
-    expect(judged.body.grantBrokerRefusal.reason).toBe('adapter_cannot_confine');
+    expect(judged.body.grantBrokerRefusal.reason).toBe('adapter_confines_public_only');
     expect(judged.body.grantBrokerRefusalScope).toBe('seat');
   });
 
@@ -639,7 +656,7 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     const res = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
     expect(res.status).toBe(200);
     const listed = res.body.grants.find((entry) => entry.grantId === row.grantId);
-    expect(listed.grantBrokerRefusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+    expect(listed.grantBrokerRefusal).toMatchObject({ reason: 'adapter_confines_public_only' });
     expect(listed.grantBrokerRefusalScope).toBe('seat');
   });
 

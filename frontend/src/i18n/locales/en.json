@@ -909,20 +909,26 @@
       "getStarted": "Get started",
       "selfHost": "Self-host it",
       "talkToUs": "Talk to us",
-      "starGithub": "Star on GitHub"
+      "starGithub": "Star on GitHub",
+      "starCountAria": "{{stars}} GitHub stars"
     },
     "hero": {
       "eyebrow": "Open-source · Apache 2.0",
       "ariaLabel": "Bring your Claude Code, your teammate's Codex, a hosted agent and your whole team into one pod.",
       "titlePrefix": "Bring",
       "titleSuffix": "into one pod.",
-      "lede": "Everyone brings their own agent, and the team shares the conversations and the task board. Open source.",
+      "lede": "Everyone brings their own agent, and the team works in the same conversations. Open source.",
       "selfHostInstall": "Self-host install",
       "copy": "Copy",
       "copied": "Copied",
       "copyInstallAria": "Copy install command",
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
+      "demoSample": "sample workspace · replies are scripted",
+      "demoTry": "try",
+      "demoNeedsYou": "needs you",
+      "demoConnect": "+ Connect Slack or Telegram",
+      "demoWorking": "{{name}} is working",
       "discord": "Questions? We're on Discord",
       "terms": {
         "yourClaudeCode": "your Claude Code",
@@ -941,7 +947,7 @@
     },
     "features": {
       "kicker": "In action",
-      "title": "A real workspace — agents and people in the same pod.",
+      "title": "Your teammate @s your agent. Everyone sees it.",
       "needs": {
         "alt": "Commonly's Activity page: three items that need you across the website, launch and support pods, two of them agent decision cards with options, above what moved forward.",
         "kicker": "Needs you",
@@ -959,27 +965,27 @@
         "title": "Hosted or your own, one roster",
         "text": "Claude Code, Codex and hosted agents side by side. Hire a hosted agent or connect your own — every one gets a name, its own skills, and memory that stays with it. A real seat on the team, not a subagent you spawn and lose.",
         "points": {
-          "bring": "Bring your own agent in about two minutes",
+          "bring": "Bring your own agent",
           "hosted": "Hosted agents when you want zero setup",
           "talk": "Talk to any of them 1:1"
         }
       },
       "connectors": {
-        "alt": "Commonly's Connectors page: Telegram is linked to the Launch pod and Slack to Support. Telegram is open, showing that Launch and Support reach it while Website and Growth are off. Below, GitHub is granted to Launch, where Wren, Kai and Vera may use it.",
+        "alt": "Commonly's Connectors page, with Telegram, Slack and GitHub on. Telegram is open, showing that Launch and Support reach it while Website and Growth are off.",
         "kicker": "Connectors",
         "title": "Your chat is the front door",
-        "text": "Connect Slack or Telegram to a pod. People ask where they already talk; an agent answers in its own name and brings the hard calls to you. Tools like GitHub are granted to a pod, and every write can ask you first.",
+        "text": "Connect Slack or Telegram to a pod. People ask where they already talk; an agent answers in its own name and brings the hard calls to you. Tools like GitHub are granted to a pod, and an agent gets only the access you gave it.",
         "points": {
           "mirror": "Mirror everything, or only when mentioned",
           "grants": "Grants, not shared passwords",
-          "record": "Every call on the pod’s record"
+          "record": "Tool tokens stay server-side"
         }
       },
       "byo": {
-        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on Sam's MacBook Pro and join the Launch pod once that computer's daemon starts it.",
+        "alt": "Commonly's Bring your own agent page, with On my computer chosen from three ways to run an agent: fern will run on My Mac and join the Launch pod once that computer's daemon starts it.",
         "kicker": "Bring your own",
         "title": "Bring the agent you already run",
-        "text": "Register your computer once. The daemon keeps your agents running across logins and reboots, and each one keeps its identity and memory here. Move it to another machine and it comes back knowing everything it learned.",
+        "text": "Register your computer once. The daemon starts when you log in and keeps your agents running, and each one keeps its identity and memory.",
         "points": {
           "runtimes": "Claude Code or Codex",
           "keys": "Your keys and your compute",
@@ -989,7 +995,7 @@
     },
     "how": {
       "kicker": "How it works",
-      "title": "Memory lives with the project, not the tool.",
+      "title": "Send a link. Your teammate sees the conversation so far.",
       "steps": {
         "install": {
           "title": "Install your agents into a pod",
@@ -997,7 +1003,7 @@
         },
         "teammate": {
           "title": "Add a teammate",
-          "text": "The memory is already there. No re-briefing, no pasting context — they pick up where the project is."
+          "text": "They join from a link, see the conversation so far, and can @ your agent."
         },
         "swap": {
           "title": "Swap Claude Code for Codex",
@@ -1011,11 +1017,12 @@
         },
         "cli": {
           "title": "Local CLI",
-          "text": "Run Claude Code or Codex on your laptop."
+          "text": "Run Claude Code on your computer, or Codex on a Mac.",
+          "next": "# then in the app, open Your own agent and press Get my connect command"
         },
         "native": {
           "title": "Native",
-          "text": "Zero-setup, in-process runtime."
+          "text": "A hosted agent, nothing to install."
         }
       }
     },
@@ -1030,7 +1037,7 @@
         },
         "data": {
           "title": "Own the data.",
-          "text": "Self-host on your machines — conversations and memory never leave."
+          "text": "Self-host it and your conversations and memory are stored on your machines."
         },
         "tax": {
           "title": "No per-agent tax.",
@@ -1053,8 +1060,8 @@
         "text": "Every agent keeps its own memory and picks up the pod’s shared history — so you stop being the router between tools that forget each other."
       },
       "mention": {
-        "title": "@mention from anywhere",
-        "text": "Address an agent with @name in any pod and it responds like a teammate — please-respond, run-now, or react to events."
+        "title": "@mention an agent",
+        "text": "@name an agent in a pod and everyone sees the exchange."
       },
       "collaboration": {
         "title": "Agent-to-agent collaboration",
@@ -1068,7 +1075,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac; Linux run once with an API key"
+          "label": "Mac, Windows. Linux tested once with an API key"
         },
         "codex": {
           "name": "Codex",
@@ -1088,60 +1095,73 @@
         },
         "deepseekHarness": {
           "name": "DeepSeek Harness",
-          "label": "Mac"
+          "label": "Mac, private pods only"
         },
         "hosted": {
           "name": "Hosted agent",
           "label": "one click, nothing to install"
         },
         "mcp": {
-          "name": "Any MCP client",
-          "label": "the pod's tools"
+          "name": "MCP clients",
+          "label": "the pod's tools, tested with Claude Code on Mac"
         },
         "linear": {
-          "name": "Linear",
-          "label": "Connector"
+          "name": "Linear"
+        },
+        "github": {
+          "name": "GitHub"
+        },
+        "telegram": {
+          "name": "Telegram",
+          "label": "Chat"
+        },
+        "slack": {
+          "name": "Slack",
+          "label": "Chat"
         }
-      }
+      },
+      "title": "Bring what you already run.",
+      "appsNote": "Agents get read access to Linear and GitHub."
     },
     "agentTeams": {
       "kicker": "Agent teams",
       "title": "One pod, everyone's agents.",
-      "chip": {
-        "chart": "Chart"
-      },
+      "sampleNote": "These are examples. The names are made up.",
       "cards": {
         "one": {
-          "title": "Two laptops, one bug",
+          "title": "Green, but not fixed",
           "roster": {
-            "1": "Alex · alex-claude, his Claude Code on his Mac",
-            "2": "Maya · maya-codex, her Codex on her Mac"
+            "1": "Alex · alex-claude, Claude Code on Alex's machine",
+            "2": "Maya · maya-codex, Codex on Maya's Mac"
           },
           "chat": {
             "1": {
-              "author": "Maya",
-              "text": "@alex-claude which refunds fail, by amount?"
+              "author": "Alex",
+              "text": "@maya-codex my agent's PR #212 went green. Can you read it?"
             },
             "2": {
-              "author": "alex-claude",
-              "chip": "Chart",
-              "text": "All 15 failures are above $5k."
+              "author": "maya-codex",
+              "text": "It only passes because gofmt now sits behind a constant, so the check can't see the call. Nothing got fixed."
             },
             "3": {
               "author": "Maya",
-              "text": "@maya-codex can you take TASK-001?"
+              "text": "@alex-claude declare gofmt and call it by name."
             },
             "4": {
-              "kind": "system",
-              "text": "maya-codex claimed TASK-001"
+              "author": "alex-claude",
+              "text": "Done. Called by name, and CI is still green."
+            },
+            "5": {
+              "author": "Alex",
+              "text": "Thanks both, merging."
             }
           },
-          "footer": "Each agent works with its own owner's access. The board shows who took the fix."
+          "footer": "Alex asked Maya's agent, Maya told Alex's agent what to change, and everyone in the pod saw all of it."
         },
         "two": {
           "title": "A call that needs a person",
           "roster": {
-            "1": "Alex · alex-claude, his Claude Code on his Mac",
+            "1": "Alex · alex-claude, Claude Code on Alex's machine",
             "2": "Maya, no agent today"
           },
           "chat": {
@@ -1163,24 +1183,24 @@
         "three": {
           "title": "Nothing to install",
           "roster": {
-            "1": "Jo · payments agent, a hosted agent started in the pod",
-            "2": "Maya · maya-codex, her Codex on her Mac"
+            "1": "Jo · payments-agent, a hosted agent started in the pod",
+            "2": "Maya, no agent today"
           },
           "chat": {
             "1": {
               "author": "Jo",
-              "text": "@payments-helper file a task for the R17 refund failures"
+              "text": "@payments-agent 15 refunds failed last night, all over $5k. Where should we look first?"
             },
             "2": {
-              "author": "payments agent",
-              "text": "Done, it's TASK-001 on the board."
+              "author": "payments-agent",
+              "text": "Check the amount limit first. Every failure is a large refund."
             },
             "3": {
-              "kind": "system",
-              "text": "maya-codex claimed TASK-001"
+              "author": "Maya",
+              "text": "Saw it. I'll look at the limit."
             }
           },
-          "footer": "Jo started an agent in one click, with nothing set up on a laptop. Maya's Codex took the task from the same board."
+          "footer": "Jo started an agent in one click, with nothing to set up, and everyone in the pod saw the answer."
         }
       }
     },
@@ -1194,17 +1214,17 @@
       },
       "kernel": {
         "title": "Kernel",
-        "text": "The Commonly Agent Protocol — identity, memory, events, tools. Four HTTP verbs. Stable, open, small, never breaking."
+        "text": "The Commonly Agent Protocol covers identity, memory, events and tools. Four verbs. Stable, open, small."
       },
       "drivers": {
         "title": "Drivers",
-        "text": "Runtime adapters — native, OpenClaw, Codex, Claude Code, webhook, CLI. Interchangeable. Your agent runs where it runs."
+        "text": "Runtime adapters for Claude Code, Codex, built-in agents and webhooks. Your agent runs where it runs."
       }
     },
     "proof": {
       "kicker": "Self-proof",
       "title": "Commonly is built on Commonly.",
-      "sub": "Role-specialized agents and a solo founder ship this project together — each agent with memory that stays with it. Every agent-authored PR is labeled; {{count}} architecture decision records document the why.",
+      "sub": "Two people and a team of specialized agents ship this project, and each agent keeps its own memory. Every agent-authored PR is labeled, and {{count}} architecture decision records explain why.",
       "stats": {
         "agents": "agents",
         "messages": "messages / 24h",
@@ -1222,15 +1242,15 @@
         "note": "Your infra, your data. Apache-2.0.",
         "items": {
           "unlimited": "Unlimited humans, agents, and pods",
-          "runtimes": "Drivers for native, OpenClaw, Codex, Claude Code and webhook agents",
-          "fork": "Fork it, audit it — no call-home",
+          "runtimes": "Drivers for Claude Code, Codex, built-in and webhook agents",
+          "fork": "Fork it, audit it",
           "support": "Community support"
         }
       },
       "cloud": {
         "name": "Cloud free",
         "period": "/bring your agents",
-        "note": "Hosted at commonly.me — your agents, our shell.",
+        "note": "Hosted at commonly.me. Your agents, our workspace.",
         "items": {
           "unlimited": "Unlimited BYO agents — they run on your machines, connect free",
           "private": "Private and invited pods",
@@ -1260,7 +1280,7 @@
     },
     "finalCta": {
       "titleLead": "Your team already has a chat.",
-      "titleTail": "Give it an agent."
+      "titleTail": "Bring everyone's agents."
     },
     "footer": {
       "product": "Product",
@@ -1711,9 +1731,23 @@
       "name": "Tool call",
       "loading": "Loading the exact tool call…",
       "unavailable": "Can't show what you'd approve — refresh before deciding.",
+      "yes": "Yes",
+      "no": "No",
+      "file": {
+        "size": "{{bytes}} bytes",
+        "cut": "Only the start is shown. This file is {{bytes}} bytes.",
+        "notShown": "Not shown. This file is {{bytes}} bytes."
+      },
+      "notice": {
+        "contentsCut": "Not all of this is shown: {{shown}} of {{total}} bytes of file contents. Approving commits all of it.",
+        "messageCut": "The commit message is cut short. Approving records all {{total}} characters.",
+        "bodyCut": "The body is cut short: {{shown}} of {{total}} characters. Approving sends all of it.",
+        "pushContents": "A push shows commit ids and size, not its contents. Approving pushes all of it."
+      },
       "ownerOnly": "Arguments are visible to the approval owner only.",
       "ran": "Approved — tool call ran.",
       "failed": "Approved — tool call failed ({{code}}).",
+      "outcomeUnknown": "Approved, outcome unknown. This call may have run. Check before approving it again.",
       "refused": "Approved — tool call refused ({{code}}).",
       "pinChanged": "Approved, but the tool changed since this request. Ask again before running it.",
       "expiredPending": "This tool-call approval has expired.",
@@ -1721,7 +1755,10 @@
         "mergePullRequest": "Merge pull request #{{number}}",
         "createIssue": "Open an issue",
         "commentOnIssue": "Comment on issue #{{number}}",
-        "closeIssue": "Close issue #{{number}}"
+        "closeIssue": "Close issue #{{number}}",
+        "createPullRequest": "Open a pull request",
+        "commitFiles": "Commit to {{head}}",
+        "pushBranch": "Push to {{head}}"
       },
       "label": {
         "repository": "Repository",
@@ -1733,7 +1770,19 @@
         "commitMessage": "Commit message",
         "title": "Title",
         "body": "Body",
-        "labels": "Labels"
+        "labels": "Labels",
+        "base": "Base branch",
+        "branch": "Branch",
+        "lands": "Where it lands",
+        "bodyLength": "Body length",
+        "draft": "Draft",
+        "fileCount": "Files",
+        "file": "File",
+        "branchExists": "Existing branch",
+        "parentCommit": "Parent commit",
+        "baseCommit": "Base commit",
+        "newCommit": "New commit",
+        "bundleSize": "Bundle size"
       },
       "exactArgs": "Exact arguments"
     },
@@ -1897,7 +1946,7 @@
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "scriptsDisabled": "If PowerShell says running scripts is disabled, run Set-ExecutionPolicy -Scope CurrentUser RemoteSigned once, then run the four lines again.",
       "windowsNote": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for {{name}}, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the last line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
-      "windowsCodex": "Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.",
+      "windowsCodex": "Windows has no sandbox Codex can use here, so nothing confines {{name}}. It runs with your own access to files and commands, and anyone in this pod, people you invite later included, can direct it. You choose that by adding <cmd>--unsandboxed</cmd>, and the last line already has it. It gets no connector grants, and it stops answering if this pod stops being invite-only.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "needsWindows": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one PowerShell window: the $env lines last only there.",
@@ -1908,6 +1957,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
+      "unavailableCodexWindows": "Codex on Windows can run only in an invite-only pod that isn’t public or listed. This one doesn’t qualify, or didn’t say. Anyone who can reach it could direct an unconfined agent on your computer. Choose “Run it here” for a hosted agent, or pick a pod that qualifies.",
       "unavailableCodex": "The Codex CLI has been tested only on a Mac and may not answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac.",
       "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",
@@ -1941,7 +1991,8 @@
       "slow": "{{name}} hasn't checked in yet. Mention it anyway; it picks up messages when it starts.",
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
-      "statAgents": "hosted agent"
+      "statAgents": "hosted agent",
+      "openHeld": "Open {{holder}}"
     },
     "preview": {
       "title": "your agent",
@@ -1969,7 +2020,7 @@
     "addComputer": {
       "title": "Add a computer",
       "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
-      "windowsNote": "On Windows there’s no sandbox. With <cmd>--unsandboxed</cmd>, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.",
+      "windowsNote": "On Windows there’s no sandbox. With <cmd>--unsandboxed</cmd>, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands. Codex can: in an invite-only pod it runs with your own access to files and commands, and anyone in that pod, people you invite later included, can direct it.",
       "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "copy": "Copy",
       "copied": "Copied"
@@ -2419,6 +2470,8 @@
     "errors": {
       "loadFailed": "Could not load your team.",
       "redeemFailed": "Could not redeem that code.",
+      "redeemRateLimited": "Too many tries from here. Wait a few minutes, then try the code again.",
+      "redeemServerFailed": "Something went wrong on our side. Try again in a minute. If it still fails, the code may already be used.",
       "openRoomFailed": "Could not open a 1:1 with this agent — try again."
     },
     "tiers": {
@@ -2438,7 +2491,6 @@
     "own": {
       "title": "Your own agent",
       "text": "Claude Code or Codex, from your own machine.",
-      "steps": "On the next page, choose “Use my own agent” if it’s offered, then “Get my connect command”.",
       "setup": "Set it up"
     }
   },
@@ -2553,7 +2605,8 @@
     "gatesTitle": "Pods that reach this channel",
     "hostedMcpAppInstalledConnected": "{{provider}} App installed. {{provider}} is connected.",
     "hostedMcpAppInstalledFinish": "{{provider}} App installed. Press Connect on {{provider}} to finish.",
-    "hostedMcpAccessNext": "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
+    "hostedMcpAccessNext": "On GitHub, choose 'Only select repositories'.",
+    "hostedMcpAccessAll": "GitHub's install page opens on All repositories. Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones. Public repos are readable either way.",
     "hostedMcpAccessOpen": "Open {{provider}}",
     "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
@@ -2701,7 +2754,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
-    "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "linearWriteReconnect": "Agents can read Linear from here, but they can't write to it.",
     "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
@@ -2719,7 +2772,8 @@
     "agents": "agents",
     "agentsAllowed": "agents allowed",
     "ask": "Ask",
-    "asksEveryWrite": "every write asks first",
+    "asksEveryWrite": "a write would ask first",
+    "asksPrWrite": "every commit, push and pull request asks you first",
     "asksFirst": "asks a person first",
     "asksList": "{{tools}} ask first",
     "asksNothing": "nothing asks first",
@@ -2758,6 +2812,26 @@
     "grantedToPod": "granted to <b>{{pod}}</b>",
     "grantedToPodBy": "granted to <b>{{pod}}</b> by <b>{{member}}</b>",
     "granting": "Granting…",
+    "repoConnect": {
+      "action": "Connect a repository",
+      "note": "connect a repository first",
+      "loading": "Reading your repositories…",
+      "readFailed": "Could not read your repositories from GitHub.",
+      "needsGithub": "Connect your GitHub account first. Commonly reads which repositories you can push to from it.",
+      "connectGithub": "Connect GitHub",
+      "none": "No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.",
+      "choose": "Choose a repository",
+      "optionPrivate": "{{repository}} (private)",
+      "optionPublic": "{{repository}} (public)",
+      "pickedPrivate": "You're connecting {{repository}}, a private repository.",
+      "pickedPublic": "You're connecting {{repository}}, a public repository.",
+      "truncated": "This list may be incomplete.",
+      "connecting": "Connecting…",
+      "checkAgain": "Check again",
+      "writeRequired": "You need write access to that repository to connect it.",
+      "exists": "That repository is already connected.",
+      "failed": "Could not connect that repository."
+    },
     "installGitHubApp": "Install GitHub App",
     "installationId": "installation ID",
     "installingGitHubApp": "Installing…",
@@ -2768,6 +2842,9 @@
     "modeRead": "read",
     "modeWrite": "read and write",
     "modeWriteConfirm": "read and write, ask first",
+    "modePrWrite": "read, plus pull requests you approve",
+    "prWriteEnds": "This change ends pull-request access on this grant.",
+    "prWriteChoice": "Agents can also open pull requests from their own branch. You approve each commit, push and pull request.",
     "existingConnection": "existing connection",
     "noLongerOffered": "This connector is no longer offered here.",
     "removeConnection": "Remove connection",
@@ -2820,6 +2897,7 @@
     "reasonUpstreamToolError": "the provider tool returned an error",
     "reasonBrokerUnavailable": "the broker was unavailable",
     "reasonBrokerError": "the broker failed",
+    "reasonOutcomeUnknown": "the outcome is unknown, and the call may have run",
     "reasonToolDrift": "the provider changed this tool since Commonly checked it",
     "reasonToolUnavailable": "this connection's tool list does not include this tool",
     "reasonToolNotFound": "this tool is not registered with Commonly",
@@ -2891,8 +2969,9 @@
       "consent": "{{agent}} runs on your computer, outside Commonly. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
       "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
       "readOnlyHint": "An agent on your computer can only read.",
+      "prWriteConsent": "{{agents}} can also send commits and pull requests to this repository, each one after you approve it.",
       "reasonUnconfinedHost": "Runs on native Windows, where no grant can be used.",
-      "reasonAdapterUnsupported": "Only Claude Code or Codex agents can be named.",
+      "reasonAdapterUnsupported": "Connectors need a sandboxed harness: only {{harnesses}} agents can be named.",
       "namedHeading": "on your computer",
       "named": "{{agent}} runs outside Commonly",
       "namedNoSandbox": "{{agent}} runs outside Commonly, with no sandbox",
@@ -2908,7 +2987,7 @@
         "notAgent": "Only an agent can be named on a grant.",
         "notOwned": "You can name only an agent you installed, and that no one else installed.",
         "unconfinedHost": "This agent runs on native Windows, where no grant can be used.",
-        "adapterUnsupported": "Only a Claude Code or Codex agent can be named on a grant."
+        "adapterUnsupported": "Only a {{harnesses}} agent can be named on a grant."
       }
     }
   },
@@ -3150,8 +3229,8 @@
     "messageWakeShort_mentions": "Mentions",
     "messageWakeShort_human": "People",
     "messageWakeShort_all": "All",
-    "turnsUsed": "{{used}} / {{cap}} turns a day",
-    "turnsUsedNoCap": "{{used}} turns a day · cap unavailable",
+    "heartbeatTurns": "{{turns}} / {{cap}} heartbeat turns a day",
+    "heartbeatTurnsNoCap": "{{turns}} heartbeat turns a day · cap unavailable",
     "specialtyCount_one": "{{count}} specialty",
     "specialtyCount_other": "{{count}} specialties",
     "boundaryCount_one": "{{count}} boundary",
@@ -3256,7 +3335,15 @@
     "other": "Other…",
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",
-    "answeredWith": "Answered with {{harness}}"
+    "answeredWith": "Answered with {{harness}}",
+    "listSeparator": ", ",
+    "listOr": " or ",
+    "noConnectors": "Connectors need a sandboxed harness. {{tool}} runs without a sandbox, so it can’t use connectors.",
+    "noConnectorsYet": "Connectors don’t work with {{tool}} yet.",
+    "noConnectorsWindows": "Connectors don’t work on Windows yet.",
+    "connectorsMacPublicOnly": "{{tool}} can use connectors only as a public agent on a Mac.",
+    "connectorsPublicOnly": "{{tool}} can use connectors only as a public agent.",
+    "connectorsPublicOnlyVersion": "{{tool}} can use connectors only as a public agent, on version {{version}}."
   },
   "outsiderNarrowing": {
     "install": {

@@ -85,6 +85,8 @@ import {
   normalizeSandboxTrust,
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
+import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
@@ -121,7 +123,7 @@ const DEFAULT_TIMEOUT_MS = (() => {
 const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
-// (TASK-545). Parallel reads live here because only this CLI has a subagent
+// (TASK-545). Parallel reads live here because the cue names this CLI's Agent
 // tool; codex is passed row slicing and the background-process cue. A public
 // seat is passed none: its argv allows Read and the MCP under dontAsk, so it
 // has no subagent to spawn or shell to background from, and it answers
@@ -786,28 +788,28 @@ const parseEvent = (line) => {
   }
 };
 
-// The reply is the `result` event's text. A turn that reaches no result event
-// (killed mid-stream, exit 0) gets the text of its assistant events, never the
-// raw NDJSON. Output with no JSON lines at all is plain text and returned as it
-// arrived. A result flagged `is_error` is a failed turn, whatever its exit code,
-// so it is raised here, outside the parse guard, and never returned as a reply.
+const STOPPED_TURN = 'the turn stopped before it finished';
+
+// The reply is the `result` event's text. A turn with no result event stopped
+// before it finished: SIGINT exits 0 without printing one (claude 2.1.318), with
+// or without assistant text, and before startup it prints nothing at all. That
+// text isn't an answer, since each assistant event may be an interim message on
+// the way to a tool, and empty text would read as a turn with nothing to say.
+// Other output with no JSON lines is plain text and returned as it arrived. A
+// result flagged `is_error` is a failed turn, whatever its exit code, so it is
+// raised here, outside the parse guard, and never returned as a reply.
 export const claudeResultText = (stdout, { credentials = [] } = {}) => {
   const text = String(stdout || '');
   const events = text.split('\n').map(parseEvent);
-  if (!events.some(Boolean)) return text.trim();
+  if (text.trim() && !events.some(Boolean)) return text.trim();
   for (let i = events.length - 1; i >= 0; i -= 1) {
     if (events[i]?.type !== 'result') continue;
     const reply = String(events[i].result ?? '').trim();
-    if (events[i].is_error === true) throw adapterFailure('claude', reply, { credentials });
+    // An interrupted request reports error_during_execution with empty text.
+    if (events[i].is_error === true) throw adapterFailure('claude', reply || STOPPED_TURN, { credentials });
     return reply;
   }
-  return events
-    .filter((event) => event?.type === 'assistant')
-    .flatMap((event) => event.message?.content || [])
-    .filter((block) => block?.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim();
+  throw adapterFailure('claude', STOPPED_TURN, { credentials });
 };
 
 // TASK-256: what a public seat's own stream says about its Commonly MCP server.
@@ -1458,6 +1460,10 @@ const prepareArgv = async (innerArgv, ctx) => {
       // link refuses the turn (fail-closed). A workspace seat's folder is the
       // operator's own choice, which may be a link, and keeps following it.
       pinWorkspace: sandboxTrust === 'public',
+      // F200: a workspace seat's folder is held to the realpath recorded on
+      // its first turn, and that record is never writable from the jail.
+      expectedWorkspaceRealpath: ctx.workspaceRealpath || null,
+      denyWritePaths: ctx.workspacePinDirs || [],
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
@@ -1524,6 +1530,10 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { statePath } = ctx.publicClaudeState;
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
+      // F200: bwrap resolves a bind source when the jail starts, after the
+      // check, so the checked realpath is the source, mounted at the path the
+      // seat was given.
+      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
       workspaceReadOnly: !grants.includes('write'),
       readOnlyWorkspaceEntries: ['.git'],
       homePath: statePath,
@@ -1648,6 +1658,13 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
+    // Only an MCP seat has a per-turn folder (createMcpConfig). Before skills
+    // mount, because they write into the workspace.
+    if (publicTrust && Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+      await refuseWorkspaceHoldingTurnDirs({
+        workspace: ctx.cwd, seat: `${ctx.environment.sandbox.trust} Claude agents`,
+      });
+    }
     // Only a stranger-facing seat is witnessed (TASK-256). A workspace seat is
     // confined too, but it answers its own team, and an outage it narrates
     // there is a signal, not a leak.
@@ -1720,6 +1737,14 @@ export default {
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    // F200: a jailed workspace seat's folder must still resolve where it did
+    // on the seat's first turn, or a link the seat left in its place would
+    // carry this turn's grant elsewhere. The record sits beside the seat's
+    // state folder, the one bwrapClaudeStatePath names for both jails.
+    const heldWorkspace = ctx.environment?.sandbox?.trust === 'workspace' && Boolean(ctx.cwd)
+      && (publicNativeSandbox || workspaceBwrapSandbox);
+    const workspacePinDirs = heldWorkspace ? [workspacePinDir(bwrapClaudeStatePath(ctx))] : [];
+    let workspaceRealpath = null;
     // The proxy's address and per-turn token, never the host's key.
     const withProvider = (env) => {
       if (providerProxy) {
@@ -1733,6 +1758,11 @@ export default {
       ...spawnCredentials(spawnContext), providerProxy?.token,
     ].filter(Boolean);
     try {
+      // Checked (and recorded, the first time) before the state is prepared
+      // or anything is spawned.
+      if (heldWorkspace) {
+        workspaceRealpath = await holdWorkspaceRealpath({ cwd: ctx.cwd, statePath: bwrapClaudeStatePath(ctx) });
+      }
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
@@ -1854,6 +1884,8 @@ export default {
         publicClaudeState,
         publicSkillArgs,
         providerProxyPort: proxyPort(providerProxy),
+        workspaceRealpath,
+        workspacePinDirs,
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);

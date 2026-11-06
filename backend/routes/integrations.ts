@@ -53,7 +53,8 @@ const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGran
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { isGithubAppConfigured } from '../services/githubAppNames';
-import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, proveConnectRepository } from '../services/githubConnectProof';
+import { githubRepositoryListRateLimit } from '../middleware/githubRepositoryListRateLimit';
+import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, listConnectRepositories, proveConnectRepository } from '../services/githubConnectProof';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 import { Types } from 'mongoose';
 import {
@@ -501,6 +502,40 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
   }
 });
 
+// The picker for the route above: what the caller's own token could connect,
+// less what they already have. Listing proves nothing; the POST still does.
+router.get('/github-app/repositories', githubRepositoryListRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+    if (!isGithubAppConfigured('connect')) {
+      return res.status(503).json({ error: 'github_app_not_configured', message: 'Commonly Connect is not configured on this instance' });
+    }
+    const listed = await listConnectRepositories({ userId });
+    const own = await Integration.find({
+      type: 'github-app', createdBy: userId, status: 'connected', revokedAt: null, 'config.app': 'connect',
+    }).select('config.installationId config.repoKey').lean() as Array<{ config?: { installationId?: string; repoKey?: string } }>;
+    // Keyed as the POST keys it: a reinstall under a new id is a new connection.
+    const connected = new Set(own.map((row) => `${row.config?.installationId}:${row.config?.repoKey}`));
+    return res.json({
+      repositories: listed.repositories
+        .filter(({ installationId, owner, repo }) => !connected.has(`${installationId}:${`${owner}/${repo}`.toLowerCase()}`)),
+      truncated: listed.truncated,
+    });
+  } catch (error) {
+    if (error instanceof GithubConnectProofError) {
+      return res.status(error.statusCode).json({
+        error: error.code,
+        message: error.message,
+        ...(error.code === 'github_connect_required'
+          ? { connect: `/api/integrations/connect/hosted-mcp/${GITHUB_MCP_ENTRY_ID}/start` } : {}),
+      });
+    }
+    console.error('Error listing Commonly Connect repositories:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Explicit admin bind for the App-wide activity webhook. Connection creation
 // alone never opts a repository into a pod or agent-visible activity.
 router.put('/github-app/:id/gig-pod', writeIntegrationsRateLimit, auth, adminAuth, async (req: AuthReq, res: Res) => {
@@ -649,7 +684,7 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const DMService = require('../services/dmService');
     if (!await DMService.canViewPod(req.user?.id, pod)) return res.status(403).json({ message: 'Access denied' });
-    const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username email').populate('platformIntegration');
+    const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username').populate('platformIntegration');
     // Routing state is the connector's, not the pod's: a member who did not
     // create this connector sees that it is linked (config.linked) and to
     // which chat (config.chatTitle), never the external chat id, the identity

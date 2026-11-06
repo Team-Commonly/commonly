@@ -751,6 +751,52 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  // F219: Claude's MCP folder holds this turn's credential, under the temp root,
+  // so a workspace that holds the temp root hands it to Read and to the jail.
+  test.each(['public', 'workspace'])('a %s seat with MCP in a workspace that holds the temp folder is refused', async (trust) => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(claude.spawn('hi', {
+      agentName: 'f219-seat',
+      sessionId: null,
+      cwd: os.tmpdir(),
+      runtimeToken: 'cm_agent_fake',
+      env: { PATH: process.env.PATH },
+      environment: {
+        model: 'test-model',
+        mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        sandbox: { trust, mode: 'workspace' },
+      },
+      _spawnImpl: impl,
+    })).rejects.toThrow(new RegExp(`${trust} Claude agents cannot run in .*set TMPDIR outside it`));
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a public seat with no MCP has no per-turn folder, so the check does not reach it', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-f219-state-'));
+    const originalPlatform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+      ));
+      await claude.spawn('hi', {
+        agentName: 'f219-no-mcp',
+        sessionId: null,
+        cwd: os.tmpdir(),
+        env: { PATH: process.env.PATH },
+        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with NO mode resolves to bwrap off darwin, with the same tool policy macOS gets', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
@@ -1776,12 +1822,15 @@ describe('claude adapter — a workspace seat on Linux', () => {
     await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
 
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [cwd, cwd]]);
+    // The source is the checked realpath (F200); tmpdir is itself a link on macOS.
+    const realCwd = fs.realpathSync(cwd);
+    const realGit = fs.realpathSync(gitDir);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [realCwd, cwd]]);
     // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([realGit, gitDir]);
     // .git is bound after the project, so it lands on top of it.
     const bindAt = (flag, p) => outer.findIndex((arg, i) => arg === flag && outer[i + 1] === p);
-    expect(bindAt('--ro-bind', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+    expect(bindAt('--ro-bind', realGit)).toBeGreaterThan(bindAt('--bind', realCwd));
   });
 
   test('a write grant on a project with no .git refuses, and creates nothing in it', async () => {
@@ -1809,7 +1858,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     const { impl, calls } = childImpl();
     await linuxSpawn(impl);
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([fs.realpathSync(cwd), cwd]);
     expect(fs.readdirSync(cwd)).toEqual([]);
   });
 

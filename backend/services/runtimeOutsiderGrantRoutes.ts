@@ -60,9 +60,14 @@ add(runtime, 'read', [
   'GET /memory/shared/:agentName/:instanceId?',
 ]);
 add(runtime, 'own_state', ['POST /events/:id/ack', 'POST /pods/:podId/skill-load']);
-// A lease renewal, the seat's own model controls (a page-issued key may change
-// only its own BYO installations), and its own read cursor: none reaches anyone else.
-add(runtime, 'own_state', ['POST /events/renew', 'PATCH /configuration', 'POST /pods/:podId/catch-up']);
+// A lease renewal or hand-back of its own delivery (F189), the seat's own model
+// controls (a page-issued key may change only its own BYO installations), and
+// its own read cursor: none reaches anyone else.
+add(runtime, 'own_state', [
+  'POST /events/renew', 'POST /events/release', 'PATCH /configuration', 'POST /pods/:podId/catch-up',
+  // Marks only the calling seat and only tightens it: confined can't be restored here.
+  'POST /host-unconfined',
+]);
 add(runtime, 'pod_write', [
   'POST /pods/:podId/typing', 'POST /pods/:podId/messages', 'POST /pods/:podId/propose-action',
   'POST /pods/:podId/summaries', 'POST /pods/:podId/ask', 'POST /pods/:podId/uploads',

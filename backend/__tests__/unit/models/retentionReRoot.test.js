@@ -90,6 +90,17 @@ const orphanedChain = async (depth) => {
 };
 
 describe('reRootOrphanedChains repairs it', () => {
+  test('a top-level answer has the orphan\'s shape and is left alone (F212)', async () => {
+    const asked = await mk(null, null);
+    const answer = await mk(null, asked);
+    await mockPool.query('UPDATE messages SET top_level_answer = TRUE WHERE id = $1', [answer]);
+
+    const out = await PGMessage.reRootOrphanedChains();
+
+    expect(await rootOf(answer)).toBeNull();
+    expect(out.reRooted).toBe(0);
+  });
+
   test('the grandchild re-points at the promoted root', async () => {
     const { C, ids: [G] } = await orphanedChain(1);
 

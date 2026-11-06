@@ -113,12 +113,14 @@ beforeAll(async () => {
     payload JSONB,
     reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    top_level_answer BOOLEAN,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
   )`);
   await mockPool.query(`CREATE TABLE pods (
     id VARCHAR(255) PRIMARY KEY, updated_at TIMESTAMP WITH TIME ZONE
   )`);
   await mockPool.query("INSERT INTO pods (id) VALUES ('pod-1')");
+  await mockPool.query("INSERT INTO pods (id) VALUES ('pod-2')");
 });
 
 describe('the two-target hazard this suite warns about is still real', () => {
@@ -145,6 +147,31 @@ describe('the two-target hazard this suite warns about is still real', () => {
     // If the order ever flips, a first-match mutation starts hitting the real
     // SQL and the warning above becomes actively misleading rather than stale.
     expect(isComment(lines[0])).toBe(true);
+  });
+});
+
+describe('a top-level answer keeps its reply edge and takes no root (F212)', () => {
+  const topLevel = (content, replyTo) => PGMessage.create(
+    POD, 'agent-1', content, 'text', replyTo, null, null, null, null, null, true,
+  );
+
+  test('the edge is stored, the root is not derived, and the row is marked', async () => {
+    const asked = await insert('asked');
+    const answer = await topLevel('answer', asked.id);
+    expect(answer).toMatchObject({ reply_to_message_id: asked.id, thread_root_id: null, top_level_answer: true });
+  });
+
+  test('a plain reply beside it still derives, and is not marked', async () => {
+    const asked = await insert('asked');
+    await topLevel('answer', asked.id);
+    const plain = await insert('reply', asked.id);
+    expect(plain.thread_root_id).toBe(asked.id);
+    expect(plain.top_level_answer).toBeNull();
+  });
+
+  test('the pod check still holds for a top-level answer', async () => {
+    const elsewhere = await PGMessage.create('pod-2', 'user-1', 'other pod', 'text');
+    await expect(topLevel('answer', elsewhere.id)).rejects.toMatchObject({ code: 'reply_target_unavailable' });
   });
 });
 

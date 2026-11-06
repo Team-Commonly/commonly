@@ -173,6 +173,20 @@ describe('judgeSeatConfinement — a seat on a computer that runs agents without
     expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
   });
 
+  test('a foreground run with no machine is refused once it marks the seat, and naming can\'t lift it', async () => {
+    await bindSeat();
+    await User.updateOne({ _id: SEAT }, { $set: { 'botMetadata.machineId': null } });
+    await installRow({ runtime: { adapter: 'codex', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+
+    await User.updateOne({ _id: SEAT }, { $set: { 'botMetadata.hostUnconfined': true } });
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ code: 'grant_broker_unconfined', reason: 'sandbox_mode_unenforceable' }),
+      scope: 'seat',
+      hostUnconfined: true,
+    });
+  });
+
   test('refuses even a seat no projection holds (a refusal can only be added)', async () => {
     await bindSeat();
     await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: true } });
@@ -198,7 +212,7 @@ describe('judgeSeatConfinement — which declaration judges the caller', () => {
 
     expect(judgement.refusal).toMatchObject({
       code: 'grant_broker_unconfined',
-      reason: 'adapter_cannot_confine',
+      reason: 'adapter_confines_public_only',
       decidedBy: 'server',
     });
     expect(judgement.scope).toBe('seat');
@@ -214,12 +228,12 @@ describe('judgeSeatConfinement — which declaration judges the caller', () => {
   test('an explicit adapter pi is refused, and so is a shouted one', async () => {
     await bindSeat();
     await installRow({ runtime: { adapter: 'pi', host: 'byo' } });
-    expect((await judge()).refusal?.reason).toBe('adapter_cannot_confine');
+    expect((await judge()).refusal?.reason).toBe('adapter_confines_public_only');
 
     await AgentInstallation.deleteMany({});
     await installRow({ runtime: { adapter: ' PI ', host: 'byo' } });
     // The daemon trims and lowercases before spawning, so ' PI ' reaches pi too.
-    expect((await judge()).refusal?.reason).toBe('adapter_cannot_confine');
+    expect((await judge()).refusal?.reason).toBe('adapter_confines_public_only');
   });
 
   test('a claude-code runtimeType is not refused', async () => {
@@ -277,14 +291,14 @@ describe('judgeSeatConfinement — which declaration judges the caller', () => {
       runtime: { runtimeType: 'pi' }, installedBy: OTHER_OWNER, podId: POD_TWO,
     });
 
-    expect((await judge()).refusal?.reason).toBe('adapter_cannot_confine');
+    expect((await judge()).refusal?.reason).toBe('adapter_confines_public_only');
 
     // Same two rows, opposite insertion order: whichever projection is scanned
     // first, the refusing one decides.
     await AgentInstallation.deleteMany({});
     await installRow({ runtime: { runtimeType: 'pi' }, installedBy: OTHER_OWNER });
     await installRow({ runtime: { runtimeType: 'claude-code' }, installedBy: OWNER, podId: POD_TWO });
-    expect((await judge()).refusal?.reason).toBe('adapter_cannot_confine');
+    expect((await judge()).refusal?.reason).toBe('adapter_confines_public_only');
   });
 
   test('an agentUserId that is not an ObjectId is unbound, not a 500', async () => {
@@ -303,7 +317,7 @@ describe('judgeSeatConfinement — which declaration judges the caller', () => {
     await installRow({ runtime: { runtimeType: 'pi' } });
 
     expect((await judge({ agentName: undefined, instanceId: undefined })).refusal?.reason)
-      .toBe('adapter_cannot_confine');
+      .toBe('adapter_confines_public_only');
   });
 
   test('a row installed by someone other than the machine owner is still judged', async () => {
@@ -315,7 +329,7 @@ describe('judgeSeatConfinement — which declaration judges the caller', () => {
     await bindSeat({ owner: OWNER });
     await installRow({ runtime: { runtimeType: 'pi' }, installedBy: OTHER_OWNER, podId: POD_TWO });
 
-    expect((await judge()).refusal?.reason).toBe('adapter_cannot_confine');
+    expect((await judge()).refusal?.reason).toBe('adapter_confines_public_only');
   });
 });
 
@@ -338,7 +352,7 @@ describe('the broker call and the tool list refuse an unconfined seat', () => {
     })).rejects.toMatchObject({
       code: 'grant_broker_unconfined',
       statusCode: 403,
-      details: expect.objectContaining({ reason: 'adapter_cannot_confine' }),
+      details: expect.objectContaining({ reason: 'adapter_confines_public_only' }),
     });
 
     // Not a spendable call: the provider was never reached and no budget line

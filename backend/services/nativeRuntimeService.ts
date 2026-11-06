@@ -27,6 +27,7 @@
 
 import { Types } from 'mongoose';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
+import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
 import {
@@ -45,6 +46,7 @@ import { nativeCueFromKernel } from './nativeKernelCue';
 import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
+import { carriesOtherAuthors } from './mentionCoalesce';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
@@ -218,6 +220,14 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 // turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
+
+// What a hosted agent posts when a person addressed it and no turns are left.
+// Before F234 the turn just ended, and the person read that as a broken agent.
+// Fixed text. It names no owner: the per-user ceiling is the owner's, across all
+// their agents, so the agent may have used none of them and the asker may not
+// be the owner.
+export const HOSTED_TURNS_USED_LINE = 'There are no turns left today, so I can\'t answer this one. '
+  + 'They reset at midnight UTC.';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -798,6 +808,11 @@ interface DispatchContext {
    */
   floorHeld?: boolean;
   /**
+   * F56: a person's own words addressed this turn and no reply has reached the
+   * pod yet. Cleared by the first post that lands.
+   */
+  personWaiting?: boolean;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -914,6 +929,48 @@ const fanOutAgentPost = (
 };
 
 /**
+ * What a posting tool tells the model and the run. Every tool that posts through
+ * postMessage ends here, so none can answer `posted: true` over a post that
+ * wrote no row, and an offer card reports like any other post (F56).
+ */
+const postToolResult = (
+  ctx: DispatchContext,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  result: any,
+): DispatchResult => {
+  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  if (result?.refused && result.reason === 'consecutive_run_cap') {
+    // The shared guidance offers an attachment, which a web-tainted turn
+    // cannot make, and only another speaker clears the cap. Say only that.
+    ctx.floorHeld = true;
+    return {
+      content: {
+        ok: false,
+        posted: false,
+        reason: result.reason,
+        guidance: `Not posted: you have already sent ${result.consecutive} messages in a row here `
+          + 'with nobody else speaking. Wait for someone else to speak. This turn ends now.',
+      },
+      error: 'message_post_refused',
+    };
+  }
+  if (result?.refused) {
+    return { content: { ok: false, posted: false, reason: result.reason, result }, error: 'message_post_refused' };
+  }
+  // A skip wrote no row (F253). A duplicate is a failed post, so the run does
+  // not count it as an answer; a NO_REPLY stays the decline it is.
+  const skip = describeSkippedPost(result);
+  if (skip) {
+    const heldBack = isHeldBackPost(result);
+    return {
+      content: { ok: !heldBack, ...skip, result },
+      ...(heldBack ? { error: 'message_post_refused' } : {}),
+    };
+  }
+  return { content: { ok: true, posted: true, result } };
+};
+
+/**
  * The daily run cap of a native install that sets none (F64). Once a native
  * post wakes the agents it @mentions (F62), two native agents can answer each
  * other; the mention dampener slows that loop and this stops it, at this many
@@ -1018,28 +1075,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        if (result?.refused && result.reason === 'consecutive_run_cap') {
-          // The shared guidance offers an attachment, which a web-tainted turn
-          // cannot make, and only another speaker clears the cap. Say only that.
-          ctx.floorHeld = true;
-          return {
-            content: {
-              ok: false,
-              posted: false,
-              reason: result.reason,
-              guidance: `Not posted: you have already sent ${result.consecutive} messages in a row here `
-                + 'with nobody else speaking. Wait for someone else to speak. This turn ends now.',
-            },
-            error: 'message_post_refused',
-          };
-        }
-        if (result?.refused) {
-          return { content: { ok: false, posted: false, result }, error: 'message_post_refused' };
-        }
-        return { content: { ok: true, posted: true, result } };
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_offer_hosted_agent': {
@@ -1085,10 +1125,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        return { content: { ok: true, posted: true, result } };
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_offer_local_agent': {
@@ -1154,10 +1195,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
-        return { content: { ok: true, posted: true, result } };
+        return postToolResult(ctx, result);
       }
 
       case 'commonly_create_task': {
@@ -1574,6 +1616,8 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
     ? trigger.payload as Record<string, unknown> : {}) as Record<string, unknown>;
   const senderId = typeof payload.userId === 'string' ? payload.userId.trim() : '';
   if (!payload.messageId || !senderId) return false;
+  // A coalesced message rides in this turn's text under someone else's name.
+  if (carriesOtherAuthors(payload)) return false;
   try {
     const User = require('../models/User');
     const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: unknown } | null;
@@ -1592,6 +1636,21 @@ export const triggerTextIsHumanWritten = async (trigger: NativeRunTrigger): Prom
 const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|an)\s+(claude code|codex|local agent)\b/i;
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
+
+// F56: since this process started. AgentRun.emptyCompletion is the durable count.
+let emptyCompletionCount = 0;
+
+/**
+ * F56 and F234: a person's own words addressed this turn, so someone is waiting
+ * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
+ */
+const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boolean> => {
+  if (!wasDirectlyAddressed(trigger)) return false;
+  const payload = (trigger.payload || {}) as Record<string, unknown>;
+  if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
+    || payload.boardWake === true || payload.welcomeWake === true) return false;
+  return triggerTextIsHumanWritten(trigger);
+};
 
 // Any reply this run, not just a card, answers the connect request.
 export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
@@ -2038,6 +2097,36 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
+  // F234: a hosted turn stopped before it ran still owes a waiting person a word.
+  // Kernel wakes arrive as chat.mention too, and nobody is waiting on those; the
+  // sweep would repeat the line all day. An agent's @ gets nothing, as it did
+  // before: that is the loop the cap exists to end. No answeringMessageId: this
+  // line isn't an answer, and that field would close the first-task card on it.
+  // A failed post doesn't change the stop.
+  const tellAddressedPerson = async (content: string): Promise<void> => {
+    if (!hostedNative || !await personAddressedThisTurn(trigger)) return;
+    try {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentMessageService = require('./agentMessageService');
+      await AgentMessageService.postMessage({
+        agentName,
+        instanceId,
+        podId,
+        content,
+        messageType: 'text',
+        displayName,
+        installationConfig: cfg,
+        metadata: { source: 'native-runtime', runFailed: true },
+        failureNotice: true,
+        personWaiting: true,
+        kind: 'error',
+        threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
+      });
+    } catch (postErr) {
+      console.warn('[native-runtime] stopped-turn line not posted:', (postErr as Error).message);
+    }
+  };
+
   // A first-contact greeting is not one of the person's turns: it fires once
   // per person and agent (AgentFirstContact), before they have asked anything,
   // so neither count below spends it (QA walk, 2026-10-16: the greeting cost 1
@@ -2063,21 +2152,27 @@ export async function runAgent(
       const dayStart = new Date();
       dayStart.setUTCHours(0, 0, 0, 0);
       const runsToday = await AgentRunModel.countDocuments({
-        podId: installation.podId,
         agentName,
         instanceId,
         startedAt: { $gte: dayStart },
         trigger: { $ne: UNMETERED_TRIGGER },
-        // For a hosted install this cap is the person's plan line, so it
-        // leaves out the runs their meter leaves out (nativeTurnsToday). The
-        // per-user ceiling below counts every run.
-        ...(hostedNative ? { metered: { $ne: false } } : {}),
+        // For a hosted install this cap is the person's plan line, so it is
+        // their agent across its rooms and leaves out the runs their meter
+        // leaves out (nativeTurnsToday), or a third room would be a third
+        // day's turns. The per-user ceiling below counts every run.
+        ...(hostedNative
+          ? {
+            metered: { $ne: false },
+            ...(installation.installedBy ? { userId: String(installation.installedBy) } : {}),
+          }
+          : { podId: installation.podId }),
       });
       if (runsToday >= dailyRunCap) {
         console.warn(
           `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
           + `in pod ${podId} — declining until UTC midnight`,
         );
+        await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
@@ -2123,9 +2218,11 @@ export async function runAgent(
             `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
             + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
           );
+          await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
           return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
         }
       } catch (err) {
+        await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
         return failedResult(
           '',
           'user_ceiling_check_failed',
@@ -2285,6 +2382,7 @@ export async function runAgent(
     installationConfig: cfg,
     computerRequesterId: SENDER_WRITTEN_EVENT_TYPES.has(String(trigger.type))
       && (trigger.payload as { messageId?: unknown } | null)?.messageId
+      && !carriesOtherAuthors(trigger.payload)
       ? String((trigger.payload as { userId?: unknown }).userId || '')
       : undefined,
     ownUserId: null,
@@ -2292,6 +2390,11 @@ export async function runAgent(
     answeringMessageId: claimMessageId || undefined,
     answeringThreadRootId: threadRootOfTrigger(trigger.payload),
   };
+
+  // F56: read once. Neither the reply nor the failed-turn line is an answer to an
+  // agent, a sweep or a wake that only quotes a person.
+  const personAsked = await personAddressedThisTurn(trigger);
+  dispatchCtx.personWaiting = personAsked;
   // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
   // fetch makes neither lookup (its own user, the trigger's sender).
   const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
@@ -2329,6 +2432,7 @@ export async function runAgent(
     run.completedAt = new Date();
     await run.save();
     emitStop();
+    await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
     return failedResult(runId, 'config', run.errorMessage);
   }
 
@@ -2618,7 +2722,7 @@ export async function runAgent(
         const axErr = err as AxiosError;
         run.status = 'failed';
         run.errorKind = 'llm_error';
-        // Publish only a bounded category, never the proxy payload, URL or credentials.
+        // Keep only a bounded category, never the proxy payload, URL or credentials.
         modelFailureReason = modelFailureReason || (axErr.code === 'ECONNABORTED' || axErr.code === 'ETIMEDOUT'
           ? 'request timed out' : 'connection failed');
         run.errorMessage = `Model ${model}: ${modelFailureReason}`.slice(0, 1000);
@@ -2893,13 +2997,15 @@ export async function runAgent(
             threadRootId: dispatchCtx.answeringThreadRootId ?? null,
             runId,
             runPodId: String(podId),
+            personWaiting: Boolean(dispatchCtx.personWaiting),
           });
           fanOutAgentPost({ podId, agentName, instanceId }, postResult);
+          if (postResult?.refused && postResult.reason === 'consecutive_run_cap') dispatchCtx.floorHeld = true;
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
           // not a user-visible final message; retaining textOut here would
           // complete the claim and swallow the human wake a second time.
-          if (!postResult?.skipped) finalMessage = textOut;
+          if (!postResult?.skipped && !postResult?.refused) finalMessage = textOut;
         } catch (postErr) {
           // The reply did not reach the pod, so the run did not answer: it
           // fails, and a hosted one gets the fixed handling below.
@@ -2917,6 +3023,16 @@ export async function runAgent(
           + 'its extra call returned nothing.';
       }
 
+      // F56: an empty completion is not a NO_REPLY. Nobody has ruled how a
+      // wake nobody is waiting on should read it, so it stays silent and is
+      // counted until there is a measured case.
+      if (!textOut && !postedViaTool && run.status === 'running') {
+        run.emptyCompletion = true;
+        emptyCompletionCount += 1;
+        console.warn(`[native-runtime] empty completion #${emptyCompletionCount} since start:`
+          + ` ${agentName} trigger=${String(trigger.type)} rounds=${run.turns.length} personAsked=${personAsked}`);
+      }
+
       run.status = run.status === 'running' ? 'succeeded' : run.status;
       break;
     }
@@ -2926,15 +3042,30 @@ export async function runAgent(
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
   }
 
+  // F56: the run cap refused the only reply a person was waiting on, or the
+  // model ended on an empty completion. For a wake nobody is waiting on those
+  // are declines; for this person they are silence.
+  if (hostedNative && personAsked && (dispatchCtx.floorHeld || run.emptyCompletion) && run.status === 'succeeded'
+    && !postedViaTool && !finalMessage) {
+    run.status = 'failed';
+    run.errorKind = 'tool_error';
+    run.errorMessage = dispatchCtx.floorHeld
+      ? 'The reply was refused: the agent already held the floor in this pod.'
+      : 'The model ended the turn on an empty completion.';
+  }
+
   // A hosted turn that failed (a guard stop or an error) and posted nothing
-  // costs the person no turn. Model failures name the model and a safe reason
-  // on native turns too; other hosted failures keep the fixed line. A turn
+  // costs the person no turn. Model failures name the model, with a safe reason
+  // on native turns; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
+    // A native agent's line carries the provider's reason, so a tainted turn
+    // can't post it in a bridged pod. A hosted line is our own fixed text, and
+    // noOutboundRelay keeps it in Commonly (F56).
     if (wasDirectlyAddressed(trigger)
-      && !((dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
+      && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
@@ -2942,14 +3073,19 @@ export async function runAgent(
           instanceId,
           podId,
           content: modelFailureReason
-            ? `Model ${model} could not answer (${modelFailureReason}). ${hostedNative
-              ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
+            // A hosted route is ours, so its person gets the model's name and
+            // no status code; that stays on run.errorMessage. A native agent's
+            // model and key are someone's to fix, so the reason stays in the note.
+            ? (hostedNative
+              ? `${MODEL_DISPLAY_NAMES[model] || model} could not answer just now. ${HOSTED_RUN_FAILED_LINE}`
+              : `Model ${model} could not answer (${modelFailureReason}). Please try again.`)
             : HOSTED_RUN_FAILED_LINE,
           messageType: 'text',
           displayName,
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           failureNotice: true,
+          personWaiting: personAsked,
           kind: 'error',
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
@@ -3046,7 +3182,8 @@ export async function runAgent(
     finalMessage,
     errorKind: run.errorKind,
     errorMessage: run.errorMessage,
-    ...(dispatchCtx.floorHeld && !postedViaTool ? { noActionReason: 'consecutive_run_cap' } : {}),
+    ...(dispatchCtx.floorHeld && !postedViaTool && run.status !== 'failed'
+      ? { noActionReason: 'consecutive_run_cap' } : {}),
   };
 }
 

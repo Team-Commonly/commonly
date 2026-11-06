@@ -23,6 +23,7 @@ import { startEgressProxy } from '../egress-proxy.js';
 import { startInstanceProxy } from '../instance-proxy.js';
 import { prepareMcpSpawn, selectedMcpVersionDir } from '../mcp-home.js';
 import { detectSeatbelt, wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { commonlyMcpServer } from '../default-environment.js';
 import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
@@ -370,6 +371,7 @@ export default {
       }
       const seatbelt = (ctx._detectSeatbelt || detectSeatbelt)();
       if (!seatbelt.available) throw new Error(`dsh adapter: a confined seat needs Seatbelt: ${seatbelt.error}`);
+      await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'confined dsh agents' });
     }
     if (!ctx.environment?.provider || !ctx.environment?.model) {
       throw new Error('dsh requires environment.provider and environment.model');

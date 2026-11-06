@@ -89,6 +89,14 @@ export const IN_PROCESS_RUNTIME_FILTER = {
   ],
 };
 
+/** IN_PROCESS_RUNTIME_FILTER, read off a config that may not be stored yet. */
+export const configRunsInProcess = (config: any): boolean => {
+  const runtimeType = String(config?.runtime?.runtimeType || '').trim().toLowerCase();
+  return runtimeType === 'native'
+    || (runtimeType === 'hosted'
+      && String(config?.hosted?.engine || '').trim().toLowerCase() === HOSTED_ENGINE_NATIVE);
+};
+
 /** The engine boundary shared by grant eligibility and agent-join checks. */
 export const runsInNarrowedProcess = (installation: any): boolean => (
   String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === 'native'
@@ -289,7 +297,12 @@ export const hostedNativeSystemPrompt = (
     + 'needed, do not post.\n'
     + '\n'
     + 'Only claim what you actually did. If a task needs a tool you do not have (for example, '
-    + `${orList(missing)}), say so plainly instead of describing a result you did not observe.`
+    + `${orList(missing)}), say so plainly instead of describing a result you did not observe. `
+    // D247 walk: a failing seat told the pod about checkpoints and re-serving. The
+    // CLI wrapper's turn frame says the same (FAILURE_IN_PLAIN_WORDS in agent.js).
+    + 'If you can\'t do what someone asked, say in plain words what didn\'t work and what they can do next, '
+    + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
+    + 'Only point them to a feature or option you know exists.'
   );
 };
 

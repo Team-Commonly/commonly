@@ -19,6 +19,10 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: (...args) => mockPodHasOutsiderWritableGrant(...args),
 }));
 
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
@@ -54,6 +58,7 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 200 }),
   countHostedAgentsForUser: (...args) => mockCountHosted(...args),
   listHostedInstallationsForUser: (...args) => mockListHosted(...args),
+  findHeldHostedInstallation: jest.fn().mockResolvedValue(null),
   readRuntimeConfig: (installation) => installation?.config?.runtime || {},
   isHostedInstallation: (installation) => (
     String(installation?.config?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'

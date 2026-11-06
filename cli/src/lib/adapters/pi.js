@@ -46,18 +46,19 @@ import { probeVersion } from './tested-version.js';
 import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, readFileSync, realpathSync, rmSync } from 'fs';
 import { mkdir, readdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
+  adapterFailure,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
 import { effectiveSandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
-import { GRANT_BROKER_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
+import { GRANT_BROKER_PUBLIC_ONLY_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
@@ -195,12 +196,19 @@ const originOf = (value) => {
  * refused here as well. A transport pi cannot speak (`sse`, which the schema and
  * the guard both admit) is refused rather than reinterpreted as one it can.
  *
- * The grant broker is refused outright, by PATH rather than by entry name: it is
- * the one http entry that carries authority rather than data, and pi is not
- * approved to confine it. The ruling for TASK-063 (`isGrantBrokerUrl` in pi-mcp-client.mjs),
- * the daemon-side half of the same refusal the server makes at the projection —
- * this is the half that holds on deploy skew, when the row names no adapter for
- * the server to key on, and in any backend older than the refusal.
+ * The grant broker is carried only on a public turn (F175c), keyed by PATH
+ * rather than entry name (`isGrantBrokerUrl` in pi-mcp-client.mjs). It is the
+ * one http entry that carries authority rather than data, and a public turn is
+ * the only pi turn that is confined: Seatbelt on macOS (`assertSandboxSupported`
+ * refuses a public turn anywhere else before this runs), with no built-in tool,
+ * so the model cannot open a file at all. A carried broker is marked
+ * `confined: true` for the bridge's own filter, and its name is reported on
+ * `ctx.grantBrokers` so the spawn can end the credential file's life early. It
+ * also names `ctx.credentialDir`, as a path, for the bridge to delete from
+ * inside pi (`removeSpawnCredential`).
+ * Every other pi turn refuses it, a broker the server flagged as named (F94)
+ * included: this is the daemon-side half of the server's
+ * `adapter_confines_public_only`, and the half that holds on deploy skew.
  *
  * The stdio half does NOT have that property and must not be read as if it did:
  * a declared stdio command is executed with no allowlist check, here and in both
@@ -223,25 +231,23 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
         console.warn(`[pi] declared MCP server '${server.name}' points at ${origin || '(unparseable)'}, not this instance (${instanceOrigin || 'unknown'}) — not starting it`);
         continue;
       }
-      // The grant broker is the one http entry that carries AUTHORITY rather
-      // than data: a granted seat acts on external systems as the granter. pi is
-      // not admitted to grant-broker confinement (ADAPTERS_WITH_GRANT_BROKER is
-      // claude and codex; a public pi's Seatbelt jail, F113b, has not been
-      // reviewed for that), so the reach is refused here as well as at the
-      // server's projection — this
-      // layer is what holds when the backend predates that refusal, when the
-      // row names no adapter for the server to key on, or when a deploy leaves
-      // the two on different clocks.
-      if (isGrantBrokerUrl(url)) {
+      // The grant broker carries AUTHORITY rather than data: a granted seat acts
+      // on external systems as the granter. Only a confined (public) pi turn
+      // may hold it; see the header above.
+      const grantBroker = isGrantBrokerUrl(url);
+      if (grantBroker && !ctx.publicSeat) {
         // eslint-disable-next-line no-console
-        console.warn(`[pi] ${GRANT_BROKER_REFUSAL} — refusing the grant broker '${server.name}': pi is not approved to confine a granter's authority, so this seat must not act with it — move the seat to the claude or codex adapter, or remove the grant`);
+        console.warn(`[pi] ${GRANT_BROKER_PUBLIC_ONLY_REFUSAL} — refusing the grant broker '${server.name}': pi carries a granter's authority only on a public seat confined by the macOS sandbox, and this seat is not one — declare sandbox.trust 'public' on a Mac, or remove the grant`);
         continue;
       }
+      if (grantBroker) ctx.grantBrokers?.push(server.name);
       carried.push({
         name: server.name,
         url,
         headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
         ...(ctx.publicSeat ? { withheldTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
+        ...(grantBroker ? { confined: true } : {}),
+        ...(grantBroker && ctx.credentialDir ? { credentialDir: ctx.credentialDir } : {}),
       });
       continue;
     }
@@ -445,10 +451,18 @@ export const buildArgs = ({
   prompt,
 ];
 
-/** The reply is the last assistant `message_end`'s text parts; tool calls are not text. */
+/**
+ * The reply is the last assistant `message_end`'s text parts; tool calls are not
+ * text. `finished` means pi ended the turn on an answer: `agent_end`, not retried,
+ * after an assistant message that stopped with `stop`. An overflow's `agent_end`
+ * says `willRetry: false` and then pi compacts and continues, so `agent_end` after
+ * an `error` or `length` stop doesn't count; the continuation's message decides.
+ */
 export const extractReply = (stdout) => {
   let text = '';
   let sawAssistant = false;
+  let finished = false;
+  let lastStop = null;
   const errors = [];
   for (const line of String(stdout).split('\n')) {
     if (!line.trim()) continue;
@@ -457,16 +471,73 @@ export const extractReply = (stdout) => {
     if (event?.type === 'message_end' && event.message?.role === 'assistant') {
       const parts = (event.message.content || []).filter((c) => c?.type === 'text').map((c) => c.text || '');
       if (parts.length) { text = parts.join('\n').trim(); sawAssistant = true; }
+      lastStop = event.message.stopReason;
+      finished = false;
     }
+    if (event?.type === 'agent_end') finished = event.willRetry !== true && lastStop === 'stop';
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
-  return { text, sawAssistant, errors };
+  return { text, sawAssistant, finished, errors };
 };
 
-const runPi = ({ command = 'pi', args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl = childSpawn }) => new Promise((resolve, reject) => {
+// A turn that printed an interim message and then ended without finishing. A
+// crash keeps its cause, so a quota line in stderr or a refusal on the stream
+// still classifies. A signal (143, 129, or a null code) has neither: stderr then
+// holds pi's startup warnings, and a refusal on the stream may be one pi was
+// recovering from, like an overflow's 400.
+const stoppedTurnFailure = (reply, {
+  code, signal, stderr, credentials,
+}) => {
+  const killed = Boolean(signal) || code === 143 || code === 129;
+  const upstream = killed ? null : reply.upstream;
+  const failure = adapterFailure(
+    'pi',
+    reply.errors.join(' | ') || (killed ? '' : stderr.trim().slice(-600)) || upstream?.detail
+      || 'the turn stopped before it finished',
+    { credentials, exitCode: code, limit: 600 },
+  );
+  if (upstream) failure.status ??= upstream.status;
+  return failure;
+};
+
+/**
+ * The first whole NDJSON line pi prints, as a callback. In json mode pi writes
+ * its session header before it binds the session and sends the prompt, and only
+ * after every extension factory has returned (main.js builds the runtime, which
+ * loads and awaits each `-e` extension, then print-mode.js writes the header;
+ * pi 0.84.1). So the bridge has read the server list and every credential it
+ * needed by the time this fires, and the model has not been called yet. Any
+ * line that parses with a string `type` counts: a resumed session's header and
+ * `agent_start` both come after the extensions too.
+ */
+const firstEventWatcher = (onFirstEvent) => {
+  let buffer = '';
+  let fired = !onFirstEvent;
+  return (chunk) => {
+    if (fired) return;
+    buffer += chunk;
+    let nl;
+    while (!fired && (nl = buffer.indexOf('\n')) !== -1) {
+      const raw = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      let event;
+      try { event = JSON.parse(raw); } catch { continue; }
+      if (event && typeof event.type === 'string') {
+        fired = true;
+        buffer = '';
+        onFirstEvent();
+      }
+    }
+  };
+};
+
+const runPi = ({
+  command = 'pi', args, cwd, env, payload, timeoutMs, credentials = [], spawnImpl = childSpawn, onFirstEvent,
+}) => new Promise((resolve, reject) => {
   let stdout = '';
   let stderr = '';
   let timedOut = false;
+  let hookError = null;
   // fd 3 carries the MCP server list, so the 4th pipe exists exactly when there
   // is a list to hand over. The bridge reads it at extension load (takeServers).
   const withList = typeof payload === 'string';
@@ -482,11 +553,26 @@ const runPi = ({ command = 'pi', args, cwd, env, payload, timeoutMs, credentials
     channel.end(payload);
   }
   const timer = setTimeout(() => { timedOut = true; proc.kill('SIGTERM'); }, timeoutMs);
-  proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+  const watch = firstEventWatcher(onFirstEvent);
+  proc.stdout.on('data', (chunk) => {
+    const text = chunk.toString();
+    stdout += text;
+    // Synchronous, in the tick the line is parsed. A hook that throws ends the
+    // turn: pi is killed and the error is the turn's result.
+    try {
+      watch(text);
+    } catch (err) {
+      if (!hookError) {
+        hookError = err;
+        proc.kill('SIGKILL');
+      }
+    }
+  });
   proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   proc.on('error', (err) => { clearTimeout(timer); reject(err); });
-  proc.on('close', (code) => {
+  proc.on('close', (code, signal) => {
     clearTimeout(timer);
+    if (hookError) return reject(hookError);
     if (timedOut) return reject(new Error(`pi timed out after ${timeoutMs}ms`));
     const reply = extractReply(stdout);
     // A refused model route is NOT an error event: pi retries the ladder itself
@@ -494,7 +580,16 @@ const runPi = ({ command = 'pi', args, cwd, env, payload, timeoutMs, credentials
     // on the stream rather than on the exit code (TASK-096, measured 2026-09-22).
     const upstream = readUpstreamRefusal(stdout, { credentials });
     if (upstream) reply.upstream = upstream;
-    if (code !== 0 && !reply.sawAssistant) {
+    // Without `finished`, the text pi printed was an interim message, so posting
+    // it would answer with half a turn and acknowledge what it held. An error
+    // event fails the turn even after `finished`, which could otherwise read as
+    // silent. A tool-only turn that finished stays silent, whatever the exit.
+    if (code !== 0 && (!reply.finished || reply.errors.length)) {
+      if (reply.sawAssistant) {
+        return reject(stoppedTurnFailure(reply, {
+          code, signal, stderr, credentials,
+        }));
+      }
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
       return reject(new Error(`pi exited ${code}: ${tail}`));
     }
@@ -628,12 +723,15 @@ export default {
 
       const unavailableMcp = [];
       const mcpReadDirectories = [];
+      const grantBrokers = [];
       const servers = resolveMcpServers(ctx.environment?.mcp, {
         ...ctx,
         credentialFile: credential?.path || null,
+        credentialDir: credential?.dir || null,
         publicSeat: isPublic,
         unavailableMcp,
         mcpReadDirectories,
+        grantBrokers,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
       const childEnv = isPublic ? {
@@ -706,6 +804,28 @@ export default {
         timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
         credentials: proxy ? [...credentials, proxy.token] : credentials,
         spawnImpl: ctx._spawnImpl, // test seam only — do not use in production
+        // F175c: a turn holding a grant broker keeps its credential file only
+        // until pi has loaded its extensions. The first layer is inside pi: the
+        // bridge deletes the directory before its factory returns, which pi
+        // awaits before it creates the session (removeSpawnCredential), and
+        // stops pi if it cannot. This is the second layer, at pi's first JSON
+        // line (firstEventWatcher). It is async to pi, so it cannot be the one
+        // that closes the file before a prompt; it normally finds the file gone,
+        // and `force` tolerates that. It covers a turn whose bridge never ran. A
+        // delete that does fail here still ends the turn.
+        onFirstEvent: isPublic && grantBrokers.length && credential
+          ? () => {
+            try {
+              (ctx._rmSync || rmSync)(credential.dir, { recursive: true, force: true });
+            } catch (err) {
+              throw new Error(
+                `pi adapter: a public pi seat could not delete its connector credential (${credential.path}) once pi `
+                + `had loaded its extensions: ${err?.message || err}; the turn was stopped so the credential does not `
+                + 'stay readable during it',
+              );
+            }
+          }
+          : undefined,
       });
       // Empty text with a clean exit is a silent turn; the run loop treats it
       // as NO_REPLY-shaped and re-delivers on its own rules. Empty text that

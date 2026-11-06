@@ -104,7 +104,15 @@ token with that App's id and key only:
    This stores the person's Commonly Connect user token.
 2. **Install Commonly Connect** on their account or org, and pick the
    repositories (the install page is `github.com/apps/<slug>/installations/new`).
-3. **Connect a repository:** `POST /api/integrations/github-app/repositories`
+3. **Connect a repository:** the **Connect a repository** step on either GitHub
+   tile lists them from `GET /api/integrations/github-app/repositories`: what the
+   person's own token can push to through a Connect installation, less what they
+   already connected. The list is only a picker. It reads at most 3 pages of
+   installations, 10 installations and 3 pages of each, stops starting new reads after 20 seconds, says
+   so when cut short, and is limited to 10 reads a minute, because each spends
+   the person's own GitHub quota. If GitHub won't list the installations at all
+   it refuses `github_unreachable`. The connect is
+   `POST /api/integrations/github-app/repositories`
    with `{ installationId, owner, repo }`. The server reads
    `GET /user/installations` and `GET /user/installations/{id}/repositories`
    with the person's own user token, and creates the connection only when the
@@ -157,8 +165,27 @@ that names `github.create_pull_request` or `github.push_branch` holds no
 `prWrite`, so those calls now refuse `pr_write_not_granted`. Re-mint the grant
 with `prWrite: true`.
 
-The grant form in the app does not offer `prWrite` yet. Until it does, a grant
-is minted with `POST /api/grants` under the owner's session.
+The grant form offers this as a checkbox on a GitHub App connection. It mints
+the read tools plus every PR tool this instance enables (`github.push_branch`
+needs `SEAT_GITHUB_PUSH_ENABLED`), as `write-with-confirm` with `prWrite`. For a
+narrower set, mint with `POST /api/grants` under the owner's session.
+
+**Change access** stays on the grant's own connection and keeps `prWrite` with
+the PR tools that grant named, though it does add the entry's read tools. It
+ends `prWrite`, and the form says so, on a child grant or when the connection is
+no longer offered. A named agent's consent is recorded as `byo-pr-v1` on a
+`prWrite` grant.
+
+Apart from that checkbox, the form offers `read` and nothing else for now, on
+every connector type (`FORM_OFFERS_WRITES` in
+`frontend/src/v2/connectors/toolModel.ts`). Without the checkbox, no grant it
+mints gives an agent a write: `hostedBrokerToolsForRun` offers a hosted run
+read tools, plus the PR tools on a `prWrite` grant; `checkByoNaming` refuses a
+write on a named seat without `prWrite`; `outsiderGrantPodRefusal` refuses any
+other outside agent in the pod, and refuses `write` on every pod, with no admin
+or GitHub App exception. A stored write grant keeps its mode in the list and the
+detail, but **Change access** reopens it on `read`, with pull-request access
+kept if it held it.
 
 ## What the agent does
 
@@ -238,7 +265,10 @@ shipped git remote helper prints.
   6 MiB) before anything parks.
 - The trail records each call (`tool_calls`): parked (`pending_approval`), then
   `ok`/`failed`/`refused` with the `approvalId`, or `approval_declined` /
-  `approval_expired`.
+  `approval_expired`. `approval_outcome_unknown` means no answer came back for an
+  approved call: a write went out and the connection or a gateway lost the reply,
+  or the process died and left no record. Either way it may have run. Check the branch or PR before
+  approving it again.
 
 ## What the owner should know
 

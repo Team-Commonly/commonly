@@ -11,6 +11,10 @@ export interface ToolGrant {
   target: { kind: 'pod' | 'seat'; id: string };
   tools: string[];
   writeMode: GrantWriteMode;
+  /** F214: the grant holds pull-request access. Its PR tools park every call for the connection owner. */
+  prWrite?: boolean;
+  /** On the owner's own read only: the catalogue's key for the connection this grant was minted on. */
+  connectionId?: string;
   budget: { calls?: number; windowMs?: number } | null;
   effectiveAudience: string[];
   expiresAt: string;
@@ -29,7 +33,7 @@ export interface ToolGrant {
   connector?: { id: string; label: string } | null;
   /**
    * F94: the granter's own agents that run outside Commonly, named on this
-   * read-only grant, and the consent that named them with each one's sandbox
+   * grant, and the consent that named them with each one's sandbox
    * state as it was recorded then.
    */
   byoAgents?: string[];
@@ -97,10 +101,19 @@ export interface ToolCatalogEntry {
    * start route answers 404.
    */
   credentialMode?: 'operator_key';
+  /** F221: a person can connect a repository of their own here (GET and POST /github-app/repositories). */
+  repositoryConnect?: boolean;
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
-  tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
+  tools: Array<{
+    name: string;
+    description?: string;
+    requiredWriteMode: GrantWriteMode;
+    irreversible: boolean;
+    /** Held only on a `prWrite` grant, whatever the mode. The server names these, so the form copies no list. */
+    prWrite?: boolean;
+  }>;
   connections: ToolConnection[];
 }
 
@@ -155,6 +168,12 @@ export interface DraftGrant {
   podId: string;
   connectionId: string;
   writeMode: GrantWriteMode;
+  /** F214: add pull-request access. The mint then goes out as write-with-confirm with `prWrite`. */
+  prWrite: boolean;
+  /** Change access: the PR tools the old grant named, so the change never adds one. */
+  prTools?: string[] | null;
+  /** Change access: this mint would not keep the old grant's pull-request access. */
+  losesPrWrite?: boolean;
   audience: string[];
   expiryDays: 7 | 30 | 90;
   /** Change access: the grant this one replaces (revoked after the mint). */
@@ -164,6 +183,23 @@ export interface DraftGrant {
    * exactly the agents it was given for, so checking another one clears it.
    */
   byoConsentFor?: string | null;
+}
+
+export interface ConnectableRepository {
+  installationId: string;
+  owner: string;
+  repo: string;
+  private: boolean;
+}
+
+/** F221: the step that connects one of the person's own repositories. */
+export interface RepositoryConnect {
+  status: 'loading' | 'ready' | 'needsGithub' | 'failed';
+  repositories: ConnectableRepository[];
+  /** GitHub's listing was cut short, so a missing repository may still exist. */
+  truncated: boolean;
+  /** `owner/repo` of the picked row. */
+  selected: string;
 }
 
 export interface GithubAppSetup {
@@ -184,6 +220,21 @@ export const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
+// F213 stopgap: no grant this form can mint gives an agent a write. Hosted runs
+// are offered read tools only, a named agent's grant must be read, any other
+// outside agent in the pod refuses the mint, and `write` refuses on every pod.
+// F214 added pull-request access beside this, on a GitHub App connection. F215
+// restores the modes; turning this on brings the choice back.
+export const FORM_OFFERS_WRITES: boolean = false;
+
+/**
+ * Offered on a GitHub App connection whose tools include opening the pull
+ * request, the one the mint requires (prWriteMintRefusal).
+ */
+export const entryOffersPrWrite = (entry: ToolCatalogEntry): boolean => (
+  entry.connectionType === 'github-app'
+  && entry.tools.some((tool) => tool.prWrite && tool.name === 'github.create_pull_request')
+);
 
 /**
  * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through

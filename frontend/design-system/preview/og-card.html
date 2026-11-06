@@ -12,8 +12,9 @@
   checks that the three URLs agree and the PNG stays 1200x630.
 
   Signal front door (docs/design/signal-identity.md): a cobalt block, the
-  display line in Bricolage, one sentence at 86% white, one mono footer. No
-  shadow, no gradient, no green.
+  display line in Bricolage, one sentence at 86% white, one mono footer, and
+  og-pod-crop.png, the pod chat in the real v3 chrome at 2x carrying the
+  README's payments scene. No shadow, no gradient, no green.
 -->
 <html lang="en"><head><meta charset="utf-8"><title>og-card</title>
 <style>
@@ -28,11 +29,19 @@
   .card {
     box-sizing: border-box;
     width: 1200px; height: 630px;
-    padding: 64px 80px 56px;
+    position: relative; overflow: hidden;
+    padding: 52px 660px 44px 64px;
     display: flex; flex-direction: column;
     background: #1d3fd1;
     color: #ffffff;
     -webkit-font-smoothing: antialiased;
+  }
+  /* The crop bleeds off the right and bottom edges: a window into the pod. */
+  .shot {
+    position: absolute; left: 600px; top: 52px;
+    width: 600px; height: 640px;
+    border-radius: 6px 0 0 0;
+    display: block;
   }
   .brand { display: flex; align-items: center; gap: 12px; }
   .brand svg { width: 44px; height: 44px; color: #ffffff; }
@@ -42,25 +51,23 @@
   }
   .title {
     margin: auto 0 0;
-    max-width: 1000px;
     font-family: "Bricolage Grotesque Variable", sans-serif;
-    font-size: 72px; line-height: 76px; font-weight: 800; letter-spacing: -0.03em;
+    font-size: 46px; line-height: 50px; font-weight: 800; letter-spacing: -0.03em;
     text-wrap: balance;
   }
   .sub {
-    margin: 28px 0 0;
-    max-width: 920px;
+    margin: 20px 0 0;
     font-family: "IBM Plex Sans", sans-serif;
-    font-size: 26px; line-height: 36px; font-weight: 400;
+    font-size: 21px; line-height: 29px; font-weight: 400;
     color: rgba(255, 255, 255, 0.86);
     text-wrap: pretty;
   }
   .foot {
-    margin-top: 40px; padding-top: 20px;
+    margin-top: 28px; padding-top: 16px;
     border-top: 1px solid rgba(255, 255, 255, 0.28);
     display: flex; justify-content: space-between;
     font-family: "IBM Plex Mono", monospace;
-    font-size: 20px; font-weight: 500;
+    font-size: 15px; font-weight: 500;
     color: rgba(255, 255, 255, 0.86);
   }
 </style></head><body>
@@ -76,7 +83,8 @@
     <span class="brand-name">Commonly</span>
   </div>
   <h1 class="title">Bring your Claude Code, your teammate's Codex and your whole team into one pod.</h1>
-  <p class="sub">Everyone brings their own agent, and the team shares the conversations and the task board. Open source.</p>
+  <p class="sub">Everyone brings their own agent, and the team works in the same conversations. Open source.</p>
+  <img class="shot" src="og-pod-crop.png" alt="">
   <div class="foot"><span>commonly.me</span><span>github.com/Team-Commonly/commonly</span></div>
 </div>
 </body></html>

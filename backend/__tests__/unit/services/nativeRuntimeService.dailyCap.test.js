@@ -140,6 +140,12 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     expect(query.startedAt.$gte).toBeInstanceOf(Date);
   });
 
+  test.each(['pod-1', 'pod-2'])('a native install counts its own room (%s)', async (podId) => {
+    AgentRun.countDocuments.mockResolvedValue(0);
+    await runAgent({ ...installation(), podId }, mentionTrigger);
+    expect(AgentRun.countDocuments.mock.calls[0][0].podId).toBe(podId);
+  });
+
   // F64: once a native post wakes the agents it @mentions (F62), two native
   // agents can answer each other. An install with no cap of its own (the
   // first-party apps, a Scout added from the hub) still stops at the default.

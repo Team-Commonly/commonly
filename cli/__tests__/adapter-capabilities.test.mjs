@@ -5,17 +5,18 @@ import {
   ADAPTERS_WITH_GRANT_BROKER,
 } from '../src/lib/default-environment.js';
 
-// Every shipped adapter appears here. In particular, pi consumes MCP but
-// cannot enforce the default sandbox; provider support alone grants neither.
+// Every shipped adapter appears here. In particular, pi consumes MCP but is
+// not handed the default sandbox; it holds a grant only on a public macOS seat
+// (F175c). Provider support alone grants neither.
 const expected = {
   stub: { sandbox: false, mcp: false, broker: false, provider: false },
   claude: { sandbox: true, mcp: true, broker: true, provider: false },
   codex: { sandbox: true, mcp: true, broker: true, provider: false },
-  pi: { sandbox: false, mcp: true, broker: false, provider: false },
-  opencode: { sandbox: true, mcp: true, broker: false, provider: true },
-  qwen: { sandbox: true, mcp: true, broker: false, provider: true },
+  pi: { sandbox: false, mcp: true, broker: true, provider: false },
+  opencode: { sandbox: true, mcp: true, broker: true, provider: true },
+  qwen: { sandbox: true, mcp: true, broker: true, provider: true },
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
-  goose: { sandbox: false, mcp: true, broker: false, provider: true },
+  goose: { sandbox: false, mcp: true, broker: true, provider: true },
   hermes: { sandbox: false, mcp: false, broker: false, provider: false },
 };
 

@@ -207,8 +207,6 @@ describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
       'components/V2MessageRow.tsx': ['const AGENT_DM_EVENT_RE = /^🤝\\s+(.+?)\\s+—\\s+\\[view\\]\\(\\/v2\\/pods\\/([a-f0-9]{24})\\)\\s*$/i;'],
       // the masked token's bullets
       'components/V2SettingsPage.tsx': ["const maskedToken = '••••••••••••••••••••••••••••••••';"],
-      // ↵ key hint in the marketing demo composer
-      'landing/DemoWorkspace.tsx': ['<span className="v2-demo__enter" aria-hidden="true">↵</span>'],
     };
     const found: string[] = [];
     for (const file of SOURCES) {

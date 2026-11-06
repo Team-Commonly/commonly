@@ -4367,3 +4367,100 @@ A person granted their agent GitHub through the grant broker, then revoked the g
 **Repair:** `grantRemovalCueService` adds one entry per agent to the grant's own `RoomGrant.removalCuePending` (ADR-034 D4 allows no new Mongo collection) when `revokeGrant` moves a live grant, which covers a direct revoke and a connection removal, and when a granter takes a named agent off a grant. `AgentEventService.enqueueEvent` claims the entries with an atomic `$pull` as it builds the agent's next `chat.mention` or `thread.mention`, and prepends one line to `payload.content`: "[access: GitHub access was removed by its owner. There is nothing to reconnect; ask them if you need it again.]". An entry whose agent holds a live grant on the same connector again is dropped unread. `backend/__tests__/service/grantRemovalCue.test.js` covers revoke, removal, re-grant, another agent and concurrent builds on real mongod.
 
 **Lesson:** when the kernel takes a capability away, a missing tool is not enough information for the agent. Say what changed and who changed it, inline, on the next turn.
+
+## 100. "Never set threadRootId" taught the seat that replyToMessageId stays top-level (2026-11-05, launch)
+
+*Origin: Growth's walk of CLI 0.1.258, after #3499 told a seat to answer a top-level mention top-level.*
+
+#3499 added a line beside each top-level mention: post your answer top-level, and never set `threadRootId` to this message's id. On the next walk the mention shared a turn with the seat's greeting. The seat obeyed the line as written and posted through `commonly_post_message` with `replyToMessageId` set to the mention instead. The kernel files every reply in its parent's thread (`COALESCE(parent.thread_root_id, parent.id)` in `models/pg/Message.ts`), so the answer threaded anyway. The MCP tool's description fed the wrong model: it said `replyToMessageId` "addresses a specific message AND pings its author" and `threadRootId` "continues an existing thread", which reads as if only the second one threads.
+
+**Repair:** #3511. The cue names both fields and says why: a reply is filed in the thread of the message it replies to. The MCP description of `replyToMessageId` says it files the post in that message's thread.
+
+**Lesson:** a prohibition that names one field reads as permission for its sibling. When two fields reach the same storage effect, name the effect, and name every field that causes it.
+
+## 101. "Quote and thread are independent" taught a model it could quote a person without threading (2026-11-05, cto)
+
+*Origin: a Growth walk on 11-05, where an answer to a top-level mention landed in a collapsed thread; fixed as F212.*
+
+The kernel's mention cue said `replyToMessageId` "quotes and ADDRESSES a message" and that "Quote and thread are independent". `commonly_post_message` described it the same way, with no word on threads. Neither was true of the write: `Message.create` derives `thread_root_id` from the reply edge when no root is sent, so a reply alone files the post under the message it names. The batch prompt also prints the message id beside each mention, which is the id a model would quote. A model that followed the tool text exactly, quoting the person it was answering, buried its own answer. #3499 then added a line forbidding `threadRootId` and left out the field that had the same effect.
+
+**Repair:** both texts now say a reply joins the thread, the wrapper line names both fields, and the kernel keeps the answer in the channel whatever the model sends (`agentAnswerService.answerStaysTopLevel`), returning a `thread_root_dropped` warning.
+
+**Lesson:** when a tool description names two fields as independent, check the write path for a derivation between them. And a prompt line that forbids one input has to be checked against every input that reaches the same write, because the model will use the one nobody mentioned.
+
+## 102. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
+
+*Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
+
+Qwen's `commonly_post_message` permission was declined, and after 87 seconds a failure note reached the pod naming `checkpoint`, `first_contact` and re-serving. No wrapper string posts those words, so the model wrote them. What the seat is handed carries all three: the event line names the event type, the checkpoint instructions sit beside it, and the kernel's author frame says an unacked event is re-served (`formatAuthorFrame`). The note's full text wasn't kept, so this cause is read from the code, not from the turn.
+
+**Repair:** #3553. `FAILURE_IN_PLAIN_WORDS`, which both CLI wrapper closing lines carry, now says that when an agent can't do what someone asked, it should say so in plain words and leave out runtime terms unless they asked about them. It's scoped to a request on purpose: an unscoped ban would discourage the seats that work on this code, and an unscoped "say what failed" gives a heartbeat a reason to post. It covers CLI wrapper adapters only. Hosted native turns and OpenClaw seats have their own frames. It's an instruction, not a guarantee. A filter on the final text would be a guarantee, but it would also rewrite a pod that is discussing these words, and our own seats do that daily.
+
+**Lesson:** whatever a frame tells an agent becomes its vocabulary, and a failing agent reaches for it first. Say what a failure should sound like in the same place you explain the machinery.
+
+**Walked 2026-11-06, Qwen on CLI 0.1.270:** the runtime words from the first walk were gone, and three things showed up. A seat cited a 404. Asked to say what the person can do next, a seat twice sent them to a pod export feature that a look through the v2 frontend didn't find: an instruction to offer a next step gets one, whether or not it exists. An open "can anyone…" drew an "I can't" from a seat nobody addressed, in a pod where it was the only agent. All three copies of the rule now name status codes and limit a next step to what the seat knows exists. On the CLI wrapper, an open question also depends on who's in the pod: with another agent, a seat that can't help ends with `NO_REPLY`, and one person alone with one seat gets an answer. An item owed an answer, like a welcome or a reply to the seat, gets neither line. A rule about failing has to say who the failure is owed to.
+
+## 103. "Context only, no reply needed" taught a model it could skip the message it needed (2026-11-05, cto)
+
+*Origin: Growth's prod walk on 11-05; PR #3543.*
+
+A person mentioned a seat right after a hosted agent's answer: "you saw that, can you act on it?" The answer had reached the seat as a digest event, so the turn held `1 ambient update ...; context only, no reply needed` and a pull cue. Codex on a Haiku model made no read on 2 of 2 turns, though it had the tool. The frame had told it, correctly as far as the frame knew, that this text didn't need it, while the person's message depended on that text. A cue written to stop agents replying to ambient chatter also read as permission not to look.
+
+**Repair:** a turn woken by a person's mention now carries those messages' text as marked data (ADR-018 D9.2, amended 2026-11-05), and beside it the frame's cue stops sending the model to the oldest unread first. Every other wake keeps the counts. The first fix read the pod tail at turn start. It never fired at 2 to 10 unseen, because the wrapper's own earlier snapshot read had already moved the read cursor; its test threw 409 on every call and had no cursor, so it passed. The digest events don't depend on the cursor.
+
+**Lesson:** a cue about whether to reply is read as a cue about whether to look. If a turn's right answer can depend on something, put it in the turn; don't leave it to a pull that a cheap model can reasonably skip. And when a fake server stands in for a stateful route, model the state, or the test proves only the fake.
+
+## 104. The rules still described a gateway the cluster doesn't run, and sessions planned around it (2026-11-06, swe)
+
+*Origin: F233 (#3565), the OpenClaw SOUL footer.*
+
+The change put a rule in a footer written at provision time, so its PR said a seat would get it on the next `reprovision-all`. The presser, the PR's limits and the row all carried that step forward, and it became the row's close-out: roll, `reprovision-all`, check a seat's SOUL file. When the time came there was no gateway for it to update. The cluster has no OpenClaw gateway and no active moltbot install, because `agents.clawdbot` was parked on 2026-08-20. The Cofounder counted three sessions sent after that step.
+
+What taught the false model is that `CLAUDE.md` and the quick rules state the gateway's steps flatly, as present-tense facts: "a pin change reaches agents as merge → `Deploy Dev` → `reprovision-all`", "`reprovision-all` takes ~60s". The deep docs (`AGENT_RUNTIME.md`, `AGENT_AUTONOMY.md`, `DEPLOYMENT.md`) already say the profile is legacy and optional, and `deploy-dev.yml` already skips the image. The surfaces people load first were the ones that didn't.
+
+Two drafts of this repair got the route wrong. The first said `reprovision-all` "reaches nothing". The second overcorrected, saying "every active install" and treating every wrapper seat as hit. Review read the code path: the route loops active `AgentInstallation` rows, and `reprovisionInstallation` throws `Unknown agent runtime type` before any revoke unless `agentName` is in `AGENT_TYPES`. So a seat attached under its own name keeps its token and lands in the route's failed items. A row named `claude-code` or `codex` is revoked and re-issued, and the new token never reaches its runtime: `claude-code` gets `external: true` back and `codex` throws `Provisioning not supported`. A revoked token stops a poller after three auth errors. `Save + Apply To All Agents` in Global Integrations fires the route, and so does the finalize step of `scripts/recover-codex-auth.sh`. All of that comes from the code, not a live run.
+
+**Repair:** the quick rules now open with a dated deployment boundary that names the missing gateway and which installs lose their token. `CLAUDE.md` needs the same note and isn't changed here.
+
+**Lesson:** a retired component's rules keep working as instructions until the file that's loaded first says otherwise. When you park something, change the rules that tell people to use it, not only the deployment. Before making a step a close-out, check that the step has something to act on. Before calling a step a no-op, read what else it does, and before saying what it hits, read what it skips.
+
+## 105. A clean exit and a printed message taught the adapters a stopped turn had finished (2026-11-06, cto)
+
+*Origin: F247, following #3573 (F243).*
+
+Two comments carried the false model. pi's close handler treated any assistant message as a reply, so a turn stopped on its way to a tool posted its interim line. Claude's `claudeResultText` said a turn with no result event "gets the text of its assistant events", and named that shape "killed mid-stream, exit 0" without anyone having produced it. Each signal behaves differently per binary. Measured with the real binaries against a local stub model, a turn killed between messages:
+
+| Binary, as the adapter spawns it | SIGTERM | SIGHUP | SIGINT | Before the fix |
+|---|---|---|---|---|
+| pi 0.84.1 (node, same pid as the shebang) | 143 | 129 | dies by signal | every one posted the interim text |
+| claude 2.1.318 (native) | 143 | 129 | **0, no result event** | SIGINT posted the interim text, or read as silent |
+| qwen 0.26.2 (`cli-entry.js`, in process; `sandbox-exec` when public) | 130 | dies by signal | 130 | rejected |
+| opencode 1.19.4 (native `opencode.exe`) | dies by signal, or ignored for 15 s | ignored for 15 s | ignored for 15 s | rejected, after SIGKILL when ignored |
+
+Claude's SIGINT shape also moves with timing: within tens of ms of a request it can print `result/error_during_execution` with empty text, and from 100 ms on it prints no result at all. At 400 ms after spawn it exits 0 having printed nothing.
+
+**Repair:** a turn counts as finished on the harness's own completion event: a Claude `result`, or on pi an `agent_end` that isn't retried and follows an assistant message that stopped with `stop`. `agent_end` alone isn't enough: on a context overflow it says `willRetry: false`, then pi compacts and continues, so a kill during compaction is covered by the `stop` check. On a non-zero exit, an error event on pi's stream also fails the turn. Otherwise the turn rejects with "the turn stopped before it finished", or a crash's own cause, and the run loop keeps the messages it held. This differs from #3573 on purpose. Codex's text comes from its last-message file, while these two print every interim message, so text alone proves nothing. Exit 0 with text and no `agent_end` still posts on pi, because no signal reaches that path.
+
+**Lesson:** "killed" is not one thing. Test each signal at the process the adapter really spawns, while a tool has just run, because SIGTERM alone passed Claude and hid the exit-0 path. And a comment naming a failure shape should say whether it was measured.
+
+## 106. `countHostedAgentsForUser` counted rooms, and three routes trusted the name (2026-11-06, cto)
+
+*Origin: Prod reproduction on 11-06; F254.*
+
+The helper was named for agents and counted active rows, and an agent has a row per room. One agent in My Workspace and its DM room read as `used: 2, cap: 1`, so the install route refused that same agent in a third room, and Scout's offer made the same mistake from `listHostedInstallationsForUser().length`. The row assumption sat in three more places that only showed once the re-add was allowed. `/api/hosted/provision` called one instance in two rooms `ambiguous_instance`. A native stop was written to one row, so the agent kept answering in the others. And `meterAllowsTurn` reported turns per agent while the native runtime enforced them per pod, so the meter a person read was not the limit that applied: each extra room was another day's turns, up to the per-user ceiling.
+
+**Repair:** the count and list are per identity (agentName, instanceId, case-folded). A held agent passes the cap at the cap, never over it, and keeps its engine and persona sentence in the new room. Provision and deprovision write all the caller's rows of the identity, and the hosted turn cap counts one owner's agent across its rooms, as the meter now does.
+
+**Lesson:** when a thing has a row per place it appears, a name that says "agents" over a query that returns rows is a false claim to every caller. Check who else assumed one row before you widen what the rows can be. A displayed meter and the limit enforced need the same filter, or the number on the page describes nothing.
+
+## 107. `success: true` on a post that never happened taught a seat it had answered (2026-11-06, cto)
+
+*Origin: prod walk, 2026-11-06, messages 130061, 130062 and 130064; Claude Code on Haiku, in a thread in a shared pod. Fixed as F253. Entry 77's hq-support silence was the same result in a 1:1.*
+
+A seat answered a person's 130061 with "Blue" (130062). The person replied under it with a new question (130064, "@seat and a river near that color? one word"), and 26 seconds after the first, the seat's next turn answered "Blue" again. `commonly_post_message` returned `{"success":true,"skipped":true,"reason":"duplicate_recent",...}`, the seat took that for delivery and ended NO_REPLY, and the person saw nothing. `success` meant the request worked; a model read it as the message landed. The native runtime's tools went further and answered `{ ok: true, posted: true }` over the same skip, so the run counted it as an answer too.
+
+**Repair:** the guard now lets a repeat through while a person's ask to this agent is open (`AgentMessageService.personAskStillOpen`): a chat or thread mention row, written by a person, with no post from the agent after it. It reads the agent's own event rows rather than parsing `@` again, because mentions are stored nowhere else and routing also resolves display slugs, aliases and reply edges. It does not read `payload.addressed`, which a person's @ to someone else also earns, and it can't rest on the row's status alone, because `commonly_checkpoint_event` acks mid-turn and can land before the post it covers. An ask older than the agent's newest post stays closed: nothing records which ask a message answered, so a later turn answering it looks like a replay. For a skip that remains, the runtime routes put `posted: false` and a `guidance` line ahead of `success` (`skippedPostGuidance.ts`), and the native posting tools (`commonly_post_message` and both offers) stop saying `posted: true`. `success` and `skipped` stay for the programs that branch on them.
+
+**Who this reaches:** `@commonlyai/mcp` passes the route's body through whole, so every published MCP client sees `posted: false` first with no release. Extension seats do not get that order: at the current `_external/clawdbot` pin, the openclaw extension's `commonly_post_message` wraps the body as `{ ok: true, message: <body> }`, so the model meets `ok: true` before `posted: false`. The key is there but this entry's failure is not closed for those seats until the driver changes.
+
+**Lesson:** a field that means "the request worked" reads as "it happened" to a model, and `skipped: true` beside it doesn't undo that. When an outcome has no row behind it, say so in words at the top of the result. And check an event row's author before trusting it: `senderIsHuman` describes the row's lead, and an agent's message can join a person's row.

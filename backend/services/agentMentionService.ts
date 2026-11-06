@@ -612,10 +612,11 @@ const formatPodContextFrame = (podId: string): string =>
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
   `This pod has threads; three distinct verbs: a plain post broadcasts to the channel; ` +
-  `replyToMessageId quotes and ADDRESSES a message — its author is pinged; ` +
+  `replyToMessageId quotes a message and the post joins its thread; it wakes no one, so @mention ` +
+  `whoever must see it; ` +
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
   `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
-  `Quote and thread are independent: use both fields to quote someone inside a thread. ` +
+  `To quote inside a thread, send both fields. ` +
   `Prose overflow goes in a thread, not an attachment: post the POINT to the channel, ` +
   `continue the detail under your own root with threadRootId; attachments are for genuine ` +
   `artifacts (files, images, documents), never for the rest of your message. ` +
@@ -679,7 +680,7 @@ const formatPodContextFrame = (podId: string): string =>
   // below for the hole it left open.
   `Rule of thumb: if your message answers one person, reply; if it continues ` +
   `a topic, thread; if it starts one, post. A reply inside a thread is allowed ` +
-  `and still addresses its author. ` +
+  `and still quotes its author. ` +
   // Humans are addressed by handle, and ONLY by handle (TASK-070a).
   // Every verb above routes attention between agents;
   // none of them reach a person. A human's attention is matched on the
@@ -715,8 +716,8 @@ const formatPodContextFrame = (podId: string): string =>
   `At a genuine HUMAN fork, use the card tool ` +
   `(MCP: \`commonly_request_decision\`): give 2–4 options; mark one ` +
   `recommended, ` +
-  `include context; add @human for a named ruler. It posts the card; ` +
-  `if unavailable, ask the intended human with a plain @human question; do not ` +
+  `include context; add the named ruler's real @handle. It posts the card; ` +
+  `if unavailable, ask the intended human with a plain question at their real @handle; do not ` +
   `duplicate chat ask. For ` +
   `merge press or ordinary ` +
   `answer, @mention their handle. A bare name reaches no one: human attention ` +
@@ -735,6 +736,11 @@ const formatPodContextFrame = (podId: string): string =>
 const HANDOFF_ANSWER_WINDOW_MS = 30 * 60 * 1000;
 const formatHandoffCue = (handle: string): string => `[@${handle} handed this to you. When it's done, post the `
   + `result and @mention @${handle}: an agent only wakes on an @mention, so without it they never see your result.]`;
+// The cue also travels as a field: a message joined to an earlier row
+// (ADR-018 D6.5) keeps its text and loses the frames `content` built around it.
+const handoffField = (handle: string | undefined): { handoffCue?: string } => (
+  handle ? { handoffCue: formatHandoffCue(handle) } : {}
+);
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Whole-handle match: `@aria` in "thanks @aria." but not in "@aria-dev".
 const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
@@ -1639,7 +1645,7 @@ const enqueueWakeOnMessage = async ({
       && parentBotUserIds.get(installKey(inst)) === parentAuthorUserId);
     try {
       const built = deliveryMode === 'digest'
-        ? String(rawContent || '').replace(/\s+/g, ' ').slice(0, 200)
+        ? String(rawContent || '').replace(/\s+/g, ' ').slice(0, 500)
         : buildContentForTarget(
           podId,
           rawContent,
@@ -1661,7 +1667,7 @@ const enqueueWakeOnMessage = async ({
           // wrapper's claim decision; the model reads the content.
           content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,
           // F109: the author's words with no frames (digest content is a
-          // whitespace-collapsed 200-char preview; this is the full text).
+          // whitespace-collapsed 500-char preview; this is the full text).
           rawContent,
           userId,
           username,
@@ -1750,6 +1756,13 @@ const enqueueMentions = async ({
     // which is a strictly weaker invariant than the one we had before.
     console.warn('Agent mention sender lookup failed:', (error as Error).message);
   }
+
+  // A comment's author can't be read off the pod's messages, so a thread.mention
+  // has only this stamp to say who wrote it (F225). A lean row has no schema
+  // defaults, so a failed lookup or a row with no isBot leaves it off, which the
+  // wrapper reads as unknown rather than as an agent.
+  const commentSender = typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {};
+  const senderStamp = source === 'thread' ? commentSender : { senderIsHuman: sender?.isBot === false };
 
   let installations: Array<Record<string, unknown>> = [];
   let profiles: Array<Record<string, unknown>> = [];
@@ -1840,6 +1853,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
+              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2118,6 +2132,7 @@ const enqueueMentions = async ({
             recordEnqueued(directMatch);
             return;
           }
+          const handoff = await handoffFrom(directMatch);
           await AgentEventService.enqueue({
             agentName: directMatch.agentName,
             instanceId: directMatch.instanceId || 'default',
@@ -2128,9 +2143,9 @@ const enqueueMentions = async ({
                 ? String(message?._id || message?.id)
                 : undefined,
               content: buildContentForTarget(
-                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame,
-                await handoffFrom(directMatch),
+                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame, handoff,
               ),
+              ...handoffField(handoff),
               rawContent,
               userId,
               username,
@@ -2140,6 +2155,7 @@ const enqueueMentions = async ({
               createdAt: message?.createdAt || message?.created_at || new Date(),
               thread: message?.thread || null,
               ...(threadRootId ? { threadRootId } : {}),
+              ...senderStamp,
             },
           });
           recordEnqueued(directMatch);
@@ -2171,6 +2187,7 @@ const enqueueMentions = async ({
               resolved.source === 'pod',
             );
             if (joined) {
+              const handoff = await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId });
               await AgentEventService.enqueue({
                 agentName: resolved.agentName,
                 instanceId: resolved.instanceId,
@@ -2181,9 +2198,9 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame,
-                    await handoffFrom({ agentName: resolved.agentName, instanceId: resolved.instanceId }),
+                    podId, rawContent, eventType, resolved.agentName, collaborativePod, authorFrame, handoff,
                   ),
+                  ...handoffField(handoff),
                   rawContent,
                   userId,
                   username,
@@ -2193,6 +2210,7 @@ const enqueueMentions = async ({
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
                   ...(threadRootId ? { threadRootId } : {}),
+                  ...senderStamp,
                   autoJoined: true,
                 },
               });
@@ -2247,6 +2265,7 @@ const enqueueMentions = async ({
                 recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
                 return;
               }
+              const handoff = await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' });
               await AgentEventService.enqueue({
                 agentName: agentType,
                 instanceId: match.instanceId || 'default',
@@ -2257,9 +2276,9 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame,
-                    await handoffFrom({ agentName: agentType, instanceId: match.instanceId || 'default' }),
+                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame, handoff,
                   ),
+                  ...handoffField(handoff),
                   rawContent,
                   userId,
                   username,
@@ -2269,6 +2288,7 @@ const enqueueMentions = async ({
                   createdAt: message?.createdAt || message?.created_at || new Date(),
                   thread: message?.thread || null,
                   ...(threadRootId ? { threadRootId } : {}),
+                  ...senderStamp,
                 },
               });
               recordEnqueued({ agentName: agentType, instanceId: match.instanceId || 'default' });
@@ -2340,6 +2360,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
+              senderIsHuman: sender?.isBot === false,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),

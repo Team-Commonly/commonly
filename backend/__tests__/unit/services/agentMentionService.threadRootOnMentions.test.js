@@ -132,6 +132,45 @@ describe('a mention carries the thread root it was posted in (TASK-026)', () => 
     expect(events[0].payload.threadRootId).toBe(101);
   });
 
+  // F225: a comment's author can't be read off the pod's messages, so the
+  // wrapper has only this stamp to price the wake with.
+  test.each([
+    ['a person', 'user-1', true],
+    ['an agent', 'bot-user-a', false],
+  ])('a thread.mention from %s says who wrote the comment', async (_label, userId, senderIsHuman) => {
+    await send(
+      { id: 'c1', _id: 'c1', content: '@seat-b please look', source: 'thread' },
+      { userId },
+    );
+    const events = mentionEvents().filter((e) => e.agentName === 'seat-b');
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('thread.mention');
+    expect(events[0].payload.senderIsHuman).toBe(senderIsHuman);
+  });
+
+  // A lean row has no schema defaults, so isBot can be missing, and a missing
+  // isBot is not an agent. Absent reads as unknown at the wrapper.
+  test.each([
+    ['has no isBot field', { _id: 'user-1' }],
+    ['could not be found', null],
+  ])('a thread.mention whose sender row %s carries no stamp', async (_label, row) => {
+    User.findById.mockImplementation(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(row),
+    }));
+    await send({ id: 'c1', _id: 'c1', content: '@seat-b please look', source: 'thread' });
+    const events = mentionEvents().filter((e) => e.agentName === 'seat-b');
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).not.toHaveProperty('senderIsHuman');
+  });
+
+  test('a chat mention keeps the stamp it always has', async () => {
+    await send({ id: 'm9', _id: 'm9', content: '@seat-b please look', source: 'chat' });
+    const events = mentionEvents().filter((e) => e.agentName === 'seat-b');
+    expect(events).toHaveLength(1);
+    expect(events[0].payload.senderIsHuman).toBe(true);
+  });
+
   test('a chat-sourced mention inside a thread carries threadRootId', async () => {
     await send({
       id: 'm3', _id: 'm3', content: '@seat-a in the thread', source: 'chat', threadRootId: 101, 

@@ -63,10 +63,10 @@ const row = (overrides = {}) => ({
   expiresAt: new Date(Date.now() + 60_000), save: jest.fn().mockResolvedValue(undefined), ...overrides,
 });
 
-// The sweep reads lapsed `flagged` rows, then (F202) `expired` rows whose side
+// The sweep reads lapsed `flagged` rows, then (F202) closed rows whose side
 // effects never finished; these tests have none of the latter.
 const sweepFinds = (lapsed) => mockApproval.find.mockImplementation((query) => (
-  query.status === 'expired'
+  query.status !== 'flagged'
     ? { select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }) }
     : Promise.resolve(lapsed)));
 

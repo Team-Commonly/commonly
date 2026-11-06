@@ -20,6 +20,7 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   isHostedInstallation: () => false,
   hostedCaps: () => ({ agentsPerUser: 1, turnsPerDay: 30 }),
   hostedCapsForOwner: async () => ({ agentsPerUser: 1, turnsPerDay: 30 }),
+  listHostedInstallationsForUser: async () => [],
 }));
 jest.mock('../../../services/nativeRuntimeService', () => ({
   isNativeRuntimeAvailable: () => false,

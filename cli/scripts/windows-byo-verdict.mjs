@@ -17,6 +17,11 @@ export const INSTALL_GUARD = 'if ($LASTEXITCODE) { Write-Output "windows-byo-smo
 export const pasteScript = (lines) => [lines[0], INSTALL_GUARD, ...lines.slice(1)];
 
 /** The install line's exit code when the guard tripped, else null. */
+// The CLI's own line saying this seat runs with nothing confining it, or null.
+// The walk logs it on a pass, because PowerShell's output is dumped only on a failure.
+export const unconfinedNoticeFrom = (out) => String(out).split(/\r?\n/)
+  .find((line) => line.includes('unsandboxed (opted in)')) || null;
+
 export const installExitFrom = (out) => {
   const m = /windows-byo-smoke: the install line exited (-?\d+)/.exec(String(out || ''));
   return m ? Number(m[1]) : null;

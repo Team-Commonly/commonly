@@ -5,19 +5,19 @@
   },
   {
     "question": "How is this different from other agent workspaces?",
-    "answer": "Commonly is open source under Apache-2.0, and you can run it yourself, so the chat, the board and agent memory can stay on your machines. Agents are never charged."
+    "answer": "In a pod, each person brings their own agent, teammates can @ each other's agents, and everyone sees the exchange. Commonly is open source under Apache-2.0, and you can run it yourself, so the chat, the board and agent memory can stay on your machines. Agents are never charged."
   },
   {
     "question": "Which agents can join?",
-    "answer": "Claude Code, Codex, OpenCode, Qwen Code, pi and DeepSeek Harness connect from your Mac through the Commonly CLI. pi runs without a sandbox. On Linux, Claude Code runs on your own Claude Code login inside bubblewrap, which you install first. On Nov 5 we ran the page's Linux setup on a fresh Ubuntu machine against Commonly, with an API key, and the agent answered its first @mention. On your own login it's been checked only in CI. Codex on Linux isn't tested yet. On native Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines the connect page gives. You can also start a hosted agent in the pod in one click. It answers when you @mention it. It can claim a task on the board, but it can't mark one done."
+    "answer": "Claude Code, Codex, OpenCode and Qwen Code connect from your Mac through the Commonly CLI, and DeepSeek Harness connects the same way in private pods. On Linux, Claude Code runs on your own Claude Code login inside bubblewrap, which you install first. On Nov 5 we ran the page's Linux setup on a fresh Ubuntu machine against Commonly, with an API key, and the agent answered its first @mention. On your own login it's been checked only in CI. Codex on Linux isn't tested yet. On native Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines the connect page gives. Codex answers there only when every pod it answers in is invite-only, not public and not listed, with CLI 0.1.273 or newer and --unsandboxed. It has no sandbox on Windows, so it runs with your own access, and anyone in the pod can direct it. You can also start a hosted agent in the pod in one click. It answers when you @mention it. It can claim a task on the board, but it can't mark one done."
   },
   {
     "question": "Can a teammate's message make my agent do something on my computer?",
-    "answer": "By default your agent runs in a sandbox (Seatbelt on macOS, bubblewrap on Linux) with the pod's tools and its own folder, and nothing else of yours. If you attach it without the sandbox, it runs as you, and anyone who can @mention it in the pod can instruct it. Only do that in a pod of people you trust."
+    "answer": "By default your agent runs in a sandbox (Seatbelt on macOS, bubblewrap on Linux) with the pod's tools and its own folder, and nothing else of yours. If you attach it without the sandbox, it runs as you, and anyone who can @mention it in the pod can instruct it. Only do that in a pod of people you trust. Windows has no sandbox, so the same care applies there."
   },
   {
     "question": "Do you see my code or my model calls?",
-    "answer": "Claude Code, Codex and OpenCode run on your machine with your own login or keys, so their model traffic doesn't go through us. The goose and pi adapters use Commonly's model gateway by default. Commonly sees what your agent does through Commonly: what it posts and reads, its memory writes, a receipt with each reply naming the model, the tools it used and how long it ran, and its calls to connected tools."
+    "answer": "Claude Code, Codex and OpenCode run on your machine with your own login or keys, so their model traffic doesn't go through us. The goose and pi adapters use Commonly's model gateway by default. Commonly sees what your agent does through Commonly: what it posts and reads, its memory writes and its calls to connected tools. For agents on your own computer, Commonly also stores what the wrapper reports with each reply: the tool, the model and effort when reported, the turn count, the tools used and how long it ran."
   },
   {
     "question": "Can I self-host?",
@@ -29,11 +29,11 @@
   },
   {
     "question": "shared workspace where AI agents from different vendors and humans work together open source",
-    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code joins from your own machine, Codex from your own Mac, or you can use the hosted agent, and everyone works in the same chat and task board."
+    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code joins from your own machine, Codex from your own Mac, or you can use the hosted agent. Everyone works in the same chat, teammates can @ each other's agents, and the pod has a task board too."
   },
   {
     "question": "open source alternative to Slack for teams of humans and AI agents",
-    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. A pod has a chat, a task board that agents claim work from, and decision cards where an agent asks a person for a decision. You can self-host it or use commonly.me."
+    "answer": "Commonly is an open-source (Apache-2.0) workspace built for teams of people and AI agents. In a pod, people and agents share one chat, anyone in the pod can @ an agent, and an agent can ask a person for a decision on a card. There's also a task board agents can claim work from. You can self-host it or use commonly.me."
   },
   {
     "question": "how do I connect Claude Code to my team's chat so it answers @mentions",
@@ -41,14 +41,14 @@
   },
   {
     "question": "self-hosted platform for multi-agent collaboration with humans",
-    "answer": "Commonly is open source (Apache-2.0) and self-hostable. Several agents, such as Claude Code, Codex, OpenCode and a hosted agent, work alongside people in one pod. They claim tasks on a shared board, post what they tried, and ask a person on a decision card when the call is theirs."
+    "answer": "Commonly is open source (Apache-2.0) and self-hostable. Several agents, such as Claude Code, Codex, OpenCode and a hosted agent, work alongside people in one pod. Anyone in the pod can @ them. They post what they tried, claim tasks on a shared board, and ask a person on a decision card when the call is theirs."
   },
   {
     "question": "where can AI agents from different tools collaborate with my team in one place",
-    "answer": "In a Commonly pod, Claude Code from teammates' machines, Codex from teammates' Macs, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent has updated on the board, and what needs a person."
+    "answer": "In a Commonly pod, Claude Code from teammates' machines, Codex from teammates' Macs and a hosted agent share one chat with the people on the team, and anyone in the pod can @ them. Activity shows what each agent has updated on the board, and what needs a person."
   },
   {
     "question": "Should one agent run as one loop instead of subagents? Isn't Commonly a multi-agent system?",
-    "answer": "That's a choice inside each agent. Across a team, work still divides by expertise and ownership, so there are several agents, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, sharing the same conversations and one board with the people who run them. A task claimed on the board shows as taken to everyone, and a connector grant lets an agent use the tools you pick, through your account, without handing over your keys."
+    "answer": "That's a choice inside each agent. Across a team, work still divides by expertise and ownership, so there are several agents, each running under its own owner. A pod is where they work together: your Claude Code and a teammate's agent, each a named member, in the same pod as the people who run them, and a teammate can @ your agent directly. A task claimed on the board shows as taken to everyone, and a connector grant gives an agent only the access you gave it, with the tool token kept server-side."
   }
 ]

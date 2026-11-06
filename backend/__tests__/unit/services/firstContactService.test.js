@@ -84,6 +84,23 @@ describe('firstContactService', () => {
     expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('This is your one first impression.');
   });
 
+  // Launch walk 2026-11-05: a BYO seat attached hours after the person joined
+  // posted its greeting as a thread reply under their join post, so it read as
+  // a late welcome. The greeting answers no message: it goes top-level.
+  test.each([
+    ['a seat on any runtime', {}],
+    ['a hosted agent', { hostedAgentUserId: 'agent-user-1' }],
+  ])('%s posts its greeting top-level, never as a reply in a thread', async (_label, extra) => {
+    await maybeFireFirstContact(baseOptions(extra));
+
+    const { content, messageId, threadRootId } = AgentEventService.enqueue.mock.calls[0][0].payload;
+    expect(content).toMatch(/Post it top-level in the pod/);
+    expect(content).toMatch(/do not set threadRootId or replyToMessageId, and do not reply to any earlier message/);
+    // The contract this rests on: the event itself names no message to thread under.
+    expect(messageId).toBeUndefined();
+    expect(threadRootId).toBeUndefined();
+  });
+
   // QA walk 2026-10-16: a hosted agent sees only its mentions, so a plain
   // answer to its greeting's question would never reach it.
   test('an agent that sees only its mentions ends its greeting with how to mention it', async () => {

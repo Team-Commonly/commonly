@@ -188,7 +188,7 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
   test('a caller declaring an adapter that cannot confine gets a refusal and no broker, named or not', async () => {
     const fixture = await seed();
     await namedGrant(fixture);
-    const responses = await Promise.all(['pi', 'goose', 'qwen', 'opencode'].map((adapter) => read(SEAT_TOKEN, adapter)));
+    const responses = await Promise.all(['dsh', 'hermes', 'mystery'].map((adapter) => read(SEAT_TOKEN, adapter)));
     responses.forEach((res) => {
       expect(res.status).toBe(200);
       expect(res.body.servers).toEqual([]);
@@ -198,12 +198,87 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     });
   });
 
+  // F175a: OpenCode confines a public seat on the same three modes as claude
+  // and keeps the credential out of its own tools' reach, so it is admitted.
+  test('an OpenCode caller on a confined seat gets its grant; on an unconfined one, a refusal', async () => {
+    const fixture = await seed({ seatEnvironment: { sandbox: { mode: 'workspace', trust: 'public' } } });
+    await grantFor({
+      grantId: 'grant_unnamed',
+      target: { kind: 'seat', id: String(fixture.seat._id) },
+      audience: [String(fixture.seat._id)],
+    });
+    const admitted = await read(SEAT_TOKEN, 'opencode');
+    expect(admitted.body.refusal).toBeNull();
+    expect(admitted.body.servers).toEqual([expect.objectContaining({ name: expect.any(String), url: brokerUrl('grant_unnamed') })]);
+
+    await AgentInstallation.updateOne({ agentName: 'quill' }, {
+      $set: { 'config.environment': { sandbox: { mode: 'none', trust: 'public' } } },
+    });
+    const refused = await read(SEAT_TOKEN, 'opencode');
+    expect(refused.body.servers).toEqual([]);
+    expect(refused.body.refusal).toMatchObject({ reason: 'sandbox_mode_none' });
+  });
+
+  // F175c: a pi caller holds a grant only on a declared public seat, and
+  // naming the seat lifts nothing for it.
+  test('a pi caller on an unconfined seat is refused even when named; on a public seat it gets its grant', async () => {
+    const fixture = await seed();
+    await namedGrant(fixture);
+    const refused = await read(SEAT_TOKEN, 'pi');
+    expect(refused.body.servers).toEqual([]);
+    expect(refused.body.refusal).toMatchObject({
+      code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: 'adapter_confines_public_only',
+    });
+
+    await AgentInstallation.updateOne({ agentName: 'quill' }, {
+      $set: { 'config.environment': { sandbox: { trust: 'public' } } },
+    });
+    const admitted = await read(SEAT_TOKEN, 'pi');
+    expect(admitted.body.refusal).toBeNull();
+    expect(admitted.body.servers).toHaveLength(1);
+  });
+
+  // F175d: Qwen and Goose read as pi does on this path: no daemon derives Qwen's
+  // default, so an absent block refuses too, with the reason naming doesn't lift.
+  test.each(['qwen', 'goose'])('a %s caller on an unconfined seat is refused even when named; on a public seat it gets its grant', async (adapter) => {
+    const fixture = await seed();
+    await namedGrant(fixture);
+    const refused = await read(SEAT_TOKEN, adapter);
+    expect(refused.body.servers).toEqual([]);
+    expect(refused.body.refusal).toMatchObject({
+      code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: 'adapter_confines_public_only',
+    });
+
+    await AgentInstallation.updateOne({ agentName: 'quill' }, {
+      $set: { 'config.environment': { sandbox: { trust: 'public' } } },
+    });
+    const admitted = await read(SEAT_TOKEN, adapter);
+    expect(admitted.body.refusal).toBeNull();
+    expect(admitted.body.servers).toHaveLength(1);
+  });
+
+  test.each(['qwen', 'goose'])('the installation\'s own %s binding refuses a named grant when the caller claims claude', async (adapter) => {
+    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter } });
+    await namedGrant(fixture);
+    const res = await read(SEAT_TOKEN, 'claude');
+    expect(res.body.servers).toEqual([]);
+    expect(res.body.refusal).toMatchObject({ reason: 'adapter_confines_public_only' });
+  });
+
   test('the installation\'s own unproven adapter still refuses when the caller claims claude', async () => {
-    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter: 'pi' } });
+    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter: 'dsh' } });
     await namedGrant(fixture);
     const res = await read(SEAT_TOKEN, 'claude');
     expect(res.body.servers).toEqual([]);
     expect(res.body.refusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+  });
+
+  test('the installation\'s own pi binding refuses a named grant when the caller claims claude', async () => {
+    const fixture = await seed({ runtime: { runtimeType: 'wrapper', adapter: 'pi' } });
+    await namedGrant(fixture);
+    const res = await read(SEAT_TOKEN, 'claude');
+    expect(res.body.servers).toEqual([]);
+    expect(res.body.refusal).toMatchObject({ reason: 'adapter_confines_public_only' });
   });
 
   test('a declared sandbox no host confines is lifted only by naming', async () => {

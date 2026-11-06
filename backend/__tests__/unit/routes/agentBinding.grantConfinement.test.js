@@ -227,7 +227,10 @@ describe('GET /assigned — grant broker confinement', () => {
   // the broker — which is the pi half of TASK-063. Once #1764 lands, pi can
   // speak the HTTP transport the broker uses, so this is what makes that
   // reachable-but-confined rather than reachable-and-bare.
-  it('withholds the broker from a pi seat, which confines on no host', async () => {
+  // F175c: pi holds a grant only on a declared public seat. A pi seat that
+  // declares nothing is never defaulted into a sandbox, so it is refused here,
+  // with the reason naming does not lift.
+  it('withholds the broker from a pi seat that declares no sandbox', async () => {
     await seed(undefined, { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' });
     const row = await assigned();
     expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
@@ -235,18 +238,55 @@ describe('GET /assigned — grant broker confinement', () => {
     expect(row.grantBrokerRefusal).toMatchObject({
       code: GRANT_BROKER_REFUSAL_CODE,
       decidedBy: 'server',
-      reason: 'adapter_cannot_confine',
+      reason: 'adapter_confines_public_only',
     });
+  });
+
+  it('projects the broker to a public pi seat', async () => {
+    await seed({ trust: 'public' }, { runtimeType: 'wrapper', adapter: 'pi', model: 'deepseek-v4-flash' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
   });
 
   // 2026-10-09: the denylist became an allowlist. An adapter nobody has shown to confine fails
   // closed, and a mode is judged against the declared adapter's own set, not the union.
   it('refuses a hand-attached seat whose runtimeType names an unproven adapter and carries no adapter key', async () => {
     // attach writes `runtime: { runtimeType: adapter.name, host: 'byo' }` with no `adapter` key.
-    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'opencode', host: 'byo', model: 'x' });
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'dsh', host: 'byo', model: 'x' });
     const row = await assigned();
     expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
     expect(row.grantBrokerRefusal).toMatchObject({ reason: 'adapter_cannot_confine' });
+  });
+
+  // F175d: a public seat on either harness holds the grant, and a hand-attached
+  // one reads the same as a daemon-placed one.
+  it.each([
+    ['qwen', { runtimeType: 'qwen', host: 'byo', model: 'x' }],
+    ['goose', { runtimeType: 'wrapper', adapter: 'goose', model: 'x' }],
+  ])('projects the broker to a public %s seat, and withholds it from a private one', async (_adapter, runtime) => {
+    await seed({ trust: 'public' }, runtime);
+    const admitted = await assigned();
+    expect(mcpNames(admitted)).toContain(GRANT_BROKER_ID);
+    expect(admitted.grantBrokerRefusal).toBeUndefined();
+
+    await seed({ trust: 'private' }, runtime);
+    const refused = await assigned();
+    expect(mcpNames(refused)).not.toContain(GRANT_BROKER_ID);
+    expect(refused.grantBrokerRefusal).toMatchObject({ reason: 'adapter_confines_public_only' });
+  });
+
+  // F175d: the daemon derives Qwen's sandbox, so an absent block is its to judge
+  // (cli default-environment.js). It derives none for Goose, so the server refuses.
+  it('leaves a qwen seat with no sandbox block to the daemon, and refuses a goose one', async () => {
+    await seed(undefined, { runtimeType: 'wrapper', adapter: 'qwen', model: 'x' });
+    const qwen = await assigned();
+    expect(mcpNames(qwen)).toContain(GRANT_BROKER_ID);
+
+    await seed(undefined, { runtimeType: 'wrapper', adapter: 'goose', model: 'x' });
+    const goose = await assigned();
+    expect(mcpNames(goose)).not.toContain(GRANT_BROKER_ID);
+    expect(goose.grantBrokerRefusal).toMatchObject({ reason: 'adapter_confines_public_only' });
   });
 
   it('leaves a wrapper row with no adapter key daemon-decided: a runtime kind is not an adapter', async () => {
@@ -257,11 +297,26 @@ describe('GET /assigned — grant broker confinement', () => {
   });
 
   it('withholds the broker from an adapter not known to confine, even with a confining-looking sandbox', async () => {
-    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'opencode', model: 'x' });
+    await seed({ mode: 'workspace', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'dsh', model: 'x' });
     const row = await assigned();
     expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
     expect(row.grantBrokerRefusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, reason: 'adapter_cannot_confine' });
-    expect(row.grantBrokerRefusal.detail).toContain('claude, codex');
+    expect(row.grantBrokerRefusal.detail).toContain('claude, codex, opencode');
+  });
+
+  // F175a: OpenCode joins the confining adapters on its three modes.
+  it.each(['workspace', 'read-only', 'bwrap'])('injects the broker for a confined OpenCode seat (%s)', async (mode) => {
+    await seed({ mode, trust: 'public' }, { runtimeType: 'wrapper', adapter: 'opencode', model: 'x' });
+    const row = await assigned();
+    expect(mcpNames(row)).toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toBeUndefined();
+  });
+
+  it('withholds the broker from an OpenCode seat whose mode is none', async () => {
+    await seed({ mode: 'none', trust: 'public' }, { runtimeType: 'wrapper', adapter: 'opencode', model: 'x' });
+    const row = await assigned();
+    expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    expect(row.grantBrokerRefusal).toMatchObject({ reason: 'sandbox_mode_none' });
   });
 
   it('withholds the broker when the mode is one the declared adapter does not enforce (codex + bwrap)', async () => {

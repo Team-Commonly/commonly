@@ -8,6 +8,7 @@
  */
 
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
+import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
 
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
@@ -103,6 +104,12 @@ const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this cont
 // adjacent `.`+digit is rare enough in provider copy to accept. The test below
 // pins what the pattern ACTUALLY has — a space after the period ends the match —
 // rather than the stronger property it does not have.
+// The gateway's two budget refusals. A key over its budget answers 422 with this
+// exact text (walked on a real key, 2026-11-06); a model group over its monthly
+// pool answers 429 "crossed budget" (our gateway config). Case-sensitive, so a
+// "thinking budget has been exceeded" stays out. Unmatched, the 422 is RUNTIME
+// and the seat respawns every few seconds against a key that stays refused.
+export const GATEWAY_BUDGET_RE = /Budget has been exceeded!|crossed budget/;
 const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
 // The status code is not a throttle wording: "429: You've reached your Fable 5
@@ -132,6 +139,8 @@ export const classifySpawnFailure = (error) => {
       ? SPAWN_FAILURE_CLASS.RATE_LIMIT
       : SPAWN_FAILURE_CLASS.RUNTIME;
   }
+  // Only whoever runs the seat can change this, so it waits as a missing CLI does.
+  if (error?.code === PUBLIC_CODEX_VERSION_CODE) return SPAWN_FAILURE_CLASS.CONFIGURATION;
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
   if (CONTENT_REFUSED_RE.test(text)) return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
@@ -139,7 +148,7 @@ export const classifySpawnFailure = (error) => {
   // Provider APIs commonly report an exhausted account quota as HTTP 429.
   // Prefer the more specific body/message over the generic status code so a
   // hard quota failure gets the long cooldown rather than a one-minute probe.
-  if (QUOTA_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
+  if (QUOTA_RE.test(text) || GATEWAY_BUDGET_RE.test(text)) return SPAWN_FAILURE_CLASS.QUOTA;
   // The possessive shape is deliberately loose about what sits between "your"
   // and "limit", and its `(?!rate[ -]?limit)` lookahead only guards the word
   // IMMEDIATELY after "your" — so "you've hit your API rate limit" walked past

@@ -35,7 +35,13 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const { default: codex, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+const { default: codexAdapter, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+// These turns use a fake spawn, so no Codex answers for its version. A test of
+// the version itself is in adapters.codex.version-floor.test.mjs.
+const codex = {
+  ...codexAdapter,
+  spawn: (prompt, ctx) => codexAdapter.spawn(prompt, { _codexVersion: '0.162.1', ...ctx }),
+};
 const {
   BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR,
 } = await import('../src/lib/adapters/codex-broker-bridge.mjs');
@@ -61,6 +67,8 @@ const fakeChild = ({
   delayMs = 0,
   outputFile = null,
   outputContents = null,
+  // Codex ends a turn it finished with this line; a test of one it didn't says so.
+  finished = true,
 } = {}) => {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
@@ -68,6 +76,7 @@ const fakeChild = ({
   proc.kill = jest.fn();
   setTimeout(async () => {
     for (const chunk of stdoutChunks) proc.stdout.emit('data', Buffer.from(chunk));
+    if (finished) proc.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
     if (stderr) proc.stderr.emit('data', Buffer.from(stderr));
     if (outputFile && outputContents !== null) {
       await writeFile(outputFile, outputContents, 'utf8');
@@ -83,7 +92,7 @@ const findOutputFile = (args) => {
 };
 
 const makeSpawnImpl = ({
-  stdoutChunks = [], stderr = '', code = 0, outputContents = null, onCall = null,
+  stdoutChunks = [], stderr = '', code = 0, outputContents = null, onCall = null, finished = true,
 } = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
@@ -97,6 +106,7 @@ const makeSpawnImpl = ({
       code,
       outputFile: findOutputFile(args),
       outputContents,
+      finished,
     });
   };
   return { impl, calls };
@@ -1068,6 +1078,69 @@ describe('codex adapter — spawn()', () => {
     expect(promptArg).not.toContain('commonly_save_my_memory');
   });
 
+  // The npm launcher re-raises a signal into its own handler and then exits 0,
+  // so through it a stopped turn has a clean exit code, and only the stream
+  // shows that it never finished.
+  test('a turn that started and never finished rejects, though codex exits 0', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-stopped"}\n',
+        '{"type":"turn.started"}\n',
+      ],
+      outputContents: null,
+      finished: false,
+    });
+
+    await expect(
+      codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
+    ).rejects.toThrow(/stopped before it finished/);
+  });
+
+  test('a stop before the first event rejects too', async () => {
+    const { impl } = makeSpawnImpl({ finished: false });
+
+    await expect(
+      codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
+    ).rejects.toThrow(/stopped before it finished/);
+  });
+
+  test('a last line with no newline still counts', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-end"}\n', '{"type":"turn.completed"}'],
+      outputContents: 'done',
+      finished: false,
+    });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('done');
+  });
+
+  test('a final message counts as finished, whatever the stream printed', async () => {
+    const { impl } = makeSpawnImpl({ outputContents: 'the reply', finished: false });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('the reply');
+  });
+
+  test('a finished turn with no text stays a silent turn', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-quiet"}\n',
+        '{"type":"turn.started"}\n',
+        '{"type":"turn.completed"}\n',
+      ],
+      outputContents: null,
+      finished: false,
+    });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('');
+    expect(res.newSessionId).toBe('sid-quiet');
+  });
+
   test('rejects when codex emits a turn.failed event, surfacing the error message', async () => {
     const { impl } = makeSpawnImpl({
       stdoutChunks: [
@@ -1470,6 +1543,75 @@ describe('codex adapter — the public Codex home on Linux', () => {
     expect(existsSync(join(project, 'state'))).toBe(false);
   });
 
+  // F219: the temp folder holds this turn's credential and last-message.txt, on
+  // macOS as on Linux, so a workspace that holds it hands them to the sandbox.
+  test('a public seat in a workspace that holds the temp folder is refused before anything is written', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const publicHome = join(fakeHome, 'public-home');
+    await expect(codex.spawn('hi', {
+      sessionId: null,
+      cwd: tmpdir(),
+      environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } },
+      env: { ...process.env, CODEX_HOME: join(fakeHome, '.codex') },
+      runtimeToken: 'cm_agent_fake',
+      agentName: 'macos-public-seat',
+      _homeDir: fakeHome,
+      _platform: 'darwin',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    })).rejects.toThrow(/public Codex agents cannot run in .*set TMPDIR outside it/);
+    expect(calls).toHaveLength(0);
+    expect(existsSync(publicHome)).toBe(false);
+  });
+
+  // F219: the sandbox denies $TMPDIR, so a shell heredoc and mktemp fail (real
+  // turn on codex-cli 0.162.1). The shell alone gets a writable temp folder.
+  describe('the temp folder a public shell gets', () => {
+    const turn = async (mode) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const workspace = join(fakeHome, 'project');
+      await mkdir(workspace, { recursive: true });
+      await codex.spawn('hi', {
+        sessionId: null,
+        cwd: workspace,
+        environment: { model: 'test-model', sandbox: { trust: 'public', mode } },
+        env: { ...process.env, CODEX_HOME: join(fakeHome, '.codex') },
+        runtimeToken: 'cm_agent_fake',
+        agentName: 'macos-public-seat',
+        _homeDir: fakeHome,
+        _platform: 'darwin',
+        _publicCodexHome: join(fakeHome, 'public-home'),
+        _spawnImpl: impl,
+      });
+      const { args, opts } = calls[0];
+      return { args, opts, workspace: realpathSync(workspace) };
+    };
+    const shellSet = (args) => args[args.findIndex((arg) => arg.startsWith('shell_environment_policy.set='))] || '';
+
+    test('a writable workspace is the shell\'s TMPDIR, and only the shell\'s', async () => {
+      const { args, opts, workspace } = await turn('workspace');
+      expect(shellSet(args)).toBe('shell_environment_policy.set={'
+        + `"TMPDIR"=${JSON.stringify(workspace)},"TMPPREFIX"=${JSON.stringify(join(workspace, 'zsh'))}}`);
+      // Without the name here, include_only drops the value set above.
+      expect(args.find((arg) => arg.startsWith('shell_environment_policy.include_only='))).toContain('"TMPPREFIX"');
+      // Codex, its MCP child and the per-turn folder stay where they were.
+      expect(opts.env.TMPDIR).toBe(process.env.TMPDIR);
+      const lastMessage = args[args.indexOf('-o') + 1];
+      expect(realpathSync(dirname(dirname(lastMessage)))).toBe(realpathSync(tmpdir()));
+    });
+
+    test('a read-only workspace has nowhere to point it', async () => {
+      const { args } = await turn('read-only');
+      expect(shellSet(args)).toBe('');
+    });
+  });
+
+  test('a private seat keeps running in the temp folder: it has no sandbox to widen', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    await codex.spawn('hi', { sessionId: null, cwd: tmpdir(), environment: { model: 'test-model' }, env: process.env, _spawnImpl: impl });
+    expect(calls).toHaveLength(1);
+  });
+
   test('a workspace that contains the home is refused before Codex runs', async () => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const env = { ...process.env, CODEX_HOME: join(fakeHome, '.codex') };
@@ -1485,6 +1627,29 @@ describe('codex adapter — the public Codex home on Linux', () => {
       _spawnImpl: impl,
     })).rejects.toThrow(/contains the agent's own Codex home/);
     expect(calls).toHaveLength(0);
+  });
+
+  // Codex parses every filesystem key as a path for the platform it runs on.
+  // `/private/tmp` (the macOS temp root) has no drive on Windows, so Codex
+  // refused the whole profile there and every turn exited before the model:
+  // "filesystem path `/private/tmp` must be absolute, use `~/...`, or start
+  // with `:`" (byo-windows run 41996139905).
+  test('a Windows seat gets no macOS path in its profile; Mac and Linux keep the /private/tmp deny', async () => {
+    const win = filesystemFlag(await publicSpawn(fakeHome, { platform: 'win32', cwd: project }));
+    expect(win).not.toContain('/private/tmp');
+    // Every key Codex reads as a path is home-relative, a :special, or relative.
+    const keys = [...win.slice('permissions.commonly_public.filesystem='.length).matchAll(/"([^"]+)"=/g)].map((m) => m[1]);
+    expect(keys.filter((key) => key.startsWith('/'))).toEqual([]);
+    expect(win).toContain('"~/.commonly"="deny"');
+    expect(win).toContain('"~/.ssh"="deny"');
+    for (const platform of ['darwin', 'linux']) {
+      // eslint-disable-next-line no-await-in-loop
+      const flag = filesystemFlag(await publicSpawn(fakeHome, { platform, cwd: project }));
+      expect(flag).toContain('"/private/tmp"="deny"');
+      // The same denies otherwise (Linux adds its helper-binary read grants after these).
+      const denies = (f) => f.split('":workspace_roots"')[0];
+      expect(denies(flag).replace('"/private/tmp"="deny",', '')).toBe(denies(win));
+    }
   });
 });
 
@@ -1713,5 +1878,61 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
     });
     expect(calls[0].args).not.toContain('--ignore-user-config');
     expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+  });
+});
+
+describe('codex adapter — a public seat runs with Commonly\'s tools only', () => {
+  const builtinFlags = [
+    'web_search="disabled"',
+    'features.multi_agent=false',
+    'features.multi_agent_v2.max_concurrent_threads_per_session=1',
+    'features.goals=false',
+  ];
+  const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+
+  const zeroDepth = 'agents.max_depth=0';
+
+  const spawnSeat = async ({ sandbox, sessionId = null }) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const root = await mkdtemp(join(tmpdir(), 'commonly-codex-builtins-'));
+    try {
+      await codex.spawn('hi', {
+        sessionId,
+        cwd: root,
+        environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}) },
+        env: { ...process.env, CODEX_HOME: join(root, 'operator') },
+        agentName: 'builtins-test-agent',
+        _publicCodexHome: join(root, 'public'),
+        _spawnImpl: impl,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+    return calls[0].args;
+  };
+
+  test.each(['workspace', 'read-only'])('a new %s turn turns the built-ins off', async (mode) => {
+    const args = await spawnSeat({ sandbox: { trust: 'public', mode } });
+    expect(configFlags(args)).toEqual(expect.arrayContaining(builtinFlags));
+    expect(configFlags(args).some((flag) => flag.includes('view_image'))).toBe(false);
+    // Codex parses these only after `exec`.
+    expect(args.indexOf('exec')).toBeLessThan(args.indexOf(builtinFlags[0]));
+  });
+
+  test('a resumed turn turns them off too', async () => {
+    const args = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, sessionId: 'thread-1' });
+    expect(args.slice(args.indexOf('exec'), args.indexOf('exec') + 3)).toEqual(['exec', 'resume', 'thread-1']);
+    expect(configFlags(args)).toEqual(expect.arrayContaining(builtinFlags));
+  });
+
+  test('agent depth 0 goes to every public seat', async () => {
+    expect(configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } }))).toContain(zeroDepth);
+    expect(configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, sessionId: 'thread-1' })))
+      .toContain(zeroDepth);
+  });
+
+  test('a private seat keeps Codex\'s built-ins', async () => {
+    const flags = configFlags(await spawnSeat({ sandbox: null }));
+    for (const flag of [...builtinFlags, zeroDepth]) expect(flags).not.toContain(flag);
   });
 });

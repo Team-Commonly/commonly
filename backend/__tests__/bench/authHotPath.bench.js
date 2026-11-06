@@ -1,7 +1,6 @@
 /**
- * Auth hot-path latency on one store, for the FerretDB CI leg
- * (.github/workflows/backend-ferretdb.yml, bench job). Not part of the suite:
- * jest.config.js ignores __tests__/bench/, and the bench job runs it on its own.
+ * Auth hot-path latency on one store, measured for ADR-034 D7. Not part of the
+ * suite: jest.config.js ignores __tests__/bench/, so run it by hand.
  *
  *   BENCH_URI=mongodb://localhost:27018 BENCH_LABEL=ferretdb \
  *     npx jest __tests__/bench --testPathIgnorePatterns=/node_modules/

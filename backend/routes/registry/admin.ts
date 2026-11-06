@@ -10,6 +10,7 @@ const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const AgentEventService = require('../../services/agentEventService');
 const { restartAgentRuntime } = require('../../services/agentProvisionerService');
+const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
 const { hash, randomSecret } = require('../../utils/secret');
 const {
   escapeRegExp,
@@ -20,7 +21,12 @@ const {
   buildAgentProfileId,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
-const { revokeRuntimeTokenEverywhere, revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
+const {
+  InProcessAgentTokenRefused,
+  revokeRuntimeTokenEverywhere,
+  revokeRuntimeTokensAfterLastUninstall,
+  runsInProcess,
+} = require('./tokens');
 
 const adminRouter = express.Router();
 
@@ -180,7 +186,11 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           skipRuntimeRestart: true,
         });
         // Track which shared runtimes need a single deferred restart
-        if (result.runtimeType === 'moltbot') sharedRuntimesNeedingRestart.add('moltbot');
+        if (result.runtimeType === 'moltbot' && !result.skipped) sharedRuntimesNeedingRestart.add('moltbot');
+        if (result.skipped) {
+          items.push({ ...result, success: true });
+          continue;
+        }
         items.push({
           installationId: result.installationId,
           agentName: result.agentName,
@@ -211,13 +221,14 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
       });
     }
 
-    const succeeded = items.filter((item) => item.success).length;
-    const failed = items.length - succeeded;
+    const skippedCount = items.filter((item) => item.skipped).length;
+    const failed = items.filter((item) => !item.success).length;
     return res.json({
       success: failed === 0,
       attempted: items.length,
-      succeeded,
+      succeeded: items.length - failed - skippedCount,
       failed,
+      skipped: skippedCount,
       items,
     });
   } catch (error) {
@@ -279,6 +290,7 @@ adminRouter.delete('/admin/installations/:installationId', auth, adminAuth, asyn
     const agentName = installation.agentName;
     const instanceId = installation.instanceId;
 
+    await retireHostedRoomRows(agentName, instanceId, installation.installedBy);
     await revokeRuntimeTokensAfterLastUninstall(agentName, instanceId);
 
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(agentName, instanceId), podId });
@@ -322,6 +334,9 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
     await assertAgentRuntimeMayJoinPod(podId, 'claude-code');
 
     const instanceId = requestedInstanceId || `sess-${randomSecret(8)}`;
+    if (await runsInProcess(null, { agentName: 'claude-code', instanceId })) {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: new InProcessAgentTokenRefused().message });
+    }
 
     // Default to Commonly's existing `<Primary> (Context)` parenthetical naming
     // pattern — see live DB examples like 'Backend Engineer (Nova)', 'Dev PM (Theo)'.

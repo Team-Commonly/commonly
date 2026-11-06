@@ -21,6 +21,9 @@ jest.mock('../../middleware/auth', () => (req, res, next) => {
   req.userId = id;
   return next();
 });
+jest.mock('../../middleware/githubRepositoryListRateLimit', () => ({
+  githubRepositoryListRateLimit: (_req, _res, next) => next(),
+}));
 jest.mock('../../middleware/integrationRateLimit', () => ({
   writeIntegrationsRateLimit: (_req, _res, next) => next(),
   listIntegrationsRateLimit: (_req, _res, next) => next(),
@@ -32,7 +35,7 @@ jest.mock('../../middleware/integrationRateLimit', () => ({
 // installation, which repositories with what permission.
 // Lists paginate 100 per page, as GitHub's do; `failPage` answers 403 from
 // that page of a repository listing on.
-const mockGithub = { byToken: {}, requests: [], failPage: null };
+const mockGithub = { byToken: {}, requests: [], failPage: null, failInstallationsPage: null };
 jest.mock('../../services/hostedVendorFetch', () => ({
   hostedVendorFetch: jest.fn(async (url, init) => {
     const token = String(init?.headers?.Authorization || '').replace('Bearer ', '');
@@ -43,6 +46,7 @@ jest.mock('../../services/hostedVendorFetch', () => ({
     const parsed = new URL(url);
     const page = Number(parsed.searchParams.get('page') || 1);
     if (parsed.pathname === '/user/installations') {
+      if (mockGithub.failInstallationsPage && page >= mockGithub.failInstallationsPage) return json(403, { message: 'Forbidden' });
       return json(200, {
         total_count: view.installations.length,
         installations: view.installations.slice((page - 1) * 100, page * 100),
@@ -90,7 +94,7 @@ let nextRepoId = 1000;
 const repo = (fullName, permissions = { push: true, pull: true }, id = (nextRepoId += 1)) => {
   const [login, name] = fullName.split('/');
   return {
-    id, name, full_name: fullName, owner: { login }, permissions,
+    id, name, full_name: fullName, owner: { login }, permissions, private: true,
   };
 };
 const filler = (count) => Array.from({ length: count }, (_, i) => repo(`Outside-Team/filler-${i}`));
@@ -134,6 +138,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
   mockGithub.requests.length = 0;
   mockGithub.failPage = null;
+  mockGithub.failInstallationsPage = null;
   process.env.GITHUB_CONNECT_APP_ID = CONNECT_APP_ID;
   process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = generateKeyPairSync('rsa', {
     modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' },
@@ -344,6 +349,125 @@ describe('self-serve Commonly Connect repository connection', () => {
     expect((await RoomGrant.findOne({ grantId: widgetGrant.grantId }).lean()).revokedAt).toBeTruthy();
     // The sibling repository shares the installation id, and keeps its grant.
     expect((await RoomGrant.findOne({ grantId: gadgetGrant.grantId }).lean()).revokedAt).toBeFalsy();
+  });
+});
+
+describe('F221: the picker for a person\'s own repositories', () => {
+  const list = (user) => request(app).get('/api/integrations/github-app/repositories').set('x-test-user', String(user._id));
+  const names = (res) => res.body.repositories.map((row) => `${row.owner}/${row.repo}`);
+
+  test('lists what the caller can push to on Connect installations, in GitHub\'s spelling', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const res = await list(alice);
+    expect(res.status).toBe(200);
+    expect(res.body.repositories).toEqual([
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget', private: true },
+      { installationId: INSTALL, owner: 'Outside-Team', repo: 'Gadget', private: true },
+    ]);
+    expect(res.body.truncated).toBe(false);
+  });
+
+  it('says which rows are public, and treats a row GitHub does not mark as private', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    const unmarked = repo('Outside-Team/Unmarked');
+    delete unmarked.private;
+    view.repositories[INSTALL] = [{ ...repo('Outside-Team/Open'), private: false }, unmarked];
+    const res = await list(alice);
+    expect(res.body.repositories.map((row) => [row.repo, row.private])).toEqual([['Open', false], ['Unmarked', true]]);
+  });
+
+  test('every request carries the caller\'s own token, and creates nothing', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    await list(bob);
+    expect(new Set(mockGithub.requests.map((row) => row.token))).toEqual(new Set(['bob-user-token']));
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
+  });
+
+  test('leaves out what the caller already connected, and only that', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    expect(names(await list(alice))).toEqual(['Outside-Team/Gadget']);
+    expect(names(await list(bob))).toEqual(['Outside-Team/Widget', 'Outside-Team/Gadget']);
+  });
+
+  test('with no GitHub user token it points at the connect flow, without calling GitHub', async () => {
+    const res = await list(alice);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ error: 'github_connect_required', connect: '/api/integrations/connect/hosted-mcp/github-mcp/start' });
+    expect(hostedVendorFetch).not.toHaveBeenCalled();
+  });
+
+  test('refuses github_app_not_configured when the Connect key is absent, before any GitHub call', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;
+    const res = await list(alice);
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('github_app_not_configured');
+    expect(hostedVendorFetch).not.toHaveBeenCalled();
+  });
+
+  test('when GitHub refuses the installations list, it says so rather than reading as empty', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.failInstallationsPage = 1;
+    const res = await list(alice);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('github_unreachable');
+  });
+
+  test('when a later page of installations fails, the list says it may be cut short', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    view.installations = [
+      ...view.installations,
+      ...Array.from({ length: 100 }, (_, i) => ({ id: 9000 + i, app_id: 999, suspended_at: null })),
+    ];
+    mockGithub.failInstallationsPage = 2;
+    const res = await list(alice);
+    expect(res.status).toBe(200);
+    expect(res.body.truncated).toBe(true);
+    expect(res.body.repositories.length).toBeGreaterThan(0);
+  });
+
+  test('stops at 10 Connect installations and says so', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    const view = mockGithub.byToken['alice-user-token'];
+    view.installations = Array.from({ length: 12 }, (_, i) => ({ id: 8000 + i, app_id: Number(CONNECT_APP_ID), suspended_at: null }));
+    view.repositories = Object.fromEntries(view.installations.map(({ id }) => [String(id), [repo(`Team-${id}/Widget`)]]));
+    const res = await list(alice);
+    expect(res.body.truncated).toBe(true);
+    expect(res.body.repositories).toHaveLength(10);
+  });
+
+  test('a reinstall under a new installation id is offered again', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
+    mockGithub.byToken['alice-user-token'].installations[0].id = 7999;
+    mockGithub.byToken['alice-user-token'].repositories['7999'] = [repo('Outside-Team/Widget')];
+    expect((await list(alice)).body.repositories).toEqual([{ installationId: '7999', owner: 'Outside-Team', repo: 'Widget', private: true }]);
+  });
+
+  test('skips a suspended installation', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.byToken['alice-user-token'].installations[0].suspended_at = '2026-11-01T00:00:00Z';
+    expect((await list(alice)).body.repositories).toEqual([]);
+  });
+
+  test('a listing GitHub cuts short, or one past the caps, says truncated', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    mockGithub.byToken['alice-user-token'].repositories[INSTALL] = Array.from({ length: 150 }, (_, i) => repo(`Outside-Team/R${i}`));
+    mockGithub.failPage = 2;
+    const cut = await list(alice);
+    expect(cut.body.truncated).toBe(true);
+    expect(cut.body.repositories).toHaveLength(100);
+
+    mockGithub.failPage = null;
+    mockGithub.byToken['alice-user-token'].repositories[INSTALL] = Array.from({ length: 400 }, (_, i) => repo(`Outside-Team/R${i}`));
+    const capped = await list(alice);
+    expect(capped.body.truncated).toBe(true);
+    expect(capped.body.repositories).toHaveLength(300);
   });
 });
 

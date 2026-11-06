@@ -78,7 +78,7 @@ const run = (runtimeType = 'hosted') => runAgent({ podId: pod._id, agentName: 'm
     ...(runtimeType === 'hosted' ? { hosted: { engine: 'native', provisionedAt: new Date() } } : {}) },
 }, { type: 'chat.mention', payload: { content: 'Please answer.', userId: String(owner._id) } });
 
-test.each(['hosted', 'native'])('a %s 503 persists failure and posts model/reason without substitution or private payload', async (runtimeType) => {
+test.each(['hosted', 'native'])('a %s 503 persists failure and posts the model without substitution or private payload', async (runtimeType) => {
   upstreamStatus = 503;
   const result = await run(runtimeType);
   expect(result).toMatchObject({ status: 'failed', errorKind: 'llm_error' });
@@ -94,8 +94,15 @@ test.each(['hosted', 'native'])('a %s 503 persists failure and posts model/reaso
   if (runtimeType === 'hosted') expect(saved.metered).toBe(false);
   expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
   const message = AgentMessageService.postMessage.mock.calls[0][0];
-  expect(message.content).toContain(model);
-  expect(message.content).toContain('HTTP 503');
+  if (runtimeType === 'hosted') {
+    // A hosted route is ours: the pod reads the model's name and no status code.
+    expect(message.content).toContain('DeepSeek V4 Flash');
+    expect(message.content).not.toContain('HTTP 503');
+  } else {
+    expect(message.content).toContain(model);
+    expect(message.content).toContain('HTTP 503');
+    expect(message.content).toContain('Please try again.');
+  }
   expect(message.content).not.toContain(privateReason);
   expect(message.content).not.toContain('cloudflare');
   expect(message.metadata.runFailed).toBe(true);

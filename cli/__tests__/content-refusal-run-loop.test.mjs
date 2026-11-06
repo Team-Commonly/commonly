@@ -212,6 +212,43 @@ describe('a provider content refusal', () => {
     expect(run.notices()[0]).not.toContain('#2250');
   });
 
+  test('a person\'s item run alone after a refusal is still told to answer', async () => {
+    const spawn = jest.fn(async (prompt) => {
+      if (prompt.includes('169.254.169.254')) throw refusal();
+      return { text: 'answered' };
+    });
+    const person = normalEvent();
+    const run = setup({
+      events: [poisonEvent(), { ...person, payload: { ...person.payload, dmKind: 'user-agent' } }],
+      spawn,
+    });
+    await drainMicrotasks();
+    run.handle.stop();
+
+    expect(spawn.mock.calls[2][0]).toContain('[A person addressed this to you directly');
+  });
+
+  test('an item run alone doesn\'t keep an attendance its own read couldn\'t report', async () => {
+    const spawn = jest.fn(async (prompt) => {
+      if (prompt.includes('169.254.169.254')) throw refusal();
+      return { text: 'NO_REPLY' };
+    });
+    const run = setup({ events: [poisonEvent(), normalEvent()], spawn });
+    const read = run.mockGet.getMockImplementation();
+    let messageReads = 0;
+    run.mockGet.mockImplementation(async (route, ...rest) => {
+      if (!String(route).endsWith('/messages')) return read(route, ...rest);
+      messageReads += 1;
+      if (messageReads > 1) throw new Error('read failed');
+      return { ...(await read(route, ...rest)), otherAgentsInPod: true, peopleInPod: 1 };
+    });
+    await drainMicrotasks();
+    run.handle.stop();
+
+    expect(spawn.mock.calls[0][0]).toContain('Another agent is in this pod');
+    expect(spawn.mock.calls[2][0]).not.toContain('Another agent is in this pod');
+  });
+
   test('a mixed batch whose ordinary item then fails for another reason leaves it unacked for redelivery', async () => {
     const spawn = jest.fn(async (prompt) => {
       if (prompt.includes('169.254.169.254')) throw refusal();
@@ -288,6 +325,28 @@ describe('a provider content refusal', () => {
     expect(run.notices()).toHaveLength(1);
     expect(run.notices()[0]).not.toContain('@vera');
     expect(run.acks()[0].result).toEqual(REFUSED_ACK(null));
+  });
+
+  test('a refused comment @ is acked as refused, and the pod is told, since the person was waiting', async () => {
+    const spawn = jest.fn(async () => { throw refusal(); });
+    const { handle, acks, notices } = setup({
+      events: [poisonEvent({
+        type: 'thread.mention',
+        payload: {
+          ...poisonEvent().payload,
+          messageId: 'comment-1',
+          thread: {
+            postId: 'post-1', postPodId: POD_ID, postContent: 'a post', commentId: 'comment-1', commentText: 'hi',
+          },
+        },
+      })],
+      spawn,
+    });
+    await drainMicrotasks();
+    handle.stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(acks()).toEqual([{ id: 'evt-poison', result: expect.objectContaining({ reason: 'provider-refused' }) }]);
+    expect(notices()).toHaveLength(1);
   });
 
   test('a refused human broadcast gets no pod notice; its claim releases as upstream-refused, for the kernel to hand on', async () => {

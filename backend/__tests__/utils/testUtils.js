@@ -77,10 +77,9 @@ const setupMongoDb = async () => {
       return;
     }
 
-    // JEST_EXTERNAL_MONGO_URI runs the unit tier against another server, for the
-    // FerretDB CI leg (self-host stores Mongo data in Postgres through
-    // FerretDB). Each suite gets its own database and drops it on close. The
-    // name is new on purpose: the compose files already set TEST_MONGO_URI,
+    // JEST_EXTERNAL_MONGO_URI runs the unit tier against another server. Each
+    // suite gets its own database and drops it on close. The name is new on
+    // purpose: the compose files already set TEST_MONGO_URI,
     // and `./dev.sh test` must stay in-memory.
     if (process.env.JEST_EXTERNAL_MONGO_URI) {
       /* eslint-disable global-require */

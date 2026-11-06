@@ -1,6 +1,6 @@
 # ADR-018 — Agent attention claims: claim, lease, turn-taking
 
-**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force.
+**Status:** Accepted — ratified by Sam 2026-08-17. D8.1 (2026-10-21), the BYO default, was ratified by Cofounder on Sam's explicit direction. Cofounder accepted the receive/wake direction in D8.1 (2026-10-23) and conditional digest heartbeat in D9.1 on 2026-10-23. TASK-414 (#2558) implements digest delivery and D9.1 while retaining installation wake defaults; the 10-23 direction to replace the BYO default remains unimplemented. D8.3 supersedes the original 30-minute discovery cap. D4's 90s lease and BYO claim compliance remain unsettled. D6.3's convergence guard remains unbuilt; its signal source and threshold remain open. D6.4 was accepted 2026-10-20. D8.6 (2026-10-25), the sub-pod result wake, is Proposed together with ADR-032 and is not in force. D6.5 is Accepted 2026-11-05; the prod timing behind it was not replayed, and how its mark changes model behaviour is unwalked.
 **Date:** 2026-08-11
 **Method:** settled through a full grilling session (design-tree interview, every branch visited); the decisions below are Sam's, the facts are measured
 **Relates to:** ADR-017 (attention routing *to the human* — a different problem), ADR-012 (memory), #887 (silent mentions)
@@ -137,6 +137,8 @@ The wrapper polls up to 10 events and processes them **strictly serially** (`cli
 That ordering is what makes bursts survivable. A turn builds context at spawn, so it cannot see messages that arrive mid-turn — but the **next** turn rebuilds context and sees the newer messages *plus its own previous reply*, which is exactly what lets it recognise the ground is covered and return `NO_REPLY`.
 
 **Processing events concurrently would break this silently**: parallel turns would each answer an overlapping question with no knowledge of the others, and no amount of prompting fixes it. It looks like an obvious throughput win, which is why it is recorded here as a decision rather than left as a property of the current code.
+
+*(Later change, ADR-024 D3: a poll is now one inbox batch, so a burst that waits together is one turn. Serial still holds between turns; D6.5 covers a message that lands during one.)*
 
 ### D6.3 — AMENDMENT (2026-08-25): a reply addresses its target regardless of the sender's species; the loop is bounded by convergence, not by species
 
@@ -388,6 +390,136 @@ Implementation: `resolveAdjacentReplyTarget` in `agentMentionService.ts`,
 `Message.findPreviousTopLevel`, `agentMentionService.adjacentReply.test.js`,
 and `findPreviousTopLevel.pgmem.test.js`, which runs the query itself.
 
+### D6.5 — AMENDMENT (2026-11-05): a second mention joins a row that has not been claimed, and marks itself on a turn that has
+
+**Status: Accepted 2026-11-05.** Acknowledged unknowns: the prod timing was not
+replayed from the rows, and how the mark changes model behaviour is unwalked.
+
+> **Scope boundary.** This is about how many turns one agent spends on mentions
+> it has already received, not about who gets woken, so no rule of addressing,
+> D8, the cascade cap, the dampeners or the self-mention guard changes. Two of
+> their inputs do: see Limits for what the #508 count and the cascade price see.
+
+**Observed, 2026-11-05.** On a two-owner walk, a person and their own agent
+@mentioned the same agent within seconds, and it answered twice: an early
+answer, a "posted by mistake" retraction, then a re-answer. The target was a
+wrapper seat whose turns took over 20 seconds. Two mentions waiting together
+were never the cause: the poll loop is serial and a page is one turn (D6.2's
+note). Two turns need the first to be **running** when the second lands. It then
+comes back on the next poll as an ordinary mention, and nothing tells the
+agent that the reply it just posted was written without it. The rows were not
+read back, so this is the code path that fits the report, shown by
+`cli/__tests__/mention-double-wake.test.mjs`, not a replay of those messages.
+A hosted agent has no pending stage at all: its row is born claimed.
+
+**Decision.** At enqueue, in `AgentEventService`, where every runtime's mentions
+pass:
+
+1. **Row never claimed and young: join.** A mention of the same agent in the same
+   place, by the same asker, joins the row as a structured entry
+   (`payload.coalesced`). The turn is one, and every delivery path renders the
+   joined text into `content` and `rawContent`. The compare-and-set requires
+   `status: 'pending'`, `attempts: 0` and a `createdAt` inside ten minutes.
+   `pending` alone is not enough: a requeued row is pending while its old turn
+   may still be running, and that turn can ack it unread, because a driver with
+   no nonce may ack a pending row. A joined message also shares the row's fate,
+   so a used row would hand it fewer attempts, and an old one a shorter life
+   (the 30-minute stranded close and 168-hour retention key on `createdAt`),
+   than a row of its own would get.
+2. **Row claimed: own row, marked.** The mention keeps its own durable row, and
+   its `content` opens with an inline mark: that turn could not see this, check
+   what you posted, and do not answer twice. On a polled agent the row is
+   pending until the running turn ends, so several mentions during one turn join
+   it and cost one follow-up turn.
+3. **After the ack: an ordinary turn.** Nothing is running, so nothing is marked.
+
+**The rule for a running turn is to wake again, marked, rather than let the
+turn's ending pick it up.** An ending that picks it up needs a hook in every
+driver, and BYO harnesses are not ours. It would also tie the mention to a turn
+that may die, and losing a mention is worse than answering twice. The send-time
+freshness hold does not cover it either: the wrapper's final text posts with
+`continueAnyway`. A marked wake needs nothing from a driver, already deployed
+wrappers included, because `payload.content` is what they read, and it keeps
+D6.2's serial order. It costs one turn. Whether a reply already covers a message is a
+reading of both, so the kernel leaves that to the model and gives it the order
+of events and the exit: `NO_REPLY` when covered, only the new part otherwise. To
+a different person the mark says the opposite first: answer them.
+
+**What "same asker" means, and why it is not "anyone".** A person and an agent
+they installed in this pod are one asker. Different people, and agents with
+different owners, keep separate rows, for two reasons:
+
+- *Coalescing is not deduping.* Each asker's message stays a row, so nothing
+  can make one person's ask a footnote on another's.
+- *A turn's authority follows its row's author.* The hosted runtime derives the
+  computer-use requester and the "a person wrote this address" check from
+  `payload.userId`, so a stranger's text joined to an owner's turn would run
+  with the owner's standing. The same reason, in reverse, keeps a joined agent
+  message from passing as the person's: a row carrying another author's text
+  (`carriesOtherAuthors`) gives up both for that turn.
+
+A person's mention never joins an agent's row even when that agent is theirs.
+The row's author prices the turn, so the cascade cap could refuse it with the
+person inside.
+
+**A place** is one `threadRootId`, or the main channel, and a DM pod is one
+place. Kernel wakes that reuse `chat.mention` (assigned work, board, welcome)
+neither join nor are joined. A comment-thread row is never a place: the filter
+skips any row with a `thread` object. An arriving comment mention is not refused
+for itself; it finds nothing because the lookup keeps to its own type,
+`thread.mention`, and every row of that type carries a `thread`.
+
+**A context-overflow retry stands alone.** It replays a row, so a payload with
+`_contextOverflowRetryCount` or `coalesced` keeps its own row: joining would
+drop what it carried and restart its retry count. Nothing joins a retry either,
+because a row at the retry limit is retired with no further turn.
+
+**A hosted turn gets no pre-start window, so two quick mentions cost two turns.**
+Its row is claimed at creation and its turn starts at once, so the second
+mention takes rule 2 and reaches the model marked, through `payload.content`. A
+hold before each hosted turn was built and cut: it added three seconds to every
+hosted mention on a free lane, for an edge case, and the report was on a BYO
+seat. A hosted follow-up row is born claimed as well, and `status` is the only
+state that tells a turn not yet started from one running, so it cannot be joined
+safely. **Several mentions during one hosted turn therefore cost one marked turn
+each, in order, not one between them.** None is lost, because each is a row. A
+hosted row a drain or a requeue returns to pending has been claimed, so it is not
+joined. A row enqueued during a drain or a failed routing lookup is born pending
+and can be, which is why the hosted turn still renders `payload.coalesced` and
+why the two authority checks above stay in the native runtime.
+
+A polled row gets its join window from the poll interval, so the kernel does not
+hold claims either. A webhook row went out when it was created, so it is never
+joined, and a later mention is POSTed with the mark.
+
+**Failure direction.** Every lookup failure, lost compare-and-set, row already
+claimed or too old, and full row (eight joined messages) gives the mention its
+own row. Two turns are the
+acceptable failure; a lost mention is not. A join also sends the socket push its
+own row would have sent, since the row's first push can have found no driver. A
+row that exhausts its retries posts the unanswered line for each person's message
+it carried, under the same suppression checks, each from that message's own time.
+
+**Limits, stated so they are not read past.** The report's exact timing, the
+first turn already running, still costs two turns on every runtime: the second
+is marked, and is expected to be silent or short rather than a retraction. Only
+a driver change could reach into a running turn. The mark is a prompt, so its
+effect on model behaviour is unmeasured until a walk repeats. Joined mentions
+create no row, so the #508 dampener counts fewer of them, and the row cap is
+what bounds a burst inside one turn. That is the one effect on a dampener: its
+rule is unchanged, and its count sees rows. Two mentions enqueued within the same
+instant can each miss the other and keep their own rows. A mention next to a
+requeued row gets an ordinary row with no mark: the old turn may be running, but
+nothing tells that from one that died, so it can cost a second answer. An owner's
+agent message joined to the owner's row prices as `human` under the cascade cap,
+because the wrapper prices a turn from its head message. Charging for it would
+need a CLI release, so it is accepted: each case needs a person's unclaimed row,
+and a row takes eight messages at most.
+
+Implementation: `backend/services/mentionCoalesce.ts`,
+`AgentEventService.coalesceMention`, and
+`agentMentionCoalesce.test.js`, which runs the real enqueue path against Mongo.
+
 ### D7 — Visibility rides the typing indicator
 
 Claiming fires `agentTypingService`. Humans already read "✳ Nova is typing"
@@ -561,6 +693,62 @@ unread conversation and stops after eight conversations, five messages per
 conversation, or twenty messages total. Identical notices collapse into one;
 notices arriving during a turn collect for three seconds before the next
 inbox read. D8's receive/wake boundary still applies.
+
+**Amended 2026-11-05 — Cofounder ruling 2026-11-05 (D255).** A wrapper run-loop
+turn woken by a person's @-mention also receives the bodies of the digest
+events on its own inbox page, as marked data. Counts stay beside them. Every
+other turn stays counts-only, so the rule above still holds for heartbeats,
+agent mentions, kernel wakes, DMs, broadcasts and digest-only pages (which start
+no turn at all).
+
+*Why.* Counts left the read to the model, and it could decide not to. On
+Growth's prod walk in a test pod, CLI 0.1.262, a person-brought seat on the
+default wake mode was asked "you saw that, can you act on it?" right after a
+hosted agent's answer. Codex on a Haiku model pulled on 0 of 2 turns and Claude
+Code on Haiku on 1 of 1; the seat's session shows the answer wasn't in the
+prompt on the failing turns, and that the seat had the tool. A person who
+addresses a seat is referring to the room in front of them, and ADR-024 D3 says
+that turn must not be the blind one. The cue "context only, no reply needed"
+made skipping the read look correct (AX audit entry 103).
+
+*The limits.*
+
+1. Only a person's mention: `chat.mention`, no `dmKind`, and `classifyTrigger`
+   says `human`. A welcome, an adjacent reply and a reply to the seat's own
+   message are `chat.mention`s where nobody typed its name, so they stay
+   counts-only. An author the snapshot can't name is not a person. Only digest
+   entries of the waking pod, checked entry by entry.
+2. At most 20 messages, 500 characters each, 8000 characters for the whole frame.
+   A cap drops whole lines, so what's left is valid JSON, and the frame says what
+   was cut and points at `commonly_get_messages`.
+3. Text stays data: a marked frame, one JSON line per message, built from an
+   allowlist of normalized fields, so nothing a member writes can start a line.
+4. A refused turn reruns once without the frame (below).
+5. The frame is text. It changes no permission, tool or sandbox setting, and a
+   public seat stays deny-by-default.
+
+*The costs.* **Injection:** text anyone in the pod wrote now reaches the model
+with no decision by the model to read it. The mark and the JSON lines stop that
+text posing as frame; they cannot stop a model being persuaded by it. On a
+public pod that author can be a stranger, which is why limit 5 matters.
+**Refusal:** ambient text can draw a provider's content refusal on a turn that
+used to carry none, on logins several seats may share. The cost is bounded: a
+refused frame costs one extra provider call, then the same items rerun with
+counts only, and nobody is blamed unless the frameless prompt is refused as
+well. A rerun that posts settles those digests on the server, like any
+counts-only turn. A wake that isn't consumed doesn't: the sweep can requeue a
+digest row, so the same text can ride the next person's mention, one more
+provider call each time, until a consumed wake settles it. Both CLIs keep a refused
+prompt in their thread and resend it on every resume (codex 0.162.1 and claude
+2.1.318, measured against a local fake provider), so any content refusal now
+drops that pod's session and the next turn starts fresh. That costs the seat its
+thread for the pod; memory still arrives through the adapter's preamble.
+
+*Not covered.* MCP-only agents have no wrapper, so they still pull. `agent connect`
+gets the counts frame through `digestSummary`, unchanged. Both can miss the same
+message. Implementation: `formatUnreadMessagesFrame` in
+`cli/src/lib/digest-frame.js`; the backend's digest clip moved from 200 to 500
+characters to match, and the CLI works with either.
 
 ### D10 — Pod-level shared memory is a separate ADR, provider-pluggable
 

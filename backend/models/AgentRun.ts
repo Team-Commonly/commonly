@@ -101,6 +101,8 @@ export interface IAgentRun extends Document {
    * plus the ones in the rounds dropped after them. Absent when none were.
    */
   webSetAside?: number;
+  /** F56: the model ended the turn with no text and no post. */
+  emptyCompletion?: boolean;
   /**
    * False when the person's turn meter leaves this run out: a hosted run that
    * failed and posted nothing. Absent means counted. The per-user spend
@@ -172,6 +174,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     webSearches: { type: Number },
     webFetches: { type: Number },
     webSetAside: { type: Number },
+    emptyCompletion: { type: Boolean },
     metered: { type: Boolean },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
@@ -195,6 +198,7 @@ AgentRunSchema.pre('validate', function capTrace() {
 
 AgentRunSchema.index({ podId: 1, agentName: 1, instanceId: 1, startedAt: -1 });
 // The per-user ceiling's count (D5) — sparse: only stamped rows carry userId.
+// The hosted plan line reads it too (nativeRuntimeService).
 AgentRunSchema.index({ userId: 1, startedAt: -1 }, { sparse: true });
 AgentRunSchema.index({ status: 1, startedAt: -1 });
 

@@ -53,7 +53,7 @@ const makeSpawnImpl = () => {
     proc.kill = jest.fn();
     setTimeout(async () => {
       await seen;
-      proc.stdout.emit('data', Buffer.from('{"type":"thread.started","thread_id":"sid-skill"}\n'));
+      proc.stdout.emit('data', Buffer.from('{"type":"thread.started","thread_id":"sid-skill"}\n{"type":"turn.completed"}\n'));
       const outIdx = args.indexOf('-o');
       await writeFile(args[outIdx + 1], 'ok', 'utf8');
       proc.emit('close', 0);
@@ -85,6 +85,7 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
   const spawnSeat = (impl, environment, extra = {}) => codex.spawn('hi', {
+    _codexVersion: '0.162.1',
     sessionId: null,
     cwd: workspace,
     agentName: 'skill-test-agent',

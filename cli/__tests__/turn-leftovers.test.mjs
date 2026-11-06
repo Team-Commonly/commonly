@@ -49,6 +49,7 @@ const start = (env) => {
 const pids = [start(process.env), start({ ...process.env, ${KEEP_PROCESS_ENV}: '1' })];
 require('fs').writeFileSync(process.argv[1], pids.join(','));
 process.stdout.write(JSON.stringify({ type: 'result', result: 'done' }) + '\\n');
+process.stdout.write(JSON.stringify({ type: 'turn.completed' }) + '\\n');
 `;
 
 const runTurn = async (adapter, extra = {}) => {
@@ -119,7 +120,9 @@ describe('claude: what a confined turn leaves running', () => {
     environment: { model: 'test-model', sandbox: { mode: 'workspace', trust } },
     agentName: `f197-${trust}`,
     skillMountDir: home,
-    _publicClaudeState: path.join(home, `state-${trust}-${Date.now()}`),
+    // Outside the workspace (home): a workspace seat's folder may not contain
+    // the record of its realpath kept beside the state folder (F200).
+    _publicClaudeState: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'cli-turn-leftovers-state-')), `state-${trust}`),
     _startProviderProxy: async () => ({
       baseURL: 'http://127.0.0.1:41597/', token: 'per-turn-f197', port: 41597, close: async () => {},
     }),
@@ -173,6 +176,7 @@ describe('codex: what a public seat\'s turn leaves running', () => {
       environment: { model: 'test-model', ...(trust ? { sandbox: { mode: 'workspace', trust } } : {}) },
       agentName: `f201-${trust || 'private'}`,
       _homeDir: home,
+      _codexVersion: '0.162.1',
       _publicCodexHome: path.join(home, `codex-home-${trust || 'private'}-${Date.now()}`),
       env: { ...outside, HOME: home, CODEX_HOME: path.join(home, 'operator-codex') },
     };

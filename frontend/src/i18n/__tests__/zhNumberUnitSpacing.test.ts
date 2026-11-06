@@ -25,7 +25,9 @@ const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
   'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
-  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens',
+  'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens', 'bytes', 'shown',
+  // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).
+  'stars',
   // harness.answeredIn: a reply's measured duration in seconds (D247).
   'seconds',
   // a formatted duration, closed because the ruling names this key explicitly:
@@ -39,6 +41,7 @@ const NUMERAL_PLACEHOLDERS = [
 // subject of this rule — neither is `projects`, whose value no consumer in the
 // shell proves either way.
 const OPAQUE_PLACEHOLDERS = [
+  'version',
   'age', 'by', 'pod', 'email', 'provider', 'podName', 'creator', 'date', 'agentName',
   'name', 'second', 'first', 'last', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
@@ -56,10 +59,17 @@ const OPAQUE_PLACEHOLDERS = [
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
   'id',
+  // approvalCard.toolCall.verb names the branch a PR write lands on.
+  'head',
+  // tools.repoConnect.picked* names the owner/repo being connected.
+  'repository',
   // podChat.deliveryHintOthers names the agent that was woken.
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
   'last',
+  // tools.byo.*adapterUnsupported names the grant harnesses as a list
+  // ("Claude Code、Codex 或 OpenCode", grantHarnessNames): Latin at both ends.
+  'harnesses',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

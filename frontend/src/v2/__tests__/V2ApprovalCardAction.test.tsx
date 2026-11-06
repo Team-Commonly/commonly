@@ -233,6 +233,17 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(en.approvalCard.approved)).not.toBeInTheDocument();
   });
 
+  test('an unknown outcome tells the owner it may have run, not that it failed', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-unknown', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.merge_pull_request' },
+      toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown',
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.outcomeUnknown)).toBeInTheDocument();
+    expect(en.approvalCard.toolCall.outcomeUnknown).toContain('This call may have run. Check before approving it again.');
+    expect(screen.queryByText(/tool call failed/i)).not.toBeInTheDocument();
+  });
+
   test('pre-ending message payloads use their old execution fields without claiming a refusal', () => {
     renderCard({
       kind: 'approval-card', approvalId: 'legacy-ran', status: 'resolved', decision: 'approved',
@@ -383,6 +394,64 @@ describe('tool-call approval details stay owner-scoped', () => {
     });
 
     await waitFor(() => expect(screen.getByTestId('approval-tool-call-state')).toHaveTextContent(/can't show what you'd approve/i));
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
+  });
+
+  test('a PR write has no canonicalArgs: its summary is what the owner reads and approves', async () => {
+    mockGet.mockResolvedValue({
+      approvals: [{
+        approvalId: 'tool-pr',
+        toolCall: {
+          tool: 'github.commit_files',
+          summary: {
+            repo: 'Team-Commonly/d14-walk-sandbox',
+            head: 'walk/one',
+            lands: 'new branch walk/one from main at abc1234',
+            subject: 'add the note',
+            message: { label: 'Commit message', text: 'add the note', length: 12, truncated: false },
+            files: [
+              { path: 'notes.md', content: 'hello', bytes: 5, truncated: false },
+              { path: 'src/auth.js', content: '', bytes: 1680, truncated: true },
+            ],
+            contents: { shownBytes: 5, totalBytes: 1685, truncated: true },
+            fileCount: 1,
+          },
+        },
+      }],
+    });
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-pr', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', toolCall: { tool: 'github.commit_files' }, summary: 'Commit',
+    });
+
+    expect(await screen.findByTestId('approval-arg-files-0')).toHaveTextContent('notes.md');
+    expect(screen.getByTestId('approval-arg-files-0')).toHaveTextContent('hello');
+    expect(screen.getByTestId('approval-arg-files-1')).toHaveTextContent('Not shown. This file is 1680 bytes.');
+    expect(screen.getByTestId('approval-arg-message')).toHaveTextContent('add the note');
+    expect(screen.getByTestId('approval-notice')).toHaveTextContent('5 of 1685 bytes');
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('Commit to walk/one');
+    expect(screen.getByTestId('approval-arg-lands')).toHaveTextContent('new branch walk/one from main at abc1234');
+    expect(screen.queryByTestId('approval-tool-call-state')).not.toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.toolCall.exactArgs)).not.toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+  });
+
+  test.each([
+    ['a summary that is not an object', 'just trust me'],
+    ['a summary that is a list', ['one']],
+    ['an empty summary', {}],
+  ])('%s leaves the call unreadable and Approve disabled', async (_label, summary) => {
+    mockGet.mockResolvedValue({
+      approvals: [{ approvalId: 'tool-pr-bad', toolCall: { tool: 'github.commit_files', summary } }],
+    });
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-pr-bad', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', toolCall: { tool: 'github.commit_files' }, summary: 'Commit',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call-state'))
+      .toHaveTextContent(en.approvalCard.toolCall.unavailable));
     expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
     expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
   });

@@ -1,7 +1,7 @@
 // Tool connectors: state, effects and verbs of the Tools list, moved out of the
 // retired tools list so the tile page and its panels share one model (TASK-733).
 // The page draws it as tiles and a drawer.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
@@ -9,16 +9,21 @@ import { useAuth } from '../../context/AuthContext';
 import { V2Pod } from '../hooks/useV2Pods';
 import { hostedMcpErrorNotice } from '../components/hostedMcpErrorNotice';
 import { safeProviderRevokePage } from '../utils/safeProviderRevokePage';
+import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   USED_RECENTLY_MS,
   MODE_RANK,
   WRITE_MODES,
+  FORM_OFFERS_WRITES,
+  entryOffersPrWrite,
   isDead,
   entryCovers,
   boundAgentOf,
 } from './toolModel';
 import type {
   GrantWriteMode,
+  ConnectableRepository,
+  RepositoryConnect,
   ToolGrant,
   ToolOutcome,
   ToolTrail,
@@ -68,6 +73,8 @@ export const useToolConnectors = (
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftGrant | null>(null);
   const [githubAppSetup, setGithubAppSetup] = useState<GithubAppSetup | null>(null);
+  const [repositoryConnect, setRepositoryConnect] = useState<RepositoryConnect | null>(null);
+  const repositoryReadRef = useRef(0);
   // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
   const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
@@ -257,8 +264,9 @@ export const useToolConnectors = (
   const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
     .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
   const asksFirst = (grant: ToolGrant): string => {
+    if (grant.prWrite) return t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' });
     if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
-    if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'every write asks first' });
+    if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' });
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
     const entry = entryFor(grant);
     if (!entry) return t('tools.unknownWritePolicy', { defaultValue: 'write policy unavailable' });
@@ -297,6 +305,7 @@ export const useToolConnectors = (
       upstream_tool_error: t('tools.reasonUpstreamToolError', { defaultValue: 'the provider tool returned an error' }),
       broker_unavailable: t('tools.reasonBrokerUnavailable', { defaultValue: 'the broker was unavailable' }),
       broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
+      approval_outcome_unknown: t('tools.reasonOutcomeUnknown', { defaultValue: 'the outcome is unknown, and the call may have run' }),
       tool_drift: t('tools.reasonToolDrift', { defaultValue: 'the provider changed this tool since Commonly checked it' }),
       tool_unavailable: t('tools.reasonToolUnavailable', { defaultValue: "this connection's tool list does not include this tool" }),
       // A write the connection never consented to (F102): the same instruction as reconnect_required.
@@ -328,7 +337,7 @@ export const useToolConnectors = (
       byo_not_agent: t('tools.byo.errors.notAgent'),
       byo_agent_not_owned: t('tools.byo.errors.notOwned'),
       byo_unconfined_host: t('tools.byo.errors.unconfinedHost'),
-      byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported'),
+      byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported', { harnesses: grantHarnessNames(t) }),
     };
     return code && Object.prototype.hasOwnProperty.call(labels, code) ? labels[code] : null;
   };
@@ -337,8 +346,12 @@ export const useToolConnectors = (
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
     write: t('tools.modeWrite', { defaultValue: 'read and write' }),
   })[mode];
+  const grantModeLabel = (grant: ToolGrant): string => (grant.prWrite
+    ? t('tools.modePrWrite', { defaultValue: 'read, plus pull requests you approve' })
+    : modeLabel(grant.writeMode));
 
   const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
+    if (!FORM_OFFERS_WRITES) return ['read'];
     if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
     return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
       ? ['read', 'write-with-confirm']
@@ -399,6 +412,15 @@ export const useToolConnectors = (
         connectionId = seated.connectionId;
       }
     }
+    // Change access stays on the grant's own repository. Pull-request access goes
+    // with it only from a live root grant on a connection still offered, and only
+    // with the PR tools that grant named. Anything else ends it, and the form says so.
+    const sameConnection = from?.connectionId && !keyGone
+      ? entry.connections.find((connection) => connection.connectionId === from.connectionId)
+      : undefined;
+    if (sameConnection) connectionId = sameConnection.connectionId;
+    const liveWithPr = Boolean(from?.prWrite) && !isDead(from as ToolGrant);
+    const keepsPr = liveWithPr && Boolean(sameConnection) && !from?.parentGrantId && entryOffersPrWrite(entry);
     const modes = entryGrantModes(entry);
     const agentIds = seatIdsIn(podId);
     setDraft({
@@ -406,6 +428,9 @@ export const useToolConnectors = (
       podId,
       connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
+      prWrite: keepsPr,
+      prTools: keepsPr ? (from as ToolGrant).tools : null,
+      losesPrWrite: liveWithPr && !keepsPr,
       audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
         ? agentIds.filter((id) => from.effectiveAudience.includes(id))
         : startingAudience(entry, connectionId, podId)),
@@ -420,10 +445,71 @@ export const useToolConnectors = (
   };
   const openGithubAppSetup = () => {
     setGithubAppSetup({ installationId: '', owner: '', repo: '' });
+    setRepositoryConnect(null);
     setDraft(null);
     setSelectedId(null);
     setConfirmRevoke(null);
     setError(null);
+  };
+  const readConnectableRepositories = async () => {
+    setError(null);
+    setRepositoryConnect({ status: 'loading', repositories: [], truncated: false, selected: '' });
+    // A slow read must not reopen a step that was closed, or overwrite a newer read.
+    repositoryReadRef.current += 1;
+    const readId = repositoryReadRef.current;
+    const settle = (next: RepositoryConnect) => setRepositoryConnect((current) => (
+      current && readId === repositoryReadRef.current ? next : current
+    ));
+    try {
+      const listed = await api.get<{ repositories?: ConnectableRepository[]; truncated?: boolean }>('/api/integrations/github-app/repositories');
+      const repositories = listed.repositories || [];
+      const only = repositories.length === 1 ? `${repositories[0].owner}/${repositories[0].repo}` : '';
+      settle({ status: 'ready', repositories, truncated: Boolean(listed.truncated), selected: only });
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      settle({
+        status: code === 'github_connect_required' ? 'needsGithub' : 'failed', repositories: [], truncated: false, selected: '',
+      });
+    }
+  };
+  // The GitHub sign-in and the App's install page both open in another tab, so
+  // coming back is when the answer can have changed.
+  const repositoryStepWaiting = repositoryConnect?.status === 'needsGithub'
+    || (repositoryConnect?.status === 'ready' && repositoryConnect.repositories.length === 0);
+  useEffect(() => {
+    if (!repositoryStepWaiting) return undefined;
+    const onVisibility = () => { if (document.visibilityState === 'visible') void readConnectableRepositories(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repositoryStepWaiting]);
+  const openRepositoryConnect = () => {
+    setDraft(null);
+    setGithubAppSetup(null);
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    void readConnectableRepositories();
+  };
+  const submitRepositoryConnect = async () => {
+    const chosen = repositoryConnect?.repositories.find((row) => `${row.owner}/${row.repo}` === repositoryConnect.selected);
+    if (!chosen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/api/integrations/github-app/repositories', {
+        installationId: chosen.installationId, owner: chosen.owner, repo: chosen.repo,
+      });
+      setRepositoryConnect(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(({
+        repository_write_required: t('tools.repoConnect.writeRequired', { defaultValue: 'You need write access to that repository to connect it.' }),
+        connection_exists: t('tools.repoConnect.exists', { defaultValue: 'That repository is already connected.' }),
+      } as Record<string, string>)[code || ''] || t('tools.repoConnect.failed', { defaultValue: 'Could not connect that repository.' }));
+    } finally {
+      setBusy(false);
+    }
   };
   // A background catalogue read can fail or stop offering this connection.
   // Keep the open draft (and any server refusal) visible in either case. The
@@ -431,8 +517,15 @@ export const useToolConnectors = (
   const draftEntry = draft
     ? catalog.find((entry) => entry.installableId === draft.entry.installableId) || draft.entry
     : null;
-  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
-    .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
+  // A `prWrite` grant holds no write but the PR tools (pr_write_other_writes), and
+  // a grant without it can't call them, so the two sets never mix.
+  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode, prWrite = false, prTools?: string[] | null): string[] => (entry?.tools || [])
+    .filter((tool) => {
+      if (!prWrite) return !tool.prWrite && MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode];
+      return tool.prWrite ? !prTools || prTools.includes(tool.name) : tool.requiredWriteMode === 'read';
+    })
+    .map((tool) => tool.name);
+  const draftPrWrite = Boolean(draft?.prWrite && draftEntry && entryOffersPrWrite(draftEntry));
 
   const draftBoundAgent = draft && draftEntry ? boundAgentOf(draftEntry, draft.connectionId) : null;
   // On a key connection only its own agent can be submitted, whatever the
@@ -453,7 +546,9 @@ export const useToolConnectors = (
   // The checked agents the grant would name, and whether the person has
   // consented for exactly these.
   const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && selectedAgentIds.includes(agent.userId));
-  const draftByoKey = draftByoNamed.map((agent) => agent.userId).sort().join(',');
+  // Pull-request access changes what the person consents to, so it is part of the key.
+  // So is the repository it names.
+  const draftByoKey = `${draftByoNamed.map((agent) => agent.userId).sort().join(',')}${draftPrWrite ? `:pr:${draft?.connectionId}` : ''}`;
   const draftByoConsented = draftByoNamed.length > 0 && draft?.byoConsentFor === draftByoKey;
   // Naming one is read-only (byo_read_only), so a write mode drops back to
   // read while one is checked, and an agent no grant can name is unchecked.
@@ -480,8 +575,9 @@ export const useToolConnectors = (
       const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
-        tools: draftTools(draftEntry, draft.writeMode),
-        writeMode: draft.writeMode,
+        tools: draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools),
+        writeMode: draftPrWrite ? 'write-with-confirm' : draft.writeMode,
+        ...(draftPrWrite ? { prWrite: true } : {}),
         audience: selectedAgentIds,
         expiresAt,
         ...(draftByoNamed.length > 0
@@ -788,6 +884,11 @@ export const useToolConnectors = (
     draft,
     setDraft,
     githubAppSetup,
+    repositoryConnect,
+    setRepositoryConnect,
+    readConnectableRepositories,
+    openRepositoryConnect,
+    submitRepositoryConnect,
     setGithubAppSetup,
     staleAfterChange,
     setStaleAfterChange,
@@ -830,6 +931,7 @@ export const useToolConnectors = (
     outcomeLabel,
     reasonLabel,
     modeLabel,
+    grantModeLabel,
     entryGrantModes,
     entryModeCopy,
     usedRecently,
@@ -839,6 +941,7 @@ export const useToolConnectors = (
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftPrWrite,
     draftBoundAgent,
     startingAudience,
     selectedAgentIds,

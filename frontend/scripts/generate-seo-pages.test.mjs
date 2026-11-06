@@ -2218,6 +2218,29 @@ test('every indexable page links the comparison and use-case pages, not only the
   }
 });
 
+// A renamed locale key reaches a template as the string "undefined", and the page
+// still builds. The word is fine in prose ("an undefined job" is in the guides), so
+// this checks only the places a missing value lands: an href and a link's own text.
+test('no generated page carries "undefined" in an href or link text', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({
+    landing: translations.landing,
+    compare: translations.compare,
+    useCases: JSON.parse(useCaseText),
+    guides: JSON.parse(guideText),
+  });
+
+  const bad = pages.flatMap((page) => [...page.content.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
+    .filter(([, attrs, text]) => /href="[^"]*undefined/.test(attrs) || /\bundefined\b/.test(text))
+    .map(([anchor]) => `${page.path}: ${anchor}`));
+  assert.deepEqual(bad, []);
+});
+
 test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
   const html = renderMarkdown([
     '# Title',

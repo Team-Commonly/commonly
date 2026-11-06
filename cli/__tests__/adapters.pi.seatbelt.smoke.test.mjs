@@ -14,6 +14,7 @@ import {
 } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import pi from '../src/lib/adapters/pi.js';
 import { detectSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
@@ -91,6 +92,70 @@ realSeatbeltTest('the jailed pi, the MCP server it starts and its shell all stay
       shell: 'DENIED',
       key: 'proxied',
       withheld: [...PUBLIC_SEAT_WITHHELD_TOOLS],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// F175c: the delete runs inside the jail, on the real kernel, through the real
+// helper. The stand-in pi prints nothing until it has deleted, so the parent's
+// first-line delete cannot be what removed the file.
+realSeatbeltTest('the jailed pi can delete its own per-spawn credential directory', async () => {
+  const root = await realpath(await mkdtemp(join(homedir(), '.pi-seatbelt-smoke-')));
+  const packageRoot = join(root, 'npm', 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent');
+  const binDir = join(root, 'npm', 'bin');
+  const workspace = join(root, 'workspace');
+  const piHome = join(root, 'pi-home');
+  const helper = fileURLToPath(new URL('../src/lib/adapters/pi-mcp-client.mjs', import.meta.url));
+  try {
+    await Promise.all([
+      mkdir(join(packageRoot, 'dist'), { recursive: true }),
+      mkdir(binDir, { recursive: true }),
+      mkdir(workspace),
+    ]);
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent' }));
+    const cli = join(packageRoot, 'dist', 'cli.js');
+    await writeFile(cli, [
+      `#!${process.execPath}`,
+      'const fs = require("fs");',
+      'if (process.argv.includes("--version")) { process.stdout.write("0.84.1\\n"); process.exit(0); }',
+      'const raw = fs.readFileSync(3, "utf8");',
+      'const file = process.env.COMMONLY_TOKEN_FILE;',
+      'const before = fs.readFileSync(file, "utf8");',
+      `import(${JSON.stringify(helper)}).then(({ readServers, removeSpawnCredential }) => {`,
+      '  const servers = readServers(raw);',
+      '  const removed = removeSpawnCredential(servers);',
+      '  const report = { before, removed, gone: !fs.existsSync(file), dirGone: !fs.existsSync(require("path").dirname(file)) };',
+      '  process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant",',
+      '    content: [{ type: "text", text: JSON.stringify(report) }] } }) + "\\n");',
+      '}, (err) => { process.stderr.write(String(err)); process.exit(3); });',
+      '',
+    ].join('\n'));
+    await chmod(cli, 0o755);
+    await symlink(cli, join(binDir, 'pi'));
+
+    const result = await pi.spawn('hello', {
+      cwd: workspace,
+      agentName: 'pi-seatbelt-delete',
+      runtimeToken: 'cm_agent_smoke',
+      instanceUrl: 'https://api.example',
+      env: { PATH: `${binDir}:${dirname(process.execPath)}:/usr/bin:/bin`, COMMONLY_LITELLM_KEY: 'sk-real' },
+      environment: {
+        model: 'smoke-model',
+        sandbox: { trust: 'public' },
+        mcp: [{
+          name: 'commonly-grant-broker',
+          transport: 'http',
+          url: '${COMMONLY_API_URL}/api/mcp/grants/g1',
+          headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' },
+        }],
+      },
+      _piHome: piHome,
+      timeoutMs: 20_000,
+    });
+    expect(JSON.parse(result.text)).toEqual({
+      before: 'cm_agent_smoke', removed: true, gone: true, dirGone: true,
     });
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -293,4 +293,23 @@ describe('commonly_offer_local_agent', () => {
     expect(posted.authorKind).toBeUndefined();
     expect(posted.metadata).toEqual({ source: 'native-runtime' });
   });
+
+  test('a held-back repeat of the fixed text reads as not posted, and is not an answer (F253)', async () => {
+    AgentMessageService.postMessage
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: 'duplicate_recent', duplicate: { id: 7 } });
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_offer_local_agent', { adapter: 'opencode', os: 'mac' }))
+      .mockResolvedValueOnce(says('The command is in the card above.'));
+
+    await runAgent(install, ask);
+
+    const tool = JSON.parse(axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool').content);
+    expect(tool).toEqual(expect.objectContaining({ ok: false, posted: false }));
+    expect(tool.guidance).toMatch(/^Not posted/);
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(2);
+    expect(AgentMessageService.postMessage.mock.calls[1][0]).toMatchObject({
+      content: 'The command is in the card above.',
+      metadata: { source: 'native-runtime', fallback: true },
+    });
+  });
 });

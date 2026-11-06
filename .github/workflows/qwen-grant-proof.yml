@@ -1,0 +1,81 @@
+name: Qwen public grant boundary
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/adapters/qwen.js'
+      - 'cli/src/lib/adapters/broker-bridge-entry.js'
+      - 'cli/src/lib/adapters/codex-broker-bridge.mjs'
+      - 'cli/src/lib/adapters/pi-mcp-client.mjs'
+      - 'cli/src/lib/adapters/seat-model.js'
+      - 'cli/src/lib/adapters/tested-version.js'
+      - 'cli/test-support/**'
+      - 'cli/src/lib/default-environment.js'
+      - 'cli/src/lib/grant-broker-guard.js'
+      - 'cli/src/lib/declared-mcp-guard.js'
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/provider-proxy.js'
+      - 'cli/src/lib/upstream-refusal.js'
+      - 'cli/src/lib/mcp*.js'
+      - 'cli/src/lib/mcp-warm-child.mjs'
+      - 'cli/src/lib/credential-file.js'
+      - 'cli/src/lib/environment.js'
+      - 'cli/src/lib/public-withheld-tools.js'
+      - 'cli/src/lib/memory-bridge.js'
+      - 'cli/src/lib/resolve-on-path.js'
+      - 'cli/src/lib/skill-prompt.js'
+      - 'packages/seats/**'
+      - 'cli/__tests__/*qwen*'
+      - 'commonly-mcp/**'
+      - '.github/workflows/qwen-grant-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install fixture dependencies and pinned Qwen
+        run: |
+          npm ci --prefix cli --ignore-scripts --no-audit --no-fund
+          npm ci --prefix commonly-mcp --ignore-scripts --no-audit --no-fund
+          mkdir -p .dev/qwen
+          npm install --prefix .dev/qwen --ignore-scripts --no-audit --no-fund @qwen-code/qwen-code@0.26.2
+      - name: Exercise real Qwen under Seatbelt
+        run: |
+          export COMMONLY_QWEN_SMOKE_BINARY="$PWD/.dev/qwen/node_modules/.bin/qwen"
+          cd cli
+          node --experimental-vm-modules node_modules/.bin/jest __tests__/qwen.grant-broker.public-smoke.test.mjs --runInBand
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real Qwen under bwrap in a disposable container
+        run: |
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            --mount "type=bind,src=$PWD,dst=/source,readonly" node:22 bash -lc '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq bubblewrap >/dev/null
+              mkdir -p /work/tools /work/packages
+              cp -R /source/cli /source/commonly-mcp /work/
+              # cli links file:../packages/seats, so npm ci needs the link target.
+              cp -R /source/packages/seats /work/packages/
+              rm -rf /work/cli/node_modules /work/commonly-mcp/node_modules
+              npm ci --prefix /work/cli --ignore-scripts --silent
+              npm ci --prefix /work/commonly-mcp --ignore-scripts --silent
+              npm install --prefix /work/tools --ignore-scripts --silent @qwen-code/qwen-code@0.26.2
+              chown -R node:node /work
+              su node -s /bin/bash -c "cd /work/cli && COMMONLY_QWEN_SMOKE_BINARY=/work/tools/node_modules/.bin/qwen node --experimental-vm-modules node_modules/.bin/jest __tests__/qwen.grant-broker.public-smoke.test.mjs --runInBand"
+            '

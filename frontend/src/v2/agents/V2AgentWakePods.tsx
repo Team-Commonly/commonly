@@ -199,6 +199,8 @@ const V2AgentWakePods: React.FC<{
   };
 
   // Sum of the draft heartbeat turns, so the header previews the cap as the select changes.
+  // It is what the heartbeats will spend, not today's usage: a mention spends a
+  // turn and never shows here.
   // A hosted install runs no faster than its floor, and the hosted rows
   // together no more than the daily cap; any other row counts as it is set.
   const floorFor = (entry: InstallationSettings) => entry.hostedHeartbeat?.minMinutes ?? 0;
@@ -206,14 +208,14 @@ const V2AgentWakePods: React.FC<{
   let hostedCap = Infinity;
   installations.forEach((entry) => {
     if (entry.hostedHeartbeat) hostedCap = Math.min(hostedCap, entry.hostedHeartbeat.runsPerDay);
-    if (draftOff[entry.podId] ?? !entry.heartbeatEnabled) return;
+    if (entry.status !== 'active' || (draftOff[entry.podId] ?? !entry.heartbeatEnabled)) return;
     const minutes = Math.max(floorFor(entry), draftMinutes[entry.podId] ?? entry.heartbeatMinutes);
     turns[entry.hostedHeartbeat ? 'hosted' : 'other'] += Math.ceil(1440 / minutes);
   });
-  const turnsUsed = Math.min(turns.hosted, hostedCap) + turns.other;
+  const heartbeatTurns = Math.min(turns.hosted, hostedCap) + turns.other;
   const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
     .filter((value) => value >= floorFor(entry));
-  const overCap = turnCap !== null && turnsUsed > turnCap;
+  const overCap = turnCap !== null && heartbeatTurns > turnCap;
 
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
@@ -231,8 +233,8 @@ const V2AgentWakePods: React.FC<{
         </span>
         <span className="v2-agent-wake-pods__cap">
           {turnCap === null
-            ? t('agentSettings.turnsUsedNoCap', { used: turnsUsed })
-            : t('agentSettings.turnsUsed', { used: turnsUsed, cap: turnCap })}
+            ? t('agentSettings.heartbeatTurnsNoCap', { turns: heartbeatTurns })
+            : t('agentSettings.heartbeatTurns', { turns: heartbeatTurns, cap: turnCap })}
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}

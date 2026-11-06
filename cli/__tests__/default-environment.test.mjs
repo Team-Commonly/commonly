@@ -44,9 +44,11 @@ describe('defaultMcpServers', () => {
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
   });
 
-  test('OpenCode sandbox support does not yet authorize the grant broker', () => {
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
+  test('the grant broker reaches exactly the adapters that confine its credential (F175a, F175c, F175d)', () => {
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'goose', 'opencode', 'pi', 'qwen']);
+    // pi is on the list, but never defaulted into a sandbox: a pi seat that
+    // declares none runs unconfined and the guard withholds its grant.
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 });
 
@@ -232,13 +234,15 @@ describe('seatBaseline', () => {
     expect(() => assertGooseSandboxSupported(derived)).not.toThrow();
     expect(() => assertGooseSandboxSupported({ ...derived, sandbox: { trust: 'public' } }))
       .toThrow(/explicit provider/);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('goose')).toBe(false);
+    // F175d: on the broker list, but this derived shape declares no sandbox,
+    // so the guard withholds a grant from it (grant-broker-guard.test.mjs).
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('goose')).toBe(true);
   });
 
-  test('derives OpenCode public confinement while withholding grant-broker eligibility', () => {
+  test('derives OpenCode public confinement, and with it grant-broker eligibility (F175a)', () => {
     const derived = seatBaseline(null, 'opencode', { sandbox: true });
     expect(derived.sandbox).toEqual({ trust: 'public' });
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('opencode')).toBe(true);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(true);
   });
 });

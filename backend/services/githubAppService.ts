@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import { sendWrite } from './brokerWriteOutcome';
 import {
   GITHUB_APP_NAMES, githubAppCredentials, githubAppOfConfig, type GitHubAppName,
 } from './githubAppNames';
@@ -167,6 +168,24 @@ const repositoryIdNumber = (value: unknown): number | null => {
 };
 
 /**
+ * The most one GitHub REST request on the broker path may take. An approved
+ * call must end well inside APPROVED_CALL_SETTLE_MS in approvalActionService,
+ * and a commit is about ten of these in sequence. The slowest path is
+ * `pushSeatBranch`, about 20 git steps bounded at 45 seconds each.
+ */
+export const GITHUB_REST_TIMEOUT_MS = 30 * 1000;
+
+/**
+ * The request config for a call the broker makes. `timeout` is only an idle
+ * timer in axios's Node adapter, so the signal is what holds the total.
+ */
+const brokerRequest = (headers: Record<string, string>) => ({
+  headers,
+  timeout: GITHUB_REST_TIMEOUT_MS,
+  signal: AbortSignal.timeout(GITHUB_REST_TIMEOUT_MS),
+});
+
+/**
  * Reuse a cached installation token only while it has this long left, so a
  * caller that runs several requests (or a slow git push) never starts on a
  * token about to expire. GitHub issues them for an hour.
@@ -243,13 +262,11 @@ class GitHubAppService {
     const res = await axios.post(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       narrowTo !== null ? { repository_ids: [narrowTo] } : {},
-      {
-        headers: {
-          Authorization: `Bearer ${appJWT}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      },
+      brokerRequest({
+        Authorization: `Bearer ${appJWT}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      }),
     );
     const token: GitHubToken = { token: res.data.token, expiresAt: res.data.expires_at };
     if (token.token && token.expiresAt) installationTokenCache.set(cacheKey, token);
@@ -386,7 +403,7 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`,
-      { headers },
+      brokerRequest(headers),
     );
     return (res.data as GitHubIssue[]).filter((i) => !i.pull_request);
   }
@@ -399,11 +416,11 @@ class GitHubAppService {
     const payload: Record<string, unknown> = { title };
     if (body) payload.body = body;
     if (labels?.length) payload.labels = labels;
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/issues`,
       payload,
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return res.data;
   }
 
@@ -412,11 +429,11 @@ class GitHubAppService {
    */
   static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId, forceApp, app, repositoryId }: IssueCommentOptions): Promise<unknown> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
       { body },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return res.data;
   }
 
@@ -428,13 +445,18 @@ class GitHubAppService {
     if (comment) {
       await this.addIssueComment({ ...options, owner, repo, issueNumber, body: comment });
     }
-    const headers = await this._apiHeaders(options.installationId, forceApp, options.app, options.repositoryId);
-    const res = await axios.patch(
-      `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
-      { state: 'closed' },
-      { headers },
-    );
-    return res.data;
+    const close = async () => {
+      const headers = await this._apiHeaders(options.installationId, forceApp, options.app, options.repositoryId);
+      const res = await sendWrite(() => axios.patch(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
+        { state: 'closed' },
+        brokerRequest(headers),
+      ));
+      return res.data;
+    };
+    // With a comment already posted, a later step that gets no answer leaves
+    // the issue changed, so even the token mint counts.
+    return comment ? sendWrite(close) : close();
   }
 
   /** Fetch one issue without exposing the server credential to the caller. */
@@ -442,7 +464,7 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
-      { headers },
+      brokerRequest(headers),
     );
     return res.data;
   }
@@ -452,7 +474,7 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
-      { headers },
+      brokerRequest(headers),
     );
     return res.data;
   }
@@ -463,11 +485,11 @@ class GitHubAppService {
     installationId, forceApp, app, repositoryId,
   }: CreatePullRequestOptions): Promise<unknown> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/pulls`,
       { title, head, base, ...(body !== undefined ? { body } : {}), ...(draft !== undefined ? { draft } : {}) },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return res.data;
   }
 
@@ -476,7 +498,7 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
-      { headers },
+      brokerRequest(headers),
     );
     return res.data;
   }
@@ -492,11 +514,11 @@ class GitHubAppService {
     if (mergeMethod) payload.merge_method = mergeMethod;
     if (commitTitle) payload.commit_title = commitTitle;
     if (commitMessage) payload.commit_message = commitMessage;
-    const res = await axios.put(
+    const res = await sendWrite(() => axios.put(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
       payload,
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return res.data;
   }
 
@@ -510,7 +532,7 @@ class GitHubAppService {
     try {
       const res = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${refPath(branch)}`,
-        { headers },
+        brokerRequest(headers),
       );
       const object = (res.data as { ref?: string; object?: { sha?: string; type?: string } }) || {};
       // GitHub answers a prefix lookup with an array; only an exact ref is one branch.
@@ -529,14 +551,14 @@ class GitHubAppService {
     owner, repo, sha, installationId, forceApp, app, repositoryId,
   }: GitDataOptions & { sha: string }): Promise<string> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/commits/${sha}`, { headers });
+    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/commits/${sha}`, brokerRequest(headers));
     return String((res.data as { tree?: { sha?: string } })?.tree?.sha || '');
   }
 
   /** The repository's default branch, as GitHub reports it now. */
   static async getDefaultBranch({ owner, repo, installationId, forceApp, app, repositoryId }: GitDataOptions): Promise<string> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, brokerRequest(headers));
     return String((res.data as { default_branch?: string })?.default_branch || '');
   }
 
@@ -554,7 +576,7 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
-      { headers },
+      brokerRequest(headers),
     );
     const data = (res.data as { tree?: unknown; truncated?: unknown }) || {};
     const entries = (Array.isArray(data.tree) ? data.tree : []).map((entry: Record<string, unknown>) => ({
@@ -572,14 +594,14 @@ class GitHubAppService {
     files: Array<{ path: string; content: string }>;
   }): Promise<string> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/trees`,
       {
         base_tree: baseTree,
         tree: files.map((file) => ({ path: file.path, mode: '100644', type: 'blob', content: file.content })),
       },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return String((res.data as { sha?: string })?.sha || '');
   }
 
@@ -589,11 +611,11 @@ class GitHubAppService {
     parents: string[];
   }): Promise<string> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/commits`,
       { message, tree, parents },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return String((res.data as { sha?: string })?.sha || '');
   }
 
@@ -603,11 +625,11 @@ class GitHubAppService {
     sha: string;
   }): Promise<void> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    await axios.post(
+    await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/refs`,
       { ref: `refs/heads/${branch}`, sha },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
   }
 
   /** Move a branch forward. Never forced: GitHub refuses (422) anything but a fast-forward. */
@@ -616,11 +638,11 @@ class GitHubAppService {
     sha: string;
   }): Promise<void> {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
-    await axios.patch(
+    await sendWrite(() => axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${refPath(branch)}`,
       { sha, force: false },
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
   }
 
   // ─── Pull Requests API ─────────────────────────────────────────────────────
@@ -651,11 +673,11 @@ class GitHubAppService {
     const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const payload: Record<string, unknown> = { event };
     if (body) payload.body = body;
-    const res = await axios.post(
+    const res = await sendWrite(() => axios.post(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
       payload,
-      { headers },
-    );
+      brokerRequest(headers),
+    ));
     return res.data;
   }
 

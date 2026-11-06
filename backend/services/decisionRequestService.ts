@@ -207,6 +207,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     metadata: { source: 'decision-request' },
     relayCard,
     threadRootId,
+    threadIsDeliberate: true,
     installationConfig: input.installationConfig || null,
   });
   if (!posted?.success || !posted?.message) {
