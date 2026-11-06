@@ -52,7 +52,14 @@ const {
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
-const { identityHoldsRuntimeToken, willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const {
+  identityHoldsRuntimeToken,
+  identityIsDormant,
+  RUNTIME_TOKEN_HELD,
+  takeBackInstallation,
+  willSolelyInstallRuntimeIdentity,
+  webhookUrlRefusal,
+} = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
@@ -611,20 +618,6 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       }
       throw joinError;
     }
-    // An in-process install promises the agent has no channel outside the
-    // backend, and pod eligibility reads it that way. The issuer refuses a
-    // token to such an identity; this refuses the same pair in the other order.
-    if ((effectiveRuntimeType === 'native' || newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE)
-      && await identityHoldsRuntimeToken(
-        safeAgentName,
-        normalizedInstanceId,
-        AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(safeAgentName), normalizedInstanceId),
-      )) {
-      return res.status(409).json({
-        code: 'runtime_token_held',
-        error: 'This agent already holds a runtime token, so it can\'t run on Commonly as well. Revoke the token first, or use a different name.',
-      });
-    }
     if (AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
@@ -646,6 +639,17 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
       const refusal = await hostedCapRefusal(userId);
       if (refusal) return res.status(403).json(refusal);
+    }
+
+    // One runtime per agent identity (services/runtimeIdentityOwnership). Asked
+    // again once the row is written. A dormant identity's tokens are revoked
+    // below, so they don't count here.
+    const installsInProcess = effectiveRuntimeType === 'native'
+      || newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE;
+    if (installsInProcess
+      && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)
+      && !await identityIsDormant(safeAgentName, normalizedInstanceId)) {
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
     }
 
     // F164: joining this pod can confine the seat's writes everywhere else
@@ -871,6 +875,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     const wakeDefault = personAgentWakeDefault(installConfig);
     if (wakeDefault) Object.assign(installConfig, wakeDefault);
 
+    const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
+    const previousRow = installsInProcess ? await AgentInstallation.findOne(installationKey) : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
       config: installConfig,
@@ -880,6 +886,15 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
     });
+    if (installsInProcess && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)) {
+      await takeBackInstallation(installationKey, previousRow);
+      if (!previousRow || previousRow.status === 'uninstalled') {
+        await AgentIdentityService.removeAgentFromPod(
+          AgentIdentityService.resolveAgentType(safeAgentName), podId, normalizedInstanceId,
+        );
+      }
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
+    }
 
     // Use upsert by the natural key (podId + agentId) so reinstalling
     // over a stale row left behind by raw status='uninstalled' updates

@@ -187,6 +187,15 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   return hashes;
 };
 
+/** Clear the agent's user token. An update, because the digest is select:false. */
+const revokeAgentUserToken = async (agentUserId: unknown): Promise<void> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../../models/User');
+  await User.updateOne({ _id: agentUserId }, {
+    $unset: { apiToken: 1, apiTokenHash: 1, apiTokenLast4: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
+  });
+};
+
 /** A portable identity keeps its User and memory, but no bearer after its last uninstall. */
 export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, instanceId: string): Promise<void> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -205,6 +214,7 @@ export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, i
   for (const name of names) {
     await revokeRuntimeTokensForAgent({ agentUser, agentName: name, instanceId });
   }
+  if (agentUser) await revokeAgentUserToken(agentUser._id);
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const agentWebSocketService = require('../../services/agentWebSocketService');
   names.forEach((name) => agentWebSocketService.disconnectIdentity(name, instanceId));
@@ -260,10 +270,11 @@ const runsInProcess = async (agentUser: any, installation: any): Promise<boolean
   if (!pairs.length) return false;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { AgentInstallation } = require('../../models/AgentRegistry');
+  // Every row that isn't uninstalled.
   return Boolean(await AgentInstallation.exists({
-    status: 'active',
+    status: { $ne: 'uninstalled' },
     $and: [{ $or: pairs }, IN_PROCESS_RUNTIME],
-  }));
+  }, { collation: RUNTIME_INSTALLATION_COLLATION }));
 };
 
 const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installation: any = null, issuer: any = null) => {
@@ -444,12 +455,20 @@ const issueUserTokenForInstallation = async ({
   scopes: any;
   force?: boolean;
 }) => {
+  const identity = { agentName: agentName.toLowerCase(), instanceId };
+  if (await runsInProcess(null, identity)) throw new InProcessAgentTokenRefused();
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(agentName.toLowerCase(), {
     instanceId,
     displayName,
   });
   await AgentIdentityService.ensureAgentInPod(agentUser, podId);
   const normalizedScopes = normalizeScopes(scopes);
+  // The same second look the runtime issuer takes once its token is stored.
+  const takeBackIfInProcess = async () => {
+    if (!await runsInProcess(agentUser, identity)) return;
+    await revokeAgentUserToken(agentUser._id);
+    throw new InProcessAgentTokenRefused();
+  };
 
   // Preserve existing token unless force-rotation is requested. Only the digest
   // is stored, so an existing token can be kept but never handed back. The
@@ -460,6 +479,7 @@ const issueUserTokenForInstallation = async ({
     const User = require('../../models/User');
     const minted = await User.mintApiTokenIfAbsent(agentUser._id, { apiTokenScopes: normalizedScopes });
     if (minted) {
+      await takeBackIfInProcess();
       return { token: minted.token, scopes: normalizedScopes, createdAt: minted.createdAt, existing: false };
     }
     agentUser.apiTokenScopes = normalizedScopes;
@@ -479,6 +499,7 @@ const issueUserTokenForInstallation = async ({
   const token = agentUser.generateApiToken();
   agentUser.apiTokenScopes = normalizedScopes;
   await agentUser.save();
+  await takeBackIfInProcess();
   return { token, scopes: normalizedScopes, createdAt: agentUser.apiTokenCreatedAt, existing: false };
 };
 
@@ -494,6 +515,7 @@ module.exports = {
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   revokeRuntimeTokensAfterLastUninstall,
+  revokeAgentUserToken,
   issueRuntimeTokenForAgent,
   InProcessAgentTokenRefused,
   runsInProcess,

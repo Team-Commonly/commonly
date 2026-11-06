@@ -16,8 +16,10 @@ jest.mock('../../../services/hostedRuntimeService', () => ({
   deprovisionAgent: (...args) => mockDeprovision(...args),
 }));
 const mockRevoke = jest.fn();
+const mockRevokeUserToken = jest.fn();
 jest.mock('../../../routes/registry/tokens', () => ({
   revokeRuntimeTokensForAgent: (...args) => mockRevoke(...args),
+  revokeAgentUserToken: (...args) => mockRevokeUserToken(...args),
 }));
 
 let mongod; let AgentInstallation; let AgentEvent; let User; let migrate;
@@ -82,6 +84,14 @@ test('a dry run reports per identity and changes nothing', async () => {
     .toEqual([['idle-agent', 1, false, 'new'], ['maya-agent', 2, true, 'new']]);
   expect(mockDeprovision).not.toHaveBeenCalled();
   expect(await field([maya._id, mayaB._id], (h) => h.engine)).toEqual([undefined, undefined]);
+});
+
+test('the revoke step clears the user token as well', async () => {
+  const bot = await User.findOne({ username: 'maya-agent' }).lean();
+
+  await migrate({ apply: true, now: NOW });
+
+  expect(mockRevokeUserToken).toHaveBeenCalledWith(bot._id);
 });
 
 test('a clean run: marked native before the revoke, stopped, revoked, done', async () => {

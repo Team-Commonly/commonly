@@ -27,12 +27,18 @@ const {
   normalizeContextPolicy,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
-const { ownsRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const {
+  identityHoldsRuntimeToken,
+  ownsRuntimeIdentity,
+  RUNTIME_TOKEN_HELD,
+  takeBackInstallation,
+  webhookUrlRefusal,
+} = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
-const { hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
+const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
 const { isHostedInstallation } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
@@ -435,6 +441,27 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
     }
 
+    // One runtime per agent identity (services/runtimeIdentityOwnership), asked
+    // for each row this write puts in service in process, and again once saved.
+    const entersInProcess = (entry: any) => {
+      const stored = normalizeConfigMap(entry.config) || {};
+      const requested = config?.runtime;
+      const runtime = requested && typeof requested === 'object'
+        ? runtimeKeepingType(requested, stored, { mayChangeType: isInstanceAdmin })
+        : (requested === undefined ? stored.runtime : requested);
+      if (!configRunsInProcess({ ...stored, runtime })) return false;
+      return !configRunsInProcess(stored) || (status === 'active' && entry.status !== 'active');
+    };
+    const rowsEntering = installationsToUpdate.filter(entersInProcess);
+    const holdsToken = () => identityHoldsRuntimeToken(name.toLowerCase(), normalizedInstanceId);
+    if (rowsEntering.length && await holdsToken()) {
+      return res.status(409).json(RUNTIME_TOKEN_HELD);
+    }
+    const rowsToRestore = rowsEntering.map((entry: any) => ({
+      key: { agentName: entry.agentName, podId: entry.podId, instanceId: entry.instanceId },
+      previous: entry.toObject(),
+    }));
+
     // The User row is the name source for chat and the pod roster. An explicit
     // rename must update that portable identity, not only per-pod projections.
     let renamedIdentity;
@@ -457,6 +484,10 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         if (effectiveDisplayName) targetInstallation.displayName = effectiveDisplayName;
         // eslint-disable-next-line no-await-in-loop
         await targetInstallation.save();
+      }
+      if (rowsToRestore.length && await holdsToken()) {
+        await Promise.all(rowsToRestore.map(({ key, previous }: any) => takeBackInstallation(key, previous)));
+        return res.status(409).json(RUNTIME_TOKEN_HELD);
       }
       // The card's sentence is the shared User's, so it follows only when this
       // write reached every installation of the identity, as a rename must.

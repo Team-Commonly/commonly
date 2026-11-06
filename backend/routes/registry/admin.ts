@@ -20,7 +20,12 @@ const {
   buildAgentProfileId,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
-const { revokeRuntimeTokenEverywhere, revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
+const {
+  InProcessAgentTokenRefused,
+  revokeRuntimeTokenEverywhere,
+  revokeRuntimeTokensAfterLastUninstall,
+  runsInProcess,
+} = require('./tokens');
 
 const adminRouter = express.Router();
 
@@ -322,6 +327,9 @@ adminRouter.post('/admin/agents/claude-code/session-token', auth, adminAuth, asy
     await assertAgentRuntimeMayJoinPod(podId, 'claude-code');
 
     const instanceId = requestedInstanceId || `sess-${randomSecret(8)}`;
+    if (await runsInProcess(null, { agentName: 'claude-code', instanceId })) {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: new InProcessAgentTokenRefused().message });
+    }
 
     // Default to Commonly's existing `<Primary> (Context)` parenthetical naming
     // pattern — see live DB examples like 'Backend Engineer (Nova)', 'Dev PM (Theo)'.

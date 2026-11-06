@@ -1,6 +1,10 @@
 // Gate test: cloud (hosted) agent installs require admin OR the cloudAgents
 // entitlement; BYO/webhook installs stay open. Mirrors the harness in
 // registry.install-runtime-type.test.js.
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),
