@@ -36,7 +36,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceNote, harnessLabel,
+  FALLBACK_HARNESSES, GRANT_TESTED_QWEN_VERSION, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceNote, harnessLabel,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -1341,7 +1341,9 @@ const V2AgentBYO: React.FC = () => {
       never: () => t('harness.noConnectors', { tool }),
       windows: () => t('harness.noConnectorsWindows'),
       macPublicOnly: () => t('harness.connectorsMacPublicOnly', { tool }),
-      publicOnly: () => t('harness.connectorsPublicOnly', { tool }),
+      publicOnly: () => (harness === 'qwen'
+        ? t('harness.connectorsPublicOnlyVersion', { tool, version: GRANT_TESTED_QWEN_VERSION })
+        : t('harness.connectorsPublicOnly', { tool })),
       notYet: () => t('harness.noConnectorsYet', { tool }),
     }[block]();
     return <p className="v2-byo__hint" data-testid="byo-no-connectors">{text}</p>;

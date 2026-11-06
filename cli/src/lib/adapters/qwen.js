@@ -21,6 +21,7 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
+import { describeMcpCommand } from '../mcp-server-version.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
 const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
@@ -101,15 +102,32 @@ const substitute = (value, ctx) => String(value).replace(/\$\{(COMMONLY_[A-Z_]+)
   COMMONLY_INSTANCE_URL: ctx.instanceUrl,
 }[name] || whole));
 
-/** The turn's servers: on a public seat, an unproven version loses the broker and keeps the turn. */
+const isCommonlyStdio = (server) => server?.name === 'commonly'
+  && (server.transport || 'stdio') === 'stdio'
+  && Boolean(describeMcpCommand(server.command)?.isCommonly);
+
+/**
+ * The turn's servers. A public seat holds a broker only on a proven version,
+ * with the Commonly server as its one other entry, as Goose requires: a second
+ * server could read the credential file from the jail, or replace an entry by
+ * name and inherit its tool approval. Otherwise the broker goes and the turn runs.
+ */
 export const withoutUnprovenBroker = (servers, { version, isPublic, instanceUrl }) => {
-  if (!isPublic || GRANT_TESTED_QWEN_VERSIONS.includes(version) || !Array.isArray(servers)) return servers;
-  return servers.filter((server) => {
-    if (!isOurGrantBroker(server, { instanceUrl })) return true;
+  if (!isPublic || !Array.isArray(servers)) return servers;
+  const brokers = servers.filter((server) => isOurGrantBroker(server, { instanceUrl }));
+  if (!brokers.length) return servers;
+  const others = servers.filter((server) => !brokers.includes(server));
+  const proven = GRANT_TESTED_QWEN_VERSIONS.includes(version);
+  const alone = others.every(isCommonlyStdio);
+  if (proven && alone) return servers;
+  const why = proven
+    ? 'another MCP server is declared beside it'
+    : `not on Qwen ${version || 'unknown'}, which hasn't passed the grant proof (${GRANT_TESTED_QWEN_VERSIONS.join(', ')})`;
+  for (const broker of brokers) {
     // eslint-disable-next-line no-console
-    console.warn(`[qwen] grant broker ${server.name}: not on Qwen ${version || 'unknown'}, which hasn't passed the grant proof (${GRANT_TESTED_QWEN_VERSIONS.join(', ')}), so this turn runs without it.`);
-    return false;
-  });
+    console.warn(`[qwen] grant broker ${broker.name}: ${why}, so this turn runs without it.`);
+  }
+  return others;
 };
 
 export const buildQwenMcpConfig = (servers, ctx) => {

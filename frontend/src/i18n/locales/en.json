@@ -3335,7 +3335,8 @@
     "noConnectorsYet": "Connectors don’t work with {{tool}} yet.",
     "noConnectorsWindows": "Connectors don’t work on Windows yet.",
     "connectorsMacPublicOnly": "{{tool}} can use connectors only as a public agent on a Mac.",
-    "connectorsPublicOnly": "{{tool}} can use connectors only as a public agent."
+    "connectorsPublicOnly": "{{tool}} can use connectors only as a public agent.",
+    "connectorsPublicOnlyVersion": "{{tool}} can use connectors only as a public agent, on version {{version}}."
   },
   "outsiderNarrowing": {
     "install": {

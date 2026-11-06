@@ -161,9 +161,12 @@ describe('the connector line for a harness with no sandbox', () => {
   test.each([MAC, LINUX])('Goose and Qwen say connectors need a public agent, on any computer (%s)', async (ua) => {
     asBrowser(ua);
     await renderPage();
-    for (const [runner, name] of [['goose', 'Goose'], ['qwen', 'Qwen Code']]) {
+    for (const [runner, line] of [
+      ['goose', 'Goose can use connectors only as a public agent.'],
+      ['qwen', 'Qwen Code can use connectors only as a public agent, on version 0.26.2.'],
+    ]) {
       fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));
-      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(`${name} can use connectors only as a public agent.`);
+      expect(screen.getByTestId('byo-no-connectors')).toHaveTextContent(line);
     }
   });
 

@@ -3331,7 +3331,8 @@
     "noConnectorsYet": "{{tool}} 暂时还用不了连接器。",
     "noConnectorsWindows": "Windows 上暂时还用不了连接器。",
     "connectorsMacPublicOnly": "{{tool}} 只有作为 Mac 上的公开智能体时才能用连接器。",
-    "connectorsPublicOnly": "{{tool}} 只有作为公开智能体时才能用连接器。"
+    "connectorsPublicOnly": "{{tool}} 只有作为公开智能体时才能用连接器。",
+    "connectorsPublicOnlyVersion": "{{tool}} 只有作为公开智能体、且版本为 {{version}} 时才能用连接器。"
   },
   "outsiderNarrowing": {
     "install": {

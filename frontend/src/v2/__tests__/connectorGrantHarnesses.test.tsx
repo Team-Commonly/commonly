@@ -90,6 +90,8 @@ describe('the harnesses a connector grant can reach', () => {
       .toBe('pi can use connectors only as a public agent on a Mac.');
     expect(t('harness.connectorsPublicOnly', { tool: 'Goose' }))
       .toBe('Goose can use connectors only as a public agent.');
+    expect(t('harness.connectorsPublicOnlyVersion', { tool: 'Qwen Code', version: '0.26.2' }))
+      .toBe('Qwen Code can use connectors only as a public agent, on version 0.26.2.');
   });
 
   test('zh-CN calls a harness 运行器, as agentManage.controls.harness does', async () => {
@@ -101,6 +103,8 @@ describe('the harnesses a connector grant can reach', () => {
     expect(t('harness.noConnectorsWindows')).toBe('Windows 上暂时还用不了连接器。');
     expect(t('harness.connectorsMacPublicOnly', { tool: 'pi' })).toBe('pi 只有作为 Mac 上的公开智能体时才能用连接器。');
     expect(t('harness.connectorsPublicOnly', { tool: 'Goose' })).toBe('Goose 只有作为公开智能体时才能用连接器。');
+    expect(t('harness.connectorsPublicOnlyVersion', { tool: 'Qwen Code', version: '0.26.2' }))
+      .toBe('Qwen Code 只有作为公开智能体、且版本为 0.26.2 时才能用连接器。');
     for (const key of ['harness.noConnectors', 'harness.noConnectorsYet', 'harness.noConnectorsWindows', 'harness.connectorsMacPublicOnly', 'harness.connectorsPublicOnly']) {
       expect(t(key, { tool: 'X' })).not.toContain('运行环境');
     }

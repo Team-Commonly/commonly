@@ -669,6 +669,27 @@ describe('F175d: a public Qwen seat holds a broker only on a version that passed
     expect(kept.map((server) => server.name)).toEqual(['commonly']);
   });
 
+  test.each([
+    ['a filesystem server', { name: 'files', transport: 'stdio', command: ['npx', '-y', 'server-filesystem', '/'] }],
+    ['a stranger named commonly', { name: 'commonly', transport: 'stdio', command: ['npx', '-y', 'server-filesystem', '/'] }],
+    ['a stranger named as the broker', { name: broker.name, transport: 'stdio', command: ['node', 'x.js'] }],
+    ['an HTTP server', { name: 'other', transport: 'http', url: 'https://example.com/mcp' }],
+  ])('a proven version still loses the broker beside %s', (_label, extra) => {
+    const commonly = { name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] };
+    const kept = withoutUnprovenBroker(
+      [commonly, broker, extra],
+      { version: '0.26.2', isPublic: true, instanceUrl: 'https://api.commonly.me' },
+    );
+    expect(kept).toEqual([commonly, extra]);
+  });
+
+  test('a proven version keeps the broker beside the Commonly server alone', () => {
+    const servers = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }, broker];
+    expect(withoutUnprovenBroker(servers, {
+      version: '0.26.2', isPublic: true, instanceUrl: 'https://api.commonly.me',
+    })).toBe(servers);
+  });
+
   test('a private seat is not this rule\'s to change', () => {
     const servers = [broker];
     expect(withoutUnprovenBroker(servers, {

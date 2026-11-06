@@ -34,6 +34,8 @@ export const GRANT_HARNESS_IDS: readonly string[] = Object.freeze(['claude', 'co
 // Harnesses on the grant list that hold a grant only when public, in their
 // sandbox. Mirrors the server's PUBLIC_ONLY_GRANT_ADAPTERS.
 const PUBLIC_ONLY_GRANT_HARNESSES = new Set(['pi', 'qwen', 'goose']);
+// The one Qwen version that holds a connector; cli's GRANT_TESTED_QWEN_VERSIONS is the rule.
+export const GRANT_TESTED_QWEN_VERSION = '0.26.2';
 
 // Of those, the ones with no sandbox off macOS.
 const MAC_SANDBOX_ONLY_HARNESSES = new Set(['pi']);

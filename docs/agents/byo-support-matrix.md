@@ -116,7 +116,9 @@ Last reviewed 2026-11-06, against main `978b1d07d`.
     is not in argv, in the config or recipe, or in the harness's environment.
   - What keeps the model off that file is the tool list, not the jail: the
     bridge and the Commonly MCP server run in the jail and must read it, so code
-    in the jail could too. A public turn on either harness runs none. A scripted
+    in the jail could too. A public turn on either harness has no tool that runs
+    code, and its only other MCP entry is the Commonly server: Qwen drops the
+    broker beside anything else, and Goose refuses the seat. A scripted
     model on real Qwen 0.26.2 and Goose 1.54.0 under Seatbelt (2026-11-05,
     macOS) called the broker and got its answer, then called every shell, file,
     fetch and `commonly_attach_file` tool it could name, using the real credential
