@@ -44,7 +44,7 @@ const makeUser = (extra = {}) => User.create({
 });
 
 describe('markSurface on the real User schema', () => {
-  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'])('%s persists', async (mark) => {
+  test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt'])('%s persists', async (mark) => {
     const user = await makeUser();
     markSurface(user._id, mark);
     const onboarding = await waitForField(user._id, mark);
@@ -71,5 +71,24 @@ describe('markSurface on the real User schema', () => {
     markSurface(bot._id, 'byoOfferShownAt');
     await settle();
     expect((await readOnboarding(bot._id)).byoOfferShownAt).toBeUndefined();
+  });
+
+  test('welcomeShownAt keeps the first render: a repeat load after a restart writes nothing', async () => {
+    const user = await makeUser();
+    markSurface(user._id, 'welcomeShownAt');
+    const first = (await waitForField(user._id, 'welcomeShownAt')).welcomeShownAt;
+
+    resetOnboardingMarksForTest();
+    markSurface(user._id, 'welcomeShownAt');
+    await settle();
+
+    expect((await readOnboarding(user._id)).welcomeShownAt).toEqual(first);
+  });
+
+  test('welcomeShownAt is a no-op for an agent', async () => {
+    const bot = await makeUser({ isBot: true });
+    markSurface(bot._id, 'welcomeShownAt');
+    await settle();
+    expect((await readOnboarding(bot._id)).welcomeShownAt).toBeUndefined();
   });
 });

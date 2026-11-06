@@ -3,7 +3,7 @@ import type { V2ApiClient } from '../hooks/useV2Api';
 export type ByoStep = 'page-viewed' | 'seat-created' | 'mcp-command-copied' | 'cli-command-copied'
   | 'daemon-command-copied' | 'token-copied' | 'listen-confirmed' | 'listen-timeout'
   | 'hosted-offer-shown' | 'hosted-offer-clicked'
-  | 'invite-card-shown' | 'invite-card-dismissed' | 'byo-offer-shown';
+  | 'invite-card-shown' | 'invite-card-dismissed' | 'byo-offer-shown' | 'welcome-shown';
 
 // Which setup command was copied. Fixed names only; the server keeps the first
 // copy of each (TASK-714), so "listen after MCP" stays visible.

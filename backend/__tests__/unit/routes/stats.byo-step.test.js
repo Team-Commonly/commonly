@@ -98,6 +98,16 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
   });
 
+  it('welcome-shown sets only its mark: no funnel row, and nothing else from the body', async () => {
+    const res = await request(app).post('/api/stats/byo-step')
+      .send({ step: 'welcome-shown', setupOs: 'mac', listenerAvailable: true, podId: 'p1' });
+    expect(res.status).toBe(200);
+    expect(mockMarkSurface).toHaveBeenCalledTimes(1);
+    expect(mockMarkSurface).toHaveBeenCalledWith('human-1', 'welcomeShownAt');
+    expect(mockMarkByoSetup).not.toHaveBeenCalled();
+    expect(mockInsertOne).not.toHaveBeenCalled();
+  });
+
   it('a copy step passes the copy type and the setup the page showed to the marks', async () => {
     const res = await request(app).post('/api/stats/byo-step')
       .send({ step: 'mcp-command-copied', copyType: 'mcp-claude', setupOs: 'mac', listenerAvailable: true });
