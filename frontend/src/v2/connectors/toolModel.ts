@@ -11,6 +11,8 @@ export interface ToolGrant {
   target: { kind: 'pod' | 'seat'; id: string };
   tools: string[];
   writeMode: GrantWriteMode;
+  /** F214: the grant holds pull-request access. Its PR tools park every call for the connection owner. */
+  prWrite?: boolean;
   budget: { calls?: number; windowMs?: number } | null;
   effectiveAudience: string[];
   expiresAt: string;
@@ -100,7 +102,14 @@ export interface ToolCatalogEntry {
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
-  tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
+  tools: Array<{
+    name: string;
+    description?: string;
+    requiredWriteMode: GrantWriteMode;
+    irreversible: boolean;
+    /** Held only on a `prWrite` grant, whatever the mode. The server names these, so the form copies no list. */
+    prWrite?: boolean;
+  }>;
   connections: ToolConnection[];
 }
 
@@ -155,6 +164,8 @@ export interface DraftGrant {
   podId: string;
   connectionId: string;
   writeMode: GrantWriteMode;
+  /** F214: add pull-request access. The mint then goes out as write-with-confirm with `prWrite`. */
+  prWrite: boolean;
   audience: string[];
   expiryDays: 7 | 30 | 90;
   /** Change access: the grant this one replaces (revoked after the mint). */
@@ -187,8 +198,14 @@ export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'wri
 // F213 stopgap: no grant this form can mint gives an agent a write. Hosted runs
 // are offered read tools only, a named agent's grant must be read, any other
 // outside agent in the pod refuses the mint, and `write` refuses on every pod.
-// F214 and F215 restore the modes; turning this on brings the choice back.
+// F214 added pull-request access beside this, on a GitHub App connection. F215
+// restores the modes; turning this on brings the choice back.
 export const FORM_OFFERS_WRITES: boolean = false;
+
+/** Pull-request access is offered on a GitHub App connection only (prWriteMintRefusal). */
+export const entryOffersPrWrite = (entry: ToolCatalogEntry): boolean => (
+  entry.connectionType === 'github-app' && entry.tools.some((tool) => tool.prWrite)
+);
 
 /**
  * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through

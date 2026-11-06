@@ -12,6 +12,7 @@ import {
   isExpired,
   isDead,
   boundAgentOf,
+  entryOffersPrWrite,
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
@@ -96,6 +97,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     outcomeLabel,
     reasonLabel,
     modeLabel,
+    grantModeLabel,
     entryGrantModes,
     entryModeCopy,
     usedRecently,
@@ -103,6 +105,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftPrWrite,
     draftBoundAgent,
     startingAudience,
     selectedAgentIds,
@@ -326,7 +329,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               )}
             </strong>
             <span className="v2-connector-row__detail">
-              {!dead && <span className="v2-tools__mode" title={modeLabel(grant.writeMode)} role="img" aria-label={modeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
+              {!dead && <span className="v2-tools__mode" title={grantModeLabel(grant)} role="img" aria-label={grantModeLabel(grant.writeMode)}><ModeGlyph mode={grant.writeMode} /></span>}
               {line2}
             </span>
           </span>
@@ -569,10 +572,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     // A key grant whose key was removed opens with no key chosen (openDraft):
     // the picker shows even for one remaining key, and the seats wait for a key.
     const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
-    const tools = draftTools(draftEntry, draft.writeMode);
+    const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite);
     const irreversible = irreversibleTools(draftEntry, tools);
-    const asks = draft.writeMode === 'read'
-      ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
+    const asks = draftPrWrite
+      ? t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' })
+      : draft.writeMode === 'read' ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
       : draft.writeMode === 'write-with-confirm'
         ? t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' })
         : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
@@ -627,12 +631,18 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
                 {entryGrantModes(draftEntry).map((mode) => (
-                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={naming && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={(naming || draftPrWrite) && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
                 ))}
               </div>
-              {naming && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
+              {naming && !draftPrWrite && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
+              {entryOffersPrWrite(draftEntry) && (
+                <label className="v2-connector-aside__relay">
+                  <input type="checkbox" checked={draft.prWrite} onChange={(event) => setDraft({ ...draft, prWrite: event.target.checked, writeMode: event.target.checked ? 'read' : draft.writeMode })} />
+                  <span>{t('tools.prWriteChoice', { defaultValue: 'Agents can also open pull requests from their own branch. You approve each commit, push and pull request.' })}</span>
+                </label>
+              )}
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
@@ -683,7 +693,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {naming && (
               <label className="v2-connector-aside__relay">
                 <input type="checkbox" checked={draftByoConsented} onChange={(event) => setDraft({ ...draft, byoConsentFor: event.target.checked ? draftByoKey : null })} />
-                <span>{draftByoNamed.map((agent) => byoConsentLine(agent)).join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
+                <span>{[...draftByoNamed.map((agent) => byoConsentLine(agent)), ...(draftPrWrite ? [t('tools.byo.prWriteConsent')] : [])].join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
               </label>
             )}
           </div>
@@ -737,7 +747,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           <dl className="v2-tools__facts">
             <dt>{t('tools.agentsAllowed', { defaultValue: 'agents allowed' })}</dt>
             <dd>{audienceLabels(grant)}</dd>
-            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{modeLabel(grant.writeMode)}</dt>
+            <dt><span className="v2-tools__mode" aria-hidden="true"><ModeGlyph mode={grant.writeMode} /></span>{grantModeLabel(grant)}</dt>
             <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
             <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
             <dd>{asksFirst(grant)}</dd>

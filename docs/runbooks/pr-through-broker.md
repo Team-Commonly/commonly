@@ -157,18 +157,21 @@ that names `github.create_pull_request` or `github.push_branch` holds no
 `prWrite`, so those calls now refuse `pr_write_not_granted`. Re-mint the grant
 with `prWrite: true`.
 
-The grant form in the app does not offer `prWrite` yet. Until it does, a grant
-is minted with `POST /api/grants` under the owner's session.
+The grant form offers this as a checkbox on a GitHub App connection. It mints
+the read tools plus all three PR tools, as `write-with-confirm` with `prWrite`,
+and **Change access** keeps the choice on a live grant. It names no narrower PR
+tool set; for one, mint with `POST /api/grants` under the owner's session.
 
-The form offers `read` and nothing else for now, on every connector type
-(`FORM_OFFERS_WRITES` in `frontend/src/v2/connectors/toolModel.ts`). No grant it
-could mint gave an agent a write: `hostedBrokerToolsForRun` offers a hosted run
+Apart from that checkbox, the form offers `read` and nothing else for now, on
+every connector type (`FORM_OFFERS_WRITES` in
+`frontend/src/v2/connectors/toolModel.ts`). Without the checkbox, no grant it
+mints gives an agent a write: `hostedBrokerToolsForRun` offers a hosted run
 read tools, plus the PR tools on a `prWrite` grant; `checkByoNaming` refuses a
 write on a named seat without `prWrite`; `outsiderGrantPodRefusal` refuses any
 other outside agent in the pod, and refuses `write` on every pod, with no admin
 or GitHub App exception. A stored write grant keeps its mode in the list and the
-detail, but **Change access** reopens it on `read`, and that mint carries no
-`prWrite`, so re-mint a `prWrite` grant through the API instead.
+detail, but **Change access** reopens it on `read`, with pull-request access
+kept if it held it.
 
 ## What the agent does
 

@@ -14,6 +14,7 @@ import {
   MODE_RANK,
   WRITE_MODES,
   FORM_OFFERS_WRITES,
+  entryOffersPrWrite,
   isDead,
   entryCovers,
   boundAgentOf,
@@ -258,6 +259,7 @@ export const useToolConnectors = (
   const irreversibleTools = (entry: ToolCatalogEntry | null, tools: string[]): string[] => (entry?.tools || [])
     .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
   const asksFirst = (grant: ToolGrant): string => {
+    if (grant.prWrite) return t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' });
     if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
     if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' });
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
@@ -339,6 +341,9 @@ export const useToolConnectors = (
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
     write: t('tools.modeWrite', { defaultValue: 'read and write' }),
   })[mode];
+  const grantModeLabel = (grant: ToolGrant): string => (grant.prWrite
+    ? t('tools.modePrWrite', { defaultValue: 'read, plus pull requests you approve' })
+    : modeLabel(grant.writeMode));
 
   const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
     if (!FORM_OFFERS_WRITES) return ['read'];
@@ -409,6 +414,8 @@ export const useToolConnectors = (
       podId,
       connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
+      // Change access keeps it. An ended grant opens without it: that is a new choice.
+      prWrite: Boolean(from?.prWrite) && !isDead(from as ToolGrant) && entryOffersPrWrite(entry),
       audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
         ? agentIds.filter((id) => from.effectiveAudience.includes(id))
         : startingAudience(entry, connectionId, podId)),
@@ -434,8 +441,14 @@ export const useToolConnectors = (
   const draftEntry = draft
     ? catalog.find((entry) => entry.installableId === draft.entry.installableId) || draft.entry
     : null;
-  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
-    .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
+  // A `prWrite` grant holds no write but the PR tools (pr_write_other_writes), and
+  // a grant without it can't call them, so the two sets never mix.
+  const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode, prWrite = false): string[] => (entry?.tools || [])
+    .filter((tool) => (prWrite
+      ? tool.prWrite || tool.requiredWriteMode === 'read'
+      : !tool.prWrite && MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]))
+    .map((tool) => tool.name);
+  const draftPrWrite = Boolean(draft?.prWrite && draftEntry && entryOffersPrWrite(draftEntry));
 
   const draftBoundAgent = draft && draftEntry ? boundAgentOf(draftEntry, draft.connectionId) : null;
   // On a key connection only its own agent can be submitted, whatever the
@@ -456,7 +469,8 @@ export const useToolConnectors = (
   // The checked agents the grant would name, and whether the person has
   // consented for exactly these.
   const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && selectedAgentIds.includes(agent.userId));
-  const draftByoKey = draftByoNamed.map((agent) => agent.userId).sort().join(',');
+  // Pull-request access changes what the person consents to, so it is part of the key.
+  const draftByoKey = `${draftByoNamed.map((agent) => agent.userId).sort().join(',')}${draftPrWrite ? ':pr' : ''}`;
   const draftByoConsented = draftByoNamed.length > 0 && draft?.byoConsentFor === draftByoKey;
   // Naming one is read-only (byo_read_only), so a write mode drops back to
   // read while one is checked, and an agent no grant can name is unchecked.
@@ -483,8 +497,9 @@ export const useToolConnectors = (
       const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
-        tools: draftTools(draftEntry, draft.writeMode),
-        writeMode: draft.writeMode,
+        tools: draftTools(draftEntry, draft.writeMode, draftPrWrite),
+        writeMode: draftPrWrite ? 'write-with-confirm' : draft.writeMode,
+        ...(draftPrWrite ? { prWrite: true } : {}),
         audience: selectedAgentIds,
         expiresAt,
         ...(draftByoNamed.length > 0
@@ -833,6 +848,7 @@ export const useToolConnectors = (
     outcomeLabel,
     reasonLabel,
     modeLabel,
+    grantModeLabel,
     entryGrantModes,
     entryModeCopy,
     usedRecently,
@@ -842,6 +858,7 @@ export const useToolConnectors = (
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftPrWrite,
     draftBoundAgent,
     startingAudience,
     selectedAgentIds,

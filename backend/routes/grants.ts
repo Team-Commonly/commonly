@@ -35,7 +35,7 @@ import {
 } from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
 import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemovalCueService';
-import { prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
+import { grantHoldsPrWrite, prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
 import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 
@@ -109,7 +109,7 @@ interface AuthenticatedRequest extends express.Request {
  * left, so only the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
-  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent'> & { audience?: string[]; connectionId?: string };
+  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent' | 'prWrite'> & { audience?: string[]; connectionId?: string };
 
 const projectGrant = (
   grant: GrantRow,
@@ -123,6 +123,7 @@ const projectGrant = (
   tools: [...(grant.tools || [])],
   connector: grantConnector(grant.tools),
   writeMode: grant.writeMode,
+  ...(grantHoldsPrWrite(grant) ? { prWrite: true } : {}),
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
   // F94: the granter's own agents running outside Commonly that this grant
