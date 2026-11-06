@@ -720,7 +720,7 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'ok' }));
   });
 
-  it('records an unreachable vendor after owner approval as failed with its transport reason', async () => {
+  it('records a vendor that dropped an approved call as failed with the unknown outcome', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
       tools: ['linear.create_issue'],
       writeMode: 'write-with-confirm',
@@ -736,11 +736,11 @@ describe('a hosted-MCP grant through the broker', () => {
       expectedArgsDigest: digestArgs(args),
       expectedDefinitionDigest: currentWriteDigest(),
       approvalId: 'approval-transport-error',
-    })).rejects.toMatchObject({ code: 'provider_unreachable' });
+    })).rejects.toMatchObject({ code: 'approval_outcome_unknown' });
 
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'failed',
-      reason: 'provider_unreachable',
+      reason: 'approval_outcome_unknown',
       approvalId: 'approval-transport-error',
     }));
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));

@@ -344,6 +344,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
             {isToolCall && toolCallEnding
               ? toolCallEnding === 'ran'
                 ? t('approvalCard.toolCall.ran')
+                : toolCallCode === 'approval_outcome_unknown'
+                  ? t('approvalCard.toolCall.outcomeUnknown')
                 : toolCallEnding === 'failed'
                   ? t('approvalCard.toolCall.failed', { code: toolCallCode })
                   : toolCallCode === 'definition_digest_mismatch'

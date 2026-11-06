@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /*
- * F202: put capped tool-call expiries back in the expiry sweep's retry.
+ * F202: put capped tool-call closures back in the sweep's retry.
  *
- * An expired broker approval whose side effects (the refusal trail, the
- * `approval.resolved` wake, the card) keep failing is retried with backoff for
- * about six hours, then the sweep logs "gave up" and stops selecting it. Once
- * the cause is fixed, this script finds those rows (expired, no
- * `expirySideEffectsDoneAt`, `expiryRetryCount` at the cap) and resets their
- * count to 0, so the next sweep retries them on the normal schedule. Every
- * side effect is safe to repeat, so a requeued row never doubles its trail
- * or its wake.
+ * A broker approval that expired or was decided, and whose side effects (the
+ * trail, the room receipt, the `approval.resolved` wake, the card) keep failing,
+ * is retried with backoff for about six hours, then the sweep logs "gave up"
+ * and stops selecting it. Once the cause is fixed, this script finds those rows
+ * (closed, no `expirySideEffectsDoneAt`, `expiryRetryCount` at the cap) and
+ * resets their count to 0, so the next sweep retries them on the normal
+ * schedule. Every side effect is safe to repeat, and no retry reaches the
+ * broker, so a requeued row never doubles its trail or runs its call again.
  *
  * A dry run by default: it lists the capped rows and writes nothing. It
  * writes only with an explicit --apply, and refuses any other argument.
@@ -25,7 +25,7 @@ import ApprovalAction from '../models/ApprovalAction';
 import { MAX_EXPIRY_RETRIES } from '../services/approvalActionService';
 
 const CAPPED = {
-  status: 'expired',
+  status: { $in: ['expired', 'resolved'] },
   actionType: 'tool_call',
   expirySideEffectsDoneAt: null,
   expiryRetryCount: { $gte: MAX_EXPIRY_RETRIES },

@@ -32,6 +32,7 @@ import {
   type HostedMcpUpstreamTool,
   withoutWithheldArgs,
 } from './hostedMcpEntryService';
+import { GATEWAY_STATUSES, markWriteUnknown } from './brokerWriteOutcome';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
@@ -594,6 +595,15 @@ export const assertHostedToolUnchanged = async (
   }
 };
 
+// A reply that started and broke, or a gateway in front of the vendor, doesn't
+// say whether the call ran.
+const replyLost = (error: unknown): boolean => {
+  if (!(error instanceof RoomGrantError)) return false;
+  const { vendorStatus, failure } = error.details || {};
+  return GATEWAY_STATUSES.has(Number(vendorStatus))
+    || failure === 'missing_rpc_reply' || failure === 'invalid_json';
+};
+
 const callHostedTool = async (
   entry: HostedMcpEntry,
   tool: HostedMcpPinnedTool,
@@ -651,9 +661,14 @@ const callHostedTool = async (
   } catch (error) {
     // The deadline covers the body too: a vendor that sends headers and then
     // trickles the reply would otherwise hold the turn open past it (TASK-254).
-    if (controller.signal.aborted && !(error instanceof RoomGrantError)) {
-      throw new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
-    }
+    const unreachable = error instanceof RoomGrantError
+      ? error.code === 'provider_unreachable' && error
+      : controller.signal.aborted
+        && new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
+    // tools/call goes out once a session is open, so with no answer the vendor
+    // may have run it. Failing to open the session sent no call.
+    if (unreachable) throw session ? markWriteUnknown(unreachable) : unreachable;
+    if (session && replyLost(error)) throw markWriteUnknown(error);
     throw error;
   } finally {
     await session?.close();

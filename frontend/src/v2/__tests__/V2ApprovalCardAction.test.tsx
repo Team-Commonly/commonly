@@ -233,6 +233,17 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(en.approvalCard.approved)).not.toBeInTheDocument();
   });
 
+  test('an unknown outcome tells the owner it may have run, not that it failed', () => {
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-unknown', status: 'resolved', decision: 'approved',
+      ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.merge_pull_request' },
+      toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown',
+    });
+    expect(screen.getByText(en.approvalCard.toolCall.outcomeUnknown)).toBeInTheDocument();
+    expect(en.approvalCard.toolCall.outcomeUnknown).toContain('This call may have run. Check before approving it again.');
+    expect(screen.queryByText(/tool call failed/i)).not.toBeInTheDocument();
+  });
+
   test('pre-ending message payloads use their old execution fields without claiming a refusal', () => {
     renderCard({
       kind: 'approval-card', approvalId: 'legacy-ran', status: 'resolved', decision: 'approved',

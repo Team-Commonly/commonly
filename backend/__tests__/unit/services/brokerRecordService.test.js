@@ -126,6 +126,17 @@ describe('recordApprovalOutcome', () => {
     expect((await linesOf(mockEmits[0]))[1].data.status).toBe('failed');
   });
 
+  it('an unknown outcome is not recorded as failed: the update carries no status and says so', async () => {
+    service.recordApprovalOutcome(
+      approval({ toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown' }), parked, { kind: 'approved' },
+    );
+    await flush();
+    const lines = await linesOf(mockEmits[0]);
+    const update = lines.find((line) => line.kind === 'tool.update');
+    expect(update.data.status).toBeUndefined();
+    expect(update.data.title).toMatch(/outcome unknown/i);
+  });
+
   it('declined, and expired, each end the call once', async () => {
     service.recordApprovalOutcome(approval(), parked, { kind: 'declined' });
     service.recordApprovalOutcome(expiredApproval(), parked, { kind: 'expired' });

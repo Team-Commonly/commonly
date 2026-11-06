@@ -228,6 +228,30 @@ class ToolCall {
     );
   }
 
+  /**
+   * The row an approved call left, if any: the parked row does not count. The
+   * sweep reads this when an approval never got its ending, so the answer comes
+   * from what the broker wrote. Scoped by grant for `idx_tool_calls_grant_at`.
+   */
+  static async findApprovedRun(grantId: string, approvalId: string): Promise<{
+    callId: string; outcome: ToolCallOutcome; reason: string | null; at: Date;
+  } | null> {
+    const db = ensurePool();
+    const { rows } = await db.query(
+      `SELECT call_id, outcome, reason, occurred_at FROM tool_calls
+        WHERE grant_id = $1 AND approval_id = $2 AND outcome <> 'pending_approval'
+        ORDER BY occurred_at DESC LIMIT 1`,
+      [grantId, approvalId],
+    );
+    if (!rows[0]) return null;
+    return {
+      callId: String(rows[0].call_id),
+      outcome: rows[0].outcome as ToolCallOutcome,
+      reason: rows[0].reason === null ? null : String(rows[0].reason),
+      at: new Date(rows[0].occurred_at as string),
+    };
+  }
+
   /** Only server-recorded references from an already-authorized run. */
   static async listRunReferences(podId: string, callIds: string[]): Promise<Array<{
     callId: string; grantId: string; credentialOwnerId: string | null;

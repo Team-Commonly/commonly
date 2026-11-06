@@ -297,6 +297,7 @@ export const useToolConnectors = (
       upstream_tool_error: t('tools.reasonUpstreamToolError', { defaultValue: 'the provider tool returned an error' }),
       broker_unavailable: t('tools.reasonBrokerUnavailable', { defaultValue: 'the broker was unavailable' }),
       broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
+      approval_outcome_unknown: t('tools.reasonOutcomeUnknown', { defaultValue: 'the outcome is unknown, and the call may have run' }),
       tool_drift: t('tools.reasonToolDrift', { defaultValue: 'the provider changed this tool since Commonly checked it' }),
       tool_unavailable: t('tools.reasonToolUnavailable', { defaultValue: "this connection's tool list does not include this tool" }),
       // A write the connection never consented to (F102): the same instruction as reconnect_required.
