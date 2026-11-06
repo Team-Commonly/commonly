@@ -347,6 +347,13 @@ describe('agent in-thread posts (threadRootId, no reply edge)', () => {
   // QA walk 3: "Give your agent its first task" completes on the first answer
   // an agent gives the workspace owner. Every landed agent post offers it to
   // the starter-task check, which decides; a refused post never does.
+  it('does not offer a failed-turn line to the first-task check', async () => {
+    await AgentMessageService.postMessage({
+      agentName: 'lee-agent', instanceId: 'default', podId: POD, content: 'I could not finish.', failureNotice: true,
+    });
+    expect(mockFirstTask).not.toHaveBeenCalled();
+  });
+
   it('offers each landed post to the first-task check, with the reply edge', async () => {
     await AgentMessageService.postMessage({
       agentName: 'lee-agent',

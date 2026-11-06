@@ -646,12 +646,38 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
     });
 
+    test('the plain-text fallback gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [reply('Here you go.')];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.finalMessage).toBeUndefined();
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+    });
+
+    test('a refused offer card gets the same line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(call('o1', 'commonly_offer_local_agent', { adapter: 'claude', os: 'mac' }))];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(posted()).toEqual(['Connect a local agent with the command below.', HOSTED_RUN_FAILED_LINE]);
+    });
+
+    test('a welcome wake quoting a person is not a person waiting', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const wake = { ...mention, payload: { ...mention.payload, welcomeWake: true } };
+      const result = await runAgent(hostedInstall(), wake);
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
     test('only the first post of a turn answers the person', async () => {
       const again = { ...postCall, id: 'p2' };
       AgentMessageService.postMessage
         .mockResolvedValueOnce({ success: true, message: { id: 'm1' } })
         .mockResolvedValueOnce({ success: true, message: { id: 'm2' } });
-      chatReplies = [toolCalls(postCall, again)];
+      chatReplies = [toolCalls(postCall, again), reply('')];
       await runAgent(hostedInstall(), mention);
       expect(AgentMessageService.postMessage.mock.calls.map(([args]) => args.personWaiting)).toEqual([true, false]);
     });

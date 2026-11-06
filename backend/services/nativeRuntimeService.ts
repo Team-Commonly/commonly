@@ -901,6 +901,23 @@ interface DispatchResult {
 }
 
 /**
+ * F56: an offer card lands or doesn't like any other post, so it reports the
+ * same way. A refused or skipped card never reads as posted to the person
+ * waiting on it.
+ */
+const offerPostResult = (
+  ctx: DispatchContext,
+  result: { success?: boolean; skipped?: boolean; refused?: boolean; reason?: string } | null | undefined,
+): { content: Record<string, unknown>; error?: string } => {
+  if (result?.refused) {
+    if (result.reason === 'consecutive_run_cap') ctx.floorHeld = true;
+    return { content: { ok: false, posted: false, reason: result.reason }, error: 'message_post_refused' };
+  }
+  if (result?.success && !result.skipped) ctx.personWaiting = false;
+  return { content: { ok: true, posted: !result?.skipped, result } };
+};
+
+/**
  * Wake the agents a stored post names, or the agent-dm peer, as the runtime
  * route does for an external agent's post. postMessage stores the row and
  * wakes no one, so without this a hosted lead's @handoff reached nobody (F62).
@@ -1101,10 +1118,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        return { content: { ok: true, posted: true, result } };
+        return offerPostResult(ctx, result);
       }
 
       case 'commonly_offer_local_agent': {
@@ -1170,10 +1188,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
           authorKind: 'kernel',
         });
-        return { content: { ok: true, posted: true, result } };
+        return offerPostResult(ctx, result);
       }
 
       case 'commonly_create_task': {
@@ -1612,6 +1631,18 @@ const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
 
 // Any reply this run, not just a card, answers the connect request.
+/**
+ * F56 and F234: a person's own words addressed this turn, so someone is waiting
+ * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
+ */
+const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boolean> => {
+  if (!wasDirectlyAddressed(trigger)) return false;
+  const payload = (trigger.payload || {}) as Record<string, unknown>;
+  if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
+    || payload.boardWake === true || payload.welcomeWake === true) return false;
+  return triggerTextIsHumanWritten(trigger);
+};
+
 export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
   postedViaTool || finalMessage !== undefined
 );
@@ -2063,11 +2094,7 @@ export async function runAgent(
   // line isn't an answer, and that field would close the first-task card on it.
   // A failed post doesn't change the stop.
   const tellAddressedPerson = async (content: string): Promise<void> => {
-    if (!hostedNative || !wasDirectlyAddressed(trigger)) return;
-    const payload = (trigger.payload || {}) as Record<string, unknown>;
-    if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
-      || payload.boardWake === true || payload.welcomeWake === true) return;
-    if (!await triggerTextIsHumanWritten(trigger)) return;
+    if (!hostedNative || !await personAddressedThisTurn(trigger)) return;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentMessageService = require('./agentMessageService');
@@ -2351,7 +2378,7 @@ export async function runAgent(
 
   // F56: read once. Neither the reply nor the failed-turn line is an answer to an
   // agent, a sweep or a wake that only quotes a person.
-  const personAsked = wasDirectlyAddressed(trigger) && await triggerTextIsHumanWritten(trigger);
+  const personAsked = await personAddressedThisTurn(trigger);
   dispatchCtx.personWaiting = personAsked;
   // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
   // fetch makes neither lookup (its own user, the trigger's sender).

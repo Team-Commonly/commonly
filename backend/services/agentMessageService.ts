@@ -207,7 +207,7 @@ interface PostMessageOptions {
   // own ask, so the shared-pod duplicate guard does not apply to it.
   failureNotice?: boolean;
   // Server-set, never model-set and never read from metadata (F56): a person's
-  // own words addressed this hosted turn and it hasn't answered yet. Its reply
+  // own words addressed this native or hosted turn and it hasn't answered yet. Its reply
   // answers that ask, so the duplicate guard does not apply. With
   // `failureNotice`, neither does the run cap: asks that land together fail
   // together, and a person who sees three lines for five asks got silence on two.
@@ -1702,10 +1702,12 @@ class AgentMessageService {
     // agent its first task" (starterTaskService). Fire-and-forget: a board
     // write never delays or fails a post, and it never throws.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    void require('./starterTaskService').completeFirstTaskOnAnswer({
-      podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
-      agentLabel: displayName || agentName, content: sanitizedContent,
-    });
+    if (failureNotice !== true) {
+      void require('./starterTaskService').completeFirstTaskOnAnswer({
+        podId: String(podId), agentName, instanceId, replyToMessageId, answeringMessageId,
+        agentLabel: displayName || agentName, content: sanitizedContent,
+      });
+    }
 
     const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
     return {
