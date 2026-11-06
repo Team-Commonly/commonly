@@ -135,10 +135,28 @@ describe('connected, with the App not installed yet (next=access)', () => {
     });
     renderPage();
 
-    expect(await screen.findByText(en.connectors.hostedMcpAccessNext)).toBeInTheDocument();
+    expect(await screen.findAllByText(en.connectors.hostedMcpAccessNext)).not.toHaveLength(0);
     const popover = await findPopover('GitHub');
     expect(await within(popover).findByRole('link', { name: "Open GitHub's connected apps" })).toHaveAttribute('href', revokePage);
     expect(window.location.search).toBe('');
+    // The notice sits in this drawer, so the entry's own copy of the warning stays out.
+    expect(screen.getAllByText(en.connectors.hostedMcpAccessNext)).toHaveLength(1);
+    expect(within(popover).getByText(en.connectors.hostedMcpAccessNext)).toBeInTheDocument();
+    expect(within(popover).queryByRole('link', { name: 'Choose what GitHub can reach' })).toBeNull();
+  });
+
+  it('keeps the warning on the entry once no notice is carrying it', async () => {
+    const revokePage = 'https://github.com/settings/apps/authorizations';
+    window.history.replaceState({}, '', `/v2/connectors?hostedMcp=connected&entryId=github-mcp&revokeAt=${encodeURIComponent(revokePage)}`);
+    mockApi({
+      connectors: [{ ...githubRow, config: { entryId: 'github-mcp', revokePage } }],
+      installables: [hostedGithub({ connections: [{ connectionId: 'i-gh', owner: 'sam', repo: '' }] })],
+    });
+    renderPage();
+
+    const popover = await findPopover('GitHub');
+    expect(await within(popover).findByText(en.connectors.hostedMcpAccessNext)).toBeInTheDocument();
+    expect(screen.getAllByText(en.connectors.hostedMcpAccessNext)).toHaveLength(1);
   });
 
   it('reads in zh-CN, keeping GitHub\'s own option label in English', async () => {

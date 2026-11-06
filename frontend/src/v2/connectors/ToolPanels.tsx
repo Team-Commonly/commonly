@@ -56,7 +56,7 @@ const ModeGlyph: React.FC<{ mode: GrantWriteMode }> = ({ mode }) => {
 };
 
 
-export const useToolPanels = (m: ToolConnectorsModel) => {
+export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string | null = null) => {
   const { t, i18n } = useTranslation();
   const {
     manualRevokeNotice,
@@ -378,6 +378,12 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     </a>
   );
 
+  // The page's own access notice travels into every drawer, so a panel for the
+  // same install page adds nothing to it but a second copy of the warning.
+  const renderGithubWarning = (entry: ToolCatalogEntry) => (
+    entry.accessPage === accessNoticePage ? null : <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+  );
+
   // An operator-key entry holds one connection per agent (TASK-330), so it
   // stays open to a key for each of the person's agents that has none yet. An
   // OAuth entry is connected once, by `connections.length`.
@@ -499,7 +505,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
         {renderReachNote(entry, entry.connections)}
         {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && (entry.entryId === 'github-mcp'
-          ? <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+          ? renderGithubWarning(entry)
           : <p className="v2-cx-note">{renderAccessLink(entry)}</p>)}
         {renderManualRevokeNotice(entry)}
       </>
@@ -582,7 +588,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           {status === 'ready' && repositories.length === 0 && (
             <>
               <p>{t('tools.repoConnect.none', { defaultValue: 'No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.' })}</p>
-              {githubEntry?.accessPage && <GithubInstallWarning>{renderAccessLink(githubEntry)}</GithubInstallWarning>}
+              {githubEntry?.accessPage && renderGithubWarning(githubEntry)}
             </>
           )}
           {status === 'ready' && repositories.length > 0 && (
@@ -882,7 +888,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               else), so the page they reach is the one that bounds this grant. */}
           {!dead && isGranter(grant) && entry?.connectionType === 'hosted-mcp' && entry.available && entry.accessPage && (
             entry.entryId === 'github-mcp'
-              ? <GithubInstallWarning>{renderAccessLink(entry)}</GithubInstallWarning>
+              ? renderGithubWarning(entry)
               : <p className="v2-connector-aside__note">{renderAccessLink(entry)}</p>
           )}
           {staleAfterChange?.oldGrantId === grant.grantId && (

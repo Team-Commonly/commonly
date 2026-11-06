@@ -52,7 +52,7 @@ const ConnectorsPage: React.FC = () => {
   const navigate = useNavigate();
   const c = useChannelConnectors();
   const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke, c.podListFailed);
-  const tp = useToolPanels(m);
+  const tp = useToolPanels(m, c.hostedMcpCallbackNotice?.kind === 'access' ? c.hostedMcpCallbackNotice.accessPage : null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [pop, setPop] = useState<Pop | null>(null);
