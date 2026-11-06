@@ -1,11 +1,18 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen } from '@testing-library/react';
 import fs from 'fs';
 import path from 'path';
 import V2PageHead from '../components/V2PageHead';
 import { readV2Css } from '../__testkit__/v2Css';
 
 const source = (name: string) => fs.readFileSync(path.resolve(__dirname, '..', name), 'utf8');
+
+// jsdom has no PointerEvent, so pointerType has to be put on the event by hand.
+const hoverPointer = (type: 'pointerOver' | 'pointerOut', element: Element) => {
+  const event = createEvent[type](element);
+  Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+  fireEvent(element, event);
+};
 
 describe('page head copy budget', () => {
   test('the shared feature header cannot render an eyebrow or sentence description', () => {
@@ -34,9 +41,9 @@ describe('page head copy budget', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(hint.compareDocumentPosition(screen.getByText('3')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(detail.parentElement).not.toHaveClass('v2-hint--open');
-    fireEvent.mouseEnter(hint.parentElement!);
+    hoverPointer('pointerOver', hint.parentElement!);
     expect(detail.parentElement).toHaveClass('v2-hint--open');
-    fireEvent.mouseLeave(hint.parentElement!);
+    hoverPointer('pointerOut', hint.parentElement!);
     expect(detail.parentElement).not.toHaveClass('v2-hint--open');
     fireEvent.focus(hint);
     expect(detail.parentElement).toHaveClass('v2-hint--open');
