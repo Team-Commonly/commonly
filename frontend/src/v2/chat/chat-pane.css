@@ -603,7 +603,7 @@
    the pencil there would slide the "i" under the finger. */
 @media (max-width: 760px) and (hover: none) {
   .v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:has(.v2-hint--open)) button.v2-pod-header__rename-open:not(:focus) {
-    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
 }
 /* An open hint shows the pencil for any pointer. The rest rule's opacity: 0
@@ -616,7 +616,7 @@
    and closes it. Hovering the line keeps it. */
 @media (max-width: 760px) and (hover: hover) {
   .v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) button.v2-pod-header__rename-open:not(:focus) {
-    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
 }
 
