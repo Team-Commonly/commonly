@@ -45,6 +45,7 @@ const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const { adapterFailure } = await import('../src/lib/upstream-refusal.js');
 const { publicCodexVersionError } = await import('../src/lib/adapters/tested-version.js');
+const { PUBLIC_TOOL_FAILED_CODE } = await import('../src/lib/public-tool-error.js');
 
 const DRAIN_DEPTH = 40;
 const drainMicrotasks = async () => {
@@ -391,6 +392,44 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
     await drainMicrotasks();
     expect(noticesIn(server.post)).toHaveLength(1);
     expect(noticesIn(server.post)[0][1].content).toContain('used up its allowance');
+    run.handle.stop();
+  });
+
+  test.each([
+    ['an OpenAI key', 'codex turn failed: Quota exceeded. Check your plan and billing details.'],
+    ['an Anthropic key', 'claude exited with code 1: Credit balance is too low'],
+  ])('%s out of credit says so, and waits out the long circuit', async (_name, message) => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(new Error(message));
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(1);
+    expect(noticesIn(server.post)[0][1].content).toContain('used up its allowance');
+    expect(retryReports(run.errors)[0]).toMatchObject({ failureClass: 'quota', circuitOpen: true });
+    expect(server.acks).toEqual([]);
+    run.handle.stop();
+  });
+
+  test('a turn that finished with a tool result quoting the words posts its reply and no notice', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'what did the API say?')]] });
+    const reply = 'The tool said: insufficient_quota. Your credit balance is too low to access the Anthropic API.';
+    const spawn = jest.fn().mockResolvedValue({ text: reply });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(turnPostsIn(server.post).map(([, body]) => body.content)).toEqual([reply]);
+    run.handle.stop();
+  });
+
+  test('a public seat withholding a tool\'s quota error posts no notice and takes no quota circuit', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(Object.assign(
+      new Error('public seat withheld this turn\'s reply: tool failed (Credit balance is too low)'),
+      { code: PUBLIC_TOOL_FAILED_CODE },
+    ));
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(0);
+    expect(retryReports(run.errors)[0].failureClass).toBe('runtime');
     run.handle.stop();
   });
 

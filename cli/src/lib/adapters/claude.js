@@ -895,20 +895,31 @@ const turnReply = (stdout, { credentials, publicMcp }) => {
   return redactKnownCredentials(claudeResultText(stdout, { credentials }), credentials);
 };
 
-// The failure tail for a non-zero exit. Stream events are mostly system init
-// and status lines, which would push the terminal error past the 2000-char cut,
-// so keep the result text, or the lines that are not system or stream events.
+// A line of stdout the CLI wrote as a failure, not as part of the turn's stream:
+// prose, or an API body printed whole. A keep-list, because a typed event holds
+// the model's words or a tool's. Unparsed text opening like an event is the last
+// one, torn by the crash.
+const isCliFailureLine = (line, event) => (event
+  ? event.type === undefined || event.type === 'error'
+  : !line.trimStart().startsWith('{"'));
+
+// The failure tail for a non-zero exit. The status scan, the failure class and
+// the pod's notice all read this text, so it holds only the CLI's own words: a
+// tool result quoting `| 429: ` once named the turn's status and cut the body
+// past the JSON it sat in (F235). So the result text counts only when flagged
+// is_error. At is_error false it's the model's answer, and a crash after it says
+// nothing about the provider. A failed result with no text keeps its subtype.
+// The cost: a crash with no result event loses a synthetic API-error assistant
+// event, so it classes runtime, and the seat log loses the turn's last lines.
 export const claudeFailureTail = (stdout) => {
-  const text = String(stdout || '');
-  const lines = text.split('\n');
+  const lines = String(stdout || '').split('\n');
   const events = lines.map(parseEvent);
-  if (!events.some(Boolean)) return text.trim();
   const result = [...events].reverse().find((event) => event?.type === 'result');
-  if (String(result?.result ?? '').trim()) return String(result.result).trim();
-  return lines
-    .filter((_, i) => !['system', 'stream_event'].includes(events[i]?.type))
-    .join('\n')
-    .trim();
+  const failed = result?.is_error === true;
+  if (failed && String(result.result ?? '').trim()) return String(result.result).trim();
+  const subtype = failed && /^\w{1,40}$/.test(result.subtype) ? result.subtype : '';
+  const prose = lines.filter((line, i) => isCliFailureLine(line, events[i])).join('\n').trim();
+  return [prose, subtype].filter(Boolean).join('\n');
 };
 
 const runClaude = ({

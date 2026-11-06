@@ -724,6 +724,41 @@ describe('claudeFailureTail', () => {
     expect(claudeFailureTail(stdout)).toBe('Claude AI usage limit reached');
   });
 
+  test('keeps the lines the CLI wrote as prose or a bare error body, and no stream events', () => {
+    const stdout = [
+      '{"type":"system","subtype":"init"}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"model"}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"tool"}]}}',
+      '{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"}}',
+      'plain prose',
+      '{"error":{"message":"an untyped body"}}',
+      '{"type":"error","error":{"message":"a typed body"}}',
+      '{"type":"user","message":{"content":"torn',
+    ].join('\n');
+    expect(claudeFailureTail(stdout)).toBe([
+      'plain prose',
+      '{"error":{"message":"an untyped body"}}',
+      '{"type":"error","error":{"message":"a typed body"}}',
+    ].join('\n'));
+  });
+
+  test('a torn event as the only output leaves nothing', () => {
+    expect(claudeFailureTail('{"type":"user","message":{"content":"to')).toBe('');
+  });
+
+  test('a result that is not an error contributes no text', () => {
+    expect(claudeFailureTail('{"type":"result","subtype":"success","is_error":false,"result":"the model\'s answer"}')).toBe('');
+  });
+
+  test.each([
+    ['alone', '{"type":"result","subtype":"error_max_turns","is_error":true}', 'error_max_turns'],
+    ['after prose', 'a line\n{"type":"result","subtype":"error_max_turns","is_error":true}', 'a line\nerror_max_turns'],
+    ['that is not a bare word', '{"type":"result","subtype":"429: a tool","is_error":true}', ''],
+    ['on a result that is not an error', '{"type":"result","subtype":"success","is_error":false}', ''],
+  ])('a result with no text names its subtype %s', (_name, stdout, tail) => {
+    expect(claudeFailureTail(stdout)).toBe(tail);
+  });
+
   test('without a result event, keeps the non-system lines and drops init and stream deltas', () => {
     const stdout = [
       '{"type":"system","subtype":"init"}',

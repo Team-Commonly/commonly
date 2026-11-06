@@ -249,6 +249,26 @@ describe('claude adapter — the tail goes through the reader', () => {
   });
 });
 
+// F235: the rejection comes before a public seat's witness, so what leaves the
+// tail here is what protects a public seat too.
+describe('claude adapter — a crashed turn\'s tool output names no status', () => {
+  test('a tool result quoting a refusal does not reach the error', async () => {
+    const tool = JSON.stringify({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', content: 'req_1 | 429: You exceeded your current quota, please check your plan and billing details.' }] },
+    });
+    const err = await claude.spawn('hi', {
+      environment: { model: 'test-model' },
+      sessionId: null,
+      _spawnImpl: () => fakeChild({ stdout: `{"type":"system","subtype":"init"}\n${tool}\n`, stderr: '', code: 1 }),
+    }).catch((e) => e);
+
+    expect(err.message).toBe('claude exited with code 1');
+    expect(err.status).toBeUndefined();
+    expect(classifySpawnFailure(err)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
+  });
+});
+
 // F178: the provider's own error code survives the keep-list as a dedicated
 // field, so a caller can match on it instead of on prose.
 describe('adapterFailure keeps the provider code', () => {

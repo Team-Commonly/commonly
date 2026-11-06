@@ -97,11 +97,40 @@ waiting on an answer. It covers three causes: a key or login the provider
 refused, a seat that wouldn't start, and an allowance or budget that ran out. A
 pod hears each cause at most once an hour, and a restart doesn't reset that.
 
-The line fires on exact wordings, not on the failure classes in `spawn-retry.js`.
-A class only picks a backoff, so a loose match there costs a slower retry. Here
-it would tell a person something untrue: a panic at `client.rs:401` is not an
-expired key. A new wording goes in the list once a seat has logged it, and
-anything unmatched stays silent in the pod, as it was before.
+Every line fires on exact wordings. A failure class alone never fires one: a
+class only picks a backoff, so a loose match there costs a slower retry. Here it
+would tell a person something untrue: a panic at `client.rs:401` is not an
+expired key.
+
+The allowance line has two gates. The failure must class as QUOTA in
+`classifySpawnFailure`, and the text before any JSON tail must match an
+`OUT_OF_ALLOWANCE_WORDINGS` entry. A word in only one of them posts nothing:
+`billing` is QUOTA with no wording, and a wording that classes as something else
+stays silent too, so a new allowance failure needs an entry in both. The key and
+wouldn't-start lines have the wording gate only.
+
+A new wording goes in a list once a seat has logged it or the vendor publishes
+it, and anything unmatched stays silent in the pod, as it was before. An API key
+out of credit uses the allowance line as it stands, since whoever runs the seat
+holds the key and adds the credit. OpenAI's `insufficient_quota` and
+`credit_balance_exhausted`, Codex's `Quota exceeded.` and Anthropic's credit
+balance errors all fire it, but only right after the adapter's own label or the
+` | ` join, directly or through a known CLI wrapper. The same words later in a
+log line post nothing, so a form wrapped some other way, such as `Error: Your
+credit balance...`, stays silent too.
+
+`credit_balance_exhausted` is QUOTA only while the code is in the error text. A
+body the keep-list reduces keeps its message and moves the code to
+`error.providerCode`, which neither the class nor the line reads, because that
+field can come from a tool's JSON. Such a refusal keeps the rate-limit class,
+probes after 60 seconds and posts nothing, unless its message carries a published
+wording.
+
+What a crashed Claude turn feeds these checks comes from `claudeFailureTail`, which
+keeps only the CLI's own words: prose lines, a bare API body, and the text of a
+result flagged `is_error`. Assistant and tool events leave the tail, and so does a
+result's text at `is_error: false`, even at a non-zero exit. A tool result quoting
+`| 429: ` used to name the turn's status from there.
 
 The line never quotes the error. A gateway budget refusal carries a masked key,
 its alias and dollar figures.
