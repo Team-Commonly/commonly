@@ -209,6 +209,28 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
     expect(res.body.agents[0].connection.state).toBe('revoked');
   });
 
+  it('does not call a daemon seat stopped because a hosted row of the identity was', async () => {
+    AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
+      agentName: 'local',
+      config: new Map([
+        ['runtime', { runtimeType: 'hosted' }],
+        ['hosted', { provisionedAt: null, deprovisionedAt: new Date() }],
+      ]),
+    })]);
+    User.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      _id: 'bot-1', username: 'local-default', botMetadata: { machineId: 'machine-1' }, agentRuntimeTokens: [],
+    }]) }) });
+    AgentCredential.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([
+      { kind: 'daemon', machineId: 'machine-1', status: 'active' },
+    ]) }) });
+    Machine.find.mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([{
+      machineId: 'machine-1', lastSeenAt: new Date(),
+    }]) }) });
+    const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
+    expect(res.status).toBe(200);
+    expect(res.body.agents[0].connection.state).not.toBe('stopped');
+  });
+
   it('projects a running daemon-bound wrapper from its live machine and active seat key', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation({
       agentName: 'local', config: new Map([['runtime', { runtimeType: 'wrapper' }]]),

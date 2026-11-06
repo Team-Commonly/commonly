@@ -456,11 +456,6 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         if (runtimeType === 'native' || hostedRunsNative(i)) {
           return { ...payload, connection: { state: 'available', lastSeenAt: null } };
         }
-        // Its owner stopped it, which is an answer, not a missing status.
-        const hostedRecord = readHostedConfig(i);
-        if (runtimeType === 'hosted' && hostedRecord.deprovisionedAt && !hostedRecord.provisionedAt) {
-          return { ...payload, connection: { state: 'stopped', lastSeenAt: null } };
-        }
         // Legacy local-cli installs are normalized to their harness name
         // (codex/claude-code) in the public payload. Host, not that label,
         // identifies a BYO listener whose credential use proves liveness.
@@ -472,6 +467,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // machine-key action and Reconnect link on that field, not on connection.
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
+        // Its owner stopped it, which is an answer, not a missing status. A
+        // daemon seat sharing the identity is still running, so it goes on.
+        const hostedRecord = readHostedConfig(i);
+        if (!daemonBound && runtimeType === 'hosted' && hostedRecord.deprovisionedAt && !hostedRecord.provisionedAt) {
+          return { ...payload, connection: { state: 'stopped', lastSeenAt: null } };
+        }
         // The harness label moves to `adapter`, so the chat tag keeps naming it.
         // The poller's report (TASK-704) outranks a stale runtimeType declaration:
         // a seat declared codex that polls claude must not project codex here.
