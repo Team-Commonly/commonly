@@ -42,8 +42,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
-import { probeVersion } from './tested-version.js';
-import { parseVersion } from '../mcp-server-version.js';
+import { meetsMinimumVersion, probeVersion, publicCodexVersionError } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { accessSync, constants, existsSync, realpathSync } from 'fs';
@@ -577,7 +576,7 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
 //   from the `exec` tool of code-mode models.
 // - `features.multi_agent` removes the agent tools from a model on the v1 agent
 //   tools, but a thread started without it keeps them when resumed, so
-//   `agents.max_depth=0` (below) covers that thread. A model whose catalog entry says
+//   `agents.max_depth=0` covers that thread. A model whose catalog entry says
 //   `multi_agent_version: "v2"` keeps `collaboration.*` in its tool list whatever
 //   these say, so the v2 cap is what stops it: at 1 the root thread fills it, and
 //   spawn_agent returns "agent thread limit reached". `agents.max_threads` doesn't
@@ -586,34 +585,31 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
 // - `features.goals` removes the goal tools. A goal is kept on the thread and
 //   comes back in the next turn's context.
 //
-// Measured on codex-cli 0.162.1, against the tool list sent to the model on
-// gpt-5.5, gpt-5.6 and gpt-6 models (adapters.codex.public-tools.test.mjs).
-// 0.133.0, 0.149.1 and 0.159.3 all start with this set, ignoring a key they don't
-// know. Of these, only the `web_search` value could fail a start, as it's an
-// enum, and "disabled" is valid on all four.
+// Measured against the tool list sent to the model, on codex-cli 0.162.1 with
+// gpt-5.5, gpt-5.6 and gpt-6 models and on 0.159.3 with gpt-5.5 and gpt-6 models
+// (adapters.codex.public-tools.test.mjs).
 const PUBLIC_BUILTIN_TOOL_FLAGS = Object.freeze([
   '-c', 'web_search="disabled"',
   '-c', 'features.multi_agent=false',
   '-c', 'features.multi_agent_v2.max_concurrent_threads_per_session=1',
   '-c', 'features.goals=false',
+  '-c', 'agents.max_depth=0',
 ]);
 
-// Unlike the set above, `agents.max_depth=0` can stop a start: codex-cli 0.133.0
-// exits with "agents.max_depth must be at least 1", and 0.149.1 is the oldest
-// version measured to take it. So it goes only to a Codex reporting at least that,
-// and a version that can't be read leaves it out, since a seat that starts matters
-// more than a thread from before these settings.
-const ZERO_AGENT_DEPTH_FLAGS = Object.freeze(['-c', 'agents.max_depth=0']);
-const ZERO_AGENT_DEPTH_MIN_VERSION = [0, 149, 1];
+// A public seat needs a tested Codex version: below this one it runs no turn.
+// Tested on macOS with the real binary, through this adapter's public flags: the
+// permission profile (shell and view_image, read and write, network off) and the
+// tool list, on new and resumed threads, on 0.159.3 and 0.162.1. An older version
+// isn't tested to this bar. A later one runs as it is, so the BYO workflows'
+// 0.164.0 is allowed, though these checks have not been run on it, nor on Linux
+// on any version.
+export const PUBLIC_CODEX_MIN_VERSION = '0.159.3';
 
-const acceptsZeroAgentDepth = (version) => {
-  const parsed = parseVersion(version);
-  if (!parsed) return false;
-  const index = parsed.findIndex((part, i) => part !== ZERO_AGENT_DEPTH_MIN_VERSION[i]);
-  return index === -1 || parsed[index] > ZERO_AGENT_DEPTH_MIN_VERSION[index];
-};
-
-const parseCodexVersion = (stdout) => String(stdout).match(/\d+\.\d+\.\d+/)?.[0] || null;
+// The exact line `codex --version` printed on every version tested. Anything else
+// counts as unread: a looser match could take a number from another line.
+const parseCodexVersion = (stdout) => (
+  /^codex-cli (\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$/m.exec(String(stdout))?.[1] || null
+);
 
 const publicPermissionProfileFlags = (
   mode,
@@ -791,7 +787,6 @@ const buildArgs = ({
   modelBaseUrl = null,
   platform = process.platform,
   workspacePath = null,
-  zeroAgentDepth = false,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -803,8 +798,9 @@ const buildArgs = ({
   // The pod is the security perimeter — agent identity is isolated, workspace
   // is PVC-scoped, no host mounts. bwrap inside the pod is redundant.
   // Public laptop wrappers are different: untrusted pod content must never
-  // inherit that bypass. Codex >=0.138 permission profiles provide a native
-  // deny-by-default read/write/network boundary on macOS and Linux. Do not
+  // inherit that bypass. Codex permission profiles provide a native
+  // deny-by-default read/write/network boundary on macOS and Linux, on the
+  // versions spawn admits (PUBLIC_CODEX_MIN_VERSION). Do not
   // pass legacy `--sandbox` alongside them: Codex documents that the legacy
   // mode disables permission-profile composition.
   const executionPolicy = publicSandbox
@@ -820,7 +816,6 @@ const buildArgs = ({
         workspacePath,
       ),
       ...PUBLIC_BUILTIN_TOOL_FLAGS,
-      ...(zeroAgentDepth ? ZERO_AGENT_DEPTH_FLAGS : []),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
@@ -915,6 +910,21 @@ const CODEX_PROVIDER_KEY_ENVS = [
   'OPENAI_API_KEY',
   'CODEX_API_KEY',
 ];
+
+// What the turn will launch, asked for its version. 30 s, as in goose: a first
+// launch after an upgrade can be slow. A failed probe isn't cached, so the next
+// turn reads it again. `_codexVersion` and `_versionProbe` are test seams only.
+const readCodexVersion = async (ctx, env) => {
+  if (ctx._codexVersion !== undefined) return ctx._codexVersion;
+  try {
+    const { command, args } = resolveLaunch('codex', [], { env, ...ctx._commandResolution });
+    return await probeVersion(command, {
+      args, env, timeoutMs: 30000, parse: parseCodexVersion, ...ctx._versionProbe,
+    });
+  } catch {
+    return null;
+  }
+};
 
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
@@ -1092,15 +1102,16 @@ export default {
         else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
       }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // Before the public home is prepared, so a refused seat changes nothing.
+      if (publicSandboxMode !== null) {
+        const codexVersion = await readCodexVersion(ctx, childEnv);
+        if (!meetsMinimumVersion(codexVersion, PUBLIC_CODEX_MIN_VERSION)) {
+          throw publicCodexVersionError({ found: codexVersion, required: PUBLIC_CODEX_MIN_VERSION });
+        }
+      }
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv)
         : null;
-      // 30 s, as in goose: a first launch after an upgrade can be slow, and an
-      // unread version drops agents.max_depth=0 for this turn. A failed probe
-      // isn't cached, so the next turn reads it again.
-      const codexVersion = publicSandboxMode === null ? null
-        : ctx._codexVersion !== undefined ? ctx._codexVersion // test seam only
-          : await probeVersion('codex', { env: childEnv, timeoutMs: 30000, parse: parseCodexVersion }).catch(() => null);
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -1115,7 +1126,6 @@ export default {
         modelBaseUrl,
         platform: ctx._platform || process.platform,
         workspacePath,
-        zeroAgentDepth: acceptsZeroAgentDepth(codexVersion),
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

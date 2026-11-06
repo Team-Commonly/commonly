@@ -16,6 +16,7 @@
  * which is what it did before.
  */
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
+import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
 import { classifySpawnFailure, GATEWAY_BUDGET_RE, SPAWN_FAILURE_CLASS } from './spawn-retry.js';
 
 /** How long one cause stays posted in a pod before the seat may post it again. */
@@ -54,12 +55,18 @@ export const WONT_START_NOTICE = 'I can’t answer right now: the tool I run on 
 export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI account I run on has used up its allowance. '
   + `It needs to reset, or whoever runs me needs to add more. ${AGAIN}`;
 
+export const codexVersionNotice = (required) => 'I can’t answer right now: the computer I run on needs '
+  + `Codex ${required} or newer. Whoever runs me needs to upgrade it and start me again. ${AGAIN}`;
+
 const matches = (wordings, text) => wordings.some((wording) => wording.test(text));
 
 /** The cause a pod should hear about, and its line, or null when it should hear nothing. */
 export const cantAnswerNotice = (error) => {
   // A public seat's withheld turn quotes a TOOL's error, not its own provider's.
   if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) return null;
+  if (error?.code === PUBLIC_CODEX_VERSION_CODE) {
+    return { cause: 'codex-version', text: codexVersionNotice(error.requiredVersion) };
+  }
   // A crashed claude turn keeps assistant and tool JSON lines in its tail, and
   // those are the model's words, or a tool's.
   const text = String(error?.message ?? '').split(/(?:^|: | \| |\n)\{"type":/)[0];

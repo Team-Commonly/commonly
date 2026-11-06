@@ -35,7 +35,13 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const { default: codex, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+const { default: codexAdapter, codexNativeBinary } = await import('../src/lib/adapters/codex.js');
+// These turns use a fake spawn, so no Codex answers for its version. A test of
+// the version itself is in adapters.codex.version-floor.test.mjs.
+const codex = {
+  ...codexAdapter,
+  spawn: (prompt, ctx) => codexAdapter.spawn(prompt, { _codexVersion: '0.162.1', ...ctx }),
+};
 const {
   BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR,
 } = await import('../src/lib/adapters/codex-broker-bridge.mjs');
@@ -1886,7 +1892,7 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
 
   const zeroDepth = 'agents.max_depth=0';
 
-  const spawnSeat = async ({ sandbox, sessionId = null, version = '0.162.1' }) => {
+  const spawnSeat = async ({ sandbox, sessionId = null }) => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const root = await mkdtemp(join(tmpdir(), 'commonly-codex-builtins-'));
     try {
@@ -1897,7 +1903,6 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
         env: { ...process.env, CODEX_HOME: join(root, 'operator') },
         agentName: 'builtins-test-agent',
         _publicCodexHome: join(root, 'public'),
-        _codexVersion: version,
         _spawnImpl: impl,
       });
     } finally {
@@ -1920,20 +1925,10 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
     expect(configFlags(args)).toEqual(expect.arrayContaining(builtinFlags));
   });
 
-  test.each([
-    ['0.149.1', true],
-    ['0.149.2', true],
-    ['0.150.0', true],
-    ['0.162.1', true],
-    ['1.0.0', true],
-    ['0.149.0', false],
-    ['0.133.0', false],
-    [null, false],
-    ['unknown', false],
-  ])('agent depth 0 goes to a Codex that takes it: %s', async (version, sent) => {
-    const flags = configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, version }));
-    expect(flags.includes(zeroDepth)).toBe(sent);
-    expect(flags).toEqual(expect.arrayContaining(builtinFlags));
+  test('agent depth 0 goes to every public seat', async () => {
+    expect(configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } }))).toContain(zeroDepth);
+    expect(configFlags(await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, sessionId: 'thread-1' })))
+      .toContain(zeroDepth);
   });
 
   test('a private seat keeps Codex\'s built-ins', async () => {

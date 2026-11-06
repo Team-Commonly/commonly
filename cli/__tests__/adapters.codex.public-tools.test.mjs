@@ -182,6 +182,36 @@ describeWithCodex('a public codex seat, on the real binary', () => {
     expect(outputOf(last, 'outside')).toContain('Operation not permitted');
   });
 
+  test('a denied folder stays closed to the shell and view_image', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const denied = await mkdtemp('/private/tmp/commonly-codex-denied-');
+    try {
+      const file = join(denied, 'a.png');
+      await writeFile(file, png);
+      const requests = await runTurn({
+        modelName: 'gpt-5.5',
+        reply: (index) => [
+          [{ type: 'function_call', name: 'view_image', call_id: 'view', arguments: JSON.stringify({ path: file }) }],
+          [{
+            type: 'function_call',
+            name: 'exec_command',
+            call_id: 'shell',
+            arguments: JSON.stringify({ cmd: `wc -c < ${file}`, yield_time_ms: 3000 }),
+          }],
+        ][index] || null,
+      });
+      const last = requests.at(-1).body;
+      expect(outputOf(last, 'view')).toContain('Operation not permitted');
+      expect(outputOf(last, 'view')).not.toContain('data:image');
+      expect(outputOf(last, 'shell')).toContain('operation not permitted');
+    } finally {
+      await rm(denied, { recursive: true, force: true });
+    }
+  });
+
   test('a gpt-6 model lists its agent tools but cannot start an agent', async () => {
     const requests = await runTurn({
       modelName: 'gpt-6-astra',

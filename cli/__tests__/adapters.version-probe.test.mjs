@@ -16,7 +16,7 @@ import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import qwen, { TESTED_QWEN_VERSIONS } from '../src/lib/adapters/qwen.js';
 import goose, { TESTED_GOOSE_VERSIONS } from '../src/lib/adapters/goose.js';
-import { probeVersion } from '../src/lib/adapters/tested-version.js';
+import { meetsMinimumVersion, probeVersion } from '../src/lib/adapters/tested-version.js';
 
 let root;
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'version-probe-')); });
@@ -173,5 +173,43 @@ describe('a bare binary name', () => {
       env: { PATH: join(root, 'empty') }, parse, cache,
     }));
     expect(cache.size).toBe(0);
+  });
+
+  test('a launch with its own argv runs that argv, and is asked every time', async () => {
+    const script = join(root, 'launcher.cjs');
+    await writeFile(script, 'console.log(process.argv.slice(2).join(" ") === "--version" ? "1.2.3" : "wrong argv");\n');
+    const cache = new Map();
+    const ran = [];
+    const execFileImpl = (cmd, args, ...rest) => { ran.push(args); return childProcess.execFile(cmd, args, ...rest); };
+    const ask = () => probeVersion(process.execPath, {
+      args: [script], env: {}, parse, cache, execFileImpl,
+    });
+    expect(await ask()).toBe('1.2.3');
+    expect(await ask()).toBe('1.2.3');
+    // The interpreter's path says nothing about which script it would run.
+    expect(cache.size).toBe(0);
+    expect(ran).toEqual([[script, '--version'], [script, '--version']]);
+  });
+});
+
+describe('meetsMinimumVersion', () => {
+  test.each([
+    ['0.159.3', true],
+    ['0.159.4', true],
+    ['0.160.0', true],
+    ['1.0.0', true],
+    ['0.170.0-beta.2', true],
+    ['0.159.2', false],
+    ['0.158.9', false],
+    ['0.159.3-alpha.1', false],
+    ['0.159', false],
+    ['0.159.3/../x', false],
+    ['v0.159.3', false],
+    ['unknown', false],
+    ['', false],
+    [null, false],
+    [undefined, false],
+  ])('%s against 0.159.3: %s', (version, meets) => {
+    expect(meetsMinimumVersion(version, '0.159.3')).toBe(meets);
   });
 });

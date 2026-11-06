@@ -8,6 +8,7 @@ import {
   spawnRetryJitter,
   spawnRetryPolicy,
 } from '../src/lib/spawn-retry.js';
+import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 
 describe('spawn retry policy', () => {
   test.each([
@@ -354,5 +355,20 @@ describe('a public witness failure is a runtime failure, whatever its text says'
   test('positive control: the same text without the code still classes as a refusal', () => {
     expect(classifySpawnFailure(new Error('{"status":500,"message":"content_policy_violation"}')))
       .toBe(SPAWN_FAILURE_CLASS.CONTENT_REFUSED);
+  });
+});
+
+describe('a public seat refused for its Codex version', () => {
+  test('is a configuration failure, so the seat waits instead of respawning', () => {
+    const error = publicCodexVersionError({ found: '0.149.1', required: '0.159.3' });
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.CONFIGURATION);
+    expect(spawnRetryPolicy({
+      error, consecutiveFailures: 1, intervalMs: 5000, jitterRatio: 0,
+    }).delayMs).toBe(SPAWN_RETRY_MAX_MS);
+  });
+
+  test('so is one whose version could not be read', () => {
+    expect(classifySpawnFailure(publicCodexVersionError({ found: null, required: '0.159.3' })))
+      .toBe(SPAWN_FAILURE_CLASS.CONFIGURATION);
   });
 });

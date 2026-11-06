@@ -8,6 +8,7 @@
  */
 
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
+import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
 
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
@@ -138,6 +139,8 @@ export const classifySpawnFailure = (error) => {
       ? SPAWN_FAILURE_CLASS.RATE_LIMIT
       : SPAWN_FAILURE_CLASS.RUNTIME;
   }
+  // Only whoever runs the seat can change this, so it waits as a missing CLI does.
+  if (error?.code === PUBLIC_CODEX_VERSION_CODE) return SPAWN_FAILURE_CLASS.CONFIGURATION;
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
   if (CONTENT_REFUSED_RE.test(text)) return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
