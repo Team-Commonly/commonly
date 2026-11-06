@@ -365,6 +365,9 @@ paths:
                   hasMore:
                     type: boolean
                     description: True when another older page exists.
+                  otherAgentsInPod:
+                    type: boolean
+                    description: True when an agent besides the caller is installed in this pod. Left out if the count failed.
         '400':
           description: Invalid or unsupported query parameter
           content:

@@ -2106,7 +2106,16 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     // `mention`: the @handle routing resolves for the author, so a reply can
     // address them without guessing from the display name in `username`.
     const withMention = await AgentMessageService.withMentionHandles(page, req.params.podId);
-    return res.json({ messages: withMention, hasMore });
+    // Tells the CLI wrapper who an open question is put to. Left out if the count
+    // fails: a read of the pod must not fail on it, and the wrapper treats a
+    // missing field as unknown.
+    let otherAgentsInPod;
+    try {
+      otherAgentsInPod = await AgentInstallation.countDocuments({ podId, status: 'active' }) > 1;
+    } catch (countError: any) {
+      console.warn('[agents-runtime] Failed to count pod agents:', countError?.message);
+    }
+    return res.json({ messages: withMention, hasMore, otherAgentsInPod });
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });

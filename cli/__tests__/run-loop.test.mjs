@@ -1797,8 +1797,7 @@ describe('performRun', () => {
     + 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
     + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
     + 'Only point them to a feature or option you know exists. '
-    + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.'
-    + ' A question put to the room isn\'t asked of you: if you can\'t help with it, end with NO_REPLY.';
+    + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
 
   const firstPromptFor = async (events) => {
     createClient.mockReturnValue({
@@ -1863,9 +1862,9 @@ describe('performRun', () => {
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
 
-  const promptWithMessages = async (events, messages, { claimHolder } = {}) => {
+  const promptWithMessages = async (events, messages, { claimHolder, otherAgentsInPod } = {}) => {
     createClient.mockReturnValue({
-      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages } : { events })),
+      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages, otherAgentsInPod } : { events })),
       post: jest.fn(async (url) => {
         if (!url.endsWith('/claim')) return {};
         return claimHolder ? { claimed: false, claimedBy: claimHolder } : { claimed: true, expiresAt: 'later' };
@@ -1886,6 +1885,48 @@ describe('performRun', () => {
   };
   const mention = (id, payload = {}) => makeEvent({
     _id: `evt-${id}`, payload: { content: '@seat what is the status?', messageId: id, ...payload },
+  });
+
+  describe('a question put to the room', () => {
+    const WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
+      + 'if you can\'t help with it, end with NO_REPLY.';
+    const ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
+      + 'answer it, even if the answer is that you can\'t help.';
+    const openQuestion = () => makeEvent({
+      _id: 'evt-open', type: 'message.posted', payload: { content: 'can anyone export this?', messageId: 'm1' },
+    });
+    const human = [{ _id: 'm1', isBot: false }];
+
+    test('with another agent here, a seat that can\'t help may stay out of it', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human, { otherAgentsInPod: true });
+      expect(prompt).toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('alone, the seat answers, even that it can\'t help', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human, { otherAgentsInPod: false });
+      expect(prompt).toContain(ALONE);
+      expect(prompt).not.toContain(WITH_PEERS);
+    });
+
+    test('an older server reports nothing, so neither line is added', async () => {
+      const prompt = await promptWithMessages([openQuestion()], human);
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a heartbeat alone is not told to answer anything', async () => {
+      const prompt = await promptWithMessages(
+        [makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: {} })], [], { otherAgentsInPod: false },
+      );
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test('a person\'s direct @ gets neither line, even with another agent here', async () => {
+      const prompt = await promptWithMessages([mention('m1')], human, { otherAgentsInPod: true });
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
   });
 
   test('a person\'s direct @ is not offered silence', async () => {

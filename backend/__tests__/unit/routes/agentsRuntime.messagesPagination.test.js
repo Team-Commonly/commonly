@@ -45,13 +45,14 @@ jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
+  AgentInstallation: { findOne: jest.fn(), find: jest.fn(), countDocuments: jest.fn() },
 }));
 
 const express = require('express');
 const request = require('supertest');
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 const router = require('../../../routes/agentsRuntime');
 
 const app = express();
@@ -83,8 +84,33 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
         { id: 'page-newest', createdAt: '2026-07-31T22:00:00.000Z' },
       ],
       hasMore: true,
+      otherAgentsInPod: false,
     });
     expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [1, false],
+    [2, true],
+  ])('with %i active installs, otherAgentsInPod is %s', async (count, expected) => {
+    AgentMessageService.getRecentMessages.mockResolvedValue([]);
+    AgentInstallation.countDocuments.mockResolvedValue(count);
+
+    const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+
+    expect(res.status).toBe(200);
+    expect(res.body.otherAgentsInPod).toBe(expected);
+    expect(AgentInstallation.countDocuments).toHaveBeenCalledWith({ podId: 'pod-1', status: 'active' });
+  });
+
+  test('a failed count leaves the field out and still returns the messages', async () => {
+    AgentMessageService.getRecentMessages.mockResolvedValue([]);
+    AgentInstallation.countDocuments.mockRejectedValueOnce(new Error('mongo down'));
+
+    const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ messages: [], hasMore: false });
   });
 
   test('reports end-of-history when the extra row is absent', async () => {

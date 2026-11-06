@@ -1581,8 +1581,7 @@ export const runMemoryImport = async ({
 // request it can't meet, so it gives a heartbeat no reason to post. Every closing
 // line carries it, and it says where the note goes once the agent has posted.
 // Walked 11-06: a seat offered an export feature that wasn't found, so a next
-// step has to be one it knows exists, and an open question drew an "I can't"
-// from a seat nobody addressed, so FINAL_TEXT_IS_POSTED sends that to NO_REPLY.
+// step has to be one it knows exists.
 const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\'t go silent: say in plain words what didn\'t work and what they can do next, '
   + 'without event types, checkpoints, deliveries, retries, status codes or other runtime terms unless they asked about them. '
   + 'Only point them to a feature or option you know exists. '
@@ -1598,8 +1597,25 @@ const FAILURE_IN_PLAIN_WORDS = 'If you can\'t do what someone asked of you, don\
 // agent.ask does not: its final text goes only to the asking agent.
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary. '
-  + FAILURE_IN_PLAIN_WORDS
-  + ' A question put to the room isn\'t asked of you: if you can\'t help with it, end with NO_REPLY.';
+  + FAILURE_IN_PLAIN_WORDS;
+
+// Who owes an open question an answer depends on who else is here. Walked 11-06:
+// "can anyone…" drew an "I can't" from a seat nobody addressed, which in a busy
+// pod could be every seat. Alone, though, the question is to this seat, and
+// silence is the worst answer a new person can get. An older server doesn't
+// report the pod's agents, so neither line is added. A heartbeat isn't told to
+// answer: nobody asked it anything this turn.
+const ROOM_QUESTION_WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
+  + 'if you can\'t help with it, end with NO_REPLY.';
+const ROOM_QUESTION_ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
+  + 'answer it, even if the answer is that you can\'t help.';
+const roomQuestionLine = (otherAgentsInPod, entries) => {
+  if (otherAgentsInPod === true) return ` ${ROOM_QUESTION_WITH_PEERS}`;
+  if (otherAgentsInPod === false && entries.some((entry) => entry.event.type !== 'heartbeat')) {
+    return ` ${ROOM_QUESTION_ALONE}`;
+  }
+  return '';
+};
 
 // The same line for a comment @ (F225), whose final text goes to the comment.
 // A person who @'d the seat is not offered silence, only the tool's exit.
@@ -3122,7 +3138,7 @@ export const performRun = ({
   // the next turn shows it. Additional pending
   // events stay in the kernel queue and are cued in the header for a later
   // pull, rather than being silently consumed here.
-  const buildInboxPrompt = (entries, inboxCount = entries.length) => {
+  const buildInboxPrompt = (entries, inboxCount = entries.length, otherAgentsInPod = null) => {
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
@@ -3184,7 +3200,8 @@ export const performRun = ({
             + 'For anything else here, post only an action or a materially useful response. '
             + FINAL_TEXT_ANSWERS_A_PERSON
           : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
-            + FINAL_TEXT_IS_POSTED),
+            + FINAL_TEXT_IS_POSTED
+            + roomQuestionLine(otherAgentsInPod, shownEntries)),
     ].join('\n\n');
   };
 
@@ -3568,11 +3585,15 @@ export const performRun = ({
       }
     }
 
+    // Null until the server says: a failed read or an older server is unknown,
+    // not "alone" and not "with peers".
+    let otherAgentsInPod = null;
     const snapshotMessages = async () => {
       try {
-        const { messages = [] } = await client.get(
+        const { messages = [], otherAgentsInPod: others } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
+        if (typeof others === 'boolean') otherAgentsInPod = others;
         return messages;
       } catch {
         return null;
@@ -3753,7 +3774,7 @@ export const performRun = ({
           },
         },
         eventPodId,
-        prompt: buildInboxPrompt([entry], 1),
+        prompt: buildInboxPrompt([entry], 1, otherAgentsInPod),
         preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
@@ -3768,7 +3789,7 @@ export const performRun = ({
         turnResult = await runTurn({
           event: batchEvent,
           eventPodId,
-          prompt: buildInboxPrompt(entries, inboxCount),
+          prompt: buildInboxPrompt(entries, inboxCount, otherAgentsInPod),
           preSpawnIds,
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,
