@@ -33,6 +33,7 @@ const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
+const { IDENTITY_COLLATION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
@@ -470,14 +471,19 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // so reuse would still leak). The owner can always reinstall their own.
     const isFirstPartyShared = !!AgentIdentityService.getAgentTypeConfig(safeAgentName);
     if (!isFirstPartyShared && agent?.ephemeral) {
+      // The caller is this ephemeral entry's publisher by now: the guard above
+      // refuses anyone else, and the self-serve branch only creates an entry
+      // for a bot that is theirs or doesn't exist yet. So what's left to ask is
+      // whether a row names another owner, which a guest's DM row and a row a
+      // mention pulled in don't.
+      //
       // Bare findOne (no .select/.lean chain) to mirror the existingInPod
       // check above and stay compatible with route unit-test mocks.
       const foreignInstall = await AgentInstallation.findOne({
-        agentName: safeAgentName,
-        instanceId: normalizedInstanceId,
+        ...installationIdentityFilter(safeAgentName, normalizedInstanceId),
         installedBy: { $ne: userId },
-      });
-      if (foreignInstall && (!addition || await hasForeignOwner(safeAgentName, normalizedInstanceId, userId))) {
+      }, null, { collation: IDENTITY_COLLATION });
+      if (foreignInstall && await hasForeignOwner(safeAgentName, normalizedInstanceId, userId)) {
         return res.status(409).json({
           code: 'agent_name_taken',
           error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
@@ -921,6 +927,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
+      // A row brought back here is the caller's, as a new one would be. Not in a
+      // DM: a guest can be the caller, so its row keeps the name it has.
+      stampInstaller: !AgentIdentityService.DM_POD_TYPES_GUARD?.has(String(pod.type)),
     });
     if (installsInProcess && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)) {
       await takeBackInstallation(installationKey, previousRow);
@@ -1205,9 +1214,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         .filter((i: any) => i.podId.toString() !== podId)
         .map((i: any) => i.podId)
       : [];
-    // An agent's rows reach pods the caller isn't in, and an add has no reason to
-    // name them.
-    const visibleOtherPodIds = addition && otherPodIds.length
+    // An agent's rows reach pods the caller isn't in, and the answer has no
+    // reason to name them.
+    const visibleOtherPodIds = otherPodIds.length
       ? (await Pod.find({
         _id: { $in: otherPodIds }, $or: [{ members: userId }, { createdBy: userId }],
       }).select('_id').lean()).map((pod: { _id: unknown }) => pod._id)

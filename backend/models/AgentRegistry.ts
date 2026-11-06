@@ -245,7 +245,7 @@ export interface IAgentInstallationRegistry extends Document {
 export interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
-  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
+  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string; stampInstaller?: boolean }): Promise<IAgentInstallationRegistry>;
   upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
   uninstall(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<mongoose.UpdateWriteOpResult>;
   reviveDmRows(agentName: string, instanceId: string, config?: unknown): Promise<void>;
@@ -367,6 +367,13 @@ AgentInstallationSchema.statics.reviveDmRows = function (agentName: string, inst
   return reviveDmRows(this, agentName, instanceId, config);
 };
 
+/**
+ * `stampInstaller` is for a person installing on purpose: a row they bring back
+ * from uninstalled is theirs, as a new row would be. Most callers reactivate on
+ * someone's behalf (an auto-join, an agent's self-install, a DM) and pass a bot
+ * or a guest as `installedBy`, so the row keeps its name unless this is set. A
+ * paused, stale or errored row was never given up, and keeps it either way.
+ */
 AgentInstallationSchema.statics.install = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
   config?: Map<string, unknown>;
@@ -375,13 +382,15 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   installedBy: Types.ObjectId;
   instanceId?: string;
   displayName?: string;
+  stampInstaller?: boolean;
 }) {
   const {
-    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
   } = options;
   const existing = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId });
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
+    if (stampInstaller && existing.status === 'uninstalled') existing.installedBy = installedBy;
     existing.status = 'active';
     existing.version = version;
     existing.config = config;

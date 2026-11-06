@@ -4,6 +4,7 @@
 import { AgentInstallation, AgentRegistry } from '../models/AgentRegistry';
 import Pod from '../models/Pod';
 import { DM_POD_TYPES_GUARD } from './agentIdentityService';
+import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { PROJECTION_OWN_KEYS } from './dmService';
 
 /**
@@ -53,8 +54,8 @@ export const resolveAdditionSource = async (
   agentName: string, instanceId: string, userId: unknown,
 ): Promise<AdditionSource> => {
   const rows = await AgentInstallation.find({
-    agentName, instanceId, installedBy: userId, status: { $ne: 'uninstalled' },
-  }).sort({ createdAt: 1, _id: 1 }).lean() as unknown as SourceRow[];
+    ...installationIdentityFilter(agentName, instanceId), installedBy: userId, status: { $ne: 'uninstalled' },
+  }).collation(IDENTITY_COLLATION).sort({ createdAt: 1, _id: 1 }).lean() as unknown as SourceRow[];
   const pods = await Pod.find({ _id: { $in: rows.map((row) => row.podId) } }).select('type').lean();
   const podType = new Map(pods.map((pod: { _id: unknown; type?: string }) => [String(pod._id), String(pod.type)]));
   const standing = rows.filter((row) => podType.has(String(row.podId)));
@@ -91,8 +92,11 @@ export const withRoutedRuntime = async (
 ): Promise<Record<string, unknown>> => {
   if ((config.runtime as { runtimeType?: unknown } | undefined)?.runtimeType) return config;
   const sibling = await AgentInstallation.findOne({
-    agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $nin: [null, ''] },
-  }).sort({ createdAt: -1 }).select('config.runtime').lean() as { config?: { runtime?: unknown } } | null;
+    ...installationIdentityFilter(agentName, instanceId),
+    status: 'active',
+    'config.runtime.runtimeType': { $nin: [null, ''] },
+  }).collation(IDENTITY_COLLATION).sort({ createdAt: -1 }).select('config.runtime')
+    .lean() as { config?: { runtime?: unknown } } | null;
   return sibling?.config?.runtime ? { ...config, runtime: sibling.config.runtime } : config;
 };
 
@@ -104,8 +108,8 @@ export const hasForeignOwner = async (
   agentName: string, instanceId: string, userId: unknown,
 ): Promise<boolean> => {
   const rows = await AgentInstallation.find({
-    agentName, instanceId, installedBy: { $ne: userId },
-  }).select('podId config.autoJoinSource').lean() as unknown as SourceRow[];
+    ...installationIdentityFilter(agentName, instanceId), installedBy: { $ne: userId },
+  }).collation(IDENTITY_COLLATION).select('podId config.autoJoinSource').lean() as unknown as SourceRow[];
   const candidates = rows.filter((row) => !row.config?.autoJoinSource);
   if (!candidates.length) return false;
   const dmPods = await Pod.find({
