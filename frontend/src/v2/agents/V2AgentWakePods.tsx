@@ -89,20 +89,24 @@ const V2AgentWakePods: React.FC<{
   const committedRef = useRef<Record<string, InstallationSettings>>({});
   const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
   const sendingRef = useRef<Record<string, boolean>>({});
+  const readIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setInstallations([]);
-    setRuntimeNarrowing(null);
-    setHostedHeartbeat(null);
-    setBusyPod(null);
     setError(null);
-    setDraftMinutes({});
-    setDraftOff({});
-    committedRef.current = {};
-    queuedRef.current = {};
-    sendingRef.current = {};
+    // A re-read of the same agent keeps its rows on screen until the new ones land.
+    if (readIdentity.current !== identity) {
+      setLoading(true);
+      setInstallations([]);
+      setRuntimeNarrowing(null);
+      setHostedHeartbeat(null);
+      setBusyPod(null);
+      setDraftMinutes({});
+      setDraftOff({});
+      committedRef.current = {};
+      queuedRef.current = {};
+      sendingRef.current = {};
+    }
     const load = async () => {
       try {
         const settingsResult = await axios.get<{
@@ -124,6 +128,7 @@ const V2AgentWakePods: React.FC<{
           ? t('agentSettings.forbidden') : t('agentSettings.loadError'));
       } finally {
         if (active) {
+          readIdentity.current = identity;
           setLoadedIdentity(identity);
           setLoading(false);
         }
