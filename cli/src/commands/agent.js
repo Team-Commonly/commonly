@@ -736,6 +736,16 @@ const PROMPT_EVENT_TYPES = new Set([
 // is the only one worth holding back.
 const DEFERRABLE_SOLO_EVENT_TYPES = new Set(['first_contact']);
 
+// How long a fresh seat's greeting waits for a person before it runs alone.
+// One poll lost the race on the 0.1.257 walk (2026-11-05): the mention landed
+// just after the hold, the greeting took the next turn alone, and the answer
+// came 50.5 s after the mention instead of 25.7 s. A person who has just
+// connected an agent usually mentions it within its first minute, and the
+// kernel posts the seat's own join line at once, so a quiet connect loses
+// nothing by greeting a minute later. Counted in polls (at least one), so a
+// shorter --interval holds for more polls, not for less time.
+const GREETING_HOLD_MS = 60_000;
+
 // Inside one batch the person's item leads the prompt; the greeting follows it.
 const PERSON_WAITING_EVENT_TYPES = new Set(['chat.mention', 'message.posted', 'dm.message']);
 
@@ -1507,8 +1517,16 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // with no message at all. Only a message with no thread, outside a DM, gets it.
 // The line still allows the overflow rule (post the point, continue under your
 // own root): only threading under the person's message is ruled out.
+//
+// The same walk on 0.1.258, with the mention sharing a turn with the greeting:
+// the seat obeyed that line about threadRootId and passed replyToMessageId
+// instead. The kernel files a reply in its parent's thread
+// (COALESCE(parent.thread_root_id, parent.id) in models/pg/Message.ts), so
+// that threads it too. The line names both fields.
 const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
-  + 'Never set threadRootId to this message\'s id; a long answer may continue under your own top-level post.]';
+  + 'Do not pass this message\'s id as threadRootId or as replyToMessageId: a reply is filed in the thread of '
+  + 'the message it replies to, so either one hides your answer under it. '
+  + 'A long answer may continue under your own top-level post.]';
 
 export const answersInChannel = (entry) => {
   const payload = entry?.event?.payload || {};
@@ -2988,6 +3006,10 @@ export const performRun = ({
   // Spent at most once per run. (CTO review 5623358693.)
   let heldGreeting = [];
   let greetingHoldSpent = false;
+  // Polls the connect-time greeting has been carried, against the window.
+  let greetingHeldPolls = 0;
+  let greetingHoldStartedAt = null;
+  const greetingHoldPolls = Math.max(1, Math.ceil(GREETING_HOLD_MS / Math.max(1, Number(intervalMs) || 1)));
 
   // The same is true of a batch whose turn FAILED: its events are claimed, so
   // scheduling a later poll retries nothing — the next poll cannot return
@@ -3463,8 +3485,16 @@ export const performRun = ({
       // The liveness clock runs from here until the next scheduled wait, paused
       // only while a model turn runs (lib/poll-liveness.js).
       pollLiveness.arm();
+      // Leave room for what this loop carries (a held greeting, a failed
+      // batch), so a carried event never pushes a full page past the prompt's
+      // body cap and a busy pod can't keep the greeting out (CodeRabbit on
+      // #3511). The overflow pass below stays as the backstop.
+      // Only wake events count: the server's page cap is on wakes, and a
+      // carried digest row takes no body (CodeRabbit on #3511).
+      const carriedCount = [...heldRetry, ...heldGreeting]
+        .filter((event) => event.deliveryMode !== 'digest').length;
       const page = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: batchLimit,
+        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
       pollLiveness.arm();
@@ -3512,7 +3542,22 @@ export const performRun = ({
         group.push(event);
         eventGroups.set(key, group);
       }
-      const groups = [...eventGroups.values()];
+      // A carried greeting must not push a full page past the prompt's body
+      // cap: an event past the cap gets no body yet is acked with the batch
+      // (CodeRabbit on #3511). Carry the greeting again instead.
+      for (const [key, group] of eventGroups) {
+        const wakeCount = group.filter((event) => event.deliveryMode !== 'digest').length;
+        if (wakeCount <= batchLimit) continue;
+        const overflow = group.filter((event) => carriedIds.has(String(event._id))
+          && DEFERRABLE_SOLO_EVENT_TYPES.has(event.type));
+        if (!overflow.length) continue;
+        heldGreeting = [...heldGreeting, ...overflow];
+        eventGroups.set(key, group.filter((event) => !overflow.includes(event)));
+      }
+      const groups = [...eventGroups.values()].filter((group) => group.length > 0);
+      // The greeting window is counted once per poll, however many pods'
+      // greetings this page carries (gate review of #3511).
+      let greetingCarriedThisPoll = false;
       // The claimed events a failure at `groupIndex` stops before they run.
       // A digest-only group was never claimed, so it is not carried.
       const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
@@ -3529,15 +3574,35 @@ export const performRun = ({
         }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
           // Nothing in this batch but the seat introducing itself: leave it
-          // unacked for one interval so a person who mentions the agent in that
-          // window is answered in the same turn instead of behind a greeting.
-          // Spent once per run, so a quiet connect still greets on the next tick.
-          if (!greetingHoldSpent && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
-            greetingHoldSpent = true;
-            heldGreeting = group;
-            log(`[inbox.batch] carrying ${group.length} greeting event(s) to the next poll in case someone is mid-sentence`);
+          // unacked for up to GREETING_HOLD_MS, so a person who mentions the
+          // agent in that window is answered first, in the same turn, instead
+          // of behind a greeting. Only the connect-time greeting is held: once
+          // a turn has carried one, later greetings run as they arrive.
+          // Digest rows ride along with a greeting without counting as a
+          // person waiting (CodeRabbit on #3511). The window is bounded by the
+          // clock too, so turns run for other pods between polls can't stretch
+          // the carry past its delivery lease (CodeRabbit on #3511).
+          if (!greetingHoldSpent
+            && (greetingCarriedThisPoll || (greetingHeldPolls < greetingHoldPolls
+              && (greetingHoldStartedAt === null || Date.now() - greetingHoldStartedAt < GREETING_HOLD_MS)))
+            && group.some((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))
+            && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type) || event.deliveryMode === 'digest')) {
+            if (greetingHeldPolls === 0 && !greetingCarriedThisPoll) {
+              log(`[inbox.batch] carrying ${group.length} greeting event(s) for up to `
+                + `${Math.round(GREETING_HOLD_MS / 1000)} s, so a person who mentions this agent is answered first`);
+            }
+            if (!greetingCarriedThisPoll) {
+              greetingCarriedThisPoll = true;
+              greetingHeldPolls += 1;
+              if (greetingHoldStartedAt === null) greetingHoldStartedAt = Date.now();
+            }
+            // Appended, never assigned: two pods' greetings can be carried in
+            // the same window, and an overwrite left the first unacked until
+            // the server's requeue, 10 to 20 minutes later.
+            heldGreeting = [...heldGreeting, ...group];
             continue;
           }
+          if (group.some((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) greetingHoldSpent = true;
           // One failure report for a batch whose items stay unacked, whether
           // the composite turn threw or an isolated item did after a refusal.
           // The unacked items are carried to the retry, not left to the
