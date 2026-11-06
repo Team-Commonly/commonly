@@ -5463,7 +5463,7 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     run.handle.stop();
   });
 
-  test('a person stamped as one is still carried past a refusal', async () => {
+  test('a person off the snapshot stamped as one clears the brake, as one on it does', async () => {
     const person = fromAgent('person', { payload: { senderIsHuman: true } });
     const server = fakeServer({
       pages: [[fromAgent('a1')], [fromAgent('a2'), person], []],
@@ -5473,13 +5473,12 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     const run = startRun({ spawn, limit: 5, cascadeCap: 1, cascadeAddressedGrace: 0 });
     await drainMicrotasks();
     await run.nextTick();
-    expect(server.ackedIds()).not.toContain('person');
-    await run.nextTick();
     expect(promptOf(spawn, 1)).toContain('body-of-person');
+    expect(server.acks.find(({ id }) => id === 'person')?.reason).not.toBe('cascade-cap');
     run.handle.stop();
   });
 
-  test('a refused turn still refuses a row that names no message: it can\'t be a person off the snapshot', async () => {
+  test('a refused turn still refuses a row with no stamp that names no message', async () => {
     const beat = inbox('beat', { type: 'heartbeat', payload: { messageId: undefined } });
     const server = fakeServer({
       pages: [[fromAgent('a1')], [fromAgent('a2'), beat]], agentRows: ['a1', 'a2'],

@@ -49,23 +49,21 @@ export const frameDecisionForkRule = (prompt) => `${DECISION_FORK_FRAME}\n\n${pr
 /**
  * Who authored the message that woke us — 'agent', 'human', or 'unknown'?
  *
- * Two signals, in order of reliability:
+ * Three signals, in order:
  *   1. payload.dmKind — the kernel stamps DM wakes 'agent-agent'/'user-agent'.
  *   2. The trigger message's isBot flag, looked up by payload.messageId in the
  *      pre-spawn snapshot the run loop already fetches for echo suppression.
+ *   3. payload.senderIsHuman, for what no snapshot can name. A page holds more
+ *      wakes than the snapshot holds messages, so without this a full page of
+ *      agent wakes reads as all unknown and walks past the cascade cap. A post
+ *      comment isn't a pod message at all (F225).
  *
  * 'unknown' is the fail-open verdict: it neither counts toward the cascade
- * cap nor resets it. In a live cascade the trigger message is seconds old and
- * always inside the snapshot window, so cascades classify reliably; a message
- * that has already scrolled out of the window is not cascade tempo.
+ * cap nor resets it. It's what's left when the kernel couldn't say either: an
+ * older server, or a sender it couldn't read.
  */
 export const classifyTrigger = (event, recentMessages) => {
   const p = event?.payload || {};
-  // A post comment is not a pod message, so a snapshot can never name its
-  // author (F225). The kernel stamps it; an older server leaves it 'unknown'.
-  if (event?.type === 'thread.mention' && typeof p.senderIsHuman === 'boolean') {
-    return p.senderIsHuman ? 'human' : 'agent';
-  }
   // The third pricing branch (#1044, fable 55845). Kernel-found work is not
   // agent churn and must not price as it: counted as 'agent' it eats cascade
   // budget exactly when the board is busiest; counted as 'human' it CLEARS the
@@ -76,12 +74,12 @@ export const classifyTrigger = (event, recentMessages) => {
   if (p.triggerAuthor === 'kernel') return 'kernel';
   if (p.dmKind === 'agent-agent') return 'agent';
   if (p.dmKind === 'user-agent') return 'human';
-  if (!p.messageId || !Array.isArray(recentMessages)) return 'unknown';
-  const trigger = recentMessages.find(
-    (m) => String(m._id || m.id) === String(p.messageId),
-  );
-  if (!trigger || typeof trigger.isBot !== 'boolean') return 'unknown';
-  return trigger.isBot ? 'agent' : 'human';
+  const trigger = p.messageId && Array.isArray(recentMessages)
+    ? recentMessages.find((m) => String(m._id || m.id) === String(p.messageId))
+    : undefined;
+  if (typeof trigger?.isBot === 'boolean') return trigger.isBot ? 'agent' : 'human';
+  if (typeof p.senderIsHuman === 'boolean') return p.senderIsHuman ? 'human' : 'agent';
+  return 'unknown';
 };
 
 // Direct-address event types: the seat was NAMED (explicit @, implicit human
@@ -94,7 +92,7 @@ export const ADDRESSED_EVENT_TYPES = new Set(['chat.mention', 'thread.mention', 
 /**
  * A person @-mentioned this seat in a pod (ADR-018 D9.2): the one wake that
  * carries unread message bodies. `trigger` is classifyTrigger's verdict, so an
- * agent's mention, a kernel wake and an author the snapshot can't name are all
+ * agent's mention, a kernel wake and an author nobody can name are all
  * out. A DM wake is not a mention, whichever type it rides, and neither is a
  * broadcast. Nor are three `chat.mention` wakes where nobody typed the seat's
  * name: a welcome, an adjacent reply and a reply to the seat's own message.

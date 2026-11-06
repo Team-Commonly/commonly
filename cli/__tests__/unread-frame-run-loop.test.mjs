@@ -156,6 +156,15 @@ const refusing = (text) => jest.fn(async (prompt) => {
 });
 
 describe('limit 1: bodies only on a person\'s mention wake', () => {
+  test('a person off the snapshot, named by the kernel\'s stamp, gets the bodies', async () => {
+    const spawn = jest.fn(async () => ({ text: 'handled' }));
+    const wake = mention('61', 'hi', { payload: { messageId: '61', content: 'hi', senderIsHuman: true } });
+    await runOnce(spawn, { pages: [[wake, ambient('60')]], pod: [bot('60')] });
+    const prompt = spawn.mock.calls[0][0];
+    expect(prompt).toContain(MARK);
+    expect(prompt).toContain(AMBIENT);
+  });
+
   test('at 2 unseen the hosted text is in the prompt, though the wrapper\'s own read moved the cursor', async () => {
     const spawn = jest.fn(async () => ({ text: 'handled' }));
     const { reads } = await runOnce(spawn, {
@@ -174,7 +183,7 @@ describe('limit 1: bodies only on a person\'s mention wake', () => {
 
   test.each([
     ['an agent\'s mention', mention('61'), [bot('60'), bot('61')]],
-    ['a mention whose author is off the snapshot', mention('61'), [bot('60')]],
+    ['a mention off the snapshot with no stamp', mention('61'), [bot('60')]],
     ['a kernel wake', mention('61', 'task', { payload: { messageId: '61', content: 'task', triggerAuthor: 'kernel' } }), [bot('60'), human('61')]],
     ['a new member\'s welcome', mention('61', 'hello', { payload: { messageId: '61', content: 'hello', welcomeWake: true } }), [bot('60'), human('61')]],
     ['an adjacent reply', mention('61', 'ok', { payload: { messageId: '61', content: 'ok', implicitReply: true, adjacentReply: true } }), [bot('60'), human('61')]],

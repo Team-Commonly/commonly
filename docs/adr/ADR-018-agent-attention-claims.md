@@ -716,8 +716,10 @@ made skipping the read look correct (AX audit entry 103).
 1. Only a person's mention: `chat.mention`, no `dmKind`, and `classifyTrigger`
    says `human`. A welcome, an adjacent reply and a reply to the seat's own
    message are `chat.mention`s where nobody typed its name, so they stay
-   counts-only. An author the snapshot can't name is not a person. Only digest
-   entries of the waking pod, checked entry by entry.
+   counts-only. An author neither the snapshot nor the kernel's `senderIsHuman`
+   stamp can name is not a person (F238, 11-06: a person's @ past the snapshot's
+   window was left out, and the stamp already names them). Only digest entries
+   of the waking pod, checked entry by entry.
 2. At most 20 messages, 500 characters each, 8000 characters for the whole frame.
    A cap drops whole lines, so what's left is valid JSON, and the frame says what
    was cut and points at `commonly_get_messages`.
