@@ -2622,7 +2622,7 @@ export async function runAgent(
         const axErr = err as AxiosError;
         run.status = 'failed';
         run.errorKind = 'llm_error';
-        // Publish only a bounded category, never the proxy payload, URL or credentials.
+        // Keep only a bounded category, never the proxy payload, URL or credentials.
         modelFailureReason = modelFailureReason || (axErr.code === 'ECONNABORTED' || axErr.code === 'ETIMEDOUT'
           ? 'request timed out' : 'connection failed');
         run.errorMessage = `Model ${model}: ${modelFailureReason}`.slice(0, 1000);
@@ -2931,8 +2931,8 @@ export async function runAgent(
   }
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
-  // costs the person no turn. Model failures name the model and a safe reason
-  // on native turns too; other hosted failures keep the fixed line. A turn
+  // costs the person no turn. Model failures name the model, with a safe reason
+  // on native turns; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
   if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
@@ -2946,10 +2946,12 @@ export async function runAgent(
           instanceId,
           podId,
           content: modelFailureReason
-            // The model's name tells the person which one failed (#2718). The
-            // status code means nothing in a pod, and stays on run.errorMessage.
-            ? `Model ${model} could not answer just now. ${hostedNative
-              ? HOSTED_RUN_FAILED_LINE : 'Please try again.'}`
+            // A hosted route is ours, so its person gets the model's name and
+            // no status code; that stays on run.errorMessage. A native agent's
+            // model and key are someone's to fix, so the reason stays in the note.
+            ? (hostedNative
+              ? `${MODEL_DISPLAY_NAMES[model] || model} could not answer just now. ${HOSTED_RUN_FAILED_LINE}`
+              : `Model ${model} could not answer (${modelFailureReason}). Please try again.`)
             : HOSTED_RUN_FAILED_LINE,
           messageType: 'text',
           displayName,
