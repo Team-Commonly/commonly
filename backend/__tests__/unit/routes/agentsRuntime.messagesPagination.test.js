@@ -11,7 +11,7 @@ jest.mock('jsonwebtoken', () => ({ sign: jest.fn(), verify: jest.fn(), decode: j
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
   req.agentUser = { _id: 'bot-1' };
-  req.agentInstallations = [{ podId: 'pod-1', status: 'active' }];
+  req.agentInstallations = [{ podId: 'pod-1', status: 'active', agentName: 'seat', instanceId: 'default' }];
   req.agentAuthorizedPodIds = ['pod-1'];
   next();
 });
@@ -39,13 +39,13 @@ jest.mock('../../../services/globalModelConfigService', () => ({}));
 jest.mock('../../../services/socialPolicyService', () => ({}));
 jest.mock('../../../integrations', () => ({ get: jest.fn() }));
 jest.mock('../../../models/Activity', () => ({}));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/Post', () => ({ findById: jest.fn() }));
-jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ find: jest.fn(), findById: jest.fn() }));
 jest.mock('../../../services/dmService', () => ({ getOrCreateAgentDM: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ find: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { findOne: jest.fn(), find: jest.fn(), countDocuments: jest.fn() },
+  AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
 }));
 
 const express = require('express');
@@ -53,6 +53,8 @@ const request = require('supertest');
 const AgentMessageService = require('../../../services/agentMessageService');
 const AgentSendFreshness = require('../../../services/agentSendFreshness');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
+const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const router = require('../../../routes/agentsRuntime');
 
 const app = express();
@@ -84,33 +86,56 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
         { id: 'page-newest', createdAt: '2026-07-31T22:00:00.000Z' },
       ],
       hasMore: true,
-      otherAgentsInPod: false,
     });
     expect(AgentSendFreshness.recordRead).not.toHaveBeenCalled();
   });
 
-  test.each([
-    [1, false],
-    [2, true],
-  ])('with %i active installs, otherAgentsInPod is %s', async (count, expected) => {
-    AgentMessageService.getRecentMessages.mockResolvedValue([]);
-    AgentInstallation.countDocuments.mockResolvedValue(count);
+  describe('who else is in the pod', () => {
+    const lean = (rows) => ({ select: () => ({ lean: async () => rows }) });
+    const installs = (...rows) => AgentInstallation.find.mockReturnValue(lean(rows));
+    const self = { agentName: 'seat', instanceId: 'default' };
+    const read = () => request(app).get('/api/agents/runtime/pods/pod-1/messages');
 
-    const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+    beforeEach(() => {
+      AgentMessageService.getRecentMessages.mockResolvedValue([]);
+      Pod.findById.mockReturnValue(lean({ members: ['u1', 'u2', 'bot-1'] }));
+      User.countDocuments.mockResolvedValue(2);
+    });
 
-    expect(res.status).toBe(200);
-    expect(res.body.otherAgentsInPod).toBe(expected);
-    expect(AgentInstallation.countDocuments).toHaveBeenCalledWith({ podId: 'pod-1', status: 'active' });
-  });
+    test('the caller alone has no peers, and people are counted', async () => {
+      installs(self);
+      const res = await read();
+      expect(res.body).toMatchObject({ otherAgentsInPod: false, peopleInPod: 2 });
+      expect(User.countDocuments).toHaveBeenCalledWith({
+        _id: { $in: ['u1', 'u2', 'bot-1'] }, isBot: { $ne: true },
+      });
+    });
 
-  test('a failed count leaves the field out and still returns the messages', async () => {
-    AgentMessageService.getRecentMessages.mockResolvedValue([]);
-    AgentInstallation.countDocuments.mockRejectedValueOnce(new Error('mongo down'));
+    test('commonly-bot is not a peer', async () => {
+      installs(self, { agentName: 'commonly-bot', instanceId: 'default' });
+      expect((await read()).body.otherAgentsInPod).toBe(false);
+    });
 
-    const res = await request(app).get('/api/agents/runtime/pods/pod-1/messages');
+    test('another agent is, and so is another instance of this one', async () => {
+      installs(self, { agentName: 'other' });
+      expect((await read()).body.otherAgentsInPod).toBe(true);
+      installs(self, { agentName: 'seat', instanceId: 'second' });
+      expect((await read()).body.otherAgentsInPod).toBe(true);
+    });
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ messages: [], hasMore: false });
+    test('an older page or a thread read does not look', async () => {
+      await request(app).get(`/api/agents/runtime/pods/pod-1/messages?before=${encodeURIComponent(cursor)}`);
+      await request(app).get('/api/agents/runtime/pods/pod-1/messages?threadRootId=12');
+      expect(AgentInstallation.find).not.toHaveBeenCalled();
+    });
+
+    test('a failed lookup leaves both out and still returns the messages', async () => {
+      installs(self);
+      User.countDocuments.mockRejectedValueOnce(new Error('mongo down'));
+      const res = await read();
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ messages: [], hasMore: false });
+    });
   });
 
   test('reports end-of-history when the extra row is absent', async () => {

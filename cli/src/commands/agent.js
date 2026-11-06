@@ -1600,18 +1600,26 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
   + FAILURE_IN_PLAIN_WORDS;
 
 // Who owes an open question an answer depends on who else is here. Walked 11-06:
-// "can anyone…" drew an "I can't" from a seat nobody addressed, which in a busy
-// pod could be every seat. Alone, though, the question is to this seat, and
-// silence is the worst answer a new person can get. An older server doesn't
-// report the pod's agents, so neither line is added. A heartbeat isn't told to
-// answer: nobody asked it anything this turn.
+// "can anyone…" drew an "I can't" from a seat nobody addressed. With another
+// agent here, that seat should step aside, and a person's message it declines
+// can go to a peer. One person alone with one seat is talking to it, and silence
+// is the worst answer a new person can get. With other people here the line may
+// be for them (ADR-018 D6.4), so neither line is added. Nor when the server
+// doesn't report the pod, or when an item is owed an answer whatever the room
+// looks like: a welcome, a reply to this seat, its own thread or task, a DM.
+// A heartbeat isn't told to answer: nobody asked it anything this turn.
 const ROOM_QUESTION_WITH_PEERS = 'Another agent is in this pod, so a question put to the room isn\'t asked of you: '
   + 'if you can\'t help with it, end with NO_REPLY.';
 const ROOM_QUESTION_ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
   + 'answer it, even if the answer is that you can\'t help.';
-const roomQuestionLine = (otherAgentsInPod, entries) => {
-  if (otherAgentsInPod === true) return ` ${ROOM_QUESTION_WITH_PEERS}`;
-  if (otherAgentsInPod === false && entries.some((entry) => entry.event.type !== 'heartbeat')) {
+const itemIsNotToTheRoom = ({ event: { payload } }) => Boolean(
+  payload?.welcomeWake || payload?.adjacentReply || payload?.dmKind
+  || payload?.repliesToYourMessage === true || payload?.addressed === true,
+);
+const roomQuestionLine = (pod, entries) => {
+  if (!pod || entries.some(itemIsNotToTheRoom)) return '';
+  if (pod.otherAgentsInPod) return ` ${ROOM_QUESTION_WITH_PEERS}`;
+  if (pod.peopleInPod === 1 && entries.some((entry) => entry.event.type !== 'heartbeat')) {
     return ` ${ROOM_QUESTION_ALONE}`;
   }
   return '';
@@ -3138,7 +3146,7 @@ export const performRun = ({
   // the next turn shows it. Additional pending
   // events stay in the kernel queue and are cued in the header for a later
   // pull, rather than being silently consumed here.
-  const buildInboxPrompt = (entries, inboxCount = entries.length, otherAgentsInPod = null) => {
+  const buildInboxPrompt = (entries, inboxCount = entries.length, pod = null) => {
     const BODY_LIMIT = batchLimit;
     const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
     const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
@@ -3201,7 +3209,7 @@ export const performRun = ({
             + FINAL_TEXT_ANSWERS_A_PERSON
           : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
             + FINAL_TEXT_IS_POSTED
-            + roomQuestionLine(otherAgentsInPod, shownEntries)),
+            + roomQuestionLine(pod, shownEntries)),
     ].join('\n\n');
   };
 
@@ -3587,13 +3595,13 @@ export const performRun = ({
 
     // Null until the server says: a failed read or an older server is unknown,
     // not "alone" and not "with peers".
-    let otherAgentsInPod = null;
+    let podAttendance = null;
     const snapshotMessages = async () => {
       try {
-        const { messages = [], otherAgentsInPod: others } = await client.get(
+        const { messages = [], otherAgentsInPod, peopleInPod } = await client.get(
           `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
         );
-        if (typeof others === 'boolean') otherAgentsInPod = others;
+        if (typeof otherAgentsInPod === 'boolean') podAttendance = { otherAgentsInPod, peopleInPod };
         return messages;
       } catch {
         return null;
@@ -3774,7 +3782,7 @@ export const performRun = ({
           },
         },
         eventPodId,
-        prompt: buildInboxPrompt([entry], 1, otherAgentsInPod),
+        prompt: buildInboxPrompt([entry], 1, podAttendance),
         preSpawnIds: before ? new Set(before.map((message) => String(message._id || message.id))) : null,
         snapshotMessages,
         claimKeeper: entry.claimKeeper,
@@ -3789,7 +3797,7 @@ export const performRun = ({
         turnResult = await runTurn({
           event: batchEvent,
           eventPodId,
-          prompt: buildInboxPrompt(entries, inboxCount, otherAgentsInPod),
+          prompt: buildInboxPrompt(entries, inboxCount, podAttendance),
           preSpawnIds,
           snapshotMessages,
           claimKeeper: compositeClaimKeeper,

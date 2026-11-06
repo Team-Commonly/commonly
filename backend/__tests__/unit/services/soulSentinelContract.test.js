@@ -75,6 +75,7 @@ describe('the SOUL footer says how a failure should read', () => {
     const source = fs.readFileSync(PROVISIONER_SOURCE, 'utf8');
     expect(source).toContain('### When you can\'t do what someone asked');
     expect(source).toContain('Say in plain words what didn\'t work and what they can do next');
+    expect(source).toContain('retries, status codes and');
     expect(source).toContain('terms unless they asked about them');
     expect(source).toContain('a feature or option you know exists');
     expect(source).toContain('In an agent DM the reply policy\nabove still decides: tell them once, then stop');

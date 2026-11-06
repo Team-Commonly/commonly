@@ -1862,9 +1862,9 @@ describe('performRun', () => {
     + 'If you already posted in this turn, post the failure note through the tool as well: final text after a tool post is dropped.';
   const SILENCE_CLOSING = 'Post only an action or a materially useful response; otherwise return NO_REPLY. ';
 
-  const promptWithMessages = async (events, messages, { claimHolder, otherAgentsInPod } = {}) => {
+  const promptWithMessages = async (events, messages, { claimHolder, pod } = {}) => {
     createClient.mockReturnValue({
-      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages, otherAgentsInPod } : { events })),
+      get: jest.fn(async (url) => (url.endsWith('/messages') ? { messages, ...pod } : { events })),
       post: jest.fn(async (url) => {
         if (!url.endsWith('/claim')) return {};
         return claimHolder ? { claimed: false, claimedBy: claimHolder } : { claimed: true, expiresAt: 'later' };
@@ -1892,21 +1892,43 @@ describe('performRun', () => {
       + 'if you can\'t help with it, end with NO_REPLY.';
     const ALONE = 'You are the only agent in this pod, so a question put to the room is asked of you: '
       + 'answer it, even if the answer is that you can\'t help.';
-    const openQuestion = () => makeEvent({
-      _id: 'evt-open', type: 'message.posted', payload: { content: 'can anyone export this?', messageId: 'm1' },
+    const openQuestion = (payload = {}) => makeEvent({
+      _id: 'evt-open', type: 'message.posted', payload: { content: 'can anyone export this?', messageId: 'm1', ...payload },
     });
     const human = [{ _id: 'm1', isBot: false }];
+    const withPeers = { otherAgentsInPod: true, peopleInPod: 1 };
+    const alone = { otherAgentsInPod: false, peopleInPod: 1 };
 
     test('with another agent here, a seat that can\'t help may stay out of it', async () => {
-      const prompt = await promptWithMessages([openQuestion()], human, { otherAgentsInPod: true });
+      const prompt = await promptWithMessages([openQuestion()], human, { pod: withPeers });
       expect(prompt).toContain(WITH_PEERS);
       expect(prompt).not.toContain(ALONE);
     });
 
     test('alone, the seat answers, even that it can\'t help', async () => {
-      const prompt = await promptWithMessages([openQuestion()], human, { otherAgentsInPod: false });
+      const prompt = await promptWithMessages([openQuestion()], human, { pod: alone });
       expect(prompt).toContain(ALONE);
       expect(prompt).not.toContain(WITH_PEERS);
+    });
+
+    test('with other people here, the line may be for them, so neither is added', async () => {
+      const prompt = await promptWithMessages(
+        [openQuestion()], human, { pod: { otherAgentsInPod: false, peopleInPod: 3 } },
+      );
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
+    });
+
+    test.each([
+      ['a new member\'s welcome', { welcomeWake: true }],
+      ['a reply to this seat\'s turn', { adjacentReply: true }],
+      ['a reply to this seat\'s message', { repliesToYourMessage: true }],
+      ['its own thread or task', { addressed: true }],
+      ['a DM', { dmKind: 'agent-agent' }],
+    ])('%s is owed an answer, so it gets neither line', async (_label, payload) => {
+      const prompt = await promptWithMessages([openQuestion(payload)], human, { pod: withPeers });
+      expect(prompt).not.toContain(WITH_PEERS);
+      expect(prompt).not.toContain(ALONE);
     });
 
     test('an older server reports nothing, so neither line is added', async () => {
@@ -1917,13 +1939,13 @@ describe('performRun', () => {
 
     test('a heartbeat alone is not told to answer anything', async () => {
       const prompt = await promptWithMessages(
-        [makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: {} })], [], { otherAgentsInPod: false },
+        [makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: {} })], [], { pod: alone },
       );
       expect(prompt).not.toContain(ALONE);
     });
 
     test('a person\'s direct @ gets neither line, even with another agent here', async () => {
-      const prompt = await promptWithMessages([mention('m1')], human, { otherAgentsInPod: true });
+      const prompt = await promptWithMessages([mention('m1')], human, { pod: withPeers });
       expect(prompt).not.toContain(WITH_PEERS);
       expect(prompt).not.toContain(ALONE);
     });
