@@ -417,7 +417,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(result.status).toBe('failed');
       expect(savedRun.errorMessage).toMatch(/ended without a reply: its post was refused\.$/);
       expect(chatBodies).toHaveLength(3);
-      expect(posted()).toEqual([]);
+      // The refused post stays refused. The person gets the fixed line, kept out of the bridge.
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls.at(-1)[0].noOutboundRelay).toBe(true);
     });
 
     // The extra call can itself be stopped. Then every web result left is set
