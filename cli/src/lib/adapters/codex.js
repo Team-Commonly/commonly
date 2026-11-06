@@ -849,33 +849,47 @@ const makeEventParser = () => {
   let buffer = '';
   let threadId = null;
   let turnFailedMessage = null;
+  let turnCompleted = false;
+
+  const consumeLine = (raw) => {
+    const line = raw.trim();
+    if (!line) return;
+    try {
+      const evt = JSON.parse(line);
+      if (evt.type === 'thread.started' && evt.thread_id && !threadId) {
+        threadId = evt.thread_id;
+      } else if (evt.type === 'turn.completed') {
+        turnCompleted = true;
+      } else if (evt.type === 'turn.failed') {
+        // Capture the most recent — codex may emit multiple before exit.
+        turnFailedMessage = evt.error?.message || 'codex turn failed';
+      }
+    } catch {
+      // Non-JSON lines on stdout are unexpected but not fatal — skip.
+    }
+  };
 
   const consume = (chunk) => {
     buffer += chunk.toString();
     let nl;
     // eslint-disable-next-line no-cond-assign
     while ((nl = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, nl).trim();
+      consumeLine(buffer.slice(0, nl));
       buffer = buffer.slice(nl + 1);
-      if (!line) continue;
-      try {
-        const evt = JSON.parse(line);
-        if (evt.type === 'thread.started' && evt.thread_id && !threadId) {
-          threadId = evt.thread_id;
-        } else if (evt.type === 'turn.failed') {
-          // Capture the most recent — codex may emit multiple before exit.
-          turnFailedMessage = evt.error?.message || 'codex turn failed';
-        }
-      } catch {
-        // Non-JSON lines on stdout are unexpected but not fatal — skip.
-      }
     }
+  };
+
+  const flush = () => {
+    consumeLine(buffer);
+    buffer = '';
   };
 
   return {
     consume,
+    flush,
     get threadId() { return threadId; },
     get turnFailedMessage() { return turnFailedMessage; },
+    get turnCompleted() { return turnCompleted; },
   };
 };
 
@@ -934,6 +948,7 @@ const runCodex = ({
     // eslint-disable-next-line no-console
     if (reaped) console.warn(`[codex] ${reaped}`);
     if (timedOut) return reject(new Error(`codex timed out after ${timeoutMs}ms`));
+    events.flush();
     if (events.turnFailedMessage) {
       // Surface the model-side failure message verbatim — the run loop posts
       // it as the agent's reply so the user sees what went wrong rather than
@@ -950,7 +965,7 @@ const runCodex = ({
     if (code !== 0) {
       return reject(adapterFailure('codex', stderr.trim(), { credentials, exitCode: code, limit: 500 }));
     }
-    resolve({ threadId: events.threadId });
+    resolve({ threadId: events.threadId, turnCompleted: events.turnCompleted });
   });
 });
 
@@ -1109,7 +1124,7 @@ export default {
       if (ctx.signal?.aborted) {
         throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
       }
-      const { threadId } = await runCodex({
+      const { threadId, turnCompleted } = await runCodex({
         args,
         cwd: ctx.cwd,
         env: childEnv,
@@ -1134,10 +1149,17 @@ export default {
       try {
         text = (await readFile(outputFile, 'utf8')).trim();
       } catch {
-        // codex didn't write the file — empty turn or stream parsing edge.
-        // Caller (run loop) treats empty text as a failed spawn and re-delivers.
+        // No file: a finished turn with no final message.
+        // The run loop treats empty text as a silent turn and acknowledges it.
         text = '';
       }
+
+      // A signal doesn't reach the exit code when codex runs through the npm
+      // launcher: it re-raises SIGTERM or SIGHUP into its own handler and exits
+      // 0. Resolving would read as a turn with nothing to say, and the messages
+      // it held would never be answered. A final message counts as finished,
+      // so a version that doesn't print turn.completed still posts its reply.
+      if (!turnCompleted && !text) throw adapterFailure('codex', 'the turn stopped before it finished');
 
       // newSessionId precedence: thread_id from this turn (always emitted on
       // a new session, often re-emitted on resume) > the persisted id we

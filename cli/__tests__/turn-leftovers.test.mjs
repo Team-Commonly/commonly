@@ -49,6 +49,7 @@ const start = (env) => {
 const pids = [start(process.env), start({ ...process.env, ${KEEP_PROCESS_ENV}: '1' })];
 require('fs').writeFileSync(process.argv[1], pids.join(','));
 process.stdout.write(JSON.stringify({ type: 'result', result: 'done' }) + '\\n');
+process.stdout.write(JSON.stringify({ type: 'turn.completed' }) + '\\n');
 `;
 
 const runTurn = async (adapter, extra = {}) => {
