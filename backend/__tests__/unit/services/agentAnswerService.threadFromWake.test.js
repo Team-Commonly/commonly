@@ -119,6 +119,16 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     ...AGENT, podId: pod._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(), ...fields,
   });
 
+  // Oldest first, so they fill the page ahead of anything created after them.
+  const agreeingAcks = (root, count) => Array.from({ length: count }, (_, i) => ({
+    ...AGENT,
+    podId: pod._id,
+    type: 'chat.mention',
+    status: 'acked',
+    payload: { threadRootId: root.id },
+    createdAt: new Date(Date.now() - 60 * 1000 + i),
+  }));
+
   // What the CAP route sends for a plain post.
   const capPost = (fields = {}, inPod = pod) => AgentMessageService.postMessage({
     ...AGENT, podId: inPod._id, content: `reply ${Math.random()}`, inferAnswerThread: true, ...fields,
@@ -364,14 +374,18 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     it('more acks than the read can hold: a disagreement past the page still counts', async () => {
       const { root } = await threadedWake();
       await deliver();
-      const at = Date.now() - 60 * 1000;
       await AgentEvent.insertMany([
-        ...Array.from({ length: 50 }, (_, i) => ({
-          ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: { threadRootId: root.id }, createdAt: new Date(at + i),
-        })),
-        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: {}, createdAt: new Date(at + 50) },
+        ...agreeingAcks(root, 51),
+        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'acked', payload: {}, createdAt: new Date() },
       ]);
       expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('exactly a page of acks that agree: every row was read, so the post files', async () => {
+      const { root } = await threadedWake();
+      await deliver();
+      await AgentEvent.insertMany(agreeingAcks(root, 50));
+      expect(await rootOf(await capPost())).toBe(root.id);
     });
 
     it('a failed read of what was just acked: the post still lands, in the channel', async () => {
