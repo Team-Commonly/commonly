@@ -231,9 +231,11 @@ export const migrateHostedInstallsToNative = async (
       const agentUser = await findAgentUser(agentName, instanceId);
       if (agentUser) {
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-        const { revokeRuntimeTokensForAgent } = require('../routes/registry/tokens');
+        const { revokeAgentUserToken, revokeRuntimeTokensForAgent } = require('../routes/registry/tokens');
         // eslint-disable-next-line no-await-in-loop
         const revoked = await revokeRuntimeTokensForAgent({ agentUser, agentName, instanceId, installation: rows[0] });
+        // eslint-disable-next-line no-await-in-loop
+        await revokeAgentUserToken(agentUser._id);
         entry.tokensRevoked = revoked.length;
       } else {
         entry.tokensRevoked = 0;

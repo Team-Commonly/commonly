@@ -89,6 +89,14 @@ export const IN_PROCESS_RUNTIME_FILTER = {
   ],
 };
 
+/** IN_PROCESS_RUNTIME_FILTER, read off a config that may not be stored yet. */
+export const configRunsInProcess = (config: any): boolean => {
+  const runtimeType = String(config?.runtime?.runtimeType || '').trim().toLowerCase();
+  return runtimeType === 'native'
+    || (runtimeType === 'hosted'
+      && String(config?.hosted?.engine || '').trim().toLowerCase() === HOSTED_ENGINE_NATIVE);
+};
+
 /** The engine boundary shared by grant eligibility and agent-join checks. */
 export const runsInNarrowedProcess = (installation: any): boolean => (
   String(readRuntimeConfig(installation).runtimeType || '').trim().toLowerCase() === 'native'

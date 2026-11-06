@@ -10,6 +10,10 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: (...args) => mockPodHasOutsiderWritableGrant(...args),
 }));
 
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {
     getByName: jest.fn(),

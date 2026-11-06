@@ -16,6 +16,10 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn(), find: jest.fn() }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  identityHoldsRuntimeToken: () => Promise.resolve(false),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentRegistry: {},
   AgentInstallation: { findOne: jest.fn(), find: jest.fn() },
@@ -45,6 +49,7 @@ const installation = (config) => ({
   config: new Map(Object.entries(config)),
   installedBy: INSTALLER,
   save: jest.fn().mockResolvedValue(true),
+  toObject: jest.fn(() => ({})),
 });
 
 const given = (row, role = 'user') => {
