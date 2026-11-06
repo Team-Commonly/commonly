@@ -574,7 +574,7 @@
   /* TASK-647 item 3: the board link keeps a 44px tap target without growing
      the 28px meta row (the hit area is a pseudo-element), the name keeps room
      for the "i" hint, and the compact meta sits closer to the link. */
-  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact { position: relative; padding: 0 5px; }
   .v2-root button.v2-pod-header__board--compact::before {
     content: '';
     position: absolute;
@@ -582,8 +582,17 @@
        area reaches 6px toward this one, so 6 + 6 meets without overlap. */
     inset: -14px -6px;
   }
-  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 24px); }
   .v2-pod-header__meta--compact { gap: 4px; }
+  /* The name comes first on a phone: "My Workspace" has to read in full on a
+     new person's first screen. The "i" keeps its desktop size, with a 44px tall
+     hit area that stops short of the board chip's, and the pencil waits behind
+     it. A pod with no description has no "i", so its pencil stays on the line.
+     Focus keeps the pencil up: tapping it on Android blurs the hint first. */
+  .v2-pod-header .v2-thread__title-line { gap: 4px; }
+  .v2-root .v2-thread__title-line button.v2-hint__trigger { position: relative; width: 20px; height: 20px; flex: 0 0 20px; }
+  .v2-root .v2-thread__title-line button.v2-hint__trigger::after { content: ''; position: absolute; inset: -12px -4px; }
+  .v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) button.v2-pod-header__rename-open:not(:focus) { display: none; }
   /* Look from the primitives: v2p-b v2p-b-g v2p-ib. */
   .v2-root button.v2-thread__back { display: inline-flex; flex: 0 0 32px; }
 }

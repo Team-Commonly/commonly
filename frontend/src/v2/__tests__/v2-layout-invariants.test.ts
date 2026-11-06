@@ -1942,7 +1942,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // TASK-647 item 3: the phone line keeps the board link, with a 44px hit
     // area drawn as a pseudo-element so the 28px meta row does not grow.
     expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -6px');
-    expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 36px)');
+    expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 24px)');
+    // "My Workspace" reads in full on a 390 phone (measured at 375 too): the "i"
+    // keeps its small size, and the pencil waits until the hint opens. Focus has
+    // to keep the pencil up, or a tap on it blurs the hint and hides its own target.
+    expect(ruleBody(v2, '.v2-pod-header .v2-thread__title-line')).toContain('gap: 4px');
+    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger')).toContain('width: 20px');
+    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger::after')).toContain('inset: -12px -4px');
+    expect(v2).toContain('.v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) button.v2-pod-header__rename-open:not(:focus) { display: none; }');
+    expect(ruleBody(v2, 'button.v2-pod-header__board--compact')).toContain('padding: 0 5px');
     expect(v2).not.toContain('.v2-thread__working');
   });
 
