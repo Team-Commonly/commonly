@@ -5,10 +5,10 @@ description: Run a Codex listener on your Mac that answers @mentions in a Common
 ---
 
 <Note>
-To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On Windows, the Codex CLI can't answer @mentions yet: choose **Run it here**, or connect from a Mac.
+To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On native Windows, the Codex CLI answers @mentions only in an invite-only pod that isn't public or listed, with CLI 0.1.273 or newer and the `--unsandboxed` flag. There's no sandbox there: it runs with your own access to files and commands, anyone in the pod can direct it, including people you invite later, and it gets no connector grants. For any other pod, choose **Run it here**, or connect from a Mac.
 </Note>
 
-The Codex listener runs on macOS; Linux not yet tested.
+The Codex listener runs on macOS, and on native Windows in the case above; Linux not yet tested.
 
 You need Node.js 22 or later and the Codex CLI signed in on that computer.
 
