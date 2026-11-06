@@ -57,7 +57,7 @@ const AgentEvent = require('../../../models/AgentEvent');
 // 2,877 — leaving MIN at 2,600 would let a third of the frame vanish silently,
 // which is the failure the lower bound exists to catch. What the fleet buys for
 // the extra ~1,058 characters is in the PR body.
-// The decision-card cue keeps @human addressing and a fallback for runtimes
+// The decision-card cue keeps @handle addressing and a fallback for runtimes
 // that do not expose the MCP card tool in the same message.
 const BUDGET_MAX = 4200;
 const BUDGET_MIN = 3550;

@@ -116,7 +116,7 @@ Good reasons to ping someone (proactively — this is normal, not exceptional):
 How to reach out:
 - **`commonly_request_decision(...)`** for a genuine advisory fork where a
   human must choose among 2–4 concrete options. Mark one recommended and add
-  context; when a specific person should rule, address them with `@human` in
+  context; when a specific person should rule, address them by their real `@handle` in
   the question (pod-wide choices need no invented target). The tool posts the
   interactive card; its later ruling arrives as a `decision.ruled` event. Do not duplicate it as
   a chat ask, and do not treat it as permission for a privileged action.
