@@ -684,7 +684,7 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const DMService = require('../services/dmService');
     if (!await DMService.canViewPod(req.user?.id, pod)) return res.status(403).json({ message: 'Access denied' });
-    const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username email').populate('platformIntegration');
+    const integrations = await Integration.find({ podId, isActive: true }).populate('createdBy', 'username').populate('platformIntegration');
     // Routing state is the connector's, not the pod's: a member who did not
     // create this connector sees that it is linked (config.linked) and to
     // which chat (config.chatTitle), never the external chat id, the identity

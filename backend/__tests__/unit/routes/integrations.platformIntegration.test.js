@@ -127,6 +127,19 @@ describe('platformIntegration virtual (#1672)', () => {
     }
   });
 
+  it('the pod list names a connector\'s creator with no email', async () => {
+    const User = require('../../../models/User');
+    await User.deleteMany({});
+    await User.collection.insertOne({ _id: CREATOR, username: 'owner', email: 'owner@example.test' });
+    await seedTelegramAndDiscord();
+
+    const res = await request(app).get(`/api/integrations/${POD}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body[0].createdBy).toMatchObject({ username: 'owner' });
+    expect(JSON.stringify(res.body)).not.toContain('owner@example.test');
+  });
+
   it('the pod list answers 200 with a Telegram row', async () => {
     await seedTelegramAndDiscord();
 
