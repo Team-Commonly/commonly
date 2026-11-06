@@ -43,7 +43,7 @@ describe('cantAnswerNotice', () => {
       ['codex, ChatGPT login', "codex turn failed: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:01 PM."],
       ['codex, workspace', 'codex turn failed: Your workspace is out of credits. Add credits to continue.'],
       ['a gateway key, walked on prod', 'codex turn failed (upstream 422): unexpected status 422 Unprocessable Entity: Budget has been exceeded! Key=walk (sk-...abcd) Current cost: 0.0154, Max budget: 5e-05'],
-      ['a gateway model group', 'codex turn failed (upstream 429): unexpected status 429: crossed budget'],
+      ['a gateway model group, as our config words it', 'codex turn failed (upstream 429): unexpected status 429: crossed budget'],
       ['pi, on a refused route', 'upstream refused 429: Budget has been exceeded! Current cost: 12.34, Max budget: 10.00'],
     ])('%s', (_name, message) => {
       expect(cantAnswerNotice(new Error(message))?.text).toBe(OUT_OF_ALLOWANCE_NOTICE);
@@ -57,7 +57,6 @@ describe('cantAnswerNotice', () => {
     ['a panic at line 401', 'codex exited with code 101: thread panicked at src/client.rs:401:12'],
     ['a stack frame at line 401', 'claude exited with code 1: at run (/app/dist/a.js:401:9)'],
     ['a process id', 'codex exited with code 137: killed process 401'],
-    ['a tool of the agent', 'claude exited with code 1: gh: HTTP 401: Bad credentials'],
     ['a server error that mentions one', 'codex turn failed (upstream 503): last status 401'],
     ['a route that wants a login', 'request failed with status 403: Authentication required for this route'],
     ['a tool that is missing', 'claude exited with code 1: gh: command not found'],
@@ -71,6 +70,26 @@ describe('cantAnswerNotice', () => {
     ['a bare 403', 'request failed with status 403'],
   ])('%s posts nothing', (_name, message) => {
     expect(cantAnswerNotice(new Error(message))).toBeNull();
+  });
+
+  // Through the real adapterFailure, which labels any "status 401" it finds.
+  test.each([
+    ['a tool the agent ran', 'codex', 'gh: HTTP 401: Bad credentials'],
+    ['curl', 'codex', 'curl: request failed, status 401'],
+    ['an MCP server', 'claude', '[mcp commonly] status: 401 on tools/list'],
+    ['the model, on a crashed turn', 'claude', 'the request came back with status 401'],
+    ['a diff stat', 'claude', '401 files changed'],
+  ])('%s posts nothing', (_name, label, tail) => {
+    expect(cantAnswerNotice(adapterFailure(label, tail, { exitCode: 1 }))).toBeNull();
+  });
+
+  test('the model quoting a failure in a crashed turn\'s tail posts nothing', () => {
+    const tail = '{"type":"assistant","text":"Not logged in · Please run /login, and You\'ve hit your weekly limit"}';
+    expect(cantAnswerNotice(new Error(`claude exited with code 1: warning | ${tail}`))).toBeNull();
+  });
+
+  test('a budget in another sense posts nothing and keeps its backoff', () => {
+    expect(cantAnswerNotice(new Error('codex turn failed: thinking budget has been exceeded'))).toBeNull();
   });
 
   test('a 401 is a 401, whatever else its body says', () => {

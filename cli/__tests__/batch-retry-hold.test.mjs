@@ -420,6 +420,29 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
     run.handle.stop();
   });
 
+  test('an event the server stamped as addressed is told', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'and then?', { type: 'message.posted', payload: { content: 'and then?', deliveryId: 'nonce-a', addressed: true } })]],
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(1);
+    run.handle.stop();
+  });
+
+  test('an item run alone after a content refusal still counts as someone waiting', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'one'), makeEvent('evt-b', 'two')]] });
+    const spawn = jest.fn()
+      .mockRejectedValueOnce(new Error('codex turn failed: This content was flagged for possible cybersecurity risk'))
+      .mockResolvedValue({ text: '', upstream: { status: 401, detail: 'expired' } });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(spawn.mock.calls.length).toBeGreaterThan(1);
+    expect(noticesIn(server.post)).toHaveLength(1);
+    run.handle.stop();
+  });
+
   test('a seat whose route refuses with no thrown failure is told, as pi reports it', async () => {
     const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
     const spawn = jest.fn().mockResolvedValue({ text: '', upstream: { status: 401, detail: 'expired' } });

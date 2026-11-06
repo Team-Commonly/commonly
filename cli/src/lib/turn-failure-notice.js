@@ -11,25 +11,25 @@
  * The failure classes in spawn-retry.js are too loose for this. They only pick a
  * backoff, so a stray "401" or "billing" in a stack trace costs a slower retry.
  * Here the match becomes a statement to a person, so each line below fires only
- * on wordings seen in seat logs or written by the wrapper itself. A failure that
- * matches none of them posts nothing, which is what it did before.
+ * on a wording a seat has logged, a walk has produced, or the wrapper or our own
+ * gateway config writes. A failure that matches none of them posts nothing,
+ * which is what it did before.
  */
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
-import { classifySpawnFailure, SPAWN_FAILURE_CLASS } from './spawn-retry.js';
+import { classifySpawnFailure, GATEWAY_BUDGET_RE, SPAWN_FAILURE_CLASS } from './spawn-retry.js';
 
 /** How long one cause stays posted in a pod before the seat may post it again. */
 export const CANT_ANSWER_NOTICE_WINDOW_MS = 60 * 60 * 1000;
 
 const LOGIN_FAILED_WORDINGS = [
-  // adapterFailure's label, written only when a provider's own status was read.
-  // A bare "401" is not enough: it turns up in stack traces and tool output.
-  /\(upstream 401\)/,
+  // Not `(upstream 401)` alone: adapterFailure writes that for any "status 401"
+  // in a tail, including a tool's stderr. A failed Codex turn is its own report.
+  /^codex turn failed \(upstream 401\)/,
   /\bupstream refused 401\b/, // the same refusal, read from pi's stream
   /^\w+ exited(?: with code)? \d+: 401\b/, // pi's text, which names no upstream
-  /API Error: 401\b/,
   /workspace routing discovery unauthorized/,
-  /(?:^|: | \| )(?:Not logged in|Invalid API key) · Please run \/login/,
-  /This API key is not scoped to a workspace/,
+  /(?:^|: | \| )Not logged in · Please run \/login/,
+  /API Error: 400 This API key is not scoped to a workspace/,
   // The wrapper's own refusals of a Claude login (adapters/claude.js).
   /the Claude login on this machine expires in/,
   /refusing a Claude login/,
@@ -40,15 +40,15 @@ const WONT_START_WORDINGS = [
 ];
 // Not the whole of QUOTA_RE, which also holds "billing" and "quota" for backoff.
 const OUT_OF_ALLOWANCE_WORDINGS = [
-  /you['’]?ve (?:hit|reached) your [^\n]{0,40}?limit/i,
+  /(?:^|: | \| )you['’]?ve (?:hit|reached) your [^\n]{0,40}?limit/i,
   /\bout of credits\b/i,
-  /budget has been exceeded|budget_exceeded|crossed budget/i, // LiteLLM, key and model group
+  GATEWAY_BUDGET_RE,
 ];
 
 const AGAIN = 'After that, send your message again if I still haven’t answered.';
 
-export const LOGIN_NOTICE = 'I can’t answer right now: the AI provider rejected the key or login on the computer '
-  + `I run on. Whoever runs me needs to renew it and start me again. ${AGAIN}`;
+export const LOGIN_NOTICE = 'I can’t answer right now: the key or login on the computer I run on isn’t working. '
+  + `Whoever runs me needs to fix it and start me again. ${AGAIN}`;
 export const WONT_START_NOTICE = 'I can’t answer right now: the tool I run on wouldn’t start on my computer. '
   + `Whoever runs me needs to fix that and start me again. ${AGAIN}`;
 export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI account I run on has used up its allowance. '
@@ -60,7 +60,9 @@ const matches = (wordings, text) => wordings.some((wording) => wording.test(text
 export const cantAnswerNotice = (error) => {
   // A public seat's withheld turn quotes a TOOL's error, not its own provider's.
   if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) return null;
-  const text = String(error?.message ?? '');
+  // A crashed claude turn keeps assistant and tool JSON lines in its tail, and
+  // those are the model's words, or a tool's.
+  const text = String(error?.message ?? '').split(' | {"type":')[0];
   // Before the allowance check: a 401 is settled, whatever else its body says.
   if (matches(LOGIN_FAILED_WORDINGS, text)) return { cause: 'login', text: LOGIN_NOTICE };
   if (matches(WONT_START_WORDINGS, text)) return { cause: 'wont-start', text: WONT_START_NOTICE };
