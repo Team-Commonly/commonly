@@ -50,6 +50,7 @@ const {
   ownsRuntimeIdentity,
   runtimeCredentialRefusal,
 } = require('../../services/runtimeIdentityOwnership');
+const { onUnconfinedHost } = require('../../services/seatGrantConfinement');
 const {
   normalizeScopes,
   revokeEveryIdentityToken,
@@ -306,6 +307,50 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
   } catch (error) {
     console.error('Error revoking agent runtime token:', error);
     return res.status(500).json({ error: 'Failed to revoke runtime token' });
+  }
+});
+
+/**
+ * DELETE /api/registry/pods/:podId/agents/:name/host-unconfined
+ * Lift the mark a seat left on itself by running with no sandbox, once its owner
+ * has moved it somewhere that confines it. The owner's word stands in for a
+ * check nobody can make: the seat's own token can't say this, so a bot is
+ * refused, and the next unsandboxed run marks it again. A machine that reports
+ * no sandbox still refuses the seat, and the reply says so.
+ */
+agentTokensRouter.delete('/pods/:podId/agents/:name/host-unconfined', tokenRouteLimit, auth, async (req: any, res: any) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const caller = await User.findById(userId).select('isBot').lean();
+    if (!caller || caller.isBot) return res.status(403).json({ error: 'Only a person can clear this' });
+    const isGlobalAdmin = await isGlobalAdminUser(userId);
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const isMember = pod.members?.some((member: any) => (member?.userId || member)?.toString?.() === userId.toString());
+    if (!isMember && !isCreator && !isGlobalAdmin) return res.status(403).json({ error: 'Access denied' });
+
+    const { installation, instanceId } = await resolveInstallation({ agentName: name, podId, instanceId: req.query.instanceId });
+    if (!installation || installation.status === 'uninstalled') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+    if (!isGlobalAdmin) {
+      const check = await ownsIdentityCountingPaused(userId, installation.agentName, instanceId);
+      if (!check.owned) return res.status(403).json({ code: check.failure, error: runtimeCredentialRefusal[check.failure] });
+    }
+
+    const agentUsername = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(name), instanceId);
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('botMetadata.machineId').lean();
+    if (!agentUser) return res.status(404).json({ error: 'Agent not found' });
+    await User.updateOne({ _id: agentUser._id }, { $unset: { 'botMetadata.hostUnconfined': 1 } });
+    return res.json({ cleared: true, machineUnconfined: await onUnconfinedHost(agentUser.botMetadata?.machineId) });
+  } catch (error) {
+    console.error('Error clearing the unsandboxed mark:', error);
+    return res.status(500).json({ error: 'Failed to clear the mark' });
   }
 });
 

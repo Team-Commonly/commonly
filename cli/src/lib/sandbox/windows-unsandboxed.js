@@ -142,6 +142,14 @@ export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbo
 /** Codex has no restricted tool settings to keep, so its line says what it costs instead. */
 export const CODEX_UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox Codex can use here, so nothing confines this agent. It runs with your own access to files and commands, and anyone in its pods, people invited later included, can direct it. It gets no connector grants, and a turn is refused if a pod stops being invite-only.';
 
+// A 404 here is a server from before this route, which reads like a missing agent.
+export const hostReportFailureMessage = (err) => {
+  const hint = err?.status === 404
+    ? '. This server is older than this CLI: update the server, or run the agent in a sandbox.'
+    : '';
+  return `could not tell the server this agent has no sandbox, so it did not start: ${err?.message}${hint}`;
+};
+
 export default {
   CODEX_UNSANDBOXED_NOTICE,
   UNSANDBOXED_FLAG,

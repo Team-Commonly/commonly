@@ -105,7 +105,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
-  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostUnconfinedForRun, runOptedInUnsandboxed,
+  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostReportFailureMessage, hostUnconfinedForRun, runOptedInUnsandboxed,
   unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
@@ -1091,6 +1091,17 @@ export const setWakeOnMessage = async ({ client, record, enabled }) => {
     { instanceId, config: { wakeOnMessage: { enabled: Boolean(enabled) } } },
   );
   return { agentName: record.agentName, podId: record.podId, instanceId, enabled: Boolean(enabled) };
+};
+
+/** Lift the mark an unsandboxed run left on the seat. Only its owner's login can. */
+export const clearUnsandboxedMark = async ({ client, record }) => {
+  if (!record?.podId || !record?.agentName) {
+    throw new Error('token record is missing podId/agentName — re-attach the agent');
+  }
+  const instanceId = record.instanceId || 'default';
+  const path = `/api/registry/pods/${encodeURIComponent(record.podId)}/agents/${encodeURIComponent(record.agentName)}/host-unconfined`;
+  const result = await client.del(`${path}?instanceId=${encodeURIComponent(instanceId)}`);
+  return { agentName: record.agentName, machineUnconfined: result?.machineUnconfined === true };
 };
 
 /**
@@ -5252,7 +5263,7 @@ Docs:
           try {
             await seatClient.post('/api/agents/runtime/host-unconfined', {});
           } catch (err) {
-            console.error(`${stamp()} [${name}] could not tell the server this agent has no sandbox, so it did not start: ${err.message}`);
+            console.error(`${stamp()} [${name}] ${hostReportFailureMessage(err)}`);
             process.exit(1);
           }
         }
@@ -5700,6 +5711,31 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         console.log(result.enabled
           ? '  The agent now sees every message in the pod; its runtime decides whether to answer (NO_REPLY otherwise). No restart needed.'
           : '  The agent now wakes only on @mentions, replies to it, and heartbeats. No restart needed.');
+      } catch (err) {
+        console.error(`Failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── clear-unsandboxed ─────────────────────────────────────────────────────
+  agent
+    .command('clear-unsandboxed <name>')
+    .description('After moving an agent to a sandboxed host, let it use grants again (needs your login, not its token)')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        process.exit(1);
+      }
+      const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
+      const token = getToken(opts.instance || record.instanceUrl);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      const client = createClient({ instance: instanceUrl, token });
+      try {
+        const result = await clearUnsandboxedMark({ client, record });
+        console.log(`✓ Cleared for ${result.agentName}. Running it with --unsandboxed marks it again.`);
+        if (result.machineUnconfined) console.log('  Its machine reports no sandbox, so grants stay refused while it runs there.');
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);

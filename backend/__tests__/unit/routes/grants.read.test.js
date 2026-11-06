@@ -505,6 +505,26 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
     expect(res.body.grantBrokerRefusalScope).toBe('seat');
   });
 
+  test('a seat that ran without a sandbox reads as refused, bound or not', async () => {
+    const bound = await seedSeatGrant({ adapter: 'claude', sandbox: { mode: 'workspace', trust: 'public' } });
+    await User.updateOne({ _id: bound.seat._id }, { $set: { 'botMetadata.hostUnconfined': true } });
+    const boundRead = await read(bound.row.grantId);
+    expect(boundRead.body.grantBrokerRefusal.detail).toMatch(/ran without a sandbox/);
+    expect(boundRead.body.grantBrokerRefusalScope).toBe('seat');
+
+    const unbound = await seedSeatGrant({ adapter: 'claude', sandbox: { mode: 'workspace', trust: 'public' }, bound: false });
+    await User.updateOne({ _id: unbound.seat._id }, { $set: { 'botMetadata.hostUnconfined': true } });
+    const unboundRead = await read(unbound.row.grantId);
+    expect(unboundRead.body.grantBrokerRefusal.detail).toMatch(/ran without a sandbox/);
+  });
+
+  test('a seat on a machine that reports no sandbox reads as refused', async () => {
+    const { row, machineId } = await seedSeatGrant({ adapter: 'claude', sandbox: { mode: 'workspace', trust: 'public' } });
+    await Machine.updateOne({ machineId }, { $set: { hostUnconfined: true } });
+    const res = await read(row.grantId);
+    expect(res.body.grantBrokerRefusal.detail).toMatch(/native Windows/);
+  });
+
   test('a declaration a host can confine reads as no refusal', async () => {
     const { row } = await seedSeatGrant({
       adapter: 'claude', sandbox: { mode: 'workspace', trust: 'public' },

@@ -12,6 +12,7 @@ import { operatorKeyAudienceRefusal } from '../services/hostedMcpOperatorKey';
 import { consentHoldsWriteScope } from '../services/hostedMcpEntryService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { unconfinedHostRefusal } from '../services/seatGrantConfinement';
 import ToolCall from '../models/ToolCall';
 import Machine from '../models/Machine';
 import type { IRoomGrant } from '../models/RoomGrant';
@@ -218,7 +219,7 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
   }
   if (!seatGrants.length) return confinements;
   const seats = await User.find({ _id: { $in: seatGrants.map((grant) => grant.target.id) } })
-    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId')
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.hostUnconfined')
     .lean();
   const seatsById = new Map(seats.map((seat: any) => [String(seat._id), seat]));
   const machineIds = Array.from(new Set(seats
@@ -250,6 +251,12 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
   for (const grant of seatGrants) {
     const seat: any = seatsById.get(String(grant.target.id));
     const meta = seat?.botMetadata || {};
+    // eslint-disable-next-line no-await-in-loop -- a machine read only for a seat that has one
+    const hostRefusal = await unconfinedHostRefusal(seat);
+    if (hostRefusal) {
+      confinements.set(grant.grantId, { refusal: hostRefusal, scope: 'seat' });
+      continue;
+    }
     const identity = typeof meta.agentName === 'string' ? meta.agentName.trim() : '';
     const owner = typeof meta.machineId === 'string' ? ownersByMachine.get(meta.machineId) : undefined;
     if (!identity || !owner) {

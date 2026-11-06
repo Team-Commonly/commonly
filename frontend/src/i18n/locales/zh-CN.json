@@ -2970,7 +2970,7 @@
       "consentNoSandbox": "{{agent}} 运行在你的电脑上，不在 Commonly 里，也没有沙箱。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
       "readOnlyHint": "运行在你电脑上的智能体只能读取。",
       "prWriteConsent": "{{agents}} 还能向这个仓库提交代码和发起 PR，每次都要你批准。",
-      "reasonUnconfinedHost": "运行在原生 Windows 上，用不了任何授权。",
+      "reasonUnconfinedHost": "运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
       "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
       "namedHeading": "运行在你电脑上",
       "named": "{{agent}} 在 Commonly 之外运行",
@@ -2986,7 +2986,7 @@
         "notAudience": "只能指定这个授权覆盖的智能体。",
         "notAgent": "授权中只能指定智能体。",
         "notOwned": "你只能指定由你独自安装的智能体。",
-        "unconfinedHost": "这个智能体运行在原生 Windows 上，用不了任何授权。",
+        "unconfinedHost": "这个智能体运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
         "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。"
       }
     }
