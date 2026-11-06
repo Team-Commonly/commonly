@@ -8,7 +8,7 @@ a one-line pointer per rule.
 
 ## Agent Runtime — Quick Rules
 
-**Deployment boundary (2026-11-06):** the hosted cluster runs no OpenClaw gateway. `agents.clawdbot` has been parked in the dev values since 2026-08-20, so `Deploy Dev` skips the gateway image, and there are no active moltbot installs. Every rule below about a gateway, `moltbot.json`, a SOUL or HEARTBEAT file, or `reprovision-all` applies only where that legacy profile is enabled. On the hosted cluster, `reprovision-all` reaches nothing, so don't schedule it or make a change's close-out depend on it.
+**Deployment boundary (2026-11-06):** the hosted cluster runs no OpenClaw gateway. `agents.clawdbot` has been parked in the dev values since 2026-08-20, so `Deploy Dev` skips the gateway image, and there are no active moltbot installs. Every rule below about a gateway, `moltbot.json`, a SOUL or HEARTBEAT file, or `reprovision-all` applies only where that legacy profile is enabled. `AgentInstallation.config.heartbeat.global` is the exception: `schedulerService` reads it, so it stays live on the hosted cluster. On the hosted cluster, `reprovision-all` has no gateway to update, but it still revokes and re-issues the runtime token of every active install, and a wrapper seat never receives the new token. It isn't a no-op. Don't schedule it, don't fire it as a config step, and don't make a close-out depend on it. Saving the model policy in Global Integrations fires it (`GlobalIntegrations.tsx`), and so does `scripts/recover-codex-auth.sh`.
 
 These are prescriptive rules not derivable from reading the code:
 
