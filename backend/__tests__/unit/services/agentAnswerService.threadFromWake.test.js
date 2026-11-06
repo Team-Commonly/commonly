@@ -362,6 +362,21 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       expect(await rootOf(await capPost({ kind: 'answer' }))).toBeNull();
     });
 
+    it('a top-level ask that sat for hours and was acked just now still disagrees', async () => {
+      await threadedWake();
+      await deliver();
+      await AgentEvent.collection.insertOne({
+        ...AGENT,
+        podId: pod._id,
+        type: 'chat.mention',
+        status: 'acked',
+        payload: {},
+        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        updatedAt: new Date(),
+      });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
     it('a heartbeat acked a moment ago that carries the thread is still not a wake', async () => {
       const { root } = await threadedWake();
       await deliver();

@@ -264,15 +264,14 @@ export const threadOfRunningTurn = async ({
     const pod = await Pod.findOne({ _id: { $eq: String(podId) } }).select('type').lean();
     if (!pod || isPersonalPodType(pod.type)) return null;
     // Only a disagreement counts: an ack alone still files nothing, as above.
-    // `createdAt` is what the index can use: an ack can't be newer than this
-    // unless its wake sat for hours, and then it says nothing about this turn.
+    // No `createdAt` bound: a wake can wait hours and arrive beside a new one,
+    // so its age says nothing here. Retention bounds the rows read.
     const justAcked: Array<{ type?: string; payload?: unknown }> = await AgentEvent.find({
       agentName: { $eq: String(agentName).toLowerCase() },
       instanceId: { $eq: String(instanceId || 'default') },
       status: 'acked',
       podId: { $eq: String(podId) },
       deliveryMode: { $ne: 'digest' },
-      createdAt: { $gte: new Date(Date.now() - WAKE_LOOKUP_WINDOW_MS) },
       updatedAt: { $gte: new Date(Date.now() - JUST_ACKED_MS) },
     }).select('type payload').limit(MAX_TURN_DELIVERIES + 1).maxTimeMS(WAKE_LOOKUP_MAX_TIME_MS)
       .lean();
