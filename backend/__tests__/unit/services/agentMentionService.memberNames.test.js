@@ -160,8 +160,7 @@ describe('who raised the turn', () => {
   test('a handle that routes to someone else is left off', async () => {
     const twin = { _id: 'user-9', username: 'ada', displayName: 'Ada Two', isBot: false };
     const content = await wakeFor({ sender: twin, members: [twin, ada, milo], username: 'ada' });
-    expect(content).toContain('raised by **Ada Two**');
-    expect(content).not.toContain('Ada Two** (@ada)');
+    expect(content).toContain('raised by **Ada Two** (message');
     expect(content).not.toContain('Ada Two (@ada)');
     expect(content).toContain('Ada Two, Ada Lin (@ada)');
   });
