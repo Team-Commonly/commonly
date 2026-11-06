@@ -89,7 +89,18 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // (pi was the witness here until it gained Seatbelt in F113b.)
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'stub',
-    })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
+    })).toThrow(/stub adapter can't enforce sandbox\.mode=workspace.*Adapters that can: claude, codex, goose, opencode, pi, qwen\./);
+  });
+
+  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112, D247)', () => {
+    let message = '';
+    try {
+      resolveAttachSandbox({ environment: { sandbox: { mode: 'workspace', trust: 'public' } }, adapterName: 'stub' });
+    } catch (err) {
+      ({ message } = err);
+    }
+    expect(message).toContain("The stub adapter can't enforce sandbox.mode=workspace");
+    expect(message).not.toMatch(/needs sandbox\.trust|Add sandbox\.trust/);
   });
 
   test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
@@ -185,13 +196,13 @@ describe("resolveAttachSandbox — dsh's confined shape", () => {
   test('the same env is still refused for adapters without their own confined shape', () => {
     for (const adapterName of ['claude', 'codex', 'opencode', 'qwen', 'pi']) {
       expect(() => resolveAttachSandbox({ environment: confined, adapterName, adapter: { name: adapterName } }))
-        .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+        .toThrow(/needs sandbox\.trust=public, and this environment has no sandbox\.trust\. Add sandbox\.trust=public, or remove sandbox\.mode\./);
     }
   });
 
   test('without the adapter object, the old refusal still holds for dsh', () => {
     expect(() => resolveAttachSandbox({ environment: confined, adapterName: 'dsh' }))
-      .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+      .toThrow(/needs sandbox\.trust=public/);
   });
 });
 
