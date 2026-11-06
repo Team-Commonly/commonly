@@ -1,7 +1,7 @@
 // Tool connectors: state, effects and verbs of the Tools list, moved out of the
 // retired tools list so the tile page and its panels share one model (TASK-733).
 // The page draws it as tiles and a drawer.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
@@ -22,6 +22,8 @@ import {
 } from './toolModel';
 import type {
   GrantWriteMode,
+  ConnectableRepository,
+  RepositoryConnect,
   ToolGrant,
   ToolOutcome,
   ToolTrail,
@@ -71,6 +73,8 @@ export const useToolConnectors = (
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftGrant | null>(null);
   const [githubAppSetup, setGithubAppSetup] = useState<GithubAppSetup | null>(null);
+  const [repositoryConnect, setRepositoryConnect] = useState<RepositoryConnect | null>(null);
+  const repositoryReadRef = useRef(0);
   // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
   const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
@@ -441,10 +445,71 @@ export const useToolConnectors = (
   };
   const openGithubAppSetup = () => {
     setGithubAppSetup({ installationId: '', owner: '', repo: '' });
+    setRepositoryConnect(null);
     setDraft(null);
     setSelectedId(null);
     setConfirmRevoke(null);
     setError(null);
+  };
+  const readConnectableRepositories = async () => {
+    setError(null);
+    setRepositoryConnect({ status: 'loading', repositories: [], truncated: false, selected: '' });
+    // A slow read must not reopen a step that was closed, or overwrite a newer read.
+    repositoryReadRef.current += 1;
+    const readId = repositoryReadRef.current;
+    const settle = (next: RepositoryConnect) => setRepositoryConnect((current) => (
+      current && readId === repositoryReadRef.current ? next : current
+    ));
+    try {
+      const listed = await api.get<{ repositories?: ConnectableRepository[]; truncated?: boolean }>('/api/integrations/github-app/repositories');
+      const repositories = listed.repositories || [];
+      const only = repositories.length === 1 ? `${repositories[0].owner}/${repositories[0].repo}` : '';
+      settle({ status: 'ready', repositories, truncated: Boolean(listed.truncated), selected: only });
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      settle({
+        status: code === 'github_connect_required' ? 'needsGithub' : 'failed', repositories: [], truncated: false, selected: '',
+      });
+    }
+  };
+  // The GitHub sign-in and the App's install page both open in another tab, so
+  // coming back is when the answer can have changed.
+  const repositoryStepWaiting = repositoryConnect?.status === 'needsGithub'
+    || (repositoryConnect?.status === 'ready' && repositoryConnect.repositories.length === 0);
+  useEffect(() => {
+    if (!repositoryStepWaiting) return undefined;
+    const onVisibility = () => { if (document.visibilityState === 'visible') void readConnectableRepositories(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repositoryStepWaiting]);
+  const openRepositoryConnect = () => {
+    setDraft(null);
+    setGithubAppSetup(null);
+    setSelectedId(null);
+    setConfirmRevoke(null);
+    void readConnectableRepositories();
+  };
+  const submitRepositoryConnect = async () => {
+    const chosen = repositoryConnect?.repositories.find((row) => `${row.owner}/${row.repo}` === repositoryConnect.selected);
+    if (!chosen) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post('/api/integrations/github-app/repositories', {
+        installationId: chosen.installationId, owner: chosen.owner, repo: chosen.repo,
+      });
+      setRepositoryConnect(null);
+      await load();
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(({
+        repository_write_required: t('tools.repoConnect.writeRequired', { defaultValue: 'You need write access to that repository to connect it.' }),
+        connection_exists: t('tools.repoConnect.exists', { defaultValue: 'That repository is already connected.' }),
+      } as Record<string, string>)[code || ''] || t('tools.repoConnect.failed', { defaultValue: 'Could not connect that repository.' }));
+    } finally {
+      setBusy(false);
+    }
   };
   // A background catalogue read can fail or stop offering this connection.
   // Keep the open draft (and any server refusal) visible in either case. The
@@ -819,6 +884,11 @@ export const useToolConnectors = (
     draft,
     setDraft,
     githubAppSetup,
+    repositoryConnect,
+    setRepositoryConnect,
+    readConnectableRepositories,
+    openRepositoryConnect,
+    submitRepositoryConnect,
     setGithubAppSetup,
     staleAfterChange,
     setStaleAfterChange,

@@ -237,6 +237,25 @@ describe('installable catalog service', () => {
     }));
     expect(JSON.stringify(catalog)).not.toMatch(/pem-material|ghs_secret|conn-object-id/);
 
+    // F221: the self-serve step needs Commonly Connect to sign and the hosted
+    // GitHub entry to read the person's token, and shows on both tiles.
+    const hostedGithub = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'github-mcp');
+    process.env.GITHUB_CONNECT_APP_ID = 'connect-1';
+    process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = 'pem';
+    const withoutHosted = await catalogFor(userId);
+    expect(withoutHosted.installables.find((entry) => entry.list === 'tools').repositoryConnect).toBeUndefined();
+    mockInstallables([], [githubTool(), buildHostedMcpToolInstallable(hostedGithub)]);
+    process.env.GITHUB_MCP_CLIENT_ID = 'client';
+    process.env.GITHUB_MCP_CLIENT_SECRET = 'secret';
+    const withConnect = await catalogFor(userId);
+    delete process.env.GITHUB_CONNECT_APP_ID;
+    delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_MCP_CLIENT_ID;
+    delete process.env.GITHUB_MCP_CLIENT_SECRET;
+    const toolRows = withConnect.installables.filter((entry) => entry.list === 'tools');
+    expect(toolRows).toHaveLength(2);
+    expect(toolRows.map((entry) => entry.repositoryConnect)).toEqual([true, true]);
+
     delete process.env.GITHUB_APP_ID;
     delete process.env.GITHUB_APP_PRIVATE_KEY;
     mockInstallables([], [githubTool()]);

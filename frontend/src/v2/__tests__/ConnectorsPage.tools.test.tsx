@@ -1638,6 +1638,106 @@ describe('the form offers read, and a stored write grant stays what it is', () =
   });
 });
 
+describe('F221: connecting your own repository', () => {
+  const ROUTE = '/api/integrations/github-app/repositories';
+  const appEntry = { ...githubEntry, connectionType: 'github-app', repositoryConnect: true, connections: [] };
+  const hostedGithub = {
+    ...linearEntry, installableId: 'github-mcp', label: 'GitHub MCP', entryId: 'github-mcp', repositoryConnect: true, accessPage: 'https://github.com/apps/connect/installations/new', connections: [],
+  };
+  const repos = [
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Widget' },
+    { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' },
+  ];
+  const openStep = async ({ listed, refused, entries = [appEntry, hostedGithub] }) => {
+    const route = (url) => {
+      if (url !== ROUTE) return undefined;
+      return refused ? Promise.reject({ response: { data: { error: refused } } }) : Promise.resolve({ data: listed });
+    };
+    mockTools({ entries, grants: [], seats: { p1: [scout], p2: [] }, route });
+    axios.post.mockResolvedValue({ data: { integration: { _id: 'row-1' } } });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
+    return screen.findByRole('complementary', { name: 'Connect a repository' });
+  };
+
+  it('is not offered where the catalogue does not say so', async () => {
+    mockTools({ entries: [{ ...hostedGithub, repositoryConnect: undefined }], grants: [], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    expect(within(popover).queryByRole('button', { name: 'Connect a repository' })).toBeNull();
+  });
+
+  it('a member who is no admin connects the repository they pick, with the row GitHub listed', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: false } });
+    const connect = await within(step).findByRole('button', { name: 'Connect' });
+    expect(connect).toBeDisabled();
+    fireEvent.change(within(step).getByLabelText('repository'), { target: { value: 'Outside-Team/Gadget' } });
+    fireEvent.click(connect);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(ROUTE, { installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' }, expect.anything()));
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Connect a repository' })).toBeNull());
+  });
+
+  it('with no GitHub account connected, it starts that sign-in instead of asking for ids', async () => {
+    const opened = { opener: 'x', location: { assign: jest.fn() }, close: jest.fn() };
+    jest.spyOn(window, 'open').mockReturnValue(opened);
+    const step = await openStep({ refused: 'github_connect_required' });
+    fireEvent.click(await within(step).findByRole('button', { name: 'Connect GitHub' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/integrations/connect/hosted-mcp/github-mcp/start', {}, expect.anything()));
+  });
+
+  it('with nothing to connect, it links the install page', async () => {
+    const step = await openStep({ listed: { repositories: [], truncated: false } });
+    const link = await within(step).findByRole('link');
+    expect(link).toHaveAttribute('href', hostedGithub.accessPage);
+  });
+
+  it('a member with a live grant can still connect another repository', async () => {
+    const connected = { ...appEntry, connections: [{ connectionId: 'conn-1', owner: 'Team-Commonly', repo: 'commonly' }] };
+    mockTools({ entries: [connected, hostedGithub], grants: [grantLive], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const drawer = await openTool('GitHub');
+    expect(within(drawer).getByRole('button', { name: 'Connect a repository' })).toBeInTheDocument();
+  });
+
+  it('a read that lands after the step closed does not reopen it', async () => {
+    let answer;
+    const route = (url) => (url === ROUTE ? new Promise((resolve) => { answer = resolve; }) : undefined);
+    mockTools({ entries: [appEntry, hostedGithub], grants: [], seats: { p1: [scout], p2: [] }, route });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
+    const step = await screen.findByRole('complementary', { name: 'Connect a repository' });
+    fireEvent.click(within(step).getByRole('button', { name: 'Cancel' }));
+    await act(async () => { answer({ data: { repositories: repos, truncated: false } }); });
+    await settle();
+    expect(screen.queryByRole('complementary', { name: 'Connect a repository' })).toBeNull();
+  });
+
+  it('coming back from the GitHub sign-in reads the list again', async () => {
+    const step = await openStep({ refused: 'github_connect_required' });
+    await within(step).findByRole('button', { name: 'Connect GitHub' });
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === ROUTE).length;
+    const before = reads();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(reads()).toBe(before + 1));
+  });
+
+  it('says when the list may be incomplete', async () => {
+    const step = await openStep({ listed: { repositories: repos, truncated: true } });
+    expect(await within(step).findByText('This list may be incomplete.')).toBeInTheDocument();
+  });
+
+  it('a refused connect stays on the step and says why', async () => {
+    const step = await openStep({ listed: { repositories: [repos[0]], truncated: false } });
+    const connect = await within(step).findByRole('button', { name: 'Connect' });
+    expect(connect).toBeEnabled();
+    axios.post.mockRejectedValueOnce({ response: { data: { error: 'repository_write_required' } } });
+    fireEvent.click(connect);
+    expect(await within(step).findByRole('alert')).toHaveTextContent('You need write access to that repository to connect it.');
+  });
+});
+
 describe('F214: pull-request access in the grant form', () => {
   const PR_TOOLS = ['github.create_pull_request', 'github.commit_files', 'github.push_branch'];
   const CHOICE = /open pull requests from their own branch/;

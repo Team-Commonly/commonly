@@ -43,6 +43,18 @@ const verdictsOf = (tools) => tools.reduce((counts, tool) => {
 }, {});
 const classOf = (name) => LINEAR_ENTRY.tools.find((tool) => tool.name === name).class;
 
+describe('what a Linear connection asks for', () => {
+  test('read and identity only, until an agent can reach an approved write', () => {
+    expect(LINEAR_ENTRY.scopes).toEqual(['read', 'openid']);
+    expect(LINEAR_ENTRY.description).not.toMatch(/change|write|approval/i);
+  });
+
+  test('a new connection reads as the read-scoped row below: writes not granted, reads ok', () => {
+    const tools = assessEntryTools(LINEAR_ENTRY, SAM_LIST, { grantedScope: LINEAR_ENTRY.scopes.join(' ') });
+    expect(verdictsOf(tools)).toEqual({ ok: 36, not_granted: 26 });
+  });
+});
+
 describe("Sam's read-scoped Linear row (read openid, 38 listed)", () => {
   test('the fixture is the shape it claims', () => {
     expect(SAM_ROW_LIST.grantedScope).toBe('read openid');

@@ -174,8 +174,38 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     const [event] = calls('chat.mention');
     expect(event).toBeDefined();
     expect(event.payload.rawContent).toBe(typed);
+    expect(event.payload.senderIsHuman).toBe(true);
     expect(event.payload.content).toContain(POD_FRAME_MARK);
     expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
+  });
+
+  test('senderIsHuman is false on a peer agent\'s @mention, at the direct site and the alias site', async () => {
+    setup();
+    await send(`@seat-a ${TEXT}`, { userId: SCOUT_BOT, username: 'scout' });
+    const [direct] = calls('chat.mention');
+    expect(direct).toBeDefined();
+    expect(direct.payload.senderIsHuman).toBe(false);
+
+    jest.clearAllMocks();
+    AgentEvent.countDocuments.mockResolvedValue(0);
+    setup({
+      installations: [
+        { agentName: 'scout', instanceId: 'a', displayName: 'Scout A' },
+        { agentName: 'scout', instanceId: 'b', displayName: 'Scout B' },
+      ],
+    });
+    await send(`@guide ${TEXT}`, { userId: SEAT_A_BOT, username: 'seat-a' });
+    const viaAlias = calls('chat.mention').filter((e) => e.agentName === 'scout');
+    expect(viaAlias).toHaveLength(2);
+    viaAlias.forEach((event) => expect(event.payload.senderIsHuman).toBe(false));
+  });
+
+  test('senderIsHuman is false when the sender lookup finds nobody', async () => {
+    setup();
+    await send(`@seat-a ${TEXT}`, { userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', username: 'gone' });
+    const [event] = calls('chat.mention');
+    expect(event).toBeDefined();
+    expect(event.payload.senderIsHuman).toBe(false);
   });
 
   test('reply (adjacency, replies-to-you frame): rawContent is exactly what was typed', async () => {
@@ -186,6 +216,7 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     const [event] = calls('chat.mention');
     expect(event).toBeDefined();
     expect(event.payload.adjacentReply).toBe(true);
+    expect(event.payload.senderIsHuman).toBe(true);
     expect(event.payload.rawContent).toBe(TEXT);
     expect(event.payload.content).toContain('you are addressed even though nobody typed your @name');
     expect(event.payload.content).toContain(POD_FRAME_MARK);
@@ -207,6 +238,7 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     await send(TEXT, { replyToMessageId: 'm-parent' });
     const event = calls('chat.mention').find((e) => e.payload.implicitReply);
     expect(event).toBeDefined();
+    expect(event.payload.senderIsHuman).toBe(true);
     expect(event.payload.rawContent).toBe(TEXT);
     expect(event.payload.content).toContain(POD_FRAME_MARK);
   });
@@ -252,6 +284,7 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     const event = calls('chat.mention').find((e) => e.agentName === 'helper-bot');
     expect(event).toBeDefined();
     expect(event.payload.autoJoined).toBe(true);
+    expect(event.payload.senderIsHuman).toBe(true);
     expect(event.payload.rawContent).toBe(typed);
     expect(event.payload.content).toContain(POD_FRAME_MARK);
     expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
@@ -272,6 +305,7 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     const events = calls('chat.mention').filter((e) => e.agentName === 'scout');
     expect(events.map((e) => e.instanceId).sort()).toEqual(['a', 'b']);
     events.forEach((event) => {
+      expect(event.payload.senderIsHuman).toBe(true);
       expect(event.payload.rawContent).toBe(typed);
       expect(event.payload.content).toContain(POD_FRAME_MARK);
       expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);

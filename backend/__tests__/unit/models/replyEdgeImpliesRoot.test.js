@@ -21,6 +21,10 @@
  * (2) is the one a reader is least likely to think of. TASK-040's Mongo
  * write-fallback is the live reminder that a second path to the same data is
  * not hypothetical here.
+ *
+ * One exception, written in the same statement: a row marked top_level_answer
+ * keeps its edge with no root (F212, models/pg/Message.create). The retention
+ * repair and the backfill both skip the mark.
  */
 const fs = require('fs');
 const path = require('path');
@@ -43,7 +47,7 @@ const productionFiles = () => {
 
 const rel = (p) => path.relative(BACKEND, p);
 
-describe('a reply edge is only ever created where the root is derived', () => {
+describe('a reply edge is only ever created by a statement that sets the root: derived, or marked top-level', () => {
   const files = productionFiles().map((f) => ({ path: rel(f), src: fs.readFileSync(f, 'utf8') }));
 
   test('CONTROL: the scan reaches the model that owns the insert', () => {

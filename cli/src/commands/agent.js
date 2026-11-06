@@ -781,6 +781,34 @@ const DELIVERY_RENEW_INTERVAL_MS = 60_000;
 // point where spawnRetryPolicy stops treating an unknown failure as transient.
 const HELD_RETRY_MAX_FAILURES = 3;
 
+// F226: a turn shows at most the batch limit, so a carried item on top of a full
+// page can sit past the cap. Such an item is not acked: it keeps its lease and
+// rejoins the next turn. At this many turns passed over the carry lets it go,
+// the way HELD_RETRY_MAX_FAILURES does, so an ambient item under a steady stream
+// of people, or anything piling up during an outage, can't be held forever. The
+// server redelivers it under its cap, and may retire it with the TASK-656 line,
+// which is skipped if the agent has posted in the pod since.
+const PAST_CAP_MAX_CARRIES = 5;
+
+// Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
+// the snapshot behind `trigger` holds 10 messages and a page holds up to 50, and
+// a wrong guess costs an ambient item one turn. Within a rank the older row
+// wins, and carried rows lead the page, so new arrivals can't overtake them.
+const capRank = (entry) => {
+  const { type, payload } = entry.event;
+  // A reply to the seat is direct address on a broadcast's transport, as the
+  // claim path treats it.
+  const direct = ADDRESSED_EVENT_TYPES.has(type)
+    || ((payload?.repliesToYourMessage === true || payload?.addressed === true)
+      && payload?.senderIsHuman !== false);
+  return direct && entry.trigger !== 'agent' && entry.trigger !== 'kernel'
+    ? 0
+    : 1 + inboxPriority(entry.event);
+};
+
+// The wake whose ack settles the digest (agentEventService.acknowledge).
+const holdsDigest = (event) => Boolean(event.digestSnapshotAt || event.payload?.digestRollup);
+
 const deliveryIdOf = (event) => {
   const deliveryId = event?.payload?.deliveryId;
   return typeof deliveryId === 'string' && deliveryId ? deliveryId : null;
@@ -1174,11 +1202,20 @@ export const resolveAttachSandbox = ({
   // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
-  if ((mode === 'workspace' || mode === 'read-only')
-    && (!confined || !ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName))) {
-    throw new Error(
-      `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
-    );
+  // Two different things can be missing, so the refusal names the one that is:
+  // the D247 walk read "requires public trust" on a seat whose trust WAS public.
+  if (mode === 'workspace' || mode === 'read-only') {
+    if (!confined) {
+      throw new Error(
+        `sandbox.mode=${mode} needs sandbox.trust=public. Add it, or remove sandbox.mode to run without a sandbox.`,
+      );
+    }
+    if (!ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName)) {
+      throw new Error(
+        `The ${adapterName || 'selected'} adapter can't enforce sandbox.mode=${mode}. `
+          + `On macOS, these adapters can: ${[...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort().join(', ')}.`,
+      );
+    }
   }
   return { mode, trust };
 };
@@ -1527,7 +1564,14 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // threadRootId set to that message, so the answer sat in a collapsed thread
 // under it. The kernel's mention cue teaches threadRootId as a verb but never
 // says which messages it is for, so each top-level mention says where its
-// answer goes, beside the message it answers.
+// answer goes, beside the message it answers. replyToMessageId alone threads
+// too, because the kernel derives the root from the reply edge, so the line
+// names both. This is advice: the guarantee is the kernel's answerStaysTopLevel.
+//
+// Only for a person's message. The line sends a plain post, which the kernel
+// cannot thread back, so on a peer's mention it would put an agent exchange in
+// the channel at every hop. A missing `senderIsHuman` means no line: the kernel
+// still keeps the answer top-level for a person.
 //
 // `chat.mention` alone is not "top-level": the kernel sends a chat-thread
 // mention as chat.mention with `payload.threadRootId`, a 1:1 DM as chat.mention
@@ -1553,6 +1597,7 @@ export const answersInChannel = (entry) => {
   return entry?.event?.type === 'chat.mention' && !entry.readOnly
     && entry.result?.reason !== 'duplicate-delivery'
     && Boolean(payload.messageId)
+    && payload.senderIsHuman === true
     && (payload.threadRootId === undefined || payload.threadRootId === null || payload.threadRootId === '')
     && payload.source !== 'dm' && !payload.dmKind;
 };
@@ -1714,6 +1759,7 @@ export const performRun = ({
   log = () => {},
   onError,
   setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
   // The host's bubblewrap probe, for a turn placed public; tests pin it.
@@ -2953,20 +2999,26 @@ export const performRun = ({
   };
 
   // ADR-024 D3: the batch header states the real inbox count even when we cap
-  // copied bodies. The cap is the fetched page itself: never acknowledge a
-  // claimed event whose body the one turn did not receive. Additional pending
+  // copied bodies. A claimed item past the cap (`pastCap`, set in
+  // handleEventBatch) is left out and named in the prompt, never acked as seen;
+  // the next turn shows it. Additional pending
   // events stay in the kernel queue and are cued in the header for a later
   // pull, rather than being silently consumed here.
   const buildInboxPrompt = (entries, inboxCount = entries.length) => {
     const BODY_LIMIT = batchLimit;
-    const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest');
-    const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest');
-    const shownEntries = wakeEntries.slice(0, BODY_LIMIT);
+    const wakeEntries = entries.filter((entry) => entry.event.deliveryMode !== 'digest' && !entry.pastCap);
+    const digestEntries = entries.filter((entry) => entry.event.deliveryMode === 'digest' && !entry.pastCap);
+    // What the turn acts on always fits. An item already settled (a peer's, a
+    // duplicate) is context, and takes only what's left.
+    const context = wakeEntries.filter((entry) => entry.result);
+    const contextShown = new Set(context.slice(0, Math.max(0, BODY_LIMIT - wakeEntries.length + context.length)));
+    const shownEntries = wakeEntries.filter((entry) => !entry.result || contextShown.has(entry));
+    const heldBack = entries.filter((entry) => entry.pastCap).length;
     const answersPerson = shownEntries.some(answersAPerson);
     const bodies = shownEntries.map((entry, index) => {
       const messageId = entry.event.payload?.messageId;
       const prefix = [
-        `Event ${index + 1}/${wakeEntries.length}: ${entry.event.type}`,
+        `Event ${index + 1}/${shownEntries.length}: ${entry.event.type}`,
         messageId ? `message ${messageId}` : null,
       ].filter(Boolean).join(' — ');
       const claimContext = entry.readOnly
@@ -2996,6 +3048,10 @@ export const performRun = ({
         + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
         + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,
+      ...(heldBack > 0
+        ? [`[${heldBack} more event${heldBack === 1 ? '' : 's'} in this inbox did not fit this turn. `
+          + 'They are unread and still queued, and come in a later turn. Don\'t answer as if you saw them.]']
+        : []),
       ...(digestFrame ? [digestFrame] : []),
       ...(omitted > 0
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
@@ -3101,8 +3157,19 @@ export const performRun = ({
   // 2026-10-25): a scheduled retry either fires, re-running the held events,
   // or releases them; it never leaves a live process idle on unacked work.
   let heldRetry = [];
+  // Claimed events the latest tick neither acked nor carried: a digest left
+  // unread, or a later group a failure or a stale ack skipped. A running seat
+  // leaves these to the requeue as it always has. A stop hands them back on
+  // every planned exit from the tick; an unexpected throw leaves the page to
+  // the requeue. One list, so a new exit has one thing to add to (F189).
+  let tickUnsettled = [];
   // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
   const heldRetryFailures = new Map();
+  // eventId → turns passed over, for PAST_CAP_MAX_CARRIES.
+  const pastCapCarries = new Map();
+  // The current batch's items past the cap. Kept out here because the tick needs
+  // them when the turn throws, and a throw returns no entries.
+  let pastCapEvents = [];
   let heldRenewTimer = null;
   const clearHeldRenewal = () => {
     if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
@@ -3144,8 +3211,11 @@ export const performRun = ({
   // Decide what a failed turn's retry carries. `failedEvents` were attempted
   // and count toward HELD_RETRY_MAX_FAILURES; `untriedEvents` are later groups
   // from the same page that the failure stopped before they ran (#782), and
-  // are just as claimed, so they ride along without a strike.
-  const holdForRetry = async (failedEvents, untriedEvents = []) => {
+  // are just as claimed, so they ride along without a strike. `pastCap` events
+  // were left out of a turn, which is no failure of theirs: no strike, and
+  // PAST_CAP_MAX_CARRIES bounds them instead. A later group's hold in the same
+  // tick adds to the carry, never replaces it.
+  const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
     const released = [];
     const carry = [];
     const seen = new Set();
@@ -3154,7 +3224,9 @@ export const performRun = ({
       if (!seen.has(id)) {
         seen.add(id);
         const failures = (heldRetryFailures.get(id) || 0) + 1;
-        if (failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
+        // A stop wins over the local limit: the sweep would make this event
+        // wait 10–20 minutes, and the server's ceiling bounds a hand-back.
+        if (running && failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
         else {
           heldRetryFailures.set(id, failures);
           carry.push(event);
@@ -3168,23 +3240,113 @@ export const performRun = ({
         carry.push(event);
       }
     }
+    const passedOver = [];
+    for (const event of pastCap) {
+      const id = String(event._id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        const carries = (pastCapCarries.get(id) || 0) + 1;
+        // As above: a stop hands the item back rather than leave it to the sweep.
+        if (running && carries >= PAST_CAP_MAX_CARRIES) passedOver.push(event);
+        else {
+          pastCapCarries.set(id, carries);
+          carry.push(event);
+        }
+      }
+    }
+    if (passedOver.length) {
+      log(
+        `[inbox.batch] releasing ${countEvents(passedOver.length)} after ${PAST_CAP_MAX_CARRIES} turns past the prompt cap `
+        + 'to the server\'s requeue (redelivered in ~10–20 min)',
+      );
+    }
     // A stopping run carries nothing and renews nothing: extending the lease
     // of a process on its way out only delays the replacement's redelivery.
-    const confirmed = running && carry.length ? await renewHeldDeliveries(carry) : null;
-    const held = running ? carry.filter((event) => stillHeld(event, confirmed)) : [];
-    const dropped = running ? carry.filter((event) => !stillHeld(event, confirmed)) : [];
-    const heldIds = new Set(held.map((event) => String(event._id)));
-    for (const id of [...heldRetryFailures.keys()]) {
-      if (!heldIds.has(id)) heldRetryFailures.delete(id);
+    // Its carry is handed back to the server when the tick ends instead
+    // (F189), so the next run answers it on its first poll.
+    if (!running) {
+      heldRetry = [...heldRetry, ...carry];
+      heldRetryFailures.clear();
+      pastCapCarries.clear();
+      return { held: [], released, handedBack: carry };
     }
-    heldRetry = held;
+    const confirmed = carry.length ? await renewHeldDeliveries(carry) : null;
+    // The stop landed during that renewal, after the limits were applied.
+    if (!running) tickUnsettled.push(...released, ...passedOver);
+    const held = carry.filter((event) => stillHeld(event, confirmed));
+    const dropped = carry.filter((event) => !stillHeld(event, confirmed));
+    heldRetry = [...heldRetry, ...held];
+    const heldIds = new Set(heldRetry.map((event) => String(event._id)));
+    for (const counts of [heldRetryFailures, pastCapCarries]) {
+      for (const id of [...counts.keys()]) {
+        if (!heldIds.has(id)) counts.delete(id);
+      }
+    }
     if (dropped.length) {
       log(
         `[inbox.batch] ${countEvents(dropped.length)} no longer held by this runner on the server `
         + '(checkpointed, requeued or retired) — not retried',
       );
     }
-    return { held, released };
+    return { held, released, handedBack: [] };
+  };
+
+  // F189/F182: hand claimed events this run will never run back to the
+  // server as pending, so the next run claims them on its first poll. Without
+  // this they stay `delivered` to a dead process until the requeue sweep
+  // (10–20 min, one attempt spent per lap): a walk on 2026-11-05 restarted a
+  // circuit-open seat five times and each restart's mention waited on that
+  // sweep. Nonce-bound on the server, so nothing a replacement holds can be
+  // released, and an event this run released can no longer be acked by it.
+  // The server refuses an event at its redelivery ceiling (`atCeiling`); it
+  // stays delivered and the requeue retires it, which bounds a poison event.
+  // Best effort: an older server without the route, or a failed request,
+  // leaves them to the requeue as before, and says so.
+  const handBackDeliveries = async (events, why) => {
+    const seen = new Set();
+    const deliveries = [];
+    for (const event of events) {
+      const id = String(event._id);
+      if (deliveryIdOf(event) && !seen.has(id)) {
+        seen.add(id);
+        deliveries.push({ eventId: id, deliveryId: deliveryIdOf(event) });
+      }
+    }
+    if (deliveries.length === 0) return [];
+    const released = [];
+    const atCeiling = [];
+    try {
+      for (let offset = 0; offset < deliveries.length; offset += 50) {
+        // eslint-disable-next-line no-await-in-loop
+        const response = await client.post('/api/agents/runtime/events/release', {
+          events: deliveries.slice(offset, offset + 50),
+        });
+        if (Array.isArray(response?.released)) released.push(...response.released.map(String));
+        if (Array.isArray(response?.atCeiling)) atCeiling.push(...response.atCeiling.map(String));
+      }
+    } catch (error) {
+      log(
+        `[inbox.batch] could not hand back ${countEvents(deliveries.length - released.length)} on ${why} `
+        + `(${error.message}) — the server's requeue redelivers them in ~10–20 min`,
+      );
+      return released;
+    }
+    log(`[inbox.batch] handed back ${countEvents(released.length)} held on ${why}, for the next run to answer`);
+    if (atCeiling.length) {
+      log(`[inbox.batch] ${countEvents(atCeiling.length)} left to the requeue (at the redelivery ceiling)`);
+    }
+    return released;
+  };
+  // Everything a stopped run still carries. Taken once: the arrays are emptied
+  // before the request, so a second caller finds nothing to send.
+  const handBackCarryOnStop = () => {
+    const carry = [...heldRetry, ...heldGreeting, ...tickUnsettled];
+    heldRetry = [];
+    heldGreeting = [];
+    tickUnsettled = [];
+    heldRetryFailures.clear();
+    clearHeldRenewal();
+    return carry.length ? handBackDeliveries(carry, 'stop') : Promise.resolve([]);
   };
 
   // Keep a long wait's leases alive. A wait shorter than one renewal interval
@@ -3214,9 +3376,13 @@ export const performRun = ({
   };
 
   // What the retry will actually do, for the failure report.
-  const describeHold = ({ held, released }, retry) => {
+  const describeHold = ({ held, released, handedBack = [] }, retry) => {
     const parts = [];
     if (retry.circuitOpen) parts.push('circuit open');
+    if (handedBack.length) {
+      return [...parts, `stopping: handing ${countEvents(handedBack.length)} back to the server for the next run`]
+        .join('; ');
+    }
     if (released.length) {
       parts.push(
         `releasing ${countEvents(released.length)} after ${HELD_RETRY_MAX_FAILURES} failed attempts `
@@ -3230,6 +3396,7 @@ export const performRun = ({
   };
 
   const handleEventBatch = async (events, inboxCount = events.length) => {
+    pastCapEvents = [];
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
       throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
@@ -3287,6 +3454,22 @@ export const performRun = ({
       ? new Set(preSpawn.map((message) => String(message._id || message.id)))
       : null;
     const activeEntries = entries.filter((entry) => !entry.result);
+    // The server settles a digest on its holder's ack, up to the holder's
+    // snapshot. A holder this turn shows settles what it shows, so every digest
+    // in hand goes in its prompt, whoever else waits. With no holder shown, a
+    // holder that waits takes them along, so they settle on a turn that shows
+    // them. A holder with a result settles nothing here: its reason doesn't count
+    // as reading a digest.
+    const carryPastCap = () => {
+      const isHolder = (entry) => holdsDigest(entry.event);
+      const shownHolder = wakingEntries.some((entry) => !entry.pastCap && !entry.result && isHolder(entry));
+      if (!shownHolder && wakingEntries.some((entry) => entry.pastCap && isHolder(entry))) {
+        for (const entry of activeEntries) {
+          if (entry.event.deliveryMode === 'digest') entry.pastCap = true;
+        }
+      }
+      pastCapEvents = entries.filter((entry) => entry.pastCap).map((entry) => entry.event);
+    };
     // Ambient digest entries provide context for this turn, but must never
     // determine its admission or count as the trigger that woke the seat.
     const wakingEntries = activeEntries.filter((entry) => entry.event.deliveryMode !== 'digest');
@@ -3318,9 +3501,18 @@ export const performRun = ({
         admissionEvent.event.payload,
       );
       if (!admission.allowed) {
+        // An agent row refuses the page, and that shouldn't cost a row nobody
+        // can place: a person's message that scrolled off the snapshot reads
+        // `unknown`. It is carried, past-cap bound included, and alone in its
+        // next page it can't be refused, because only 'agent' ever is. A row
+        // stamped as an agent's is placed, so it stays refused, or it would walk
+        // past this brake. A legacy row has no stamp, and still carries.
         for (const entry of wakingEntries) {
-          entry.result = batchAdmissionResult(entry.event, admission);
+          if (entry.trigger === 'unknown' && entry.event.payload?.messageId
+            && entry.event.payload?.senderIsHuman !== false) entry.pastCap = true;
+          else entry.result = batchAdmissionResult(entry.event, admission);
         }
+        carryPastCap();
         return { entries };
       }
     }
@@ -3337,10 +3529,9 @@ export const performRun = ({
       }
     }
 
-    for (const entry of activeEntries) {
-      if (entry.event.deliveryMode === 'digest') continue;
+    const claimEntry = async (entry) => {
       const messageId = entry.event.payload?.messageId;
-      if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) continue;
+      if (!messageId || !CLAIMABLE_EVENT_TYPES.has(entry.event.type)) return;
       const claimKeeper = createClaimKeeper(client, {
         messageId,
         podId: eventPodId,
@@ -3364,7 +3555,7 @@ export const performRun = ({
           // read-only so a generic broadcast cannot widen itself after CAS.
           if (entry.event.payload?.repliesToYourMessage === true || entry.event.payload?.addressed === true) {
             entry.peerFrame = peerHoldsFrame(claim.holder, messageId);
-            continue;
+            return;
           }
           // D3a's partition: no later model judgement can widen this item's
           // authority after a peer won the binding CAS.
@@ -3377,9 +3568,23 @@ export const performRun = ({
       } else {
         log(`[${entry.event.type}] claim unavailable (${claim.error?.message || 'unknown error'}) — proceeding unguarded`);
       }
-    }
+    };
 
-    const actionEntries = wakingEntries.filter((entry) => !entry.result);
+    // The cap is spent here, not when the prompt is built: a lost claim gives its
+    // slot back, and an item past the cap is never claimed, because a seat that
+    // isn't reading a message must not hold a peer off it.
+    let slotsLeft = batchLimit;
+    for (const entry of [...wakingEntries].sort((a, b) => capRank(a) - capRank(b))) {
+      if (slotsLeft === 0) entry.pastCap = true;
+      else {
+        // eslint-disable-next-line no-await-in-loop
+        await claimEntry(entry);
+        if (!entry.result) slotsLeft -= 1;
+      }
+    }
+    carryPastCap();
+
+    const actionEntries = wakingEntries.filter((entry) => !entry.result && !entry.pastCap);
     if (actionEntries.length === 0) return { entries };
 
     const claimKeepers = actionEntries
@@ -3395,8 +3600,8 @@ export const performRun = ({
       type: 'inbox.batch',
       payload: {
         ...actionEntries[0].event.payload,
-        batchEventIds: entries.map((entry) => String(entry.event._id)),
-        hasHeartbeat: entries.some((entry) => entry.event.type === 'heartbeat'),
+        batchEventIds: entries.filter((entry) => !entry.pastCap).map((entry) => String(entry.event._id)),
+        hasHeartbeat: entries.some((entry) => !entry.pastCap && entry.event.type === 'heartbeat'),
       },
     };
     // One item, run as its own turn. Used only after the provider refused a
@@ -3450,7 +3655,7 @@ export const performRun = ({
           || (turnResult?.outcome === 'no_action'
             && (!turnResult?.reason || turnResult.reason === 'silent_or_empty'))) {
           for (const entry of activeEntries) {
-            if (entry.event.deliveryMode === 'digest') {
+            if (entry.event.deliveryMode === 'digest' && !entry.pastCap) {
               entry.result = { outcome: 'no_action', reason: 'digest-read' };
             }
           }
@@ -3549,16 +3754,37 @@ export const performRun = ({
     try { return await turn(); } finally { pollLiveness.arm(); }
   };
 
+  // The scheduled next tick, so stop() can cancel it: a stopped run idling in
+  // a 15-minute circuit wait otherwise stays alive until the timer fires,
+  // which is why a walk on 2026-11-05 needed repeated signals to end it.
+  let tickTimer = null;
+  let tickInFlight = false;
+  // stop() returns this: it resolves once the hand-back has answered, whether
+  // the idle stop or the in-flight tick's end performs it.
+  let stopped = null;
+  let resolveStopped = () => {};
   const tick = async () => {
+    tickTimer = null;
     if (!running) return;
+    tickInFlight = true;
+    try { await runTick(); } finally {
+      tickInFlight = false;
+      if (!running) {
+        try { await handBackCarryOnStop(); } finally { resolveStopped(); }
+      }
+    }
+  };
+
+  const runTick = async () => {
+    tickUnsettled = [];
     let nextPollDelayMs = intervalMs;
     let completedModelTurn = false;
     let retryScheduled = false;
     try {
       // ADR-024 D3: this is an inbox fetch, not a stream of interrupts. The
-      // backend returns one pod's oldest pending batch, so every delivered row
-      // below reaches the SAME composite turn before it can age into the
-      // requeue sweep. The service selects the pod before claiming any row;
+      // backend returns one pod's oldest pending batch, so the rows below belong
+      // to one composite turn, and what doesn't fit its prompt is carried to the
+      // next (F226). The service selects the pod before claiming any row;
       // do not reintroduce a mixed-pod `limit: 10` here.
       // TASK-317: name this CLI for the chat chip. The server keeps it as a
       // display-only label (runtime.reportedCli) and never as a binding.
@@ -3579,8 +3805,9 @@ export const performRun = ({
       });
       pollLiveness.arm();
       // A stall fired while this request hung: the loop has already given up on
-      // it. A plain stop() falls through instead, to the group loop's own
-      // `running` check, which leaves the page's rows to requeue as it always has.
+      // it, and `agent run` exits in onStall, so its page is left to the requeue.
+      // A plain stop() falls through instead, to the group loop's own `running`
+      // check, which hands the page back.
       if (pollStalled) return;
       const { events = [], inboxCount } = page;
       consecutiveAuthErrors = 0;
@@ -3623,8 +3850,8 @@ export const performRun = ({
         eventGroups.set(key, group);
       }
       // A carried greeting must not push a full page past the prompt's body
-      // cap: an event past the cap gets no body yet is acked with the batch
-      // (CodeRabbit on #3511). Carry the greeting again instead.
+      // cap (CodeRabbit on #3511). It goes back to the greeting hold instead
+      // of the past-cap carry.
       for (const [key, group] of eventGroups) {
         const wakeCount = group.filter((event) => event.deliveryMode !== 'digest').length;
         if (wakeCount <= batchLimit) continue;
@@ -3638,18 +3865,30 @@ export const performRun = ({
       // The greeting window is counted once per poll, however many pods'
       // greetings this page carries (gate review of #3511).
       let greetingCarriedThisPoll = false;
-      // The claimed events a failure at `groupIndex` stops before they run.
-      // A digest-only group was never claimed, so it is not carried.
+      // The events a failure at `groupIndex` stops before they run. A later
+      // digest-only group never starts a turn of its own, so a retry does not
+      // carry it.
       const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
         .filter((later) => !later.every((event) => event.deliveryMode === 'digest'))
         .flat();
+      // Every later group a stop must hand back. The server claims a digest
+      // alongside a wake on the same page, and a private wake groups apart
+      // from it, so a digest-only group here can be `delivered` to this run.
+      const claimedAfter = (groupIndex) => groups.slice(groupIndex + 1).flat();
       for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
         const group = groups[groupIndex];
-        if (!running) break;
+        if (!running) {
+          // Claimed by this tick's poll (or carried into it) and never run:
+          // a stop that arrived mid-poll or mid-page (F182). Handed back when
+          // the tick ends.
+          heldRetry = [...heldRetry, ...group, ...claimedAfter(groupIndex)];
+          break;
+        }
         // A current kernel never claims a digest-only page. Guard a mixed
         // version rollout too: an ambient batch must not start a model turn.
         if (group.every((event) => event.deliveryMode === 'digest')) {
           log(`[inbox.batch] digest-only page (${group.length}) — no spawn or ack`);
+          tickUnsettled.push(...group);
           continue;
         }
         if ((group[0].podId || podId) && !PRIVATE_RESPONSE_EVENT_TYPES.has(group[0].type)) {
@@ -3697,7 +3936,12 @@ export const performRun = ({
             });
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
-            const hold = await holdForRetry(failedEvents, untriedAfter(groupIndex));
+            tickUnsettled.push(...claimedAfter(groupIndex));
+            const hold = await holdForRetry(
+              failedEvents.filter((event) => !pastCapEvents.includes(event)),
+              untriedAfter(groupIndex),
+              pastCapEvents,
+            );
             keepHeldLeases(retry.delayMs);
             const event = group[0];
             const wrapped = new Error(
@@ -3781,6 +4025,13 @@ export const performRun = ({
             );
             break;
           }
+          // Items a stop cut off before they ran (refusal isolation checks
+          // `running`), and any digest this batch left unread.
+          tickUnsettled.push(...batch.entries.filter((entry) => !entry.result).map((entry) => entry.event));
+          if (pastCapEvents.length) {
+            await holdForRetry([], [], pastCapEvents);
+            keepHeldLeases(nextPollDelayMs);
+          }
           continue;
         }
         const [event] = group;
@@ -3814,6 +4065,7 @@ export const performRun = ({
               retryScheduled = true;
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
+              tickUnsettled.push(...claimedAfter(groupIndex));
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
@@ -3889,6 +4141,7 @@ export const performRun = ({
           if (terminalError) {
             running = false;
             onError?.(terminalError);
+            tickUnsettled.push(...claimedAfter(groupIndex));
             return;
           }
           onError?.(new Error(`Ack failed for ${event._id}: ${ackErr.message}`));
@@ -3941,15 +4194,26 @@ export const performRun = ({
     // names it, and a sibling's completed turn must not shorten the backoff.
     // A wait the loop schedules itself always ends, so it is not a stall.
     pollLiveness.pause();
-    if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
+    if (running) tickTimer = setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
   tick();
   return {
+    // Resolves once anything held has been handed back. A tick in flight hands
+    // back its own carry when it ends; an idle run does it here. A second
+    // stop() returns the same promise.
     stop: () => {
+      if (stopped) return stopped;
+      stopped = new Promise((resolve) => { resolveStopped = resolve; });
       running = false;
       pollLiveness.stop();
       clearHeldRenewal();
+      if (tickTimer !== null) {
+        clearTimeoutImpl(tickTimer);
+        tickTimer = null;
+      }
+      if (!tickInFlight) handBackCarryOnStop().finally(() => resolveStopped());
+      return stopped;
     },
   };
 };

@@ -4378,7 +4378,17 @@ A person granted their agent GitHub through the grant broker, then revoked the g
 
 **Lesson:** a prohibition that names one field reads as permission for its sibling. When two fields reach the same storage effect, name the effect, and name every field that causes it.
 
-## 101. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
+## 101. "Quote and thread are independent" taught a model it could quote a person without threading (2026-11-05, cto)
+
+*Origin: a Growth walk on 11-05, where an answer to a top-level mention landed in a collapsed thread; fixed as F212.*
+
+The kernel's mention cue said `replyToMessageId` "quotes and ADDRESSES a message" and that "Quote and thread are independent". `commonly_post_message` described it the same way, with no word on threads. Neither was true of the write: `Message.create` derives `thread_root_id` from the reply edge when no root is sent, so a reply alone files the post under the message it names. The batch prompt also prints the message id beside each mention, which is the id a model would quote. A model that followed the tool text exactly, quoting the person it was answering, buried its own answer. #3499 then added a line forbidding `threadRootId` and left out the field that had the same effect.
+
+**Repair:** both texts now say a reply joins the thread, the wrapper line names both fields, and the kernel keeps the answer in the channel whatever the model sends (`agentAnswerService.answerStaysTopLevel`), returning a `thread_root_dropped` warning.
+
+**Lesson:** when a tool description names two fields as independent, check the write path for a derivation between them. And a prompt line that forbids one input has to be checked against every input that reaches the same write, because the model will use the one nobody mentioned.
+
+## 102. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
 
 *Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
 
