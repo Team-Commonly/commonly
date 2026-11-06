@@ -416,8 +416,12 @@ const V2YourTeamPage: React.FC = () => {
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
-    const visualState = a.connection && a.connection.state !== 'connected' ? 'idle' : state;
-    const statusText = a.connection && a.connection.state !== 'connected'
+    // An ask still waits on a seat that dropped off, so its card keeps the ring.
+    const visualState = state !== 'needsYou' && a.connection && a.connection.state !== 'connected' ? 'idle' : state;
+    const offline = Boolean(a.connection && a.connection.state !== 'connected');
+    // The ask stays the line's content, so the connection gets a quiet line of its own.
+    const askOffline = offline && state === 'needsYou';
+    const statusText = offline && !askOffline
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
       ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
@@ -443,10 +447,11 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
             <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
+              {(!offline || askOffline) && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {(!offline || askOffline) && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
+            {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{connectionLabel(a.connection!, t)}</div>}
             {a.connection?.state === 'never' && a.fixCommand && (
               <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
             )}
@@ -488,16 +493,16 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
-          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
-            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
-              {t('agentConnection.reconnect')}
-            </button>
-          ) : null}
-          {!needsReconnect && state === 'needsYou' && (
+          {state === 'needsYou' && (
             <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
+          {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
+            <button type="button" className={`v2p-b ${state === 'needsYou' ? 'v2p-b-s' : 'v2p-b-p'} v2p-b-sm v2-team-card__answer`} onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+              {t('agentConnection.reconnect')}
+            </button>
+          ) : null}
           {!needsReconnect && <button
             type="button"
             className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk"
