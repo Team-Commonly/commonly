@@ -38,7 +38,7 @@ node cap/measure_after.js
 COMMONLY_TOKEN=… D215_POD=<pod id> D215_AGENT=<name>/default node cap/measure_after.js prod --only chat,board
 ```
 
-Roster, memory notes and machines are account data, so a page can miss its target only because of who ran it. `D215_FIXTURES=/api/path=file.json;/api/other=file2.json` serves those GETs as the frame draws them. Name the fixtures when you report a score. The byo route opens the machine start, the state the frame draws, which needs a machine on the account or a fixture for `/api/machines`.
+Roster, memory notes and machines are account data, so a page can miss its target only because of who ran it. `D215_FIXTURES=/api/path=file.json;/api/other=file2.json` serves those GETs as the frame draws them. The run prints how many GETs each fixture answered, and a fixture at 0 means that score is the account's data. Name the fixtures when you report a score. The byo route opens the machine start, the state the frame draws, and the run stops if the account has no machine and no fixture for `/api/machines`.
 
 ## Caveats
 

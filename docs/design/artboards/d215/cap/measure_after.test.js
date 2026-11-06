@@ -3,8 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
-const { assertLanded, parseFixtures, fixtureRoute, BASE } = require('./lib');
+const { BYO_ROUTE, BYO_NEEDS, METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { assertLanded, parseFixtures, fixtureRoute, fixtureUse, guardRoute, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
 
@@ -58,9 +58,46 @@ test('a non-GET is never sent by the fixture route, even on a fixture path', asy
   }
 });
 
+test('the guard sends a GET and aborts every write', async () => {
+  const get = routed('GET', 'https://commonly.me/api/pods');
+  await guardRoute(get);
+  assert.deepStrictEqual(get.calls, [['continue']]);
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) {
+    const r = routed(method, 'https://commonly.me/api/pods');
+    await guardRoute(r);
+    assert.deepStrictEqual(r.calls, [['abort']]);
+  }
+});
+
+test('a fixture counts what it answered, so one that never matched shows as 0', async () => {
+  fixtureUse.clear();
+  fixtureUse.set('/api/never', 0);
+  const handler = fixtureRoute([{ path: '/api/pods', body: '[]' }]);
+  await handler(routed('GET', 'https://commonly.me/api/pods'));
+  await handler(routed('GET', 'https://commonly.me/api/pods'));
+  await handler(routed('GET', 'https://commonly.me/api/other'));
+  assert.deepStrictEqual([...fixtureUse], [['/api/never', 0], ['/api/pods', 2]]);
+});
+
+test('byo opens the machine start, and a page with no machine cannot print a score', async () => {
+  assert.match(BYO_ROUTE, /\?mode=machine$/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'measure_after.js'), 'utf8'), /\['byo', \(\) => BYO_ROUTE, \{ needs: BYO_NEEDS \}\]/);
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  const page = (machines) => ({
+    goto: async () => ({ ok: () => true, status: () => 200 }),
+    waitForTimeout: async () => {},
+    url: () => BASE + BYO_ROUTE,
+    locator: () => ({ count: async () => machines }),
+    evaluate: async () => ({ helperWords: 0, innerRatio: 1 }),
+  });
+  const byo = ['byo', () => BYO_ROUTE, { needs: BYO_NEEDS }];
+  await assert.rejects(checkSurface(page(0), byo, '1440', t), /byo-1440: no machine/);
+  assert.strictEqual((await checkSurface(page(1), byo, '1440', t)).ok, true);
+});
+
 test('open() registers the fixture route after the abort guard, so the guard still sees what it passes on', () => {
   const src = fs.readFileSync(path.join(__dirname, 'lib.js'), 'utf8');
-  const guard = src.indexOf("return r.abort(); });");
+  const guard = src.indexOf("ctx.route('**/api/**', guardRoute)");
   const fixture = src.indexOf('fixtureRoute(fixtures));');
   assert.ok(guard > -1 && fixture > guard, 'the guard must be registered first');
 });
@@ -69,6 +106,10 @@ test('a malformed D215_FIXTURES entry throws, and none means no fixtures', () =>
   assert.deepStrictEqual(parseFixtures(undefined), []);
   assert.deepStrictEqual(parseFixtures(''), []);
   assert.throws(() => parseFixtures('no-equals-sign'), /D215_FIXTURES needs/);
+  // These can never match a request, so they'd score the account's data while the report names them.
+  for (const bad of ['api/a=f.json', ' /api/b=f.json', '/api/c?x=1=f.json', '/other=f.json']) {
+    assert.throws(() => parseFixtures(bad), /exact \/api\/ path/);
+  }
 });
 
 test('no argument measures the artboard', () => {

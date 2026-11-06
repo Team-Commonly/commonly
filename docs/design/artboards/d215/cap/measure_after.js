@@ -168,6 +168,11 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
+// The byo frame draws the machine start with a machine picked. Opened with no machine, the page shows
+// an empty picker and drops a mode card, so it reads fewer words than the frame and could print a HIT.
+const BYO_ROUTE = '/v2/agents/byo?mode=machine';
+const BYO_NEEDS = { sel: '[data-testid=byo-machine-select] option', why: 'no machine on this account or in D215_FIXTURES, so this is not the state the frame draws' };
+
 // Navigates, opens the panel a surface needs, and measures it. The URL is checked again
 // just before measuring, so a redirect that lands after a click cannot be scored either.
 async function checkSurface(p, [name, route, opt = {}], vp, targets) {
@@ -190,6 +195,7 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
+  if (opt.needs && !(await p.locator(opt.needs.sel).count())) throw new Error(`${name}-${vp}: ${opt.needs.why}`);
   const B = BUSY[name];
   if (B) {
     if (await p.locator(B.refuse).first().isVisible()) throw new Error(`${name}-${vp}: the page did not load (${B.refuse} on screen in place of rows)`);
@@ -251,8 +257,7 @@ async function prod(only) {
     ['agent-memory', () => `/v2/agents/${agent}/memory`],
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
-    // The frame draws the machine start, the same state frame-diff scores.
-    ['byo', () => '/v2/agents/byo?mode=machine'],
+    ['byo', () => BYO_ROUTE, { needs: BYO_NEEDS }],
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
@@ -273,10 +278,12 @@ async function prod(only) {
     await b.close();
   }
   if (!checked) { console.error('no surface was measured'); process.exit(2); }
+  const { fixtureUse } = require('./lib');
+  for (const [fixture, served] of fixtureUse) console.log(`fixture ${fixture} served ${served}`);
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { BYO_ROUTE, BYO_NEEDS, METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;
