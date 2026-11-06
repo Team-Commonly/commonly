@@ -124,9 +124,12 @@ describe('GET /pods/:podId/messages pagination contract (#795)', () => {
     });
 
     test('an older page or a thread read does not look', async () => {
-      await request(app).get(`/api/agents/runtime/pods/pod-1/messages?before=${encodeURIComponent(cursor)}`);
-      await request(app).get('/api/agents/runtime/pods/pod-1/messages?threadRootId=12');
+      const older = await request(app)
+        .get(`/api/agents/runtime/pods/pod-1/messages?before=${encodeURIComponent(cursor)}`);
+      const thread = await request(app).get('/api/agents/runtime/pods/pod-1/messages?threadRootId=12');
       expect(AgentInstallation.find).not.toHaveBeenCalled();
+      expect(older.body).toEqual({ messages: [], hasMore: false });
+      expect(thread.body).toEqual({ messages: [], hasMore: false });
     });
 
     test('a failed lookup leaves both out and still returns the messages', async () => {
