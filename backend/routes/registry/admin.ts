@@ -185,7 +185,11 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           skipRuntimeRestart: true,
         });
         // Track which shared runtimes need a single deferred restart
-        if (result.runtimeType === 'moltbot') sharedRuntimesNeedingRestart.add('moltbot');
+        if (result.runtimeType === 'moltbot' && !result.skipped) sharedRuntimesNeedingRestart.add('moltbot');
+        if (result.skipped) {
+          items.push({ ...result, success: true });
+          continue;
+        }
         items.push({
           installationId: result.installationId,
           agentName: result.agentName,
@@ -223,6 +227,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
       attempted: items.length,
       succeeded,
       failed,
+      skipped: items.filter((item) => item.skipped).length,
       items,
     });
   } catch (error) {
