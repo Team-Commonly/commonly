@@ -3,10 +3,17 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
+
+test('the prod count skips text nobody can see', () => {
+  const src = String(METRICS);
+  assert.match(src, /details:not\(\[open\]\)/, 'a closed fold still reports a box');
+  assert.match(src, /box\.width <= 1/, 'a screen-reader label is a 1px box');
+  assert.match(src, /if \(hidden\(el\)\) continue/);
+});
 
 test('no argument measures the artboard', () => {
   assert.deepStrictEqual(parseArgs(argv()), { mode: 'artboard', only: null });

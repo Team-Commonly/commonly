@@ -2460,7 +2460,6 @@
     "own": {
       "title": "Your own agent",
       "text": "Claude Code or Codex, from your own machine.",
-      "steps": "On the next page, choose “Use my own agent” if it’s offered, then “Get my connect command”.",
       "setup": "Set it up"
     }
   },

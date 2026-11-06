@@ -15,6 +15,22 @@
   "helperWords": 9,
   "innerRatio": 6.28
  },
+ "chat-agents-away-1440": {
+  "helperWords": 79,
+  "innerRatio": 1
+ },
+ "chat-agents-away-390": {
+  "helperWords": 48,
+  "innerRatio": 1
+ },
+ "chat-trace-390": {
+  "helperWords": 5,
+  "innerRatio": 1
+ },
+ "chat-trace-1440": {
+  "helperWords": 9,
+  "innerRatio": 1
+ },
  "board-1440": {
   "helperWords": 71,
   "innerRatio": 1
@@ -48,11 +64,11 @@
   "innerRatio": 1
  },
  "connectors-1440": {
-  "helperWords": 28,
+  "helperWords": 36,
   "innerRatio": 1
  },
  "connectors-390": {
-  "helperWords": 1,
+  "helperWords": 0,
   "innerRatio": 1
  },
  "byo-1440": {
@@ -68,39 +84,71 @@
   "innerRatio": 1.03
  },
  "byo-handoff-390": {
-  "helperWords": 106,
+  "helperWords": 130,
   "innerRatio": 1.31
  },
  "connect-1440": {
-  "helperWords": 20,
-  "innerRatio": 1.09
+  "helperWords": 38,
+  "innerRatio": 1.12
  },
  "connect-390": {
-  "helperWords": 20,
-  "innerRatio": 1.77
+  "helperWords": 38,
+  "innerRatio": 1.8
+ },
+ "profile-1440": {
+  "helperWords": 7,
+  "innerRatio": 1
+ },
+ "profile-390": {
+  "helperWords": 7,
+  "innerRatio": 1
  },
  "team-1440": {
-  "helperWords": 56,
+  "helperWords": 75,
   "innerRatio": 1
  },
  "team-390": {
-  "helperWords": 34,
-  "innerRatio": 1.93
+  "helperWords": 75,
+  "innerRatio": 1.94
  },
  "activity-busy-1440": {
   "helperWords": 94,
   "innerRatio": 1
  },
- "activity-busy-390": {
-  "helperWords": 84,
-  "innerRatio": 1.31
- },
  "activity-dayzero-1440": {
   "helperWords": 52,
   "innerRatio": 1
  },
+ "activity-busy-390": {
+  "helperWords": 90,
+  "innerRatio": 1.31
+ },
  "activity-dayzero-390": {
   "helperWords": 53,
+  "innerRatio": 1
+ },
+ "artifacts-busy-1440": {
+  "helperWords": 36,
+  "innerRatio": 1
+ },
+ "artifacts-dayzero-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "artifacts-busy-390": {
+  "helperWords": 34,
+  "innerRatio": 1
+ },
+ "artifacts-dayzero-390": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "run-trace-after-1440": {
+  "helperWords": 23,
+  "innerRatio": 1
+ },
+ "run-trace-after-390": {
+  "helperWords": 23,
   "innerRatio": 1
  },
  "firstrun-welcome-1440": {
@@ -135,60 +183,12 @@
   "helperWords": 55,
   "innerRatio": 1
  },
- "chat-agents-away-1440": {
-  "helperWords": 79,
-  "innerRatio": 1
- },
- "chat-agents-away-390": {
-  "helperWords": 48,
-  "innerRatio": 1
- },
- "chat-trace-390": {
-  "helperWords": 5,
-  "innerRatio": 1
- },
- "chat-trace-1440": {
-  "helperWords": 9,
-  "innerRatio": 1
- },
- "profile-1440": {
-  "helperWords": 7,
-  "innerRatio": 1
- },
- "profile-390": {
-  "helperWords": 7,
-  "innerRatio": 1
- },
- "run-trace-after-1440": {
-  "helperWords": 23,
-  "innerRatio": 1
- },
- "run-trace-after-390": {
-  "helperWords": 23,
-  "innerRatio": 1
- },
  "firstrun-welcome-nohost-1440": {
   "helperWords": 13,
   "innerRatio": 1
  },
  "firstrun-welcome-nohost-390": {
   "helperWords": 9,
-  "innerRatio": 1
- },
- "artifacts-busy-1440": {
-  "helperWords": 36,
-  "innerRatio": 1
- },
- "artifacts-busy-390": {
-  "helperWords": 34,
-  "innerRatio": 1
- },
- "artifacts-dayzero-1440": {
-  "helperWords": 0,
-  "innerRatio": 1
- },
- "artifacts-dayzero-390": {
-  "helperWords": 0,
   "innerRatio": 1
  }
 }
