@@ -68,7 +68,9 @@ const identityRows = async (agentName: string, instanceId: string, reading: Reco
   const { AgentInstallation } = require('../models/AgentRegistry');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Pod = require('../models/Pod');
-  const installations: RuntimeInstallation[] = await AgentInstallation.find({ agentName, instanceId, ...reading })
+  const installations: RuntimeInstallation[] = await AgentInstallation.find({
+    ...installationIdentityFilter(agentName, instanceId), ...reading,
+  })
     .collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
   const dmPods = await Pod.find({
     _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) },

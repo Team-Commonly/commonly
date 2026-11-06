@@ -894,6 +894,24 @@ describe('installing an in-process runtime on an identity that holds a token', (
         expect(await holdsTokenOnBot('stopped-seat')).toBe(false);
       });
 
+      it('counts another installer\'s row stored with no instance', async () => {
+        const other = await User.create({ username: 'legacy-installer', email: 'legacy-installer@test.com', password: 'password123' });
+        await stoppedRow('stopped-seat');
+        await giveUserToken('stopped-seat');
+        await AgentInstallation.collection.insertOne({
+          agentName: 'stopped-seat', podId: privatePod._id, version: '1.0.0', status: 'paused', installedBy: other._id,
+          runtimeTokens: [{ tokenHash: 'legacy-copy', label: 'test', createdAt: new Date() }], createdAt: new Date(),
+        });
+
+        const res = await request(app)
+          .delete(`/api/registry/pods/${firstPod._id}/agents/stopped-seat/tokens`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('another_installer');
+        expect(await holdsTokenOnBot('stopped-seat')).toBe(true);
+      });
+
       it('counts another installer\'s row under an alias of the name', async () => {
         const other = await User.create({ username: 'alias-installer', email: 'alias-installer@test.com', password: 'password123' });
         await inProcessRow('commonly-summarizer', { status: 'paused' });
