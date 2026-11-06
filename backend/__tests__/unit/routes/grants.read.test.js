@@ -187,7 +187,7 @@ describe('GET /api/grants?connectionOwner=me', () => {
     });
     const revoked = res.body.grants.find((row) => row.grantId === owned[0].grantId);
     expect(revoked).toMatchObject({ revokedBy: OWNER, revokedAt: revokedAt.toISOString() });
-    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS].sort().join())).toBe(true);
+    expect(res.body.grants.every((row) => row.expiresAt && Object.keys(row).sort().join() === [...FIELDS, 'connectionId'].sort().join())).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('conn-other');
   });
 

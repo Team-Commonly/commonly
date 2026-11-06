@@ -105,8 +105,9 @@ interface AuthenticatedRequest extends express.Request {
 /**
  * What the page may see of a grant (tools plan §6): the
  * explicit list and nothing else. `connectionId` and `brokerId` are the
- * broker's business; the raw `audience` snapshot still names agents who have
- * left, so only the effective audience goes out.
+ * broker's business, except that the owner's own list adds `connectionId` (see
+ * GET /); the raw `audience` snapshot still names agents who have left, so only
+ * the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent' | 'prWrite'> & { audience?: string[]; connectionId?: string };

@@ -1748,8 +1748,10 @@ describe('F214: pull-request access in the grant form', () => {
     const ENDS = 'This change ends pull-request access on this grant.';
 
     it('names it on the list row too', async () => {
-      await openChange({ ...held, connectionId: 'conn-b' });
-      expect(document.querySelector('.v2-tools__mode[aria-label="read, plus pull requests you approve"]')).not.toBeNull();
+      mockTools({ entries: [twoRepos], grants: [{ ...held, connectionId: 'conn-b' }], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
+      renderPage();
+      await openTool('GitHub');
+      expect(await screen.findByRole('img', { name: 'read, plus pull requests you approve' })).toHaveAttribute('aria-label', 'read, plus pull requests you approve');
     });
 
     it('Change access stays on the grant\'s own repository', async () => {
