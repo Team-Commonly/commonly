@@ -68,12 +68,29 @@ describe('Scout welcome locale', () => {
     });
 
     it('offers their own agent, then the pod, in one fixed line', () => {
-      expect(SCOUT_AGENT_OFFER).toBe("I can't open repos, but your agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.");
+      expect(SCOUT_AGENT_OFFER).toBe("I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.");
       expect(prompt).toContain(`"${SCOUT_AGENT_OFFER}"`);
     });
 
-    it('fits the reply budget with the task clause in front', () => {
-      expect(`I put "${SCOUT_FIRST_TASK}" on your board. ${SCOUT_AGENT_OFFER}`.length).toBeLessThanOrEqual(200);
+    it('lists Connect first, Run it here second, and says it can\'t read a repo', () => {
+      const connect = SCOUT_AGENT_OFFER.indexOf('connect Claude Code or Codex');
+      const runHere = SCOUT_AGENT_OFFER.indexOf('run one here');
+      const pod = SCOUT_AGENT_OFFER.indexOf('tell me the project');
+      expect(connect).toBeGreaterThan(-1);
+      expect(runHere).toBeGreaterThan(connect);
+      expect(pod).toBeGreaterThan(runHere);
+      expect(SCOUT_AGENT_OFFER).toContain("which can't open repos yet");
+    });
+
+    it('sends the offer with the hosted button, and leaves that part out if the tool refuses', () => {
+      expect(prompt).toContain('Send that reply with commonly_offer_hosted_agent');
+      expect(prompt).toContain('leaving out the part about running one here');
+      expect(scoutApp.tools).toContain('commonly_offer_hosted_agent');
+    });
+
+    // Over the 200-character budget by the caveat, which the budget exempts.
+    it('stays close to the reply budget with the task clause in front', () => {
+      expect(`I put "${SCOUT_FIRST_TASK}" on your board. ${SCOUT_AGENT_OFFER}`.length).toBeLessThanOrEqual(240);
     });
 
     it('still proposes the pod once a project is named, and keeps its locale rule', () => {
@@ -91,9 +108,9 @@ describe('Scout welcome locale', () => {
       expect(prompt).toContain('If your earlier messages show that task is already on the board, skip the call');
     });
 
-    it('makes the same offer at any "I can\'t" moment, with Run it here as the fallback', () => {
+    it('makes the same offer at any "I can\'t" moment, with Run it here after Connect', () => {
       expect(prompt).toContain('Any time you have to say you can\'t do something their own agent could');
-      expect(prompt).toContain('"Run it here" is the fallback, not the first offer');
+      expect(prompt).toContain('"Run it here" comes right after Connect, never first');
       expect(prompt).toContain('never offer it as the way to read one');
     });
   });

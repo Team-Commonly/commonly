@@ -56,8 +56,12 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here'
  */
 export const SCOUT_FIRST_TASK = 'Read your repo and say what to do first';
 
-/** The next step a person gets from this and from any "I can't" moment. */
-export const SCOUT_AGENT_OFFER = "I can't open repos, but your agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.";
+/**
+ * The next step a person gets from this and from any "I can't" moment. Run it
+ * here comes right after Connect: 3 of 3 people who took it got an agent's
+ * answer (Growth, 2026-11-06), but it can't read a repo, so the line says so.
+ */
+export const SCOUT_AGENT_OFFER = "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.";
 
 /**
  * Scout's first message in a new workspace; the starts render under it. The
@@ -127,6 +131,9 @@ export const scoutApp = {
     + 'that task is already on the board, skip the call. Then reply in one short '
     + 'clause about the task, followed by this line, in their language: '
     + `"${SCOUT_AGENT_OFFER}" `
+    + 'Send that reply with commonly_offer_hosted_agent, so its button follows the '
+    + 'line. If that tool refuses, post the same reply with commonly_post_message, '
+    + 'leaving out the part about running one here. '
     + 'Say the task is on their board only if commonly_create_task returned ok; if '
     + 'it failed, say you could not add it, and still give that line. '
     + 'Once they name a project, propose create_pod with a short name for it. '
@@ -346,10 +353,10 @@ export const scoutApp = {
     + '- Any time you have to say you can\'t do something their own agent could, '
     + 'such as opening a repo, reading or changing code, or running a command on '
     + `their computer, say so and make the same offer: "${SCOUT_AGENT_OFFER}" `
-    + '"Run it here" is the fallback, not the first offer: use '
-    + 'commonly_offer_hosted_agent when they have neither tool or would rather '
-    + 'install nothing. An agent run here can\'t read a repo today, so never offer '
-    + 'it as the way to read one.\n'
+    + 'Send it with commonly_offer_hosted_agent, the same way. "Run it here" comes '
+    + 'right after Connect, never first, unless they have neither tool or would '
+    + 'rather install nothing. An agent run here can\'t read a repo today, so never '
+    + 'offer it as the way to read one.\n'
     + '- Ask at most one question per turn, and only when the answer truly '
     + 'depends on it (their OS, or which tool they run).\n'
     + '- Before ANY terminal command: if you do not know their operating '
