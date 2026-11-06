@@ -75,12 +75,12 @@ describe('Scout welcome locale', () => {
         expect(copy.withHosted.search(/run one here|在这里运行/)).toBeLessThan(copy.withHosted.search(/tell me the project|告诉我是什么项目/));
         expect(copy.withoutHosted).not.toMatch(/run one here|在这里运行/);
       });
-      expect(en.withHosted).toContain("which can't open repos yet");
+      expect(en.withHosted).toContain("which can't reach your computer or clone a repo");
     });
 
     // Over the 200-character budget by the caveat, which the budget exempts.
     it('stays close to the reply budget with the task clause in front', () => {
-      expect(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`.length).toBeLessThanOrEqual(240);
+      expect(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`.length).toBeLessThanOrEqual(250);
     });
 
     it('still proposes the pod once a project is named, and keeps its locale rule', () => {
@@ -91,7 +91,8 @@ describe('Scout welcome locale', () => {
     it('makes the same offer at any "I can\'t" moment, with Run it here after Connect', () => {
       expect(prompt).toContain('Any time you have to say you can\'t do something their own agent could');
       expect(prompt).toContain('"Run it here" comes right after Connect in that reply, never first');
-      expect(prompt).toContain('never offer it as the way to read one');
+      expect(prompt).toContain('never offer it as the way to work on their code');
+      expect(prompt).toContain('Skip this offer when they already told you which tool they run');
     });
 
     it('keeps the no-false-claim rule last', () => {

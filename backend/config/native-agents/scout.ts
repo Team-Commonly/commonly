@@ -28,8 +28,7 @@ import UI_CARD_REVISION from '../uiCardCatalogueRevision.json';
  * the start a new person picked (services/onboardingMarks.ts, by id).
  */
 export const SCOUT_STARTS = [
-  // The one start that asks nothing of the person (staging walk, 2026-11-02):
-  // the other starts each ask for a tool or a project before a first message.
+  // Leads because it asks nothing of the person (staging walk, 2026-11-02).
   { id: 'ask-scout', label: 'Show me what you can do' },
   { id: 'connect-agent', label: 'Connect an agent I already use' },
   { id: 'start-pod', label: 'Start a pod for a project' },
@@ -53,7 +52,8 @@ export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here'
  * 8 people clicked a start and 5 of those chats ended with Scout waiting on
  * them, three of them on "What's the project?". The same offer follows any
  * "I can't". Run it here comes right after Connect: 3 of 3 people who took it
- * got an agent's answer, but it can't read a repo, so the line says so.
+ * got an agent's answer. It can read a public repo's page from a link but can't
+ * reach their computer or clone anything, so the line says that.
  *
  * This is fixed text that commonly_offer_own_agent posts, because a prompt rule
  * did not hold: on deepseek-v4-flash, 4 of 6 replies still went out through the
@@ -64,15 +64,15 @@ export const SCOUT_OFFER_COPY = {
     firstTask: 'Read your repo and say what to do first',
     taskOnBoard: (title: string): string => `"${title}" is on your board.`,
     taskFailed: "I couldn't add a task to your board.",
-    withHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't open repos yet, or tell me the project and I'll set up its pod.",
+    withHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't reach your computer or clone a repo, or tell me the project and I'll set up its pod.",
     withoutHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.",
   },
   'zh-CN': {
     firstTask: '读一读你的仓库，说说先做什么',
     taskOnBoard: (title: string): string => `“${title}”已经在你的任务板上了。`,
     taskFailed: '我没能把任务加到你的任务板上。',
-    withHosted: '我打不开代码仓库，但你自己的智能体可以：连接 Claude Code 或 Codex。也可以在这里运行一个，不过它暂时也打不开仓库。或者告诉我是什么项目，我来建好它的 Pod。',
-    withoutHosted: '我打不开代码仓库，但你自己的智能体可以：连接 Claude Code 或 Codex。或者告诉我是什么项目，我来建好它的 Pod。',
+    withHosted: '我打不开仓库，但你自己的智能体可以：接入 Claude Code 或 Codex 就行。也可以在这里运行一个，不过它连不上你的电脑，也拉不了仓库。或者告诉我是什么项目，我来建 Pod。',
+    withoutHosted: '我打不开仓库，但你自己的智能体可以：接入 Claude Code 或 Codex 就行。或者告诉我是什么项目，我来建 Pod。',
   },
 } as const;
 
@@ -362,7 +362,10 @@ export const scoutApp = {
     + 'Give it a lead, one short sentence in their language naming what you can\'t do, '
     + 'only when that is not opening a repo. It posts your whole reply, so post nothing '
     + 'else. "Run it here" comes right after Connect in that reply, never first. An '
-    + 'agent run here can\'t read a repo today, so never offer it as the way to read one.\n'
+    + 'agent run here can\'t reach their computer or clone a repo, so never offer it as '
+    + 'the way to work on their code. Skip this offer when they already told you which '
+    + 'tool they run, or commonly_agent_status shows their own agent: answer from the '
+    + 'rules above instead, or tell them to @mention it.\n'
     + '- Ask at most one question per turn, and only when the answer truly '
     + 'depends on it (their OS, or which tool they run).\n'
     + '- Before ANY terminal command: if you do not know their operating '

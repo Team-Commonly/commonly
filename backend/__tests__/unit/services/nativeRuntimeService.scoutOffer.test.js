@@ -12,7 +12,12 @@ jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
-jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn().mockResolvedValue({ success: true }),
+  sanitizeAgentContent: jest.fn((text) => (String(text).startsWith('NO_REPLY') ? '' : text)),
+}));
+const mockEmitTaskUpdated = jest.fn();
+jest.mock('../../../services/taskEventService', () => ({ emitTaskUpdated: (...args) => mockEmitTaskUpdated(...args) }));
 jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
   release: jest.fn().mockResolvedValue({ released: true }),
@@ -94,6 +99,7 @@ describe('commonly_offer_own_agent', () => {
     await runAgent(scoutInstall, ask);
 
     expect(mockTask.create).toHaveBeenCalledTimes(1);
+    expect(mockEmitTaskUpdated).toHaveBeenCalledWith(POD, expect.objectContaining({ title: en.firstTask }), 'created');
     expect(mockTask.create.mock.calls[0][0]).toMatchObject({ podId: POD, title: en.firstTask, status: 'pending', assignee: null });
     expect(posted()).toHaveLength(1);
     expect(posted()[0].content).toBe(`${en.taskOnBoard(en.firstTask)} ${en.withHosted}`);
@@ -110,7 +116,9 @@ describe('commonly_offer_own_agent', () => {
 
     await runAgent(scoutInstall, ask);
 
+    expect(mockTask.exists).toHaveBeenCalledWith({ podId: POD, title: { $in: [en.firstTask, zh.firstTask] } });
     expect(mockTask.create).not.toHaveBeenCalled();
+    expect(mockEmitTaskUpdated).not.toHaveBeenCalled();
     expect(posted()[0].content).toContain(en.taskOnBoard(en.firstTask));
   });
 
@@ -127,9 +135,9 @@ describe('commonly_offer_own_agent', () => {
   });
 
   test.each([
-    ['already holds a hosted agent', () => mockListHosted.mockResolvedValue([{ agentName: 'a' }, { agentName: 'b' }, { agentName: 'c' }])],
-    ['the hosted count failed', () => mockListHosted.mockRejectedValue(new Error('db down'))],
-    ['this instance cannot host', () => { delete process.env.HOSTED_ENGINE; }],
+    ['holds their hosted agents already', () => mockListHosted.mockResolvedValue([{ agentName: 'a' }, { agentName: 'b' }, { agentName: 'c' }])],
+    ['cannot be counted', () => mockListHosted.mockRejectedValue(new Error('db down'))],
+    ['is on an instance that cannot host', () => { delete process.env.HOSTED_ENGINE; }],
   ])('leaves out the button and its words when the person %s', async (_name, arrange) => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     arrange();
@@ -151,6 +159,36 @@ describe('commonly_offer_own_agent', () => {
 
     expect(mockTask.create).not.toHaveBeenCalled();
     expect(posted()[0].content).toBe(`I can't run commands on your computer. ${en.withHosted}`);
+  });
+
+  test('a long lead is cut to one short line', async () => {
+    offer({ locale: 'en', lead: `I can't ${'x'.repeat(400)}\nsecond line` });
+    axios.post.mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted()[0].content).toBe(`I can't ${'x'.repeat(152)} ${en.withHosted}`);
+  });
+
+  test('a lead that is a sentinel cannot silence the offer', async () => {
+    offer({ locale: 'en', lead: 'NO_REPLY' });
+    axios.post.mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted()[0].content).toBe(en.withHosted);
+  });
+
+  test('a refused post is not counted as an answer, so the model\'s text still reaches the person', async () => {
+    AgentMessageService.postMessage
+      .mockResolvedValueOnce({ success: false, refused: true, reason: 'not_allowed' })
+      .mockResolvedValue({ success: true });
+    offer({ locale: 'en', addFirstTask: true });
+    axios.post.mockResolvedValueOnce(says('I can\'t post that right now.'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted().map((call) => call.content)).toContain('I can\'t post that right now.');
   });
 
   test('reads in zh-CN, with the task title in Chinese', async () => {

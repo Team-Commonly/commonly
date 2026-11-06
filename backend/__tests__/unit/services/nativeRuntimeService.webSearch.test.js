@@ -430,6 +430,7 @@ describe('native turn with commonly_web_search', () => {
 
     test.each([
       ['commonly_offer_hosted_agent', { content: 'Run it here.' }],
+      ['commonly_offer_own_agent', { locale: 'en', addFirstTask: true }],
       ['commonly_propose_action', {
         actionType: 'create_pod', params: { name: 'Research' }, summary: 'Create a research pod',
       }],

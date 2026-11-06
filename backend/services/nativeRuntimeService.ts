@@ -25,9 +25,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, global-require,
    @typescript-eslint/no-require-imports */
 
-import { SCOUT_OFFER_COPY, normalizeScoutLocale } from '../config/native-agents/scout';
 import { Types } from 'mongoose';
+import { SCOUT_OFFER_COPY, normalizeScoutLocale } from '../config/native-agents/scout';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
+import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
@@ -814,6 +815,7 @@ const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so
   + 'cannot post in it.';
 const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that called a granted tool '
   + 'cannot post in it.';
+const OWN_AGENT_LEAD_MAX = 160;
 const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
   'commonly_offer_own_agent',
@@ -1196,15 +1198,21 @@ export async function dispatchTool(
 
       case 'commonly_offer_own_agent': {
         const copy = SCOUT_OFFER_COPY[normalizeScoutLocale(args.locale)];
-        const lead = args.lead ? toSingleLineTitle(String(args.lead)) : '';
+        const AgentMessageService = require('./agentMessageService');
+        // Free text beside fixed words, so it stays one short line, and a lead
+        // that is a sentinel can't silence the offer behind it.
+        const lead = AgentMessageService.sanitizeAgentContent(
+          toSingleLineTitle(String(args.lead || '')).slice(0, OWN_AGENT_LEAD_MAX),
+        );
         let taskLine = '';
         if (args.addFirstTask === true) {
           const Task = require('../models/Task');
           try {
-            // One title, so a second click doesn't stack a second row.
-            if (!await Task.exists({ podId: ctx.podId, title: copy.firstTask })) {
+            // Either language's title counts, so a second click doesn't stack a row.
+            const titles = Object.values(SCOUT_OFFER_COPY).map((entry) => entry.firstTask);
+            if (!await Task.exists({ podId: ctx.podId, title: { $in: titles } })) {
               const taskNum = (await Task.countDocuments({ podId: ctx.podId })) + 1;
-              await Task.create({
+              const created = await Task.create({
                 podId: ctx.podId,
                 taskNum,
                 taskId: `N-${taskNum}-${ctx.agentName}-${Date.now().toString(36)}`,
@@ -1216,6 +1224,8 @@ export async function dispatchTool(
                 source: 'agent',
                 createdByUserId: (await resolveSeatUserId(ctx.podId, ctx.agentName, ctx.instanceId)) || null,
               });
+              // The reply says it's on the board, so an open board has to show it.
+              emitTaskUpdated(ctx.podId, created, 'created');
             }
             taskLine = copy.taskOnBoard(copy.firstTask);
           } catch (err) {
@@ -1235,7 +1245,6 @@ export async function dispatchTool(
           }
         }
         const href = `/v2/agents/byo?pod=${encodeURIComponent(String(ctx.podId))}&mode=hosted`;
-        const AgentMessageService = require('./agentMessageService');
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,

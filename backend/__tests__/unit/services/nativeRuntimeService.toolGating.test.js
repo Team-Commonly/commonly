@@ -132,6 +132,15 @@ describe('toolsForConfig', () => {
     });
   });
 
+  test('the own-agent offer is opt-in, and stays offered where the instance cannot host', () => {
+    const declared = { tools: ['commonly_offer_own_agent'] };
+    withEnv(NO_HOSTING, () => {
+      expect(names(toolsForConfig(declared))).toContain('commonly_offer_own_agent');
+      expect(names(toolsForConfig({}))).not.toContain('commonly_offer_own_agent');
+      expect(names(toolsForConfig({ tools: ['commonly_post_message'] }))).not.toContain('commonly_offer_own_agent');
+    });
+  });
+
   // Scout told strangers "200 turns a day" after the free line became 30
   // (#2237): the number lived in a copy. The offer's description is built from
   // the cap source, so the model is told the line the meter enforces.
