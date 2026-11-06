@@ -293,8 +293,11 @@ exports.addComment = async (req: any, res: any) => {
 
     const commentingUser = await User.findById(req.userId).select('_id username').lean();
 
-    // Create the comment object
+    // Create the comment object. The id is set here because the mention below
+    // names this comment, and push() casts a copy that this object never sees.
+    const commentId = new mongoose.Types.ObjectId();
     const comment: any = {
+      _id: commentId,
       userId: req.userId,
       text,
       replyTo: replyToCommentId || null,
@@ -334,9 +337,8 @@ exports.addComment = async (req: any, res: any) => {
         }
         await AgentMentionService.enqueueMentions({
           podId: mentionPodId,
+          // No _id: payload.messageId means a Postgres chat row to its readers.
           message: {
-            _id: comment._id,
-            id: comment._id,
             content: text,
             messageType: 'thread',
             source: 'thread',
@@ -348,7 +350,7 @@ exports.addComment = async (req: any, res: any) => {
               postPodId: post.podId || null,
               postContent: post.content,
               postUserId: post.userId,
-              commentId: comment._id,
+              commentId,
               commentText: text,
             },
           },
