@@ -419,6 +419,25 @@ describe('V2AgentBYO — Run it here', () => {
     expect(screen.getByTestId('byo-hosted-running')).toBeInTheDocument();
   });
 
+  test('a provision refused for a name Commonly already runs says so in the app\'s words', async () => {
+    mockGet({ configured: true });
+    axios.post.mockImplementation((url) => {
+      if (url === '/api/hosted/provision') {
+        return Promise.reject({
+          response: { data: { code: 'in_process_agent_no_token', message: 'server text about runtime tokens' } },
+        });
+      }
+      return Promise.resolve({ data: { ok: true } });
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-hosted'));
+    fireEvent.click(actButton());
+    await screen.findByText(/Commonly already runs an agent called .+ Choose a different name\./);
+    expect(screen.queryByText(/server text about runtime tokens/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/the agent you run yourself/i)).not.toBeInTheDocument();
+  });
+
   test('surfaces the beta cap from the install gate instead of a generic failure', async () => {
     mockGet({ configured: true });
     axios.post.mockImplementation((url) => {

@@ -805,6 +805,10 @@ const V2AgentBYO: React.FC = () => {
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;
+      if (code === IN_PROCESS_NAME_CODE) {
+        setError(t('agentByo.errors.hostedNameTaken', { name: cleanName }));
+        return;
+      }
       setError(code === 'hosted_runtime_unconfigured'
         ? t('agentByo.errors.hostedUnavailable')
         : (e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed')));
