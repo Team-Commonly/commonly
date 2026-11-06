@@ -661,6 +661,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
       const result = await runAgent(hostedInstall(), mention);
       expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
       expect(posted()).toEqual(['Connect a local agent with the command below.', HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(true);
     });
 
     test('a welcome wake quoting a person is not a person waiting', async () => {

@@ -1630,7 +1630,6 @@ const CONNECT_INTENT = /\b(connect|link|hook up|set up)\b[^.!?\n]{0,40}?\b(my|a|
 
 export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(text);
 
-// Any reply this run, not just a card, answers the connect request.
 /**
  * F56 and F234: a person's own words addressed this turn, so someone is waiting
  * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
@@ -1643,6 +1642,7 @@ const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boole
   return triggerTextIsHumanWritten(trigger);
 };
 
+// Any reply this run, not just a card, answers the connect request.
 export const connectRequestAnswered = (postedViaTool: boolean, finalMessage: string | undefined): boolean => (
   postedViaTool || finalMessage !== undefined
 );
