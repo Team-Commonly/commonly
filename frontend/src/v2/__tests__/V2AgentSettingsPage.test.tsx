@@ -1116,8 +1116,15 @@ describe('one Identity & access list (d215 frame)', () => {
     test('the header keeps the connection while an add re-reads the settings', async () => {
       const base = fleet({ state: 'connected' });
       let rosterReads = 0;
+      let added = false;
+      let releaseKeys = () => {};
       axios.get.mockImplementation((url, ...rest) => {
         if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        // A resolved mock lands before React renders the reload, and with no reload
+        // there's no second roster read. The keys read is a network call in the app.
+        if (url === '/api/credentials' && added) {
+          return new Promise((resolve) => { releaseKeys = () => resolve(base(url, ...rest)); });
+        }
         if (url === '/api/registry/pods/pod-1/agents') {
           rosterReads += 1;
           // The read after the add never lands, as on a slow connection.
@@ -1125,7 +1132,10 @@ describe('one Identity & access list (d215 frame)', () => {
         }
         return base(url, ...rest);
       });
-      axios.post.mockResolvedValue({ data: { success: true } });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
       render(
         <AuthContext.Provider value={authValue}>
           <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
@@ -1137,6 +1147,8 @@ describe('one Identity & access list (d215 frame)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
       await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Loading agent settings…');
+      releaseKeys();
       await screen.findByText('Added to Design.');
       await waitFor(() => expect(rosterReads).toBeGreaterThan(1));
       expect(document.querySelector('.st')).toHaveTextContent('Connected · 1 pod');
