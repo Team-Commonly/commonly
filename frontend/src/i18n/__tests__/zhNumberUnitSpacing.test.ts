@@ -41,6 +41,7 @@ const NUMERAL_PLACEHOLDERS = [
 // subject of this rule — neither is `projects`, whose value no consumer in the
 // shell proves either way.
 const OPAQUE_PLACEHOLDERS = [
+  'version',
   'age', 'by', 'pod', 'email', 'provider', 'podName', 'creator', 'date', 'agentName',
   'name', 'second', 'first', 'last', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
