@@ -1721,6 +1721,19 @@
       "name": "工具调用",
       "loading": "正在加载确切的工具调用…",
       "unavailable": "无法显示待批准内容 — 刷新后再决定。",
+      "yes": "是",
+      "no": "否",
+      "file": {
+        "size": "{{bytes}}字节",
+        "cut": "只显示了开头。这个文件共{{bytes}}字节。",
+        "notShown": "未显示。这个文件共{{bytes}}字节。"
+      },
+      "notice": {
+        "contentsCut": "这里没有显示全部内容：文件内容共{{total}}字节，已显示{{shown}}字节。批准后会提交全部内容。",
+        "messageCut": "提交信息到这里被截断了。批准后会记录全部{{total}}个字符。",
+        "bodyCut": "正文到这里被截断了：共{{total}}个字符，已显示{{shown}}个。批准后会发送全部内容。",
+        "pushContents": "推送只显示提交 ID 和大小，不显示具体内容。批准后会推送全部内容。"
+      },
       "ownerOnly": "参数仅对批准负责人可见。",
       "ran": "已批准 — 工具调用已执行。",
       "failed": "已批准 — 工具调用失败（{{code}}）。",
@@ -1733,7 +1746,7 @@
         "createIssue": "创建 Issue",
         "commentOnIssue": "评论 Issue #{{number}}",
         "closeIssue": "关闭 Issue #{{number}}",
-        "createPullRequest": "创建 PR",
+        "createPullRequest": "发起 PR",
         "commitFiles": "提交到 {{head}}",
         "pushBranch": "推送到 {{head}}"
       },
@@ -1754,12 +1767,12 @@
         "bodyLength": "正文长度",
         "draft": "草稿",
         "fileCount": "文件数",
+        "file": "文件",
         "branchExists": "已有分支",
         "parentCommit": "父提交",
         "baseCommit": "基准提交",
         "newCommit": "新提交",
-        "bundleSize": "Bundle 大小",
-        "contentsShown": "已显示的文件内容"
+        "bundleSize": "Bundle 大小"
       },
       "exactArgs": "原始参数"
     },

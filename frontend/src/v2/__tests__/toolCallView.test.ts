@@ -1,4 +1,4 @@
-import { prWriteView, toolCallView } from '../components/toolCallView';
+import { canShowToolCall, prWriteView, toolCallView } from '../components/toolCallView';
 
 // The card is a consent surface: the readable view may relabel, but it must
 // show every pinned argument, and it may only link to github.com paths built
@@ -136,31 +136,97 @@ test('label boundaries remain distinct when a label contains a comma', () => {
   expect(JSON.parse(separate.value)).toEqual(['security', 'urgent', 'p1']);
 });
 
+// These fixtures are the shapes prWriteApprovalSummary sends, not a tidier copy:
+// `message` is an object, and a file past the cap has empty content.
 describe('a PR write summary', () => {
   const sha = 'a'.repeat(40);
+  const file = (path: string, content: string, bytes: number, truncated = false) => ({
+    path, bytes, content, truncated,
+  });
   const commit = {
     repo: 'Team-Commonly/d14-walk-sandbox',
     base: 'main',
     head: 'walk/one',
     lands: 'new branch walk/one from main at aaaaaaa',
     subject: 'add notes',
-    message: 'add notes\n\nwith a body',
-    files: [
-      { path: 'a.md', content: 'first', bytes: 5, truncated: false },
-      { path: 'b.md', content: 'second', bytes: 6, truncated: false },
-    ],
+    message: {
+      label: 'Full commit message, exactly as it will be recorded',
+      text: 'add notes\n\nwith a body',
+      length: 21,
+      truncated: false,
+    },
+    files: [file('a.md', 'first', 5), file('b.md', 'second', 6)],
     contents: { label: 'File contents', shownBytes: 11, totalBytes: 11, truncated: false },
     fileCount: 2,
     parentSha: sha,
     branchExists: false,
   };
+  const row = (view: ReturnType<typeof prWriteView>, key: string) => view.rows.find((r) => r.keys[0] === key);
 
-  test('every key lands in a row, and every file gets its own', () => {
-    const { rows } = prWriteView('github.commit_files', commit);
-    const shown = new Set(rows.map((row) => row.keys[0]));
-    Object.keys(commit).forEach((key) => expect(shown.has(key)).toBe(true));
-    expect(rows.filter((row) => row.keys[0] === 'files').map((row) => [row.label, row.value]))
+  test('every key but the byte total lands in a row, and every file gets its own', () => {
+    const view = prWriteView('github.commit_files', commit);
+    const shown = new Set(view.rows.map((r) => r.keys[0]));
+    Object.keys(commit).filter((key) => key !== 'contents').forEach((key) => expect(shown.has(key)).toBe(true));
+    expect(view.rows.filter((r) => r.keys[0] === 'files').map((r) => [r.value, r.detail]))
       .toEqual([['a.md', 'first'], ['b.md', 'second']]);
+    expect(view.notices).toEqual([]);
+  });
+
+  test('the commit message is its text, not the object carrying it', () => {
+    const view = prWriteView('github.commit_files', commit);
+    expect(row(view, 'message')).toMatchObject({ value: 'add notes\n\nwith a body', kind: 'block' });
+  });
+
+  test('a path never becomes a row label, so a file called Repository reads as a file', () => {
+    const view = prWriteView('github.commit_files', { files: [file('Repository', 'x', 1)] });
+    expect(view.rows[0]).toMatchObject({
+      labelKey: 'approvalCard.toolCall.label.file', label: 'file', value: 'Repository',
+    });
+  });
+
+  test('a file past the cap says it is not shown, and never reads as an empty file', () => {
+    const view = prWriteView('github.commit_files', {
+      files: [file('src/auth.js', '', 1680, true)],
+      contents: { shownBytes: 65536, totalBytes: 67216, truncated: true },
+    });
+    expect(view.rows[0].detail).toBeUndefined();
+    expect(view.rows[0].note).toEqual({ key: 'approvalCard.toolCall.file.notShown', vars: { bytes: '1680' } });
+    expect(view.notices).toEqual([{
+      key: 'approvalCard.toolCall.notice.contentsCut', vars: { shown: '65536', total: '67216' },
+    }]);
+  });
+
+  test('a really empty file stays an empty file, and a cut one says so', () => {
+    const view = prWriteView('github.commit_files', {
+      files: [file('empty', '', 0), file('long', 'start', 90000, true)],
+    });
+    expect(view.rows[0]).toMatchObject({ detail: '', note: { key: 'approvalCard.toolCall.file.size' } });
+    expect(view.rows[1]).toMatchObject({ detail: 'start', note: { key: 'approvalCard.toolCall.file.cut' } });
+  });
+
+  test('a cut commit message and a cut PR body each get a notice', () => {
+    const cutMessage = prWriteView('github.commit_files', {
+      message: { text: 'start', length: 9000, truncated: true },
+    });
+    expect(cutMessage.notices).toEqual([{ key: 'approvalCard.toolCall.notice.messageCut', vars: { total: '9000' } }]);
+    const body = prWriteView('github.create_pull_request', { bodyPreview: 'abc', bodyLength: 3000 });
+    expect(body.notices).toEqual([{ key: 'approvalCard.toolCall.notice.bodyCut', vars: { shown: '3', total: '3000' } }]);
+    expect(prWriteView('github.create_pull_request', { bodyPreview: 'abc', bodyLength: 3 }).notices).toEqual([]);
+  });
+
+  test('a push always says its contents are not shown', () => {
+    const view = prWriteView('github.push_branch', {
+      repo: 'a/b', head: 'x', baseOid: sha, newOid: sha, bundleBytes: 2048,
+    });
+    expect(view.notices).toEqual([{ key: 'approvalCard.toolCall.notice.pushContents', vars: {} }]);
+    expect(row(view, 'bundleBytes')?.value).toBe('2048 B');
+  });
+
+  test('a boolean reads as a yes or no', () => {
+    expect(row(prWriteView('github.create_pull_request', { draft: true }), 'draft'))
+      .toMatchObject({ valueKey: 'approvalCard.toolCall.yes' });
+    expect(row(prWriteView('github.commit_files', commit), 'branchExists'))
+      .toMatchObject({ valueKey: 'approvalCard.toolCall.no' });
   });
 
   test('a key the view has never heard of is still shown under its own name', () => {
@@ -169,11 +235,9 @@ describe('a PR write summary', () => {
   });
 
   test('a commit id is shortened with the full id one hover away, and the repo links to GitHub', () => {
-    const { rows } = prWriteView('github.commit_files', commit);
-    expect(rows.find((row) => row.keys[0] === 'parentSha'))
-      .toMatchObject({ value: 'aaaaaaa', title: sha, kind: 'mono' });
-    expect(rows.find((row) => row.keys[0] === 'repo'))
-      .toMatchObject({ href: 'https://github.com/Team-Commonly/d14-walk-sandbox' });
+    const view = prWriteView('github.commit_files', commit);
+    expect(row(view, 'parentSha')).toMatchObject({ value: 'aaaaaaa', title: sha, kind: 'mono' });
+    expect(row(view, 'repo')).toMatchObject({ href: 'https://github.com/Team-Commonly/d14-walk-sandbox' });
   });
 
   test('a repo that is not a plain owner/name never becomes a link', () => {
@@ -182,15 +246,26 @@ describe('a PR write summary', () => {
     });
   });
 
-  test.each([
-    ['github.create_pull_request', 'approvalCard.toolCall.verb.createPullRequest'],
-    ['github.commit_files', 'approvalCard.toolCall.verb.commitFiles'],
-    ['github.push_branch', 'approvalCard.toolCall.verb.pushBranch'],
-  ])('%s has its verb', (tool, key) => {
-    expect(prWriteView(tool, { head: 'walk/one' }).verb).toEqual({ key, vars: { head: 'walk/one' } });
+  test('each tool has its verb, and one with no branch to name has none', () => {
+    expect(prWriteView('github.create_pull_request', {}).verb)
+      .toEqual({ key: 'approvalCard.toolCall.verb.createPullRequest', vars: {} });
+    expect(prWriteView('github.commit_files', { head: 'x' }).verb)
+      .toEqual({ key: 'approvalCard.toolCall.verb.commitFiles', vars: { head: 'x' } });
+    expect(prWriteView('github.push_branch', { head: 'x' }).verb)
+      .toEqual({ key: 'approvalCard.toolCall.verb.pushBranch', vars: { head: 'x' } });
+    expect(prWriteView('github.commit_files', {}).verb).toBeNull();
   });
 
-  test('any other tool gets no verb, so the card falls back to its name', () => {
-    expect(prWriteView('github.create_issue', {}).verb).toBeNull();
+  test.each([
+    ['no tool', { summary: { repo: 'a/b' } }, false],
+    ['neither arguments nor a summary', { tool: 'github.commit_files' }, false],
+    ['a list for arguments', { tool: 'github.create_issue', canonicalArgs: ['x'] }, false],
+    ['a summary that is not an object', { tool: 'github.commit_files', summary: 'trust me' }, false],
+    ['an empty summary', { tool: 'github.commit_files', summary: {} }, false],
+    ['a summary on a tool that has none', { tool: 'github.create_issue', summary: { repo: 'a/b' } }, false],
+    ['arguments', { tool: 'github.create_issue', canonicalArgs: { title: 'x' } }, true],
+    ['a summary on a PR write', { tool: 'github.commit_files', summary: { repo: 'a/b' } }, true],
+  ])('canShowToolCall with %s', (_label, envelope, expected) => {
+    expect(canShowToolCall(envelope)).toBe(expected);
   });
 });

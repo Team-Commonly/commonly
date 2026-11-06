@@ -14,7 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import type { V2Message } from '../hooks/useV2PodDetail';
-import { prWriteView, toolCallView } from './toolCallView';
+import { canShowToolCall, prWriteView, toolCallView } from './toolCallView';
 
 interface V2ApprovalCardProps {
   message: V2Message;
@@ -31,10 +31,6 @@ interface ToolCallEnvelope {
   summary?: Record<string, unknown>;
   argsDigest?: string;
 }
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> => (
-  !!value && typeof value === 'object' && !Array.isArray(value)
-);
 
 interface PendingApproval {
   approvalId?: string;
@@ -153,10 +149,10 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           || (cardMessageId && String(approval.messageId || '').trim() === cardMessageId)
         ));
         const envelope = match?.toolCall;
-        if (!envelope?.tool || !(isPlainObject(envelope.canonicalArgs) || isPlainObject(envelope.summary))) {
+        if (!canShowToolCall(envelope)) {
           throw new Error('approval details unavailable');
         }
-        setPendingToolCall(envelope);
+        setPendingToolCall(envelope as ToolCallEnvelope);
       })
       .catch(() => {
         if (!cancelled) setToolCallError(true);
@@ -201,10 +197,11 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const action = describeAction(payload.actionType, payload.params);
   const prose = payload.summary || message.content;
   const toolCallReady = !needsToolCall || !!pendingToolCall;
+  const hasArgs = !!pendingToolCall?.canonicalArgs && typeof pendingToolCall.canonicalArgs === 'object'
+    && !Array.isArray(pendingToolCall.canonicalArgs);
   const readable = !pendingToolCall?.tool ? null
-    : pendingToolCall.canonicalArgs ? toolCallView(pendingToolCall.tool, pendingToolCall.canonicalArgs)
-      : pendingToolCall.summary ? prWriteView(pendingToolCall.tool, pendingToolCall.summary)
-        : null;
+    : hasArgs ? toolCallView(pendingToolCall.tool, pendingToolCall.canonicalArgs as Record<string, unknown>)
+      : prWriteView(pendingToolCall.tool, pendingToolCall.summary as Record<string, unknown>);
 
   const decide = async (decision: 'approved' | 'declined') => {
     if (
@@ -267,13 +264,22 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                     <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
                       {row.href
                         ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
-                        : row.value}
+                        : (row.valueKey ? t(row.valueKey) : row.value)}
+                      {row.note && <div className="v2-approval__pitch">{t(row.note.key, row.note.vars)}</div>}
+                      {row.detail !== undefined && (
+                        <pre className="v2-approval__tool-call v2-approval__arg-value--block">{row.detail}</pre>
+                      )}
                     </dd>
                   </div>
                 ))}
               </dl>
             )}
-            {pendingToolCall.canonicalArgs && (
+            {readable?.notices?.map((notice) => (
+              <div className="v2-approval__state v2-approval__state--attention" data-testid="approval-notice" key={notice.key}>
+                {t(notice.key, notice.vars)}
+              </div>
+            ))}
+            {hasArgs && (
               <details className="v2-approval__exact">
                 <summary>{t('approvalCard.toolCall.exactArgs')}</summary>
                 <pre className="v2-approval__tool-call" data-testid="approval-tool-call">

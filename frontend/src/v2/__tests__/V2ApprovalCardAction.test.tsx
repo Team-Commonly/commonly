@@ -409,8 +409,12 @@ describe('tool-call approval details stay owner-scoped', () => {
             head: 'walk/one',
             lands: 'new branch walk/one from main at abc1234',
             subject: 'add the note',
-            files: [{ path: 'notes.md', content: 'hello', bytes: 5, truncated: false }],
-            contents: { shownBytes: 5, totalBytes: 5, truncated: false },
+            message: { label: 'Commit message', text: 'add the note', length: 12, truncated: false },
+            files: [
+              { path: 'notes.md', content: 'hello', bytes: 5, truncated: false },
+              { path: 'src/auth.js', content: '', bytes: 1680, truncated: true },
+            ],
+            contents: { shownBytes: 5, totalBytes: 1685, truncated: true },
             fileCount: 1,
           },
         },
@@ -423,6 +427,9 @@ describe('tool-call approval details stay owner-scoped', () => {
 
     expect(await screen.findByTestId('approval-arg-files-0')).toHaveTextContent('notes.md');
     expect(screen.getByTestId('approval-arg-files-0')).toHaveTextContent('hello');
+    expect(screen.getByTestId('approval-arg-files-1')).toHaveTextContent('Not shown. This file is 1680 bytes.');
+    expect(screen.getByTestId('approval-arg-message')).toHaveTextContent('add the note');
+    expect(screen.getByTestId('approval-notice')).toHaveTextContent('5 of 1685 bytes');
     expect(screen.getByTestId('approval-action')).toHaveTextContent('Commit to walk/one');
     expect(screen.getByTestId('approval-arg-lands')).toHaveTextContent('new branch walk/one from main at abc1234');
     expect(screen.queryByTestId('approval-tool-call-state')).not.toBeInTheDocument();
@@ -433,6 +440,7 @@ describe('tool-call approval details stay owner-scoped', () => {
   test.each([
     ['a summary that is not an object', 'just trust me'],
     ['a summary that is a list', ['one']],
+    ['an empty summary', {}],
   ])('%s leaves the call unreadable and Approve disabled', async (_label, summary) => {
     mockGet.mockResolvedValue({
       approvals: [{ approvalId: 'tool-pr-bad', toolCall: { tool: 'github.commit_files', summary } }],
