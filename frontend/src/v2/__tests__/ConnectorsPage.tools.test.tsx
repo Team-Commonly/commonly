@@ -1711,7 +1711,7 @@ describe('F214: pull-request access in the grant form', () => {
 
   describe('on a grant that holds it', () => {
     const held = {
-      ...grantLive, grantId: 'grant_pr', prWrite: true, tools: ['github.list_issues', ...PR_TOOLS],
+      ...grantLive, grantId: 'grant_pr', prWrite: true, connectionId: 'conn-1', tools: ['github.list_issues', ...PR_TOOLS],
     };
 
     it('the detail names it, and Change access keeps it', async () => {
