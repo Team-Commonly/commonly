@@ -1944,12 +1944,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, 'button.v2-pod-header__board--compact::before')).toContain('inset: -14px -6px');
     expect(ruleBody(v2, '.v2-thread__title-line > h1')).toContain('max-width: calc(100% - 24px)');
     // "My Workspace" reads in full on a 390 phone (measured at 375 too): the "i"
-    // keeps its small size, and the pencil waits until the hint opens. Focus has
-    // to keep the pencil up, or a tap on it blurs the hint and hides its own target.
+    // draws small, and the pencil is clipped until the hint opens. Clipped, not
+    // display: none, or a keyboard can't reach the only rename control there is.
     expect(ruleBody(v2, '.v2-pod-header .v2-thread__title-line')).toContain('gap: 4px');
     expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger')).toContain('width: 20px');
-    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger::after')).toContain('inset: -12px -4px');
-    expect(v2).toContain('.v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) button.v2-pod-header__rename-open:not(:focus) { display: none; }');
+    expect(ruleBody(v2, '.v2-root .v2-thread__title-line button.v2-hint__trigger::after')).toContain('inset: -13px -4px');
+    const clipped = 'button.v2-pod-header__rename-open:not(:focus) {\n    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);';
+    expect(v2).toContain(`.v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:has(.v2-hint--open)) ${clipped}`);
+    expect(v2).toContain(`.v2-pod-header:not(.v2-pod-header--direct) .v2-thread__title-line:has(.v2-hint):not(:hover, :has(.v2-hint--open)) ${clipped}`);
+    expect(v2).toContain('@media (max-width: 760px) and (hover: none)');
+    expect(v2).toContain('@media (max-width: 760px) and (hover: hover)');
+    expect(v2).not.toContain('rename-open:not(:focus) { display: none; }');
     expect(ruleBody(v2, 'button.v2-pod-header__board--compact')).toContain('padding: 0 5px');
     expect(v2).not.toContain('.v2-thread__working');
   });
