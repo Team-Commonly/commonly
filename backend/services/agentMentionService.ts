@@ -465,6 +465,15 @@ const autoJoinAgentToPod = async (
     }
   }
 
+  // A DM keeps its members (ADR-001 §3.10), and the writes below go past the
+  // guard ensureAgentInPod holds, so a contact binding can't add a third party.
+  const pod = await Pod.findById(podId).select('type members').lean() as { type?: string; members?: unknown[] } | null;
+  const alreadyMember = (pod?.members || []).some((member) => String(member) === String(targetUser._id));
+  if (!pod || (isPersonalPodType(pod.type) && !alreadyMember)) {
+    console.warn(`[mention-autojoin] refused — pod=${podId} keeps its members`);
+    return false;
+  }
+
   // This auto-join creates a row without a native runtime declaration. Refuse
   // before either the installation or membership write in a protected pod.
   await assertAgentRuntimeMayJoinPod(podId, undefined);
