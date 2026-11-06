@@ -55,8 +55,8 @@ describe('works-with logos', () => {
     const read = (name: string) => JSON.parse(
       fs.readFileSync(path.resolve(__dirname, `../../../i18n/locales/${name}.json`), 'utf8'),
     ).landing.worksWith;
-    expect(read('en').appsNote).toBe('Linear and GitHub, read access only.');
-    expect(read('zh-CN').appsNote).toBe('Linear 和 GitHub，只开放读取权限。');
+    expect(read('en').appsNote).toBe('Agents get read access to Linear and GitHub.');
+    expect(read('zh-CN').appsNote).toBe('智能体对 Linear 和 GitHub 只有读取权限。');
     for (const [locale, chat] of [['en', 'Chat'], ['zh-CN', '聊天']]) {
       const { items } = read(locale);
       expect(items.linear.label).toBeUndefined();
