@@ -1022,7 +1022,8 @@ const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
     HOSTED_OWNER_REFUSALS[refusal],
     HOSTED_OWNER_MESSAGES[refusal],
     403,
-    accountId ? { credentialOwnerId: accountId } : undefined,
+    undefined,
+    accountId,
   );
 };
 
@@ -1539,9 +1540,7 @@ const refusedCredentialOwner = (
   error: unknown,
   resolved: string | undefined,
 ): string | undefined => (
-  error instanceof RoomGrantError && typeof error.details?.credentialOwnerId === 'string'
-    ? error.details.credentialOwnerId
-    : resolved
+  error instanceof RoomGrantError && error.credentialOwnerId ? error.credentialOwnerId : resolved
 );
 
 /** The grant's and call's facts on a trail row. The ref is shape-checked, so it can't be a URL: it's the seat's own branch name. */
