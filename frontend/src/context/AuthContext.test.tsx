@@ -117,6 +117,13 @@ test('updateProfile sends auth header and updates user', async () => {
   expect(global.testAuth.currentUser).toEqual({ name: 'Updated' });
 });
 
+test('mergeUser adds a server-changed field to the signed-in user and leaves the rest', async () => {
+  axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });
+  await act(async () => { await global.testAuth.login('a', 'b'); });
+  act(() => { global.testAuth.mergeUser({ entitlements: { cloudAgents: true } }); });
+  expect(global.testAuth.currentUser).toEqual({ name: 'Init', entitlements: { cloudAgents: true } });
+});
+
 test('updateProfile leaves auth loading false while the profile write is pending', async () => {
   axios.get.mockResolvedValue({ data: { name: 'Init' } });
   axios.post.mockResolvedValueOnce({ data: { token: 'tok', user: { name: 'Init' } } });

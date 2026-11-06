@@ -2469,6 +2469,7 @@
     "errors": {
       "loadFailed": "Could not load your team.",
       "redeemFailed": "Could not redeem that code.",
+      "redeemRateLimited": "Too many tries from here. Wait a few minutes, then try the code again.",
       "openRoomFailed": "Could not open a 1:1 with this agent — try again."
     },
     "tiers": {

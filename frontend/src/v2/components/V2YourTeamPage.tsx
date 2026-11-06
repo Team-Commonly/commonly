@@ -177,7 +177,7 @@ const dedupeAgents = (rows: Array<AgentInstallationSummary & { podName?: string 
 const V2YourTeamPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, mergeUser } = useAuth();
   const entitledFromUser = useMemo(() => {
     const entitlements = (user as { entitlements?: { cloudAgents?: boolean } } | null)?.entitlements;
     return Boolean(entitlements?.cloudAgents) || user?.role === 'admin';
@@ -213,13 +213,16 @@ const V2YourTeamPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-      await axios.post('/api/auth/redeem-invitation', { invitationCode: code }, { headers });
+      const res = await axios.post<{ entitlements?: Record<string, unknown> }>('/api/auth/redeem-invitation', { invitationCode: code }, { headers });
+      if (res.data?.entitlements) mergeUser?.({ entitlements: res.data.entitlements });
       setRedeemed(true);
       setRedeemOpen(false);
       setRedeemCode('');
-    } catch {
-      // The server's text is English only, so the translated line stands for every refusal.
-      setRedeemError(t('yourTeam.errors.redeemFailed'));
+    } catch (err: unknown) {
+      // The server's text is English only. A rate limit is the one failure that isn't about the
+      // code, and it's shared with sign-in on this IP, so a good code mustn't read as a bad one.
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      setRedeemError(t(status === 429 ? 'yourTeam.errors.redeemRateLimited' : 'yourTeam.errors.redeemFailed'));
     } finally {
       setRedeeming(false);
     }
