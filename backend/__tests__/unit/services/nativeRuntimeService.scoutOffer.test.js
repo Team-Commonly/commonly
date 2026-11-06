@@ -239,6 +239,32 @@ describe('commonly_offer_own_agent', () => {
     expect(posted().map((call) => call.content)).toContain('Here is another way.');
   });
 
+  test('a skipped offer wrote no row, so the model can still answer', async () => {
+    AgentMessageService.postMessage
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: 'heartbeat_diagnostic_suppressed' })
+      .mockResolvedValue({ success: true });
+    offer({ locale: 'en' });
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Here is another way.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted().map((call) => call.content)).toContain('Here is another way.');
+  });
+
+  test('a skipped offer leaves the fallback on for the model\'s closing text', async () => {
+    AgentMessageService.postMessage
+      .mockResolvedValueOnce({ success: true, skipped: true, reason: 'heartbeat_diagnostic_suppressed' })
+      .mockResolvedValue({ success: true });
+    offer({ locale: 'en' });
+    axios.post.mockResolvedValueOnce(says('I can\'t open repos.'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted().map((call) => call.content)).toContain('I can\'t open repos.');
+  });
+
   test('does not post the model\'s closing text as a second message', async () => {
     offer({ locale: 'en' });
     axios.post.mockResolvedValueOnce(says('Offer sent.'));

@@ -1275,7 +1275,8 @@ export async function dispatchTool(
         });
         fanOutAgentPost(ctx, result);
         const posted = postToolResult(ctx, result);
-        if (!posted.error) ctx.ownAgentOfferPosted = true;
+        // A skip returns no error and writes no row, so the reply isn't out yet.
+        if (!posted.error && result?.success && !result.skipped) ctx.ownAgentOfferPosted = true;
         return posted;
       }
 
@@ -3084,7 +3085,10 @@ export async function runAgent(
               ? String((parsedArgs as any).content)
               : undefined;
           }
-          if ((toolName === 'commonly_offer_local_agent' || toolName === 'commonly_offer_own_agent') && !result.error) {
+          if (toolName === 'commonly_offer_local_agent' && !result.error) {
+            postedViaTool = true;
+          }
+          if (toolName === 'commonly_offer_own_agent' && dispatchCtx.ownAgentOfferPosted) {
             postedViaTool = true;
           }
           messages.push({
