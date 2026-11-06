@@ -61,6 +61,8 @@ const fakeChild = ({
   delayMs = 0,
   outputFile = null,
   outputContents = null,
+  // Codex ends a turn it finished with this line; a test of one it didn't says so.
+  finished = true,
 } = {}) => {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
@@ -68,6 +70,7 @@ const fakeChild = ({
   proc.kill = jest.fn();
   setTimeout(async () => {
     for (const chunk of stdoutChunks) proc.stdout.emit('data', Buffer.from(chunk));
+    if (finished) proc.stdout.emit('data', Buffer.from('{"type":"turn.completed"}\n'));
     if (stderr) proc.stderr.emit('data', Buffer.from(stderr));
     if (outputFile && outputContents !== null) {
       await writeFile(outputFile, outputContents, 'utf8');
@@ -83,7 +86,7 @@ const findOutputFile = (args) => {
 };
 
 const makeSpawnImpl = ({
-  stdoutChunks = [], stderr = '', code = 0, outputContents = null, onCall = null,
+  stdoutChunks = [], stderr = '', code = 0, outputContents = null, onCall = null, finished = true,
 } = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
@@ -97,6 +100,7 @@ const makeSpawnImpl = ({
       code,
       outputFile: findOutputFile(args),
       outputContents,
+      finished,
     });
   };
   return { impl, calls };
@@ -1066,6 +1070,69 @@ describe('codex adapter — spawn()', () => {
     expect(promptArg).toContain('unreadable');
     expect(promptArg).toContain('just this');
     expect(promptArg).not.toContain('commonly_save_my_memory');
+  });
+
+  // The npm launcher re-raises a signal into its own handler and then exits 0,
+  // so through it a stopped turn has a clean exit code, and only the stream
+  // shows that it never finished.
+  test('a turn that started and never finished rejects, though codex exits 0', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-stopped"}\n',
+        '{"type":"turn.started"}\n',
+      ],
+      outputContents: null,
+      finished: false,
+    });
+
+    await expect(
+      codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
+    ).rejects.toThrow(/stopped before it finished/);
+  });
+
+  test('a stop before the first event rejects too', async () => {
+    const { impl } = makeSpawnImpl({ finished: false });
+
+    await expect(
+      codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl }),
+    ).rejects.toThrow(/stopped before it finished/);
+  });
+
+  test('a last line with no newline still counts', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-end"}\n', '{"type":"turn.completed"}'],
+      outputContents: 'done',
+      finished: false,
+    });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('done');
+  });
+
+  test('a final message counts as finished, whatever the stream printed', async () => {
+    const { impl } = makeSpawnImpl({ outputContents: 'the reply', finished: false });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('the reply');
+  });
+
+  test('a finished turn with no text stays a silent turn', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-quiet"}\n',
+        '{"type":"turn.started"}\n',
+        '{"type":"turn.completed"}\n',
+      ],
+      outputContents: null,
+      finished: false,
+    });
+
+    const res = await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
+
+    expect(res.text).toBe('');
+    expect(res.newSessionId).toBe('sid-quiet');
   });
 
   test('rejects when codex emits a turn.failed event, surfacing the error message', async () => {
