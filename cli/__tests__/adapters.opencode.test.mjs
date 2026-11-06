@@ -2084,6 +2084,18 @@ describe('opencode public seat — the grant broker (F175a)', () => {
     });
   });
 
+  // F219 item 1: this adapter already refused it. Pinned beside the others.
+  test('a public seat in a workspace that holds the temp folder is refused, and nothing is spawned', async () => {
+    await withTemp(async (root) => {
+      const ctx = await publicCtx(root);
+      await mkdir(join(ctx.cwd, 'tmp'));
+      const spawn = makeSpawnImpl();
+      await expect(opencode.spawn('hello', { ...ctx, _tempRoot: join(ctx.cwd, 'tmp'), _spawnImpl: spawn.impl }))
+        .rejects.toThrow(/refuse a workspace .* that contains the per-spawn credential directory/);
+      expect(spawn.calls).toHaveLength(0);
+    });
+  });
+
   // Review fix (#3487): OpenCode treats the whole git worktree as inside the
   // project, so a workspace below a repo root that also holds the temp root
   // would let the tools reach the credential without external_directory.

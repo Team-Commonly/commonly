@@ -751,6 +751,52 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  // F219: Claude's MCP folder holds this turn's credential, under the temp root,
+  // so a workspace that holds the temp root hands it to Read and to the jail.
+  test.each(['public', 'workspace'])('a %s seat with MCP in a workspace that holds the temp folder is refused', async (trust) => {
+    const { impl, calls } = makeSpawnImpl();
+    await expect(claude.spawn('hi', {
+      agentName: 'f219-seat',
+      sessionId: null,
+      cwd: os.tmpdir(),
+      runtimeToken: 'cm_agent_fake',
+      env: { PATH: process.env.PATH },
+      environment: {
+        model: 'test-model',
+        mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
+        sandbox: { trust, mode: 'workspace' },
+      },
+      _spawnImpl: impl,
+    })).rejects.toThrow(new RegExp(`${trust} Claude agents cannot run in .*set TMPDIR outside it`));
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a public seat with no MCP has no per-turn folder, so the check does not reach it', async () => {
+    const { impl, calls } = makeSpawnImpl();
+    const publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-f219-state-'));
+    const originalPlatform = process.platform;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      spawnSync.mockImplementation((cmd) => (
+        cmd === 'which' ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }
+      ));
+      await claude.spawn('hi', {
+        agentName: 'f219-no-mcp',
+        sessionId: null,
+        cwd: os.tmpdir(),
+        env: { PATH: process.env.PATH },
+        environment: { model: 'test-model', sandbox: { trust: 'public' } },
+        _publicClaudeState: publicState,
+        _spawnImpl: impl,
+      });
+      expect(calls).toHaveLength(1);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      spawnSync.mockReset();
+      fs.rmSync(publicState, { recursive: true, force: true });
+    }
+  });
+
   test('public trust with NO mode resolves to bwrap off darwin, with the same tool policy macOS gets', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();

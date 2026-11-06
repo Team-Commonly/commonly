@@ -16,6 +16,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // A version enters this list only after a real headless turn with that binary.
@@ -291,26 +292,31 @@ export default {
       // eslint-disable-next-line no-console
       console.warn(`[goose] installed ${version || 'unknown'} differs from smoke-tested ${TESTED_GOOSE_VERSIONS.join(', ')}; private seat continues`);
     }
-    const home = await mkdtemp(join(tmpdir(), 'commonly-goose-'));
+    if (isPublic) await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'public Goose agents' });
+    // Keep child-writable state separate from adapter-owned config and keys, as
+    // qwen does (F219). The jail reads tempDir and cannot change it: the
+    // Commonly MCP child runs in the jail, so the credential stays readable.
+    const tempDir = await mkdtemp(join(tmpdir(), 'commonly-goose-'));
+    const home = await mkdtemp(join(tmpdir(), 'commonly-goose-home-'));
     let proxy;
     try {
       const credential = writeCredentialFile(ctx.runtimeToken, {
-        root: home, agentName: ctx.agentName || 'agent',
+        root: tempDir, agentName: ctx.agentName || 'agent',
       });
+      // No tokenFile: nothing here reads one, so the token is never on disk.
       if (isPublic) proxy = await startProviderProxy({
-        provider: configured, keyFile, tokenFile: join(home, 'provider-proxy-token'), adapterLabel: 'Goose',
-        pinnedModel: model,
+        provider: configured, keyFile, adapterLabel: 'Goose', pinnedModel: model,
       });
       const mcpReadDirectories = [];
       const publicExtensions = [];
       // Node's compiled-in OpenSSL config can sit outside the permitted tree
       // (including hostedtoolcache on CI). Use our empty config, retaining
       // Node's bundled TLS roots, instead of granting host configuration reads.
-      const opensslConfig = join(home, 'openssl.cnf');
+      const opensslConfig = join(tempDir, 'openssl.cnf');
       if (isPublic) await writeFile(opensslConfig, '', { mode: 0o600 });
       // The recipe's own directory is the template include root, so it holds
-      // the recipe alone, never the proxy token or the credential file.
-      const recipeDir = join(home, 'recipe');
+      // the recipe alone, never the credential file.
+      const recipeDir = join(tempDir, 'recipe');
       const recipePath = join(recipeDir, 'public-recipe.json');
       const args = [
         'run', '--no-session', ...(!isPublic ? ['--no-profile', '--with-builtin', 'developer'] : []),
@@ -347,7 +353,7 @@ export default {
         ...(isPublic ? { OPENSSL_CONF: opensslConfig } : {}),
         OPENAI_HOST: proxy ? new URL(proxy.baseURL).origin : baseUrl.origin,
         OPENAI_BASE_PATH: `${new URL(proxy?.baseURL || baseUrl).pathname.replace(/\/$/, '')}/chat/completions`.replace(/^\//, ''),
-        OPENAI_API_KEY: proxy ? (await readFile(proxy.tokenFile, 'utf8')).trim() : key,
+        OPENAI_API_KEY: proxy ? proxy.token : key,
       };
       withholdRuntimeCredential(env, { credentialFile: credential?.path || null });
       const requestedTimeout = Number(ctx.timeoutMs);
@@ -366,12 +372,12 @@ export default {
               ...(sandbox.filesystem || {}), 'write-outside': [home],
             } },
           }, { workspacePath: ctx.cwd, homePath: home,
-            readOnlyPaths: [binary, process.execPath, ...mcpReadDirectories] });
+            readOnlyPaths: [tempDir, binary, process.execPath, ...mcpReadDirectories] });
         } else {
           if ((ctx._platform || process.platform) !== 'darwin') throw new Error('goose adapter: Seatbelt requires macOS');
           [executable, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
             workspacePath: ctx.cwd, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
-            executablePath: binary, statePath: home, mcpConfigDir: home,
+            executablePath: binary, statePath: home, mcpConfigDir: tempDir,
             // Public seat: the CLI made this workspace, so it is pinned (F197).
             pinWorkspace: true,
             loopbackNetworkPorts: [proxy.port], readOnlyDirectories: mcpReadDirectories,
@@ -386,7 +392,7 @@ export default {
       return { text, newSessionId: null };
     } finally {
       try { await proxy?.close(); } finally {
-        await rm(home, { recursive: true, force: true });
+        await Promise.all([tempDir, home].map((path) => rm(path, { recursive: true, force: true })));
       }
     }
   },

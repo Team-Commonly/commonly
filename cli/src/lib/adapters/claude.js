@@ -85,6 +85,7 @@ import {
   normalizeSandboxTrust,
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
+import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { holdWorkspaceRealpath, workspacePinDir } from '../sandbox/workspace-pin.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
@@ -1657,6 +1658,13 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
+    // Only an MCP seat has a per-turn folder (createMcpConfig). Before skills
+    // mount, because they write into the workspace.
+    if (publicTrust && Array.isArray(ctx.environment?.mcp) && ctx.environment.mcp.length > 0) {
+      await refuseWorkspaceHoldingTurnDirs({
+        workspace: ctx.cwd, seat: `${ctx.environment.sandbox.trust} Claude agents`,
+      });
+    }
     // Only a stranger-facing seat is witnessed (TASK-256). A workspace seat is
     // confined too, but it answers its own team, and an outage it narrates
     // there is a signal, not a leak.

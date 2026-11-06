@@ -41,7 +41,7 @@ Last reviewed 2026-11-06, against main `978b1d07d`.
 | **Codex** | **works** in the foreground for a public seat. Walked 2026-11-04 in a pod open to join, with CLI 0.1.233 and codex-cli 0.162.1 on macOS 26.4, using an isolated `CODEX_HOME`: the seat answered an @mention in 21 s. Re-walked 2026-11-06 on this repo's CLI with codex-cli 0.162.1 through the model gateway: a public seat answered an @mention in 21 s, wrote a file inside its workspace, and `cat` of a file under `/private/tmp` failed with `Operation not permitted`, read from the seat's own rollout. The daemon is **unverified** | **unverified**. Never refused by the host check, because Codex confines itself with its own permission profiles | **refused** by default, on a host with no sandbox Codex can use: a public seat always refuses, at attach, at `agent run` and turn by turn. With the opt-in `--unsandboxed`, a seat whose every pod is confirmed private (invite-only, not publicly readable, not listed; re-read before each turn, and a failed read doesn't start it) runs unconfined, with your own access to files and commands. Anyone in the pod can direct it, people invited later included, and it gets no connector grants. Walked 2026-11-06 on Windows Server 2025 against prod, with this checkout's CLI and Codex on an API key through the model gateway: in an invite-only pod the seat answered a main-channel @mention in 39 s, pasting the SHA-256 PowerShell computed for a string chosen at that moment, with the unconfined notice in its log (`byo-windows.yml` run 42154387865). With the pod set open to join and the flag still passed, it refused at start without naming the flag (run 42154734536). The publicly readable, listed and failed-read cases are covered by unit tests only | **unverified**. A codex MCP entry must declare its own `env` table, or the server can't start (repo CLAUDE.md, Agent Runtime). |
 | **OpenCode** | **works** for a public seat on a tested version. Walked 2026-11-04 by Growth on OpenCode 1.19.4 and CLI 0.1.240, running the Bring your own page's OpenCode lines from `~` with an OpenAI-compatible provider (our own model gateway in place of `api.anthropic.com`): an @mention got a reply through the tool in 25 s. A replay fixture covered 1.18.35, 1.19.0 and 1.19.4 on 2026-10-24 ([opencode.md](../cli/opencode.md)) | **unverified**. Bubblewrap code path, not walked | **refused**: `windowsSandboxMessage` (offers WSL 2 with bubblewrap instead) | n/a |
 | **Qwen Code** | **works** for a public seat. Walked 2026-11-04 by Growth on Qwen Code 0.26.2 and CLI 0.1.242 in a pod open to join: it replied through the tool in 14.3 s. The withheld `commonly_attach_file` was never offered | **unverified**. Bubblewrap code path | **refused**, as OpenCode | n/a |
-| **Goose** | **works** for a public seat on 1.54.0 only. Walked 2026-11-04 by Growth on Goose 1.54.0 and CLI 0.1.242 in a pod open to join: it replied through the tool in 15.7 s. Goose 1.56 is **refused** on public seats by the version gate, `TESTED_GOOSE_VERSIONS` (`adapters/goose.js`), which lists 1.54.0 only. #3430 (open) keeps it refused on purpose: its loop adds a `load_skill` tool that passes the allowlist | **unverified**. Bubblewrap code path | **unverified** | n/a |
+| **Goose** | **works** for a public seat on 1.54.0 only. Walked 2026-11-04 by Growth on Goose 1.54.0 and CLI 0.1.242 in a pod open to join: it replied through the tool in 15.7 s. That walk predates F219, which moved the credential and recipe out of the writable seat home; on that layout `goose.public-smoke.test.mjs` passed with real Goose 1.54.0 under Seatbelt and a stub model (2026-11-05, macOS), with no walk on a real pod yet. Goose 1.56 is **refused** on public seats by the version gate, `TESTED_GOOSE_VERSIONS` (`adapters/goose.js`), which lists 1.54.0 only. #3430 (open) keeps it refused on purpose: its loop adds a `load_skill` tool that passes the allowlist | **unverified**. Bubblewrap code path | **unverified** | n/a |
 | **Hermes** | **unverified**. A 2026-10-22 walk on Hermes 0.22.2 answered a mention, but it used our own model provider and a version below today's floor (0.22.5 to below 0.23). The adapter sends model calls through OpenRouter, and that path has no recorded walk | **unverified** | **unverified** | n/a |
 | **pi** | **unverified**. A private seat runs without a sandbox, since pi has no default one and refuses a declared private one (`default-environment.js`). A declared public seat runs under Seatbelt (`adapters/pi.js`) | **unverified** | **unverified** | n/a |
 | **DeepSeek Harness** | **works**, private seats only: walked 2026-10-23, confined turn 2026-10-28 ([dsh.md](../cli/dsh.md)). Public seats are refused | **unverified**: "not walked" (dsh.md) | **unverified**: "not walked" (dsh.md) | n/a |
@@ -101,6 +101,27 @@ Last reviewed 2026-11-06, against main `978b1d07d`.
   - dsh and Hermes have no sandbox, and neither does pi off macOS. The
     Connect page says these harnesses can't use connectors, and tells pi
     users that connectors need a public agent on a Mac.
+- **A confined seat's workspace can't hold the temp folder.** A turn keeps its
+  credential in a folder under the temp root, which stays out of the jail only
+  because nothing grants it. A workspace that is `$TMPDIR`, or holds it, would
+  grant it. Codex, Goose, Qwen, confined dsh and Claude Code with MCP refuse that
+  at spawn (`cli/src/lib/sandbox/turn-dir.js`); OpenCode has its own check. The
+  refusal says to run in a project folder or set `TMPDIR` elsewhere. Measured
+  2026-11-05 with a real `TMPDIR` on each adapter. Pi keeps its credential in its
+  seat home, not the temp root, so this check doesn't apply to it.
+- **What a jailed seat can do to its own credential.** On Goose and OpenCode the
+  MCP child runs in the jail, so jailed code can read the credential file and
+  can't change it (real Seatbelt profile, a shell in the harness's place,
+  2026-11-05). On Linux this is read from the bwrap arguments, not run. A real
+  public Goose turn had its shell, file-write and extension calls refused, so
+  no model-steered code runs there to read it. A Codex shell command can't read
+  the file at all (F203, default profile on macOS).
+- **Temp files in a public Codex shell.** The profile denies `$TMPDIR` and
+  `/tmp`, so a writable seat's shell gets `TMPDIR` and zsh's `TMPPREFIX` in its
+  workspace. Heredocs work (real turn, codex-cli 0.162.1 on macOS, stub model,
+  2026-11-05). On macOS a bare `mktemp` still fails because it ignores `TMPDIR`;
+  `mktemp "$TMPDIR/name.XXXXXX"` works. A read-only seat's heredocs still fail.
+  Linux is not run.
 - **Hosted fallback.** The Windows refusals offer "Run it here" on the
   Connect page. That runs the agent on Commonly, and nothing runs on the user's
   machine.

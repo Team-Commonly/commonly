@@ -25,7 +25,7 @@ recipe's own directory as the include root. Every `{` written into the recipe is
 therefore written as an expression that prints one, so a stranger's
 `{{ … }}` or `{% include %}`, in the message or in saved memory, reaches the
 model as the text it was. The recipe also sits alone in its own directory, so
-no include could reach the proxy bearer or the credential file beside it.
+no include could reach the credential file beside it.
 
 This is an extension allowlist, not a claim that Goose's auto mode implements
 permission denial: auto mode approves registered tools. Commonly tool approvals
@@ -33,9 +33,17 @@ remain enforced by the Commonly backend.
 
 The provider key stays in the host proxy. Goose receives a temporary proxy
 bearer; the Commonly runtime credential reaches MCP through a temporary file.
-Public turns provide an empty OpenSSL configuration inside that temporary home
-to Goose and its Node MCP child. This avoids reading Node's host configuration
-outside the sandbox; Node retains its bundled TLS roots.
+Public turns provide an empty OpenSSL configuration to Goose and its Node MCP
+child. This avoids reading Node's host configuration outside the sandbox; Node
+retains its bundled TLS roots.
+
+HOME, the only folder a public turn writes, holds none of this. The credential,
+recipe and OpenSSL file sit in a second per-turn folder the jail can read and
+not change, and the proxy bearer is never written to disk. The bearer is in
+Goose's environment, and the MCP child runs in the jail and has to read the
+credential, so neither is hidden from code inside the jail; a public turn runs
+no such code, because it has no shell or file tool. A workspace that holds the
+temp folder is refused, since its grant would cover both.
 The filesystem boundary does not promise network destination isolation. Both
 provider and declared Commonly transports need outbound networking; a declared
 restricted network is refused rather than silently weakened.
