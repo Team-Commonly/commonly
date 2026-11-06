@@ -1179,14 +1179,13 @@ export const resolveAttachSandbox = ({
   if (mode === 'workspace' || mode === 'read-only') {
     if (!confined) {
       throw new Error(
-        `sandbox.mode=${mode} needs sandbox.trust=public, and this environment has ${trust ? `sandbox.trust=${trust}` : 'no sandbox.trust'}. `
-          + 'Add sandbox.trust=public, or remove sandbox.mode.',
+        `sandbox.mode=${mode} needs sandbox.trust=public. Add it, or remove sandbox.mode to run without a sandbox.`,
       );
     }
     if (!ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName)) {
       throw new Error(
-        `The ${adapterName || 'selected'} adapter can't enforce sandbox.mode=${mode}, so a sandbox.trust=${trust} seat can't run on it. `
-          + `Adapters that can: ${[...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort().join(', ')}.`,
+        `The ${adapterName || 'selected'} adapter can't enforce sandbox.mode=${mode}. `
+          + `On macOS, these adapters can: ${[...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort().join(', ')}.`,
       );
     }
   }
