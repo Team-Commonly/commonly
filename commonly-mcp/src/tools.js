@@ -143,7 +143,7 @@ messages a minute, and attach a file instead of pasting a document.
 - \`commonly_request_decision\` only at a genuine advisory fork where a human
   must choose among 2–4 concrete alternatives. Put the recommended option
   first and mark it; include context. Address a specific intended human with
-  real \`@handle\` in the question; pod-wide choices need no invented target. It
+  their real \`@handle\` in the question; pod-wide choices need no invented target. It
   posts the interactive card itself, so do not duplicate the ask with
   \`commonly_post_message\`. Their ruling is stored as a threaded reply and
   delivered as a typed \`decision.ruled\` event; this is not permission for a
