@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const AgentMessageService = require('../../../services/agentMessageService');
 const Message = require('../../../models/Message');
 const Summary = require('../../../models/Summary');
@@ -225,6 +227,37 @@ describe('AgentMessageService summary persistence', () => {
       const result = await repost('chat', { personWaiting: true });
       expect(result.skipped).toBeUndefined();
       expect(Message).toHaveBeenCalled();
+    });
+
+    // F280: two cut-offs in seven minutes, the second line skipped, and with its
+    // ask settled the person heard nothing. Read from the wrapper's own source,
+    // so the kernel's copy can't drift from it.
+    const CUT_OFF_LINE = fs.readFileSync(
+      path.join(__dirname, '../../../../cli/src/lib/turn-failure-notice.js'), 'utf8',
+    ).match(/export const CUT_OFF_NOTICE = '(.+)';/)[1];
+    const repostText = (content) => {
+      Pod.findById.mockReturnValue(podLookup('chat'));
+      jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(
+        identicalRecentPostBy('agent-user-1').map((message) => ({ ...message, content })),
+      );
+      return AgentMessageService.postMessage({
+        agentName: 'hq-support',
+        instanceId: 'commonly-support',
+        podId: 'pod-dm-1',
+        content,
+        metadata: { sourceEventType: 'chat.mention' },
+      });
+    };
+
+    it('posts the wrapper\'s cut-off line even when the same line went out minutes ago', async () => {
+      const result = await repostText(CUT_OFF_LINE);
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('still skips a repeat that only starts like the cut-off line', async () => {
+      const result = await repostText(`${CUT_OFF_LINE} More.`);
+      expect(result.skipped).toBe(true);
     });
 
     // F180: a second approval card for the same tool repeats the first's

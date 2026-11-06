@@ -59,6 +59,8 @@ export const OUT_OF_ALLOWANCE_NOTICE = 'I can’t answer right now: the AI accou
 // stopped. The event won't come back, so this is all the person hears. Hedged,
 // because a kill can land after the last word: a checkpoint says the seat
 // finished an item, and part one of an answer has been enough to earn one.
+// The kernel exempts this exact text from its duplicate guard: change both
+// (CUT_OFF_LINE in agentMessageService.ts, pinned by a test).
 export const CUT_OFF_NOTICE = 'I got cut off before I could finish that, so please ask me again if anything is missing.';
 
 export const codexVersionNotice = (required) => 'I can’t answer right now: the computer I run on needs '
