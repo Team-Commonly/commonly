@@ -186,6 +186,10 @@ const setupPgDb = async () => {
     `);
 
     await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS record_chains (
+        id BIGSERIAL PRIMARY KEY, pod_id VARCHAR(64) NOT NULL, task_id VARCHAR(64) NOT NULL DEFAULT '',
+        run_id VARCHAR(64) NOT NULL, head_seq INTEGER NOT NULL DEFAULT 0, head_hash CHAR(64)
+      );
       CREATE TABLE IF NOT EXISTS record_openings (
         chain_id BIGINT NOT NULL,
         seq INTEGER NOT NULL,

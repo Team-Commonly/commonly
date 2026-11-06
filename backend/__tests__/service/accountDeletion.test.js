@@ -45,10 +45,16 @@ const addFile = async (owner, name, legacy = false) => {
 
 describe('Self-serve account deletion', () => {
   let app;
-  const opening = (subject) => mockPg.query(
-    "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, 'data.decidedBy', $2, $2, $3)",
-    [`c1:${'a'.repeat(64)}`, subject, 'b'.repeat(32)],
+  const chain = () => mockPg.query(
+    "INSERT INTO record_chains (id, pod_id, run_id) VALUES (1, 'pod', 'run') ON CONFLICT (id) DO NOTHING",
   );
+  const opening = async (subject) => {
+    await chain();
+    return mockPg.query(
+      "INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, 'data.decidedBy', $2, $2, $3)",
+      [`c1:${'a'.repeat(64)}`, subject, 'b'.repeat(32)],
+    );
+  };
   const openingsOf = async (subject) => (await mockPg.query('SELECT 1 FROM record_openings WHERE subject = $1', [subject])).rows.length;
   beforeAll(async () => {
     process.env.JWT_SECRET = 'account-deletion-service-test';
@@ -72,7 +78,12 @@ describe('Self-serve account deletion', () => {
     // of allocating a fresh ephemeral port for every supertest request.
     app = app.listen(0);
   });
-  afterEach(async () => { await clearMongoDb(); await clearPgDb(); await mockPg.query('DELETE FROM users'); });
+  afterEach(async () => {
+    await clearMongoDb(); await clearPgDb();
+    await mockPg.query('DELETE FROM record_openings');
+    await mockPg.query("DELETE FROM record_chains WHERE run_id = 'run'");
+    await mockPg.query('DELETE FROM users');
+  });
   afterAll(async () => { await new Promise((resolve) => app.close(resolve)); await closeMongoDb(); await closePgDb(); });
 
   it('takes the person\'s ids off record lines on both delete paths, and nobody else\'s (F265)', async () => {
@@ -110,6 +121,7 @@ describe('Self-serve account deletion', () => {
     expect(await AccountDeletion.exists({ _id: owner._id })).toBeTruthy();
     const [row] = commitRecordLine({ kind: 'tool.call', actor, data: {} }).openings;
     expect(row).toMatchObject({ subject: String(owner._id), field: 'actor.owner' });
+    await chain();
     await mockPg.query(
       'INSERT INTO record_openings (chain_id, seq, commitment, field, subject, value, salt) VALUES (1, 1, $1, $2, $3, $4, $5)',
       [row.commitment, row.field, row.subject, row.value, row.salt],
