@@ -101,6 +101,8 @@ export interface ToolCatalogEntry {
    * start route answers 404.
    */
   credentialMode?: 'operator_key';
+  /** F221: a person can connect a repository of their own here (GET and POST /github-app/repositories). */
+  repositoryConnect?: boolean;
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
@@ -181,6 +183,22 @@ export interface DraftGrant {
    * exactly the agents it was given for, so checking another one clears it.
    */
   byoConsentFor?: string | null;
+}
+
+export interface ConnectableRepository {
+  installationId: string;
+  owner: string;
+  repo: string;
+}
+
+/** F221: the step that connects one of the person's own repositories. */
+export interface RepositoryConnect {
+  status: 'loading' | 'ready' | 'needsGithub' | 'failed';
+  repositories: ConnectableRepository[];
+  /** GitHub's listing was cut short, so a missing repository may still exist. */
+  truncated: boolean;
+  /** `owner/repo` of the picked row. */
+  selected: string;
 }
 
 export interface GithubAppSetup {
