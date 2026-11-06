@@ -14,11 +14,12 @@ The CLI builds the report in `cli/src/lib/machine-host.js`. The server stores it
 A machine also records `firstAnswerAt`: the first time an agent bound to it acked an event a person was waiting on (`chat.mention`, `thread.mention` or `dm.message`, the `PERSON_WAITING_EVENT_TYPES` set) with outcome `posted`. It's set once and never moved, and a failure to set it never fails the ack.
 
 Admins read the counts at `GET /api/admin/analytics/machines`, and in the "Daemon machines" section of the admin usage page:
-- machines by platform, with how many have answered;
+- machines by platform, with how many have answered a person. A mention from another agent or a kernel wake doesn't count, even though an agent's DM arrives as `chat.mention`;
 - machines by CLI version.
 
 ## What these counts can't see
 
+- **Whether a machine is online.** The total counts every registered machine, including stopped ones.
 - **Foreground runs.** `commonly agent run` in a terminal registers no machine, so it's never counted. The Windows prod walk (byo-windows.yml run 41926949969) ran that way. These counts cover daemon machines only.
 - **Whether a reply was really posted.** `posted` is the outcome the seat's own ack reports. Nobody checks it against a message, so a seat that acks `posted` without posting still counts its machine as answered.
 - **Anything before the release.** `firstAnswerAt` starts when this ships. A machine whose agents answered people before then reads "not answered" until it answers again.

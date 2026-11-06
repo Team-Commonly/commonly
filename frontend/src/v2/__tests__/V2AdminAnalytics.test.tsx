@@ -135,7 +135,7 @@ describe('V2AdminAnalytics', () => {
     renderPage();
     const heading = await screen.findByRole('heading', { name: 'Daemon machines' });
     const section = heading.closest('section');
-    expect(section).toHaveTextContent('Machines running the daemon: 5.');
+    expect(section).toHaveTextContent('Registered machines: 5, online or not.');
     const [platforms, versions] = section.querySelectorAll('table');
     const rows = (table) => [...table.querySelectorAll('tbody tr')]
       .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));

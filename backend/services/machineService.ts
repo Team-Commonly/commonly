@@ -87,13 +87,18 @@ export function normalizeHostReport(raw: unknown): IMachineHost | null {
 
 /**
  * TASK-784: an agent bound to a machine acked an event a person was waiting
- * on (an @mention or a DM) with a posted reply. The machine's first such
- * answer is kept and never moved. Telemetry: a failure here never fails the
- * ack.
+ * on (an @mention or a DM from a person, not from an agent or the kernel) with
+ * a posted reply. The machine's first such answer is kept and never moved.
+ * Telemetry: a failure here never fails the ack.
  */
 export async function noteMachineAnswered(
   agentUser: { botMetadata?: { machineId?: unknown } } | null | undefined,
-  event: { type?: unknown; delivery?: { outcome?: unknown } | null } | null | undefined,
+  event: {
+    type?: unknown;
+    delivery?: { outcome?: unknown } | null;
+    payload?: Record<string, unknown> | null;
+    createdAt?: Date | string;
+  } | null | undefined,
 ): Promise<void> {
   try {
     const machineId = agentUser?.botMetadata?.machineId;
@@ -101,11 +106,15 @@ export async function noteMachineAnswered(
     // Required here, not at the top: machineService loads on the auth path, and
     // the unanswered-mention service pulls in the identity and pod-line services.
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const { PERSON_WAITING_EVENT_TYPES } = require('./unansweredMentionService') as {
+    const { PERSON_WAITING_EVENT_TYPES, messagesFromPeople } = require('./unansweredMentionService') as {
       PERSON_WAITING_EVENT_TYPES: readonly string[];
+      messagesFromPeople: (row: NonNullable<typeof event>) => Promise<unknown[]>;
     };
-    if (!PERSON_WAITING_EVENT_TYPES.includes(String(event?.type || ''))) return;
-    if (event?.delivery?.outcome !== 'posted') return;
+    if (!event || !PERSON_WAITING_EVENT_TYPES.includes(String(event.type || ''))) return;
+    if (event.delivery?.outcome !== 'posted') return;
+    // Checked first, so a machine that has already answered reads no senders.
+    if (!await Machine.exists({ machineId, firstAnswerAt: null })) return;
+    if ((await messagesFromPeople(event)).length === 0) return;
     await Machine.updateOne({ machineId, firstAnswerAt: null }, { $set: { firstAnswerAt: new Date() } });
   } catch (err) {
     console.warn('[machine] first-answer stamp failed:', (err as Error).message);
