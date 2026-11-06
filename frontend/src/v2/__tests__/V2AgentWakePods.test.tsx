@@ -198,9 +198,9 @@ describe('per-agent Wake and Pods settings', () => {
 
   it('previews heartbeat turns against the plan cap before saving', async () => {
     renderSettings();
-    expect(await screen.findByText('0 / 30 turns a day')).toBeInTheDocument();
+    expect(await screen.findByText('0 / 30 heartbeat turns a day')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Heartbeat'), { target: { value: '30' } });
-    expect(screen.getByText('48 / 30 turns a day')).toBeInTheDocument();
+    expect(screen.getByText('48 / 30 heartbeat turns a day')).toBeInTheDocument();
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
     expect(updatePod).not.toHaveBeenCalled();
   });
@@ -215,7 +215,18 @@ describe('per-agent Wake and Pods settings', () => {
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 30 },
     ] } });
     renderSettings();
-    expect(await screen.findByText('72 / 30 turns a day')).toBeInTheDocument();
+    expect(await screen.findByText('72 / 30 heartbeat turns a day')).toBeInTheDocument();
+  });
+
+  it('leaves a paused pod out of the scheduled total, since the scheduler does not wake it', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 2, installations: [
+      { podId: 'pod-a', podName: 'Alpha', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 240 },
+      { podId: 'pod-b', podName: 'Beta', status: 'paused', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
+    ] } });
+    renderSettings();
+    expect(await screen.findByText('6 / 30 heartbeat turns a day')).toBeInTheDocument();
   });
 
   it('states the daily turn count clearly when the cap is unavailable', async () => {
@@ -224,7 +235,7 @@ describe('per-agent Wake and Pods settings', () => {
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
       }] } });
     renderSettings();
-    expect(await screen.findByText('24 turns a day · cap unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('24 heartbeat turns a day · cap unavailable')).toBeInTheDocument();
   });
 
   describe('an agent that runs on Commonly (hosted)', () => {
@@ -245,7 +256,7 @@ describe('per-agent Wake and Pods settings', () => {
       client.get.mockResolvedValue(hostedRows([{}, { hostedHeartbeat: null, heartbeatMinutes: 30 }]));
       renderSettings();
       // min(24 hosted, cap 6) + 48 from the row that isn't hosted.
-      expect(await screen.findByText('54 / 30 turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('54 / 30 heartbeat turns a day')).toBeInTheDocument();
       const [hosted, other] = screen.getAllByLabelText('Heartbeat') as HTMLSelectElement[];
       expect(Array.from(hosted.options).map((option) => option.value)).not.toContain('15');
       expect(Array.from(other.options).map((option) => option.value)).toContain('15');
@@ -261,14 +272,14 @@ describe('per-agent Wake and Pods settings', () => {
     it('keeps a stored interval below the floor visible, and counts it as hourly', async () => {
       client.get.mockResolvedValue(hostedRows([{ heartbeatMinutes: 15 }], 30));
       renderSettings();
-      expect(await screen.findByText('24 / 30 turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('24 / 30 heartbeat turns a day')).toBeInTheDocument();
       expect(optionValues()).toContain('15');
     });
 
     it('previews against the daily heartbeat cap and says why', async () => {
       client.get.mockResolvedValue(hostedRows([{}, {}]));
       renderSettings();
-      expect(await screen.findByText('6 / 30 turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('6 / 30 heartbeat turns a day')).toBeInTheDocument();
       expect(screen.queryByText(/This exceeds the daily cap/)).not.toBeInTheDocument();
       expect(screen.getByText('Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.'))
         .toBeInTheDocument();
@@ -277,7 +288,7 @@ describe('per-agent Wake and Pods settings', () => {
     it('says heartbeats aren\'t available when the cap is zero, and previews none', async () => {
       client.get.mockResolvedValue(hostedRows([{}], 0));
       renderSettings();
-      expect(await screen.findByText('0 / 30 turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('0 / 30 heartbeat turns a day')).toBeInTheDocument();
       expect(screen.getByText('Heartbeats aren\'t available yet for your agents that run on Commonly.')).toBeInTheDocument();
     });
 
