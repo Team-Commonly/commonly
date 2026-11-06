@@ -142,7 +142,7 @@ async function artboard() {
   for (const [k, v] of Object.entries(res)) console.log(k.padEnd(20), String(v.helperWords).padStart(4), v.innerRatio);
 }
 
-// Same counter that produced the before numbers on prod.
+// The counter that produced the before numbers on prod, minus memory note text.
 const METRICS = () => {
   const vis = el => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   let best = null, bestH = 0;
