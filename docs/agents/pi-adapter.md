@@ -65,6 +65,64 @@ pi -p --mode json --no-extensions --no-skills --no-prompt-templates --no-themes
   ```
 
   (`baseUrl: http://litellm:4000/v1` is the in-cluster form for a cloud seat.)
+- **Your own provider.** `commonly agent attach pi --env <file>`, `agent run
+  --env` and the daemon's adapter swap accept the shared provider shape that
+  OpenCode, Qwen, Goose and dsh use:
+
+  ```json
+  {
+    "model": "my-model",
+    "provider": { "id": "mine", "baseURL": "https://models.example/v1", "keyFile": "/Users/me/.config/mine.key", "api": "openai-chat" }
+  }
+  ```
+
+  `id` becomes pi's provider name and `baseURL` its `baseUrl`. `api` is
+  `openai-chat` (the default, pi's `openai-completions`) or
+  `anthropic-messages`, where `baseURL` is the host: pi calls `<baseURL>/v1/messages`.
+  `keyFile` is an absolute path to a regular mode-0600 file outside the
+  workspace, checked at attach and on every spawn. Such a seat needs no
+  `COMMONLY_LITELLM_KEY`, and doesn't carry one into pi.
+
+  pi sends `reasoning_effort` to every model it treats as reasoning, and the
+  shared shape's `effort` has no `none`. For a provider that refuses the field,
+  declare `"models": { "my-model": { "reasoning": false } }`. pi reads nothing
+  else from `provider.models`.
+
+  The two shapes don't mix: a block holding `id`, `baseURL`, `keyFile` or
+  `models` is the shared shape, validated as a whole, so pi's `name`, `baseUrl`
+  or `apiKeyEnv` beside them is refused. pi's own shape stays a token-file
+  override, and `--env` still refuses it.
+
+  **Where the key goes.** `models.json` only ever holds
+  `"apiKey": "$COMMONLY_PI_PROVIDER_KEY"`.
+
+  - *Private turn:* the adapter reads `keyFile` and puts the value in pi's
+    environment under that name, the same channel as `COMMONLY_LITELLM_KEY`.
+    `pi-shell-env.mjs` strips the name from pi's shells and the MCP bridge's
+    child environment is an allowlist. That limits inheritance and nothing more:
+    a private seat has no sandbox, so its shell can read `keyFile` itself, or
+    pi's environment through `ps eww $PPID`.
+  - *Public turn:* pi never holds the key. The provider proxy runs in the
+    adapter's process and reads `keyFile` there, outside the jail. The jailed pi
+    gets a per-turn proxy token under the same variable, and `models.json`
+    points at `127.0.0.1`. The Seatbelt profile doesn't admit `keyFile`, and a
+    key file inside the seat's public home, pi's package, the CLI's code or a
+    prepared MCP build is refused, because the jail can read those. The proxy
+    also redacts the key from what the provider sends back.
+  - *Reaching `baseURL`:* the proxy, not the jail, connects to it, so a public
+    seat's `baseURL` can be any host this machine reaches, `localhost` included.
+  - *Limits of a public turn:* `anthropic-messages` is refused at attach, at
+    `agent run` and on an adapter swap, because the proxy's model pin covers chat
+    completions only. The pin also needs the provider's reply to name exactly
+    the seat's `model`, so a provider that answers under another name fails with
+    `Served model check failed`.
+
+  Measured on pi 0.84.1 against a local stub provider, not a real one: the
+  adapter's real spawn got replies on both APIs and on a public turn under real
+  Seatbelt, the stub saw the key from `keyFile`, a model `bash env` saw no key,
+  and a provider `id` of `openai` or `anthropic` used the `models.json` key over
+  an `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the environment.
+  No person has walked this path against a real provider.
 - **Effort → thinking.** `none/off → off`, `minimal`, `low`, `medium`, `high`,
   `xhigh`, `max` map 1:1; anything else is omitted and pi picks its default.
 - **Commonly tools.** `environment.mcp` (the same stdio entries claude and
@@ -137,7 +195,8 @@ The local executable remains 0.84.1; this assessment does not certify a complete
    `POST /key/generate {"key_alias":"laptop-codex-seats-deepseek","models":["deepseek-v4-flash"],"max_budget":20,"budget_duration":"30d"}`
    — store it at `~/.commonly/bin/litellm-seat-key` (0600).
 2. Put it in the seat's process env as `COMMONLY_LITELLM_KEY` (the launchd
-   plist / `revive-fleet.sh` export). The adapter refuses to spawn without it.
+   plist / `revive-fleet.sh` export). The adapter refuses to spawn without it,
+   unless the seat declares its own `provider.keyFile`.
 3. In `~/.commonly/tokens/<seat>.json`: `"adapter": "pi"`,
    `environment.model = "deepseek-v4-flash"`, keep `effort`, keep `mcp`.
 4. Restart the seat. First turn shows `[<seat>] spawning pi`; the seat's home
@@ -162,5 +221,6 @@ in-cluster provider block above. Neither is wired yet; cody is parked at
 - No pi in CI: the adapter's jest suites mock the binary; the bridge client is
   tested against a fake stdio server. The live proof is manual.
 - Memory summaries: the adapter returns `text` and `newSessionId` only.
-- Public-trust sandboxing (`environment.sandbox.trust: 'public'`) is not
-  implemented for pi; do not attach a pi seat to a stranger-readable pod.
+- Public-trust sandboxing (`environment.sandbox.trust: 'public'`) runs under
+  macOS Seatbelt only, on the versions in `TESTED_PI_VERSIONS`. pi has no bwrap
+  path, so a public pi seat off macOS is refused.
