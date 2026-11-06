@@ -42,6 +42,8 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { probeVersion } from './tested-version.js';
+import { parseVersion } from '../mcp-server-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { accessSync, constants, existsSync, realpathSync } from 'fs';
@@ -609,6 +611,53 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
   });
 };
 
+// A public Codex seat runs with Commonly's tools, the shell, file edits and
+// view_image. Those three read and write through the permission profile, as
+// measured on each version named below; these keys turn off Codex's other
+// built-ins, which claude.js does with its deny list.
+//
+// - `web_search` is the top-level mode, and "disabled" also drops `web__run`
+//   from the `exec` tool of code-mode models.
+// - `features.multi_agent` removes the agent tools from a model on the v1 agent
+//   tools, but a thread started without it keeps them when resumed, so
+//   `agents.max_depth=0` (below) covers that thread. A model whose catalog entry says
+//   `multi_agent_version: "v2"` keeps `collaboration.*` in its tool list whatever
+//   these say, so the v2 cap is what stops it: at 1 the root thread fills it, and
+//   spawn_agent returns "agent thread limit reached". `agents.max_threads` doesn't
+//   do this, and only `model_catalog_json` takes the names out, which replaces
+//   the whole catalog.
+// - `features.goals` removes the goal tools. A goal is kept on the thread and
+//   comes back in the next turn's context.
+//
+// Measured on codex-cli 0.162.1, against the tool list sent to the model on
+// gpt-5.5, gpt-5.6 and gpt-6 models (adapters.codex.public-tools.test.mjs).
+// 0.133.0, 0.149.1 and 0.159.3 all start with this set, ignoring a key they don't
+// know. Of these, only the `web_search` value could fail a start, as it's an
+// enum, and "disabled" is valid on all four.
+const PUBLIC_BUILTIN_TOOL_FLAGS = Object.freeze([
+  '-c', 'web_search="disabled"',
+  '-c', 'features.multi_agent=false',
+  '-c', 'features.multi_agent_v2.max_concurrent_threads_per_session=1',
+  '-c', 'features.goals=false',
+]);
+
+// Unlike the set above, `agents.max_depth=0` can stop a start: codex-cli 0.133.0
+// exits with "agents.max_depth must be at least 1", and 0.149.1 is the oldest
+// version measured to take it. So it goes only to a Codex reporting at least that,
+// and a version that can't be read leaves it out, since a seat that starts matters
+// more than a thread from before these settings.
+const ZERO_AGENT_DEPTH_FLAGS = Object.freeze(['-c', 'agents.max_depth=0']);
+const ZERO_AGENT_DEPTH_MIN_VERSION = [0, 149, 1];
+
+const acceptsZeroAgentDepth = (version) => {
+  const parsed = parseVersion(version);
+  if (!parsed) return false;
+  const index = parsed.findIndex((part, i) => part !== ZERO_AGENT_DEPTH_MIN_VERSION[i]);
+  return index === -1 || parsed[index] > ZERO_AGENT_DEPTH_MIN_VERSION[index];
+};
+
+const parseCodexVersion = (stdout) => String(stdout).match(/\d+\.\d+\.\d+/)?.[0] || null;
+
 const publicPermissionProfileFlags = (
   mode,
   commitAttributionEnv = null,
@@ -785,6 +834,7 @@ const buildArgs = ({
   modelBaseUrl = null,
   platform = process.platform,
   workspacePath = null,
+  zeroAgentDepth = false,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -812,6 +862,8 @@ const buildArgs = ({
         platform,
         workspacePath,
       ),
+      ...PUBLIC_BUILTIN_TOOL_FLAGS,
+      ...(zeroAgentDepth ? ZERO_AGENT_DEPTH_FLAGS : []),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
@@ -1003,9 +1055,10 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     //
-    // Codex has no subagent tool, so of the two habits (TASK-545) it is
-    // taught row slicing alone; claude.js adds parallel reads. A public seat
-    // answers strangers rather than working board rows, so it is taught neither.
+    // Of the two habits (TASK-545) a private Codex seat is taught row slicing
+    // alone. claude.js adds parallel reads, whose cue names Claude's Agent tool;
+    // Codex has agent tools of its own, under other names. A public seat answers
+    // strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
@@ -1070,6 +1123,12 @@ export default {
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv)
         : null;
+      // 30 s, as in goose: a first launch after an upgrade can be slow, and an
+      // unread version drops agents.max_depth=0 for this turn. A failed probe
+      // isn't cached, so the next turn reads it again.
+      const codexVersion = publicSandboxMode === null ? null
+        : ctx._codexVersion !== undefined ? ctx._codexVersion // test seam only
+          : await probeVersion('codex', { env: childEnv, timeoutMs: 30000, parse: parseCodexVersion }).catch(() => null);
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -1084,6 +1143,7 @@ export default {
         modelBaseUrl,
         platform: ctx._platform || process.platform,
         workspacePath,
+        zeroAgentDepth: acceptsZeroAgentDepth(codexVersion),
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
