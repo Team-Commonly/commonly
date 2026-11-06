@@ -14,6 +14,7 @@
 //   D215_POD          id of a pod with a long chat history and a busy board
 //   D215_AGENT        agent route segment, e.g. "<name>/default"
 //   D215_SIDEBAR_POD  optional; pod opened for the 1440 sidebar shot (defaults to D215_POD)
+//   D215_FIXTURES     optional; serves account data as the frame draws it (see lib.js)
 //   --only a,b        optional; limit to these surfaces (chat, board, settings, ...)
 // It exits 1 when any surface misses its target. It prints counts only, never page text.
 //
@@ -167,6 +168,11 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
+// The byo frame draws the machine start with a machine picked. Opened with no machine, the page shows
+// an empty picker and drops a mode card, so it reads fewer words than the frame and could print a HIT.
+const BYO_ROUTE = '/v2/agents/byo?mode=machine';
+const BYO_NEEDS = { sel: '[data-testid=byo-machine-select] option', why: 'no machine on this account or in D215_FIXTURES, so this is not the state the frame draws' };
+
 // Navigates, opens the panel a surface needs, and measures it. The URL is checked again
 // just before measuring, so a redirect that lands after a click cannot be scored either.
 async function checkSurface(p, [name, route, opt = {}], vp, targets) {
@@ -189,6 +195,7 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
+  if (opt.needs && !(await p.locator(opt.needs.sel).count())) throw new Error(`${name}-${vp}: ${opt.needs.why}`);
   const B = BUSY[name];
   if (B) {
     if (await p.locator(B.refuse).first().isVisible()) throw new Error(`${name}-${vp}: the page did not load (${B.refuse} on screen in place of rows)`);
@@ -250,7 +257,7 @@ async function prod(only) {
     ['agent-memory', () => `/v2/agents/${agent}/memory`],
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
-    ['byo', () => '/v2/agents/byo'],
+    ['byo', () => BYO_ROUTE, { needs: BYO_NEEDS }],
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
@@ -259,22 +266,31 @@ async function prod(only) {
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
   let miss = 0, checked = 0;
-  for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
-    const { b, p } = await open(vw, vh, mob);
-    for (const surface of SURF) {
-      if (only && !only.includes(surface[0])) continue;
-      const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
-      checked++;
-      if (!ok) miss++;
-      console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+  // A run that stops partway has already printed scores, so it still says what served them.
+  try {
+    for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
+      const { b, p } = await open(vw, vh, mob);
+      try {
+        for (const surface of SURF) {
+          if (only && !only.includes(surface[0])) continue;
+          const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
+          checked++;
+          if (!ok) miss++;
+          console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+        }
+      } finally {
+        await b.close();
+      }
     }
-    await b.close();
+  } finally {
+    const { fixtureUse } = require('./lib');
+    for (const [fixture, served] of fixtureUse) console.log(`fixture ${fixture} served ${served}`);
   }
   if (!checked) { console.error('no surface was measured'); process.exit(2); }
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { BYO_ROUTE, BYO_NEEDS, METRICS, BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;
