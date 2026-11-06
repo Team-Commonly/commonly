@@ -103,7 +103,11 @@ const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this cont
 // adjacent `.`+digit is rare enough in provider copy to accept. The test below
 // pins what the pattern ACTUALLY has — a space after the period ends the match —
 // rather than the stronger property it does not have.
-const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+// LiteLLM's two budget refusals, measured on a real key 2026-11-06 and read from
+// its config: a key over its budget answers 422 `budget_exceeded`, a model group
+// over its pool answers 429 "crossed budget". Unmatched, the 422 is RUNTIME and
+// the seat respawns every few seconds against a key that stays refused.
+const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit|budget has been exceeded|budget_exceeded|crossed budget)/i;
 const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
 // The status code is not a throttle wording: "429: You've reached your Fable 5
 // limit" is an exhausted allowance that a provider reports as HTTP 429.

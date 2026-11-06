@@ -89,6 +89,27 @@ a delivery that goes silent, such as a crash or a SIGKILL.
 - An older server without the route, or a failed request, leaves the events to
   the requeue. The log says so, naming the count.
 
+## What a pod hears when a turn can't run
+
+No model turn can explain a key that stopped working, so the wrapper posts one
+fixed line (`cli/src/lib/turn-failure-notice.js`) to each pod with someone
+waiting on an answer. It covers three causes: a key or login the provider
+refused, a seat that wouldn't start, and an allowance or budget that ran out. A
+pod hears each cause at most once an hour, and a restart doesn't reset that.
+
+The line fires on exact wordings, not on the failure classes in `spawn-retry.js`.
+A class only picks a backoff, so a loose match there costs a slower retry. Here
+it tells a person something untrue: a panic at `client.rs:401` once read as an
+expired key. A new wording goes in the list once a seat has logged it, and
+anything unmatched stays silent in the pod, as it was before.
+
+The line never quotes the error. A gateway budget refusal carries a masked key,
+its alias and dollar figures.
+
+Budget enforcement lags. On 2026-11-06 a key capped at $0.00005 spent $0.0154
+before the gateway started refusing it, so a walk needs a key that is already
+over budget.
+
 ## Release and verification
 
 This requires all three pieces: deployed backend renewal route, published CLI

@@ -318,10 +318,14 @@ describe('performRun', () => {
     // grepping for `no wrapper-post` should find only genuine silence.
     expect(lines.some((line) => line.includes('no wrapper-post'))).toBe(false);
 
-    // Nothing was delivered, and the ack says why rather than saying "declined" —
-    // `no_action` with no reason would hand a human wake to another listener
-    // while a route-wide refusal queues every other seat behind the same wall.
-    expect(mockPost).not.toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', expect.anything());
+    // No reply was delivered, only the fixed line saying why (turn-failure-notice.js),
+    // and the ack says why rather than saying "declined" — `no_action` with no
+    // reason would hand a human wake to another listener while a route-wide
+    // refusal queues every other seat behind the same wall.
+    const podPosts = mockPost.mock.calls.filter(([route]) => route === '/api/agents/runtime/pods/pod-abc/messages');
+    expect(podPosts).toHaveLength(1);
+    expect(podPosts[0][1].content).toContain('used up its allowance');
+    expect(podPosts[0][1].content).not.toContain('12.34');
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
       {

@@ -43,6 +43,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
+const { adapterFailure } = await import('../src/lib/upstream-refusal.js');
 
 const DRAIN_DEPTH = 40;
 const drainMicrotasks = async () => {
@@ -343,9 +344,13 @@ describe('performRun — a failed turn is retried from the carry', () => {
   });
 });
 
-describe('performRun — a failure only a person can fix tells the pod', () => {
-  const expired = () => new Error('codex exited with code 1: 401 Authentication Error, Expired Key sk-walk-abc');
+describe('performRun — a failure the seat can\'t retry its way out of tells the pod', () => {
+  const expired = () => adapterFailure('codex turn failed', 'unexpected status 401 Unauthorized: Authentication Error - Expired Key sk-walk-abc');
   const noticesIn = (post) => turnPostsIn(post).filter(([, body]) => /I can’t answer right now/.test(body.content));
+
+  beforeEach(() => {
+    fs.rmSync(path.join(sessionsTmpDir, '.commonly', 'sessions', 'my-stub.notices.json'), { force: true });
+  });
 
   test('an expired key posts one plain line, once, however many retries fail', async () => {
     const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
@@ -363,19 +368,74 @@ describe('performRun — a failure only a person can fix tells the pod', () => {
     run.handle.stop();
   });
 
-  test('a turn that works clears it, so a later failure says so again', async () => {
-    const server = fakeServer({ pages: [[makeEvent('evt-a', 'first')], [], [makeEvent('evt-b', 'second')]] });
-    const spawn = jest.fn()
-      .mockRejectedValueOnce(expired())
-      .mockResolvedValueOnce({ text: 'back' })
-      .mockRejectedValueOnce(expired());
+  test('a seat out of allowance says so, in its own words', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(new Error("claude exited with code 1: You've hit your weekly limit · resets Nov 3 at 5pm"));
     const run = startRun({ spawn });
     await drainMicrotasks();
     expect(noticesIn(server.post)).toHaveLength(1);
+    expect(noticesIn(server.post)[0][1].content).toContain('used up its allowance');
+    run.handle.stop();
+  });
 
-    await run.fireNext();
-    await run.fireNext();
-    expect(noticesIn(server.post)).toHaveLength(2);
+  test('a restart does not post it again', async () => {
+    const first = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const firstRun = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(first.post)).toHaveLength(1);
+    firstRun.handle.stop();
+    await drainMicrotasks();
+
+    const second = fakeServer({ pages: [[makeEvent('evt-b', 'hello?')]] });
+    const secondRun = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(second.post)).toHaveLength(0);
+    secondRun.handle.stop();
+  });
+
+  test('a pod behind the failed one is told too, without waiting for its own turn', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'first'), makeEvent('evt-b', 'second', { podId: 'pod-other' })]],
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(noticesIn(server.post).map(([route]) => route).sort()).toEqual([
+      expect.stringContaining('pod-abc'),
+      expect.stringContaining('pod-other'),
+    ]);
+    run.handle.stop();
+  });
+
+  test('a person replying to the seat without an @ is told', async () => {
+    const server = fakeServer({
+      pages: [[makeEvent('evt-a', 'and then?', { type: 'message.posted', payload: { content: 'and then?', deliveryId: 'nonce-a', repliesToYourMessage: true } })]],
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(1);
+    run.handle.stop();
+  });
+
+  test('a seat whose route refuses with no thrown failure is told, as pi reports it', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockResolvedValue({ text: '', upstream: { status: 401, detail: 'expired' } });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(1);
+    expect(server.acks).toHaveLength(1);
+    run.handle.stop();
+  });
+
+  test('a route that refused for another reason tells no one', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockResolvedValue({ text: '', upstream: { status: 503 } });
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(0);
     run.handle.stop();
   });
 
@@ -394,6 +454,34 @@ describe('performRun — a failure only a person can fix tells the pod', () => {
     const run = startRun({ spawn });
     await drainMicrotasks();
     expect(noticesIn(server.post)).toHaveLength(0);
+    run.handle.stop();
+  });
+
+  test('a failure the model hint already covers posts only the hint', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const failure = Object.assign(adapterFailure('codex turn failed', 'unexpected status 401'), { providerCode: 'model_not_found' });
+    const spawn = jest.fn().mockRejectedValue(failure);
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(noticesIn(server.post)).toHaveLength(0);
+    run.handle.stop();
+  });
+
+  test('the failure report does not wait on the notice', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const original = server.post.getMockImplementation();
+    let reportedBeforePost = null;
+    let run;
+    server.post.mockImplementation(async (route, body) => {
+      if (String(route).endsWith('/messages') && reportedBeforePost === null) {
+        reportedBeforePost = retryReports(run.errors).length > 0;
+      }
+      return original(route, body);
+    });
+    const spawn = jest.fn().mockImplementation(async () => { throw expired(); });
+    run = startRun({ spawn });
+    await drainMicrotasks();
+    expect(reportedBeforePost).toBe(true);
     run.handle.stop();
   });
 

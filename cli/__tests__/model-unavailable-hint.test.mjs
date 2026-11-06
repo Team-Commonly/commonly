@@ -175,8 +175,10 @@ describe('performRun posts the model hint', () => {
     expect(post.mock.calls.filter(([route]) => String(route).includes('/ack'))).toHaveLength(0);
   });
 
-  test.each(UNRELATED)('posts nothing on %s', async (_label, error) => {
-    expect(podPosts(await runOnce(error))).toHaveLength(0);
+  // Some of these post their own line (turn-failure-notice.js), never a model hint.
+  test.each(UNRELATED)('posts no model hint on %s', async (_label, error) => {
+    const hints = podPosts(await runOnce(error)).filter(([, body]) => !body.content.startsWith('I can’t answer right now'));
+    expect(hints).toHaveLength(0);
   });
 
   test('holds for an hour per model, survives a restart, and a different model still posts', async () => {
