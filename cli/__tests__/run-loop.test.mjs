@@ -1480,7 +1480,7 @@ describe('performRun', () => {
   // does. Pinned as literals, like FINAL_TEXT_IS_POSTED above.
   const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
     + "is short, is that you can't help, or repeats what another agent said. Do not leave them without a reply.]";
-  const PERSON_CLOSING = 'Do not narrate the inbox. Answer each person who addressed you above. '
+  const PERSON_CLOSING = 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
     + 'For anything else here, post only an action or a materially useful response. '
     + 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
     + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary.';
@@ -1540,6 +1540,8 @@ describe('performRun', () => {
     ['an agent\'s DM', () => mention('m1', { dmKind: 'agent-agent', source: 'dm' }), []],
     ['a sender the snapshot cannot name', () => mention('m1'), []],
     ['a kernel reminder', () => mention('m1', { triggerAuthor: 'kernel' }), [{ _id: 'm1', isBot: false }]],
+    ['a reply beside the seat that named nobody', () => mention('m1', { adjacentReply: true }), [{ _id: 'm1', isBot: false }]],
+    ['a welcome to a new member', () => mention('m1', { welcomeWake: true }), [{ _id: 'm1', isBot: false }]],
     ['a heartbeat', () => makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: { content: 'Run your checklist.' } }), []],
     ['a person\'s message that named nobody', () => makeEvent({
       _id: 'evt-amb', type: 'message.posted', payload: { content: 'morning all', messageId: 'm1' },
@@ -1556,6 +1558,63 @@ describe('performRun', () => {
       [mention('m1')], [{ _id: 'm1', isBot: false }], { claimHolder: 'peer-seat' },
     );
     expect(prompt).toContain('[Claim notice: @peer-seat holds message m1');
+    expect(prompt).not.toContain(PERSON_ADDRESSED);
+    expect(prompt).toContain(SILENCE_CLOSING);
+  });
+
+  test('a person\'s reply to the seat\'s own message counts as addressing it', async () => {
+    const prompt = await promptWithMessages([mention('m1', { implicitReply: true })], [{ _id: 'm1', isBot: false }]);
+    expect(prompt).toContain(PERSON_ADDRESSED);
+  });
+
+  test('beside a peer-held item, the closing names only the marked items', async () => {
+    const claimed = [];
+    createClient.mockReturnValue({
+      get: jest.fn(async (url) => (url.endsWith('/messages')
+        ? { messages: [{ _id: 'm1', isBot: false }, { _id: 'm2', isBot: false }] }
+        : { events: [mention('m1'), mention('m2')] })),
+      post: jest.fn(async (url) => {
+        if (!url.endsWith('/claim')) return {};
+        claimed.push(url);
+        return claimed.length === 1 ? { claimed: false, claimedBy: 'peer-seat' } : { claimed: true, expiresAt: 'later' };
+      }),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    const [held, mine] = spawn.mock.calls[0][0].split('Event 2/2');
+    expect(held).toContain('[Claim notice: @peer-seat');
+    expect(held).not.toContain(PERSON_ADDRESSED);
+    expect(mine).toContain(PERSON_ADDRESSED);
+    expect(mine).toContain(PERSON_CLOSING);
+  });
+
+  test('a person\'s item past the body limit does not change the closing', async () => {
+    createClient.mockReturnValue({
+      get: jest.fn(async (url) => (url.endsWith('/messages')
+        ? { messages: [{ _id: 'm1', isBot: true }, { _id: 'm2', isBot: false }] }
+        : { events: [mention('m1'), mention('m2')] })),
+      post: jest.fn(async (url) => (url.endsWith('/claim') ? { claimed: true, expiresAt: 'later' } : {})),
+    });
+    const spawn = jest.fn(async () => ({ text: 'NO_REPLY' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+      agentName: 'my-stub',
+      inboxBatchLimit: 1,
+      setTimeoutImpl: noopTimeout,
+    });
+    await drainMicrotasks();
+    stop();
+    const [prompt] = spawn.mock.calls[0];
     expect(prompt).not.toContain(PERSON_ADDRESSED);
     expect(prompt).toContain(SILENCE_CLOSING);
   });

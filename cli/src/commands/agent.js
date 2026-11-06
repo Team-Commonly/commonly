@@ -1527,7 +1527,9 @@ export const answersInChannel = (entry) => {
 // exit: NO_REPLY stays only as the way to end after a reply posted through a
 // tool, so the wrapper doesn't post a second one. It needs the sender known to
 // be human, so an agent's @ and a message off the snapshot keep the old line. A
-// seat whose peer holds the claim keeps it too: the peer is answering them.
+// seat whose peer holds the claim keeps it too: the peer is answering them. So
+// do two chat.mention wakes where nobody typed the seat's name: an adjacent
+// reply and a new member's welcome, whose kernel frames offer NO_REPLY.
 const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them in this turn, even if the answer '
   + 'is short, is that you can\'t help, or repeats what another agent said. Do not leave them without a reply.]';
 const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
@@ -1535,6 +1537,7 @@ const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless
 
 export const answersAPerson = (entry) => (
   entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame
+  && !entry.event.payload?.adjacentReply && !entry.event.payload?.welcomeWake
 );
 
 const extractPrompt = (event) => {
@@ -2927,7 +2930,7 @@ export const performRun = ({
         ? [`[${omitted} more event${omitted === 1 ? '' : 's'} arrived. Their count is real; pull pod context if needed.]`]
         : []),
       answersPerson
-        ? 'Do not narrate the inbox. Answer each person who addressed you above. '
+        ? 'Do not narrate the inbox. Answer every item marked as a person addressing you directly. '
           + 'For anything else here, post only an action or a materially useful response. '
           + FINAL_TEXT_ANSWERS_A_PERSON
         : 'Do not narrate the inbox. Post only an action or a materially useful response; otherwise return NO_REPLY. '
