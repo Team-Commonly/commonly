@@ -1985,7 +1985,7 @@
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
-      "unavailableCodexWindows": "Windows 上的 Codex 只能在邀请制 Pod 里运行，而这个 Pod 不是邀请制，或者没有说明。能进入这个 Pod 的人都可以指挥你电脑上不受限制的智能体。你可以选择「在这里运行」，改用托管智能体；也可以换一个邀请制 Pod。",
+      "unavailableCodexWindows": "Windows 上的 Codex 只能在邀请制 Pod 里运行，而且这个 Pod 不能公开，也不能出现在列表里。这个 Pod 不符合，或者没有说明。能进入这个 Pod 的人都可以指挥你电脑上不受限制的智能体。你可以选择「在这里运行」，改用托管智能体；也可以换一个符合条件的 Pod。",
       "unavailableCodex": "Codex CLI 目前只在 Mac 上测试过，在 {{os}} 上可能还无法回复 @提及。你可以选择「在这里运行」，改用托管智能体；也可以换到 Mac 上运行这条命令。",
       "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",

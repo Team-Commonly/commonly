@@ -351,7 +351,8 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
     else await expect(running).rejects.toThrow(rejection);
   };
   const printed = (spy) => spy.mock.calls.map((call) => call.join(' ')).join('\n');
-  const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result });
+  const hostReport = jest.fn().mockResolvedValue({ hostUnconfined: true });
+  const podsRead = (result) => createClientMock.mockReturnValueOnce({ get: result, post: hostReport });
 
   test('no flag, private pods: refused, the pods are not read, and the line names the flag', async () => {
     await run([], exitSentinel);
@@ -366,6 +367,7 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
     createClientMock.mockImplementation(() => { throw new Error('reached the poll loop'); });
     await run(['--unsandboxed'], 'reached the poll loop');
     const warned = printed(warnSpy);
+    expect(hostReport).toHaveBeenCalledWith('/api/agents/runtime/host-unconfined', {});
     expect(warned).toContain('nothing confines this agent');
     expect(warned).toContain('anyone in its pods, people invited later included, can direct it');
     expect(warned).toContain('no connector grants');
@@ -384,6 +386,15 @@ describe('agent run: Codex on native Windows, by the opt-in only (F187)', () => 
     expect(exitSentinel.code).toBe(1);
     expect(printed(errorSpy)).toContain('publicly readable or open to join');
     expect(printed(errorSpy)).not.toContain('--unsandboxed');
+    expect(printed(warnSpy)).not.toContain('nothing confines this agent');
+  });
+
+  test('a run that can\'t tell the server it has no sandbox does not start', async () => {
+    hostReport.mockRejectedValueOnce(new Error('offline'));
+    podsRead(jest.fn().mockResolvedValue({ installations: [privatePod] }));
+    await run(['--unsandboxed'], exitSentinel);
+    expect(exitSentinel.code).toBe(1);
+    expect(printed(errorSpy)).toContain('could not tell the server this agent has no sandbox');
     expect(printed(warnSpy)).not.toContain('nothing confines this agent');
   });
 

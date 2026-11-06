@@ -38,6 +38,7 @@ const drain = async () => {
 let eventCount = 0;
 const runOneTurn = async ({
   environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl, codexUnconfined,
+  eventType = 'chat.mention', eventPayload = { content: 'read the repo' },
 }) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
@@ -45,8 +46,8 @@ const runOneTurn = async ({
     if (route === '/api/agents/runtime/events') {
       return {
         events: [{
-          _id: eventId, type: 'chat.mention', podId: 'pod-ws', agentName: 'workspace-stub',
-          payload: { content: 'read the repo' },
+          _id: eventId, type: eventType, podId: 'pod-ws', agentName: 'workspace-stub',
+          payload: eventPayload,
         }],
       };
     }
@@ -253,6 +254,26 @@ describe('performRun: a Windows Codex run opted in on private pods (F187)', () =
     expect(ctx.environment.sandbox).toBeUndefined();
     expect(ctx.environment.model).toBe('m');
     expect(ctx.hostUnconfined).toBeUndefined();
+  });
+
+  test('a private ask on a pod turned open is answered with a refusal, not left to expire', async () => {
+    const { post } = await run([{ ...privatePod, joinPolicy: 'open' }], {
+      spawns: 0,
+      eventType: 'agent.ask',
+      eventPayload: { requestId: 'ask-1', from: 'other-seat', question: 'can you check this?', prompt: 'can you check this?' },
+    });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/asks/ask-1/respond', {
+      content: expect.stringContaining('this pod isn’t private'),
+    });
+  });
+
+  test('a failed pod read refuses no ask: it stays unacked and comes back', async () => {
+    const { post } = await run(new Error('offline'), {
+      spawns: 0,
+      eventType: 'agent.ask',
+      eventPayload: { requestId: 'ask-2', from: 'other-seat', question: 'can you check this?', prompt: 'can you check this?' },
+    });
+    expect(post.mock.calls.filter(([route]) => /\/asks\//.test(route))).toHaveLength(0);
   });
 
   test.each([

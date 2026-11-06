@@ -60,13 +60,13 @@ const NOT_JUDGED: SeatConfinementJudgement = { refusal: null, scope: 'unbound' }
 
 /** The seat's own row: the identity the auth path resolved, for the key fallback. */
 const loadSeat = async (agentUserId: unknown): Promise<{
-  botMetadata?: { agentName?: unknown; instanceId?: unknown; machineId?: unknown };
+  botMetadata?: { agentName?: unknown; instanceId?: unknown; machineId?: unknown; hostUnconfined?: unknown };
 } | null> => {
   // The routes in front of this pass the token's identity and Mongo will not
   // cast a non-ObjectId — a 500 is not a judgement.
   if (typeof agentUserId !== 'string' || !Types.ObjectId.isValid(agentUserId)) return null;
   const seat = await User.findById(agentUserId)
-    .select('botMetadata.machineId botMetadata.agentName botMetadata.instanceId')
+    .select('botMetadata.machineId botMetadata.hostUnconfined botMetadata.agentName botMetadata.instanceId')
     .lean();
   return seat as never;
 };
@@ -151,7 +151,9 @@ const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
 
 export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<SeatConfinementJudgement> => {
   const seat = await loadSeat(caller.agentUserId);
-  if (await onUnconfinedHost(seat?.botMetadata?.machineId)) {
+  // A foreground run has no machine to report for it, so it marks the seat
+  // itself (POST /api/agents/runtime/host-unconfined).
+  if (seat?.botMetadata?.hostUnconfined === true || await onUnconfinedHost(seat?.botMetadata?.machineId)) {
     return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat', hostUnconfined: true };
   }
   const keys = seatKeysFor(caller, seat);

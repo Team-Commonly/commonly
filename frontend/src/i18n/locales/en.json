@@ -1929,7 +1929,7 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
-      "unavailableCodexWindows": "Codex on Windows can run only in an invite-only pod, and this one isn’t, or didn’t say. Anyone who can reach it could direct an unconfined agent on your computer. Choose “Run it here” for a hosted agent, or pick an invite-only pod.",
+      "unavailableCodexWindows": "Codex on Windows can run only in an invite-only pod that isn’t public or listed. This one doesn’t qualify, or didn’t say. Anyone who can reach it could direct an unconfined agent on your computer. Choose “Run it here” for a hosted agent, or pick a pod that qualifies.",
       "unavailableCodex": "The Codex CLI has been tested only on a Mac and may not answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac.",
       "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",

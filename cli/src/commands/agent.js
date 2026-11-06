@@ -2493,6 +2493,18 @@ export const performRun = ({
       }
       if (turnRefusal) {
         log(`turn refused, because ${placement.reason}: ${turnRefusal.replace(/\n\s*/g, ' ')}`);
+        // Asked privately, nobody else can pick this up, and the asker would
+        // otherwise wait out the ask's 24-hour expiry.
+        if (event.type === 'agent.ask' && event.payload?.requestId) {
+          try {
+            await client.post(
+              `/api/agents/runtime/asks/${encodeURIComponent(event.payload.requestId)}/respond`,
+              { content: 'I can’t take this ask: this pod isn’t private, so I can’t run for it on my computer.' },
+            );
+          } catch (err) {
+            if (err?.status !== 409 || err?.body?.code !== 'already_responded') throw err;
+          }
+        }
         return {
           outcome: 'no_action',
           refused: { reason: 'delivery-refused' },
@@ -4960,12 +4972,10 @@ Docs:
       // refused: nothing here may assume a pod is private.
       let codexUnconfined = false;
       if (optedIn && record.adapter === 'codex' && process.platform === 'win32') {
+        const seatClient = createClient({ instance: record.instanceUrl, token: record.runtimeToken });
         let installations = null;
         try {
-          const identity = await createClient({
-            instance: record.instanceUrl,
-            token: record.runtimeToken,
-          }).get('/api/agents/runtime/installations');
+          const identity = await seatClient.get('/api/agents/runtime/installations');
           installations = identity?.installations;
         } catch (err) {
           console.error(`${stamp()} [${name}] could not read whether this agent's pods are private, so it did not start: ${err.message}`);
@@ -4974,6 +4984,17 @@ Docs:
         codexUnconfined = codexUnconfinedForRun({
           optedIn, adapterName: record.adapter, environment: record.environment, installations,
         });
+        // An unconfined Codex can read this run's token and call the grant
+        // broker itself, past the local guard, so the server has to refuse it.
+        // No report, no run: "gets no connector grants" rests on this call.
+        if (codexUnconfined) {
+          try {
+            await seatClient.post('/api/agents/runtime/host-unconfined', {});
+          } catch (err) {
+            console.error(`${stamp()} [${name}] could not tell the server this agent has no sandbox, so it did not start: ${err.message}`);
+            process.exit(1);
+          }
+        }
       }
       if (codexUnconfined) console.warn(`${stamp()} [${name}] ${CODEX_UNSANDBOXED_NOTICE}`);
       let runEnvironment = record.environment;
