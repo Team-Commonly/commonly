@@ -190,6 +190,7 @@ describe('registry install — a hosted agent joins with one post', () => {
       const doc = { _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-room' };
       return { ...buildLeanChain(doc), select: () => buildLeanChain(doc) };
     });
+    User.findOne.mockImplementationOnce(() => buildSelectLeanChain({ _id: 'bot-1' }));
     const res = makeRes();
     await installHandler(makeReq('hosted'), res);
 

@@ -661,7 +661,8 @@ describe('adding an existing agent to another pod', () => {
     it('keeps the name on a DM row, which is not a pod install', async () => {
       await installByo();
       await AgentRegistry.updateOne({ agentName: NAME }, { $set: { ephemeral: false } });
-      const room = await pod('Room', [stranger._id, owner._id], { type: 'agent-room' });
+      const agent = await User.findOne({ username: AgentIdentityService.buildAgentUsername(NAME, 'default'), isBot: true });
+      const room = await pod('Room', [stranger._id, agent._id], { type: 'agent-room' });
       await seedRow(owner._id, room._id, { status: 'uninstalled' });
       expect((await install(stranger, room._id, webhook)).status).toBe(200);
       expect((await row(room._id)).installedBy).toEqual(owner._id);
