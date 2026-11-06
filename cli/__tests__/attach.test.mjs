@@ -89,7 +89,18 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // (pi was the witness here until it gained Seatbelt in F113b.)
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'stub',
-    })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
+    })).toThrow(/stub adapter can't enforce sandbox\.mode=workspace\. On macOS, these adapters can: claude, codex, goose, opencode, pi, qwen\./);
+  });
+
+  test('a public seat on an adapter that cannot enforce it is not told to set public trust (F112, D247)', () => {
+    let message = '';
+    try {
+      resolveAttachSandbox({ environment: { sandbox: { mode: 'read-only', trust: 'public' } }, adapterName: 'stub' });
+    } catch (err) {
+      ({ message } = err);
+    }
+    expect(message).toContain("The stub adapter can't enforce sandbox.mode=read-only");
+    expect(message).not.toMatch(/needs sandbox\.trust/);
   });
 
   test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
@@ -107,7 +118,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // refused.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace' } }, adapterName: 'goose',
-    })).toThrow(/sandbox enforcement/);
+    })).toThrow(/needs sandbox\.trust=public/);
   });
 
   test('a public pi seat attaches under the Seatbelt sandbox its adapter now enforces (F113b)', () => {
@@ -123,7 +134,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     // A mode with no confined trust is still refused for pi.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace' } }, adapterName: 'pi', platform: 'darwin',
-    })).toThrow(/sandbox enforcement/);
+    })).toThrow(/needs sandbox\.trust=public/);
   });
 
   test('the enforcement set is the default-sandbox set plus Goose and pi; pi is never a derived default', () => {
@@ -185,13 +196,13 @@ describe("resolveAttachSandbox — dsh's confined shape", () => {
   test('the same env is still refused for adapters without their own confined shape', () => {
     for (const adapterName of ['claude', 'codex', 'opencode', 'qwen', 'pi']) {
       expect(() => resolveAttachSandbox({ environment: confined, adapterName, adapter: { name: adapterName } }))
-        .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+        .toThrow(/needs sandbox\.trust=public\. Add it, or remove sandbox\.mode to run without a sandbox\./);
     }
   });
 
-  test('without the adapter object, the old refusal still holds for dsh', () => {
+  test('without the adapter object, dsh is still refused', () => {
     expect(() => resolveAttachSandbox({ environment: confined, adapterName: 'dsh' }))
-      .toThrow(/requires public trust and an adapter with sandbox enforcement/);
+      .toThrow(/needs sandbox\.trust=public/);
   });
 });
 

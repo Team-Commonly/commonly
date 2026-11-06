@@ -1174,11 +1174,20 @@ export const resolveAttachSandbox = ({
   // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
-  if ((mode === 'workspace' || mode === 'read-only')
-    && (!confined || !ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName))) {
-    throw new Error(
-      `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
-    );
+  // Two different things can be missing, so the refusal names the one that is:
+  // the D247 walk read "requires public trust" on a seat whose trust WAS public.
+  if (mode === 'workspace' || mode === 'read-only') {
+    if (!confined) {
+      throw new Error(
+        `sandbox.mode=${mode} needs sandbox.trust=public. Add it, or remove sandbox.mode to run without a sandbox.`,
+      );
+    }
+    if (!ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName)) {
+      throw new Error(
+        `The ${adapterName || 'selected'} adapter can't enforce sandbox.mode=${mode}. `
+          + `On macOS, these adapters can: ${[...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort().join(', ')}.`,
+      );
+    }
   }
   return { mode, trust };
 };
