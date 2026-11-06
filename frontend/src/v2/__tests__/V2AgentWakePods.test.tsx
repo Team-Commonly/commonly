@@ -196,7 +196,7 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getByText('New pod')).toBeInTheDocument();
   });
 
-  it('previews heartbeat turns against the plan cap before saving', async () => {
+  it('previews heartbeats against the plan cap before saving', async () => {
     renderSettings();
     expect(await screen.findByText('0 / 30 heartbeats a day')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Heartbeat'), { target: { value: '30' } });
@@ -205,7 +205,7 @@ describe('per-agent Wake and Pods settings', () => {
     expect(updatePod).not.toHaveBeenCalled();
   });
 
-  it('totals heartbeat turns across pods, counting an Off pod as zero', async () => {
+  it('totals heartbeats across pods, counting an Off pod as zero', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 2, podCount: 3, installations: [
       { podId: 'pod-a', podName: 'Alpha', status: 'active', wakeOnMessage: false, humanOnly: false,
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
@@ -236,6 +236,15 @@ describe('per-agent Wake and Pods settings', () => {
       }] } });
     renderSettings();
     expect(await screen.findByText('24 heartbeats a day · cap unavailable')).toBeInTheDocument();
+  });
+
+  it('says one heartbeat in the singular when the cap is unknown', async () => {
+    client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 1440,
+      }] } });
+    renderSettings();
+    expect(await screen.findByText('1 heartbeat a day · cap unavailable')).toBeInTheDocument();
   });
 
   describe('an agent that runs on Commonly (hosted)', () => {
