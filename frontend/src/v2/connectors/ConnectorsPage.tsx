@@ -739,6 +739,7 @@ const ConnectorsPage: React.FC = () => {
             {!phone && showChannels && (
               <section className="v2-cx-group" aria-label={t('connectors.channelsGroup', { defaultValue: 'Channels' })}>
                 <h2 className="v2-cx-group__title">
+                  <svg className="v2-cx-group__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" /></svg>
                   {t('connectors.channelsGroup', { defaultValue: 'Channels' })}
                   {offToggle('channels', offChannels.length)}
                 </h2>
@@ -760,6 +761,7 @@ const ConnectorsPage: React.FC = () => {
             {!phone && showTools && (
               <section className="v2-cx-group" aria-label={t('tools.title', { defaultValue: 'Tools' })}>
                 <h2 className="v2-cx-group__title">
+                  <svg className="v2-cx-group__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" /></svg>
                   {t('tools.title', { defaultValue: 'Tools' })}
                   {offToggle('tools', offTools.length + orphanHidden.length)}
                 </h2>

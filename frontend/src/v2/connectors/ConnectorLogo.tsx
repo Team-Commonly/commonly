@@ -1,10 +1,27 @@
 // The d215 artboard's connector logos: a 40px mark that carries the name, so a
-// tile needs no label above it. Brand fills are the artboard's own; the two that
-// follow the theme (GitHub's disc and its glyph) read the v2 tokens.
+// tile needs no label above it. Brand fills are the artboard's own; the ones that
+// follow the theme (GitHub's disc and glyph, Notion's plate and mark) read the v2 tokens.
 import React from 'react';
 import { PlatformGlyph } from '../icons/platforms';
 
 const LOGOS: Record<string, React.ReactNode> = {
+  discord: (
+    <>
+      <rect x="2" y="2" width="36" height="36" rx="10" fill="#5865F2" />
+      <path d="M12.5 13.5c2.2-1.1 4.4-1.6 5.6-1.6l.6 1.2c.9-.1 1.7-.1 2.6 0l.6-1.2c1.2 0 3.4.5 5.6 1.6 1.9 3 2.9 6.5 2.6 10.6-2 1.6-4 2.4-5.8 2.8l-1.2-1.9c.9-.3 1.7-.7 2.4-1.2-2.9 1.4-6.7 1.4-9.6 0 .7.5 1.5.9 2.4 1.2l-1.2 1.9c-1.8-.4-3.8-1.2-5.8-2.8-.3-4.1.7-7.6 2.6-10.6z" fill="#fff" />
+      <circle cx="16.4" cy="20.4" r="1.9" fill="#5865F2" />
+      <circle cx="23.6" cy="20.4" r="1.9" fill="#5865F2" />
+    </>
+  ),
+  notion: (
+    <>
+      <rect x="3" y="3" width="34" height="34" rx="9" fill="var(--v2-bg-subtle)" />
+      <g transform="translate(8 8)" fill="none" stroke="var(--v2-ink)" strokeWidth="2">
+        <rect x="3" y="2.5" width="18" height="19" rx="1.5" />
+        <path d="M7.5 17V7l9 10V7" strokeLinejoin="round" />
+      </g>
+    </>
+  ),
   slack: (
     <>
       <rect x="17" y="4" width="6" height="15" rx="3" fill="#36C5F0" />
@@ -57,7 +74,7 @@ const ALIASES: Record<string, string> = { 'github-mcp': 'github' };
 
 // Brand spellings for the ids above, for surfaces that show a bare connector id.
 const NAMES: Record<string, string> = {
-  slack: 'Slack', telegram: 'Telegram', github: 'GitHub', linear: 'Linear',
+  discord: 'Discord', notion: 'Notion', slack: 'Slack', telegram: 'Telegram', github: 'GitHub', linear: 'Linear',
   atlassian: 'Atlassian', airtable: 'Airtable', sentry: 'Sentry',
 };
 
