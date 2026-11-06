@@ -236,7 +236,7 @@ const V2AgentWakePods: React.FC<{
       <h2 className="gtitle">
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
         {t('agentSettings.wakeTitle')}
-        <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote} aria-expanded={wakeNoteOpen}
+        <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote}
           onClick={() => setWakeNoteOpen((open) => !open)} onBlur={() => setWakeNoteOpen(false)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' && event.key !== ' ') return;

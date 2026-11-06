@@ -79,7 +79,12 @@
 .v2-agent-settings-page .info svg.i { width: 15px; height: 15px; }
 .v2-agent-settings-page .info:hover, .v2-agent-settings-page .info:focus-visible { color: var(--ink); }
 .v2-agent-settings-page .info .tip { display: none; position: absolute; z-index: 30; top: 24px; left: -8px; width: 260px; padding: 10px 12px; border-radius: 10px; background: var(--sf); box-shadow: var(--sh-pop); font: 400 12.5px/1.45 var(--f-body); color: var(--se); text-align: left; white-space: normal; }
-.v2-agent-settings-page .info:hover .tip, .v2-agent-settings-page .info:focus-visible .tip, .v2-agent-settings-page .info.pin .tip { display: block; }
+/* A touch browser keeps :hover after a tap, so hover opens the note only where a
+   pointer really hovers. Otherwise a second tap couldn't close it. */
+.v2-agent-settings-page .info:focus-visible .tip, .v2-agent-settings-page .info.pin .tip { display: block; }
+@media (hover: hover) {
+  .v2-agent-settings-page .info:hover .tip { display: block; }
+}
 .v2-agent-settings-page .sel { --box-h: 28px; height: var(--box-h); border-radius: 8px; background: var(--sf); box-shadow: inset 0 0 0 1px var(--b); display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
 .v2-agent-settings-page .sel svg.i { width: 14px; height: 14px; color: var(--mu); }
 
