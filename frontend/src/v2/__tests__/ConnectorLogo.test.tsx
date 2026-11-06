@@ -9,6 +9,10 @@ describe('ConnectorLogo', () => {
     const { container } = render(<ConnectorLogo type="discord" />);
     expect(container.querySelector('.v2-cx-logo--glyph')).toBeNull();
     expect(container.querySelector('svg.v2-cx-logo rect')).toHaveAttribute('fill', '#5865F2');
+    // The mark itself: the white face and its two eyes, so a bare blue plate fails.
+    expect(container.querySelector('svg.v2-cx-logo path')).toHaveAttribute('fill', '#fff');
+    expect(container.querySelector('svg.v2-cx-logo path')?.getAttribute('d')).toMatch(/^M12\.5 13\.5/);
+    expect(container.querySelectorAll('svg.v2-cx-logo circle')).toHaveLength(2);
   });
 
   test('Notion is the frame\'s mark, and its plate and stroke follow the theme', () => {
@@ -16,6 +20,9 @@ describe('ConnectorLogo', () => {
     expect(container.querySelector('.v2-cx-logo--glyph')).toBeNull();
     expect(container.querySelector('svg.v2-cx-logo > rect')).toHaveAttribute('fill', 'var(--v2-bg-subtle)');
     expect(container.querySelector('svg.v2-cx-logo g')).toHaveAttribute('stroke', 'var(--v2-ink)');
+    // The page outline and the N inside it.
+    expect(container.querySelector('svg.v2-cx-logo g rect')).toHaveAttribute('width', '18');
+    expect(container.querySelector('svg.v2-cx-logo g path')).toHaveAttribute('d', 'M7.5 17V7l9 10V7');
   });
 
   test('a type with no drawn logo still gets the glyph on its soft disc', () => {
