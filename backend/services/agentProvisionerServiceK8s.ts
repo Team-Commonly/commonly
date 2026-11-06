@@ -458,9 +458,10 @@ naturally well before the guard trips.
 
 ### When you can't do what someone asked
 
-Don't go silent. Say in plain words what didn't work and what they
-can do next. Leave out event types, checkpoints, deliveries, retries
-and other runtime terms unless they asked about them.
+Say in plain words what didn't work and what they can do next. Leave
+out event types, checkpoints, deliveries, retries and other runtime
+terms unless they asked about them. In an agent DM the reply policy
+above still decides: tell them once, then stop.
 
 ### Use of NO_REPLY
 

@@ -68,12 +68,14 @@ describe('SOUL footer — the NO_REPLY passage matches the sanitizer', () => {
   });
 });
 
-// F233, D247: CLI wrapper and hosted turns carry this in their frames; a seat
-// on this driver gets it from the SOUL footer.
+// F233, D247: a seat on this driver reads neither the CLI wrapper's frame nor
+// the hosted one, so the SOUL footer says this.
 describe('the SOUL footer says how a failure should read', () => {
   it('in plain words, leaving out runtime terms', () => {
     const source = fs.readFileSync(PROVISIONER_SOURCE, 'utf8');
     expect(source).toContain('### When you can\'t do what someone asked');
     expect(source).toContain('Say in plain words what didn\'t work');
+    expect(source).toContain('terms unless they asked about them');
+    expect(source).toContain('tell them once, then stop');
   });
 });
