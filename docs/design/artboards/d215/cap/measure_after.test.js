@@ -106,6 +106,8 @@ test('a malformed D215_FIXTURES entry throws, and none means no fixtures', () =>
   assert.deepStrictEqual(parseFixtures(undefined), []);
   assert.deepStrictEqual(parseFixtures(''), []);
   assert.throws(() => parseFixtures('no-equals-sign'), /D215_FIXTURES needs/);
+  const file = path.join(__dirname, '..', 'targets.json');
+  assert.throws(() => parseFixtures(`/api/a=${file};/api/a=${file}`), /names \/api\/a twice/);
   // These can never match a request, so they'd score the account's data while the report names them.
   for (const bad of ['api/a=f.json', ' /api/b=f.json', '/api/c?x=1=f.json', '/other=f.json']) {
     assert.throws(() => parseFixtures(bad), /exact \/api\/ path/);

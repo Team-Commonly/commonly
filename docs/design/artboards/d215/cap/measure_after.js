@@ -266,20 +266,27 @@ async function prod(only) {
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
   let miss = 0, checked = 0;
-  for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
-    const { b, p } = await open(vw, vh, mob);
-    for (const surface of SURF) {
-      if (only && !only.includes(surface[0])) continue;
-      const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
-      checked++;
-      if (!ok) miss++;
-      console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+  // A run that stops partway has already printed scores, so it still says what served them.
+  try {
+    for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
+      const { b, p } = await open(vw, vh, mob);
+      try {
+        for (const surface of SURF) {
+          if (only && !only.includes(surface[0])) continue;
+          const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
+          checked++;
+          if (!ok) miss++;
+          console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
+        }
+      } finally {
+        await b.close();
+      }
     }
-    await b.close();
+  } finally {
+    const { fixtureUse } = require('./lib');
+    for (const [fixture, served] of fixtureUse) console.log(`fixture ${fixture} served ${served}`);
   }
   if (!checked) { console.error('no surface was measured'); process.exit(2); }
-  const { fixtureUse } = require('./lib');
-  for (const [fixture, served] of fixtureUse) console.log(`fixture ${fixture} served ${served}`);
   process.exit(miss ? 1 : 0);
 }
 

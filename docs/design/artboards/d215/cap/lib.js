@@ -15,11 +15,14 @@ const BASE = (process.env.COMMONLY_URL || 'https://commonly.me').replace(/\/$/, 
 const fixtureUse = new Map();
 
 function parseFixtures(spec) {
+  const paths = new Set();
   return (spec || '').split(';').filter(Boolean).map((kv) => {
     const at = kv.indexOf('=');
     if (at < 1) throw new Error(`D215_FIXTURES needs /api/path=file.json, got ${kv}`);
     const path = kv.slice(0, at);
     if (!/^\/api\/[^\s?#]*$/.test(path)) throw new Error(`D215_FIXTURES path must be an exact /api/ path with no query or spaces, got ${path}`);
+    if (paths.has(path)) throw new Error(`D215_FIXTURES names ${path} twice, and only the first would be served`);
+    paths.add(path);
     return { path, body: fs.readFileSync(kv.slice(at + 1), 'utf8') };
   });
 }
