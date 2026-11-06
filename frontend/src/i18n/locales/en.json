@@ -1742,7 +1742,10 @@
         "mergePullRequest": "Merge pull request #{{number}}",
         "createIssue": "Open an issue",
         "commentOnIssue": "Comment on issue #{{number}}",
-        "closeIssue": "Close issue #{{number}}"
+        "closeIssue": "Close issue #{{number}}",
+        "createPullRequest": "Open a pull request",
+        "commitFiles": "Commit to {{head}}",
+        "pushBranch": "Push to {{head}}"
       },
       "label": {
         "repository": "Repository",
@@ -1754,7 +1757,19 @@
         "commitMessage": "Commit message",
         "title": "Title",
         "body": "Body",
-        "labels": "Labels"
+        "labels": "Labels",
+        "base": "Base branch",
+        "branch": "Branch",
+        "lands": "Where it lands",
+        "bodyLength": "Body length",
+        "draft": "Draft",
+        "fileCount": "Files",
+        "branchExists": "Existing branch",
+        "parentCommit": "Parent commit",
+        "baseCommit": "Base commit",
+        "newCommit": "New commit",
+        "bundleSize": "Bundle size",
+        "contentsShown": "File contents shown"
       },
       "exactArgs": "Exact arguments"
     },

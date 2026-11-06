@@ -58,6 +58,8 @@ const OPAQUE_PLACEHOLDERS = [
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
   'id',
+  // approvalCard.toolCall.verb names the branch a PR write lands on.
+  'head',
   // podChat.deliveryHintOthers names the agent that was woken.
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).

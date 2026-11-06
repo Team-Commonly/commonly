@@ -1,4 +1,4 @@
-import { toolCallView } from '../components/toolCallView';
+import { prWriteView, toolCallView } from '../components/toolCallView';
 
 // The card is a consent surface: the readable view may relabel, but it must
 // show every pinned argument, and it may only link to github.com paths built
@@ -134,4 +134,63 @@ test('label boundaries remain distinct when a label contains a comma', () => {
   expect(comma.value).not.toBe(separate.value);
   expect(JSON.parse(comma.value)).toEqual(['security, urgent', 'p1']);
   expect(JSON.parse(separate.value)).toEqual(['security', 'urgent', 'p1']);
+});
+
+describe('a PR write summary', () => {
+  const sha = 'a'.repeat(40);
+  const commit = {
+    repo: 'Team-Commonly/d14-walk-sandbox',
+    base: 'main',
+    head: 'walk/one',
+    lands: 'new branch walk/one from main at aaaaaaa',
+    subject: 'add notes',
+    message: 'add notes\n\nwith a body',
+    files: [
+      { path: 'a.md', content: 'first', bytes: 5, truncated: false },
+      { path: 'b.md', content: 'second', bytes: 6, truncated: false },
+    ],
+    contents: { label: 'File contents', shownBytes: 11, totalBytes: 11, truncated: false },
+    fileCount: 2,
+    parentSha: sha,
+    branchExists: false,
+  };
+
+  test('every key lands in a row, and every file gets its own', () => {
+    const { rows } = prWriteView('github.commit_files', commit);
+    const shown = new Set(rows.map((row) => row.keys[0]));
+    Object.keys(commit).forEach((key) => expect(shown.has(key)).toBe(true));
+    expect(rows.filter((row) => row.keys[0] === 'files').map((row) => [row.label, row.value]))
+      .toEqual([['a.md', 'first'], ['b.md', 'second']]);
+  });
+
+  test('a key the view has never heard of is still shown under its own name', () => {
+    const { rows } = prWriteView('github.commit_files', { newField: 'still here' });
+    expect(rows).toEqual([expect.objectContaining({ label: 'newField', value: 'still here' })]);
+  });
+
+  test('a commit id is shortened with the full id one hover away, and the repo links to GitHub', () => {
+    const { rows } = prWriteView('github.commit_files', commit);
+    expect(rows.find((row) => row.keys[0] === 'parentSha'))
+      .toMatchObject({ value: 'aaaaaaa', title: sha, kind: 'mono' });
+    expect(rows.find((row) => row.keys[0] === 'repo'))
+      .toMatchObject({ href: 'https://github.com/Team-Commonly/d14-walk-sandbox' });
+  });
+
+  test('a repo that is not a plain owner/name never becomes a link', () => {
+    ['../evil', 'a/b/c', 'owner/..', 'no-slash'].forEach((repo) => {
+      expect(prWriteView('github.push_branch', { repo }).rows[0].href).toBeUndefined();
+    });
+  });
+
+  test.each([
+    ['github.create_pull_request', 'approvalCard.toolCall.verb.createPullRequest'],
+    ['github.commit_files', 'approvalCard.toolCall.verb.commitFiles'],
+    ['github.push_branch', 'approvalCard.toolCall.verb.pushBranch'],
+  ])('%s has its verb', (tool, key) => {
+    expect(prWriteView(tool, { head: 'walk/one' }).verb).toEqual({ key, vars: { head: 'walk/one' } });
+  });
+
+  test('any other tool gets no verb, so the card falls back to its name', () => {
+    expect(prWriteView('github.create_issue', {}).verb).toBeNull();
+  });
 });

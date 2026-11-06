@@ -1732,7 +1732,10 @@
         "mergePullRequest": "合并 PR #{{number}}",
         "createIssue": "创建 Issue",
         "commentOnIssue": "评论 Issue #{{number}}",
-        "closeIssue": "关闭 Issue #{{number}}"
+        "closeIssue": "关闭 Issue #{{number}}",
+        "createPullRequest": "创建 PR",
+        "commitFiles": "提交到 {{head}}",
+        "pushBranch": "推送到 {{head}}"
       },
       "label": {
         "repository": "仓库",
@@ -1744,7 +1747,19 @@
         "commitMessage": "提交信息",
         "title": "标题",
         "body": "正文",
-        "labels": "标签"
+        "labels": "标签",
+        "base": "基准分支",
+        "branch": "分支",
+        "lands": "写入位置",
+        "bodyLength": "正文长度",
+        "draft": "草稿",
+        "fileCount": "文件数",
+        "branchExists": "已有分支",
+        "parentCommit": "父提交",
+        "baseCommit": "基准提交",
+        "newCommit": "新提交",
+        "bundleSize": "Bundle 大小",
+        "contentsShown": "已显示的文件内容"
       },
       "exactArgs": "原始参数"
     },

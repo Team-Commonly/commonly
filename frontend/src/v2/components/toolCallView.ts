@@ -147,3 +147,80 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
     : null;
   return { verb, rows };
 };
+
+const PR_WRITE_VERBS: Record<string, string> = {
+  'github.create_pull_request': 'approvalCard.toolCall.verb.createPullRequest',
+  'github.commit_files': 'approvalCard.toolCall.verb.commitFiles',
+  'github.push_branch': 'approvalCard.toolCall.verb.pushBranch',
+};
+
+const SUMMARY_LABEL_KEYS: Record<string, string> = {
+  repo: 'approvalCard.toolCall.label.repository',
+  base: 'approvalCard.toolCall.label.base',
+  head: 'approvalCard.toolCall.label.branch',
+  lands: 'approvalCard.toolCall.label.lands',
+  title: 'approvalCard.toolCall.label.title',
+  subject: 'approvalCard.toolCall.label.commitTitle',
+  message: 'approvalCard.toolCall.label.commitMessage',
+  bodyPreview: 'approvalCard.toolCall.label.body',
+  bodyLength: 'approvalCard.toolCall.label.bodyLength',
+  draft: 'approvalCard.toolCall.label.draft',
+  fileCount: 'approvalCard.toolCall.label.fileCount',
+  branchExists: 'approvalCard.toolCall.label.branchExists',
+  parentSha: 'approvalCard.toolCall.label.parentCommit',
+  baseOid: 'approvalCard.toolCall.label.baseCommit',
+  newOid: 'approvalCard.toolCall.label.newCommit',
+  bundleBytes: 'approvalCard.toolCall.label.bundleSize',
+};
+const SUMMARY_BLOCK_KEYS = new Set(['message', 'bodyPreview']);
+const SUMMARY_COMMIT_KEYS = new Set(['parentSha', 'baseOid', 'newOid']);
+
+/**
+ * A parked PR write, readable. The server keeps a commit's or push's raw
+ * arguments on the row and sends the owner `summary` in their place
+ * (buildOwnerCardPayload), so this is the only view of the call the owner gets.
+ * Like toolCallView it may format but never drops: every key lands in a row, and
+ * every file the summary carries gets one.
+ */
+export const prWriteView = (tool: string, summary: Record<string, unknown>): ToolCallView => {
+  const rows: ToolCallRow[] = [];
+  for (const [key, raw] of Object.entries(summary)) {
+    if (key === 'files' && Array.isArray(raw)) {
+      raw.forEach((file: { path?: unknown; content?: unknown }, index) => {
+        const path = asText(file?.path);
+        rows.push({ keys: ['files', String(index)], label: path, value: asText(file?.content), kind: 'block' });
+      });
+    } else if (key === 'contents' && raw && typeof raw === 'object') {
+      const { shownBytes, totalBytes } = raw as { shownBytes?: unknown; totalBytes?: unknown };
+      rows.push({
+        keys: [key],
+        labelKey: 'approvalCard.toolCall.label.contentsShown',
+        label: key,
+        value: `${asText(shownBytes)} / ${asText(totalBytes)} B`,
+        kind: 'text',
+      });
+    } else {
+      const labelKey = Object.prototype.hasOwnProperty.call(SUMMARY_LABEL_KEYS, key)
+        ? SUMMARY_LABEL_KEYS[key]
+        : undefined;
+      const [owner, name, extra] = key === 'repo' && typeof raw === 'string' ? raw.split('/') : [];
+      const sha = SUMMARY_COMMIT_KEYS.has(key) && typeof raw === 'string' && COMMIT_SHA.test(raw) ? raw : null;
+      rows.push({
+        keys: [key],
+        labelKey,
+        label: key,
+        value: sha ? sha.slice(0, 7) : `${asText(raw)}${key === 'bundleBytes' ? ' B' : ''}`,
+        kind: SUMMARY_BLOCK_KEYS.has(key) ? 'block' : (sha ? 'mono' : 'text'),
+        ...(sha ? { title: sha } : {}),
+        ...(owner && name && extra === undefined && GITHUB_SEGMENT.test(owner) && GITHUB_SEGMENT.test(name)
+          ? { href: `https://github.com/${owner}/${name}` }
+          : {}),
+      });
+    }
+  }
+  const verbKey = Object.prototype.hasOwnProperty.call(PR_WRITE_VERBS, tool) ? PR_WRITE_VERBS[tool] : null;
+  return {
+    verb: verbKey ? { key: verbKey, vars: { head: asText(summary.head) } } : null,
+    rows,
+  };
+};

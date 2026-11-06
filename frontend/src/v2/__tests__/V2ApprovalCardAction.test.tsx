@@ -398,6 +398,56 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
   });
 
+  test('a PR write has no canonicalArgs: its summary is what the owner reads and approves', async () => {
+    mockGet.mockResolvedValue({
+      approvals: [{
+        approvalId: 'tool-pr',
+        toolCall: {
+          tool: 'github.commit_files',
+          summary: {
+            repo: 'Team-Commonly/d14-walk-sandbox',
+            head: 'walk/one',
+            lands: 'new branch walk/one from main at abc1234',
+            subject: 'add the note',
+            files: [{ path: 'notes.md', content: 'hello', bytes: 5, truncated: false }],
+            contents: { shownBytes: 5, totalBytes: 5, truncated: false },
+            fileCount: 1,
+          },
+        },
+      }],
+    });
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-pr', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', toolCall: { tool: 'github.commit_files' }, summary: 'Commit',
+    });
+
+    expect(await screen.findByTestId('approval-arg-files-0')).toHaveTextContent('notes.md');
+    expect(screen.getByTestId('approval-arg-files-0')).toHaveTextContent('hello');
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('Commit to walk/one');
+    expect(screen.getByTestId('approval-arg-lands')).toHaveTextContent('new branch walk/one from main at abc1234');
+    expect(screen.queryByTestId('approval-tool-call-state')).not.toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.toolCall.exactArgs)).not.toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+  });
+
+  test.each([
+    ['a summary that is not an object', 'just trust me'],
+    ['a summary that is a list', ['one']],
+  ])('%s leaves the call unreadable and Approve disabled', async (_label, summary) => {
+    mockGet.mockResolvedValue({
+      approvals: [{ approvalId: 'tool-pr-bad', toolCall: { tool: 'github.commit_files', summary } }],
+    });
+    renderCard({
+      kind: 'approval-card', approvalId: 'tool-pr-bad', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', toolCall: { tool: 'github.commit_files' }, summary: 'Commit',
+    });
+
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call-state'))
+      .toHaveTextContent(en.approvalCard.toolCall.unavailable));
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    expect(screen.getByText(en.approvalCard.decline)).toBeEnabled();
+  });
+
   test('a pending row without toolCall keeps Approve disabled', async () => {
     mockGet.mockResolvedValue({ approvals: [{ approvalId: 'tool-4' }] });
     renderCard({
