@@ -163,17 +163,12 @@ const METRICS = () => {
   return { helperWords: words, innerRatio: +Math.max(innerRatio, docRatio).toFixed(2) };
 };
 
-// Navigates, opens the tab or panel a surface needs, and measures it. The URL is checked again
+// Navigates, opens the panel a surface needs, and measures it. The URL is checked again
 // just before measuring, so a redirect that lands after a click cannot be scored either.
 async function checkSurface(p, [name, route, opt = {}], vp, targets) {
   const { go, assertLanded, pathOf } = require('./lib');
   const url = route(vp);
   await go(p, url);
-  if (opt.tab) {
-    const t = p.getByRole('tab', { name: opt.tab });
-    if (!(await t.count())) throw new Error(`${name}-${vp}: no "${opt.tab}" tab on ${url}`);
-    await t.first().click(); await p.waitForTimeout(2000);
-  }
   if (opt.list390 && vp === '390') {
     // /v2 may auto-select a pod on a first phone visit. The back control is found by class, not
     // by its translated name, and the pods list itself must be on screen before anything counts.
@@ -248,7 +243,7 @@ async function prod(only) {
   const SURF = [
     ['settings', () => '/v2/settings'],
     ['agent-settings', () => `/v2/agents/${agent}`],
-    ['agent-memory', () => `/v2/agents/${agent}`, { tab: 'Memory' }],
+    ['agent-memory', () => `/v2/agents/${agent}/memory`],
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
     ['byo', () => '/v2/agents/byo'],
