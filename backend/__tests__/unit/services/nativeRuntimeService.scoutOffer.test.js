@@ -137,7 +137,11 @@ describe('commonly_offer_own_agent', () => {
   test.each([
     ['holds their hosted agents already', () => mockListHosted.mockResolvedValue([{ agentName: 'a' }, { agentName: 'b' }, { agentName: 'c' }])],
     ['cannot be counted', () => mockListHosted.mockRejectedValue(new Error('db down'))],
-    ['is on an instance that cannot host', () => { delete process.env.HOSTED_ENGINE; }],
+    ['is on an instance that cannot host', () => {
+      delete process.env.HOSTED_ENGINE;
+      delete process.env.HOSTED_RUNTIME_URL;
+      delete process.env.HOSTED_RUNTIME_ADMIN_TOKEN;
+    }],
   ])('leaves out the button and its words when the person %s', async (_name, arrange) => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     arrange();
@@ -208,6 +212,31 @@ describe('commonly_offer_own_agent', () => {
     await runAgent(scoutInstall, ask);
 
     expect(posted()[0].content).toBe(en.withHosted);
+  });
+
+  test('a follow-up post after the offer is refused', async () => {
+    offer({ locale: 'en' });
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Offer sent.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted().map((call) => call.content)).toEqual([en.withHosted]);
+  });
+
+  test('a follow-up post after a refused offer still goes out', async () => {
+    AgentMessageService.postMessage
+      .mockResolvedValueOnce({ success: false, refused: true, reason: 'not_allowed' })
+      .mockResolvedValue({ success: true });
+    offer({ locale: 'en' });
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Here is another way.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    expect(posted().map((call) => call.content)).toContain('Here is another way.');
   });
 
   test('does not post the model\'s closing text as a second message', async () => {

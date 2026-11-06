@@ -876,6 +876,7 @@ interface DispatchContext {
    * pod yet. Cleared by the first post that lands.
    */
   personWaiting?: boolean;
+  ownAgentOfferPosted?: boolean;
   /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
@@ -1113,6 +1114,13 @@ export async function dispatchTool(
         if (!content) {
           return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
         }
+        // The offer is the whole reply: a follow-up reads as a second answer.
+        if (ctx.ownAgentOfferPosted) {
+          return {
+            content: { ok: false, posted: false, reason: 'already_replied', guidance: 'Your reply is already posted. End this turn.' },
+            error: 'message_post_refused',
+          };
+        }
         const AgentMessageService = require('./agentMessageService');
         const messageType = args.messageType ?? 'text';
         if (messageType !== 'text' && messageType !== 'card') {
@@ -1238,7 +1246,10 @@ export async function dispatchTool(
         let hosted = false;
         if (hostedEngineAvailable() && ctx.installation?.installedBy) {
           try {
-            const held = await listHostedInstallationsForUser(ctx.installation.installedBy);
+            const held = await withDeadline(
+              listHostedInstallationsForUser(ctx.installation.installedBy),
+              BYO_NAME_LOOKUP_TIMEOUT_MS,
+            );
             hosted = held.length < hostedCaps().agentsPerUser;
           } catch (err) {
             console.warn('[native-runtime] hosted count failed, offering no button:', (err as Error).message);
@@ -1263,7 +1274,9 @@ export async function dispatchTool(
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
-        return postToolResult(ctx, result);
+        const posted = postToolResult(ctx, result);
+        if (!posted.error) ctx.ownAgentOfferPosted = true;
+        return posted;
       }
 
       case 'commonly_offer_local_agent': {
