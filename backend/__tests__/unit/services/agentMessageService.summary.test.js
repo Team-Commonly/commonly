@@ -219,6 +219,14 @@ describe('AgentMessageService summary persistence', () => {
       expect(Message).toHaveBeenCalled();
     });
 
+    // F56: asked the same thing twice, the agent gives the same answer, and the
+    // guard swallowed it while the wrapper reported a post.
+    it('posts a reply a person is waiting on even when it repeats a recent one', async () => {
+      const result = await repost('chat', { personWaiting: true });
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
     // F180: a second approval card for the same tool repeats the first's
     // text by construction; dropping it failed the parked call on prod.
     it('posts an approval card even when the same card went out minutes ago', async () => {

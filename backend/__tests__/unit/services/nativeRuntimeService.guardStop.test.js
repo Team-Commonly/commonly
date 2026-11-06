@@ -618,6 +618,45 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual([]);
   });
 
+  describe('F56: a reply the floor cap refused', () => {
+    const capped = { success: false, refused: true, reason: 'consecutive_run_cap', consecutive: 3 };
+    const postCall = { id: 'p1', type: 'function', function: { name: 'commonly_post_message', arguments: JSON.stringify({ content: 'Here you go.' }) } };
+
+    test('a person who gets no reply gets the fixed line', async () => {
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+      expect(result.noActionReason).toBeUndefined();
+      expect(savedRun.metered).toBe(false);
+      expect(posted()).toEqual(['Here you go.', HOSTED_RUN_FAILED_LINE]);
+      const line = AgentMessageService.postMessage.mock.calls[1][0];
+      expect(line).toMatchObject({ failureNotice: true, personWaiting: true });
+    });
+
+    test('an agent\'s @ stays a decline', async () => {
+      const User = require('../../../models/User');
+      AgentMessageService.postMessage.mockResolvedValueOnce(capped);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ isBot: true }) }) }));
+      chatReplies = [toolCalls(postCall)];
+      const result = await runAgent(hostedInstall(), mention);
+      User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) }));
+      expect(result).toMatchObject({ status: 'succeeded', noActionReason: 'consecutive_run_cap' });
+      expect(posted()).toEqual(['Here you go.']);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(false);
+    });
+
+    test('only the first post of a turn answers the person', async () => {
+      const again = { ...postCall, id: 'p2' };
+      AgentMessageService.postMessage
+        .mockResolvedValueOnce({ success: true, message: { id: 'm1' } })
+        .mockResolvedValueOnce({ success: true, message: { id: 'm2' } });
+      chatReplies = [toolCalls(postCall, again)];
+      await runAgent(hostedInstall(), mention);
+      expect(AgentMessageService.postMessage.mock.calls.map(([args]) => args.personWaiting)).toEqual([true, false]);
+    });
+  });
+
   test('an agent\'s @ past the cap stays quiet', async () => {
     const User = require('../../../models/User');
     AgentRun.countDocuments.mockResolvedValueOnce(100000);

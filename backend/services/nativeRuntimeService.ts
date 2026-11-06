@@ -807,6 +807,11 @@ interface DispatchContext {
    */
   floorHeld?: boolean;
   /**
+   * F56: a person's own words addressed this turn and no reply has reached the
+   * pod yet. Cleared by the first post that lands.
+   */
+  personWaiting?: boolean;
+  /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
    * results and pages read. commonly_fetch_url opens only one of these.
@@ -1027,9 +1032,11 @@ export async function dispatchTool(
           answeringMessageId: ctx.answeringMessageId,
           threadRootId: ctx.answeringThreadRootId ?? null,
           runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
         fanOutAgentPost(ctx, result);
+        if (result?.success && !result.skipped) ctx.personWaiting = false;
         if (result?.refused && result.reason === 'consecutive_run_cap') {
           // The shared guidance offers an attachment, which a web-tainted turn
           // cannot make, and only another speaker clears the cap. Say only that.
@@ -2074,6 +2081,7 @@ export async function runAgent(
         installationConfig: cfg,
         metadata: { source: 'native-runtime', runFailed: true },
         failureNotice: true,
+        personWaiting: true,
         kind: 'error',
         threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
       });
@@ -2340,6 +2348,11 @@ export async function runAgent(
     answeringMessageId: claimMessageId || undefined,
     answeringThreadRootId: threadRootOfTrigger(trigger.payload),
   };
+
+  // F56: read once. Neither the reply nor the failed-turn line is an answer to an
+  // agent, a sweep or a wake that only quotes a person.
+  const personAsked = wasDirectlyAddressed(trigger) && await triggerTextIsHumanWritten(trigger);
+  dispatchCtx.personWaiting = personAsked;
   // Who wrote what matters only to commonly_fetch_url, so a turn that cannot
   // fetch makes neither lookup (its own user, the trigger's sender).
   const mayFetch = toolsForConfig(cfg).some((tool) => tool.function.name === 'commonly_fetch_url');
@@ -2942,13 +2955,15 @@ export async function runAgent(
             threadRootId: dispatchCtx.answeringThreadRootId ?? null,
             runId,
             runPodId: String(podId),
+            personWaiting: Boolean(dispatchCtx.personWaiting),
           });
           fanOutAgentPost({ podId, agentName, instanceId }, postResult);
+          if (postResult?.refused && postResult.reason === 'consecutive_run_cap') dispatchCtx.floorHeld = true;
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
           // not a user-visible final message; retaining textOut here would
           // complete the claim and swallow the human wake a second time.
-          if (!postResult?.skipped) finalMessage = textOut;
+          if (!postResult?.skipped && !postResult?.refused) finalMessage = textOut;
         } catch (postErr) {
           // The reply did not reach the pod, so the run did not answer: it
           // fails, and a hosted one gets the fixed handling below.
@@ -2973,6 +2988,15 @@ export async function runAgent(
     run.status = 'failed';
     run.errorKind = run.errorKind || 'unknown';
     run.errorMessage = (loopErr as Error).message?.slice(0, 1000) || 'unknown error';
+  }
+
+  // F56: the run cap refused the only reply a person was waiting on. That's a
+  // decline for a wake nobody is waiting on, and silence for this person.
+  if (hostedNative && personAsked && dispatchCtx.floorHeld && run.status === 'succeeded'
+    && !postedViaTool && !finalMessage) {
+    run.status = 'failed';
+    run.errorKind = 'tool_error';
+    run.errorMessage = 'The reply was refused: the agent already held the floor in this pod.';
   }
 
   // A hosted turn that failed (a guard stop or an error) and posted nothing
@@ -3003,6 +3027,7 @@ export async function runAgent(
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           failureNotice: true,
+          personWaiting: personAsked,
           kind: 'error',
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
@@ -3099,7 +3124,8 @@ export async function runAgent(
     finalMessage,
     errorKind: run.errorKind,
     errorMessage: run.errorMessage,
-    ...(dispatchCtx.floorHeld && !postedViaTool ? { noActionReason: 'consecutive_run_cap' } : {}),
+    ...(dispatchCtx.floorHeld && !postedViaTool && run.status !== 'failed'
+      ? { noActionReason: 'consecutive_run_cap' } : {}),
   };
 }
 
