@@ -53,6 +53,7 @@ const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGran
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { isGithubAppConfigured } from '../services/githubAppNames';
+import { githubRepositoryListRateLimit } from '../middleware/githubRepositoryListRateLimit';
 import { GithubConnectProofError, GITHUB_MCP_ENTRY_ID, listConnectRepositories, proveConnectRepository } from '../services/githubConnectProof';
 import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 import { Types } from 'mongoose';
@@ -503,7 +504,7 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
 
 // The picker for the route above: what the caller's own token could connect,
 // less what they already have. Listing proves nothing; the POST still does.
-router.get('/github-app/repositories', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+router.get('/github-app/repositories', githubRepositoryListRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const userId = String(req.user?.id || '').trim();
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -513,11 +514,12 @@ router.get('/github-app/repositories', listIntegrationsRateLimit, auth, async (r
     const listed = await listConnectRepositories({ userId });
     const own = await Integration.find({
       type: 'github-app', createdBy: userId, status: 'connected', revokedAt: null, 'config.app': 'connect',
-    }).select('config.repoKey').lean() as Array<{ config?: { repoKey?: string } }>;
-    const connected = new Set(own.map((row) => String(row.config?.repoKey || '')));
+    }).select('config.installationId config.repoKey').lean() as Array<{ config?: { installationId?: string; repoKey?: string } }>;
+    // Keyed as the POST keys it: a reinstall under a new id is a new connection.
+    const connected = new Set(own.map((row) => `${row.config?.installationId}:${row.config?.repoKey}`));
     return res.json({
       repositories: listed.repositories
-        .filter(({ owner, repo }) => !connected.has(`${owner}/${repo}`.toLowerCase())),
+        .filter(({ installationId, owner, repo }) => !connected.has(`${installationId}:${`${owner}/${repo}`.toLowerCase()}`)),
       truncated: listed.truncated,
     });
   } catch (error) {

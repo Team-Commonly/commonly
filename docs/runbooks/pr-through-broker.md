@@ -104,11 +104,14 @@ token with that App's id and key only:
    This stores the person's Commonly Connect user token.
 2. **Install Commonly Connect** on their account or org, and pick the
    repositories (the install page is `github.com/apps/<slug>/installations/new`).
-3. **Connect a repository:** the GitHub tile's **Connect a repository** step
-   lists them from `GET /api/integrations/github-app/repositories`: what the
+3. **Connect a repository:** the **Connect a repository** step on either GitHub
+   tile lists them from `GET /api/integrations/github-app/repositories`: what the
    person's own token can push to through a Connect installation, less what they
-   already connected. The list is only a picker, capped at 10 installations and
-   3 pages of each, and it says so when cut short. The connect is
+   already connected. The list is only a picker. It reads at most 3 pages of
+   installations, 10 installations and 3 pages of each, within 20 seconds, says
+   so when cut short, and is limited to 10 reads a minute, because each spends
+   the person's own GitHub quota. If GitHub won't list the installations at all
+   it refuses `github_unreachable`. The connect is
    `POST /api/integrations/github-app/repositories`
    with `{ installationId, owner, repo }`. The server reads
    `GET /user/installations` and `GET /user/installations/{id}/repositories`

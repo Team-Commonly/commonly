@@ -25,9 +25,10 @@ export const GITHUB_MCP_ENTRY_ID = 'github-mcp';
 const MAX_PAGES = 10;
 const PAGE_SIZE = 100;
 const GITHUB_TIMEOUT_MS = 8000;
-/** The picker's bound: at most 3 + 10 × 3 requests in one page load. */
+/** The picker's bound: at most 3 + 10 × 3 requests in one page load, within the time budget. */
 const LIST_MAX_INSTALLATIONS = 10;
 const LIST_MAX_PAGES = 3;
+const LIST_BUDGET_MS = 20_000;
 
 export type GithubConnectProofRefusalCode =
   | 'github_connect_required'
@@ -203,7 +204,9 @@ export interface ConnectableRepository {
  * What `userId` could connect, for the app's picker: repositories of Connect
  * installations their own token can see, that they can push to. It offers, and
  * proves nothing: the connect route still runs `proveConnectRepository`. A
- * listing GitHub cut short, or one past the caps, comes back `truncated`.
+ * listing GitHub cut short, or one past the caps or the time budget, comes back
+ * `truncated`. If GitHub won't give the installations at all there is nothing
+ * to say about the person's repositories, so that refuses instead.
  */
 export const listConnectRepositories = async (
   input: { userId: string },
@@ -215,13 +218,17 @@ export const listConnectRepositories = async (
   const repositories: ConnectableRepository[] = [];
   if (!appId) return { repositories, truncated: false };
   let truncated = false;
+  const deadline = Date.now() + LIST_BUDGET_MS;
 
   const installations: InstallationEntry[] = [];
   for (let page = 1; page <= LIST_MAX_PAGES; page += 1) {
     const body = await getJson(deps, token, `/user/installations?per_page=${PAGE_SIZE}&page=${page}`) as {
       installations?: unknown;
     } | null;
-    if (!body && page > 1) truncated = true;
+    if (!Array.isArray(body?.installations)) {
+      if (page === 1) throw new GithubConnectProofError('github_unreachable', 'GitHub refused the lookup', 502);
+      truncated = true;
+    }
     const list = Array.isArray(body?.installations) ? body?.installations as InstallationEntry[] : [];
     installations.push(...list);
     if (list.length < PAGE_SIZE) break;
@@ -234,6 +241,7 @@ export const listConnectRepositories = async (
   for (const installation of usable.slice(0, LIST_MAX_INSTALLATIONS)) {
     const installationId = String(installation.id);
     for (let page = 1; page <= LIST_MAX_PAGES; page += 1) {
+      if (Date.now() >= deadline) return { repositories, truncated: true };
       // eslint-disable-next-line no-await-in-loop -- bounded by the caps above, and GitHub's limit is per token
       const body = await getJson(
         deps, token, `/user/installations/${installationId}/repositories?per_page=${PAGE_SIZE}&page=${page}`,

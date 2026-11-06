@@ -505,6 +505,9 @@ const ConnectorsPage: React.FC = () => {
             <div className="v2-cx-pop__acts">{tp.renderEntryActions(toolEntry)}</div>
           </div>
         )}
+        {toolGranted(toolEntry) && toolEntry.repositoryConnect && (
+          <div className="v2-cx-pop__acts">{tp.renderRepositoryConnectAction(toolEntry)}</div>
+        )}
         <div className="v2-cx-list">
           {liveGrants.map(tp.renderRow)}
           {deadGrants.length > 0 && (

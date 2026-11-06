@@ -401,6 +401,12 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     </>
   );
 
+  const renderRepositoryConnectAction = (entry: ToolCatalogEntry) => (entry.available && entry.repositoryConnect ? (
+    <button type="button" className="v2-connector-row__action" onClick={openRepositoryConnect}>
+      {t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}
+    </button>
+  ) : null);
+
   // What a person can do with an entry that has no live grant: the verbs of the
   // old "Not yet" row, shared by the tile's popover.
   const renderEntryActions = (entry: ToolCatalogEntry) => {
@@ -430,11 +436,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           </button>
         )}
         {renderDisconnect(entry, 'row')}
-        {entry.available && entry.repositoryConnect && (
-          <button type="button" className="v2-connector-row__action" onClick={openRepositoryConnect}>
-            {t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}
-          </button>
-        )}
+        {renderRepositoryConnectAction(entry)}
         {canInstallGithubApp && (
           <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
             {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
@@ -475,8 +477,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           ? t('tools.operatorKey.noAgents')
           : t('tools.operatorKey.note');
       }
-      return isHosted
-        ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+      if (isHosted) return t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label });
+      return entry.repositoryConnect
+        ? t('tools.repoConnect.note', { defaultValue: 'connect a repository first' })
         : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' });
     };
     return (
@@ -563,11 +566,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
         <section className="v2-connector-aside__card">
           <h2>{t('tools.repoConnect.action', { defaultValue: 'Connect a repository' })}</h2>
           {status === 'loading' && <p role="status">{t('tools.repoConnect.loading', { defaultValue: 'Reading your repositories…' })}</p>}
-          {status === 'failed' && <p role="alert">{t('tools.repoConnect.readFailed', { defaultValue: "Couldn't read your repositories from GitHub." })}</p>}
+          {status === 'failed' && <p role="alert">{t('tools.repoConnect.readFailed', { defaultValue: 'Could not read your repositories from GitHub.' })}</p>}
           {status === 'needsGithub' && <p>{t('tools.repoConnect.needsGithub', { defaultValue: 'Connect your GitHub account first. Commonly reads which repositories you can push to from it.' })}</p>}
           {status === 'ready' && repositories.length === 0 && (
             <p>
-              {t('tools.repoConnect.none', { defaultValue: 'No repository to connect yet. Install Commonly Connect on your account or org and pick the repositories.' })}
+              {t('tools.repoConnect.none', { defaultValue: 'No repositories left to connect. To add more, install Commonly Connect on your account or org and pick the repositories.' })}
               {githubEntry?.accessPage && <> {renderAccessLink(githubEntry)}</>}
             </p>
           )}
@@ -599,7 +602,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 {t('tools.repoConnect.checkAgain', { defaultValue: 'Check again' })}
               </button>
             )}
-            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setRepositoryConnect(null)}>
+            <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { setRepositoryConnect(null); setError(null); }}>
               {t('tools.cancel', { defaultValue: 'Cancel' })}
             </button>
           </div>
@@ -909,5 +912,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderRepositoryConnect, renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderRepositoryConnect, renderRepositoryConnectAction, renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

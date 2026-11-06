@@ -1642,7 +1642,7 @@ describe('F221: connecting your own repository', () => {
   const ROUTE = '/api/integrations/github-app/repositories';
   const appEntry = { ...githubEntry, connectionType: 'github-app', repositoryConnect: true, connections: [] };
   const hostedGithub = {
-    ...linearEntry, installableId: 'github-mcp', label: 'GitHub MCP', entryId: 'github-mcp', accessPage: 'https://github.com/apps/connect/installations/new', connections: [],
+    ...linearEntry, installableId: 'github-mcp', label: 'GitHub MCP', entryId: 'github-mcp', repositoryConnect: true, accessPage: 'https://github.com/apps/connect/installations/new', connections: [],
   };
   const repos = [
     { installationId: '7001', owner: 'Outside-Team', repo: 'Widget' },
@@ -1656,15 +1656,15 @@ describe('F221: connecting your own repository', () => {
     mockTools({ entries, grants: [], seats: { p1: [scout], p2: [] }, route });
     axios.post.mockResolvedValue({ data: { integration: { _id: 'row-1' } } });
     renderPage();
-    const popover = await openToolPopover('GitHub');
+    const popover = await openToolPopover('GitHub MCP');
     fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
     return screen.findByRole('complementary', { name: 'Connect a repository' });
   };
 
   it('is not offered where the catalogue does not say so', async () => {
-    mockTools({ entries: [{ ...appEntry, repositoryConnect: undefined }], grants: [], seats: { p1: [scout], p2: [] } });
+    mockTools({ entries: [{ ...hostedGithub, repositoryConnect: undefined }], grants: [], seats: { p1: [scout], p2: [] } });
     renderPage();
-    const popover = await openToolPopover('GitHub');
+    const popover = await openToolPopover('GitHub MCP');
     expect(within(popover).queryByRole('button', { name: 'Connect a repository' })).toBeNull();
   });
 
@@ -1690,6 +1690,37 @@ describe('F221: connecting your own repository', () => {
     const step = await openStep({ listed: { repositories: [], truncated: false } });
     const link = await within(step).findByRole('link');
     expect(link).toHaveAttribute('href', hostedGithub.accessPage);
+  });
+
+  it('a member with a live grant can still connect another repository', async () => {
+    const connected = { ...appEntry, connections: [{ connectionId: 'conn-1', owner: 'Team-Commonly', repo: 'commonly' }] };
+    mockTools({ entries: [connected, hostedGithub], grants: [grantLive], seats: { p1: [scout], p2: [] } });
+    renderPage();
+    const drawer = await openTool('GitHub');
+    expect(within(drawer).getByRole('button', { name: 'Connect a repository' })).toBeInTheDocument();
+  });
+
+  it('a read that lands after the step closed does not reopen it', async () => {
+    let answer;
+    const route = (url) => (url === ROUTE ? new Promise((resolve) => { answer = resolve; }) : undefined);
+    mockTools({ entries: [appEntry, hostedGithub], grants: [], seats: { p1: [scout], p2: [] }, route });
+    renderPage();
+    const popover = await openToolPopover('GitHub MCP');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Connect a repository' }));
+    const step = await screen.findByRole('complementary', { name: 'Connect a repository' });
+    fireEvent.click(within(step).getByRole('button', { name: 'Cancel' }));
+    await act(async () => { answer({ data: { repositories: repos, truncated: false } }); });
+    await settle();
+    expect(screen.queryByRole('complementary', { name: 'Connect a repository' })).toBeNull();
+  });
+
+  it('coming back from the GitHub sign-in reads the list again', async () => {
+    const step = await openStep({ refused: 'github_connect_required' });
+    await within(step).findByRole('button', { name: 'Connect GitHub' });
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === ROUTE).length;
+    const before = reads();
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await waitFor(() => expect(reads()).toBe(before + 1));
   });
 
   it('says when the list may be incomplete', async () => {
