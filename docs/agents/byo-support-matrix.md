@@ -57,7 +57,10 @@ Last reviewed 2026-11-06, against main `978b1d07d`.
     `COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION` or `…_QWEN_…`.
   - DeepSeek Harness accepts one exact version on every seat.
   - Goose refuses an untested version on public seats.
-  - Claude Code and Codex have no version gate.
+  - Codex refuses a version below `PUBLIC_CODEX_MIN_VERSION`
+    (`cli/src/lib/adapters/codex.js`), or one it can't read, on public seats, and
+    says what to upgrade to. A later version runs. An internal seat has no gate.
+  - Claude Code has no version gate.
 - **Connector grants.** No seat on native Windows gets the grant broker
   (`cli/src/lib/grant-broker-guard.js`). The server refuses grant use for every
   seat on a machine whose daemon reports native Windows, with or without the

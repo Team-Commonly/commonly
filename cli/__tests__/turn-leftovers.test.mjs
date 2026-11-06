@@ -176,6 +176,7 @@ describe('codex: what a public seat\'s turn leaves running', () => {
       environment: { model: 'test-model', ...(trust ? { sandbox: { mode: 'workspace', trust } } : {}) },
       agentName: `f201-${trust || 'private'}`,
       _homeDir: home,
+      _codexVersion: '0.162.1',
       _publicCodexHome: path.join(home, `codex-home-${trust || 'private'}-${Date.now()}`),
       env: { ...outside, HOME: home, CODEX_HOME: path.join(home, 'operator-codex') },
     };

@@ -44,6 +44,7 @@ const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const { adapterFailure } = await import('../src/lib/upstream-refusal.js');
+const { publicCodexVersionError } = await import('../src/lib/adapters/tested-version.js');
 
 const DRAIN_DEPTH = 40;
 const drainMicrotasks = async () => {
@@ -365,6 +366,21 @@ describe('performRun — a failure the seat can\'t retry its way out of tells th
     await run.fireNext();
     expect(spawn.mock.calls.length).toBeGreaterThan(1);
     expect(noticesIn(server.post)).toHaveLength(1);
+    run.handle.stop();
+  });
+
+  test('a public seat on a Codex below the floor names the version it needs, and waits', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a', 'are you there?')]] });
+    const spawn = jest.fn().mockRejectedValue(publicCodexVersionError({ found: '0.149.1', required: '0.159.3' }));
+    const run = startRun({ spawn });
+    await drainMicrotasks();
+    const notices = noticesIn(server.post);
+    expect(notices).toHaveLength(1);
+    expect(notices[0][1].content).toContain('Codex 0.159.3 or newer');
+    expect(notices[0][1].content).not.toContain('0.149.1');
+    expect(server.acks).toEqual([]);
+    expect(retryReports(run.errors)[0].message).toContain('Upgrade Codex to at least 0.159.3');
+    expect(retryReports(run.errors)[0].failureClass).toBe('configuration');
     run.handle.stop();
   });
 

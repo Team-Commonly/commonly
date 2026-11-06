@@ -1,10 +1,12 @@
 import { adapterFailure } from '../src/lib/upstream-refusal.js';
 import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
+import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import {
   LOGIN_NOTICE,
   OUT_OF_ALLOWANCE_NOTICE,
   WONT_START_NOTICE,
   cantAnswerNotice,
+  codexVersionNotice,
 } from '../src/lib/turn-failure-notice.js';
 
 const causeOf = (error) => cantAnswerNotice(error)?.cause ?? null;
@@ -120,8 +122,30 @@ describe('cantAnswerNotice', () => {
     ['sk-', 'walk-budget', '0.0154', 'Max budget'].forEach((leak) => expect(text).not.toContain(leak));
   });
 
+  describe('a public seat refused for its Codex version', () => {
+    test.each([
+      ['an older version', '0.149.1'],
+      ['a version it could not read', null],
+    ])('%s tells the pod what whoever runs it should do', (_name, found) => {
+      const notice = cantAnswerNotice(publicCodexVersionError({ found, required: '0.159.3' }));
+      expect(notice.cause).toBe('codex-version');
+      expect(notice.text).toBe(codexVersionNotice('0.159.3'));
+      expect(notice.text).toContain('Codex 0.159.3 or newer');
+      expect(notice.text).toContain('upgrade');
+    });
+
+    test('the pod is not told which version the host runs', () => {
+      const { text } = cantAnswerNotice(publicCodexVersionError({ found: '0.149.1', required: '0.159.3' }));
+      expect(text).not.toContain('0.149.1');
+    });
+
+    test('the code decides, so a look-alike error tells nobody', () => {
+      expect(cantAnswerNotice(new Error('Upgrade Codex to at least 0.159.3'))).toBeNull();
+    });
+  });
+
   test('every line fits one chat message and says what to do', () => {
-    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE].forEach((line) => {
+    [LOGIN_NOTICE, WONT_START_NOTICE, OUT_OF_ALLOWANCE_NOTICE, codexVersionNotice('0.159.3')].forEach((line) => {
       expect(line.length).toBeLessThanOrEqual(400);
       expect(line).toMatch(/^I can’t answer right now: /);
       expect(line).toContain('your message again');

@@ -85,6 +85,7 @@ describe('codex adapter — a public seat gets its declared skills as AGENTS.md'
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
   const spawnSeat = (impl, environment, extra = {}) => codex.spawn('hi', {
+    _codexVersion: '0.162.1',
     sessionId: null,
     cwd: workspace,
     agentName: 'skill-test-agent',
