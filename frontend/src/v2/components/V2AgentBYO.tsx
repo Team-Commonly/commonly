@@ -1421,7 +1421,7 @@ const V2AgentBYO: React.FC = () => {
     // picker, so it keeps the "Adapter" label the page always showed.
     <>
     <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
-    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
+    <p className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
       {orderHarnessIds(harnessCatalog).map((runner) => (
         <button
           key={runner}

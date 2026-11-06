@@ -302,8 +302,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
   test('the BYO adapter choice wraps on a phone, so no adapter sits off screen', () => {
     const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__os {');
-    expect(phone).toContain('.v2-feature--byo .v2-byo__os { display: flex; flex-wrap: wrap;');
-    expect(phone).toContain('.v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1 1 auto;');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters { flex-wrap: wrap; }');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters .v2-byo__link { flex: 1 1 auto; }');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner"');
+    // Basis 0 is what keeps the Mac/Linux/Windows segments equal, and only the adapters wrap.
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center;');
   });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
