@@ -497,7 +497,9 @@ const resolveConnected = async ({
     // An uninstall keeps the row, and a post here would put the bot back in the pod.
     if (!install || install.status === 'uninstalled') {
       // Uninstalled while stalled: close it silently. There is no room to
-      // congratulate and nobody waiting on the promise.
+      // congratulate and nobody waiting on the promise. Plain `resolve`, not
+      // `resolveActioned`: nobody started the agent the nudge asked about.
+      if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId));
       await StalledConnectEpisode.updateOne(
         { _id: ep._id, status: 'open' },
         { $set: { status: 'resolved', resolvedAt: now } },
