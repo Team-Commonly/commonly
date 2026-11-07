@@ -195,7 +195,7 @@
       "empty": "还没有连接的 CLI 设备。",
       "never": "从未",
       "none": "无",
-      "created": "创建于{{created}} · 上次使用：{{used}}",
+      "created": "创建时间：{{created}} · 上次使用：{{used}}",
       "revoked": "撤销于{{date}}",
       "revoke": "撤销",
       "revokeConfirm": "撤销 {{label}}？这个 CLI 需要重新登录。",

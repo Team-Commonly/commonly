@@ -850,6 +850,26 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(screen.queryByText('Couldn’t load keys.')).not.toBeInTheDocument();
   });
 
+  test('an error that opens the key panel offers no key action on an unread list', async () => {
+    const base = fleet({ state: 'connected' });
+    let settingsDown = false;
+    axios.get.mockImplementation((url, ...rest) => {
+      if (url === '/api/credentials') return Promise.reject(new Error('Network Error'));
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+      if (settingsDown && url.endsWith('/manage-settings')) return Promise.reject(new Error('Settings down'));
+      return base(url, ...rest);
+    });
+    axios.post.mockResolvedValue({ data: { success: true } });
+    renderPage();
+    await screen.findByText('Couldn’t load keys.');
+    settingsDown = true;
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+    await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('Settings down')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
+  });
+
   test('a retry the server refuses settles as no access, not as a load failure', async () => {
     const base = fleet({ state: 'never' });
     let refuse = false;

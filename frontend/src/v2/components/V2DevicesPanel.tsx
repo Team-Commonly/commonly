@@ -43,7 +43,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
   useEffect(() => { void load(); }, [load]);
 
   const revoke = async (device: Device) => {
-    if (!window.confirm(t('settings.devices.revokeConfirm', { label: device.label, interpolation: { escapeValue: false } }))) return;
+    if (!window.confirm(t('settings.devices.revokeConfirm', { label: device.label }))) return;
     try {
       await axios.delete(`/api/auth/devices/${device.id}`);
       setDevices((current) => current.map((entry) => entry.id === device.id ? { ...entry, revokedAt: new Date().toISOString() } : entry));

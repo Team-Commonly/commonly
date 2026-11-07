@@ -128,6 +128,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setKeysReadyFor(null);
     setKeysForbidden(false);
     setKeysFailed(false);
+    setKeysRetrying(false);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
@@ -203,13 +204,15 @@ const V2AgentSettingsPage: React.FC = () => {
         setKeysFailed(false);
       }
     } finally {
-      setKeysRetrying(false);
+      if (currentIdentity.current === requestIdentity) setKeysRetrying(false);
     }
   }, [fetchKeys]);
 
   // The Memory row's summary, from the same owner/admin index the Memory tab reads.
   // A viewer without identity-wide key access is not the owner, so it is not asked.
-  const memoryReady = keysReadyFor === identityKey && !keysForbidden && !keysFailed;
+  // Nothing that revokes or replaces a key may act on a list the page never read.
+  const keysKnown = !keysForbidden && !keysFailed;
+  const memoryReady = keysReadyFor === identityKey && keysKnown;
   useEffect(() => {
     setMemory(null);
     if (!memoryReady) return undefined;
@@ -463,7 +466,7 @@ const V2AgentSettingsPage: React.FC = () => {
                       {t('agentSettings.keysRetry')}
                     </button>
                   )}
-                  {!keysForbidden && !keysFailed && (
+                  {keysKnown && (
                     <button type="button" className="b b-g ib b-sm" title={t('agentSettings.keyActions')} aria-label={t('agentSettings.keyActions')}
                       ref={keyToggleRef} aria-expanded={keyOpen} aria-controls="agent-key-panel"
                       // A key shown only once can't be folded away; Done is the way out of it.
@@ -475,7 +478,7 @@ const V2AgentSettingsPage: React.FC = () => {
               </div>
               {keyOpen && <div id="agent-key-panel" className="v2-agent-settings-page__keypanel">
                 {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
-                {!keysForbidden && (installation?.runtime?.runtimeType === 'wrapper' ? (
+                {keysKnown && (installation?.runtime?.runtimeType === 'wrapper' ? (
                   <p className="v2-agent-settings-page__live">{t('agentSettings.wrapperReconnect')}</p>
                 ) : !disconnected && (
                   <div className="v2-agent-settings-page__actions">
@@ -484,7 +487,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     </button>
                   </div>
                 ))}
-                {pendingAction === 'replace' && !keysForbidden && (
+                {pendingAction === 'replace' && keysKnown && (
                   <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
                     <p>{t('agentByo.rekey.warning', { name: displayName })}</p>
                     <div className="v2-agent-settings__actions">
@@ -505,7 +508,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     }}>{t('agentSettings.done')}</button>
                   </div>
                 )}
-                {!keysForbidden && (
+                {keysKnown && (
                   <>
                     {activeKeys.length ? <ul className="v2-agent-settings__keys">{activeKeys.map(renderKey)}</ul>
                       : null}

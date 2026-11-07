@@ -37,7 +37,7 @@ test('the panel, its dates and the revoke confirm read in Chinese', async () => 
 
   await screen.findByText('laptop');
   expect(screen.getByRole('heading', { name: '设备' })).toBeInTheDocument();
-  const meta = screen.getByText(/^创建于/);
+  const meta = screen.getByText(/^创建时间：/);
   expect(meta).toHaveTextContent(new Date(device.createdAt).toLocaleString('zh-CN'));
   expect(meta.textContent).not.toMatch(LATIN_WORD);
   fireEvent.click(screen.getByRole('button', { name: '撤销' }));
