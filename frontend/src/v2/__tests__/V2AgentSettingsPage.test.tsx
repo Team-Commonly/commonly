@@ -832,6 +832,39 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(container.querySelector('.st .dot--off')).toBeNull();
   });
 
+  test('a key list that fails to load costs the key row, not the page', async () => {
+    const base = fleet({ state: 'never' });
+    let keysUp = false;
+    axios.get.mockImplementation((url, options) => {
+      if (url !== '/api/credentials') return base(url, options);
+      return keysUp ? Promise.resolve({ data: [] }) : Promise.reject(new Error('Network Error'));
+    });
+    renderPage();
+    expect(await screen.findByText('Couldn’t load keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Network Error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Key actions' })).not.toBeInTheDocument();
+    keysUp = true;
+    fireEvent.click(within(screen.getByText('Couldn’t load keys.').closest('.lrow')).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t load keys.')).not.toBeInTheDocument();
+  });
+
+  test('a retry the server refuses settles as no access, not as a load failure', async () => {
+    const base = fleet({ state: 'never' });
+    let refuse = false;
+    axios.get.mockImplementation((url, options) => {
+      if (url !== '/api/credentials') return base(url, options);
+      return Promise.reject(refuse ? Object.assign(new Error('Denied'), { response: { status: 403 } }) : new Error('Network Error'));
+    });
+    renderPage();
+    const row = (await screen.findByText('Couldn’t load keys.')).closest('.lrow');
+    refuse = true;
+    fireEvent.click(within(row).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(/Key management is unavailable/)).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
   test('an agent that never connected keeps the idle dot', async () => {
     axios.get.mockImplementation(fleet({ state: 'never' }));
     renderPage();

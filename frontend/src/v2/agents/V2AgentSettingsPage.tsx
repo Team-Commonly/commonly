@@ -52,6 +52,9 @@ const V2AgentSettingsPage: React.FC = () => {
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
   const quietRefresh = useRef(false);
   const [keysForbidden, setKeysForbidden] = useState(false);
+  // The list couldn't be read. Only the key row depends on it, so the page stays up.
+  const [keysFailed, setKeysFailed] = useState(false);
+  const [keysRetrying, setKeysRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,6 +127,7 @@ const V2AgentSettingsPage: React.FC = () => {
     setKeys([]);
     setKeysReadyFor(null);
     setKeysForbidden(false);
+    setKeysFailed(false);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
@@ -144,7 +148,8 @@ const V2AgentSettingsPage: React.FC = () => {
           setKeysForbidden(true);
           setKeysReadyFor(identityKey);
         } else {
-          setError(errorLabel(requestError, t('agentSettings.unavailable')));
+          setKeysFailed(true);
+          setKeysReadyFor(identityKey);
         }
       });
     }
@@ -162,7 +167,10 @@ const V2AgentSettingsPage: React.FC = () => {
       pending = true;
       try {
         const rows = await fetchKeys();
-        if (active) setKeys(rows);
+        if (active) {
+          setKeys(rows);
+          setKeysFailed(false);
+        }
       } catch {
         // Keep the last list; the next tick or focus retries.
       } finally {
@@ -180,9 +188,28 @@ const V2AgentSettingsPage: React.FC = () => {
     };
   }, [access, podId, fetchKeys]);
 
+  const retryKeys = useCallback(async () => {
+    const requestIdentity = currentIdentity.current;
+    setKeysRetrying(true);
+    try {
+      const rows = await fetchKeys();
+      if (currentIdentity.current !== requestIdentity) return;
+      setKeys(rows);
+      setKeysFailed(false);
+    } catch (requestError) {
+      if (currentIdentity.current !== requestIdentity) return;
+      if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+        setKeysForbidden(true);
+        setKeysFailed(false);
+      }
+    } finally {
+      setKeysRetrying(false);
+    }
+  }, [fetchKeys]);
+
   // The Memory row's summary, from the same owner/admin index the Memory tab reads.
   // A viewer without identity-wide key access is not the owner, so it is not asked.
-  const memoryReady = keysReadyFor === identityKey && !keysForbidden;
+  const memoryReady = keysReadyFor === identityKey && !keysForbidden && !keysFailed;
   useEffect(() => {
     setMemory(null);
     if (!memoryReady) return undefined;
@@ -424,14 +451,19 @@ const V2AgentSettingsPage: React.FC = () => {
               <div className="lrow">
                 <span className="lb"><V2AgentSettingsIcon name="key" />{t('agentSettings.runtimeKey')}</span>
                 <span className="vl">
-                  {keysForbidden ? t('agentSettings.keyUnavailable') : runsOnCommonly && !activeKeys.length ? t('agentSettings.keyNotNeeded') : <>
+                  {keysForbidden ? t('agentSettings.keyUnavailable') : keysFailed ? t('agentSettings.keysLoadFailed') : runsOnCommonly && !activeKeys.length ? t('agentSettings.keyNotNeeded') : <>
                     <span className={`dot${disconnected || !activeKeys.length ? ' dot--off' : ''}`} aria-hidden="true" />
                     {activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}
                     {newestUse && <span className="mo">{t('agentSettings.keyUsed', { when: localizeRelativeTime(newestUse, t, { pastEvent: true }) })}</span>}
                   </>}
                 </span>
                 <span className="ac">
-                  {!keysForbidden && (
+                  {keysFailed && (
+                    <button type="button" className="b b-g b-sm" disabled={keysRetrying} onClick={() => void retryKeys()}>
+                      {t('agentSettings.keysRetry')}
+                    </button>
+                  )}
+                  {!keysForbidden && !keysFailed && (
                     <button type="button" className="b b-g ib b-sm" title={t('agentSettings.keyActions')} aria-label={t('agentSettings.keyActions')}
                       ref={keyToggleRef} aria-expanded={keyOpen} aria-controls="agent-key-panel"
                       // A key shown only once can't be folded away; Done is the way out of it.
