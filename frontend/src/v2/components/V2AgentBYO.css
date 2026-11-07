@@ -108,9 +108,11 @@
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
   /* A phone hint opens in the flow, so on the held line it takes its own row under the link. */
-  .v2-feature--byo .v2-byo__held:has(.v2-hint--open) { flex-wrap: wrap; }
+  /* A grid, not a wrapping row: the (i) keeps its column when the hint opens, so a hover can't move it out from under the pointer. */
+  .v2-feature--byo .v2-byo__held { display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; }
   .v2-feature--byo .v2-byo__held .v2-hint--open { display: contents; }
-  .v2-feature--byo .v2-byo__held .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }
+  /* Zero width with a full minimum: the hint fills its row without widening the columns above it. */
+  .v2-feature--byo .v2-byo__held .v2-hint__content { grid-column: 1 / -1; width: 0; min-width: 100%; }
   /* Every "i" hint on the page (the head's and each start's) is the frame's info--lg:
      a 44 box with no border holding the 15px i-info glyph in the placeholder tone. V2Hint
      draws the letter "i", so the letter is hidden and the glyph is masked in its place. */
