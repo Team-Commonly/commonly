@@ -52,10 +52,15 @@ describe('a scheduled post and the run cap', () => {
   });
 
   it('fails toward posting when the schedule can\'t be read', async () => {
-    jest.spyOn(console, 'warn').mockImplementationOnce(() => {});
-    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockImplementationOnce(() => { throw new Error('read failed'); });
-    await expect(AgentMessageService.owedScheduledPost(pod._id, 'daily', 'default', bot._id)).resolves.toBe(true);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const real = AgentInstallation.findOne.bind(AgentInstallation);
+    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockImplementation((query, ...rest) => {
+      if (query?.agentName?.$eq) throw new Error('read failed');
+      return real(query, ...rest);
+    });
+    expect((await post('The count for today.')).success).toBe(true);
     findOne.mockRestore();
+    console.warn.mockRestore();
   });
 
   it('lets one post through for a wake since the last post, and only one', async () => {
