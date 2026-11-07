@@ -1,8 +1,13 @@
-import { emitStoppedLine, hasStoppedLineSince } from './systemActionLineService';
+import {
+  emitRemovedLine, emitStoppedLine, hasRemovedLineSince, hasStoppedLineSince,
+} from './systemActionLineService';
 import { hostedStoppedAt } from './hostedEngine';
+import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentIdentityService = require('./agentIdentityService');
 
@@ -14,6 +19,21 @@ const AgentIdentityService = require('./agentIdentityService');
 const stoppedSince = (installation: Record<string, unknown>): Date | null => hostedStoppedAt(installation);
 
 const inFlight = new Set<string>();
+
+interface AgentRow {
+  _id: unknown;
+  username?: string;
+  profilePicture?: string | null;
+  botMetadata?: { displayName?: string; instanceId?: string; machineId?: unknown };
+}
+
+const findAgent = (agentName: string, instanceId: string): Promise<AgentRow | null> => User.findOne({
+  isBot: true,
+  'botMetadata.agentName': { $eq: agentName },
+  'botMetadata.instanceId': { $eq: instanceId },
+}).select('username profilePicture botMetadata').lean();
+
+const startOfUtcDay = (now: Date): Date => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
 /**
  * F297. A person addressed an agent its owner stopped. This tells the room once,
@@ -50,14 +70,7 @@ export async function noteStoppedMention({
   const stoppedAt = install ? stoppedSince(install) : null;
   if (!stoppedAt) return false;
 
-  const agent = await User.findOne({
-    isBot: true,
-    'botMetadata.agentName': { $eq: agentName },
-    'botMetadata.instanceId': { $eq: instanceId },
-  }).select('username profilePicture botMetadata').lean() as {
-    _id: unknown; username?: string; profilePicture?: string | null;
-    botMetadata?: { displayName?: string; instanceId?: string; machineId?: unknown };
-  } | null;
+  const agent = await findAgent(agentName, instanceId);
   if (!agent || agent.botMetadata?.machineId) return false;
 
   const agentKey = `${agentName}:${instanceId}`;
@@ -67,10 +80,59 @@ export async function noteStoppedMention({
   if (inFlight.has(flightKey)) return false;
   inFlight.add(flightKey);
   try {
-    const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const midnight = startOfUtcDay(now);
     const since = stoppedAt > midnight ? stoppedAt : midnight;
     if (await hasStoppedLineSince(podId, agentKey, since)) return false;
     await emitStoppedLine({
+      podId,
+      actorUserId: String(agent._id),
+      actorUsername: agent.username || agentName,
+      actorAvatarUrl: agent.profilePicture || null,
+      actorIsBot: true,
+      agentLabel: AgentIdentityService.resolveAgentDisplayLabel(agent, agentName),
+      agentKey,
+      messageId,
+      threadRootId: threadRootId ?? null,
+    });
+    return true;
+  } finally {
+    inFlight.delete(flightKey);
+  }
+}
+
+/**
+ * F270. A person wrote in a DM with an agent that has no active install left.
+ * Nothing will read the message, so the room says so, once a UTC day. Only when
+ * every row is uninstalled: a paused or stale row has an owner who can bring it
+ * back, and the caller's exact-match query misses a row with no instanceId or a
+ * stored name in another case. The caller checks the sender is a person.
+ */
+export async function noteRemovedAgentDm({
+  podId, agentName: rawAgentName, instanceId, messageId, threadRootId, now = new Date(),
+}: {
+  podId: string;
+  agentName: string;
+  instanceId: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+  now?: Date;
+}): Promise<boolean> {
+  if (messageId === null) return false;
+  const agentName = rawAgentName.toLowerCase();
+  const standing = await AgentInstallation.exists({
+    ...installationIdentityFilter(agentName, instanceId), status: { $ne: 'uninstalled' },
+  }).collation(IDENTITY_COLLATION);
+  if (standing) return false;
+  const agent = await findAgent(agentName, instanceId);
+  if (!agent) return false;
+
+  const agentKey = `${agentName}:${instanceId}`;
+  const flightKey = `removed:${podId}:${agentKey}`;
+  if (inFlight.has(flightKey)) return false;
+  inFlight.add(flightKey);
+  try {
+    if (await hasRemovedLineSince(podId, agentKey, startOfUtcDay(now))) return false;
+    await emitRemovedLine({
       podId,
       actorUserId: String(agent._id),
       actorUsername: agent.username || agentName,

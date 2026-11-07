@@ -10,7 +10,7 @@ const mockDbPg = {};
 jest.mock('../../config/db-pg', () => mockDbPg);
 
 const {
-  emitStoppedLine, hasStoppedLineSince,
+  emitRemovedLine, emitStoppedLine, hasRemovedLineSince, hasStoppedLineSince,
 } = require('../../services/systemActionLineService');
 
 const { findPreviousNonSilentMessage } = require('../../services/systemExchangeTriggers');
@@ -71,6 +71,21 @@ real('the stopped line on real PostgreSQL (F297)', () => {
 
   it("is never read as the agent's own last turn, though it's stored under the agent", async () => {
     expect(await findPreviousNonSilentMessage(POD, USER)).toBe('@nova hello');
+  });
+
+  it('keeps a removed line apart from a stopped one', async () => {
+    expect(await hasRemovedLineSince(POD, 'nova:default', anHourAgo())).toBe(false);
+    await emitRemovedLine({
+      podId: POD,
+      actorUserId: USER,
+      actorUsername: 'nova',
+      actorIsBot: true,
+      agentLabel: 'Nova',
+      agentKey: 'nova:default',
+      messageId,
+    });
+    expect(await hasRemovedLineSince(POD, 'nova:default', anHourAgo())).toBe(true);
+    expect(await hasRemovedLineSince(OTHER_POD, 'nova:default', anHourAgo())).toBe(false);
   });
 
   it('ignores a line from before the window, so a second stop is told again', async () => {

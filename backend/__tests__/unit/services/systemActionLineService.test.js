@@ -10,7 +10,7 @@ jest.mock('../../../config/socket', () => ({
 }));
 
 const {
-  emitStoppedLine, emitSystemActionLine, hasStoppedLineSince,
+  emitRemovedLine, emitStoppedLine, emitSystemActionLine, hasRemovedLineSince, hasStoppedLineSince,
 } = require('../../../services/systemActionLineService');
 
 beforeEach(() => {
@@ -96,7 +96,21 @@ describe('the stopped line', () => {
     expect(await hasStoppedLineSince('pod-1', 'nova:default', since)).toBe(true);
     mockQuery.mockResolvedValueOnce({ rows: [] });
     expect(await hasStoppedLineSince('pod-1', 'nova:default', since)).toBe(false);
-    expect(mockQuery.mock.calls[0][0]).toContain("'agent-stopped'");
-    expect(mockQuery.mock.calls[0][1]).toEqual(['pod-1', since, 'nova:default']);
+    expect(mockQuery.mock.calls[0][1]).toEqual(['pod-1', since, 'nova:default', 'agent-stopped']);
+  });
+
+  it('says a removed agent is gone, promising nothing, and looks for its own action', async () => {
+    await emitRemovedLine(line);
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[2]).toBe("Nova was removed, so it can't answer here.");
+    expect(JSON.parse(params[3])).toMatchObject({
+      kind: 'system-action', action: 'agent-removed', agentKey: 'nova:default',
+    });
+    expect(params.slice(4)).toEqual([77, 555]);
+
+    const since = new Date('2026-11-06T00:00:00.000Z');
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    await hasRemovedLineSince('pod-1', 'nova:default', since);
+    expect(mockQuery.mock.calls[1][1]).toEqual(['pod-1', since, 'nova:default', 'agent-removed']);
   });
 });
