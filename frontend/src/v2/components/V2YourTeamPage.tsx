@@ -420,7 +420,7 @@ const V2YourTeamPage: React.FC = () => {
     // The card already names who's asking, so "Mia mentioned you" reads "mentioned you".
     // Other titles keep their name: "Mia is blocked" needs its subject.
     const askTitle = ask?.kind === 'mention' && ask.actorName && ask.title?.startsWith(`${ask.actorName} `)
-      ? ask.title.slice(ask.actorName.length + 1) : ask?.title;
+      ? t('yourTeam.card.mentionedYou') : ask?.title;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
     // An ask still waits on a seat that dropped off, so its card keeps the ring.

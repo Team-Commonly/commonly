@@ -316,7 +316,7 @@ const V2App: React.FC = () => {
                 <Route
                   path="pods/:podId/board"
                   element={feature(
-                    'Board',
+                    t('board.title'),
                     <V2PodBoard />,
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
@@ -329,7 +329,7 @@ const V2App: React.FC = () => {
                   element={(
                     <V2LegacyPodRoomRedirect
                       /* ChatRoom owns its own sticky AppBar, so the feature header is off. */
-                      ensembleRoom={(room) => feature('Pod Tools', room, false, false)}
+                      ensembleRoom={(room) => feature(t('common.pageTitle.podTools'), room, false, false)}
                     />
                   )}
                 />
@@ -340,7 +340,7 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents"
                   element={feature(
-                    'Your Team',
+                    t('yourTeam.title'),
                     <V2YourTeamPage />,
                     false,
                     /* V2YourTeamPage owns its own header — suppress the
@@ -367,12 +367,12 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect" hint={t('connect.intro')}><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title={t('common.pageTitle.connect')} hint={t('connect.intro')}><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
                   element={feature(
-                    'Connectors',
+                    t('common.nav.connectors'),
                     <ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
@@ -398,7 +398,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', <V2SettingsPage />, false, false, 'v2-feature--settings')}
+                  element={feature(t('common.nav.settings'), <V2SettingsPage />, false, false, 'v2-feature--settings')}
                 />
                 <Route
                   path="settings/devices"

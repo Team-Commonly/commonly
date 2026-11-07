@@ -1,7 +1,8 @@
 // @ts-nocheck
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import i18n, { i18nReady } from '../../i18n';
 import { AuthContext } from '../../context/AuthContext';
 import V2AccountMenu from '../components/V2AccountMenu';
 
@@ -41,4 +42,24 @@ describe('V2AccountMenu avatar', () => {
     expect(avatar.querySelector('img')).toHaveAttribute('alt', 'Ada');
     expect(avatar.querySelector('img').getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
   });
+});
+
+test('the account menu reads in Chinese', async () => {
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  const auth = { currentUser: { _id: 'u1', username: 'mei' }, logout: jest.fn() };
+  render(
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter>
+        <div className="v2-root"><V2AccountMenu /></div>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: '打开账号菜单' }));
+  expect(screen.getByRole('navigation', { name: '账号' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '设置' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '接入' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '退出登录' })).toBeInTheDocument();
+  await act(async () => { await i18n.changeLanguage('en'); });
 });

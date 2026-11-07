@@ -1,9 +1,10 @@
 // @ts-nocheck
 // Your Team, direction C (YourTeam.dc.html) — ux-lead rulings 66163–66165.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
+import i18n, { i18nReady } from '../../i18n';
 import V2YourTeamPage from '../components/V2YourTeamPage';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -279,6 +280,18 @@ describe('Your Team (direction C)', () => {
     renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
     expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('● needs you · mentioned you');
+  });
+
+  test('the mention line follows the app language', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
+      await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+      expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('提及了你');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 
   test.each([['blocked', 'Wren is blocked'], ['approval', 'Wren requests approval']])('a %s title keeps its subject', async (kind, title) => {
