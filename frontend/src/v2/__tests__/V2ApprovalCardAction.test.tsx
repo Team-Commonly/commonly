@@ -351,6 +351,75 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/approvals/pending?podId=pod-1');
   });
 
+  describe('approving what was shown (F215)', () => {
+    const toolCard = {
+      kind: 'approval-card', approvalId: 'tool-9', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', summary: 'Update an issue',
+    };
+    const pending = (toolCall: Record<string, unknown>) => mockGet.mockResolvedValue({
+      approvals: [{ approvalId: 'tool-9', messageId: 'm1', toolCall }],
+    });
+
+    test('approving sends back the digest of the arguments on the card', async () => {
+      pending({ tool: 'sentry.update_issue', canonicalArgs: { status: 'resolved' }, argsDigest: 'digest-1' });
+      mockPost.mockResolvedValue({ approval: {} });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByText(en.approvalCard.approve)).toBeEnabled());
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+        '/api/approvals/tool-9/resolve', { decision: 'approved', argsDigest: 'digest-1' },
+      ));
+    });
+
+    test('a PR write shows its server summary and can be approved on the card', async () => {
+      pending({
+        tool: 'github.create_pull_request', argsDigest: 'digest-2',
+        summary: { repo: 'o/r', head: 'seat/1/x', base: 'main', title: 'Fix it' },
+      });
+      mockPost.mockResolvedValue({ approval: {} });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-arg-title')).toHaveTextContent('Fix it'));
+      expect(screen.getByTestId('approval-arg-head')).toHaveTextContent('seat/1/x');
+      // The summary is not the envelope, so nothing is labelled as the exact arguments.
+      expect(screen.queryByTestId('approval-tool-call')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+        '/api/approvals/tool-9/resolve', { decision: 'approved', argsDigest: 'digest-2' },
+      ));
+    });
+
+    test('a card with neither arguments nor a summary stays unapprovable', async () => {
+      pending({ tool: 'sentry.update_issue', argsDigest: 'digest-3' });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-tool-call-state'))
+        .toHaveTextContent(en.approvalCard.toolCall.unavailable));
+      expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    });
+
+    test('a value past its box says so, and the exact arguments show what a row shows', async () => {
+      pending({
+        tool: 'sentry.update_issue', argsDigest: 'digest-4',
+        canonicalArgs: { reason: `${'x'.repeat(5000)}‮tail` },
+      });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-arg-reason')).toBeInTheDocument());
+      expect(screen.getByTestId('approval-arg-reason')).toHaveTextContent(
+        en.approvalCard.toolCall.longValue.replace('{{length}}', '5005'),
+      );
+      expect(screen.getByTestId('approval-tool-call')).toHaveTextContent('\\u{202E}tail');
+      expect(screen.getByTestId('approval-tool-call').textContent).not.toContain('‮');
+    });
+
+    test('a server that will not take the review says so', async () => {
+      pending({ tool: 'sentry.update_issue', canonicalArgs: { status: 'resolved' }, argsDigest: 'digest-5' });
+      mockPost.mockRejectedValue({ response: { status: 409, data: { error: 'approval_needs_review' } } });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByText(en.approvalCard.approve)).toBeEnabled());
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      expect(await screen.findByText(en.approvalCard.errors.needsReview)).toBeInTheDocument();
+    });
+  });
+
   test('the owner reads the call as a verb and rows, with the exact arguments one click away', async () => {
     const headSha = 'abc1234def5678abc1234def5678abc1234def56';
     mockGet.mockResolvedValue({

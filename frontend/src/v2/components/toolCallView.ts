@@ -29,6 +29,8 @@ export interface ToolCallRow {
   detail?: string;
   /** A line about the row itself. */
   note?: { key: string; vars: Record<string, string> };
+  /** Set when a block is longer than its scrolling box shows at once. */
+  fullLength?: number;
 }
 
 export interface ToolCallView {
@@ -60,6 +62,22 @@ const BLOCK_KEYS = new Set(['body', 'commitMessage']);
 // shown as text and never put in a URL.
 const GITHUB_SEGMENT = /^(?!\.{1,2}$)[A-Za-z0-9_.-]{1,100}$/;
 const COMMIT_SHA = /^[0-9a-f]{7,64}$/i;
+
+// Past either of these, a block scrolls inside its 12em box and has to say so.
+const LONG_VALUE_CHARS = 400;
+const LONG_VALUE_LINES = 8;
+const isLong = (text: string): boolean => (
+  text.length > LONG_VALUE_CHARS || text.split('\n').length > LONG_VALUE_LINES
+);
+
+// Text an outsider may have written reaches this card through the model. A
+// bidi override, zero-width or tag character draws one thing and runs another,
+// so each is shown as its code point. Tab and the line breaks stay real.
+const INVISIBLE = /[\p{Cf}\p{Zl}\p{Zp}]|(?![\t\n\r])\p{Cc}/gu;
+export const showInvisibles = (text: string): string => text.replace(
+  INVISIBLE,
+  (char) => `\\u{${(char.codePointAt(0) as number).toString(16).toUpperCase()}}`,
+);
 
 const asText = (value: unknown): string => {
   if (typeof value === 'string') return value;
@@ -138,9 +156,10 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
       label: key,
       value: isLabels ? JSON.stringify(raw) : asText(raw),
       // A multi-line string keeps its line breaks, whatever its key.
-      kind: typeof raw === 'string' && (BLOCK_KEYS.has(key) || raw.includes('\n'))
+      kind: typeof raw === 'string' && (BLOCK_KEYS.has(key) || raw.includes('\n') || isLong(raw))
         ? 'block'
         : (typeof raw === 'string' || isLabels ? 'text' : 'mono'),
+      ...(typeof raw === 'string' && isLong(raw) ? { fullLength: raw.length } : {}),
     });
   }
 
@@ -153,7 +172,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
   const verb = verbKey && (!needsNumber || number !== null)
     ? { key: verbKey, vars: number !== null ? { number: String(number) } : {} }
     : null;
-  return { verb, rows };
+  return { verb, rows: rows.map((row) => ({ ...row, value: showInvisibles(row.value) })) };
 };
 
 const PR_WRITE_VERBS: Record<string, string> = {
@@ -288,7 +307,11 @@ export const prWriteView = (tool: string, summary: Record<string, unknown>): Too
     verb: verbKey && (!namesBranch || typeof summary.head === 'string')
       ? { key: verbKey, vars: namesBranch ? { head: summary.head as string } : {} }
       : null,
-    rows,
+    rows: rows.map((row) => ({
+      ...row,
+      value: showInvisibles(row.value),
+      ...(row.detail === undefined ? {} : { detail: showInvisibles(row.detail) }),
+    })),
     notices,
   };
 };

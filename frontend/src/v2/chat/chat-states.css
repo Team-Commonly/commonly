@@ -1071,6 +1071,13 @@
   overflow-y: auto;
 }
 
+.v2-approval__arg-length {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--v2-text-muted);
+}
+
 .v2-approval__arg dd a {
   color: var(--v2-accent-text);
   text-decoration: none;

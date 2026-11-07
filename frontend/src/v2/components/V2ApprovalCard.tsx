@@ -14,7 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import type { V2Message } from '../hooks/useV2PodDetail';
-import { canShowToolCall, prWriteView, toolCallView } from './toolCallView';
+import { canShowToolCall, prWriteView, showInvisibles, toolCallView } from './toolCallView';
 
 interface V2ApprovalCardProps {
   message: V2Message;
@@ -216,7 +216,12 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     setError(null);
     try {
       const response = await api.post<ResolveApprovalResponse>(
-        `/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`, { decision },
+        `/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`,
+        // The digest says which arguments this approval is for; the server
+        // refuses a parked call's approval that doesn't name the ones it holds.
+        decision === 'approved' && pendingToolCall?.argsDigest
+          ? { decision, argsDigest: pendingToolCall.argsDigest }
+          : { decision },
       );
       // The card's own state lands via messageCardUpdated. The attention counts
       // (nav rail, pod inspector) refresh only on this event or window focus; a
@@ -233,8 +238,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         && path?.startsWith('/v2/agents/byo?')
       ) navigate(path);
     } catch (err) {
-      const status409 = (err as { response?: { status?: number } })?.response?.status;
-      setError(status409 === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));
+      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      if (response?.data?.error === 'approval_needs_review') setError(t('approvalCard.errors.needsReview'));
+      else setError(response?.status === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));
     } finally {
       setDeciding(false);
     }
@@ -269,6 +275,11 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                         ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
                         : (row.valueKey ? t(row.valueKey) : row.value)}
                       {row.note && <div className="v2-approval__pitch">{t(row.note.key, row.note.vars)}</div>}
+                      {row.fullLength !== undefined && (
+                        <span className="v2-approval__arg-length">
+                          {t('approvalCard.toolCall.longValue', { length: row.fullLength })}
+                        </span>
+                      )}
                       {row.detail !== undefined && (
                         <pre className="v2-approval__tool-call v2-approval__arg-value--block">{row.detail}</pre>
                       )}
@@ -286,7 +297,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               <details className="v2-approval__exact">
                 <summary>{t('approvalCard.toolCall.exactArgs')}</summary>
                 <pre className="v2-approval__tool-call" data-testid="approval-tool-call">
-                  {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
+                  {showInvisibles(JSON.stringify(pendingToolCall.canonicalArgs, null, 2))}
                 </pre>
               </details>
             )}

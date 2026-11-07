@@ -23,7 +23,7 @@ import path from 'path';
 // convenient.
 const NUMERAL_PLACEHOLDERS = [
   // bare numbers, or numbers formatted with grouping separators (Intl.NumberFormat)
-  'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt',
+  'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt', 'length',
   'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
   'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens', 'bytes', 'shown',
   // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).

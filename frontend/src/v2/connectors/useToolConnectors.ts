@@ -351,11 +351,12 @@ export const useToolConnectors = (
     : modeLabel(grant.writeMode));
 
   const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
-    if (!FORM_OFFERS_WRITES) return ['read'];
-    if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
-    return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
-      ? ['read', 'write-with-confirm']
-      : ['read'];
+    if (entry.connectionType === 'hosted-mcp') {
+      return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
+        ? ['read', 'write-with-confirm']
+        : ['read'];
+    }
+    return FORM_OFFERS_WRITES ? WRITE_MODES : ['read'];
   };
 
   const entryModeCopy = (entry: ToolCatalogEntry): string => {

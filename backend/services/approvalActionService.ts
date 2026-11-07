@@ -946,6 +946,12 @@ interface ResolveOptions {
   approvalId: string;
   callerUserId: string;
   decision: 'approved' | 'declined';
+  /**
+   * The `argsDigest` the owner's client was shown. The route always passes it,
+   * `null` when the client sent none, so a person's approval of a parked call
+   * is bound to the call they read. Only a server-side caller omits it.
+   */
+  reviewedArgsDigest?: string | null;
 }
 
 export interface ResolveResult {
@@ -1313,6 +1319,14 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     if (expired.toolCall) expired.toolCall.canonicalArgs = undefined;
     await finishToolCallClosureOrLeaveForRetry(expired, 'expired');
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
+  }
+
+  // A parked call is approved from the card that shows its arguments, never
+  // from a surface that has only the tool's description (scope §5c). The card
+  // stays open, so the owner can read it and decide.
+  if (parkedCall && decision === 'approved' && options.reviewedArgsDigest !== undefined
+    && options.reviewedArgsDigest !== parkedCall.argsDigest) {
+    return { status: 409, body: { error: 'approval_needs_review', approval: buildCardPayload(row) } };
   }
 
   // ADR-017:201 — expired stays DECIDABLE. Refusing a late decision would

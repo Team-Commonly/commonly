@@ -548,6 +548,51 @@ describe('V2ActivityPage', () => {
     expect(mockPost).not.toHaveBeenCalledWith(expect.stringContaining('/api/activity/appr-1'), expect.anything(), expect.anything());
   });
 
+  describe('a parked tool call is reviewed on its card (F215)', () => {
+    const toolQueue = (extra: Record<string, unknown>) => ({
+      items: [{
+        id: 'appr-2', kind: 'approval', sourceType: 'approval_action', title: 'Scout requests approval',
+        detail: 'Update an issue (approval required)', podId: 'pod-1', podName: 'Launch pod',
+        createdAt: '2026-09-10T11:00:00.000Z', messageId: 77, ...extra,
+      }],
+      count: 1,
+      composePodId: 'pod-1',
+    });
+    const serve = (queue: unknown) => mockGet.mockImplementation((url: string) => (
+      url === '/api/activity/decision-queue'
+        ? Promise.resolve({ data: queue })
+        : Promise.resolve({ data: { ...recap, needsYou: [] } })
+    ));
+
+    test('it offers Review, which opens the card, and no Approve', async () => {
+      serve(toolQueue({ reviewOnCard: true }));
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+      expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+      expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+      expect(mockPost).not.toHaveBeenCalled();
+    });
+
+    test('it can still be denied from the row', async () => {
+      serve(toolQueue({ reviewOnCard: true }));
+      mockPost.mockResolvedValue({ data: { ok: true } });
+      renderPage();
+      await screen.findByRole('button', { name: 'Review' });
+      fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+        '/api/approvals/appr-2/resolve', { decision: 'declined' }, expect.anything(),
+      ));
+    });
+
+    test('a row filed before this change tells the owner to open it when the server refuses', async () => {
+      serve(toolQueue({}));
+      mockPost.mockRejectedValue({ response: { status: 409, data: { error: 'approval_needs_review' } } });
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+      expect(await screen.findByText('Open this request and check it before you approve.')).toBeInTheDocument();
+    });
+  });
+
   test('hides Get started after any historical attention item, even with unfinished steps', async () => {
     const handledAskRecap = { ...recap, hasEverHadAttention: true, needsYou: [], agents: [], board: [] };
     let releaseRegistry: ((value: { data: { agents: unknown[] } }) => void) | null = null;

@@ -99,6 +99,7 @@ const recordForRecipients = async (
           actorUserId: payload.actorUserId,
           messageId: payload.messageId,
           threadRootId: payload.threadRootId,
+          reviewOnCard: payload.reviewOnCard,
           options: payload.options,
           sourceCreatedAt: payload.sourceCreatedAt,
           status: 'open',
@@ -506,6 +507,8 @@ export const recordActionApproval = async (row: any, displayName?: string | null
       title: label ? `${label} requests approval` : 'Approval requested', actorName: label || undefined,
       actorUserId: row?.agentUserId ? String(row.agentUserId) : undefined,
       detail: compact(row?.summary, 180), podName: pod?.name || 'Pod',
+      ...(row?.actionType === 'tool_call'
+        ? { reviewOnCard: true, messageId: row?.messageId ? String(row.messageId) : undefined } : {}),
       emailRecipientId: owner, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
@@ -966,6 +969,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
       id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), sourceType: row.source.type, title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
+      ...(row.reviewOnCard ? { reviewOnCard: true } : {}),
     });
   }
   const remaining = Math.max(window.length - offset - picked.length, 0);

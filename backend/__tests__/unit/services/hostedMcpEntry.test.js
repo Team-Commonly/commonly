@@ -1013,7 +1013,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.resource).toBe('https://mcp.linear.app/mcp');
     expect(entry.issuer).toBe('https://mcp.linear.app');
     expect(entry.client).toBe('cimd');
-    expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
+    expect([...entry.scopes].sort()).toEqual(['openid', 'read', 'write']);
   });
 
   test('the Google Calendar entry is pre-registered and pins only its five read tools', () => {
@@ -1488,12 +1488,11 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const capture = LINEAR_CAPTURE;
     const [entry] = HOSTED_MCP_ENTRIES;
     expect(capture.server).toBe(entry.resource);
-    // The pins came from a consenting list at read write openid. The entry asks
-    // for less until an agent can reach an approved write (F224).
-    expect(capture.scopeRequested.split(' ').filter((scope) => scope !== 'write').sort())
-      .toEqual([...entry.scopes].sort());
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    // Its writes need `write` on the token, so an older read-only connection
+    // cannot be granted them until it reconnects.
     expect(entry.writeScope).toBe('write');
-    expect(entry.scopes).not.toContain(entry.writeScope);
+    expect(entry.scopes).toContain(entry.writeScope);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
     const excludedByPinRuling = new Set(['get_attachment', 'extract_images', 'prepare_attachment_upload',
       'create_attachment_from_upload', 'create_attachment', 'create_issue_label']);

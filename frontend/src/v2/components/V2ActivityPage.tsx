@@ -58,6 +58,9 @@ interface NeedsYouItem {
   // Mention rows carry where they live so a reply can land IN the thread.
   messageId?: number | string;
   threadRootId?: number | string;
+  // A parked tool call. This row shows only its description, so Approve lives
+  // on the card, where the arguments are.
+  reviewOnCard?: boolean;
 }
 
 interface BoardItem {
@@ -1125,9 +1128,10 @@ const V2ActivityPage: React.FC = () => {
       }
       notifyAttentionChanged();
       setReloadKey((value) => value + 1);
-    } catch {
+    } catch (err) {
+      const refused = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       setActionErrorItemId(item.id);
-      setActionError(t('activity.approval.actionFailed'));
+      setActionError(t(refused === 'approval_needs_review' ? 'activity.approval.needsReview' : 'activity.approval.actionFailed'));
       restoreActionFocus();
     } finally {
       setActingApprovalId(null);
@@ -1284,7 +1288,7 @@ const V2ActivityPage: React.FC = () => {
     if (item.kind === 'approval') {
       return [{
         key: 'deny', label: t('activity.approval.deny'), glyph: <ActGlyph name="deny" />, onSelect: () => { void actOnApproval(item, 'reject'); }, disabled: actingApprovalId === item.id,
-      }, openAct(item)];
+      }, ...(item.reviewOnCard ? [] : [openAct(item)])];
     }
     if (item.kind === 'mention') {
       return [{
@@ -1299,6 +1303,13 @@ const V2ActivityPage: React.FC = () => {
     return [];
   };
   const primaryKey = (item: NeedsYouItem): React.ReactNode => {
+    if (item.kind === 'approval' && item.reviewOnCard) {
+      return (
+        <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__key" onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
+          {t('activity.approval.review')}
+        </button>
+      );
+    }
     if (item.kind === 'approval') {
       return (
         <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__key" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>

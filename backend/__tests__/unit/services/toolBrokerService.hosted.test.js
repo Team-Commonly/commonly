@@ -1249,14 +1249,32 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(getToolDefinitions().every((definition) => definition.connectionType === 'github-app')).toBe(true);
   });
 
-  it('does not offer a hosted write tool in a run\'s list, even when the grant could name it', async () => {
+  it('offers a hosted write on a write-with-confirm grant, since every call parks (F215)', async () => {
     mockRoomGrant.find.mockReturnValue({
       select: () => ({
         lean: async () => [hostedGrant({
           tools: ['linear.create_issue'],
           writeMode: 'write-with-confirm',
           brokerId: 'grant-broker',
-        })], 
+        })],
+      }),
+    });
+    mockPod.find.mockReturnValue({
+      select: () => ({ lean: async () => [{ _id: POD_ID, members: ['agent-a'] }] }),
+    });
+
+    const projection = await hostedBrokerToolsForRun({ identityId: 'agent-a', podId: POD_ID });
+    expect(projection.tools.map((tool) => tool.function.name)).toEqual(['linear_create_issue']);
+  });
+
+  it('does not offer a hosted write on a read grant, even when the grant could name it', async () => {
+    mockRoomGrant.find.mockReturnValue({
+      select: () => ({
+        lean: async () => [hostedGrant({
+          tools: ['linear.create_issue'],
+          writeMode: 'read',
+          brokerId: 'grant-broker',
+        })],
       }),
     });
     mockPod.find.mockReturnValue({

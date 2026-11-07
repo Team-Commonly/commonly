@@ -173,8 +173,13 @@ export const runD14Walk = async ({
     }
     throw new Error(`no parked ${match.tool} card${match.head ? ` for ${match.head}` : ''} within ${PARK_WAIT_MS / 1000}s`);
   };
-  const decide = async (approvalId, decision) => {
-    const r = await api('POST', `/api/approvals/${approvalId}/resolve`, { token: ownerToken, body: { decision } });
+  // An approval names the arguments it reviewed, as the card does (F215).
+  const decide = async (approvalId, decision, podId) => {
+    const body = { decision };
+    if (decision === 'approved') {
+      body.argsDigest = (await pendingCards(podId)).find((card) => card.approvalId === approvalId)?.toolCall?.argsDigest;
+    }
+    const r = await api('POST', `/api/approvals/${approvalId}/resolve`, { token: ownerToken, body });
     expect(r.status === 200, `${decision} ${r.status}: ${JSON.stringify(r.data)}`);
     return r.data;
   };
@@ -330,7 +335,7 @@ export const runD14Walk = async ({
           const approvalId = parkedApprovalId(reply);
           expect(approvalId, `commit_files did not park: ${JSON.stringify(reply)}`);
           expect(!(await branchExists(branch())), 'the branch exists on GitHub before approval');
-          await decide(approvalId, 'approved');
+          await decide(approvalId, 'approved', podId);
           manifest.branches.push(branch());
           const deadline = Date.now() + 60_000;
           while (!(await branchExists(branch())) && Date.now() < deadline) await sleep(POLL_MS); // eslint-disable-line no-await-in-loop
@@ -355,7 +360,7 @@ export const runD14Walk = async ({
             const approvalId = parkedApprovalId(reply);
             expect(approvalId, `create_pull_request did not park: ${JSON.stringify(reply)}`);
             await noPr(branch(), 'while parked');
-            await decide(approvalId, 'approved');
+            await decide(approvalId, 'approved', podId);
             const pull = await waitForPull(branch());
             manifest.pulls.push(pull.number);
             expect(pull.head.ref.startsWith(`seat/${seatId}/`), `PR head ${pull.head.ref} is not a seat/${seatId}/ head`);
@@ -414,12 +419,12 @@ export const runD14Walk = async ({
         });
         if (commitCard) {
           await step('hosted: approved commit lands, pull request parks, opens after approval', async () => {
-            await decide(commitCard.approvalId, 'approved');
+            await decide(commitCard.approvalId, 'approved', podId);
             manifest.branches.push(branch);
             const prCard = await waitForCard(podId, { tool: 'github.create_pull_request', head: branch });
             await noPr(branch, 'while parked');
             expect(prCard.toolCall?.summary?.base === defaultBranch, `PR base ${prCard.toolCall?.summary?.base}`);
-            await decide(prCard.approvalId, 'approved');
+            await decide(prCard.approvalId, 'approved', podId);
             const pull = await waitForPull(branch);
             manifest.pulls.push(pull.number);
             expect(pull.head.ref.startsWith(`seat/${hostedId}/`), `PR head ${pull.head.ref} is not a seat/${hostedId}/ head`);
