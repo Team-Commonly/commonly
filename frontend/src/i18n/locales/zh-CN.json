@@ -56,7 +56,7 @@
   },
   "taskRecord": {
     "title": "任务记录",
-    "back": "返回看板",
+    "back": "返回任务板",
     "intro": "按顺序列出此任务发生的事。每条记录都带有上一条的哈希，任何一条被改动，链就会断开。",
     "loading": "正在加载记录…",
     "access": "该 Pod 可能没有开启记录，或你已无权访问。",
@@ -74,7 +74,7 @@
     "downloadError": "无法下载记录，请重试。",
     "actor": {
       "unknown": "未知操作者",
-      "board": "看板",
+      "board": "任务板",
       "system": "系统：{{id}}",
       "policy": "策略：{{id}}"
     },
@@ -371,7 +371,7 @@
     "open": "打开",
     "openPod": "打开 pod",
     "moreActions": "更多操作",
-    "openBoard": "打开看板",
+    "openBoard": "打开任务板",
     "compose": {
       "eyebrow": "发起对话",
       "title": "告诉你的智能体你在想什么",
@@ -458,11 +458,11 @@
       "emptyDescription": "智能体在 Pod 中发布更新后，工作会在这里归类显示。"
     },
     "board": {
-      "eyebrow": "看板变更",
-      "title": "看板",
+      "eyebrow": "任务板变更",
+      "title": "任务板",
       "description": "此时间范围内发生变化的任务。",
-      "emptyTitle": "此时间范围内没有看板变更",
-      "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
+      "emptyTitle": "此时间范围内没有任务板变更",
+      "emptyDescription": "任务变更会显示在这里，不会创建第二个任务板。",
       "status": {
         "pending": "待处理",
         "claimed": "进行中",
@@ -892,7 +892,7 @@
       "members_other": "{{count}}名成员",
       "agents_one": "{{count}}个智能体",
       "agents_other": "{{count}}个智能体",
-      "boardOpen": "看板{{count}}项待办",
+      "boardOpen": "任务板{{count}}项待办",
       "boardTasks_other": "{{count}}项待办",
       "backToPods": "返回 Pod 列表",
       "invite": "邀请",
@@ -1654,7 +1654,7 @@
       "inProgressCount": "{{count}}个进行中",
       "complete": "已完成",
       "completeCount": "{{count}}个已完成",
-      "viewRunBoard": "查看运行看板",
+      "viewRunBoard": "查看运行任务板",
       "recentTasks": "最近任务",
       "empty": "还没有任务。智能体工作时会在这里创建任务 —— 或 @提及 某个智能体并向它提出请求。"
     },
@@ -1719,7 +1719,7 @@
     }
   },
   "board": {
-    "title": "看板",
+    "title": "任务板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "addTo": "添加到{{column}}",
@@ -1762,7 +1762,7 @@
       "saveError": "无法保存焦点，请重试。",
       "progress": "{{done}}/{{total}}已完成"
     },
-    "loadErrorTitle": "看板加载失败",
+    "loadErrorTitle": "任务板加载失败",
     "loadErrorText": "请检查网络连接后重试。",
     "createError": "任务创建失败，请重试。",
     "col": {
@@ -3314,7 +3314,7 @@
     "messageWake_mentions": "仅 @提及",
     "messageWake_human": "来自真人的消息",
     "messageWake_all": "所有消息",
-    "boardWake": "看板变更时唤醒",
+    "boardWake": "任务板变更时唤醒",
     "heartbeat": "心跳间隔",
     "heartbeatInterval": "间隔",
     "turnsPerDay": "每天{{count}}次 · 上限{{cap}}次",
