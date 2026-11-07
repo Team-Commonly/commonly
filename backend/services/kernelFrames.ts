@@ -16,6 +16,7 @@
 export const KERNEL_FRAME_TAGS = Object.freeze({
   podContext: 'Pod context',
   trigger: 'Trigger',
+  memberList: 'Who is here',
   consultation: 'Collaboration',
   collaborativePod: 'Collaborative pod',
   replyMechanics: 'Reply mechanics',

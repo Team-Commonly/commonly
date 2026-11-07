@@ -46,7 +46,15 @@ const AgentEvent = require('../../../models/AgentEvent');
 const kernelContent = async ({ installations, content, type }) => {
   AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue(installations) });
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
-  User.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([]) });
+  const members = [
+    { _id: 'user-1', username: 'alice', isBot: false },
+    { _id: 'bot-1', username: 'seat-a', isBot: true, botMetadata: { agentName: 'seat-a', instanceId: 'default' } },
+    { _id: 'bot-2', username: 'seat-b', isBot: true, botMetadata: { agentName: 'seat-b', instanceId: 'default' } },
+  ];
+  User.find.mockImplementation((query) => ({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(query?._id?.$in ? members : []),
+  }));
   User.findById.mockImplementation(() => ({
     select: jest.fn().mockReturnThis(),
     lean: jest.fn().mockResolvedValue({ _id: 'user-1', isBot: false }),
