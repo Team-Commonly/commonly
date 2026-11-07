@@ -447,6 +447,25 @@
   user-select: all;
 }
 
+/* The way to a key, for the agents Bring your own can connect. */
+.v2-root a.v2-chat__agent-room-connect {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-top: 2px;
+  color: var(--v2-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v2-root a.v2-chat__agent-room-connect:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 760px) {
+  .v2-root a.v2-chat__agent-room-connect { min-height: 44px; }
+}
+
 .v2-root button.v2-chat__agent-room-copy {
   all: unset;
   box-sizing: border-box;

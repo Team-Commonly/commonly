@@ -329,6 +329,37 @@ describe('V2Thread agent-room liveness', () => {
     expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
   });
 
+  test('the notice offers Connect, into the pod that holds the agent, when the server names one', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria', connectPodId: 'home-pod',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    const link = await screen.findByRole('link', { name: 'Connect' });
+    expect(link).toHaveAttribute('href', '/v2/agents/byo?pod=home-pod&name=openclaw&instanceId=aria&reconnect=1');
+    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('with no pod from the server the notice keeps the command and offers no Connect', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-fix-command')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
   test('the owner copies the fix command with one key, which confirms the copy', async () => {
     navigator.clipboard.writeText.mockClear();
     axios.get.mockResolvedValue({

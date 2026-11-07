@@ -557,7 +557,7 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     // eslint-disable-next-line global-require
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
-    const { deriveAgentState } = require('../services/agentStateService');
+    const { deriveAgentState, offersConnect } = require('../services/agentStateService');
 
     const installations = await AgentInstallation.find({ podId, status: 'active' })
       .select('agentName instanceId displayName installedBy config runtimeTokens')
@@ -569,12 +569,14 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       'botMetadata.instanceId': String(inst.instanceId || 'default'),
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
-      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt')
+      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt')
       .lean();
     const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
+    const machineByIdentity = new Map<string, unknown>();
     (agentUsers || []).forEach((u: any) => {
       const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
       userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
+      machineByIdentity.set(key, u.botMetadata?.machineId);
     });
 
     const callerId = String(req.user?.id || '');
@@ -585,6 +587,33 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       ) || [],
       callerId,
     ));
+
+    // An agent room's Connect goes to the pod holding the agent: Bring your own
+    // lists neither DM pods nor public ones, and would land on another pod.
+    if (pod.type === 'agent-room') {
+      await Promise.all(installations.map(async (inst: any, index: number) => {
+        const row = agents[index];
+        const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
+        if (row.state !== 'never-connected' || !row.fixCommand
+          || !offersConnect(inst, machineByIdentity.get(key))) return;
+        const homes = await AgentInstallation.find({
+          agentName: inst.agentName,
+          instanceId: inst.instanceId,
+          installedBy: callerId,
+          status: 'active',
+          podId: { $ne: podId },
+        }).select('podId').sort({ createdAt: 1 }).lean();
+        const installable = await Pod.find({
+          _id: { $in: homes.map((home: any) => home.podId) },
+          members: callerId,
+          type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
+          publicRead: { $ne: true },
+        }).select('_id').lean();
+        const ids = new Set(installable.map((home: any) => String(home._id)));
+        const home = homes.find((candidate: any) => ids.has(String(candidate.podId)));
+        if (home) row.connectPodId = String(home.podId);
+      }));
+    }
 
     return res.json({ agents });
   } catch (error) {

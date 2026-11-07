@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { ShellGlyph } from '../icons/glyphs';
 import V2Avatar from './V2Avatar';
@@ -86,6 +86,8 @@ interface AgentStateRow {
   /** A Commonly-hosted agent; absent from an older backend. */
   hosted?: boolean;
   fixCommand?: string;
+  /** The pod Bring your own can connect this agent in; the server sets it only when Connect can work. */
+  connectPodId?: string;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -1592,6 +1594,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? directAgent.state.fixCommand || ''
     : '';
+  // reconnect=1 keeps the agent's own name, so the page can't allocate "<name>-2".
+  const directAgentConnectPod = directAgentFixCommand ? directAgent?.state?.connectPodId : undefined;
+  const directAgentConnectLink = directAgentConnectPod && directAgent?.state
+    ? `/v2/agents/byo?pod=${encodeURIComponent(directAgentConnectPod)}&name=${encodeURIComponent(directAgent.state.agentName)}&instanceId=${encodeURIComponent(directAgent.state.instanceId)}&reconnect=1`
+    : '';
   // Group pods name each agent that isn't running, so nobody waits on a reply
   // that can't come: 5 of 7 people who heard nothing in their first pod had an
   // agent that never connected (silence census, 10-30). Only reach states the
@@ -2292,6 +2299,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                             <ShellGlyph name={fixCommandCopied ? 'check' : 'copy'} size={16} />
                           </button>
                         </div>
+                        {directAgentConnectLink && (
+                          <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
+                            {t('agentConnection.connect')}
+                          </Link>
+                        )}
                       </>
                     )}
                   </div>
