@@ -5,6 +5,7 @@
 **Owner:** Sam (ratifies) · review: UX Lead 52986 · Sprint Review 52987/52990 · Pod Architect 52988/52989/52991
 **Grounding:** #887 / #888, the 2026-08-09→11 silent-mention incident — and now the review's own find: a four-month, fully-recorded first-party degradation (45%→100% failure Apr→Aug, then 8 days of zero runs) that no surface ever showed anyone (#895)
 **Follow-ups already filed from review:** #895 (native heartbeat opt-in projection), #896 (boot-backlog ack-without-spawn), #897 (kernel cascade gap), #898 (pod.join has no producer / Unreachable)
+**Next:** [`agent-health.md`](agent-health.md) (2026-11-07) covers turn health, owner notices and fixes. This brief still owns reach states and copy principles.
 
 ---
 
