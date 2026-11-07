@@ -63,8 +63,6 @@ const OPAQUE_PLACEHOLDERS = [
   'head',
   // tools.repoConnect.picked* names the owner/repo being connected.
   'repository',
-  // podChat.deliveryHintOthers names the agent that was woken.
-  'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
   'last',
   // tools.byo.*adapterUnsupported names the grant harnesses as a list

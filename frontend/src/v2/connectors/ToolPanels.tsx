@@ -332,9 +332,9 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
                   composed three pieces (`granted to` + pod + `by` + member), so zh could
                   only read 「授权给 Growth 授权者 sam」 (TASK-179). */}
               {granter ? (
-                <Trans i18nKey="tools.grantedToPodBy" values={{ pod: targetLabel, member: granter }} components={{ b: <b /> }} />
+                <Trans i18nKey="tools.grantedToPodBy" components={{ pod: <b>{targetLabel}</b>, member: <b>{granter}</b> }} />
               ) : (
-                <Trans i18nKey="tools.grantedToPod" values={{ pod: targetLabel }} components={{ b: <b /> }} />
+                <Trans i18nKey="tools.grantedToPod" components={{ pod: <b>{targetLabel}</b> }} />
               )}
             </strong>
             <span className="v2-connector-row__detail">
