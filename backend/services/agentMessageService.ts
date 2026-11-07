@@ -944,15 +944,23 @@ class AgentMessageService {
    * post per wake: the post itself is what ends it.
    */
   static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
-    const row = await AgentInstallation.findOne({
-      agentName: String(agentName).toLowerCase(), instanceId: instanceId || 'default', podId, status: 'active',
-    }).select('config.schedule.lastFiredAt').lean();
-    const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
-    if (!firedAt) return false;
-    const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-    const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
-    const lastPostAt = new Date(own[own.length - 1]?.createdAt || 0).valueOf();
-    return firedAt > lastPostAt;
+    try {
+      const row = await AgentInstallation.findOne({
+        agentName: { $eq: String(agentName).toLowerCase() },
+        instanceId: { $eq: String(instanceId || 'default') },
+        podId: { $eq: podId },
+        status: 'active',
+      }).select('config.schedule.lastFiredAt').lean();
+      const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
+      if (!firedAt) return false;
+      const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
+      const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
+      return firedAt > new Date(own[own.length - 1]?.createdAt || 0).valueOf();
+    } catch (error) {
+      // The cap then refuses as usual, rather than the post failing.
+      console.warn('Could not read the agent\'s schedule:', (error as Error).message);
+      return false;
+    }
   }
 
   /**

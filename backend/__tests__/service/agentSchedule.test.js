@@ -79,6 +79,7 @@ describe('a BYO agent schedule', () => {
     await save('race');
     const fired = await Promise.all([dispatchSchedules(AT), dispatchSchedules(AT)]);
     expect(fired[0] + fired[1]).toBe(1);
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
   });
 
   it('a re-save keeps the day already fired', async () => {
@@ -146,6 +147,68 @@ describe('a BYO agent schedule', () => {
     expect((await save('left', owner, { ...body, enabled: false })).status).toBe(200);
   });
 
+  it.each([
+    ['a mention wrote another pod\'s row', async () => {
+      const elsewhere = await Pod.create({ name: 'Theirs', type: 'chat', createdBy: other._id, members: [other._id] });
+      await AgentInstallation.upsert('stopped', elsewhere._id, { version: '1', installedBy: other._id });
+    }],
+    ['their own row is paused', () => AgentInstallation.updateOne({ agentName: 'stopped' }, { status: 'paused' })],
+  ])('lets the owner stop it when %s, and changes nothing else', async (_name, lockOut) => {
+    await seat('stopped');
+    await save('stopped');
+    await lockOut();
+    expect((await save('stopped')).status).toBe(403);
+    const res = await save('stopped', owner, { ...body, enabled: false, prompt: 'Something else.', time: '09:00' });
+    expect(res.status).toBe(200);
+    const row = await AgentInstallation.findOne({ agentName: 'stopped', podId: pod._id }).lean();
+    expect(row.config.schedule).toMatchObject({ enabled: false, prompt: 'Post the morning count.', time: '07:47' });
+  });
+
+  it('gives a guest nothing to stop on their own room row', async () => {
+    const bot = await User.create({
+      username: 'empty-bot', email: 'e@test.com', password: 'password123', isBot: true,
+      botMetadata: { agentName: 'emptied', instanceId: 'default' },
+    });
+    await seat('emptied');
+    const room = await DMService.getOrCreateAgentRoom(bot._id, other._id, { agentName: 'emptied', instanceId: 'default' });
+    expect((await save('emptied', other, { ...body, enabled: false }, room._id)).status).toBe(403);
+    const row = await AgentInstallation.findOne({ agentName: 'emptied', podId: room._id }).lean();
+    expect(row.config.schedule).toBeUndefined();
+  });
+
+  it('leaves the schedule alone on a refusal', async () => {
+    await seat('kept');
+    await save('kept');
+    const before = (await AgentInstallation.findOne({ agentName: 'kept' }).lean()).config.schedule;
+    expect((await save('kept', other, { ...body, prompt: 'Not yours.' })).status).toBe(403);
+    expect((await save('kept', owner, { ...body, time: '25:00' })).status).toBe(400);
+    expect((await AgentInstallation.findOne({ agentName: 'kept' }).lean()).config.schedule).toEqual(before);
+  });
+
+  it('keeps a day claimed while a save was on its way', async () => {
+    await seat('racing');
+    await save('racing');
+    const stale = await AgentInstallation.findOne({ agentName: 'racing' });
+    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockResolvedValueOnce(stale);
+    await dispatchSchedules(AT);
+    await save('racing', owner, { ...body, prompt: 'A new job.' });
+    findOne.mockRestore();
+    const row = await AgentInstallation.findOne({ agentName: 'racing' }).lean();
+    expect(row.config.schedule).toMatchObject({ prompt: 'A new job.', lastFiredOn: '2026-11-07' });
+  });
+
+  it('claims only the schedule it read', async () => {
+    await seat('changed');
+    await save('changed');
+    const rows = await AgentInstallation.find({ agentName: 'changed' }).lean();
+    await save('changed', owner, { ...body, enabled: false });
+    const find = jest.spyOn(AgentInstallation, 'find')
+      .mockReturnValueOnce({ select: () => ({ lean: async () => rows }) });
+    expect(await dispatchSchedules(AT)).toBe(0);
+    find.mockRestore();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
   it('does not add to a wake the seat has not picked up, and spends the day', async () => {
     await seat('offline');
     await save('offline');
@@ -157,6 +220,7 @@ describe('a BYO agent schedule', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
     const row = await AgentInstallation.findOne({ agentName: 'offline' }).lean();
     expect(row.config.schedule.lastFiredOn).toBe('2026-11-07');
+    expect(row.config.schedule.lastFiredAt).toBeUndefined();
   });
 
   it('waits behind no plain heartbeat, and stands down with autonomy off', async () => {
@@ -170,6 +234,8 @@ describe('a BYO agent schedule', () => {
     await AgentInstallation.updateOne({ agentName: 'quiet' }, { $set: { 'config.autonomy': { enabled: false } } });
     expect(await dispatchSchedules(AT)).toBe(1);
     expect(mockEnqueue.mock.calls[0][0].agentName).toBe('beating');
+    const fired = await AgentInstallation.findOne({ agentName: 'beating' }).lean();
+    expect(fired.config.schedule.lastFiredAt).toEqual(AT);
   });
 
   it('skips a schedule turned off and a seat that left', async () => {

@@ -1252,9 +1252,14 @@ class SchedulerService {
       };
     }
 
+    // First and on its own: a daily wake that misses its hour is lost, where a
+    // heartbeat just comes round again.
+    const scheduledWakes = await dispatchSchedules(now).catch((error: Error) => {
+      console.error('Scheduled agent wakes failed:', error.message);
+      return 0;
+    });
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
     const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
-    const scheduledWakes = await dispatchSchedules(now);
     return { ...result, enqueued: result.enqueued + unreadWakes + scheduledWakes, skippedByLease: false };
   }
 

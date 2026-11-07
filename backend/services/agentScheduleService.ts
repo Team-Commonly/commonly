@@ -135,8 +135,14 @@ export const dispatchSchedules = async (now: Date = new Date()): Promise<number>
     try {
       // eslint-disable-next-line no-await-in-loop
       const claim = await AgentInstallation.updateOne(
-        { _id: row._id, 'config.schedule.lastFiredOn': { $ne: day } },
-        { $set: { 'config.schedule.lastFiredOn': day, 'config.schedule.lastFiredAt': now } },
+        {
+          _id: row._id,
+          status: 'active',
+          'config.schedule.enabled': true,
+          'config.schedule.prompt': schedule.prompt,
+          'config.schedule.lastFiredOn': { $ne: day },
+        },
+        { $set: { 'config.schedule.lastFiredOn': day } },
       );
       if (!claim.modifiedCount) continue;
       // eslint-disable-next-line no-await-in-loop
@@ -157,6 +163,8 @@ export const dispatchSchedules = async (now: Date = new Date()): Promise<number>
         type: 'heartbeat',
         payload: { trigger: 'schedule', content: buildScheduleContent(schedule.prompt, row.podId) },
       });
+      // eslint-disable-next-line no-await-in-loop
+      await AgentInstallation.updateOne({ _id: row._id }, { $set: { 'config.schedule.lastFiredAt': now } });
       enqueued += 1;
     } catch (error) {
       console.error(`[agent-schedule] ${row.agentName} wake for ${day} failed:`, (error as Error).message);

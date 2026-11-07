@@ -386,13 +386,6 @@ AgentInstallationSchema.statics.reviveDmRows = function (agentName: string, inst
   return reviveDmRows(this, agentName, instanceId, config);
 };
 
-/**
- * `stampInstaller` is for a person installing on purpose: a row they bring back
- * from uninstalled is theirs, as a new row would be. Most callers reactivate on
- * someone's behalf (an auto-join, an agent's self-install, a DM) and pass a bot
- * or a guest as `installedBy`, so the row keeps its name unless this is set. A
- * paused, stale or errored row was never given up, and keeps it either way.
- */
 // A daily schedule belongs to the one row its owner set it on. Every path that
 // writes a row builds its config by copying another row's, so it's dropped here
 // rather than at each copy: one left in runs the owner's job in someone else's
@@ -408,6 +401,13 @@ const withoutSchedule = <T>(config: T): T => {
   return rest as T;
 };
 
+/**
+ * `stampInstaller` is for a person installing on purpose: a row they bring back
+ * from uninstalled is theirs, as a new row would be. Most callers reactivate on
+ * someone's behalf (an auto-join, an agent's self-install, a DM) and pass a bot
+ * or a guest as `installedBy`, so the row keeps its name unless this is set. A
+ * paused, stale or errored row was never given up, and keeps it either way.
+ */
 AgentInstallationSchema.statics.install = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
   config?: Map<string, unknown>;
