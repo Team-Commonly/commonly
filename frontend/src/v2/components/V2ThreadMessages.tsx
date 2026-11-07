@@ -367,6 +367,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
                         )}
+                        {/* Says what the click gives back. It is the one start that answers
+                            with no typing, and nothing else on the welcome says so. */}
+                        {start.action === WELCOME_HOSTED_ACTION && !hostedHere && (
+                          <p className="v2-chat__start-note">{t('podChat.starts.hostedNote')}</p>
+                        )}
                       </React.Fragment>
                     );
                   })}

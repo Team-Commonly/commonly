@@ -662,6 +662,7 @@
     "starts": {
       "label": "开始方式",
       "openByo": "去接入自己的智能体",
+      "hostedNote": "不用安装，它就在这里回复你。",
       "labels": {
         "ask-scout": "看看你能做什么",
         "connect-agent": "接入我在用的智能体",

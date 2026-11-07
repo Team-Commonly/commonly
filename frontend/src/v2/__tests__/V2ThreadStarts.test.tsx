@@ -629,6 +629,32 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(screen.queryByText('Beta: 1 hosted agent per account, 30 turns a day.')).not.toBeInTheDocument();
   });
 
+  test('the welcome says what the hosted start gives back, under that start only', () => {
+    renderThread([welcomeRunsHere]);
+    const note = screen.getByText('Nothing to install. It answers you here.');
+    const button = screen.getByRole('button', { name: HOSTED });
+    expect(button.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.previousElementSibling).toBe(button);
+  });
+
+  test('a hosted start that only links has no such note: nothing runs here on the click', () => {
+    renderThread([{
+      ...welcome,
+      payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED, href: HREF }] },
+    }]);
+    expect(screen.getByRole('button', { name: HOSTED })).toBeInTheDocument();
+    expect(screen.queryByText('Nothing to install. It answers you here.')).not.toBeInTheDocument();
+  });
+
+  test('the note leaves once the click is under way', async () => {
+    let finish;
+    axios.post.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    renderThread([welcomeRunsHere]);
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(screen.queryByText('Nothing to install. It answers you here.')).not.toBeInTheDocument());
+    finish({ data: {} });
+  });
+
   test('a held agent answers the click with its running line, even when the start carries no limits', async () => {
     answer({
       '/api/hosted/welcome-start': [HELD],
@@ -782,5 +808,17 @@ describe("V2Thread — Scout's starts under zh-CN", () => {
     fireEvent.click(within(group).getByRole('button', { name: '接入我在用的智能体' }));
 
     await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined));
+  });
+
+  test('the hosted start carries its note in zh-CN', async () => {
+    await i18n.changeLanguage('zh-CN');
+    renderThread([{
+      ...welcome,
+      payload: {
+        kind: 'starts',
+        starts: [{ id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' }],
+      },
+    }]);
+    expect(screen.getByText('不用安装，它就在这里回复你。')).toBeInTheDocument();
   });
 });

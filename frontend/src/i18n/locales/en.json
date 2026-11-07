@@ -663,6 +663,7 @@
     "starts": {
       "label": "Ways to start",
       "openByo": "Open Bring your own",
+      "hostedNote": "Nothing to install. It answers you here.",
       "labels": {
         "ask-scout": "Show me what you can do",
         "connect-agent": "Connect an agent I already use",
