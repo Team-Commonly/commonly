@@ -43,7 +43,7 @@ type RegistrationMethod = 'none' | ConfidentialMethod;
  * A secret that lapses within this margin is treated as lapsed, so a start
  * never hands the vendor a client about to stop working mid-flow.
  */
-export const CLIENT_SECRET_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
+const CLIENT_SECRET_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 const currentFilter = (entry: HostedMcpOAuthEntry) => ({
   entryId: entry.id,

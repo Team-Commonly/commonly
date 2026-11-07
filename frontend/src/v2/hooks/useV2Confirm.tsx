@@ -147,5 +147,3 @@ export const useV2Confirm = (subject?: string) => {
   const dialog = request ? <V2ConfirmDialog request={request} onSettle={settle} /> : null;
   return { confirm, prompt, dialog };
 };
-
-export default useV2Confirm;

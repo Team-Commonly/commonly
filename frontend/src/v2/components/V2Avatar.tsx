@@ -4,7 +4,7 @@ import {
   characterAvatarFor, paperAvatarFor, gradientFor, initialsFor, AvatarKind,
 } from '../utils/avatars';
 
-export type V2AvatarSize = 'sm' | 'md' | 'lg';
+type V2AvatarSize = 'sm' | 'md' | 'lg';
 
 interface V2AvatarProps {
   name?: string | null;

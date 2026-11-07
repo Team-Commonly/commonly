@@ -119,7 +119,7 @@ const establishCleanupReceipt = async (user: IUser, releaseOnBillingFailure = tr
   }
 };
 
-export const ACCOUNT_DELETION_SWEEP_BATCH = 100;
+const ACCOUNT_DELETION_SWEEP_BATCH = 100;
 const SWEEP_LEASE_ID = 'account-deletion-sweep';
 const SWEEP_LEASE_MS = 120_000;
 

@@ -22,5 +22,3 @@ export const useRelativeNow = (intervalMs = 60_000): number => {
   }, [intervalMs]);
   return now;
 };
-
-export default useRelativeNow;

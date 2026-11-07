@@ -21,8 +21,6 @@ export const useSocket = (): SocketContextValue => {
   return ctx;
 };
 
-export const useSocketContext = (): SocketContextValue => useSocket();
-
 interface SocketProviderProps {
   children: React.ReactNode;
 }

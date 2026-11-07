@@ -176,19 +176,3 @@ export { ImagePreview, TaskCard };
 
 // Also add img handler to MarkdownContent — re-export a chat-image aware version
 export { default as MarkdownContent } from './MarkdownContent';
-
-// Convenience: for agent task link (used in TaskCard and elsewhere)
-export function AgentTaskLink({
-  taskId,
-  podId,
-}: {
-  taskId: string;
-  podId?: string;
-}): React.ReactElement {
-  const href = podId ? `/pods/${podId}?task=${taskId}` : '#';
-  return (
-    <Link href={href} target={podId ? '_self' : '_blank'} underline="hover" variant="body2">
-      {taskId} →
-    </Link>
-  );
-}

@@ -190,7 +190,7 @@ const brokerRequest = (headers: Record<string, string>) => ({
  * caller that runs several requests (or a slow git push) never starts on a
  * token about to expire. GitHub issues them for an hour.
  */
-export const TOKEN_REUSE_MARGIN_MS = 10 * 60 * 1000;
+const TOKEN_REUSE_MARGIN_MS = 10 * 60 * 1000;
 
 /** Keyed `${app}:${installationId}`, so one App's token is never served for the other's installation. */
 const installationTokenCache = new Map<string, GitHubToken>();

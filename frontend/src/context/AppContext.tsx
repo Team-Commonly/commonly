@@ -109,5 +109,3 @@ export const useAppContext = (): AppContextValue => {
   if (!ctx) throw new Error('useAppContext must be used within AppProvider');
   return ctx;
 };
-
-export default AppContext;

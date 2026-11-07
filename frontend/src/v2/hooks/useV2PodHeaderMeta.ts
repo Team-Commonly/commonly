@@ -78,5 +78,3 @@ export const useV2PodHeaderMeta = (podId: string | null | undefined): V2PodHeade
 
   return { boardOpen, channels };
 };
-
-export default useV2PodHeaderMeta;
