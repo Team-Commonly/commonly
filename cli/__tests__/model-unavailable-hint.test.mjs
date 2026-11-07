@@ -56,6 +56,11 @@ const UNRELATED = [
   ['a 403 naming a model but not key scope', adapterFailure('claude', '403: {"error":{"message":"model claude-x: request blocked by policy"}}', { exitCode: 1 })],
   ['a 404 that is not about a model', adapterFailure('codex', 'HTTP 404 Not Found: /v1/responses', { exitCode: 1 })],
   ['a model-shaped line without a 404', new Error('model: claude-x took too long')],
+  ['an attached 404 with a model shape on a later line', Object.assign(
+    new Error('HTTP 404 Not Found: POST /v1/messages\nloaded config\nmodel: sonnet'),
+    { status: 404 },
+  )],
+  ['the model code on a server error', Object.assign(new Error('upstream failed'), { status: 503, providerCode: 'model_not_found' })],
   ['a 404 on one stderr line and a model shape on another', Object.assign(
     new Error('codex exited with code 1: model: claude-x'),
     { stderr: 'HTTP 404 Not Found: /v1/responses' },

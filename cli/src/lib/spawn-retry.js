@@ -9,6 +9,7 @@
 
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
 import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
+import { modelUnavailableFailure } from './model-unavailable.js';
 
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
@@ -125,6 +126,8 @@ const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capa
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
+const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
+
 const errorText = (error) => [
   error?.message,
   error?.stderr,
@@ -170,11 +173,17 @@ export const classifySpawnFailure = (error) => {
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.RATE_LIMIT;
   }
+  // A model the provider won't run fails the same way until someone changes it.
+  // A 403 for that reads as configuration below; a 404 has no status of its own
+  // there, so without this it retried in seconds against the same answer. A
+  // turn's text can hold a tool's 404 from before a dropped connection killed
+  // the turn, so a connection fault keeps the quick retry.
   if (
     error?.code === 'ENOENT'
     || error?.status === 401
     || error?.status === 403
     || CONFIGURATION_RE.test(text)
+    || (modelUnavailableFailure(error) && !CONNECTION_FAULT_RE.test(text))
   ) {
     return SPAWN_FAILURE_CLASS.CONFIGURATION;
   }

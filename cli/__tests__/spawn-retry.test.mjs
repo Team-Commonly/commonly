@@ -9,6 +9,12 @@ import {
   spawnRetryPolicy,
 } from '../src/lib/spawn-retry.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
+import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
+import { adapterFailure } from '../src/lib/upstream-refusal.js';
+
+const publicToolFailure = () => Object.assign(new Error('model: gpt-9'), {
+  code: PUBLIC_TOOL_FAILED_CODE, status: 404, providerCode: 'model_not_found',
+});
 
 describe('spawn retry policy', () => {
   test.each([
@@ -359,6 +365,49 @@ describe('a public witness failure is a runtime failure, whatever its text says'
   test('positive control: the same text without the code still classes as a refusal', () => {
     expect(classifySpawnFailure(new Error('{"status":500,"message":"content_policy_violation"}')))
       .toBe(SPAWN_FAILURE_CLASS.CONTENT_REFUSED);
+  });
+});
+
+describe('a model the provider will not run waits like a 403 does', () => {
+  const body404 = '{"type":"error","error":{"type":"not_found_error","message":"model: claude-opus-9"}}';
+  test.each([
+    ['an attached 404', Object.assign(new Error('model: claude-opus-9'), { status: 404 })],
+    ['a 404 written on the line', new Error('API Error: 404 The model `gpt-9` does not exist')],
+    ['an Anthropic 404 body', new Error(body404)],
+    ['an attached 404 with its body below a generic line', Object.assign(new Error(`provider failed:\n${body404}`), { status: 404 })],
+    ['the OpenAI code on a 400', Object.assign(new Error('bad request'), { status: 400, providerCode: 'model_not_found' })],
+  ])('%s opens the circuit for the long wait on the first failure', (_label, error) => {
+    expect(spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 })).toEqual({
+      failureClass: SPAWN_FAILURE_CLASS.CONFIGURATION,
+      circuitOpen: true,
+      delayMs: SPAWN_RETRY_MAX_MS,
+    });
+  });
+
+  test('a gateway 404 naming a model it has no route for waits too', () => {
+    const error = new Error('{"error":{"message":"Route not registered for model: gpt-5","type":"not_found_error","code":"404"}}');
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.CONFIGURATION);
+  });
+
+  test('a plain-text body with the model below its status keeps the short retry', () => {
+    const error = adapterFailure('codex turn failed', 'unexpected status 404 Not Found\nThe model `gpt-9` does not exist', { exitCode: 1 });
+    expect(error.status).toBe(404);
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
+  });
+
+  test.each([
+    ['a bare 404', Object.assign(new Error('not found'), { status: 404 })],
+    ['a wrong route', new Error('HTTP 404: no route for /v1/messages')],
+    ['a 404 with a model on a later line', Object.assign(
+      new Error('HTTP 404 Not Found: POST /v1/messages\nloaded config\nmodel: sonnet'),
+      { status: 404 },
+    )],
+    ['the model code on a server error', Object.assign(new Error('bad gateway'), { status: 503, providerCode: 'model_not_found' })],
+    ['a 503 written inside the body', new Error('{"status":503,"error":{"type":"not_found_error","message":"model: gpt-9"}}')],
+    ['a model 404 from a tool before the connection dropped', new Error('HTTP 404: model gpt-9 not found\nread ECONNRESET')],
+    ['the model code in a public tool failure', publicToolFailure()],
+  ])('%s stays a runtime failure', (_label, error) => {
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
 });
 
