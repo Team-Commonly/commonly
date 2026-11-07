@@ -751,7 +751,9 @@ describe('someone who does not manage this agent', () => {
     });
     renderPage('/v2/agents/maya-claude/u1a2b');
     const state = await screen.findByTestId('agent-settings-no-access');
+    expect(state).toHaveAttribute('role', 'alert');
     expect(state).toHaveTextContent("You can't open these settings");
+    expect(state).toHaveTextContent('Only the installer or an admin can open them, while the agent is in a pod.');
     // Not the profile: a private agent's reads "Agent not found", a second dead end.
     expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
   });

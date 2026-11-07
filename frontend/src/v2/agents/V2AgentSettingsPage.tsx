@@ -266,7 +266,7 @@ const V2AgentSettingsPage: React.FC = () => {
     const wayOut = <Link className="v2p-b v2p-b-s" to="/v2/agents">{t('agentSettings.yourTeam')}</Link>;
     if (marker === NOTHING_MANAGEABLE) {
       return (
-        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" data-testid="agent-settings-no-access">
+        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" role="alert" data-testid="agent-settings-no-access">
           <h1>{t('agentSettings.noAccess.title')}</h1>
           <p>{t('agentSettings.noAccess.body')}</p>
           {wayOut}
