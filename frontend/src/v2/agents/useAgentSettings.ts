@@ -59,6 +59,9 @@ interface ManageSettingsResponse {
 }
 
 /** The generic PATCH writes across this identity's accessible installations. */
+// The page matches this to show the no-access state, so it is never read as copy.
+export const NO_AGENT_ACCESS = 'No accessible installation';
+
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
   const [installation, setInstallation] = useState<AgentSettingsInstallation | null>(null);
@@ -122,7 +125,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    throw new Error('No accessible installation');
+    throw new Error(NO_AGENT_ACCESS);
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {
@@ -172,7 +175,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   }, [agentName, instanceId, podId]);
 
   const update = useCallback(async (patch: AgentSettingsPatch) => {
-    if (!podId) throw new Error('No accessible installation');
+    if (!podId) throw new Error(NO_AGENT_ACCESS);
     const response = await axios.patch(installationUrl(podId), { ...patch, instanceId });
     await refresh();
     return response.data;

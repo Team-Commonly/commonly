@@ -10,7 +10,7 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { useAgentSettings } from './useAgentSettings';
+import { NO_AGENT_ACCESS, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
@@ -266,6 +266,20 @@ const V2AgentSettingsPage: React.FC = () => {
 
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
   if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
+  if ((!access || !podId) && loadError instanceof Error && loadError.message === NO_AGENT_ACCESS) {
+    return (
+      <div className="v2-agent-settings__state v2-agent-settings__state--no-access" data-testid="agent-settings-no-access">
+        <h1>{t('agentSettings.noAccess.title')}</h1>
+        <p>{t('agentSettings.noAccess.body')}</p>
+        <Link
+          className="v2p-b v2p-b-s"
+          to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}
+        >
+          {t('agentSettings.noAccess.profile')}
+        </Link>
+      </div>
+    );
+  }
   if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
     {error || errorLabel(loadError, t('agentSettings.unavailable'))}
   </div>;

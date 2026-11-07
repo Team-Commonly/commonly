@@ -743,6 +743,27 @@ test('a name outside 1–80 characters is refused under the field; other refusal
   expect(screen.queryByText('Enter a display name of 1–80 characters.')).toBeNull();
 });
 
+describe('someone who does not manage this agent', () => {
+  test('gets a sentence and the way to the profile, not the hook\'s error text', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) return Promise.resolve({ data: { installations: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/v2/agents/maya-claude/u1a2b');
+    const state = await screen.findByTestId('agent-settings-no-access');
+    expect(state).toHaveTextContent("You can't manage this agent");
+    expect(screen.queryByText('No accessible installation')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See its profile' })).toHaveAttribute('href', '/v2/agent/maya-claude/u1a2b');
+  });
+
+  test('a load that fails for any other reason keeps its own error', async () => {
+    axios.get.mockRejectedValue(new Error('boom'));
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('boom');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+  });
+});
+
 describe('one Identity & access list (d215 frame)', () => {
   // A connected webhook agent with one active key, a memory index and no skills or grants.
   const fleet = ({ state = 'connected', memory = 'ok', skills = 'ok', runtimeType = 'webhook', placement = null } = {}) => (url) => {
