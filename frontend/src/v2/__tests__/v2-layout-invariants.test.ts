@@ -6614,3 +6614,10 @@ test('a Team card keeps a long description to two lines', () => {
   expect(desc).toContain('-webkit-line-clamp: 2');
   expect(desc).toContain('overflow: hidden');
 });
+
+test('a phone hint on the held line opens on its own row, so it cannot squeeze the link', () => {
+  const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__held .v2-hint--open');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held:has(.v2-hint--open) { flex-wrap: wrap; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint--open { display: contents; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }');
+});

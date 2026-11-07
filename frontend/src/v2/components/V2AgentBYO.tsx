@@ -1487,7 +1487,9 @@ const V2AgentBYO: React.FC = () => {
       <button type="button" className="v2-byo__link" onClick={openHeld}>
         {t('agentByo.hosted.heldLink', { holder: heldHolder })}
       </button>
-      <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>{heldReason}</V2Hint>
+      <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
+        {t('agentByo.hosted.heldOff', { cap: hosting?.caps.agentsPerUser ?? 1, mode: t('agentByo.mode.hosted') })}
+      </V2Hint>
     </p>
   );
 

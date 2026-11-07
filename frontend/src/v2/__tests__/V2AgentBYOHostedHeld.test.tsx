@@ -83,7 +83,7 @@ const actButton = () => screen.queryAllByRole('button', { name: /^run it here$/i
   .find((b) => !b.hasAttribute('aria-pressed')) ?? null;
 
 const NOTICE = /^You already have a hosted agent \(beta allows 1\)\. Open Maya$/;
-const REASON = 'You already have a hosted agent (beta allows 1).';
+const REASON = 'You already have a hosted agent, and the beta allows 1, so Run it here is off.';
 
 beforeEach(() => {
   sessionStorage.clear();

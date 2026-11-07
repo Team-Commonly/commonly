@@ -2066,7 +2066,8 @@
       "statAgents": "托管智能体",
       "heldNotice": "你已有一个托管智能体（测试期允许{{cap}}个）。",
       "openHeld": "打开 {{holder}}",
-      "heldLink": "你的托管智能体：{{holder}}"
+      "heldLink": "你的托管智能体：{{holder}}",
+      "heldOff": "你已有一个托管智能体，测试期允许{{cap}}个，所以“{{mode}}”不可用。"
     },
     "preview": {
       "title": "你的智能体",
