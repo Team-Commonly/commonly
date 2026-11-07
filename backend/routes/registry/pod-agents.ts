@@ -1,5 +1,6 @@
 // Pod/agent management routes — extracted from registry.js (GH#112)
 // Handles: list agents in pod, get single agent, uninstall agent
+import { isGuestOfIdentity } from '../../services/runtimeIdentityOwnership';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
@@ -414,6 +415,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
 
+    // A room's row names whoever opened it, who isn't always who runs the agent.
+    const guestRows = new Set<unknown>((await Promise.all(
+      (pod.type === 'agent-room' ? installations as any[] : []).filter(installedByViewer).map(async (i: any) => (
+        await isGuestOfIdentity(viewerId, i.agentName, i.instanceId || 'default') ? i : null
+      )),
+    )).filter(Boolean));
+
     res.json({
       callerSpoke,
       agents: installations.map((i: any) => {
@@ -500,7 +508,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // the installer only, the same rule /agent-states applies to fixCommand.
         // It is `commonly agent run <name>`; no token or URL is in it.
         // eslint-disable-next-line global-require
-        const fixCommand = connection?.state === 'never' && installedByViewer(i)
+        const fixCommand = connection?.state === 'never' && installedByViewer(i) && !guestRows.has(i)
           ? require('../../services/agentStateService').runInstructionFor(i) : null;
         return {
           ...seatPayload,

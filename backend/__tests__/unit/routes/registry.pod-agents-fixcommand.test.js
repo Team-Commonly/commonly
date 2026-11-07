@@ -75,6 +75,23 @@ describe('never-connected seat command (TASK-716)', () => {
     expect(agent.fixCommand).toBeUndefined();
   });
 
+  it("gives a guest no command on the room row that names them", async () => {
+    await agentFor(owner);
+    const roomId = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({
+      _id: roomId, name: 'Nova', type: 'agent-room', createdBy: other, members: [other],
+    });
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId: roomId, version: '1.0.0', installedBy: other,
+      status: 'active', config: { runtime: { runtimeType: 'wrapper', host: 'byo' } },
+    });
+    mockViewer = String(other);
+    const res = await request(app).get(`/api/registry/pods/${roomId}/agents`);
+    const agent = res.body.agents.find((a) => a.name === 'nova');
+    expect(agent.connection.state).toBe('never');
+    expect(agent.fixCommand).toBeUndefined();
+  });
+
   it('drops the command once the seat has polled', async () => {
     const agent = await agentFor(owner, [{ tokenHash: 'h', lastUsedAt: new Date() }]);
     expect(agent.connection.state).not.toBe('never');

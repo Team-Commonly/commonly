@@ -19,6 +19,7 @@
 import mongoose from 'mongoose';
 import { classifyRuntime, deriveAgentState } from './agentStateService';
 import { CLI_INSTALL } from './byoHandoffService';
+import { isGuestOfIdentity } from './runtimeIdentityOwnership';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
@@ -95,6 +96,8 @@ async function askerNeverConnectedAgents(podId: string, askerId: string): Promis
     seen.add(key);
     const derived = deriveAgentState(i, tokensByKey.get(key) || [], askerId);
     if (derived.state !== 'never-connected' || !derived.fixCommand) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if (await isGuestOfIdentity(askerId, i.agentName, i.instanceId || 'default')) continue;
     agents.push({ displayName: derived.displayName, fixCommand: derived.fixCommand });
     if (agents.length === MAX_AGENTS) break;
   }

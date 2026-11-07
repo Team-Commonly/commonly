@@ -60,6 +60,7 @@ export interface IStalledConnectEpisode extends Document {
   tokenSource?: 'installation' | 'user' | null;
   /** Which producer explained it. See the class comment. */
   producer: 'timer' | 'reactive';
+  /** When the episode opened. A nudge went out only if `nudgeMessageId` is set. */
   nudgedAt: Date;
   nudgeMessageId?: string;
   /**

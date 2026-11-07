@@ -4538,3 +4538,14 @@ Both reports were true and neither meant anything. In the first, the crawler's o
 **Repair:** a control is found by its label and its place among controls with that label. A capture with no controls, or with fewer than half its clicks judged, is an error and fails the run. A refused write and a refused read are now separate, because a background poll used to mark any click in its window as blocked.
 
 **Lesson:** a zero means nothing until you know how many things were tested. Report the denominator beside the count, and make a run fail when it tested too little to say anything.
+
+## 115. `nudgedAt` is stamped on an episode that sent no nudge (2026-11-07, F156)
+
+*Origin: Growth's prod walk of #3688. An MCP-only connect's episode read `nudgedAt: 10:32:00` and the pod held no message at all.*
+
+Since #3688 a stalled-connect episode can open with no nudge, because the only thing left to say is the close. The field kept its name and its required stamp, so anyone counting `nudgedAt` counts nudges that never happened.
+
+**Repair:** the field's comment says it's when the episode opened. A nudge went out only if `nudgeMessageId` is set, so count that.
+
+**Lesson:** when a change makes a step optional, reread the names that assumed the step.
+

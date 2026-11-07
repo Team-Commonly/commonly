@@ -113,6 +113,27 @@ describe('askerStartCommandCue', () => {
     expect(await askerStartCommandCue(String(pod._id), String(asker._id))).toBe('');
   });
 
+  test("says nothing to a guest about the owner's agent, though their room's row names them", async () => {
+    const asker = await person('river');
+    const owner = await person('dana');
+    const pod = await chatPod(owner);
+    const bot = await install(pod, owner, 'dana-agent');
+    const room = await Pod.create({ name: 'Dana agent', type: 'agent-room', createdBy: asker._id, members: [asker._id, bot._id] });
+    await install(room, asker, 'dana-agent');
+
+    expect(await askerStartCommandCue(String(room._id), String(asker._id))).toBe('');
+  });
+
+  test('still tells the owner in their own room with the agent', async () => {
+    const owner = await person('dana');
+    const pod = await chatPod(owner);
+    const bot = await install(pod, owner, 'dana-agent');
+    const room = await Pod.create({ name: 'Dana agent', type: 'agent-room', createdBy: owner._id, members: [owner._id, bot._id] });
+    await install(room, owner, 'dana-agent');
+
+    expect(await askerStartCommandCue(String(room._id), String(owner._id))).toContain('commonly agent run dana-agent');
+  });
+
   test('says nothing to an agent, even about an agent it set up', async () => {
     const owner = await person('river');
     const pod = await chatPod(owner);
