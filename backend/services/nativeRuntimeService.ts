@@ -1428,7 +1428,7 @@ export async function dispatchTool(
             ok: true,
             proposed: true,
             approvalId: result.approvalId,
-            note: 'Approval card posted. The action runs only if the owner approves — do not post another message about it.',
+            note: 'Approval card posted. The action runs only if the owner approves. Do not post another message about the card; anything else they asked for still gets its own post.',
           },
         };
       }
