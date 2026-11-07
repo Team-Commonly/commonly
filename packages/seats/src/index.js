@@ -20,3 +20,5 @@ export {
 } from './record/format.js';
 export { toOtlpJson } from './record/otel.js';
 export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
+export { startDashboard } from './dashboard/server.js';
+export { renderRuns, renderRun, renderCompat, layout as renderLayout } from './dashboard/render.js';
