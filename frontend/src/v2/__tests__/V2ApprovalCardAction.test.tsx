@@ -169,6 +169,25 @@ describe('the approval card consents to the action, not the prose', () => {
   });
 });
 
+describe('the "Approval needed" badge', () => {
+  const card = { kind: 'approval-card', approvalId: 'badge', ownerUserId: 'viewer-1', actionType: 'create_pod', params: { name: 'x', type: 'chat' } };
+
+  test('shows while the card can still be answered', () => {
+    renderCard({ ...card, status: 'flagged' });
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+  });
+
+  test.each([
+    ['declined', { status: 'resolved', decision: 'declined' }, en.approvalCard.declined],
+    ['expired', { status: 'expired' }, en.approvalCard.expired],
+    ['aged out', { status: 'flagged', expiresAt: new Date(Date.now() - 1000).toISOString() }, en.approvalCard.aged],
+  ])('is gone once the card is %s', (_name, state, line) => {
+    renderCard({ ...card, ...state });
+    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
+  });
+});
+
 describe('both locales carry the action phrasings', () => {
   describe.each([['en', en as any], ['zh-CN', zhCN as any]])('%s', (_locale, bundle) => {
     const action = bundle.approvalCard?.action;

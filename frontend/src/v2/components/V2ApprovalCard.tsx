@@ -241,7 +241,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
       <div className="v2-approval">
         <div className="v2-approval__head">
-          <span className="v2-approval__badge">{t('approvalCard.badge')}</span>
+          {/* Only while someone can still answer it: past that, the state line says what happened. */}
+          {status === 'flagged' && !aged && <span className="v2-approval__badge">{t('approvalCard.badge')}</span>}
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>
