@@ -2258,7 +2258,7 @@ const enqueueMentions = async ({
           }
           try {
             await noteNeverConnectedMention({
-              podId,
+              podId: String(podId),
               agentName: directMatch.agentName,
               instanceId: directMatch.instanceId,
               senderId: String(userId),

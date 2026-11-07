@@ -33,6 +33,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { noteStoppedMention } = require('../../../services/stoppedMentionService');
+const { noteNeverConnectedMention } = require('../../../services/neverConnectedMentionService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const peer = {
@@ -154,6 +155,27 @@ describe('a mention of a stopped agent', () => {
     const result = await mention();
     expect(result.enqueued).toEqual(['nova']);
     expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+});
+
+describe('a mention of an agent that never connected', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setup();
+    noteNeverConnectedMention.mockResolvedValue(false);
+  });
+
+  it('hands on a plain pod id, because a post passes the ObjectId and Postgres would refuse it', async () => {
+    const objectId = { toString: () => 'pod-1' };
+    await AgentMentionService.enqueueMentions({
+      podId: objectId,
+      message: { _id: '900', content: '@nova hello', createdAt: new Date() },
+      userId: human._id,
+      username: human.username,
+    });
+
+    expect(noteNeverConnectedMention).toHaveBeenCalled();
+    expect(noteNeverConnectedMention.mock.calls[0][0].podId).toBe('pod-1');
   });
 });
 
