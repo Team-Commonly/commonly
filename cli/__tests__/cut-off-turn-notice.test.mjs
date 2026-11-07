@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
-const { CUT_OFF_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { CUT_OFF_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
 
 const drainMicrotasks = async () => {
   for (let i = 0; i < 40; i += 1) {
@@ -111,6 +111,7 @@ const fakeServer = ({
     if (target.endsWith('/messages')) {
       if (skipPosts) return { success: true, skipped: true, reason: 'duplicate_recent' };
       wrapperPosts.push(body);
+      tail.push(seatSaid(`wrapper-${wrapperPosts.length}`, { content: body.content }));
       return { message: { id: 'wrapper-post' } };
     }
     if (target.endsWith('/comments')) {
@@ -220,6 +221,48 @@ describe('a third failure on an answer already started', () => {
       await fireRetries(run, 2);
       expect(spawn).toHaveBeenCalledTimes(3);
       expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the wrapper\'s own notice for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-enoent')]] });
+    const spawn = jest.fn(async () => { throw new Error('spawn pi ENOENT'); });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.map((body) => body.content)).toEqual([WONT_START_NOTICE]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the model hint for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-model')]] });
+    const spawn = jest.fn(async () => {
+      throw Object.assign(new Error('codex turn failed: HTTP 404: model: gpt-5'), { status: 404 });
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.length).toBeGreaterThan(0);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says it once for a batch whose items are let go one at a time', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a')], [makeEvent('evt-b')]] });
+    const spawn = jest.fn(async () => {
+      if (spawn.mock.calls.length === 2) server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 3);
+      expect(spawn).toHaveBeenCalledTimes(4);
+      expect(noticesIn(server)).toHaveLength(1);
     } finally { run.handle.stop(); }
   });
 

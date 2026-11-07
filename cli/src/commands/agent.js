@@ -2621,11 +2621,18 @@ export const performRun = ({
   // past its duplicate guard, since a second cut-off has no open ask to carry it.
   // A turn only agents woke gets no line: "ask me again" isn't for them, and in
   // an agent-dm the line would wake the peer into a paid turn.
-  // F279: an event let go after three failures counts too, from the first
-  // attempt's snapshot, because the server's retry is 10 to 20 minutes off and
-  // the kernel skips its own line once the agent has posted. It may come back
+  // F279: an event let go after three failures counts too, because the server's
+  // retry is 10 to 20 minutes off and the kernel skips its own line once the
+  // agent has posted. `part` is what one of its attempts posted. It may come back
   // and fail again, so it hears this once.
-  const noticeCutOff = async (lostEvents, { released = [], since = null } = {}) => {
+  const noteFailedTurnPart = async (failedEvents) => {
+    if (!failedTurn?.preSpawnIds) return;
+    const tail = await failedTurn.snapshotMessages(50);
+    const ownPost = tail && newestOwnPostSince(tail, failedTurn.preSpawnIds);
+    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), ownPost));
+  };
+
+  const noticeCutOff = async (lostEvents, { released = [], part = null } = {}) => {
     const turnArgs = failedTurn;
     failedTurn = null;
     const waiting = [...lostEvents, ...released].filter((event) => event.deliveryMode !== 'digest'
@@ -2651,7 +2658,8 @@ export const performRun = ({
         const tail = turnArgs.preSpawnIds ? await turnArgs.snapshotMessages(50) : null;
         // Nothing of this seat's in the pod means no half answer to explain: a
         // deliberate silence checkpoints too, and a requeue takes a row as well.
-        const ownPost = tail && newestOwnPostSince(tail, since || turnArgs.preSpawnIds);
+        const ownPost = (lostEvents.some((event) => waiting.includes(event))
+          && tail && newestOwnPostSince(tail, turnArgs.preSpawnIds)) || part;
         if (!ownPost) return;
         delivery = await deliverChatReply({
           client,
@@ -2668,6 +2676,8 @@ export const performRun = ({
           + `${delivery.reason || 'the notice was not posted'}`);
       } else {
         waiting.forEach((event) => cutOffTold.add(String(event._id)));
+        // The line covers every part so far, so a sibling let go later has none.
+        heldRetryParts.clear();
         log(`[inbox.batch] told pod ${eventPodId} this agent was cut off before it finished`);
       }
     } catch (noticeError) {
@@ -3469,8 +3479,10 @@ export const performRun = ({
   let tickUnsettled = [];
   // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
   const heldRetryFailures = new Map();
-  // Event id to the pod ids seen before its first failed attempt, for noticeCutOff.
-  const heldRetrySnapshots = new Map();
+  // Event id to what a failed attempt on it posted, for noticeCutOff. Read as each
+  // attempt fails, because the attempt's own snapshot then leaves out the notices
+  // the wrapper posted after earlier ones: those aren't part of an answer.
+  const heldRetryParts = new Map();
   const cutOffTold = new Set();
   // eventId → turns passed over, for PAST_CAP_MAX_CARRIES.
   const pastCapCarries = new Map();
@@ -3526,7 +3538,7 @@ export const performRun = ({
   // tick adds to the carry, never replaces it.
   const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
     const released = [];
-    let since = null;
+    let part = null;
     const carry = [];
     const seen = new Set();
     for (const event of failedEvents) {
@@ -3536,10 +3548,9 @@ export const performRun = ({
         const failures = (heldRetryFailures.get(id) || 0) + 1;
         // A stop wins over the local limit: the sweep would make this event
         // wait 10–20 minutes, and the server's ceiling bounds a hand-back.
-        if (!heldRetrySnapshots.has(id)) heldRetrySnapshots.set(id, failedTurn?.preSpawnIds || null);
         if (running && failures >= HELD_RETRY_MAX_FAILURES) {
           released.push(event);
-          since = since || heldRetrySnapshots.get(id);
+          part = part || heldRetryParts.get(id) || null;
         } else {
           heldRetryFailures.set(id, failures);
           carry.push(event);
@@ -3581,7 +3592,7 @@ export const performRun = ({
     if (!running) {
       heldRetry = [...heldRetry, ...carry];
       heldRetryFailures.clear();
-      heldRetrySnapshots.clear();
+      heldRetryParts.clear();
       pastCapCarries.clear();
       const confirmed = await renewHeldDeliveries(failedEvents);
       return {
@@ -3595,7 +3606,7 @@ export const performRun = ({
     const dropped = carry.filter((event) => !stillHeld(event, confirmed));
     heldRetry = [...heldRetry, ...held];
     const heldIds = new Set(heldRetry.map((event) => String(event._id)));
-    for (const counts of [heldRetryFailures, heldRetrySnapshots, pastCapCarries]) {
+    for (const counts of [heldRetryFailures, heldRetryParts, pastCapCarries]) {
       for (const id of [...counts.keys()]) {
         if (!heldIds.has(id)) counts.delete(id);
       }
@@ -3607,7 +3618,7 @@ export const performRun = ({
       );
     }
     return {
-      held, released, since, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
+      held, released, part, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
     };
   };
 
@@ -3665,7 +3676,7 @@ export const performRun = ({
     heldGreeting = [];
     tickUnsettled = [];
     heldRetryFailures.clear();
-    heldRetrySnapshots.clear();
+    heldRetryParts.clear();
     clearHeldRenewal();
     return carry.length ? handBackDeliveries(carry, 'stop') : Promise.resolve([]);
   };
@@ -4321,6 +4332,8 @@ export const performRun = ({
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
             tickUnsettled.push(...claimedAfter(groupIndex));
+            // That failure posts its own hint inside the turn, so it can't be read here.
+            if (!modelUnavailableFailure(err)) await noteFailedTurnPart(failedEvents);
             const hold = await holdForRetry(
               failedEvents.filter((event) => !pastCapEvents.includes(event)),
               untriedAfter(groupIndex),
@@ -4355,7 +4368,7 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
-            await noticeCutOff(hold.lost, { released: hold.released, since: hold.since });
+            await noticeCutOff(hold.lost, { released: hold.released, part: hold.part });
             await noticeCantAnswer(err, [...failedEvents, ...untriedAfter(groupIndex)]);
           };
           let batch;
