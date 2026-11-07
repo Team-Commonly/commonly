@@ -142,7 +142,9 @@ describe('commonly_offer_own_agent', () => {
 
     await runAgent(scoutInstall, ask);
 
-    expect(mockTask.exists).toHaveBeenCalledWith({ podId: POD, title: { $in: [en.firstTask, zh.firstTask] } });
+    expect(mockTask.exists).toHaveBeenCalledWith({
+      podId: POD, title: { $in: [en.firstTask, zh.firstTask] }, status: { $ne: 'done' },
+    });
     expect(mockTask.create).not.toHaveBeenCalled();
     expect(mockEmitTaskUpdated).not.toHaveBeenCalled();
     expect(posted()[0].content).toContain(en.taskOnBoard(en.firstTask));

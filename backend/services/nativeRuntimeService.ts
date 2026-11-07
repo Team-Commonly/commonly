@@ -601,7 +601,7 @@ export const TOOLS = [
         type: 'object',
         properties: {
           locale: { type: 'string', enum: ['en', 'zh-CN'], description: 'The person\'s language.' },
-          addFirstTask: { type: 'boolean', description: 'Also add the first task to this pod\'s board. It is not added twice.' },
+          addFirstTask: { type: 'boolean', description: 'Also add the first task to this pod\'s board. It is not added while one is open.' },
           lead: { type: 'string', description: 'Optional. One short sentence, in their language, posted before the fixed words.' },
         },
         required: ['locale'],
@@ -1216,9 +1216,10 @@ export async function dispatchTool(
         if (args.addFirstTask === true) {
           const Task = require('../models/Task');
           try {
-            // Either language's title counts, so a second click doesn't stack a row.
+            // Either language's title counts, so a second click doesn't stack a
+            // row. A done row is closed, so the reply can't call it on the board.
             const titles = Object.values(SCOUT_OFFER_COPY).map((entry) => entry.firstTask);
-            if (!await Task.exists({ podId: ctx.podId, title: { $in: titles } })) {
+            if (!await Task.exists({ podId: ctx.podId, title: { $in: titles }, status: { $ne: 'done' } })) {
               const taskNum = (await Task.countDocuments({ podId: ctx.podId })) + 1;
               const created = await Task.create({
                 podId: ctx.podId,

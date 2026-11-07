@@ -220,7 +220,8 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
 
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
-  const last = await Task.findOne({ podId, taskId: { $exists: true } }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
+  // Native runtime rows are N-<num>-<agent>-<ts>, and parse to NaN here.
+  const last = await Task.findOne({ podId, taskId: /^TASK-/ }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
   const lastNum = last ? parseInt((last.taskId || '').replace('TASK-', ''), 10) : 0;
   const num = lastNum + 1;
   return { taskId: `TASK-${String(num).padStart(3, '0')}`, taskNum: num };
@@ -1367,5 +1368,6 @@ module.exports.claimableConditions = claimableConditions;
 // The native runtime's commonly_claim_task claims through the same function (TASK-340).
 module.exports.claimTaskAs = claimTaskAs;
 module.exports.claimantOf = claimantOf;
+module.exports.nextTaskId = nextTaskId;
 
 export {};

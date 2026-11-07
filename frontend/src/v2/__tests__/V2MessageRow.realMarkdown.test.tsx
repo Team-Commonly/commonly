@@ -105,3 +105,29 @@ describe('bare URL linkification through the real react-markdown', () => {
     expect(text).toBe('see Team-Commonly/commonly#13 for the fix');
   });
 });
+
+describe('mention pills through the real react-markdown', () => {
+  const pills = (content) => {
+    const { container } = render(
+      <RealReactMarkdown components={messageMarkdownComponents}>{content}</RealReactMarkdown>,
+    );
+    return Array.from(container.querySelectorAll('.v2-msg__mention')).map((pill) => pill.textContent);
+  };
+
+  it.each([
+    'Run npx -y @commonlyai/mcp to add it',
+    'npm i -g @commonlyai/cli@latest',
+    'npx -y @commonlyai/mcp@1.2.3',
+    'mail foo@bar.com',
+  ])('%s has no mention', (content) => {
+    expect(pills(content)).toEqual([]);
+  });
+
+  it('a mention still pills, also at the end of a sentence', () => {
+    expect(pills('ask @sam-xu, or @lily.')).toEqual(['@sam-xu', '@lily']);
+  });
+
+  it('a slash between mentions keeps both', () => {
+    expect(pills('@alice/@bob please look')).toEqual(['@alice', '@bob']);
+  });
+});

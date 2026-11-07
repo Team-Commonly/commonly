@@ -31,7 +31,8 @@ const V2UICard = lazy(() => import('../cards/V2UICard'));
 // Match @username — letters/digits start, then letters/digits/underscore/hyphen.
 // Used to wrap inline mentions in a styled pill. Capturing group keeps the
 // match in `split()` output so we can render text + pill segments in order.
-const MENTION_RE = /(@[a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
+// An npm scope such as @commonlyai/mcp is a package, not a person.
+const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;
 
 // Walk a React children tree and replace bare `@name` text segments with a
 // styled `<span>` pill. Recurses into arrays + cloned elements so mentions
