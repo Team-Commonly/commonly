@@ -7,6 +7,7 @@ jest.mock('../../../models/User', () => ({ findById: jest.fn(), findOne: jest.fn
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 
 const { noteUnansweredMention } = require('../../../services/unansweredMentionService');
+const { coalescedEntry } = require('../../../services/mentionCoalesce');
 const { emitUnansweredMentionLine } = require('../../../services/systemActionLineService');
 const User = require('../../../models/User');
 const { pool } = require('../../../config/db-pg');
@@ -64,12 +65,18 @@ describe('a message that asked someone else (F299)', () => {
     expect(await noteUnansweredMention(event({ messageId: '900', welcomeWake: true }))).toBe(true);
   });
 
-  it('skips a joined message that asked nothing, and tells the one that did', async () => {
+  it('skips a joined message that asked someone else, and tells the rest', async () => {
     const joined = (messageId, extra) => ({ messageId, userId: 'b'.repeat(24), createdAt: new Date(5), ...extra });
     await noteUnansweredMention(event({
-      messageId: '900', coalesced: [joined('901', { notAnAsk: true }), joined('902')],
+      messageId: '900',
+      coalesced: [
+        { ...coalescedEntry({ messageId: '901', userId: 'b'.repeat(24), ...askedOther }), createdAt: new Date(5) },
+        // Carried on from the agent: the server took it as addressed to it.
+        { ...coalescedEntry({ messageId: '902', userId: 'b'.repeat(24), implicitReply: true, adjacentReply: true }), createdAt: new Date(5) },
+        joined('903'),
+      ],
     }));
-    expect(emitUnansweredMentionLine.mock.calls.map(([line]) => line.messageId)).toEqual(['900', '902']);
+    expect(emitUnansweredMentionLine.mock.calls.map(([line]) => line.messageId)).toEqual(['900', '902', '903']);
   });
 
   it('tells a joined ask when the lead asked someone else', async () => {

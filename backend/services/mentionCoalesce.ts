@@ -116,6 +116,7 @@ export const coalescedEntry = (payload: Payload): Payload => ({
   ...(payload.handoffCue ? { handoffCue: payload.handoffCue } : {}),
   // The flags that say so stay behind on the row this joins, so say it here.
   ...(asksThisAgent(payload) ? {} : { notAnAsk: true }),
+  ...(askedSomeoneElse(payload) ? { askedSomeoneElse: true } : {}),
 });
 
 const entriesOf = (payload: Payload | undefined): Payload[] => (

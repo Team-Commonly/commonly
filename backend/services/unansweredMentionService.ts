@@ -30,8 +30,8 @@ interface PgPool {
 /**
  * A message a retired row was carrying: its own, then any joined to it
  * (ADR-018 D6.5). Each person waiting gets their own line, and one who asked
- * someone else isn't waiting on this agent. A joined message only keeps the flag
- * that says so, which also covers one that carried on from the agent.
+ * someone else isn't waiting on this agent. Not `notAnAsk`: a message that
+ * carried on from the agent is one too, and that person is waiting.
  */
 const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageId: unknown; since: Date }> => {
   const payload = (event.payload || {}) as Record<string, unknown>;
@@ -41,7 +41,7 @@ const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageI
     ...(askedSomeoneElse(payload) ? [] : [{ userId: payload.userId, messageId: payload.messageId, since: rowSince }]),
     ...joined
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
-      .filter((entry) => !entry.notAnAsk)
+      .filter((entry) => !entry.askedSomeoneElse)
       .map((entry) => {
         const sentAt = new Date(entry.createdAt as string);
         return {
