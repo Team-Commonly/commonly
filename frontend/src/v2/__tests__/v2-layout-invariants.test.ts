@@ -6578,6 +6578,12 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
   });
 
+  test('a wrapped phone message head grows instead of overlapping the message', () => {
+    const css = read('../chat/chat-message.css');
+    expect(css).toContain('@media (max-width: 640px) {\n  .v2-thread .v2-msg__head { height: auto; min-height: 20px; }\n}');
+    expect(css.indexOf('height: auto; min-height: 20px')).toBeGreaterThan(css.indexOf('.v2-thread .v2-msg__head { height: 20px; gap: 8px; }'));
+  });
+
   test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
     const settings = read('../components/V2SettingsPage.css');
     // Desktop reaches the guide from the rail, so the row is for phones only.
