@@ -342,6 +342,21 @@ describe('V2Thread agent-room liveness', () => {
 
     const link = await screen.findByRole('link', { name: 'Connect' });
     expect(link).toHaveAttribute('href', '/v2/agents/byo?pod=home-pod&name=openclaw&instanceId=aria&reconnect=1');
+    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('an agent made on the page offers Connect alone: no computer has its key', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria', connectPodId: 'home-pod', noSavedKey: true,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    await screen.findByRole('link', { name: 'Connect' });
     expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
   });
 

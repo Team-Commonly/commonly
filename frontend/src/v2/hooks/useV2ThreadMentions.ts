@@ -20,6 +20,7 @@ interface MentionAgentState {
   agentName?: string;
   instanceId?: string;
   connectPodId?: string;
+  noSavedKey?: boolean;
 }
 
 interface MentionItem extends V2ComposerMention {
@@ -158,7 +159,7 @@ export const useV2ThreadMentions = ({
         return rows;
       }
       seen.add(agentName);
-      const connectLink = agentConnectLink(state);
+      const connectLink = state.noSavedKey ? agentConnectLink(state) : '';
       rows.push({ agentName, state: state.state, fixCommand: state.fixCommand, ...(connectLink ? { connectLink } : {}) });
       return rows;
     }, []);

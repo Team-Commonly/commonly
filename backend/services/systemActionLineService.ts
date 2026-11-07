@@ -149,7 +149,7 @@ export interface NotConnectedLine extends SystemLineActor {
 
 export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void> {
   const content = `${line.agentLabel} isn't connected yet, so it won't see this until it runs. `
-    + 'Run the connect command shown on its page.';
+    + 'Its owner can connect it.';
   await insertSystemLine(line, content, {
     kind: 'system-action',
     action: 'agent-not-connected',

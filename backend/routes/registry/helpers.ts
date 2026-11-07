@@ -334,8 +334,8 @@ const composeInstallIntro = ({
   // remove, so the hedge is not decoration (fleet review 2026-08-14).
   state: string;
   fixCommand: string;
-  // Its key isn't saved on any computer yet, so the bare command can't run:
-  // the agent's Settings has the Connect that issues a new one.
+  // Made on the page: no computer has its key, so the bare command can't run,
+  // and the agent's Settings has the Connect that issues a new one.
   connectable?: boolean;
 }): string => {
   // Older CLI versions seeded description from displayName, producing intros

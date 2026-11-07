@@ -530,7 +530,7 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
 
 /**
  * GET /:podId/agent-states — #891 surface 1, the mention-time honesty read.
- * Membership gate + two fetches, then an agent room's Connect pod; the
+ * Membership gate + two fetches, then the pod for Connect; the
  * per-runtime-class honesty rules (and the owner-only fix-copy split) live in
  * agentStateService, where they are pure and unit-tested.
  */
@@ -547,7 +547,7 @@ const agentStatesRateLimit = rateLimit({
 router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as { type?: string; publicRead?: boolean } | null;
+    const pod = await Pod.findById(podId) as { type?: string; publicRead?: boolean; members?: unknown[] } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
     const canView = await DMService.canViewPod(req.user?.id, pod);
     if (!canView) return res.status(403).json({ message: 'Not authorized to view pod agent states' });
@@ -557,7 +557,7 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     // eslint-disable-next-line global-require
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
-    const { deriveAgentState, offersConnect } = require('../services/agentStateService');
+    const { deriveAgentState, keyOnlyOnPage, offersConnect } = require('../services/agentStateService');
     // eslint-disable-next-line global-require
     const { connectPodFor } = require('../services/roomConnectService');
     // eslint-disable-next-line global-require
@@ -614,18 +614,27 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
         if (!ownership.owned) return;
         if (row.state !== 'never-connected' || !offersConnect(inst, machineByIdentity.get(key))) return;
         const connectPodId = await connectPodFor(inst, callerId, podId);
-        if (connectPodId) row.connectPodId = connectPodId;
+        if (connectPodId) {
+          row.connectPodId = connectPodId;
+          if (keyOnlyOnPage(inst, machineByIdentity.get(key))) row.noSavedKey = true;
+        }
       }));
     } else if (pod.type !== 'agent-dm' && pod.type !== 'agent-admin') {
-      // The installer's way back from a shared pod. The bare command needs a key
-      // saved on that computer, and an agent made on the page has none there.
+      // The installer's way back from a shared pod, for an agent whose key is on
+      // no computer. A co-installer can't reissue it, so they keep the command.
       await Promise.all(installations.map(async (inst: any, index: number) => {
         const row = agents[index];
         const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
         if (!row.isOwner || row.state !== 'never-connected') return;
-        if (!offersConnect(inst, machineByIdentity.get(key))) return;
-        const connectPodId = pod.publicRead ? await connectPodFor(inst, callerId, podId) : podId;
-        if (connectPodId) row.connectPodId = connectPodId;
+        if (!keyOnlyOnPage(inst, machineByIdentity.get(key))) return;
+        const ownership = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId.toLowerCase())
+          .catch(() => ({ owned: false }));
+        if (!ownership.owned) return;
+        const listed = !pod.publicRead && (pod.members || []).some((id) => String(id) === callerId);
+        const connectPodId = listed ? podId : await connectPodFor(inst, callerId, podId);
+        if (!connectPodId) return;
+        row.connectPodId = connectPodId;
+        row.noSavedKey = true;
       }));
     }
 

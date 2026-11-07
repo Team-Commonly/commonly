@@ -29,7 +29,7 @@ const {
 const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { loadPodMentionMap, routedMentionHandle } = require('../../services/agentMentionService');
-const { deriveAgentState, offersConnect, runInstructionFor } = require('../../services/agentStateService');
+const { deriveAgentState, keyOnlyOnPage, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -1216,7 +1216,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           );
           state = derived.state;
           if (derived.fixCommand) fixCommand = derived.fixCommand;
-          connectable = offersConnect(
+          connectable = keyOnlyOnPage(
             { instanceId: normalizedInstanceId, config: normalizeConfigMap(installation.config) || {} },
             botRow?.botMetadata?.machineId,
           );

@@ -104,6 +104,7 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
       isOwner: true,
       fixCommand: 'commonly agent run sam-agent',
       connectPodId: 'pod-1',
+      noSavedKey: true,
     }]);
     renderChat(makeDetail());
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));

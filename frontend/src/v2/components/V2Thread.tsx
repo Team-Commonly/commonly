@@ -90,6 +90,8 @@ interface AgentStateRow {
   fixCommand?: string;
   /** The pod Bring your own can connect this agent in; the server sets it only when Connect can work. */
   connectPodId?: string;
+  /** Made on the page: no computer has its key, so the bare command can't start it. */
+  noSavedKey?: boolean;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -2291,12 +2293,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   </span>
                   <div className="v2-chat__agent-room-status-body">
                     {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
-                    {directAgentConnectLink && (
-                      <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
-                        {t('agentConnection.connect')}
-                      </Link>
-                    )}
-                    {directAgentFixCommand && !directAgentConnectLink && (
+                    {directAgentFixCommand && !directAgent?.state?.noSavedKey && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>
                         <div className="v2-chat__agent-room-command">
@@ -2311,6 +2308,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                             <ShellGlyph name={fixCommandCopied ? 'check' : 'copy'} size={16} />
                           </button>
                         </div>
+                      </>
+                    )}
+                    {directAgentConnectLink && (
+                      <>
+                        {' '}
+                        <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
+                          {t('agentConnection.connect')}
+                        </Link>
                       </>
                     )}
                   </div>
