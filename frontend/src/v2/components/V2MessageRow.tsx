@@ -392,8 +392,9 @@ const V2CodeCopy: React.FC<{ text: string }> = ({ text }) => {
         input.style.opacity = '0';
         document.body.appendChild(input);
         input.select();
-        document.execCommand('copy');
+        const accepted = document.execCommand('copy');
         document.body.removeChild(input);
+        if (!accepted) throw new Error('Copy refused');
       }
       setCopied(true);
     } catch {

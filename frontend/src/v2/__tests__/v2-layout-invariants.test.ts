@@ -1753,7 +1753,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-msg__collapse--closed pre');
     expect(ruleBody(v2, '.v2-lightbox')).toContain('rgba(16, 24, 40, 0.9)');
     expect(messageRow).not.toContain('FILE_EXT_COLORS');
-    expect(read('../chat/chat-message.css')).toContain('.v2-msg__content .v2-msg__code pre { padding-right: 44px; }');
+    expect(read('../chat/chat-message.css')).toContain('.v2-msg__code { position: relative; margin: 6px 0; }');
+    expect(read('../chat/chat-message.css')).toContain('.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }');
     expect(messageRow).toContain('COLLAPSE_AFTER_LINES = 6');
     expect(messageRow).toContain('<V2Lightbox');
   });

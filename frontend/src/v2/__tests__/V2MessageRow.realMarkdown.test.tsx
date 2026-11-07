@@ -157,6 +157,19 @@ describe('the copy key on a code block', () => {
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeInTheDocument();
   });
 
+  it('falls back without the clipboard API, and only says Copied when it worked', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    const execCommand = jest.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    document.execCommand = execCommand;
+    renderMessage('```\none\n```\n');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    await waitFor(() => expect(execCommand).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('button', { name: 'Copied!' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+    expect(document.querySelector('textarea')).toBeNull();
+  });
+
   it('reads in zh-CN', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     try {

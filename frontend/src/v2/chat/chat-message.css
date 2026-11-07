@@ -505,11 +505,12 @@
 
 /* The copy key sits over the block's corner, and the right padding keeps it off
    the end of a long line. On a phone it stays visible, and ::after widens the tap. */
-.v2-msg__code { position: relative; }
-.v2-msg__content .v2-msg__code pre { padding-right: 44px; }
+/* The wrapper takes the block's margin, so a block that opens or closes a message still loses it. */
+.v2-msg__code { position: relative; margin: 6px 0; }
+.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }
 .v2-root button.v2-msg__code-copy {
   position: absolute;
-  top: 12px;
+  top: 6px;
   right: 6px;
   width: 28px;
   height: 28px;
