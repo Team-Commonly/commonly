@@ -5,8 +5,11 @@ import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from
 import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
+import { invalidScheduleField, takesSchedule } from '../../services/agentScheduleService';
+import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
+const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
@@ -78,6 +81,12 @@ const settings = (installation: any, podName: string, podType?: string) => {
       && Number(config.heartbeat?.everyMinutes) > 0
       ? Math.max(1, Math.min(1440, Math.trunc(Number(config.heartbeat.everyMinutes)))) : 60,
     hostedHeartbeat: hostedHeartbeatFor(installation),
+    schedule: config.schedule ? {
+      enabled: config.schedule.enabled === true,
+      time: config.schedule.time,
+      timezone: config.schedule.timezone,
+      prompt: config.schedule.prompt,
+    } : null,
   };
 };
 
@@ -236,6 +245,56 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
   } catch (error) {
     console.error('Error saving agent settings:', error);
     return res.status(500).json({ error: 'Failed to save agent settings' });
+  }
+});
+
+router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLimit, auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const invalid = invalidScheduleField(body);
+    if (invalid) return res.status(400).json(invalid);
+    const installation = await AgentInstallation.findOne({
+      ...installationIdentityFilter(String(req.params.name).toLowerCase(), normalizeInstanceId(req.query.instanceId)),
+      podId: req.params.podId,
+      status: { $ne: 'uninstalled' },
+    });
+    if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+    // Being this row's installer is not enough: a room or a mention writes a row
+    // naming whoever opened it, and the wake runs on the owner's tools and
+    // spend. The sole-installer rule, as for a push webhook, admins exempt.
+    // Whoever manages the row can still stop what's on it, or someone else's
+    // mention of the agent would lock its owner out. That write sets nothing else.
+    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    const ownership = isAdmin
+      ? { owned: true as const }
+      : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId || 'default');
+    const config = normalizeConfigMap(installation.config) || {};
+    const onlyStopping = !ownership.owned && body.enabled === false && Boolean(config.schedule)
+      && canManage(installation, userId, isAdmin);
+    if (!ownership.owned && !onlyStopping) {
+      return res.status(403).json({ code: ownership.failure, error: 'Only the agent\'s owner can schedule it' });
+    }
+    // Stopping one needs no seat in the pod, starting one does, admins included.
+    if (body.enabled && !(await Pod.exists({ _id: installation.podId, members: userId }))) {
+      return res.status(403).json({ code: 'not_pod_member', error: 'Join this pod to schedule an agent in it' });
+    }
+    if (!takesSchedule({ ...installation.toObject(), config })) {
+      return res.status(400).json({ code: 'schedule_byo_only', error: 'A schedule is for an agent you run yourself' });
+    }
+    // Field by field, so a save can't overwrite the dispatcher's claim on the day.
+    const { enabled, time, timezone, prompt } = body;
+    const fields = onlyStopping ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
+    const saved = await AgentInstallation.findOneAndUpdate(
+      { _id: installation._id },
+      { $set: Object.fromEntries(Object.entries(fields).map(([key, value]) => [`config.schedule.${key}`, value])) },
+      { new: true },
+    );
+    return res.json({ settings: settings(saved, '') });
+  } catch (error) {
+    console.error('Error saving agent schedule:', error);
+    return res.status(500).json({ error: 'Failed to save agent schedule' });
   }
 });
 

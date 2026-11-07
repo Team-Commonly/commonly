@@ -386,6 +386,21 @@ AgentInstallationSchema.statics.reviveDmRows = function (agentName: string, inst
   return reviveDmRows(this, agentName, instanceId, config);
 };
 
+// A daily schedule belongs to the one row its owner set it on. Every path that
+// writes a row builds its config by copying another row's, so it's dropped here
+// rather than at each copy: one left in runs the owner's job in someone else's
+// room. The schedule route writes it after the row exists.
+const withoutSchedule = <T>(config: T): T => {
+  if (config instanceof Map) {
+    const copy = new Map(config);
+    copy.delete('schedule');
+    return copy as T;
+  }
+  if (!config || typeof config !== 'object') return config;
+  const { schedule: _schedule, ...rest } = config as Record<string, unknown>;
+  return rest as T;
+};
+
 /**
  * `stampInstaller` is for a person installing on purpose: a row they bring back
  * from uninstalled is theirs, as a new row would be. Most callers reactivate on
@@ -404,8 +419,9 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   stampInstaller?: boolean;
 }) {
   const {
-    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
+    version, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
   } = options;
+  const config = withoutSchedule(options.config);
   const existing: any = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
@@ -453,8 +469,9 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   displayName?: string;
 }) {
   const {
-    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+    version, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
   } = options;
+  const config = withoutSchedule(options.config);
   const here = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
   const filter = here ? { _id: { $eq: here._id } } : { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {

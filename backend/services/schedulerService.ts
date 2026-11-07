@@ -29,6 +29,10 @@ const AgentEnsembleService = require('./agentEnsembleService');
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
   buildHeartbeatContent: (heartbeatPodId: unknown) => string;
 };
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { dispatchSchedules } = require('./agentScheduleService') as {
+  dispatchSchedules: (now?: Date) => Promise<number>;
+};
 // eslint-disable-next-line global-require
 const PodCurationService = require('./podCurationService');
 // eslint-disable-next-line global-require
@@ -1248,9 +1252,15 @@ class SchedulerService {
       };
     }
 
+    // First and on its own: a daily wake that misses its hour is lost, where a
+    // heartbeat just comes round again.
+    const scheduledWakes = await dispatchSchedules(now).catch((error: Error) => {
+      console.error('Scheduled agent wakes failed:', error.message);
+      return 0;
+    });
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
     const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
-    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+    return { ...result, enqueued: result.enqueued + unreadWakes + scheduledWakes, skippedByLease: false };
   }
 
   /**

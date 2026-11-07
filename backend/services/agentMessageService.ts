@@ -939,6 +939,32 @@ class AgentMessageService {
   }
 
   /**
+   * Has a scheduled wake fired here since this agent last posted? That wake's
+   * post goes past the run cap, since one line a day is not a monologue. One
+   * post per wake: the post itself is what ends it.
+   */
+  static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
+    try {
+      const row = await AgentInstallation.findOne({
+        agentName: { $eq: String(agentName).toLowerCase() },
+        instanceId: { $eq: String(instanceId || 'default') },
+        podId: { $eq: podId },
+        status: 'active',
+      }).select('config.schedule.lastFiredAt').lean();
+      const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
+      if (!firedAt) return false;
+      const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
+      const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
+      return firedAt > new Date(own[own.length - 1]?.createdAt || 0).valueOf();
+    } catch (error) {
+      // Toward posting (review-checklist rule 19): a refusal here is a job's
+      // result nobody sees, and the cost is one post past the cap.
+      console.warn('Could not read the agent\'s schedule:', (error as Error).message);
+      return true;
+    }
+  }
+
+  /**
    * Whether this agent's next post in the pod would be refused by the run cap.
    * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
    */
@@ -1792,7 +1818,7 @@ class AgentMessageService {
         ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
-        if (run >= runCap) {
+        if (run >= runCap && !(await AgentMessageService.owedScheduledPost(podId, agentName, instanceId, agentUser._id))) {
           AgentMessageService.logMessageLifecycle('skipped', {
             agentName,
             instanceId,

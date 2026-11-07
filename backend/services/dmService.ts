@@ -13,13 +13,13 @@ import { identityIsPaused } from './runtimeIdentityOwnership';
  * What a new projection of an agent (agent-room, DM) inherits from the
  * agent's existing active installation: everything the native runtime reads
  * — runtime, model, systemPrompt, tools, triggers, budgets — minus the keys
- * that belong to the projection itself (heartbeat, autoJoinSource). Without
+ * that belong to the projection itself (heartbeat, autoJoinSource, schedule). Without
  * this a room install carried only {heartbeat, autoJoinSource}: the router
  * could not see a runtime (fixed in #1524), and once it could, the run fell
  * to the default model with no system prompt. Returns null when the agent has
  * no install with a runtime (BYO wrappers), which keeps today's behaviour.
  */
-export const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
+export const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource', 'schedule']);
 export const resolveInstallInheritance = async (
   agentName: string,
   instanceId: string,

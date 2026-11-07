@@ -36,6 +36,10 @@ jest.mock('../../../models/AgentRegistry', () => ({
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
     })),
+    findOne: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    })),
   },
 }));
 jest.mock('../../../models/User', () => ({
