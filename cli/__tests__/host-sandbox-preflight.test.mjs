@@ -143,7 +143,7 @@ describe('hostSandboxRefusal', () => {
     test('Claude Code and Codex both stop at start, in plain words', () => {
       for (const [adapter, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {
         const message = seat(adapter, refused(true));
-        expect(message).toMatch(new RegExp(`^Commonly runs a connected ${label} inside a bubblewrap sandbox`));
+        expect(message).toMatch(new RegExp(`^A connected ${label} runs inside a bubblewrap sandbox`));
         expect(message).toContain('uid map: Permission denied');
         expect(message).not.toMatch(/\bseat\b/i);
       }
@@ -179,6 +179,10 @@ describe('hostSandboxRefusal', () => {
 
     test('a Codex seat is checked only when public, and a missing bubblewrap stays Codex\'s to report', () => {
       expect(seat('codex', available)).toBeNull();
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'linux', detectBwrap: refused(false),
+      })).toMatch(/^A connected Codex runs inside a bubblewrap sandbox/);
+      expect(seat('codex', () => ({ available: false, namespaceRefused: false, error: 'spawnSync bwrap ETIMEDOUT' }))).toBeNull();
       expect(seat('codex', missing('bwrap not found on PATH.'))).toBeNull();
       expect(hostSandboxRefusal({
         environment: { sandbox: { trust: 'workspace' } }, adapterName: 'codex', platform: 'linux', detectBwrap: never,
@@ -266,10 +270,10 @@ describe('hostSandboxRefusal', () => {
     }
   });
 
-  test('Codex on a Mac or Linux is left alone', () => {
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin' })).toBeNull();
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux' })).toBeNull();
-    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux' })).toBeNull();
+  test('Codex on a Mac, or on a Linux host that starts a sandbox, is left alone', () => {
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin', detectBwrap: never })).toBeNull();
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux', detectBwrap: available })).toBeNull();
+    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: never })).toBeNull();
   });
 
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {

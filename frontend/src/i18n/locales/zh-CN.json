@@ -2139,7 +2139,7 @@
       "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
       "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 <name/> 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
       "windowsCodex": "Windows 上没有 Codex 在这里能用的沙箱，所以没有任何东西限制 <name/>。它用你自己的权限访问文件、运行命令，这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它不会获得任何连接器授权；如果这个 Pod 不再是邀请制，它就不再回复。",
-      "linuxUbuntu": "在 Ubuntu 24.04及更高版本上，AppArmor 可能让 bubblewrap 无法启动。遇到这种情况，命令会停下来并列出你的选择：改用「在这里运行」，或者自己用 sudo 加载 Ubuntu 提供的 AppArmor 配置文件（可选）。这个配置文件我们在全新的 Ubuntu 24.04服务器镜像上测试过，不代表每台机器都适用。",
+      "linuxUbuntu": "在 Ubuntu 24.04或更高版本上，AppArmor 可能让 bubblewrap 无法启动。这时命令会停下来，列出你可以怎么做：改用「在这里运行」；或者自己用 sudo 加载 Ubuntu 提供的 AppArmor 配置文件，这一步是可选的。这个配置文件我们在全新的 Ubuntu 24.04服务器镜像上测试过，不代表每台机器都适用。",
       "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上，用 API 密钥经模型网关连上线上的 Commonly，把 Codex 跑了一遍，它回复了第一条 @提及。用你自己登录的 ChatGPT 账号或 OpenAI 密钥时，在 Linux 上还没有验证过。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",

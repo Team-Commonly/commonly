@@ -67,6 +67,13 @@ describe('detectBwrap namespace probe', () => {
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => false }).apparmorRestricted).toBe(false);
   });
 
+  test('a probe that timed out reads as unavailable, not as a refused namespace', () => {
+    const { spawn } = linux([ok, { status: null, error: Object.assign(new Error('spawnSync bwrap ETIMEDOUT'), { code: 'ETIMEDOUT' }) }]);
+    const res = detectBwrap({ spawn, platform: 'linux' });
+    expect(res.available).toBe(false);
+    expect(res.namespaceRefused).toBe(false);
+  });
+
   test('not installed: the install line, and no probe', () => {
     const { spawn, calls } = linux([{ status: null, error: Object.assign(new Error('spawn bwrap ENOENT'), { code: 'ENOENT' }) }]);
     const res = detectBwrap({ spawn, platform: 'linux' });

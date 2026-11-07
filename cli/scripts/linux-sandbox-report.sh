@@ -31,34 +31,52 @@ probe() {
   jail
 }
 
-sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap apparmor-utils apparmor-profiles
+refusals() {
+  node --input-type=module -e "
+    import { hostSandboxRefusal } from './cli/src/lib/sandbox/host-check.js';
+    for (const adapterName of ['claude', 'codex']) {
+      console.log('--- what ' + adapterName + ' prints');
+      console.log(hostSandboxRefusal({ environment: { sandbox: { trust: 'public' } }, adapterName, platform: 'linux' }));
+    }
+  "
+}
+
+profiles() {
+  echo "$1: $(sudo aa-status --profiled) profiles, $(sudo aa-status --enforced) enforced, $(ls /etc/apparmor.d | wc -l) entries in /etc/apparmor.d"
+}
+
+sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
+(cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
 
 echo "=== host"
 . /etc/os-release && echo "$PRETTY_NAME, kernel $(uname -r)"
 bwrap --version
 sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone 2>&1
-ls /etc/apparmor.d | grep -iE 'bwrap|unpriv' || echo "no bwrap profile in /etc/apparmor.d"
-ls /usr/share/apparmor/extra-profiles 2>/dev/null | grep -iE 'bwrap|unpriv' || echo "no bwrap profile in extra-profiles"
+profiles "as the host came"
 
 probe "as the host came"
+refusals
 
-extra=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
-if [ -f "$extra" ]; then
-  echo "=== Ubuntu's bwrap-userns-restrict"
-  cat "$extra"
-  sudo apparmor_parser -r "$extra" && probe "with bwrap-userns-restrict loaded"
-  sudo apparmor_parser -R "$extra"
-fi
+if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" = 22.04 ]; then exit 0; fi
 
-echo "=== a profile that grants bwrap userns and nothing else changes"
-narrow=$(mktemp)
-cat > "$narrow" <<'PROFILE'
-abi <abi/4.0>,
-include <tunables/global>
-profile bwrap /usr/bin/bwrap flags=(unconfined) {
-  userns,
-}
-PROFILE
-sudo apparmor_parser -r "$narrow" && probe "with the userns grant loaded"
-sudo apparmor_parser -R "$narrow"
+echo "=== the one profile, without the package"
+dir=$(mktemp -d)
+(cd "$dir" && apt-get download apparmor-profiles && dpkg-deb -x apparmor-profiles_*.deb x)
+profile=/etc/apparmor.d/bwrap-userns-restrict
+sudo cp "$dir/usr/share/apparmor/extra-profiles/bwrap-userns-restrict" "$profile"
+sudo apparmor_parser -r "$profile" && probe "with bwrap-userns-restrict loaded"
+profiles "with one profile"
+sudo systemctl reload apparmor
+profiles "after an AppArmor reload"
+probe "after an AppArmor reload"
+sudo apparmor_parser -R "$profile" && sudo rm "$profile"
+probe "after undoing it"
+
+echo "=== what the package would add"
+before=$(ls /etc/apparmor.d)
+sudo apt-get install -y -qq apparmor-profiles
+comm -13 <(echo "$before" | sort) <(ls /etc/apparmor.d | sort) | tr '\n' ' '; echo
+profiles "with the package, not reloaded"
+sudo systemctl reload apparmor
+profiles "with the package, after an AppArmor reload"
 exit 0

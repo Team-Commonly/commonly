@@ -14,7 +14,7 @@
  */
 
 import { spawnSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
@@ -63,7 +63,10 @@ const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
 
 const APPARMOR_USERNS_SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
 
+// Inside a container the sysctl reports the host, and what blocks bwrap is the
+// container's own policy, so the host's AppArmor is not the person's way out.
 const readApparmorRestriction = () => {
+  if (existsSync('/.dockerenv')) return false;
   try {
     return readFileSync(APPARMOR_USERNS_SYSCTL, 'utf8').trim() === '1';
   } catch {
@@ -93,9 +96,9 @@ export const detectBwrap = ({
       const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
       return {
         available: false,
-        // Set only when bwrap ran and was refused, so a caller can tell this
-        // host from one without bubblewrap.
-        namespaceRefused: true,
+        // Only when bwrap ran and exited refusing: a probe that timed out or
+        // couldn't spawn says nothing about this host.
+        namespaceRefused: !probe.error && typeof probe.status === 'number',
         reason,
         apparmorRestricted: readRestriction(),
         error: `bubblewrap is installed but cannot start a sandbox on this machine (${reason}). `

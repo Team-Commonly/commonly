@@ -346,6 +346,12 @@ export const runLinuxProdWalk = async () => {
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply: ${JSON.stringify(said.slice(0, 300))}`);
+    // Answered with no working sandbox would be a seat that ran unconfined.
+    if (probe.status !== 0) {
+      fail('the agent answered, but bubblewrap could not start a sandbox on this runner');
+      await stop();
+      return 1;
+    }
     log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with `
       + `${ADAPTER_LABEL[adapter]} in the bubblewrap jail, on an API key through the model gateway`
       + `${adapter === 'codex' ? ' (provider set in the runner\'s system Codex config)' : ''}`);

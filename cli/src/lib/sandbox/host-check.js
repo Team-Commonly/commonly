@@ -86,11 +86,11 @@ const UBUNTU_BWRAP_PROFILE_LINES = [
 ];
 
 /** bubblewrap is installed and this host refused it a sandbox. */
-const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted }) => {
+export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted }) => {
   const label = ADAPTER_LABELS[adapterName] || adapterName;
   const offersProfile = apparmorRestricted === true && (adapterName === 'claude' || adapterName === 'codex');
   return [
-    `Commonly runs a connected ${label} inside a bubblewrap sandbox, and this machine won't let bubblewrap start one (${reason}).`,
+    `A connected ${label} runs inside a bubblewrap sandbox, and this machine won't let bubblewrap start one (${reason}).`,
     ...(apparmorRestricted === true
       ? ['AppArmor on Ubuntu 24.04 and later restricts the user namespaces bubblewrap needs.']
       : []),
