@@ -126,6 +126,8 @@ const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capa
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
 
+const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
+
 const errorText = (error) => [
   error?.message,
   error?.stderr,
@@ -173,13 +175,15 @@ export const classifySpawnFailure = (error) => {
   }
   // A model the provider won't run fails the same way until someone changes it.
   // A 403 for that reads as configuration below; a 404 has no status of its own
-  // there, so without this it retried in seconds against the same answer.
+  // there, so without this it retried in seconds against the same answer. A
+  // turn's text can hold a tool's 404 from before a dropped connection killed
+  // the turn, so a connection fault keeps the quick retry.
   if (
     error?.code === 'ENOENT'
     || error?.status === 401
     || error?.status === 403
     || CONFIGURATION_RE.test(text)
-    || modelUnavailableFailure(error)
+    || (modelUnavailableFailure(error) && !CONNECTION_FAULT_RE.test(text))
   ) {
     return SPAWN_FAILURE_CLASS.CONFIGURATION;
   }

@@ -65,8 +65,9 @@ const jsonBody404 = (text) => {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
   const error = parsed.error && typeof parsed.error === 'object' ? parsed.error : parsed;
-  const is404 = [parsed.status, parsed.code, error.status, error.code]
-    .some((value) => String(value) === '404') || error.type === 'not_found_error';
+  const statuses = [parsed.status, parsed.code, error.status, error.code];
+  if (statuses.some((value) => Number(value) >= 500)) return false;
+  const is404 = statuses.some((value) => String(value) === '404') || error.type === 'not_found_error';
   const message = error.message ?? parsed.message;
   return is404 && typeof message === 'string' && modelShaped(message);
 };
