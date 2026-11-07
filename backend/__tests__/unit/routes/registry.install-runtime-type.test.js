@@ -488,6 +488,7 @@ describe('registry install runtimeType fallback', () => {
       podId: 'pod-1',
       installedByUserId: 'user-1',
       installerIsAgent: false,
+      teamPodMembers: expect.any(Array),
     });
     expect(res.status).not.toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
