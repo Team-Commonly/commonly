@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentControlSection, { AgentControlLoader } from '../components/V2AgentControlSection';
 import i18n, { i18nReady } from '../../i18n';
@@ -11,6 +11,53 @@ jest.mock('../../utils/axiosConfig', () => ({
 const api = jest.requireMock('../../utils/axiosConfig').default;
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
+
+const showFix = (fixCommand?: string, state: 'never' | 'connected' = 'never') => render(
+  <MemoryRouter><V2AgentControlSection agentName="maple" instanceId="default" podId="pod-1" runtimeType="wrapper" actionsOnly
+    connection={{ state, lastSeenAt: null }} fixCommand={fixCommand} /></MemoryRouter>,
+);
+
+describe('a never-connected agent on Settings', () => {
+  test('shows its owner the command, with a way to copy it', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    showFix('commonly agent run maple');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('commonly agent run maple');
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+  });
+
+  test('a webhook gets its sentence and nothing to copy', () => {
+    showFix('Run the program behind your webhook URL.');
+    expect(screen.getByTestId('agent-control-section')).toHaveTextContent('Run the program behind your webhook URL.');
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
+  });
+
+  test('someone who did not install it gets no row', () => {
+    showFix(undefined);
+    expect(screen.queryByTestId('agent-control-section')).not.toBeInTheDocument();
+  });
+
+  test('a connected agent does not show the command', () => {
+    showFix('commonly agent run maple', 'connected');
+    expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
+  });
+
+  test('the loader passes the roster command through', async () => {
+    api.get.mockImplementation((url: string) => {
+      if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-9' } });
+      if (url === '/api/registry/pods/pod-9/agents') return Promise.resolve({ data: { agents: [{
+        name: 'maple', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+        connection: { state: 'never', lastSeenAt: null }, fixCommand: 'commonly agent run maple',
+      }] } });
+      return Promise.reject(new Error('Unexpected request'));
+    });
+    render(<MemoryRouter><AgentControlLoader agentName="maple" instanceId="default" actionsOnly /></MemoryRouter>);
+    expect(await screen.findByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+  });
+});
 
 const show = (state: 'revoked' | 'stale' | 'never' | 'connected') => render(
   <MemoryRouter><V2AgentControlSection agentName="local" instanceId="default" podId="pod-1" runtimeType="wrapper"
