@@ -165,3 +165,17 @@ describe('dark-safe surfaces (TASK-681)', () => {
     expect(rd('../components/V2PodBoard.css')).toMatch(/\.v2-board__overlay\s*\{\s*background:\s*var\(--v2-scrim\)/);
   });
 });
+
+describe('the approval card states read on both themes', () => {
+  const states = fs.readFileSync(path.join(__dirname, '../chat/chat-states.css'), 'utf8');
+
+  test('every set carries the warning text token', () => {
+    expect(light).toContain('--v2-warning-text: #b45309;');
+    expect(dark).toContain('--v2-warning-text: #f4a23a;');
+    expect(media).toContain('--v2-warning-text: #f4a23a;');
+  });
+  test('the states take their colour from tokens', () => {
+    expect(states).toMatch(/\.v2-approval__state--approved\s*\{\s*color:\s*var\(--v2-success-text\)/);
+    expect(states).toMatch(/\.v2-approval__state--attention\s*\{\s*color:\s*var\(--v2-warning-text\)/);
+  });
+});

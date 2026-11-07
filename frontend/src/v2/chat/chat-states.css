@@ -1199,7 +1199,7 @@
 }
 
 .v2-approval__state--approved {
-  color: #047857;
+  color: var(--v2-success-text);
   font-weight: 600;
 }
 
@@ -1209,7 +1209,7 @@
 }
 
 .v2-approval__state--attention {
-  color: #b45309;
+  color: var(--v2-warning-text);
   font-weight: 600;
 }
 

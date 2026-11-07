@@ -143,6 +143,7 @@ body.modern-ui.v2-canvas {
   --v2-success-ring: rgba(16, 185, 129, 0.40);
   --v2-success-ring-strong: rgba(16, 185, 129, 0.50);
   --v2-warning: #f4a23a;
+  --v2-warning-text: #b45309;
   --v2-warning-soft: #fdefdc;
   --v2-info: #0891b2;
   --v2-info-soft: #dff4f8;
@@ -327,6 +328,7 @@ body.modern-ui.v2-canvas {
     --v2-on-accent: #ffffff;
     --v2-accent-fill: #3d5ef2;
     --v2-accent-fill-hover: #2948d8;
+    --v2-warning-text: #f4a23a;
     --v2-warning-soft: rgba(244, 162, 58, 0.16);
     --v2-info-soft: rgba(8, 145, 178, 0.16);
     --v2-platform-x: #e8ebf1;
@@ -401,6 +403,7 @@ body.modern-ui.v2-canvas {
       --v2-on-accent: #ffffff;
       --v2-accent-fill: #3d5ef2;
       --v2-accent-fill-hover: #2948d8;
+      --v2-warning-text: #f4a23a;
       --v2-warning-soft: rgba(244, 162, 58, 0.16);
       --v2-info-soft: rgba(8, 145, 178, 0.16);
       --v2-platform-x: #e8ebf1;
