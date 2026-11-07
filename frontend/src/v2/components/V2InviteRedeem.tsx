@@ -12,6 +12,7 @@ import V2Avatar from './V2Avatar';
 import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import './V2InviteRedeem.css';
+import { isDefaultWorkspaceDescription, isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { Trans, useTranslation } from 'react-i18next';
 
 interface InvitePodInfo {
@@ -205,7 +206,7 @@ const V2InviteRedeem: React.FC = () => {
         <p className="v2-invite__description">
           {/* Invite resolution sends the ownership fact, not the creator ID.
               Keep the owner's original description while correcting it for guests. */}
-          {invite.isOwner === false && pod.name === 'My Workspace' && pod.description === 'Your private workspace'
+          {invite.isOwner === false && isDefaultWorkspaceName(pod.name) && isDefaultWorkspaceDescription(pod.description)
             ? t('inviteRedeem.sharedWorkspaceDescription') : pod.description}
         </p>
       )}

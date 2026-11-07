@@ -8,6 +8,7 @@ const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
+const { isDefaultWorkspaceName } = require('../../config/defaultWorkspacePod');
 const AgentTemplate = require('../../models/AgentTemplate');
 const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
@@ -1082,7 +1083,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       const podDoc = pod;
       // The agent is not counted in `members` (routing goes through
       // AgentInstallation), so a solo workspace reads as one member here.
-      const isOwnWorkspace = podDoc?.name === 'My Workspace';
+      const isOwnWorkspace = isDefaultWorkspaceName(podDoc?.name);
       const introWorthy = podDoc
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'

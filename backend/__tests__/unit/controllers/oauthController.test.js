@@ -327,6 +327,17 @@ describe('OAuth Controller', () => {
       expect(await User.findOne({ email: 'octo@example.com' })).toBeTruthy();
     });
 
+    it('names a new account\'s first pod in the language the signup started in', async () => {
+      process.env.AUTH_ALLOWED_EMAILS = 'octo@example.com';
+      await seedState({ locale: 'zh-CN' });
+      mockGithubProfile();
+      await oauthController.oauthCallback(callbackReq(), mockRes());
+      const user = await User.findOne({ email: 'octo@example.com' });
+      const pod = await Pod.findOne({ createdBy: user._id });
+      expect({ name: pod.name, description: pod.description })
+        .toEqual({ name: '我的工作空间', description: '你的私人工作空间' });
+    });
+
     it('uses a verified team email when a personal email is primary on GitHub', async () => {
       process.env.AUTH_ALLOWED_DOMAINS = 'team.example';
       await seedState();

@@ -32,6 +32,7 @@ import type { V2InviteTab } from './V2InviteModal';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
+import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import { runtimeChipLabel } from '../utils/runtimeChip';
@@ -1564,7 +1565,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
   // Do not offer the automatic first-reply invite in the private Scout workspace
   // (the placement-B privacy ruling). Group replies and empty pods qualify separately.
-  const scoutWorkspace = viewerOwnsPod && pod.name === 'My Workspace';
+  const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
     .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
   const teammateMoment = soloHuman && !scoutWorkspace && detail.initialMessagesLoaded === true
