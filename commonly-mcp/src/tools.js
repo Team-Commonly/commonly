@@ -181,6 +181,26 @@ export const buildTools = (config) => {
     }
   };
 
+  // A checkpoint sent beside a post used to land even when the post came back
+  // held, and a model could stop there with its answer unsent. So it waits for
+  // those posts, and a held one turns it back once: the model may have read the
+  // hold and chosen to say nothing, and that can't be a trap.
+  const postsInFlight = new Set();
+  const heldPods = new Set();
+  const trackPost = async (podId, posting) => {
+    postsInFlight.add(posting);
+    try {
+      const posted = await posting;
+      heldPods.delete(podId);
+      return posted;
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 409 && error.body?.code === 'unseen_messages') heldPods.add(podId);
+      throw error;
+    } finally {
+      postsInFlight.delete(posting);
+    }
+  };
+
   const tools = [
     {
       name: 'commonly_get_started',
@@ -231,11 +251,11 @@ export const buildTools = (config) => {
         messageType: { type: 'string', enum: ['text', 'card'] },
         payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400. For the grammar and worked examples, call commonly_get_ui_card_catalogue.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => trackPost(podId, request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
         body: { content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind },
-      })),
+      }))),
     },
     {
       name: 'commonly_claim_message',
@@ -269,6 +289,11 @@ export const buildTools = (config) => {
         if (typeof eventId !== 'string' || !eventId.trim()
           || typeof deliveryId !== 'string' || !deliveryId.trim()) {
           throw new Error('eventId and deliveryId from the current inbox item are required');
+        }
+        await Promise.allSettled([...postsInFlight]);
+        if (heldPods.size) {
+          heldPods.clear();
+          throw new Error('Not checkpointed: a post from this step came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint again.');
         }
         return request(config, {
           method: 'POST',
