@@ -4,6 +4,8 @@ import { isHostedInstallation } from './hostedRuntimeService';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentEvent = require('../models/AgentEvent');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentEventService = require('./agentEventService');
 
 /**
@@ -14,13 +16,17 @@ const AgentEventService = require('./agentEventService');
  * schedule lives on each installation, so it belongs to one pod.
  *
  * It's delivered as a `heartbeat` event whose `payload.content` is the owner's
- * instruction. Every wrapper already runs that field as the turn's prompt, so
- * this needs no CLI release. The heartbeat setting itself is untouched: a seat
- * with its heartbeat off still gets its schedule.
+ * instruction. The CLI wrapper and OpenClaw already run that field as the
+ * turn's prompt, so this needs no CLI release. The heartbeat setting itself is
+ * untouched: a seat with its heartbeat off still gets its schedule.
  *
- * The dispatcher ticks every 10 minutes, so a wake can land up to 10 minutes
- * late. A tick missed by a restart is caught up inside CATCH_UP_MINUTES, and
- * past that the day is skipped: a morning job at midnight helps nobody.
+ * The dispatcher ticks every minute. A tick missed by a restart is caught up
+ * inside CATCH_UP_MINUTES, and past that the day is skipped. An undelivered
+ * wake isn't added to: a seat back after days runs its job once.
+ *
+ * `lastFiredAt` also lets the wake's post through the run cap
+ * (AgentMessageService.owedScheduledPost): a daily post in a quiet pod is not
+ * a monologue, and would stop on the fourth day.
  */
 
 export const SCHEDULE_PROMPT_MAX_CHARS = 1000;
@@ -34,6 +40,7 @@ export interface AgentSchedule {
   timezone: string;
   prompt: string;
   lastFiredOn?: string;
+  lastFiredAt?: Date;
 }
 
 const isTimeZone = (value: unknown): value is string => {
@@ -64,10 +71,11 @@ export const invalidScheduleField = (body: Record<string, unknown>) => {
   return null;
 };
 
-/** Commonly runs a hosted or native agent, whose turns have their own limits. */
-export const takesSchedule = (installation: any): boolean => (
-  !isHostedInstallation(installation) && !classifyRuntime(installation).isNative
-);
+/** Agents you run yourself. Commonly runs the others, under their own limits. */
+export const takesSchedule = (installation: any): boolean => {
+  const { isByo, isNative } = classifyRuntime(installation);
+  return isByo && !isNative && !isHostedInstallation(installation);
+};
 
 const localClock = (now: Date, timeZone: string) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -112,11 +120,11 @@ export const buildScheduleContent = (prompt: string, podId: unknown): string => 
  */
 export const dispatchSchedules = async (now: Date = new Date()): Promise<number> => {
   const rows = await AgentInstallation.find({ status: 'active', 'config.schedule.enabled': true })
-    .select('agentName instanceId podId config.schedule config.runtime').lean();
+    .select('agentName instanceId podId config.schedule config.runtime config.autonomy').lean();
   let enqueued = 0;
   for (const row of rows) {
     const schedule = row.config?.schedule as AgentSchedule | undefined;
-    if (!schedule || !takesSchedule(row)) continue;
+    if (!schedule || !takesSchedule(row) || row.config?.autonomy?.enabled === false) continue;
     let day: string | null = null;
     try {
       day = dueDay(schedule, now);
@@ -128,9 +136,19 @@ export const dispatchSchedules = async (now: Date = new Date()): Promise<number>
       // eslint-disable-next-line no-await-in-loop
       const claim = await AgentInstallation.updateOne(
         { _id: row._id, 'config.schedule.lastFiredOn': { $ne: day } },
-        { $set: { 'config.schedule.lastFiredOn': day } },
+        { $set: { 'config.schedule.lastFiredOn': day, 'config.schedule.lastFiredAt': now } },
       );
       if (!claim.modifiedCount) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const undelivered = await AgentEvent.exists({
+        agentName: row.agentName,
+        instanceId: row.instanceId || 'default',
+        podId: row.podId,
+        type: 'heartbeat',
+        status: 'pending',
+        'payload.trigger': 'schedule',
+      });
+      if (undelivered) continue;
       // eslint-disable-next-line no-await-in-loop
       await AgentEventService.enqueue({
         agentName: row.agentName,

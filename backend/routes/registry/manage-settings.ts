@@ -6,6 +6,7 @@ import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hoste
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
 import { invalidScheduleField, takesSchedule } from '../../services/agentScheduleService';
+import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
@@ -260,8 +261,20 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
       status: { $ne: 'uninstalled' },
     });
     if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+    // Being this row's installer is not enough: a room or a mention writes a row
+    // naming whoever opened it, and the wake runs on the owner's tools and
+    // spend. The sole-installer rule, as for a push webhook, admins exempt.
     const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
-    if (!canManage(installation, userId, isAdmin)) return res.status(403).json({ error: 'Installer or admin required' });
+    if (!isAdmin) {
+      const ownership = await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId);
+      if (!ownership.owned) {
+        return res.status(403).json({ code: ownership.failure, error: 'Only the agent\'s owner can schedule it' });
+      }
+    }
+    // Stopping one needs no seat in the pod, starting one does, admins included.
+    if (body.enabled && !(await Pod.exists({ _id: installation.podId, members: userId }))) {
+      return res.status(403).json({ code: 'not_pod_member', error: 'Join this pod to schedule an agent in it' });
+    }
     const config = normalizeConfigMap(installation.config) || {};
     if (!takesSchedule({ ...installation.toObject(), config })) {
       return res.status(400).json({ code: 'schedule_byo_only', error: 'A schedule is for an agent you run yourself' });

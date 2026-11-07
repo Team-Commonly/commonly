@@ -26,11 +26,12 @@ const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { dispatchSchedules } = require('./agentScheduleService') as {
-  dispatchSchedules: (now?: Date) => Promise<number>;
-};
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
   buildHeartbeatContent: (heartbeatPodId: unknown) => string;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { dispatchSchedules } = require('./agentScheduleService') as {
+  dispatchSchedules: (now?: Date) => Promise<number>;
 };
 // eslint-disable-next-line global-require
 const PodCurationService = require('./podCurationService');

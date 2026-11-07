@@ -21,12 +21,13 @@
  * - The kernel's own records (`hosted`), which only the install and
  *   provision routes write. Refused for every caller, admins included: a
  *   hand-written engine or provision stamp is a record that no longer
- *   describes what happened.
+ *   describes what happened. `schedule` is refused the same way: its one
+ *   writer is the schedule route, which validates it and checks ownership.
  */
 
 export const KERNEL_RUN_RUNTIME_TYPES: ReadonlySet<string> = new Set(['native', 'hosted']);
 
-export const KERNEL_OWNED_CONFIG_KEYS: readonly string[] = ['hosted'];
+export const KERNEL_OWNED_CONFIG_KEYS: readonly string[] = ['hosted', 'schedule'];
 
 /** What the native runtime reads to decide what a turn costs and can do. */
 export const KERNEL_RUN_COMPUTE_KEYS: readonly string[] = [

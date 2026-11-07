@@ -7,6 +7,7 @@ const {
   buildScheduleContent,
   dueDay,
   invalidScheduleField,
+  takesSchedule,
 } = require('../../../services/agentScheduleService');
 
 const LA = 'America/Los_Angeles';
@@ -72,5 +73,35 @@ describe('buildScheduleContent', () => {
     expect(content).toContain('Post the morning count.');
     expect(content).toContain('podId: pod-1');
     expect(content).toContain('NO_REPLY');
+  });
+});
+
+describe('takesSchedule', () => {
+  const runtime = (config) => ({ config: { runtime: config } });
+
+  it.each([
+    [{ runtimeType: 'local-cli', host: 'byo' }],
+    [{ runtimeType: 'local-cli' }],
+    [{ runtimeType: 'webhook' }],
+  ])('takes an agent you run yourself: %j', (config) => {
+    expect(takesSchedule(runtime(config))).toBe(true);
+  });
+
+  it.each([
+    [{ runtimeType: 'moltbot' }],
+    [{ runtimeType: 'internal' }],
+    [{ runtimeType: 'native' }],
+    [{ runtimeType: 'hosted' }],
+    [{}],
+  ])('refuses the rest: %j', (config) => {
+    expect(takesSchedule(runtime(config))).toBe(false);
+  });
+});
+
+describe('a wake in a daylight saving gap', () => {
+  it('fires at the first tick after the jump', () => {
+    const schedule = { time: '02:30', timezone: 'America/Los_Angeles' };
+    expect(dueDay(schedule, new Date('2026-03-08T09:59:00Z'))).toBeNull();
+    expect(dueDay(schedule, new Date('2026-03-08T10:00:00Z'))).toBe('2026-03-08');
   });
 });

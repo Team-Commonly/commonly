@@ -11,7 +11,9 @@ jest.mock('../../services/agentEventService', () => ({ enqueue: (...args) => moc
 
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
+const AgentEvent = require('../../models/AgentEvent');
 const { AgentInstallation } = require('../../models/AgentRegistry');
+const DMService = require('../../services/dmService');
 const { dispatchSchedules } = require('../../services/agentScheduleService');
 const manageSettings = require('../../routes/registry/manage-settings');
 
@@ -30,8 +32,8 @@ describe('a BYO agent schedule', () => {
       config: new Map([['runtime', runtime]]), ...extra,
     })
   );
-  const save = (agentName, user = owner, payload = body) => request(app)
-    .put(`/api/registry/agents/${agentName}/manage-settings/pods/${pod._id}/schedule`)
+  const save = (agentName, user = owner, payload = body, podId = pod._id) => request(app)
+    .put(`/api/registry/agents/${agentName}/manage-settings/pods/${podId}/schedule`)
     .set('Authorization', header(user))
     .send(payload);
 
@@ -85,6 +87,89 @@ describe('a BYO agent schedule', () => {
     await dispatchSchedules(AT);
     await save('resave', owner, { ...body, prompt: 'New words' });
     await expect(dispatchSchedules(AT)).resolves.toBe(0);
+  });
+
+  it('stays on the row it was set on when a guest opens a room with the agent', async () => {
+    const bot = await User.create({
+      username: 'daily-bot', email: 'b@test.com', password: 'password123', isBot: true,
+      botMetadata: { agentName: 'daily', instanceId: 'default' },
+    });
+    await seat('daily');
+    await save('daily');
+    const room = await DMService.getOrCreateAgentRoom(bot._id, other._id, { agentName: 'daily', instanceId: 'default' });
+    const roomRow = await AgentInstallation.findOne({ agentName: 'daily', podId: room._id }).lean();
+    expect(String(roomRow.installedBy)).toBe(String(other._id));
+    expect(roomRow.config.runtime).toBeDefined();
+    expect(roomRow.config.schedule).toBeUndefined();
+    expect(await dispatchSchedules(AT)).toBe(1);
+    expect(String(mockEnqueue.mock.calls[0][0].podId)).toBe(String(pod._id));
+  });
+
+  it.each([['install'], ['upsert']])('%s never stores a schedule copied from another row', async (method) => {
+    const schedule = { enabled: true, time: '07:47', timezone: 'America/Los_Angeles', prompt: 'x' };
+    const runtime = { runtimeType: 'local-cli' };
+    const options = { version: '1', installedBy: other._id };
+    const first = await AgentInstallation[method]('copy-a', pod._id, { ...options, config: new Map(Object.entries({ runtime, schedule })) });
+    const second = await AgentInstallation[method]('copy-b', pod._id, { ...options, config: { runtime, schedule } });
+    [first, second].forEach((row) => {
+      expect(row.config.get('schedule')).toBeUndefined();
+      expect(row.config.get('runtime')).toEqual(runtime);
+    });
+  });
+
+  it('refuses a guest whose row names them, and a second installer', async () => {
+    const bot = await User.create({
+      username: 'room-bot', email: 'r@test.com', password: 'password123', isBot: true,
+      botMetadata: { agentName: 'roomed', instanceId: 'default' },
+    });
+    await seat('roomed');
+    const room = await DMService.getOrCreateAgentRoom(bot._id, other._id, { agentName: 'roomed', instanceId: 'default' });
+    const res = await save('roomed', other, body, room._id);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('owner_installation_missing');
+
+    const elsewhere = await Pod.create({ name: 'Theirs', type: 'chat', createdBy: other._id, members: [other._id] });
+    await AgentInstallation.create({
+      agentName: 'roomed', instanceId: 'default', podId: elsewhere._id, version: '1', installedBy: other._id,
+      status: 'active', config: new Map([['runtime', { runtimeType: 'local-cli', host: 'byo' }]]),
+    });
+    expect((await save('roomed', other, body, elsewhere._id)).body.code).toBe('another_installer');
+  });
+
+  it('needs a seat in the pod to start a schedule, not to stop one', async () => {
+    await seat('left');
+    expect((await save('left')).status).toBe(200);
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
+    const res = await save('left');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('not_pod_member');
+    expect((await save('left', owner, { ...body, enabled: false })).status).toBe(200);
+  });
+
+  it('does not add to a wake the seat has not picked up, and spends the day', async () => {
+    await seat('offline');
+    await save('offline');
+    await AgentEvent.create({
+      agentName: 'offline', instanceId: 'default', podId: pod._id, type: 'heartbeat', status: 'pending',
+      payload: { trigger: 'schedule', content: 'yesterday' },
+    });
+    expect(await dispatchSchedules(AT)).toBe(0);
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    const row = await AgentInstallation.findOne({ agentName: 'offline' }).lean();
+    expect(row.config.schedule.lastFiredOn).toBe('2026-11-07');
+  });
+
+  it('waits behind no plain heartbeat, and stands down with autonomy off', async () => {
+    await seat('beating');
+    await save('beating');
+    await AgentEvent.create({
+      agentName: 'beating', instanceId: 'default', podId: pod._id, type: 'heartbeat', status: 'pending', payload: {},
+    });
+    await seat('quiet');
+    await save('quiet');
+    await AgentInstallation.updateOne({ agentName: 'quiet' }, { $set: { 'config.autonomy': { enabled: false } } });
+    expect(await dispatchSchedules(AT)).toBe(1);
+    expect(mockEnqueue.mock.calls[0][0].agentName).toBe('beating');
   });
 
   it('skips a schedule turned off and a seat that left', async () => {
