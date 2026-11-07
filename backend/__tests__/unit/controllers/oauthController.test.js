@@ -10,13 +10,19 @@ jest.mock('../../../services/communityPodService', () => ({
 }));
 jest.mock('../../../services/emailService', () => ({ sendEmail: jest.fn().mockResolvedValue(undefined) }));
 const { ensureUserInCommunityPod } = require('../../../services/communityPodService');
+const Pod = require('../../../models/Pod');
 const oauthController = require('../../../controllers/oauthController');
+const AgentMessageService = require('../../../services/agentMessageService');
+const { SCOUT_WELCOME, scoutWelcomeFor } = require('../../../config/native-agents/scout');
 const authController = require('../../../controllers/authController');
 const {
   setupMongoDb,
   closeMongoDb,
   clearMongoDb,
+  waitFor,
 } = require('../../utils/testUtils');
+
+const SCOUT_WELCOME_ZH = scoutWelcomeFor('zh-CN');
 
 jest.mock('axios', () => ({
   post: jest.fn(),
@@ -195,7 +201,9 @@ describe('OAuth Controller', () => {
         params: { provider: 'github' },
         // A query invite on a POST is ignored: only the body counts.
         query: { invite: 'FROM-QUERY' },
-        body: { next: '/v2/pods/abc', invite: 'CODE2', ref: 'x' },
+        body: {
+          next: '/v2/pods/abc', invite: 'CODE2', ref: 'x', locale: 'zh-CN',
+        },
         protocol: 'https',
         get: () => 'api.test.local',
       }, res);
@@ -207,6 +215,7 @@ describe('OAuth Controller', () => {
       expect(state.invitationCode).toBe('CODE2');
       expect(state.next).toBe('/v2/pods/abc');
       expect(state.signupRef).toBe('x');
+      expect(state.locale).toBe('zh-CN');
     });
 
     it('serves consecutive starts — pending rows must not collide on the exchangeCode index', async () => {
@@ -258,6 +267,20 @@ describe('OAuth Controller', () => {
 
       expect((await stateFor('X')).signupRef).toBe('x');
       expect((await stateFor('https://evil.example')).signupRef).toBe('');
+    });
+
+    it('keeps the language the person started in, and anything else is English', async () => {
+      const stateFor = async (locale) => {
+        const res = mockRes();
+        await oauthController.startOAuth(startReq('github', { locale }), res);
+        const state = new URL(res.redirect.mock.calls[0][0]).searchParams.get('state');
+        return OAuthLoginState.findOne({ state });
+      };
+
+      expect((await stateFor('zh-CN')).locale).toBe('zh-CN');
+      expect((await stateFor('fr')).locale).toBe('en');
+      expect((await stateFor(['zh-CN'])).locale).toBe('en');
+      expect((await stateFor(undefined)).locale).toBe('en');
     });
 
     it('keeps a deep link with its query (the re-engagement link)', async () => {
@@ -508,6 +531,31 @@ describe('OAuth Controller', () => {
 
       const user = await User.findOne({ email: 'octo@example.com' });
       expect(user.onboarding.signupRef).toBe('x');
+    });
+
+    it.each([
+      ['zh-CN', SCOUT_WELCOME_ZH],
+      ['en', SCOUT_WELCOME],
+    ])('a new account started in %s gets the welcome in that language', async (locale, body) => {
+      const post = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
+      await seedState({ locale });
+      mockGithubProfile();
+      const res = mockRes();
+
+      await oauthController.oauthCallback(callbackReq(), res);
+
+      const completion = new URL(res.redirect.mock.calls[0][0]);
+      expect(completion.pathname).toBe('/v2/oauth/complete');
+      expect(completion.searchParams.get('code')).toBeTruthy();
+      expect(completion.searchParams.get('locale')).toBeNull();
+
+      // Onboarding finishes after the response, so an earlier test's welcome can land here too.
+      const user = await User.findOne({ email: 'octo@example.com' });
+      const pod = await Pod.findOne({ createdBy: user._id });
+      const welcomes = () => post.mock.calls.map(([message]) => message).filter(({ podId }) => podId === String(pod._id));
+      await waitFor(() => welcomes().length > 0);
+      expect(welcomes()[0].content).toBe(body);
+      post.mockRestore();
     });
 
     it('signing in to an existing account does not set a signup ref', async () => {

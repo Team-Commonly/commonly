@@ -26,6 +26,8 @@ export interface IOAuthLoginState extends Document {
   // First-touch ref code (?ref=x) for a signup made through this login.
   signupRef?: string;
   signupSource?: SignupTouch;
+  // The app language at /start: a new account's Scout welcome is stored in it.
+  locale?: string;
   userId?: Types.ObjectId | null;
   exchangeCode?: string | null;
   exchangeExpiresAt?: Date | null;
@@ -45,6 +47,7 @@ const OAuthLoginStateSchema = new Schema<IOAuthLoginState>(
     invitationCode: { type: String, default: '' },
     next: { type: String, default: '/v2' },
     signupRef: { type: String, default: '' },
+    locale: { type: String, default: 'en' },
     signupSource: {
       type: new Schema({ ref: String, referrer: String, landingPath: String, firstSeenAt: Date }, { _id: false }),
     },
