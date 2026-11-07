@@ -89,6 +89,7 @@ const V2AgentSettingsPage: React.FC = () => {
   const editorLink = useLocation().hash === `#${AGENT_MEMORY_EDITOR_ID}`;
   const landedOnEditor = useRef(false);
   useEffect(() => {
+    if (!editorLink) landedOnEditor.current = false;
     if (!editorLink || landedOnEditor.current || !runsRef.current) return;
     landedOnEditor.current = true;
     runsRef.current.open = true;

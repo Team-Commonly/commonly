@@ -70,6 +70,19 @@ test('the Memory tab\'s Edit link opens How it runs and lands on the editor', as
   renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
   await waitFor(() => expect(screen.getByTestId('agent-how-it-runs')).toHaveAttribute('open'));
   await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
+  expect(document.activeElement).toHaveTextContent('Memory');
+  delete Element.prototype.scrollIntoView;
+});
+
+test('a memory load failure is what the Edit link lands on, so Try again is in view', async () => {
+  const scrollIntoView = jest.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const base = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (url.endsWith('/editable')
+    ? Promise.reject(new Error('down'))
+    : base(url, options)));
+  renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
+  await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
   delete Element.prototype.scrollIntoView;
 });
 

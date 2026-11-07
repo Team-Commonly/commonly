@@ -43,6 +43,26 @@ describe('CollapsibleProse', () => {
     expect(folded(<p>报告很长。他问：“要合并吗？”</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^他问：“要合并吗？”$/);
   });
 
+  it('keeps a corner quote with its question, and a question in a heading', () => {
+    setScrollHeight(900);
+    expect(folded(<p>报告很长。他问：「要合并吗？」</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^他问：「要合并吗？」$/);
+    expect(folded(<><p>Long report.</p><h3>Ready to ship?</h3></>).container.querySelector('.v2-msg__closing')).toHaveTextContent('Ready to ship?');
+  });
+
+  it('shows the end of a very long question, not the whole paragraph again', () => {
+    setScrollHeight(900);
+    const text = `${'word '.repeat(200)}is this right?`;
+    const closing = folded(<p>{text}</p>).container.querySelector('.v2-msg__closing');
+    expect(closing.textContent.length).toBeLessThanOrEqual(241);
+    expect(closing.textContent.startsWith('…')).toBe(true);
+    expect(closing.textContent.endsWith('is this right?')).toBe(true);
+  });
+
+  it('keeps an abbreviation before a capitalised word', () => {
+    setScrollHeight(900);
+    expect(folded(<p>All done. Should I use one, e.g. HTTP?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. HTTP\?$/);
+  });
+
   it('keeps an abbreviation inside the question', () => {
     setScrollHeight(900);
     expect(folded(<p>All done. Should I use one, e.g. the new API?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. the new API\?$/);

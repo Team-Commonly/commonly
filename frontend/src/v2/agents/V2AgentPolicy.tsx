@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { agentSettingsErrorText as message } from './useAgentSettings';
@@ -51,9 +51,13 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
 
   // Reached from the Memory tab's Edit control. Scrolled to once the editor has drawn, because
   // only then has the page above it stopped growing.
-  const editorDrawn = Boolean(documents) || memoryPrivate;
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const editorDrawn = Boolean(documents) || memoryPrivate || Boolean(memoryLoadError);
   useEffect(() => {
-    if (scrollToEditor && editorDrawn) document.getElementById(AGENT_MEMORY_EDITOR_ID)?.scrollIntoView?.({ block: 'center' });
+    if (!scrollToEditor || !editorDrawn) return;
+    document.getElementById(AGENT_MEMORY_EDITOR_ID)?.scrollIntoView?.({ block: 'center' });
+    // Without this, the next Tab starts from the top of the page.
+    if (document.activeElement === document.body) editorHeading.current?.focus({ preventScroll: true });
   }, [scrollToEditor, editorDrawn]);
   const memoryUrl = `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/editable`;
   const loadMemory = useCallback(async (preserveDraft = false) => {
@@ -174,7 +178,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     </div>}
     {/* Memory editing has no frame here yet; the Memory tab's Edit control opens it, and it keeps its live markup. */}
     <div className="v2-agent-policy__group" id={AGENT_MEMORY_EDITOR_ID}>
-      <h3>{t('agentPolicy.memory')}</h3>
+      <h3 ref={editorHeading} tabIndex={-1}>{t('agentPolicy.memory')}</h3>
       {documents ? <>
         <div className="v2-agent-policy__memory-tabs" role="tablist" aria-label={t('agentPolicy.memory')}>
           {memorySections.map((entry) => <button type="button" role="tab" aria-selected={entry === section}

@@ -1,6 +1,8 @@
 /* Memory editing has no settings frame yet; the rest of Policy lives in v2-agent-settings-surface.css. */
 .v2-agent-policy__group { display: grid; gap: 14px; margin-top: 12px; padding: 20px; border: 1px solid var(--v2-border); border-radius: 6px; background: var(--v2-surface); }
 .v2-agent-policy__group h3 { margin: 0; font: 700 16px/22px var(--v2-font-display); }
+/* Focus lands here from the Memory tab's Edit control; the heading isn't a control. */
+.v2-agent-policy__group h3:focus { outline: none; }
 .v2-agent-policy__group label { display: grid; gap: 6px; color: var(--v2-text-secondary); font: 500 13px/20px var(--v2-font); }
 .v2-agent-policy__group textarea { width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 400 14px/20px var(--v2-font); }
 .v2-agent-policy__group textarea { resize: vertical; }
