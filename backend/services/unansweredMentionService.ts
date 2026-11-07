@@ -58,6 +58,7 @@ const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageI
  *   agent: nobody is waiting on it. A welcome wake is a newcomer's first
  *   message, so a row retired here does get this line, but a native turn that
  *   runs on one and fails posts nothing (personAddressedThisTurn);
+ * - it was a comment on a post with no pod: there is no room to tell them in;
  * - the agent has posted in the pod since the message. It was alive and may
  *   have answered without acknowledging, and a line claiming silence would
  *   then be false. Missing a line is better than a wrong one.
@@ -67,6 +68,9 @@ export async function noteUnansweredMention(event: RetiredEvent): Promise<boolea
   if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true || payload.boardWake === true) {
     return false;
   }
+  // A comment on a post with no pod carries some pod of the commenter's.
+  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  if (comment && !comment.postPodId) return false;
   const waiting: ReturnType<typeof carriedMessages> = [];
   for (const message of carriedMessages(event)) {
     const senderId = typeof message.userId === 'string' || typeof message.userId === 'number'
