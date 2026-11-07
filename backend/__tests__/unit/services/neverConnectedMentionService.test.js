@@ -73,6 +73,13 @@ it('posts one not-connected line when a person mentions a BYO agent that never p
   });
 });
 
+it('says nothing with no message to hang it on, since the line is a reply to the mention', async () => {
+  const posted = await noteNeverConnectedMention({ ...args, messageId: null });
+
+  expect(posted).toBe(false);
+  expect(mockEmitNotConnected).not.toHaveBeenCalled();
+});
+
 it('posts the line when the owner is the one who mentions it (TASK-722)', async () => {
   const posted = await noteNeverConnectedMention({ ...args, senderId: byoInstall.installedBy });
 

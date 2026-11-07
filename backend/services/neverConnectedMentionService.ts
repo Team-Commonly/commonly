@@ -62,9 +62,10 @@ export async function isNeverConnectedAgent(args: {
  * `never-connected`, the same verdict the Your Team row and the stalled-connect
  * nudge use. There is no second rule here.
  *
- * Silent when: the sender is a bot (agents do not get told they are unseen),
- * the install is not active, the agent is not in the never-connected state, or
- * a line for this agent already sits in the pod today.
+ * Silent when: there is no message to reply to, the sender is a bot (agents do
+ * not get told they are unseen), the install is not active, the agent is not in
+ * the never-connected state, or a line for this agent already sits in the pod
+ * today.
  */
 export async function noteNeverConnectedMention({
   podId,
@@ -83,6 +84,8 @@ export async function noteNeverConnectedMention({
   threadRootId?: string | number | null;
   now?: Date;
 }): Promise<boolean> {
+  // The line is a reply to the mention, and a comment has no message to reply to.
+  if (messageId === null) return false;
   const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
   if (!sender || sender.isBot) return false;
 
