@@ -480,11 +480,11 @@ const V2AgentSettingsPage: React.FC = () => {
                 </span>
               </div>
               <div className="lrow">
-                <span className="lb"><V2AgentSettingsIcon name="grid" />{t('agentSkills.title')}</span>
+                <span className="lb"><V2AgentSettingsIcon name="grid" />{t('agentSkills.title')}{phone && skillCount === 0 && ` · ${t('agentSettings.none').toLowerCase()}`}</span>
                 <span className="vl">
                   {typeof skillCount === 'number' && (skillCount > 0
                     ? t('agentSettings.skillCount', { count: skillCount })
-                    : <span className="mu">{t('agentSettings.none')}</span>)}
+                    : !phone && <span className="mu">{t('agentSettings.none')}</span>)}
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}

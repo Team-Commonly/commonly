@@ -1032,6 +1032,20 @@ describe('one Identity & access list (d215 frame)', () => {
     });
     afterEach(() => { window.matchMedia = realMatchMedia; });
 
+    test('empty Connectors and Skills read as one label, as the frame draws them', async () => {
+      axios.get.mockImplementation(fleet());
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText(/^Connectors · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(await screen.findByText(/^Skills · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(screen.queryByText('None')).not.toBeInTheDocument();
+    });
+
     test('a 52px bar with back to Your team, the tabs as their own row, and every row still reachable', async () => {
       axios.get.mockImplementation(fleet());
       render(
@@ -1052,7 +1066,7 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(tabs.closest('.mtop')).toBeNull();
       expect(tabs).toHaveClass('seg--full');
       for (const label of ['Name', 'Runtime key', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
-        expect(screen.getByText(label, { selector: '.lb' })).toBeInTheDocument();
+        expect(screen.getByText(new RegExp(`^${label}( · none)?$`), { selector: '.lb' })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Your team' }));
       expect(await screen.findByText('your team')).toBeInTheDocument();
