@@ -1,3 +1,4 @@
+import { isHostedRoomRefusal } from './hostedRoomRefusal';
 import { isLimitedUseTool } from './limitedUseConnectors';
 import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
@@ -1374,7 +1375,10 @@ const resolveApprovalPodId = async (
     String(target.id),
     connection.ownerUserId,
     { agentName: agentName || 'grant-broker', instanceId: instanceId || 'default' },
-  );
+  ).catch((error: unknown) => {
+    if (isHostedRoomRefusal(error)) throw new RoomGrantError(error.code, error.message, error.status);
+    throw error;
+  });
   if (!room?._id) {
     throw new RoomGrantError('approval_unavailable', 'approval room could not be created', 503);
   }

@@ -238,18 +238,30 @@ const identityRows = (agentName: string, instanceId: string, extra: Record<strin
 );
 
 export interface HostedOwner {
+  // Null when people host the agent but none of them can carry this requester's
+  // turns. The row is refused then, and never guessed at.
   ownerId: unknown;
-  // False when every row the owner has of this agent is uninstalled.
+  // False when every row of the agent's owners is uninstalled. A paused row is
+  // not gone: resuming it has to find its rooms, so paused stays live.
   live: boolean;
+  // True when every owner paused it. A room written now starts paused, and
+  // reaches the owner's line only when they resume it.
+  paused: boolean;
 }
+
+// Oldest rows first. Past it an owner goes unseen and the row is refused, which
+// is the safe way to be wrong: nobody is charged.
+export const HOSTED_OWNER_POD_SCAN = 500;
 
 /**
  * Who owns a hosted agent, as seen by the person opening a DM with it: a person
  * who installed it themselves, on a row that is not a DM's. An agent can be
  * hosted by several people under one identity, so `requesterId`'s own row comes
- * first, then the row of someone hosting it in a pod they share, then the
- * oldest. A DM's own row never names an owner, and neither does a row an agent
- * wrote for itself. Null when no person owns it.
+ * first, then the oldest row of someone hosting it in a pod they share. An owner
+ * who shares no pod with them is never picked, whoever else is hosting it: a
+ * stranger's turns are not theirs to pay for. Nor is a paused owner while anyone
+ * still runs it. A DM's own row never names an owner, and neither does a row an
+ * agent wrote for itself. Null when no person owns it.
  */
 export const resolveHostedOwner = async (
   agentName: string, instanceId: string, requesterId: unknown,
@@ -270,14 +282,21 @@ export const resolveHostedOwner = async (
   const owned = hosted.filter((row: any) => personIds.has(String(row.installedBy)));
   if (!owned.length) return null;
   const standing = owned.filter((row: any) => row.status !== 'uninstalled');
-  const pool: any[] = standing.length ? standing : owned;
-  const shared = await Pod.find({ _id: { $in: pool.map((row) => row.podId) }, members: requesterId })
-    .select('_id').lean();
+  const running = standing.filter((row: any) => row.status !== 'paused');
+  const live = standing.length > 0;
+  const paused = live && !running.length;
+  let pool: any[] = owned;
+  if (running.length) pool = running;
+  else if (live) pool = standing;
+  if (!requesterId) return { ownerId: null, live, paused };
+  const own = pool.find((candidate) => String(candidate.installedBy) === String(requesterId));
+  if (own) return { ownerId: own.installedBy, live, paused };
+  const podIds = [...new Set(pool.map((candidate) => String(candidate.podId)))].slice(0, HOSTED_OWNER_POD_SCAN);
+  const shared = await Pod.find({ _id: { $in: podIds }, members: { $eq: requesterId } })
+    .select('_id').limit(HOSTED_OWNER_POD_SCAN).lean();
   const sharedIds = new Set(shared.map((pod: any) => String(pod._id)));
-  const row = pool.find((candidate) => String(candidate.installedBy) === String(requesterId))
-    || pool.find((candidate) => sharedIds.has(String(candidate.podId)))
-    || pool[0];
-  return { ownerId: row.installedBy, live: standing.length > 0 };
+  const row = pool.find((candidate) => sharedIds.has(String(candidate.podId)));
+  return { ownerId: row ? row.installedBy : null, live, paused };
 };
 
 /**
@@ -465,6 +484,7 @@ module.exports = {
   findHeldHostedInstallation,
   resumeCapRefusal,
   AGENT_ROOM_AUTO_JOIN_SOURCE,
+  HOSTED_OWNER_POD_SCAN,
   resolveHostedOwner,
   retireHostedRoomRows,
   turnsToday,

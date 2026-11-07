@@ -1,3 +1,5 @@
+const { HostedRoomRefusedError } = require('../../../services/hostedRoomRefusal');
+
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
@@ -92,6 +94,17 @@ test('approval after a pod becomes ineligible refuses before provider execution'
   expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
     outcome: 'refused', reason: 'outsider_grant_pod_bridged',
   }));
+});
+
+test('keeps a hosted room refusal as a permanent refusal, with its own code', async () => {
+  mockDmService.getOrCreateAgentRoom.mockRejectedValue(new HostedRoomRefusedError());
+  await expect(broker.callTool({
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },
+  })).rejects.toMatchObject({ code: 'hosted_no_shared_owner', statusCode: 403 });
+  expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+    outcome: 'refused', reason: 'hosted_no_shared_owner',
+  }));
+  expect(mockProposeAction).not.toHaveBeenCalled();
 });
 
 test('records a refusal when the approval proposal is refused, naming the owner', async () => {

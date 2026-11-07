@@ -5,6 +5,7 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import {
   AGENT_ROOM_AUTO_JOIN_SOURCE, isHostedInstallation, resolveHostedOwner,
 } from './hostedRuntimeService';
+import { HostedRoomRefusedError } from './hostedRoomRefusal';
 import { identityIsPaused } from './runtimeIdentityOwnership';
 
 /**
@@ -319,6 +320,33 @@ class DMService {
     const fallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
     const label = resolveAgentDisplayLabel(agentUser, fallback);
 
+    // The room install must carry the agent's RUNTIME, or the event router
+    // finds this pod-scoped row, sees no runtimeType, and parks the wake in the
+    // external queue where nothing consumes it. Every hosted Scout DM went
+    // silent this way (2026-08-28 .. 09-02: two strangers, one smoke). Copy
+    // runtime from the agent's existing active install; the room is a
+    // projection of the same agent. While the agent is paused the room starts
+    // paused too, and takes a paused row's runtime so resuming it doesn't leave
+    // it silent.
+    //
+    // The person in a DM with a hosted agent is a guest unless they own it.
+    // `installedBy` is what makes someone an owner, for the cap, for starting
+    // and stopping it and for the line its turns draw on, so the row names the
+    // agent's owner, and a stop reaches it with their others. This is settled
+    // before the pod exists: a refused person gets a reason and no room, rather
+    // than a room nothing can answer in.
+    let paused = false;
+    let inherited: Record<string, unknown> | null = null;
+    let hostedOwner: Awaited<ReturnType<typeof resolveHostedOwner>> = null;
+    let hosted = false;
+    if (agentName) {
+      paused = await identityIsPaused(agentName.toLowerCase(), instanceId || 'default');
+      inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default', paused ? 'paused' : 'active');
+      hosted = isHostedInstallation({ config: inherited });
+      if (hosted) hostedOwner = await resolveHostedOwner(agentName, instanceId || 'default', requestingUserId);
+      if (hostedOwner?.live && !hostedOwner.ownerId) throw new HostedRoomRefusedError();
+    }
+
     // Create a new agent-room pod. The agent is the conceptual "host" — listed
     // first in members and set as createdBy so the UI can display the agent's
     // avatar in the pod header.
@@ -359,25 +387,7 @@ class DMService {
     // (they fire on user message, not on a schedule).
     if (agentName) {
       try {
-        // The room install must carry the agent's RUNTIME, or the event
-        // router finds this pod-scoped row, sees no runtimeType, and parks
-        // the wake in the external queue where nothing consumes it. Every
-        // hosted Scout DM went silent this way (2026-08-28 .. 09-02: two
-        // strangers, one smoke). Copy runtime from the agent's existing
-        // active install; the room is a projection of the same agent.
-        // While the agent is paused the room starts paused too, and takes a
-        // paused row's runtime so resuming it doesn't leave it silent.
-        const paused = await identityIsPaused(agentName.toLowerCase(), instanceId || 'default');
-        const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default', paused ? 'paused' : 'active');
-        // The person in a DM with a hosted agent is a guest unless they own
-        // it. `installedBy` is what makes someone an owner, for the cap, for
-        // starting and stopping it and for the line its turns draw on, so this
-        // row names the agent's owner, and a stop reaches it with their others.
         // With no owner to name there is no row: the agent can't answer here.
-        const hosted = isHostedInstallation({ config: inherited });
-        const hostedOwner = hosted
-          ? await resolveHostedOwner(agentName, instanceId || 'default', requestingUserId)
-          : null;
         if (hosted && !hostedOwner?.live) {
           console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
           return roomPod;
@@ -396,7 +406,7 @@ class DMService {
           // the pod name above. NOT `${agentName} (${instanceId})`.
           displayName: label,
         });
-        if (paused) {
+        if (paused || hostedOwner?.paused) {
           await AgentInstallation.updateOne(
             { agentName: agentName.toLowerCase(), podId: roomPod._id, instanceId: instanceId || 'default' },
             { $set: { status: 'paused' } },
