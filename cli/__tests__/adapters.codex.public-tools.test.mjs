@@ -148,6 +148,11 @@ describeWithCodex('a public codex seat, on the real binary', () => {
     );
   });
 
+  test('an API-key turn talks only to the model route', async () => {
+    await runTurn({ modelName: 'gpt-5.5', reply: () => null });
+    expect(model.refused).toEqual([]);
+  });
+
   test('a gpt-6 model nests the same tools under exec', async () => {
     const requests = await runTurn({
       modelName: 'gpt-6-astra',
