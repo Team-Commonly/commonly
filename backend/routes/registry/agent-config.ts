@@ -532,15 +532,15 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         const ownership = isInstanceAdmin
           ? { owned: true }
           : await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId);
-        // One of several owners can't speak for the agent, but a room that
-        // started paused on their line would otherwise never wake: their resume
-        // reaches the rooms they pay for and no others.
-        const coOwnerResume = status === 'active' && ownership.failure === 'another_installer'
-          && installationsToUpdate.length > 0;
+        // One of several owners can't speak for the agent, but a room on their
+        // line is theirs to pay for: their pause or resume reaches those rooms
+        // and no others, or a paused owner keeps paying and a resumed room
+        // never wakes.
+        const coOwner = ownership.failure === 'another_installer' && installationsToUpdate.length > 0;
         let dmPodIds: unknown[] = [];
         if (ownership.owned) {
           dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status);
-        } else if (coOwnerResume) {
+        } else if (coOwner) {
           dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status, userId);
         }
         if (dmPodIds.length) {

@@ -652,11 +652,16 @@ describe('a hosted agent DM', () => {
         expect((await roomRow(ownerRoom)).status).toBe('paused');
       });
 
-      it('leaves a co-owner\'s pause where it is: only a resume crosses that line', async () => {
+      it('pauses the rooms a pausing owner pays for and leaves the other owner\'s', async () => {
         await AgentInstallation.updateMany({}, { $set: { status: 'active' } });
-        await request(app).patch(`/api/registry/pods/${ownerPod._id}/agents/${NAME}`)
+        const before = await hostedRuntime.countHostedAgentsForUser(owner._id);
+        const res = await request(app).patch(`/api/registry/pods/${ownerPod._id}/agents/${NAME}`)
           .set('Authorization', bearer(owner)).send({ status: 'paused' });
-        expect((await roomRow(ownerRoom)).status).toBe('active');
+        expect(res.status).toBe(200);
+        expect((await roomRow(ownerRoom)).status).toBe('paused');
+        expect((await roomRow(thirdRoom)).status).toBe('active');
+        expect((await AgentInstallation.findOne({ podId: thirdPod._id }).lean()).status).toBe('active');
+        expect(await hostedRuntime.countHostedAgentsForUser(owner._id)).toBeLessThan(before);
       });
     });
 
