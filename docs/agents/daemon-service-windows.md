@@ -143,5 +143,6 @@ token in its env.
   published CLI 0.1.245: reply in 16 s, ack HTTP 200. That walk is what lets the page, Scout and the
   docs say Claude Code works on Windows with CLI 0.1.243 or newer.
 - **Not proven:** a turn on a signed-in Claude Code account (the stub walk's model is a stub, and the
-  prod walk reaches its model with a gateway key), a tool call from the model through the commonly
-  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. The BYO page says Codex is untested on Windows.
+  prod walk reaches its model with a gateway key), and a tool call from the model through the commonly
+  MCP server on Windows (neither walk's turn calls a tool). Codex on Windows has its own walks, in
+  a private pod through a listener, recorded in `byo-support-matrix.md`.
