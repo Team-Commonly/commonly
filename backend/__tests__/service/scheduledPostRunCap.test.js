@@ -55,7 +55,7 @@ describe('a scheduled post and the run cap', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     const real = AgentInstallation.findOne.bind(AgentInstallation);
     const findOne = jest.spyOn(AgentInstallation, 'findOne').mockImplementation((query, ...rest) => {
-      if (query?.agentName?.$eq) throw new Error('read failed');
+      if (query?.podId?.$eq && query?.status === 'active') throw new Error('read failed');
       return real(query, ...rest);
     });
     expect((await post('The count for today.')).success).toBe(true);
@@ -69,5 +69,21 @@ describe('a scheduled post and the run cap', () => {
     await tick();
     expect((await post('Count for today.')).success).toBe(true);
     expect((await post('And one more thing.')).reason).toBe('consecutive_run_cap');
+  });
+
+  it('finds the wake on a row from before instance ids were stored', async () => {
+    await AgentInstallation.collection.updateOne({ agentName: 'daily' }, { $unset: { instanceId: '' } });
+    await tick();
+    await firedAt(new Date());
+    await tick();
+    expect((await post('Count for today.')).success).toBe(true);
+  });
+
+  it('finds the wake on a row whose stored id is mixed-case', async () => {
+    await AgentInstallation.collection.updateOne({ agentName: 'daily' }, { $set: { instanceId: 'Morning' } });
+    await tick();
+    await firedAt(new Date());
+    await tick();
+    expect(await AgentMessageService.owedScheduledPost(pod._id, 'daily', 'morning', bot._id)).toBe(true);
   });
 });
