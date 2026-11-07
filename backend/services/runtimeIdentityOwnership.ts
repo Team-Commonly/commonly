@@ -289,11 +289,11 @@ export const isGuestOfIdentity = async (
   instanceId: string,
 ): Promise<boolean> => {
   const ownership = await ownsRuntimeIdentity(userId, agentName.toLowerCase(), instanceId.toLowerCase())
-    .catch((error: Error) => {
+    .catch((error: Error): OwnershipCheck => {
       console.warn('Could not read the agent\'s owner:', error.message);
-      return { owned: true as const };
+      return { owned: true };
     });
-  return !ownership.owned && ownership.failure === 'owner_installation_missing';
+  return ownership.owned === false && ownership.failure === 'owner_installation_missing';
 };
 
 /**

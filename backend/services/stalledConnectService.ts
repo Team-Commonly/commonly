@@ -65,6 +65,7 @@ export interface StalledScanResult {
   resolved: Array<{ episodeId: string; agentName: string; podId: string }>;
   skippedTooRecent: number;
   skippedNotStalled: number;
+  skippedGuest: number;
 }
 
 export interface TokenEpisodeKey {
@@ -208,7 +209,7 @@ export const scan = async ({
   const { AgentInstallation } = require('../models/AgentRegistry');
 
   const result: StalledScanResult = {
-    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0,
+    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0,
   };
 
   await resolveConnected({ now, result });
@@ -272,7 +273,7 @@ export const scan = async ({
     // A room's row names whoever opened it, and the nudge is for whoever runs
     // the agent, who hears it on their own row.
     if (await isGuestOfIdentity(install.installedBy, agentName, instanceId)) {
-      result.skippedNotStalled += 1;
+      result.skippedGuest += 1;
       continue;
     }
     // An MCP client never listens, so it derives never-connected however often

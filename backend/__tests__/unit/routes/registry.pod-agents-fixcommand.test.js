@@ -108,6 +108,8 @@ describe('never-connected seat command (TASK-716)', () => {
     mockViewer = String(other);
     const list = await request(app).get(`/api/registry/pods/${roomId}/agents`);
     const one = await request(app).get(`/api/registry/pods/${roomId}/agents/nova`);
+    expect(list.body.agents.map((a) => a.name)).toContain('nova');
+    expect(one.body.agent.name).toBe('nova');
     expect(JSON.stringify(list.body)).not.toContain(url);
     expect(JSON.stringify(one.body)).not.toContain(url);
 
@@ -120,9 +122,8 @@ describe('never-connected seat command (TASK-716)', () => {
       config: { ...config, autoJoinSource: 'mention-resolution' },
     });
     const joined = await request(app).get(`/api/registry/pods/${standing}/agents/nova`);
+    expect(joined.body.agent.name).toBe('nova');
     expect(JSON.stringify(joined.body)).not.toContain(url);
-    const room = await request(app).get(`/api/registry/pods/${roomId}/agents/nova`);
-    expect(JSON.stringify(room.body)).not.toContain(url);
 
     mockViewer = String(owner);
     const own = await request(app).get(`/api/registry/pods/${podId}/agents/nova`);

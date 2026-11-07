@@ -69,8 +69,9 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await row(room._id, guest._id);
     await row(team._id, owner._id);
 
-    await scan({ now: NOW });
+    const result = await scan({ now: NOW });
     expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    expect(result.skippedGuest).toBe(1);
   });
 
   const expectMcpClose = async () => {
