@@ -20,6 +20,91 @@ const linksFor = (content) => {
   return links;
 };
 
+const CLI_LINE = 'claude mcp add commonly -e COMMONLY_API_URL=https://api.commonly.me -e COMMONLY_AGENT_TOKEN=<your key> -- npx -y @commonlyai/mcp';
+
+const rendered = (source) => {
+  const { container, unmount } = render(<RealReactMarkdown>{source}</RealReactMarkdown>);
+  const out = {
+    code: Array.from(container.querySelectorAll('code')).map((c) => c.textContent),
+    links: Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href')),
+  };
+  unmount();
+  return out;
+};
+
+describe('a URL inside code stays as written, because people copy it', () => {
+  it('a fenced command keeps its URL', () => {
+    const { code, links } = rendered(linkifyBareUrls(`Run this:\n\n\`\`\`\n${CLI_LINE}\n\`\`\`\n`));
+    expect(code).toEqual([`${CLI_LINE}\n`]);
+    expect(links).toEqual([]);
+  });
+
+  it('a fence the message never closed still counts as code', () => {
+    const { code, links } = rendered(linkifyBareUrls(`Run this:\n\n\`\`\`\n${CLI_LINE}`));
+    expect(code[0]).toContain('COMMONLY_API_URL=https://api.commonly.me -e');
+    expect(links).toEqual([]);
+  });
+
+  it('single and double backtick spans keep their URL', () => {
+    expect(rendered(linkifyBareUrls('set `URL=https://a.example/x` first')).code).toEqual(['URL=https://a.example/x']);
+    expect(rendered(linkifyBareUrls('set ``URL=https://a.example/`x`` first')).code).toEqual(['URL=https://a.example/`x']);
+  });
+
+  it('a URL beside the code still links', () => {
+    const { code, links } = rendered(linkifyBareUrls('see https://b.example/docs then run `curl https://a.example/x`'));
+    expect(code).toEqual(['curl https://a.example/x']);
+    expect(links).toEqual(['https://b.example/docs']);
+  });
+
+  it('a URL ends where a code span starts', () => {
+    const { code, links } = rendered(linkifyBareUrls('https://b.example/docs`token`'));
+    expect(code).toEqual(['token']);
+    expect(links).toEqual(['https://b.example/docs']);
+  });
+
+  it('a stray fence mid-sentence hides nothing after it', () => {
+    expect(rendered(linkifyBareUrls('Use ``` to fence code, see https://b.example/docs')).links)
+      .toEqual(['https://b.example/docs']);
+  });
+
+  it('a stray fence mid-sentence does not pair with a real fence below it', () => {
+    const { code, links } = rendered(linkifyBareUrls(`Use \`\`\` to fence code:\n\n\`\`\`\n${CLI_LINE}\n\`\`\`\n`));
+    expect(code).toEqual([`${CLI_LINE}\n`]);
+    expect(links).toEqual([]);
+  });
+
+  it('a longer fence holds a shorter one and keeps its URL', () => {
+    const { code, links } = rendered(linkifyBareUrls('````\n```\nrun https://a.example/x\n```\n````\n'));
+    expect(code).toEqual(['```\nrun https://a.example/x\n```\n']);
+    expect(links).toEqual([]);
+  });
+
+  it('a fence indented inside a list keeps its URL', () => {
+    const { code, links } = rendered(linkifyBareUrls('1. Run:\n\n   ```\n   curl https://a.example/x\n   ```\n'));
+    expect(code).toEqual(['curl https://a.example/x\n']);
+    expect(links).toEqual([]);
+  });
+
+  it('text after a closed fence still links', () => {
+    expect(rendered(linkifyBareUrls('```\ncurl https://a.example/x\n```\n\nsee https://b.example/docs')).links)
+      .toEqual(['https://b.example/docs']);
+  });
+
+  it('a one-line triple-backtick span keeps its URL', () => {
+    expect(rendered(linkifyBareUrls('run ```curl https://a.example/x``` first')).links).toEqual([]);
+  });
+
+  it('a NUL already in the message cannot be taken for a masked span', () => {
+    expect(linkifyBareUrls('a\u00000\u0000b `c`')).toBe('a0b `c`');
+    expect(prUrlsToRefLinks('a\u00005\u0000b')).toBe('a5b');
+  });
+
+  it('a PR URL in code is not turned into a ref link', () => {
+    const line = '`gh pr view https://github.com/o/r/pull/12`';
+    expect(prUrlsToRefLinks(`${line} and https://github.com/o/r/pull/13`)).toBe(`${line} and [o/r#13](https://github.com/o/r/pull/13)`);
+  });
+});
+
 describe('bare URL linkification through the real react-markdown', () => {
   it('a closing bracket inside the URL stays one link with the full href', () => {
     expect(linksFor('see https://example.com/a]b now')).toEqual([

@@ -213,6 +213,19 @@ const REACTION_TOKEN_RE = /\[\[reactions:([^\]]+)\]\]/g;
 const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // Absolute image URLs and the instance-relative upload reference the legacy
 // image send posted as bare content (`/api/uploads/<key>.png`).
+// Code spans and fences are quoted grammar, not attachments or links: mask them
+// while directives and URLs are rewritten, then put them back verbatim. Inside
+// code a link's brackets show as text and break a command someone copies. As in
+// markdown, a fence opens on a line of its own (indented inside a list) and runs to
+// its closing line or the end of the message. Backticks anywhere else are a span
+// on one line, so a stray ``` mid-sentence can't pair with a real fence below it.
+const CODE_RE = /^[ \t]*(`{3,})[^`\n]*$[\s\S]*?(?:^[ \t]*\1`*[ \t]*$|(?![\s\S]))|```[^\n]*?```|``[^\n]*?``|`[^`\n]*`/gm;
+const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
+  const spans: string[] = [];
+  const masked = content.replace(/\u0000/g, '').replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
+  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
+};
+
 // Bare http(s) URLs become markdown links. The match runs to the end of the URL,
 // so `github.com/x` links whole. Trailing punctuation stays outside the link, and
 // so does a closing paren the URL does not open. Brackets are escaped in the link
@@ -222,43 +235,40 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // link, so the sentence keeps its words and punctuation ("Review: o/r#12.") and
 // the card below carries the detail. Removing the URL instead left stray
 // separators behind ("Review: ." and "see  for it").
-export const prUrlsToRefLinks = (text: string): string => text.replace(
-  // A URL already inside link syntax (`[label](url)`, `<url>`, `[url]`) is left alone.
-  /(?<![(<[])https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
-  (_match, owner: string, repo: string, num: string) => (
-    `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
-  ),
-);
+export const prUrlsToRefLinks = (text: string): string => {
+  const { masked, restore } = maskCode(text);
+  return restore(masked.replace(
+    // A URL already inside link syntax (`[label](url)`, `<url>`, `[url]`) is left alone.
+    /(?<![(<[])https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
+    (_match, owner: string, repo: string, num: string) => (
+      `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
+    ),
+  ));
+};
 
 const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D', '\\': '%5C' };
-export const linkifyBareUrls = (text: string): string => text.replace(
-  /(?<![(<[])https?:\/\/[^\s<>"]+/g,
-  (raw) => {
-    let url = raw;
-    for (;;) {
-      const before = url;
-      url = url.replace(/[.,!?;:]+$/, '');
-      if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-        url = url.slice(0, -1);
+export const linkifyBareUrls = (text: string): string => {
+  const { masked, restore } = maskCode(text);
+  return restore(masked.replace(
+    /(?<![(<[])https?:\/\/[^\s<>"\u0000]+/g,
+    (raw) => {
+      let url = raw;
+      for (;;) {
+        const before = url;
+        url = url.replace(/[.,!?;:]+$/, '');
+        if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+          url = url.slice(0, -1);
+        }
+        if (url === before) break;
       }
-      if (url === before) break;
-    }
-    const label = url.replace(/[\\[\]]/g, '\\$&');
-    const dest = url.replace(/[()[\]\\]/g, (c) => LINK_DEST_ENCODE[c]);
-    return `[${label}](${dest})${raw.slice(url.length)}`;
-  },
-);
+      const label = url.replace(/[\\[\]]/g, '\\$&');
+      const dest = url.replace(/[()[\]\\]/g, (c) => LINK_DEST_ENCODE[c]);
+      return `[${label}](${dest})${raw.slice(url.length)}`;
+    },
+  ));
+};
 
 const IMAGE_URL_RE = /^(?:https?:\/\/.+|\/api\/uploads\/[^\s]+)\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
-
-// Code spans and fences are quoted grammar, not attachments: mask them while
-// the directives are pulled out, then put them back verbatim.
-const CODE_RE = /```[\s\S]*?```|`[^`\n]*`/g;
-const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
-  const spans: string[] = [];
-  const masked = content.replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
-  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
-};
 
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
@@ -286,7 +296,8 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
   const reactions: ParsedReaction[] = [];
-  const stripped = content.replace(REACTION_TOKEN_RE, (_match, body) => {
+  const { masked, restore } = maskCode(content);
+  const stripped = masked.replace(REACTION_TOKEN_RE, (_match, body) => {
     String(body).split(',').forEach((entry: string) => {
       const trimmed = entry.trim();
       if (!trimmed) return;
@@ -301,7 +312,7 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
     });
     return '';
   }).trim();
-  return { stripped, reactions };
+  return { stripped: restore(stripped), reactions };
 };
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
