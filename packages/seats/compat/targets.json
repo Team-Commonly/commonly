@@ -1,0 +1,260 @@
+[
+  {
+    "cli": "stub",
+    "version": "0.0.0",
+    "adapter": "src/adapters/stub.js#default",
+    "enabled": true,
+    "note": "reference no-op adapter: it never calls a provider, so the provider checks fail by design",
+    "timeouts": {
+      "turnMs": 5000,
+      "stallMs": 2000
+    }
+  },
+  {
+    "cli": "fake-cli",
+    "version": "1.0.0",
+    "adapter": "test-support/fake-cli-adapter.js#default",
+    "enabled": true,
+    "note": "a real child process speaking to the fake provider; the runner's own control",
+    "timeouts": {
+      "turnMs": 10000,
+      "stallMs": 2000
+    }
+  },
+  {
+    "cli": "goose",
+    "version": "1.56.0",
+    "adapter": "src/adapters/acp-launch.js#createAcpGooseAdapter",
+    "requires": "acp",
+    "enabled": true,
+    "probeOptions": {
+      "watchProvider": false
+    },
+    "limits": {
+      "retry-status": {
+        "note": "retries a provider 5xx with backoff and sends no session/update while it does; its error text arrives only after it gives up, as an agent_message_chunk followed by end_turn"
+      }
+    },
+    "binary": {
+      "bin": "goose",
+      "release": {
+        "linux-x64": {
+          "url": "https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-x86_64-unknown-linux-gnu.tar.gz",
+          "sha256": "225a929b35b5130fb691eafdb50be236f2c0a150019b53973775938f8f19c281"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-aarch64-unknown-linux-gnu.tar.gz",
+          "sha256": "26bcb7d3f55aac485a91d81cbdecd8d90e5af1acadeca6e580b4d58b64a888e4"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/aaif-goose/goose/releases/download/v1.56.0/goose-aarch64-apple-darwin.tar.gz",
+          "sha256": "52f3f8d62e3d144c5de70c5c471de39d8b92c24d41d5b3436eb8bab11ba4bc24"
+        }
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "opencode",
+    "version": "1.19.4",
+    "adapter": "src/adapters/acp-launch.js#createAcpOpencodeAdapter",
+    "requires": "acp",
+    "enabled": true,
+    "note": "opencode-ai, the 1.x line",
+    "probeOptions": {
+      "watchProvider": false
+    },
+    "limits": {
+      "retry-status": {
+        "note": "retries a provider 5xx with backoff (about 73 s before it gives up) and sends no session/update while it does, then answers session/prompt with -32603 and no HTTP status",
+        "fixedIn": "@opencode/cli ≥2.0.15"
+      }
+    },
+    "binary": {
+      "npm": "opencode-ai@1.19.4",
+      "bin": {
+        "linux-x64": "node_modules/opencode-linux-x64/bin/opencode",
+        "linux-arm64": "node_modules/opencode-linux-arm64/bin/opencode",
+        "darwin-arm64": "node_modules/opencode-darwin-arm64/bin/opencode"
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "opencode-v2",
+    "version": "2.1.4",
+    "adapter": "src/adapters/acp-launch.js#createAcpOpencodeAdapter",
+    "requires": "acp",
+    "enabled": true,
+    "note": "@opencode/cli, the 2.x line: a separate npm package whose launcher needs its postinstall, so the platform binary is run directly",
+    "probeOptions": {
+      "watchProvider": false
+    },
+    "binary": {
+      "npm": "@opencode/cli@2.1.4",
+      "bin": {
+        "linux-x64": "node_modules/@opencode/cli-linux-x64/bin/opencode",
+        "linux-arm64": "node_modules/@opencode/cli-linux-arm64/bin/opencode",
+        "darwin-arm64": "node_modules/@opencode/cli-darwin-arm64/bin/opencode"
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "copilot",
+    "version": "1.0.103",
+    "adapter": "src/adapters/copilot.js#createCopilotAdapter",
+    "enabled": true,
+    "note": "GitHub Copilot CLI, @github/copilot: BYOK through COPILOT_PROVIDER_BASE_URL (type openai) with COPILOT_OFFLINE, so no GitHub sign-in",
+    "binary": {
+      "npm": "@github/copilot@1.0.103",
+      "bin": {
+        "linux-x64": "node_modules/@github/copilot-linux-x64/copilot",
+        "linux-arm64": "node_modules/@github/copilot-linux-arm64/copilot",
+        "darwin-arm64": "node_modules/@github/copilot-darwin-arm64/copilot"
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "gemini",
+    "version": "0.65.0",
+    "adapter": "src/adapters/provider-unsupported.js#createGeminiAdapter",
+    "enabled": true,
+    "note": "Google Gemini CLI, @google/gemini-cli: speaks only the Gemini API, so every turn check reports provider_unsupported",
+    "binary": {
+      "npm": "@google/gemini-cli@0.65.0",
+      "bin": "node_modules/.bin/gemini"
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "qwen-code",
+    "version": "0.26.1",
+    "adapter": "src/adapters/qwen.js#createQwenAdapter",
+    "enabled": true,
+    "note": "Qwen Code, @qwen-code/qwen-code: OpenAI auth through OPENAI_BASE_URL; the production qwen adapter runs the same invocation",
+    "limits": {
+      "provider-5xx": {
+        "note": "retries a provider 503 and has not given up when the 60 s turn deadline ends it (22 requests in 60 s, 0.26.1)"
+      }
+    },
+    "binary": {
+      "npm": "@qwen-code/qwen-code@0.26.1",
+      "bin": "node_modules/.bin/qwen"
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "cline",
+    "version": "3.0.73",
+    "adapter": "src/adapters/cline.js#createClineAdapter",
+    "enabled": true,
+    "note": "Cline CLI, the cline npm package: an openai-compatible provider written to its settings store",
+    "limits": {
+      "provider-5xx": {
+        "note": "retries a provider 503 and has not given up when the 60 s turn deadline ends it (3.0.73)"
+      },
+      "resume-session": {
+        "note": "--id with --json refuses every prompt form (positional, after --, piped stdin) with \"JSON output mode requires a prompt argument or piped stdin\" (3.0.73)"
+      }
+    },
+    "binary": {
+      "npm": "cline@3.0.73",
+      "bin": {
+        "linux-x64": "node_modules/@cline/cli-linux-x64/bin/cline",
+        "linux-arm64": "node_modules/@cline/cli-linux-arm64/bin/cline",
+        "darwin-arm64": "node_modules/@cline/cli-darwin-arm64/bin/cline"
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "aider",
+    "version": "0.86.2",
+    "adapter": "src/adapters/aider.js#createAiderAdapter",
+    "enabled": true,
+    "note": "Aider, aider-chat on PyPI: installed into a venv from wheels only; needs python 3.10 to 3.12 on PATH as python3 (or COMPAT_PYTHON)",
+    "limits": {
+      "refusal": {
+        "note": "litellm reads a 400 content-policy refusal as retryable: aider asks the provider 9 times over about 64 s with backoff, then prints the refusal and stops (0.86.2)"
+      }
+    },
+    "binary": {
+      "pip": "aider-chat==0.86.2",
+      "bin": "venv/bin/aider"
+    },
+    "timeouts": {
+      "turnMs": 120000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "amp",
+    "version": "0.0.1792958443-g695471",
+    "adapter": "src/adapters/provider-unsupported.js#createAmpAdapter",
+    "enabled": true,
+    "note": "Amp, @ampcode/cli: model calls go through the Amp service, so every turn check reports provider_unsupported",
+    "binary": {
+      "npm": "@ampcode/cli@0.0.1792958443-g695471",
+      "bin": {
+        "linux-x64": "node_modules/@ampcode/cli-linux-x64/amp",
+        "linux-arm64": "node_modules/@ampcode/cli-linux-arm64/amp",
+        "darwin-arm64": "node_modules/@ampcode/cli-darwin-arm64/amp"
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  },
+  {
+    "cli": "cursor",
+    "version": "2026.10.22-27dcf5f",
+    "adapter": "src/adapters/provider-unsupported.js#createCursorAdapter",
+    "enabled": true,
+    "note": "Cursor CLI, cursor-agent: model calls go through Cursor's backend, so every turn check reports provider_unsupported",
+    "binary": {
+      "bin": "dist-package/cursor-agent",
+      "release": {
+        "linux-x64": {
+          "url": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/linux/x64/agent-cli-package.tar.gz",
+          "sha256": "85296944e4600a83c4b764f578d1502bf9c416db200d33a593e8f3ecabfdc294"
+        },
+        "linux-arm64": {
+          "url": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/linux/arm64/agent-cli-package.tar.gz",
+          "sha256": "22a36df9720830668ccd4d707e5190204ab9c8a0efb2f068cc914895f804d3ec"
+        },
+        "darwin-arm64": {
+          "url": "https://downloads.cursor.com/lab/2026.10.22-27dcf5f/darwin/arm64/agent-cli-package.tar.gz",
+          "sha256": "2f5b0a3dd5fb951cecffac813867d8a08d810e59837d59fd5f12d69b922398d7"
+        }
+      }
+    },
+    "timeouts": {
+      "turnMs": 60000,
+      "stallMs": 15000
+    }
+  }
+]

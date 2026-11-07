@@ -10,6 +10,7 @@ export const FAILURE_KINDS = Object.freeze({
   timeout: { retryable: true, meaning: 'the run exceeded its wall-clock budget' },
   exited: { retryable: true, meaning: 'the CLI process ended before the turn settled' },
   protocol: { retryable: false, meaning: 'the CLI broke its wire protocol' },
+  provider_unsupported: { retryable: false, meaning: 'the CLI cannot be pointed at the run\'s OpenAI- or Anthropic-compatible provider' },
   refusal: { retryable: false, meaning: 'the model or provider refused; never retried' },
   max_tokens: { retryable: false, meaning: 'the turn hit its token limit' },
   max_turn_requests: { retryable: false, meaning: 'the turn hit its request limit' },
