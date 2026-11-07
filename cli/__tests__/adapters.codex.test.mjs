@@ -1845,11 +1845,11 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
       for (const line of loggedLines()) expect(line).not.toContain('codex-access-token-secret');
     });
 
-    test('with no auth.json, a CODEX_API_KEY in the env is the key and the route is forwarded', async () => {
+    test('a CODEX_API_KEY goes through the host proxy instead of this route (D250)', async () => {
       const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_API_KEY: KEY });
       delete env.OPENAI_API_KEY;
       const { args } = (await runPublic({ env }))[0];
-      expect(args[routeFlag(args) + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+      expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
       expect(args.some((a) => String(a).includes(KEY))).toBe(false);
     });
 

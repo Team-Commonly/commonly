@@ -68,8 +68,7 @@ describe('the walk workflows install the CLI the dispatch names', () => {
   test('byo-linux.yml: Codex 0.164.0 for codex, Claude Code 2.1.318 otherwise', () => {
     const install = /if \[ "\$ADAPTER" = codex \]; then\n([\s\S]*?)\n\s*else\n([\s\S]*?)\n\s*fi/.exec(workflow('byo-linux.yml'));
     expect(install).not.toBeNull();
-    expect(install[1]).toMatch(/npm i -g @openai\/codex@0\.164\.0\n/);
-    expect(install[1]).toMatch(/\/etc\/codex\/config\.toml/);
+    expect(install[1].trim()).toBe('npm i -g @openai/codex@0.164.0');
     expect(install[2].trim()).toBe('npm i -g @anthropic-ai/claude-code@2.1.318');
   });
 

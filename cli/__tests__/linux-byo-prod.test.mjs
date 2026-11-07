@@ -73,8 +73,8 @@ describe('the Linux prod walk', () => {
 
   test('hands the gateway key to each adapter under its own names, and only those', () => {
     expect(walkModelEnv('claude', 'k', 'https://gw')).toEqual({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'https://gw' });
-    // Codex ignores OPENAI_BASE_URL, so its key rides under the provider's env_key.
-    expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ LITELLM_API_KEY: 'k' });
+    // The CLI keeps this key on the host behind its proxy (D250).
+    expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ CODEX_API_KEY: 'k', OPENAI_BASE_URL: 'https://gw/v1' });
   });
 
   // Codex will not create its sandbox helpers under the temp dir, so a walk

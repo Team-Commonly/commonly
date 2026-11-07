@@ -83,6 +83,7 @@ import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } fro
 import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -381,7 +382,10 @@ const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
   || process.env.CODEX_HOME
   || join(homedir(), '.codex');
 
-const preparePublicCodexHome = async (ctx, childEnv) => {
+// `login: false` is the proxy route (D250): codex authenticates with the
+// per-turn token, so the public home gets no link to the person's Codex login,
+// and a link an earlier turn left is removed.
+const preparePublicCodexHome = async (ctx, childEnv, { login = true } = {}) => {
   const operatorHome = operatorCodexHome(ctx);
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
@@ -443,7 +447,9 @@ const preparePublicCodexHome = async (ctx, childEnv) => {
   if (targetStat && !targetStat.isSymbolicLink()) {
     throw new Error(`refusing to replace non-symlink public Codex credential: ${targetAuth}`);
   }
-  if (sourceStat) {
+  if (!login) {
+    if (targetStat) await unlink(targetAuth);
+  } else if (sourceStat) {
     const currentTarget = targetStat
       ? pathResolve(dirname(targetAuth), await readlink(targetAuth))
       : null;
@@ -744,9 +750,10 @@ export const publicModelRouteBaseUrl = (source = {}) => {
 // it is kept or logged. Only "apikey" counts as a key; a file with any other
 // mode, no mode, or that does not parse is treated as a login and fails closed,
 // whatever OPENAI_API_KEY says, since codex prefers its stored login. With no
-// auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
-// CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
-// it counts as a login whatever auth.json says.
+// auth.json, an OPENAI_API_KEY in the env is the key (a CODEX_API_KEY never gets
+// here: it takes the proxy route below). A CODEX_ACCESS_TOKEN in the env is a
+// token codex sends in place of a key, so it counts as a login whatever
+// auth.json says.
 const CODEX_OWN_AUTH_ENVS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'];
 
 const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
@@ -763,11 +770,43 @@ export const codexAuthKind = async (operatorHome, source = {}) => {
     if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return 'login';
   }
   if (text === null) {
-    return envSet(source, 'OPENAI_API_KEY') || envSet(source, 'CODEX_API_KEY') ? 'apikey' : 'none';
+    return envSet(source, 'OPENAI_API_KEY') ? 'apikey' : 'none';
   }
   let mode = null;
   try { mode = JSON.parse(text)?.auth_mode ?? null; } catch { /* unreadable: a login */ }
   return mode === 'apikey' ? 'apikey' : 'login';
+};
+
+// D250: the F188 route leaves the key in codex's own environment. With
+// CODEX_API_KEY in the seat's environment (codex's own name for an exec key),
+// the key stays on the host behind the per-turn loopback proxy, as a Claude
+// seat's ANTHROPIC_API_KEY does, and codex gets a provider entry naming the
+// proxy plus a per-turn token in an env var of our own. Measured on 0.162.1
+// with `--ignore-user-config`: these two `-c` overrides sent
+// `POST <base_url>/responses` with `Authorization: Bearer $<env_key>`. The URL
+// passes the same check as F188's. Without this key the seat takes F188's
+// route or the person's Codex login, as before.
+const CODEX_PROXY_PROVIDER = 'commonly_proxy';
+const CODEX_PROVIDER_TOKEN_ENV = 'COMMONLY_CODEX_PROVIDER_TOKEN';
+const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
+const publicProviderRoute = (source = {}) => {
+  if (!envSet(source, 'CODEX_API_KEY')) return null;
+  return {
+    baseURL: publicModelRouteBaseUrl(source) || OPENAI_DEFAULT_BASE_URL,
+    key: source.CODEX_API_KEY.trim(),
+  };
+};
+
+const providerRouteFlags = (proxy) => {
+  if (!proxy) return [];
+  // codex appends `/responses` itself, so a trailing slash would double it.
+  const baseUrl = proxy.baseURL.replace(/\/+$/, '');
+  return [
+    '-c', `model_provider=${toml(CODEX_PROXY_PROVIDER)}`,
+    '-c', `model_providers.${CODEX_PROXY_PROVIDER}={name=${toml('Commonly host proxy')},`
+      + `base_url=${toml(baseUrl)},env_key=${toml(CODEX_PROVIDER_TOKEN_ENV)},wire_api="responses"}`,
+  ];
 };
 
 // Build the argv after the `codex` binary. Resume vs new turn is a
@@ -785,6 +824,7 @@ const buildArgs = ({
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
   modelBaseUrl = null,
+  providerProxy = null,
   platform = process.platform,
   workspacePath = null,
 }) => {
@@ -815,6 +855,7 @@ const buildArgs = ({
         platform,
         workspacePath,
       ),
+      ...providerRouteFlags(providerProxy),
       ...PUBLIC_BUILTIN_TOOL_FLAGS,
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
@@ -1065,6 +1106,7 @@ export default {
       root: dir,
     });
 
+    let providerProxy = null;
     try {
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
@@ -1094,14 +1136,25 @@ export default {
       // Checked before the public home is prepared, so a refused route changes nothing.
       // Only a seat that will forward the URL validates it: a ChatGPT host with an
       // OPENAI_BASE_URL set for some other tool keeps running, as it did before.
-      let modelBaseUrl = null;
       const routeEnv = ctx.env || process.env;
-      if (publicSandboxMode !== null && String(routeEnv.OPENAI_BASE_URL || '').trim()) {
+      const route = publicSandboxMode !== null ? publicProviderRoute(routeEnv) : null;
+      let modelBaseUrl = null;
+      if (!route && publicSandboxMode !== null && String(routeEnv.OPENAI_BASE_URL || '').trim()) {
         const authKind = await codexAuthKind(operatorCodexHome(ctx), routeEnv);
         if (authKind === 'apikey') modelBaseUrl = publicModelRouteBaseUrl(routeEnv);
         else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
       }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      // codex talks to the proxy alone, so none of the names it or its gateway
+      // read stays in its environment, on the turn or on the version probe; the
+      // turn gets the per-turn token instead. In upper case, as above: Windows
+      // env names are case-insensitive, and this is a plain copy of them.
+      if (route) {
+        const routeNames = new Set([...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]);
+        for (const name of Object.keys(childEnv)) {
+          if (routeNames.has(name.toUpperCase())) delete childEnv[name];
+        }
+      }
       // Before the public home is prepared, so a refused seat changes nothing.
       if (publicSandboxMode !== null) {
         const codexVersion = await readCodexVersion(ctx, childEnv);
@@ -1110,8 +1163,17 @@ export default {
         }
       }
       const publicCodexHome = publicSandboxMode !== null
-        ? await preparePublicCodexHome(ctx, childEnv)
+        ? await preparePublicCodexHome(ctx, childEnv, { login: !route })
         : null;
+      if (route) {
+        providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+          provider: { baseURL: route.baseURL },
+          keyMaterial: route.key,
+          wire: 'openai-responses',
+          adapterLabel: 'Codex',
+        });
+        childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
+      }
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -1124,6 +1186,7 @@ export default {
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
         modelBaseUrl,
+        providerProxy,
         platform: ctx._platform || process.platform,
         workspacePath,
       });
@@ -1161,7 +1224,8 @@ export default {
         // authenticates with. Snapshot HERE — `withholdRuntimeCredential` above
         // already removed the token from the child copy, and after that there is
         // nothing left to compare a tail against.
-        credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
+        // The per-turn proxy token is one too: codex was handed it in place of the key.
+        credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), route?.key, providerProxy?.token].filter(Boolean),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
@@ -1201,6 +1265,7 @@ export default {
         ...(typeof effort === 'string' && effort ? { effort } : {}) };
       return { text, newSessionId, ...(Object.keys(stats).length ? { stats } : {}) };
     } finally {
+      try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   },

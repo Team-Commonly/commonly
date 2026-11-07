@@ -11,11 +11,9 @@
  * put a personal Claude login into repo secrets.
  *
  * Codex takes the same gateway key, on the gateway's Responses route (the
- * route cloud-codex uses). Its public seat skips the user's config.toml
- * (`--ignore-user-config`) and Codex ignores OPENAI_BASE_URL, so the workflow
- * writes the gateway provider into the runner's /etc/codex/config.toml
- * (`--codex-system-config` prints it) and the key rides as LITELLM_API_KEY.
- * The agent's saved model must be one the gateway serves on that route. A
+ * route cloud-codex uses), given as CODEX_API_KEY beside OPENAI_BASE_URL. The
+ * CLI keeps the key behind its per-turn proxy and hands codex only the proxy
+ * (D250). The agent's saved model must be one the gateway serves there. A
  * person's own ChatGPT login or OpenAI key is not walked.
  *
  * The run does not post the @mention. When the CLI is polling, it logs
@@ -48,7 +46,9 @@ import { homedir, tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-import { parseRecorderLog, prodInputs, prodOutcome, redact } from './windows-byo-verdict.mjs';
+import {
+  describeCause, parseRecorderLog, prodInputs, prodOutcome, redact,
+} from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const API = 'https://api.commonly.me';
@@ -102,21 +102,20 @@ export const walkAdapter = (env) => {
 export const walkHomeRoot = () => homedir();
 
 /**
- * The gateway key (and, for Claude Code, its address) under the names each
- * adapter reads. Codex ignores OPENAI_BASE_URL (measured on codex-cli 0.162.1
- * and 0.164.0: every request went to api.openai.com), so its gateway is a
- * provider in the runner's system config (codexSystemConfig), which reads the
- * key from LITELLM_API_KEY as cloud-codex does.
+ * The gateway key and address under the names each adapter reads. Codex takes
+ * them as a person would, CODEX_API_KEY beside OPENAI_BASE_URL: the CLI keeps
+ * the key on the host behind its per-turn proxy and hands codex only the proxy.
  */
 export const walkModelEnv = (adapter, llmKey, gateway) => (adapter === 'codex'
-  ? { LITELLM_API_KEY: llmKey }
+  ? { CODEX_API_KEY: llmKey, OPENAI_BASE_URL: `${gateway}/v1` }
   : { ANTHROPIC_API_KEY: llmKey, ANTHROPIC_BASE_URL: gateway });
 
 /**
- * /etc/codex/config.toml for the runner. A public Codex seat runs with
- * --ignore-user-config, which skips $CODEX_HOME/config.toml; the system layer
- * is the one place left to name a provider. The walk's label says so: this is
- * our gateway set system-wide, not a user's own ChatGPT login or OpenAI key.
+ * Codex's system-layer config for the Windows walk (windows-byo-prod.mjs). A
+ * public Codex seat runs with --ignore-user-config, which skips
+ * $CODEX_HOME/config.toml; the system layer is the one other place to name a
+ * provider. The walk's label says so: this is our gateway set system-wide, not
+ * a user's own ChatGPT login or OpenAI key.
  */
 export const codexSystemConfig = (gateway) => [
   'model_provider = "commonly-gateway"',
@@ -326,20 +325,28 @@ export const runLinuxProdWalk = async () => {
   // and cannot change what the agent's next post is told it has seen.
   let outcome = null;
   let lastRead = null;
+  let lastMessages = [];
   while (Date.now() - readyAt < ANSWER_TIMEOUT_MS && exited === null && !/circuit open; releasing/.test(out)) {
     // eslint-disable-next-line no-await-in-loop
     const page = await api(`/api/agents/runtime/pods/${podId}/messages?limit=20&before=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)
       .catch((err) => ({ status: 0, body: {}, error: err.message }));
     lastRead = page.error || `HTTP ${page.status}`;
+    lastMessages = page.body.messages || lastMessages;
     const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
     outcome = prodOutcome({
-      messages: page.body.messages || [], agentName, readyAt, events: recorded.events, acks: recorded.acks,
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
     });
     if (outcome.passed) break;
     // eslint-disable-next-line no-await-in-loop
     await sleep(POLL_MS);
   }
   const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
+  // Read once more after the loop: a refusal the CLI logged on its way out still names the cause.
+  if (outcome && !outcome.passed) {
+    outcome = prodOutcome({
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
+    });
+  }
   await stop();
   if (outcome?.passed) {
     const said = String(outcome.reply.content || '');
@@ -348,10 +355,11 @@ export const runLinuxProdWalk = async () => {
     log(`the reply: ${JSON.stringify(said.slice(0, 300))}`);
     log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with `
       + `${ADAPTER_LABEL[adapter]} in the bubblewrap jail, on an API key through the model gateway`
-      + `${adapter === 'codex' ? ' (provider set in the runner\'s system Codex config)' : ''}`);
+      + `${adapter === 'codex' ? ' (the key kept on the host behind the CLI\'s per-turn proxy)' : ''}`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
+  if (outcome?.cause) log(describeCause(outcome.cause, ADAPTER_LABEL[adapter]));
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);
@@ -361,9 +369,5 @@ export const runLinuxProdWalk = async () => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.includes('--codex-system-config')) {
-    process.stdout.write(codexSystemConfig(MODEL_GATEWAY));
-    process.exit(0);
-  }
   process.exit(process.argv.includes('--check') ? check() : await runLinuxProdWalk());
 }
