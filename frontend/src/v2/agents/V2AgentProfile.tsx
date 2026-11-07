@@ -570,10 +570,9 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
               values={{
                 notes: memIndex.totalEntries,
                 count: memIndex.sections.length,
-                section: memIndex.lastAgentWrite ? memorySectionLabel(memIndex.lastAgentWrite.section) : '',
                 time: memIndex.lastAgentWrite ? timeAgo(memIndex.lastAgentWrite.updatedAt) : '',
               }}
-              components={{ b: <b /> }}
+              components={{ b: <b />, section: <>{memIndex.lastAgentWrite ? memorySectionLabel(memIndex.lastAgentWrite.section) : ''}</> }}
             />
             {' '}
             {memIndex.viewerRole === 'admin' ? t('agentProfile.memory.privateAdmin') : t('agentProfile.memory.privateOwner')}

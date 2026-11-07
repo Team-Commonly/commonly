@@ -2054,8 +2054,7 @@ const V2AgentBYO: React.FC = () => {
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 <Trans
                   i18nKey={listenAdapter === 'codex' ? 'agentByo.listen.windowsCodex' : 'agentByo.listen.windowsNote'}
-                  values={{ name: issued.agentName }}
-                  components={{ cmd: <code /> }}
+                  components={{ cmd: <code />, name: <>{issued.agentName}</> }}
                 />
               </p>
             )}

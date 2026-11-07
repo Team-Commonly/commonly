@@ -396,8 +396,10 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 <div className="v2-chat__delivery-hint" role="status">
                   <Trans
                     i18nKey={agentDeliveryHint.wokenAgent ? 'podChat.deliveryHintOthers' : 'podChat.deliveryHint'}
-                    values={{ handle: agentDeliveryHint.mentionHandle, woken: agentDeliveryHint.wokenAgent }}
-                    components={{ handle: <strong /> }}
+                    components={{
+                      handle: <strong>@{agentDeliveryHint.mentionHandle}</strong>,
+                      woken: <>{agentDeliveryHint.wokenAgent}</>,
+                    }}
                   />
                 </div>
               )}
