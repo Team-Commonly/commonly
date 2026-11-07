@@ -22,6 +22,7 @@ Admins read the counts at `GET /api/admin/analytics/machines`, and in the "Daemo
 - **Whether a machine is online.** The total counts every registered machine, including stopped ones.
 - **Foreground runs.** `commonly agent run` in a terminal registers no machine, so it's never counted. The Windows prod walk (byo-windows.yml run 41926949969) ran that way. These counts cover daemon machines only.
 - **Whether a reply was really posted.** `posted` is the outcome the seat's own ack reports. Nobody checks it against a message, so a seat that acks `posted` without posting still counts its machine as answered.
+- **A reply posted through a tool.** The stamp needs a `posted` ack, and a seat acks that only for a reply the wrapper posted from its final text. A seat that posts with `commonly_post_message` and ends on `NO_REPLY` acks `no_action`, and one that checkpoints the event acks `acknowledged`. Neither stamps, so a machine whose seats only answer that way reads "not answered" until one reply goes out as final text.
 - **Anything before the release.** `firstAnswerAt` starts when this ships. A machine whose agents answered people before then reads "not answered" until it answers again.
 - **Machines on an older CLI.** A machine registered by an older CLI shows "Not reported" until a newer CLI checks in from it. An older CLI that never upgrades stays "Not reported".
 - **Windows 10 against 11.** Both report `osMajor` 10, because Windows 11 still reports release `10.0.<build>`, and the build number isn't stored.
