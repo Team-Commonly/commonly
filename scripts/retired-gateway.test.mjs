@@ -6,13 +6,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = process.env.RETIRED_GATEWAY_ROOT
   || join(dirname(fileURLToPath(import.meta.url)), '..');
-const RETIRED = /agents\.clawdbot|clawdbot-gateway|_external\/clawdbot/;
+const RETIRED = /agents\.clawdbot|clawdbot-gateway|_external\/clawdbot|CLAWDBOT_GATEWAY_URL|MOLTBOT_GATEWAY_URL|CLAWDBOT_IMAGE|CLAWDBOT_GATEWAY_TOKEN/;
 
 const walk = (dir) => readdirSync(dir).flatMap((name) => {
   const path = join(dir, name);
@@ -49,8 +50,30 @@ test('no tracked file outside docs names a deleted file', () => {
 });
 
 test('the pattern catches what it is for', () => {
-  for (const line of ['{{- if .Values.agents.clawdbot.enabled }}', 'key: clawdbot-gateway-token', 'docker build _external/clawdbot']) {
+  for (const line of ['{{- if .Values.agents.clawdbot.enabled }}', 'key: clawdbot-gateway-token', 'docker build _external/clawdbot', '- name: CLAWDBOT_GATEWAY_URL', '- name: MOLTBOT_GATEWAY_URL', '- name: CLAWDBOT_IMAGE', '- name: CLAWDBOT_GATEWAY_TOKEN']) {
     assert.match(line, RETIRED);
   }
   assert.match("'templates/agents/clawdbot-deployment.yaml',", DELETED);
+});
+
+test('dev.sh stops the old containers by name, and only stops them', () => {
+  const bin = mkdtempSync(join(tmpdir(), 'retired-gateway-'));
+  const log = join(bin, 'docker.log');
+  // A docker that reports every container running and records what it is asked.
+  writeFileSync(join(bin, 'docker'), `#!/bin/sh\necho "$@" >> "${log}"\n[ "$1" = ps ] && echo abc123\nexit 0\n`);
+  chmodSync(join(bin, 'docker'), 0o755);
+  try {
+    const run = spawnSync('bash', [join(ROOT, 'dev.sh'), 'clawdbot'], {
+      encoding: 'utf8',
+      env: { PATH: `${bin}:/usr/bin:/bin` },
+    });
+    assert.equal(run.status, 1);
+    assert.match(run.stdout, /retired/);
+    const calls = readFileSync(log, 'utf8');
+    assert.match(calls, /^stop clawdbot-gateway-dev$/m);
+    assert.match(calls, /^stop clawdbot-cli-dev$/m);
+    assert.doesNotMatch(calls, /\b(rm|prune|volume)\b|-v\b/);
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
 });

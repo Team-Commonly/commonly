@@ -9,7 +9,7 @@ const {
   parsePresets,
   checkPresetToolNames,
   loadNativeTools,
-  NAMED_AS_REMOVED,
+  stripComments,
   PRESETS_FILE,
   RETIRED_RUNTIMES,
 } = require('../../../../scripts/verify-preset-tool-names');
@@ -69,6 +69,27 @@ describe('preset tool names resolve on the runtime the preset declares', () => {
         .toThrow(/'runtime-less' declares 0 distinct runtimes/);
     });
 
+    it('reads a block whatever quotes its id and runtime use', () => {
+      const presets = parsePresets(manyPresets(['    id: "double",\n    runtime: "internal",\n    prompt: `commonly_ghost`,']));
+      expect(presets.find((p) => p.id === 'double')).toMatchObject({ runtime: 'internal', names: ['commonly_ghost'] });
+    });
+
+    it('refuses a boundary with no readable id instead of merging it into the block above', () => {
+      expect(() => parsePresets(manyPresets(['    id: PRESET_ID,\n    runtime: \'internal\',']))).toThrow(/no readable id/);
+    });
+
+    it('sees a tool named after a // inside a prompt', () => {
+      const [preset] = parsePresets(manyPresets([presetBlock(
+        'slashes', 'internal', '    prompt: `Use a path like a//b then commonly_ghost.`,',
+      )])).filter((p) => p.id === 'slashes');
+      expect(preset.names).toContain('commonly_ghost');
+    });
+
+    it('still blanks real comments, and a quote inside one changes nothing', () => {
+      expect(stripComments("const a = 1; // don't name commonly_ghost\nconst b = 'x';")).not.toContain('commonly_ghost');
+      expect(stripComments("/* commonly_ghost */\nconst u = 'https://x.test';")).toContain('https://x.test');
+    });
+
     it('refuses a block that declares several runtimes', () => {
       expect(() => parsePresets(manyPresets([[
         "    id: 'two-runtimes',",
@@ -117,12 +138,15 @@ const toolsForConfig = () => TOOLS;
     });
 
     it('does not count a name that only appears in a comment', () => {
-      const withComment = `${nativeSource([
+      // Inside the array, or the slice would drop it whether or not comments are stripped.
+      const withComment = nativeSource([
         'commonly_post_message', 'commonly_create_task', 'commonly_read_memory',
         'commonly_write_memory', 'commonly_read_context',
-      ])}\n// TODO: add { name: 'commonly_ghost' } here\n`;
+      ]).replace('];', "  // { type: 'function', function: { name: 'commonly_ghost' } },\n];");
+      expect(withComment).toMatch(/commonly_ghost[\s\S]*\];/);
       const names = loadNativeTools({ read: () => withComment });
       expect(names.has('commonly_ghost')).toBe(false);
+      expect(names.has('commonly_read_context')).toBe(true);
     });
   });
 
@@ -131,9 +155,11 @@ const toolsForConfig = () => TOOLS;
       openclaw: new Set(['commonly_post_message', 'commonly_create_post']),
       internal: new Set(['commonly_post_message']),
     };
-    const mentionsRemoved = NAMED_AS_REMOVED.map(
-      (t, i) => presetBlock(`removed-note-${i}`, 'openclaw', `    prompt: \`${t} was removed.\`,`),
-    );
+    const mentionsRemoved = [presetBlock(
+      'removed-note',
+      'openclaw',
+      '    prompt: `(The former commonly_pr_diff/commonly_pr_review tools were removed: a reason.)`,',
+    )];
 
     it('flags a name absent on the runtime its preset declares', () => {
       // The row's scenario: create_post exists on openclaw only, and is
@@ -177,12 +203,30 @@ const toolsForConfig = () => TOOLS;
       expect(checkPresetToolNames({ presets, sets }).missing).toHaveLength(0);
     });
 
+    it('exempts the removal sentence on a checked runtime', () => {
+      const presets = parsePresets(manyPresets([presetBlock(
+        'checked-note',
+        'internal',
+        '    prompt: `(The former commonly_pr_diff/commonly_pr_review tools were removed: a reason.)`,',
+      )]));
+      expect(checkPresetToolNames({ presets, sets }).missing).toHaveLength(0);
+    });
+
+    it('fails a positive instruction to call a removed tool', () => {
+      const presets = parsePresets(manyPresets([
+        ...mentionsRemoved,
+        presetBlock('calls-it', 'internal', '    prompt: `Read the change with commonly_pr_diff.`,'),
+      ]));
+      const { missing } = checkPresetToolNames({ presets, sets });
+      expect(missing.map((m) => m.tool)).toEqual(['commonly_pr_diff']);
+    });
+
     it('refuses an exemption that outlives the sentence justifying it', () => {
       // Same self-check as namedForOtherDrivers: an exclusion nobody revisits
       // silently widens into a licence for a future real use of the name.
       const presets = parsePresets(manyPresets());
       expect(() => checkPresetToolNames({ presets, sets }))
-        .toThrow(/no longer mentions it/);
+        .toThrow(/no longer mentions the removed tools/);
     });
 
     it('skips a retired runtime without calling it uncovered', () => {

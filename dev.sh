@@ -53,6 +53,19 @@ read_env_value() {
     printf '%s' "$line"
 }
 
+# Containers from the retired clawdbot compose profile. Compose no longer knows
+# them, so `down` leaves them running, holding port 18789 and the mounted
+# credentials, and restart: unless-stopped brings them back after a reboot.
+stop_retired_gateway() {
+    local name
+    for name in clawdbot-gateway-dev clawdbot-cli-dev; do
+        if [ -n "$(docker ps -q --filter "name=^/${name}$" 2>/dev/null || true)" ]; then
+            echo "🛑 Stopping retired container ${name}. Remove it with: docker rm ${name}"
+            docker stop "$name" >/dev/null || true
+        fi
+    done
+}
+
 set_compose_args() {
     COMPOSE_ARGS=(-f "$COMPOSE_FILE")
 }
@@ -108,6 +121,7 @@ case "$1" in
         # Set higher timeout for frontend npm install
         export COMPOSE_HTTP_TIMEOUT=300
         set_compose_args
+        stop_retired_gateway
         docker compose "${COMPOSE_ARGS[@]}" up -d
         echo "✅ Development environment started!"
         echo "🌐 Frontend: http://localhost:3000"
@@ -124,6 +138,7 @@ case "$1" in
 
     down)
         echo "🛑 Stopping development environment..."
+        stop_retired_gateway
         docker compose -f $COMPOSE_FILE down
         echo "✅ Development environment stopped!"
         ;;
@@ -320,6 +335,7 @@ case "$1" in
         ;;
 
     clawdbot)
+        stop_retired_gateway
         echo "The local OpenClaw gateway was retired (ADR-021 Part B), so this command no longer does anything."
         echo "Use native agents, or attach a local CLI with: commonly agent attach <cli>"
         exit 1

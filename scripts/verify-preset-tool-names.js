@@ -34,14 +34,43 @@ const RETIRED_RUNTIMES = ['openclaw'];
 const blankOut = (text) => text.replace(/[^\n]/g, ' ');
 
 /**
- * Comments are NOT delivered to agents, and this file's comments discuss tools
- * at length — including backticked names of tools that deliberately do not
- * exist on the pinned lineage. Counting one would red the build over a
- * paragraph. The `[^:]` guard keeps `https://` from being read as a comment.
+ * Comments are NOT delivered to agents, and these files' comments discuss tools
+ * at length, so counting one would red the build over a paragraph. String
+ * contents ARE delivered: a `//` inside a prompt is prompt text, so this walks
+ * the source and blanks only what sits outside a string. A ' or " string ends at
+ * its line, so a quote in a regex literal cannot swallow the rest of the file.
  */
-const stripComments = (src) => src
-  .replace(/\/\*[\s\S]*?\*\//g, blankOut)
-  .replace(/(^|[^:])\/\/[^\n]*/g, (m, lead) => lead + blankOut(m.slice(lead.length)));
+const stripComments = (src) => {
+  let out = '';
+  let quote = null;
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (quote) {
+      if (c === '\\') {
+        out += src.slice(i, i + 2);
+        i += 2;
+      } else {
+        if (c === quote || (c === '\n' && quote !== '`')) quote = null;
+        out += c;
+        i += 1;
+      }
+    } else if (c === "'" || c === '"' || c === '`') {
+      quote = c;
+      out += c;
+      i += 1;
+    } else if (c === '/' && (src[i + 1] === '/' || src[i + 1] === '*')) {
+      const close = src[i + 1] === '/' ? src.indexOf('\n', i) : src.indexOf('*/', i + 2) + 2;
+      const end = close <= i + 1 ? src.length : close;
+      out += blankOut(src.slice(i, end));
+      i = end;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return out;
+};
 
 /**
  * Tool names DECLARED by the extension — matched on the `name:` key of a tool
@@ -90,20 +119,12 @@ const loadNativeTools = ({ read = fs.readFileSync } = {}) => {
 };
 
 /**
- * Names that presets.ts mentions in order to say they are GONE.
- *
- * One live site, in the dev-pm preset's prompt: "(The former `commonly_pr_diff`
- * /`commonly_pr_review` tools were removed — they spent a shared server
- * credential on a caller-chosen repo.)" That sentence is correct, and a
- * name-matching check fires on it. Excluding by name is the honest handling;
- * trying to detect negated prose is not something a regex should be asked to do.
- *
- * Self-checked below on the same principle as `namedForOtherDrivers`: an
- * exemption for a name the file no longer mentions is a hole with no remaining
- * justification, and it would silently excuse that tool if a preset later
- * started cueing it for real.
+ * The one sentence presets.ts uses to say two tools are GONE. It is matched as
+ * a sentence rather than exempting the names, so a prompt that tells an agent to
+ * call `commonly_pr_diff` still fails. Self-checked below: an exemption for text
+ * the file no longer holds has no remaining justification.
  */
-const NAMED_AS_REMOVED = ['commonly_pr_diff', 'commonly_pr_review'];
+const REMOVAL_NOTICE = /\(The former [^()]*commonly_pr_diff[^()]*commonly_pr_review[^()]*tools were removed[^()]*\)/g;
 
 /**
  * presets.ts split into its preset definitions, each with the runtime it
@@ -120,11 +141,18 @@ const NAMED_AS_REMOVED = ['commonly_pr_diff', 'commonly_pr_review'];
  * tool named by either `internal` preset, so a call-position check would cover
  * zero of the presets on the runtime whose namespace actually differs.
  */
+const BLOCK_ID = /^ {4}id: (['"`])([^'"`]+)\1/;
+
 const parsePresets = (source) => {
   const code = stripComments(source);
   const lines = code.split('\n');
   const starts = [];
-  lines.forEach((line, i) => { if (/^ {4}id: '/.test(line)) starts.push(i); });
+  lines.forEach((line, i) => {
+    if (!/^ {4}id:/.test(line)) return;
+    // An id in a shape this cannot read would merge its preset into the one above.
+    if (!BLOCK_ID.test(line)) throw new Error(`preset boundary at line ${i + 1} has no readable id: ${line.trim()}`);
+    starts.push(i);
+  });
 
   // Control, same shape as the empty-parse guard above: zero or a handful of
   // blocks means the file's indentation or shape moved, and a check that looks
@@ -139,9 +167,8 @@ const parsePresets = (source) => {
   return starts.map((start, k) => {
     const end = k + 1 < starts.length ? starts[k + 1] : lines.length;
     const body = lines.slice(start, end).join('\n');
-    const id = (body.match(/^ {4}id: '([^']+)'/) || [])[1];
-    const runtimes = [...new Set([...body.matchAll(/runtime: '([a-z-]+)'/g)].map((m) => m[1]))];
-    if (!id) throw new Error(`preset block at line ${start + 1} has no parseable id`);
+    const id = body.match(BLOCK_ID)[2];
+    const runtimes = [...new Set([...body.matchAll(/\bruntime: (['"`])([a-z-]+)\1/g)].map((m) => m[2]))];
     if (runtimes.length !== 1) {
       throw new Error(
         `preset '${id}' declares ${runtimes.length} distinct runtimes (${runtimes.join(', ') || 'none'}). `
@@ -153,7 +180,8 @@ const parsePresets = (source) => {
       id,
       line: start + 1,
       runtime: runtimes[0],
-      names: [...new Set(body.match(/commonly_[a-z_]+/g) || [])],
+      names: [...new Set(body.replace(REMOVAL_NOTICE, '').match(/commonly_[a-z_]+/g) || [])],
+      hasRemovalNotice: body.search(REMOVAL_NOTICE) !== -1,
     };
   });
 };
@@ -178,22 +206,18 @@ const parsePresets = (source) => {
  * because it is dangerous.
  */
 const checkPresetToolNames = ({ presets, sets, retired = [] }) => {
-  const mentioned = new Set(presets.flatMap((p) => p.names));
-  NAMED_AS_REMOVED.forEach((tool) => {
-    if (!mentioned.has(tool)) {
-      throw new Error(
-        `NAMED_AS_REMOVED lists ${tool}, but presets.ts no longer mentions it. Delete the `
-        + 'exemption rather than leaving it to excuse a future use.',
-      );
-    }
-  });
+  if (!presets.some((p) => p.hasRemovalNotice)) {
+    throw new Error(
+      'presets.ts no longer mentions the removed tools. Delete REMOVAL_NOTICE rather than '
+      + 'leaving it to excuse a future use.',
+    );
+  }
 
-  const exempt = new Set(NAMED_AS_REMOVED);
   const missing = [];
   const uncovered = [];
 
   presets.forEach((preset) => {
-    const names = preset.names.filter((n) => !exempt.has(n));
+    const { names } = preset;
     // Nothing to resolve against: the runtime's tool set left with its driver.
     if (retired.includes(preset.runtime)) return;
     const set = sets[preset.runtime];
@@ -208,7 +232,7 @@ const checkPresetToolNames = ({ presets, sets, retired = [] }) => {
   });
 
   const retiredCount = presets.filter((p) => retired.includes(p.runtime)).length;
-  return { missing, uncovered, mentioned, presetCount: presets.length, retiredCount };
+  return { missing, uncovered, presetCount: presets.length, retiredCount };
 };
 
 const main = () => {
@@ -259,5 +283,5 @@ if (require.main === module) main();
 
 module.exports = {
   parsePresets, checkPresetToolNames, loadNativeTools, stripComments,
-  NAMED_AS_REMOVED, PRESETS_FILE, RETIRED_RUNTIMES,
+  PRESETS_FILE, RETIRED_RUNTIMES,
 };
