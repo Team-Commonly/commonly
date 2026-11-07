@@ -241,8 +241,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
       <div className="v2-approval">
         <div className="v2-approval__head">
-          {/* Only while someone can still answer it: past that, the state line says what happened. */}
-          {status === 'flagged' && !aged && <span className="v2-approval__badge">{t('approvalCard.badge')}</span>}
+          {/* Only while it can still be decided: past that, the state line says what happened.
+              An aged proposal stays decidable, so it keeps the badge; an aged tool call does not. */}
+          {status === 'flagged' && !(isToolCall && aged) && <span className="v2-approval__badge">{t('approvalCard.badge')}</span>}
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>

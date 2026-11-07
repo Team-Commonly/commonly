@@ -180,11 +180,19 @@ describe('the "Approval needed" badge', () => {
   test.each([
     ['declined', { status: 'resolved', decision: 'declined' }, en.approvalCard.declined],
     ['expired', { status: 'expired' }, en.approvalCard.expired],
-    ['aged out', { status: 'flagged', expiresAt: new Date(Date.now() - 1000).toISOString() }, en.approvalCard.aged],
+    ['a tool call that aged out', { status: 'flagged', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+      expiresAt: new Date(Date.now() - 1000).toISOString() }, en.approvalCard.toolCall.expiredPending],
   ])('is gone once the card is %s', (_name, state, line) => {
     renderCard({ ...card, ...state });
     expect(screen.getByText(line)).toBeInTheDocument();
     expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
+  });
+
+  test('stays on an aged proposal, which can still be decided', () => {
+    renderCard({ ...card, status: 'flagged', expiresAt: new Date(Date.now() - 1000).toISOString() });
+    expect(screen.getByText(en.approvalCard.aged)).toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
   });
 });
 
@@ -233,8 +241,10 @@ describe('tool-call approval details stay owner-scoped', () => {
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       });
       expect(screen.queryByText(en.approvalCard.toolCall.expiredPending)).not.toBeInTheDocument();
+      expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
       act(() => { jest.advanceTimersByTime(60_001); });
       expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+      expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
       expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
       expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
     } finally {
