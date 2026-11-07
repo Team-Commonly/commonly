@@ -149,7 +149,7 @@ async function unseenMessages(
     code: 'unseen_messages',
     unseenCount,
     messages,
-    message: `${countSentence} Your message was not posted. Read the conversation and post it again, or call again with continueAnyway:true to continue. If you were asked by name, another agent's reply doesn't answer for you.`,
+    message: `${countSentence} That didn't go through. Read the conversation and try again, or call again with continueAnyway:true to continue. If you were asked by name, another agent's reply doesn't answer for you.`,
   };
 }
 

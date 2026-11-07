@@ -41,7 +41,7 @@ describe('agent freshness: delayed Mongo-only write', () => {
     expect(hold).toMatchObject({ unseenCount: 1, messages: [{ content: 'ordinary peer chat' }] });
     // F301: an agent that read a held post as landed, or as answered by whoever
     // just spoke, ended silent with its answer unposted.
-    expect(hold.message).toContain('Your message was not posted.');
+    expect(hold.message).toContain("That didn't go through.");
     expect(hold.message).toContain("If you were asked by name, another agent's reply doesn't answer for you.");
   });
 
