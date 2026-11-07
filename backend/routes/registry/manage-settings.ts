@@ -288,12 +288,16 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     }
     // Field by field, so a save can't overwrite the dispatcher's claim on the day.
     const { enabled, time, timezone, prompt } = body;
-    const fields = onlyStopping || isBareStop(body) ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
+    const stopping = onlyStopping || isBareStop(body);
+    const fields = stopping ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
     const saved = await AgentInstallation.findOneAndUpdate(
-      { _id: installation._id },
+      // A reinstall can clear the schedule after the read, and a stop on its own
+      // must not leave a schedule of just `enabled` behind.
+      { _id: installation._id, ...(stopping ? { 'config.schedule': { $exists: true } } : {}) },
       { $set: Object.fromEntries(Object.entries(fields).map(([key, value]) => [`config.schedule.${key}`, value])) },
       { new: true },
     );
+    if (!saved) return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
     return res.json({ settings: settings(saved, '') });
   } catch (error) {
     console.error('Error saving agent schedule:', error);

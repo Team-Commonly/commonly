@@ -167,9 +167,12 @@ describe('a BYO agent schedule', () => {
   it('stops on enabled alone and keeps the rest', async () => {
     await seat('bare');
     await save('bare');
+    await expect(dispatchSchedules(AT)).resolves.toBe(1);
+    const before = (await AgentInstallation.findOne({ agentName: 'bare' }).lean()).config.schedule;
+    expect(before.lastFiredAt).toBeTruthy();
     expect((await save('bare', owner, { enabled: false })).status).toBe(200);
     const row = await AgentInstallation.findOne({ agentName: 'bare' }).lean();
-    expect(row.config.schedule).toMatchObject({ enabled: false, prompt: 'Post the morning count.', time: '07:47' });
+    expect(row.config.schedule).toEqual({ ...before, enabled: false });
   });
 
   it('won\'t write a bare stop where no schedule exists', async () => {
@@ -182,15 +185,36 @@ describe('a BYO agent schedule', () => {
   });
 
   it('tells someone without rights nothing about whether a schedule exists', async () => {
+    const stored = async () => (await AgentInstallation.findOne({ agentName: 'quiet' }).lean()).config.schedule;
     await seat('quiet');
     expect((await save('quiet', other, { enabled: false })).status).toBe(403);
+    expect(await stored()).toBeUndefined();
     await save('quiet');
+    const before = await stored();
     expect((await save('quiet', other, { enabled: false })).status).toBe(403);
+    expect(await stored()).toEqual(before);
+  });
+
+  it('won\'t leave a stray stop on a schedule a reinstall cleared after the read', async () => {
+    await seat('raced');
+    await save('raced');
+    const read = AgentInstallation.findOne.bind(AgentInstallation);
+    const spy = jest.spyOn(AgentInstallation, 'findOne').mockImplementationOnce(async (...args) => {
+      const row = await read(...args);
+      await AgentInstallation.updateOne({ agentName: 'raced' }, { $unset: { 'config.schedule': '' } });
+      return row;
+    });
+    const res = await save('raced', owner, { enabled: false });
+    spy.mockRestore();
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('no_schedule');
+    expect((await AgentInstallation.findOne({ agentName: 'raced' }).lean()).config.schedule).toBeUndefined();
   });
 
   it('still needs every field to start one', async () => {
     await seat('half');
     expect((await save('half', owner, { enabled: true })).status).toBe(400);
+    expect((await AgentInstallation.findOne({ agentName: 'half' }).lean()).config.schedule).toBeUndefined();
   });
 
   it('gives a guest nothing to stop on their own room row', async () => {
