@@ -42,6 +42,8 @@ interface V2ThreadMessagesProps {
   startsDisabled?: boolean;
   // The welcome's hosted start while it runs in place, or after it failed.
   hostedStart?: WelcomeHostedStartState;
+  /** Only the pod's creator runs the hosted start in place; everyone else follows its link. */
+  viewerOwnsPod?: boolean;
   onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
@@ -145,6 +147,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onStart,
   startsDisabled = false,
   hostedStart = null,
+  viewerOwnsPod = false,
   onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
@@ -366,6 +369,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                         </button>
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
+                        )}
+                        {/* Says what the click gives back. It is the one start that answers
+                            with no typing, and nothing else on the welcome says so. */}
+                        {viewerOwnsPod && start.action === WELCOME_HOSTED_ACTION && !hostedHere && (
+                          <p className="v2-chat__start-note">{t('podChat.starts.hostedNote')}</p>
                         )}
                       </React.Fragment>
                     );
