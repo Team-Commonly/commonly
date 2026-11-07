@@ -74,8 +74,8 @@ const setupMongoDb = async () => {
       // isolated from data seeded by prior files. Connecting starts each loaded
       // model's index build, so wait for those, or the drop can take a unique
       // index with it and the file runs without it, then build them again. A
-      // schema's own conflict stays as quiet as it is in autoIndex: User declares
-      // username twice under one index name.
+      // schema's own conflict stays as quiet as it is in autoIndex;
+      // modelIndexNames.test.js is what catches one.
       const models = Object.values(mongoose.models);
       await Promise.allSettled(models.map((model) => model.init()));
       await mongoose.connection.dropDatabase();
