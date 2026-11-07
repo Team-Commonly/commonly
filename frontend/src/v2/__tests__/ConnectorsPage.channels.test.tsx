@@ -865,7 +865,7 @@ describe('Connectors page: channels', () => {
     renderPage();
 
     const popover = await openPopover('Linear');
-    expect(within(popover).getByText('Read Linear issues and projects.')).toBeInTheDocument();
+    expect(within(popover).getByText('Issues, projects, cycles and releases in your own Linear workspace.')).toBeInTheDocument();
     await waitFor(() => expect(window.location.search).toBe(''));
     expect(screen.queryByRole('link', { name: "Open Linear's connected apps" })).toBeNull();
   });

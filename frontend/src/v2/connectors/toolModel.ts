@@ -185,6 +185,17 @@ export interface DraftGrant {
   byoConsentFor?: string | null;
 }
 
+/** The last Grant that went through, for the confirmation the drawer shows. */
+export interface GrantNotice {
+  grantId: string;
+  installableId: string;
+  tool: string;
+  pod: string;
+  agents: string;
+  /** Change access: a new grant that replaced an old one. */
+  changed: boolean;
+}
+
 export interface ConnectableRepository {
   installationId: string;
   owner: string;
@@ -284,5 +295,24 @@ export const boundAgentOf = (entry: ToolCatalogEntry, connectionId: string): str
 export const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now: number): boolean => (
   grants.some((grant) => !isDead(grant, now) && entryCovers(entry, grant))
 );
+
+/**
+ * The one thing a hosted entry's panel says about writing, for what is on
+ * screen. A hosted grant is read or ask-first: the mint refuses `write`, so a
+ * hosted write always parks for the connection's owner. An offer has no grant
+ * to describe, so it says what a grant can be.
+ */
+export type AccessStatement = 'offerRead' | 'offerAsk' | 'grantedRead' | 'grantedAsk' | 'grantedMixed';
+
+export const accessStatement = (modes: GrantWriteMode[], liveGrants: ToolGrant[]): AccessStatement => {
+  if (liveGrants.length === 0) return modes.some((mode) => mode !== 'read') ? 'offerAsk' : 'offerRead';
+  const writing = liveGrants.filter((grant) => grant.writeMode !== 'read').length;
+  if (writing === 0) return 'grantedRead';
+  return writing === liveGrants.length ? 'grantedAsk' : 'grantedMixed';
+};
+
+/** How many of these tool names are writes. A name the entry does not list counts as none. */
+export const writeToolCount = (entry: ToolCatalogEntry, tools: string[]): number => (entry.tools || [])
+  .filter((tool) => tool.requiredWriteMode !== 'read' && tools.includes(tool.name)).length;
 
 export const PER_ENTRY_REVOKE_COPY = new Set(['supabase', 'linear', 'sentry']);

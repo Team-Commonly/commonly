@@ -83,8 +83,8 @@ describe('the row and the grant step', () => {
     const popover = await openSentry();
     const note = fill(en.tools.reachNone, { label: 'Sentry' });
     expect(within(popover).getByText(note)).toHaveAttribute('role', 'note');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Sentry' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Sentry to agents' });
     expect(within(form).getByText(note)).toHaveAttribute('role', 'note');
     // A warning, not a block: a project may be added later.
     expect(within(form).getByRole('button', { name: 'Grant' })).toBeEnabled();
@@ -95,8 +95,8 @@ describe('the row and the grant step', () => {
     renderPage();
 
     const popover = await openSentry();
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Sentry' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Sentry to agents' });
     const note = fill(en.tools.reachNone, { label: 'Sentry' });
     expect(within(form).queryByText(note)).toBeNull();
     fireEvent.change(within(form).getByRole('combobox', { name: 'connection' }), { target: { value: 'conn-empty' } });

@@ -311,7 +311,7 @@ describe('Connectors page: operator-key entries', () => {
     const popover = await openToolPopover('Latchkey');
     expect(within(popover).queryByRole('button', { name: 'Connect' })).toBeNull();
     expect(agentOptions(popover)).toEqual(['Reed']);
-    expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+    expect(within(popover).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
     expect(within(popover).getByRole('button', { name: /^Disconnect Latchkey: Key · Scout · / })).toBeInTheDocument();
 
     paste(popover);
@@ -366,7 +366,7 @@ describe('Connectors page: operator-key entries', () => {
 describe('Connectors page: granting an operator-key connection', () => {
   const reedKey = { ...scoutKey, connectionId: 'conn-reed', agentId: REED };
   const grantPost = () => axios.post.mock.calls.find(([url]) => url === '/api/grants');
-  const openKeyDraft = async (connections, { add = 'Add', form = 'Add Latchkey' } = {}) => {
+  const openKeyDraft = async (connections, { add = 'Grant to agents', form = 'Grant Latchkey to agents' } = {}) => {
     axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
     mockApi({ pods, seats, grants: [], installables: [{ ...keyedEntry, connections }] });
     renderPage();
@@ -389,8 +389,10 @@ describe('Connectors page: granting an operator-key connection', () => {
     mockApi({ pods, seats, grants: [keyGrant({}), dead], installables: [{ ...keyedEntry, connections }] });
     renderPage();
     const drawer = await openDrawer('Latchkey');
+    const fold = within(drawer).queryByRole('button', { name: /^inactive · / });
+    if (fold) fireEvent.click(fold);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    return screen.findByRole('complementary', { name: 'Add Latchkey' });
+    return screen.findByRole('complementary', { name: 'Grant Latchkey to agents' });
   };
   const revoked = { revokedAt: new Date(Date.now() - 600000).toISOString(), revokedBy: 'u1' };
 
@@ -488,8 +490,8 @@ describe('Connectors page: granting an operator-key connection', () => {
     mockApi({ pods, seats, grants: [], installables: [{ ...linearEntry, connections: [signIn] }] });
     renderPage();
     const popover = await openToolPopover('Linear');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
     expect(within(form).getByRole('checkbox', { name: 'Nova' })).toBeChecked();
     expect(within(form).queryByText(/can use this key/)).toBeNull();
@@ -502,7 +504,7 @@ describe('Connectors page: granting an operator-key connection', () => {
     await i18nReady;
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     try {
-      const form = await openKeyDraft([scoutKey, reedKey], { add: '添加', form: '添加 Latchkey' });
+      const form = await openKeyDraft([scoutKey, reedKey], { add: '授权给智能体', form: '把 Latchkey 授权给智能体' });
       expect(within(form).getByText('只有 Scout 可以使用这个密钥。')).toBeInTheDocument();
       fireEvent.change(form.querySelectorAll('select')[1], { target: { value: 'conn-reed' } });
       expect(within(form).getByText('Reed 不在这个 Pod 中。')).toBeInTheDocument();

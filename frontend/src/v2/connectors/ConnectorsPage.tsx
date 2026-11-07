@@ -60,6 +60,9 @@ const ConnectorsPage: React.FC = () => {
   // The gone connector whose tile opened its list of grants (TASK-754).
   const [orphanKey, setOrphanKey] = useState<string | null>(null);
   const [offOpen, setOffOpen] = useState({ channels: false, tools: false });
+  // Ended grants fold under a live one, so a grant is never below its own history.
+  const [inactiveOpen, setInactiveOpen] = useState(false);
+  const freshRef = useRef<HTMLDivElement | null>(null);
   const phone = usePhone();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -146,8 +149,23 @@ const ConnectorsPage: React.FC = () => {
   // ---- what is open ----
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
-  const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
+  // A confirmed grant holds its entry's drawer open, even from a tile's reveal.
+  const { grantNotice } = m;
+  const openToolKey = toolKey || grantNotice?.installableId;
+  const toolEntry = openToolKey ? m.catalog.find((entry) => entry.installableId === openToolKey) || null : null;
   const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || m.repositoryConnect || toolEntry || m.selected || orphanGroup);
+
+  useEffect(() => {
+    if (grantNotice) setToolKey(grantNotice.installableId);
+  }, [grantNotice]);
+
+  // The new grant's row arrives with the re-read after the confirmation, and each
+  // of the two can land out of view in a drawer that was scrolled down the form.
+  const freshGrant = grantNotice ? grants.find((grant) => grant.grantId === grantNotice.grantId) || null : null;
+  const freshRowShown = Boolean(freshGrant);
+  useEffect(() => {
+    if (grantNotice) freshRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [grantNotice, freshRowShown]);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -184,8 +202,10 @@ const ConnectorsPage: React.FC = () => {
     setOrphanKey(null);
     m.setSelectedId(null);
     m.setDraft(null);
+    m.setGrantNotice(null);
     m.setGithubAppSetup(null);
     m.setRepositoryConnect(null);
+    setInactiveOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const closeChannels = useCallback(() => {
@@ -213,10 +233,12 @@ const ConnectorsPage: React.FC = () => {
   const openTool = (entry: ToolCatalogEntry, event: React.MouseEvent<HTMLButtonElement>) => {
     closeChannels();
     m.setDraft(null);
+    m.setGrantNotice(null);
     m.setGithubAppSetup(null);
     m.setRepositoryConnect(null);
     m.setSelectedId(null);
     setOrphanKey(null);
+    setInactiveOpen(false);
     if (toolHasDrawer(entry)) {
       setPop(null);
       setToolKey(entry.installableId);
@@ -233,6 +255,7 @@ const ConnectorsPage: React.FC = () => {
     setPop(null);
     setToolKey(null);
     m.setDraft(null);
+    m.setGrantNotice(null);
     m.setGithubAppSetup(null);
     m.setRepositoryConnect(null);
     m.setConfirmRevoke(null);
@@ -488,10 +511,15 @@ const ConnectorsPage: React.FC = () => {
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
     const grantedKeyForm = toolGranted(toolEntry) ? tp.renderKeyForm(toolEntry) : null;
+    // A revoke or expiry takes the confirmation back: it would otherwise read as live.
+    const confirmed = grantNotice && grantNotice.installableId === toolEntry.installableId && !(freshGrant && isDead(freshGrant, m.now))
+      ? grantNotice : null;
+    const freshRow = confirmed ? liveGrants.find((grant) => grant.grantId === confirmed.grantId) || null : null;
+    const foldInactive = liveGrants.length > 0;
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
-        {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
+        {toolGranted(toolEntry) && tp.renderAccessNote(toolEntry)}
         {/* A granted operator-key entry still takes a key for an agent that has none. */}
         {grantedKeyForm && (
           <>
@@ -510,11 +538,27 @@ const ConnectorsPage: React.FC = () => {
           <div className="v2-cx-pop__acts">{tp.renderRepositoryConnectAction(toolEntry)}</div>
         )}
         <div className="v2-cx-list">
-          {liveGrants.map(tp.renderRow)}
+          {confirmed && (
+            <div className="v2-cx-fresh" ref={freshRef}>
+              <p className="v2-cx-confirm" role="status">
+                {t(confirmed.changed ? 'tools.grantChangedConfirm' : 'tools.grantedConfirm', {
+                  tool: confirmed.tool, agents: confirmed.agents, pod: confirmed.pod,
+                })}
+              </p>
+              {freshRow && tp.renderRow(freshRow)}
+            </div>
+          )}
+          {liveGrants.filter((grant) => grant !== freshRow).map(tp.renderRow)}
           {deadGrants.length > 0 && (
             <>
-              <p className="v2-cx-group__title">{t('connectors.inactiveFold', { defaultValue: 'inactive · {{n}}', n: deadGrants.length })}</p>
-              {deadGrants.map(tp.renderRow)}
+              <p className="v2-cx-group__title">
+                {foldInactive ? (
+                  <button type="button" className="v2-cx-off v2-cx-off--fold" aria-expanded={inactiveOpen} onClick={() => setInactiveOpen((open) => !open)}>
+                    {t('connectors.inactiveFold', { defaultValue: 'inactive · {{n}}', n: deadGrants.length })}
+                  </button>
+                ) : t('connectors.inactiveFold', { defaultValue: 'inactive · {{n}}', n: deadGrants.length })}
+              </p>
+              {(!foldInactive || inactiveOpen) && deadGrants.map(tp.renderRow)}
             </>
           )}
           {hiddenOf(toolEntry).map(tp.renderHiddenConnection)}
@@ -531,13 +575,21 @@ const ConnectorsPage: React.FC = () => {
   // Counted over everything, not the search result, so the header holds still while typing.
   const offeredCount = c.items.filter((item) => !channelInactive(item)).length
     + shownCatalog.filter((entry) => !toolOff(entry)).length;
-  const availableCount = offeredCount - onCount;
+  // Connected but granted to no agent: neither on (nothing can use it) nor merely
+  // available (the person already did their half). Off entries are never offered.
+  const connectedTools = shownCatalog.filter((entry) => (
+    entry.connections.length > 0 && !toolGranted(entry) && !toolOff(entry)
+  )).length;
+  const availableCount = offeredCount - onCount - connectedTools;
   // An orphan grant's tile is live too (TASK-754), so it counts as on. It was
   // never offered, so it leaves `available` alone.
   const orphanOn = new Set(grants
     .filter((grant) => !m.catalog.some((entry) => entryCovers(entry, grant)) && !isDead(grant, m.now))
     .map(orphanKeyOf)).size;
-  const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount + orphanOn, available: Math.max(0, availableCount) });
+  const metaCounts = { on: onCount + orphanOn, available: Math.max(0, availableCount) };
+  const meta = connectedTools > 0
+    ? t('connectors.metaConnected', { ...metaCounts, connected: connectedTools })
+    : t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', ...metaCounts });
 
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';
@@ -674,7 +726,7 @@ const ConnectorsPage: React.FC = () => {
     <div className="v2-cx">
       <header className="v2-cx-head">
         <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
-        {!phone && !c.loading && <span className="v2-cx-head__meta">{meta}</span>}
+        {!phone && !c.loading && <span className="v2-cx-head__meta" title={meta}>{meta}</span>}
         <span className="v2-cx-head__sp" />
         {phone ? (
           <button

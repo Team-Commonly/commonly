@@ -63,7 +63,7 @@ describe('Connectors page: the tile surface', () => {
     expect(screen.queryByText('Telegram copy.')).toBeNull();
     expect(screen.queryByText('GitHub tool copy.')).toBeNull();
     // Counts: Slack is on; Telegram, GitHub, Linear are offered.
-    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 3 available');
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 2 connected, no grant · 1 available');
   });
 
   it('the filter segment hides a group, and All brings it back', async () => {
@@ -137,7 +137,7 @@ describe('Connectors page: the tile surface', () => {
     expect(tileNode('Discord')).toHaveClass('v2-cx-tile--dim');
     expect(tileNode('Sentry')).toBeNull();
     // The head counts what is on or offered, never what is off.
-    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('0 on · 2 available');
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('0 on · 1 connected, no grant · 1 available');
 
     await expandOff('Tools');
     expect(tileNode('Sentry')).toHaveClass('v2-cx-tile--dim');
@@ -184,7 +184,7 @@ describe('Connectors page: the tile surface', () => {
     expect(within(popover).queryByText('four')).toBeNull();
     expect(within(popover).queryByText('a.one')).toBeNull();
     expect(within(popover).getByText('+2')).toBeInTheDocument();
-    expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+    expect(within(popover).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
   });
 
   it('a connected tile opens a drawer with its panel, and the close button closes it', async () => {
@@ -305,7 +305,7 @@ describe('Connectors page: the tile surface', () => {
     expect(tile.parentElement).toBe(github.parentElement);
     expect(within(tile).getByRole('img', { name: 'Granted' })).toBeInTheDocument();
     // A live tile is counted as on; GitHub, with no grant, is still available.
-    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 available');
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 connected, no grant · 0 available');
     const tools = screen.getByRole('region', { name: 'Tools' });
     expect(tools.querySelector('.v2-connector-row')).toBeNull();
     expect(tools.querySelector('.v2-connector-row__action--icon')).toBeNull();
@@ -332,7 +332,7 @@ describe('Connectors page: the tile surface', () => {
     await findTile('GitHub');
     await findTile('Atlassian');
     expect(document.querySelectorAll('button.v2-cx-tile[title="Atlassian"]')).toHaveLength(1);
-    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 available');
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 connected, no grant · 0 available');
     fireEvent.click(tileNode('Atlassian'));
     const drawer = await findDrawer(/Atlassian/);
     expect(within(drawer).getByRole('button', { name: /View Atlassian in Rewire Live Demo/ })).toBeInTheDocument();
@@ -394,7 +394,7 @@ describe('Connectors page: the tile surface', () => {
 
     await clickTile('GitHub');
     const pop = await findPopover('GitHub');
-    fireEvent.click(within(pop).getByRole('button', { name: 'Add' }));
+    fireEvent.click(within(pop).getByRole('button', { name: 'Grant to agents' }));
     await findDrawer('GitHub');
     expect(screen.queryByRole('dialog', { name: 'GitHub' })).toBeNull();
 
@@ -420,10 +420,10 @@ describe('Connectors page: the tile surface', () => {
 
     await findTile('GitHub');
     const meta = () => document.querySelector('.v2-cx-head__meta');
-    expect(meta()).toHaveTextContent('1 on · 3 available');
+    expect(meta()).toHaveTextContent('1 on · 2 connected, no grant · 1 available');
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'lin' } });
     await findTile('Linear');
-    expect(meta()).toHaveTextContent('1 on · 3 available');
+    expect(meta()).toHaveTextContent('1 on · 2 connected, no grant · 1 available');
   });
 
   it('gives an installed provider this instance no longer offers the reveal, not an empty drawer', async () => {
