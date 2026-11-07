@@ -17,10 +17,12 @@ describe('setupMongoDb against a shared database', () => {
   afterAll(closeMongoDb);
 
   it('keeps a unique index whose build beat the drop', async () => {
-    const { host, port, name } = mongoose.connection;
+    // The string it connected with: credentials and authSource come along.
+    const uri = mongoose.connection._connectionString;
+    expect(uri).toEqual(expect.any(String));
     await mongoose.disconnect();
     process.env.INTEGRATION_TEST = 'true';
-    process.env.MONGO_URI = `mongodb://${host}:${port}/${name}`;
+    process.env.MONGO_URI = uri;
     try {
       await setupMongoDb();
     } finally {
