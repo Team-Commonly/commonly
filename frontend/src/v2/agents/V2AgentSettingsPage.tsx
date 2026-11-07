@@ -335,8 +335,10 @@ const V2AgentSettingsPage: React.FC = () => {
     runtimeName === 'hosted' || runtimeName === 'webhook' ? t(`agentManage.controls.runtimeKind_${runtimeName}`) : runtimeName,
     runtime.model,
   ].filter(Boolean).join(' · ');
-  // A hosted agent runs on Commonly, so it has no machine to report and no key to hold.
-  const runsOnCommonly = runtime.runtimeType === 'hosted';
+  // The server says `available` only for an agent that runs inside Commonly, so it
+  // has no machine to report and needs no key. A hosted agent on another engine
+  // does poll with a key, so runtimeType alone can't say this.
+  const runsOnCommonly = connectionState === 'available';
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
   const memoryHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`;
   const talkLabel = t('agentProfile.hero.talkTo', { name: displayName });

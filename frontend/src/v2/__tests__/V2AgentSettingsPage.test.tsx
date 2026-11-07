@@ -803,6 +803,25 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).toHaveTextContent('not reported');
   });
 
+  test('a native agent reads the same way, because the server calls it available too', async () => {
+    const base = fleet({ runtimeType: 'native', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    await screen.findByText(/Ready on Commonly/);
+    expect(await screen.findByText('Not needed')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).not.toHaveTextContent('not reported');
+  });
+
+  test.each(['never', 'stopped'])('a hosted agent in state %s with no key keeps the warning, since it may poll with one', async (state) => {
+    const base = fleet({ runtimeType: 'hosted', state });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Not needed')).not.toBeInTheDocument();
+  });
+
   test('a hosted agent that does hold a key still shows it', async () => {
     axios.get.mockImplementation(fleet({ runtimeType: 'hosted', state: 'available' }));
     renderPage();
