@@ -104,6 +104,27 @@ describe('a turn nobody is waiting on', () => {
     expect(result.status).toBe('succeeded');
   });
 
+  it('a heartbeat whose post failed is a failed run, not a decline', async () => {
+    AgentMessageService.postMessage.mockRejectedValueOnce(new Error('pod write failed'));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Two issues opened today.' }))
+      .mockResolvedValueOnce(says('I tried to post the update.'));
+    const result = await runAgent(scoutInstall, heartbeat);
+    expect(result.status).toBe('failed');
+    // The failed tool attempt only: the final text never becomes a fallback post.
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed post followed by one that lands is a normal heartbeat', async () => {
+    AgentMessageService.postMessage.mockRejectedValueOnce(new Error('pod write failed'));
+    axios.post
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Two issues opened today.' }))
+      .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Two issues opened today.' }))
+      .mockResolvedValueOnce(says('NO_REPLY'));
+    const result = await runAgent(scoutInstall, heartbeat);
+    expect(result.status).toBe('succeeded');
+  });
+
   it('a heartbeat still posts through the tool', async () => {
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_post_message', { podId: POD, content: 'Two issues opened today.' }))

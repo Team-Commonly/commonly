@@ -3280,6 +3280,17 @@ export async function runAgent(
           run.errorKind = 'tool_error';
         }
       }
+      // A heartbeat that called the post tool and never got a post through
+      // meant to say something, so it did not decline: the run fails, and its
+      // digest is not settled as answered.
+      if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
+        && run.turns.some((t: any) => (t.toolCalls || []).some(
+          (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed',
+        ))) {
+        run.status = 'failed';
+        run.errorKind = 'tool_error';
+        run.errorMessage = 'A heartbeat post failed, and a heartbeat\'s final text is not posted.';
+      }
       // The extra recovery call was given because the model meant to answer,
       // so an empty one is a reply that never came, not a decline.
       if (recoveryRetried && !textOut && !postedViaTool) {
