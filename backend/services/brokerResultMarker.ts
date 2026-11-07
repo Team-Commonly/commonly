@@ -9,5 +9,5 @@ export const untrustedConnectorMarker = (title: string): string => (
  * provider, and the decision arrives on its own as an `approval.resolved` event.
  */
 export const PENDING_APPROVAL_NOTE = 'Commonly parked this until the person who connected it decides on a Commonly '
-  + 'approval card. Nothing has been sent yet. When they decide, the pod shows the outcome on its own and you receive '
+  + 'approval card. Nothing has been sent yet. When they decide, the card shows the outcome on its own and you receive '
   + 'an approval.resolved event. Do not call this again meanwhile, and do not say you will confirm later.';

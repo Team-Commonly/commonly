@@ -9,9 +9,9 @@ test('the parked note says who parked the call', () => {
 
 // "The Linear connection owner" read as though Linear approves it, and "I'll
 // confirm here" promised a post that the resolved wake is built not to make.
-test('the parked note names the card, and leaves the outcome to the pod', () => {
+test('the parked note names the card, and leaves the outcome to it', () => {
   expect(PENDING_APPROVAL_NOTE).toContain('decides on a Commonly approval card');
   expect(PENDING_APPROVAL_NOTE).not.toContain('connection owner');
-  expect(PENDING_APPROVAL_NOTE).toContain('the pod shows the outcome on its own');
+  expect(PENDING_APPROVAL_NOTE).toContain('the card shows the outcome on its own');
   expect(PENDING_APPROVAL_NOTE).toContain('do not say you will confirm later');
 });
