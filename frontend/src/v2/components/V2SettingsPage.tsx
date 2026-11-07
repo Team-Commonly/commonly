@@ -272,7 +272,6 @@ const V2AccountSection: React.FC = () => {
             </span>
           </span>
         </span>
-        <span className="vl" />
         <span className="ac">
           <button
             type="button"

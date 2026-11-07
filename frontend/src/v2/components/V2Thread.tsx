@@ -919,11 +919,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // until the follow lands, only real input (wheel, touch, key, pointer)
   // can take the reader off the bottom; a time limit backs that up.
   const followingUntilRef = useRef(0);
-  const scrollListToEnd = useCallback(() => {
+  const scrollListToEnd = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = messagesContainerRef.current;
     if (!el) return;
     followingUntilRef.current = Date.now() + FOLLOW_SETTLE_MS;
-    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior });
     else el.scrollTop = el.scrollHeight;
   }, []);
   const jumpToLatest = useCallback(() => {
@@ -963,7 +963,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   useEffect(() => {
     if (!newestMessageId) return;
     if (atBottomRef.current) {
-      scrollListToEnd();
+      // The first read's rows don't animate in from the top; see the landing below.
+      scrollListToEnd(initialLoadComplete ? 'smooth' : 'instant');
       setJumpCount(0);
     } else {
       setJumpCount((count) => count + 1);
@@ -1175,6 +1176,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     if (hashMatch) return hashMatch[1];
     return new URLSearchParams(location.search || '').get('message');
   }, [location.hash, location.search]);
+  // Opening a pod lands at the end at once, before paint. A smooth follow from the top leaves
+  // the edge sentinel in view, so it loads the older page, and that prepend stops the follow
+  // thousands of pixels short. A deep link has its own landing.
+  const landedPodRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!initialLoadComplete || !newestMessageId || landedPodRef.current === currentPodId) return;
+    landedPodRef.current = currentPodId;
+    const el = messagesContainerRef.current;
+    if (landingTarget || !el) return;
+    el.scrollTop = el.scrollHeight;
+    atBottomRef.current = true;
+  }, [currentPodId, initialLoadComplete, landingTarget, newestMessageId]);
   const retryHistorySearch = useCallback(async () => {
     // Retry is a new automatic target search, so a previous deliberate edge
     // release must not let the sentinel bypass the fresh bounded search.

@@ -6,6 +6,9 @@ import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSe
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import './v2-agent-policy.css';
 
+// The Memory tab's Edit control links here.
+export const AGENT_MEMORY_EDITOR_ID = 'agent-memory-editor';
+
 type MemorySection = 'soul' | 'long_term' | 'shared';
 type MemoryDocument = { content: string; updatedAt: string | null; visibility: string };
 type MemoryDocuments = Record<MemorySection, MemoryDocument>;
@@ -19,9 +22,10 @@ interface Props {
   instanceId: string;
   installation: AgentSettingsInstallation | null;
   update: (patch: AgentSettingsPatch) => Promise<unknown>;
+  scrollToEditor?: boolean;
 }
 
-const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update }) => {
+const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update, scrollToEditor = false }) => {
   const { t } = useTranslation();
   const environment = (installation?.config?.environment || {}) as { adapter?: string; sandbox?: { mode?: string } };
   const runtime = installation?.runtime;
@@ -45,6 +49,12 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     setTrustMode(environment.sandbox?.mode || '');
   }, [installation]);
 
+  // Reached from the Memory tab's Edit control. Scrolled to once the editor has drawn, because
+  // only then has the page above it stopped growing.
+  const editorDrawn = Boolean(documents) || memoryPrivate;
+  useEffect(() => {
+    if (scrollToEditor && editorDrawn) document.getElementById(AGENT_MEMORY_EDITOR_ID)?.scrollIntoView?.({ block: 'center' });
+  }, [scrollToEditor, editorDrawn]);
   const memoryUrl = `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/editable`;
   const loadMemory = useCallback(async (preserveDraft = false) => {
     const response = await axios.get<{ sections: MemoryDocuments }>(memoryUrl);
@@ -162,8 +172,8 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         </div>}
       </>}
     </div>}
-    {/* Memory editing has no frame here yet (the artboard moves it to the Memory tab, which cannot edit yet), so it keeps its live markup. */}
-    <div className="v2-agent-policy__group">
+    {/* Memory editing has no frame here yet; the Memory tab's Edit control opens it, and it keeps its live markup. */}
+    <div className="v2-agent-policy__group" id={AGENT_MEMORY_EDITOR_ID}>
       <h3>{t('agentPolicy.memory')}</h3>
       {documents ? <>
         <div className="v2-agent-policy__memory-tabs" role="tablist" aria-label={t('agentPolicy.memory')}>

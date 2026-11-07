@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
@@ -17,7 +17,7 @@ import V2AgentListingRow from './V2AgentListingRow';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import V2AgentHostedRun from './V2AgentHostedRun';
 import V2AgentWakePods from './V2AgentWakePods';
-import V2AgentPolicy from './V2AgentPolicy';
+import V2AgentPolicy, { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
 import './v2-agent-settings.css';
 import './v2-agent-settings-surface.css';
@@ -84,6 +84,15 @@ const V2AgentSettingsPage: React.FC = () => {
   useEffect(() => {
     if (runsNeedAttention && runsRef.current) runsRef.current.open = true;
   }, [runsNeedAttention]);
+  // The Memory tab's Edit control opens How it runs, where the editor sits. The page loads in
+  // stages, so this waits for the fold to mount, and opens it once. The editor scrolls itself in.
+  const editorLink = useLocation().hash === `#${AGENT_MEMORY_EDITOR_ID}`;
+  const landedOnEditor = useRef(false);
+  useEffect(() => {
+    if (!editorLink || landedOnEditor.current || !runsRef.current) return;
+    landedOnEditor.current = true;
+    runsRef.current.open = true;
+  });
   const [memory, setMemory] = useState<{ notes: number; updatedAt: string | null } | null>(null);
   const navigate = useNavigate();
   // The same width the page's one-line phone rows start at.
@@ -581,7 +590,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     } : undefined}
                   />
                   <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
-                    installation={installation} update={update} />
+                    installation={installation} update={update} scrollToEditor={editorLink} />
                 </div>
               </details>
             </div>

@@ -4563,10 +4563,14 @@ body.modern-ui.v2-canvas {
    does not set :focus-visible, so a clicked row keeps its time. Touch screens
    have no hover: the 390 frame draws the time at rest there too, and a press
    and hold on the row (--reveal, V2PodsSidebar) is its hover state. */
-.v2-pods__rowwrap:hover .v2-pods__pin,
 .v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,
 .v2-root .v2-pods__rowwrap .v2-pods__pin:focus,
 .v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }
+/* A tap applies :hover before its click, so outside real hover the invisible pin would catch the
+   tap meant for the row. Press and hold (--reveal) is the touch path. */
+@media (hover: hover) {
+  .v2-pods__rowwrap:hover .v2-pods__pin { opacity: 1; pointer-events: auto; }
+}
 
 .v2-root button.v2-pods__pin:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 .v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); }
@@ -4574,10 +4578,12 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__row-time { display: inline-block; min-width: 24px; text-align: right; }
 
-.v2-pods__rowwrap:hover .v2-pods__row-time,
 .v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,
 .v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,
 .v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }
+@media (hover: hover) {
+  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }
+}
 
 /* The press and hold must not open the system callout or select the name. */
 @media (hover: none) and (pointer: coarse) {

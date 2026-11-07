@@ -973,6 +973,9 @@
   mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
 }
 
+/* A closing question stays readable under the fold. Same type as the message. */
+.v2-msg__closing { margin: 2px 0 0; font-size: 14px; line-height: 22px; color: var(--v2-ink-2); word-break: break-word; }
+
 .v2-root button.v2-msg__showmore {
   display: inline-flex;
   align-items: center;
