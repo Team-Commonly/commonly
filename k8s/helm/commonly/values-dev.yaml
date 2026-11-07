@@ -30,7 +30,6 @@ billing:
 
 agentProvisioning:
   enabled: true
-  createWorkspacePvc: false
 
 # F78 (11-03): Google rejects the Gemini key ("API key not valid"), so backend,
 # ops-runner and commonly-bot stop getting it. A working key turns this back on.
@@ -127,8 +126,6 @@ backend:
     commonlyApiUrl: ""
     # ADR-023 W2 hosted runtime (workers/agent-runtime, deployed 2026-08-30).
     hostedRuntimeUrl: "https://commonly-agent-runtime.commonlyai.workers.dev"
-    clawdbotGatewayUrl: ""
-    moltbotGatewayUrl: ""
     pgHost: "YOUR_PG_HOST"
     pgPort: "25450"
     pgDatabase: "defaultdb"
@@ -156,7 +153,7 @@ backend:
     # Bypass off — provisioner now writes LiteLLM virtual keys (not raw
     # Codex JWTs) to per-agent auth-profiles, and LiteLLM proxies Codex
     # via /chatgpt-auth/auth.json (rotator-managed). Pairs with
-    # litellm.codexBypassLitellm: false + litellm.codexAuthRotator.enabled: true.
+    # litellm.codexAuthRotator.enabled: true.
     codexBypassLitellm: "false"
     # injection-guard ONLY (2026-08-13). The default pair includes
     # openai-moderation-enforce, whose OPENAI_API_KEY is the literal
@@ -265,48 +262,6 @@ externalSecrets:
     clusterName: commonly-dev
 
 agents:
-  clawdbot:
-    # PARKED 2026-08-20 — the moltbot tier is retiring in favour of
-    # pi/OpenCode wrapper adapters (ADR-021/ADR-023, #1050). Its credential
-    # stack had been dead since 2026-07-02 — both cluster codex tokens expired,
-    # OpenRouter 401 "User not found" — and nobody noticed for seven weeks,
-    # because the native and BYO tiers never touch those credentials.
-    #
-    # This flag is the durable half of the park. The manual
-    # `kubectl scale --replicas=0` alone would be UNDONE by the next Deploy Dev,
-    # because the template hardcodes `replicas: 1` behind this flag and helm
-    # upgrade restores whatever the chart declares. Identity continuity holds
-    # either way: User rows, memory, and installations survive (ADR-001), so
-    # the same agents return as themselves on the replacement runtime.
-    enabled: false
-    image:
-      repository: gcr.io/YOUR_GCP_PROJECT_ID/clawdbot-gateway
-      tag: "20260414192025"
-      pullPolicy: Always
-    strategy:
-      type: Recreate
-    # TASK-521 (ADR-021): both PVCs were deleted on 2026-11-04 after the
-    # export was verified restorable (copy in the private archive bucket).
-    # Off here, or the next upgrade recreates them empty.
-    persistence:
-      config:
-        enabled: false
-        storageClass: standard-rwo
-        size: 1Gi
-        accessMode: ReadWriteOnce
-      workspace:
-        enabled: false
-        storageClass: standard-rwo
-        size: 10Gi
-        accessMode: ReadWriteOnce
-    nodeSelector:
-      pool: dev
-    tolerations:
-      - key: "pool"
-        operator: "Equal"
-        value: "dev"
-        effect: "NoSchedule"
-
   commonlyBot:
     enabled: true
     image:
@@ -414,12 +369,8 @@ litellm:
   # The base image pin must match the shared boot script. v1.106.2 includes
   # spend-log tool-index retention and the headless device-login guard;
   # BerriAI/litellm#48153 tracks the remaining ChatGPT Responses input patch.
-  # BerriAI/litellm#25429 workaround used to live here. Now off — acpx is
-  # being deprecated in commonly (see ADR-005 Stage 3) and we'd rather route
-  # everything through LiteLLM than chase an upstream bug for a code path
-  # we're retiring. With bypass off, all Codex traffic goes via LiteLLM's
-  # chatgpt/ bridge and the rotator below handles 429-driven account swaps.
-  codexBypassLitellm: false
+  # All Codex traffic goes via LiteLLM's chatgpt/ bridge and the rotator below
+  # handles 429-driven account swaps.
   # Re-enable the codex-auth-rotator sidecar — swaps /chatgpt-auth/auth.json
   # between accounts every 10 min OR on 429 events written by LiteLLM's
   # custom callback. Each ChatGPT Team user has independent quota, so

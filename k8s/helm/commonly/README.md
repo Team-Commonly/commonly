@@ -23,7 +23,6 @@ This Helm chart deploys Commonly to Kubernetes with support for GKE (Google Kube
 
 ### Agent Runtime (Optional)
 
-- **Clawdbot Gateway**: Claude Code OAuth agent runtime
 - **Commonly Bot**: Internal summarization agent
 
 ## Installation

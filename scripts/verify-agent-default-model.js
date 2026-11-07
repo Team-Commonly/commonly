@@ -6,8 +6,6 @@
 // Checks, against the rendered litellm-config model_list:
 //   - AGENT_DEFAULT_MODEL on the backend, backend-worker and ops-runner (the K8s
 //     provisioner and the global policy read it);
-//   - the gateway seed config's default primary and fallbacks, and every model
-//     registered under a provider that points at LiteLLM;
 //   - each cloud-codex agent's codex CLI model.
 // A name resolves to every model_list entry that carries it (LiteLLM balances
 // across them), and through every fallback LiteLLM would take from it:
@@ -16,8 +14,6 @@
 // router_settings or litellm_settings. Every name reached that way must be a
 // model_name or an alias. An upstream is DeepSeek when its model (under any
 // provider prefix), custom_llm_provider or api_base says so, in any case.
-// `google/*` gateway fallbacks go straight to Google, not through LiteLLM, so
-// they are listed but not resolved (F105 moves them); a google/* primary fails.
 // Also resolved: the chat-model defaults LITELLM_CHAT_MODEL, NATIVE_RUNTIME_MODEL
 // and LLM_SERVICE_MODEL on the backend workloads and AGENT_MODEL on the
 // commonly-bot, wherever they are set.
@@ -151,45 +147,7 @@ if (noDeepseek) {
   }
 }
 
-// 2. The gateway seed config (moltbot.json).
-const gateway = docs.find((d) => d.kind === 'ConfigMap' && d.metadata?.name === 'clawdbot-config');
-if (gateway) {
-  const config = JSON.parse(gateway.data['moltbot.json']);
-  const providers = config.models?.providers || {};
-  const viaLitellm = (provider) => /litellm/.test(String(providers[provider]?.baseUrl || ''));
-  const resolveRef = (where, ref, { directGoogleOk = false } = {}) => {
-    const slash = ref.indexOf('/');
-    const provider = ref.slice(0, slash);
-    const id = ref.slice(slash + 1);
-    if (provider === 'google') {
-      if (!directGoogleOk) {
-        failures.push(`${where}: "${ref}" goes straight to Google, not through LiteLLM`);
-        return;
-      }
-      checked.push(`${where}: ${ref} (direct to Google, not resolved)`);
-      return;
-    }
-    if (!viaLitellm(provider)) {
-      failures.push(`${where}: "${ref}" uses provider "${provider}", which does not point at LiteLLM`);
-      return;
-    }
-    if (!(providers[provider].models || []).some((m) => m.id === id)) {
-      failures.push(`${where}: "${ref}" is not in provider "${provider}"'s model list`);
-    }
-    resolve(where, id);
-  };
-  const model = config.agents?.defaults?.model || {};
-  resolveRef('gateway default primary', String(model.primary || ''));
-  for (const ref of model.fallbacks || []) resolveRef('gateway default fallback', String(ref), { directGoogleOk: true });
-  for (const [provider, def] of Object.entries(providers)) {
-    if (!def || !viaLitellm(provider)) continue;
-    for (const m of def.models || []) resolve(`gateway registry ${provider}`, String(m.id));
-  }
-} else {
-  failures.push('clawdbot-config not rendered');
-}
-
-// 3. cloud-codex's codex CLI model (config.toml in the boot script).
+// 2. cloud-codex's codex CLI model (config.toml in the boot script).
 for (const dep of docs.filter((d) => d.kind === 'Deployment' && /^cloud-codex-/.test(d.metadata?.name || ''))) {
   const script = JSON.stringify(dep.spec.template.spec);
   const match = script.match(/\\nmodel = \\"([^"\\]+)\\"/);

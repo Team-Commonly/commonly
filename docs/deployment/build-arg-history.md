@@ -1,5 +1,7 @@
 # Build Arg History: OPENCLAW_INSTALL_DOC_TOOLCHAIN
 
+> **Historical.** The gateway image is no longer built ([ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md)).
+
 Moved verbatim from `CLAUDE.md` ("Build & Deploy") as part of the CLAUDE.md
 slim-down (TASK-528). The history of the build arg is kept here, with its dates
 and pins, so the anchor in `CLAUDE.md` can point to it.

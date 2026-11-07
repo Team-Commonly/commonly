@@ -62,8 +62,8 @@ The run is always dispatched on main; `ref` picks the commit it builds. Its
 first job refuses a `ref` that is not a full SHA in the repo, and any SHA
 without a green `staging-smoke`. An empty `ref` deploys main HEAD, which is not
 what you cut, so always pass it. The image tag defaults to the first 8
-characters of the SHA. The workflow builds backend, frontend and commonly-bot
-(plus clawdbot-gateway when the release enables it), then runs `helm upgrade`.
+characters of the SHA. The workflow builds backend, frontend and commonly-bot,
+then runs `helm upgrade`.
 
 `allow_without_staging_smoke=true` bypasses the gate. Use it only for a P0
 while staging itself is broken, and say so in the release record.

@@ -45,10 +45,8 @@ Team-Commonly/commonly
 
 ### `LITELLM_API_KEY`
 
-Required for the local legacy gateway parity path. The target Phase 2 shape is
-that this is only needed when `COMMONLY_LOCAL_CLAWDBOT=1`; until that
-gate lands, treat it as required whenever you manually start the legacy
-gateway profile.
+Required for local work against LiteLLM. The local legacy gateway profile
+was retired under ADR-021 Part B.
 
 Use a LiteLLM virtual key, not the master key. The verified recipe in
 this repo is to port-forward the dev LiteLLM Deployment and call
@@ -135,7 +133,6 @@ Defaults should stay off unless you are actively working in that area.
 
 | Variable | Effect | Credential Pairing |
 | --- | --- | --- |
-| `COMMONLY_LOCAL_CLAWDBOT=1` | Opts into the local legacy gateway compose path | `LITELLM_API_KEY` |
 | `COMMONLY_LOCAL_SCHEDULER=1` | Opts into local heartbeat scheduler work | none for v1 |
 
 ## Troubleshooting

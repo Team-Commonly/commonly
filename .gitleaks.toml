@@ -69,9 +69,8 @@ paths = [
   '''k8s/QUICK_START\.md''',
   # Runtime state (gitignored, but may appear in git history — see issue #88)
   '''external/''',
-  # _external/clawdbot is a git submodule (Team-Commonly/openclaw fork).
-  # Submodule contents are not scanned; this covers the historical commits
-  # before the submodule conversion (when files were tracked directly).
+  # Covers the historical commits that tracked the openclaw fork directly,
+  # before it became a submodule (retired under ADR-021).
   '''_external/''',
   # Playwright browser state committed before gitignore was added — see issue #88
   '''state\.json''',

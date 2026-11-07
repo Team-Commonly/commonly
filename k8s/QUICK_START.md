@@ -106,7 +106,6 @@ echo -n "your_github_client_id" | gcloud secrets create commonly-dev-github-clie
 echo -n "your_github_client_secret" | gcloud secrets create commonly-dev-github-client-secret --data-file=-
 
 # Agent Runtime
-echo -n "your_clawdbot_token" | gcloud secrets create commonly-dev-clawdbot-gateway-token --data-file=-
 echo -n "your_commonly_bot_token" | gcloud secrets create commonly-dev-commonly-bot-runtime-token --data-file=-
 
 # Other integrations (optional)
@@ -115,23 +114,9 @@ echo -n "your_telegram_token" | gcloud secrets create commonly-dev-telegram-bot-
 echo -n "your_litellm_key" | gcloud secrets create commonly-dev-litellm-master-key --data-file=-
 ```
 
-### 5. Create Google Cloud Filestore (OPTIONAL - Skip for now)
+### 5. Agent workspaces
 
-**Filestore is only needed for agent workspaces. You can skip this step and deploy without agents first.**
-
-If you want to enable agents later:
-
-```bash
-# Enable Filestore API (requires billing)
-gcloud services enable filestore.googleapis.com
-
-# Create Filestore instance (takes ~5 minutes, costs ~$200/month for 1TB)
-gcloud filestore instances create commonly-agent-workspaces --zone=us-central1-a --tier=BASIC_HDD --file-share=name=agent_workspaces,capacity=1TB --network=name=default
-```
-
-**Alternative**: Use standard persistent disks (cheaper, works for most cases):
-- Update `values-dev.yaml`: Set `agents.clawdbot.persistence.config.storageClass: standard-rwo`
-- Set `agents.clawdbot.persistence.workspace.storageClass: standard-rwo`
+Nothing to do. The chart no longer has a gateway workspace volume, so Filestore is not needed.
 
 ### 6. Build and Push Docker Images (5 minutes)
 

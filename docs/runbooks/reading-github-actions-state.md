@@ -403,9 +403,8 @@ Practical consequences:
 
   Read the `paths:` lists from the file, in full, every time. `Playwright Tests`
   is paths-gated (`frontend/**`, `backend/**`, `e2e/**`, `playwright.config.*`)
-  and is easy to forget because most PRs match it. `Smoke Tests` gates on seven
-  entries, not the three you might skim — `k8s/**`, both Dockerfiles, the
-  checked-out agent-runtime submodule (`_external/clawdbot` and its `/**` glob),
+  and is easy to forget because most PRs match it. `Smoke Tests` gates on five
+  entries, not the three you might skim — `k8s/**`, both Dockerfiles,
   `dev.sh`, **and `.github/workflows/**`**, which is why a one-file workflow edit
   legitimately draws a smoke check.
 
