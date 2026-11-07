@@ -330,7 +330,15 @@ const V2AgentSettingsPage: React.FC = () => {
   const displayName = access.displayName || agentName;
   const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
   const runtimeDetails = describeRuntime(runtime);
-  const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
+  const runtimeName = runtimeDetails.adapter || runtime.adapter || runtime.runtimeType;
+  const runtimeSummary = [
+    runtimeName === 'hosted' || runtimeName === 'webhook' ? t(`agentManage.controls.runtimeKind_${runtimeName}`) : runtimeName,
+    runtime.model,
+  ].filter(Boolean).join(' · ');
+  // The server says `available` only for an agent that runs inside Commonly, so it
+  // has no machine to report and needs no key. A hosted agent on another engine
+  // does poll with a key, so runtimeType alone can't say this.
+  const runsOnCommonly = connectionState === 'available';
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
   const memoryHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`;
   const talkLabel = t('agentProfile.hero.talkTo', { name: displayName });
@@ -341,7 +349,7 @@ const V2AgentSettingsPage: React.FC = () => {
   );
   const status = (
     <div className="st">
-      {connection && <span className={`dot${disconnected ? ' dot--off' : connection.state === 'connected' ? '' : ' dot--idle'}`} aria-hidden="true" />}
+      {connection && <span className={`dot${disconnected ? ' dot--off' : connection.state === 'connected' || connection.state === 'available' ? '' : ' dot--idle'}`} aria-hidden="true" />}
       {[connection && connectionLabel(connection, t), t('agentSettings.podCount', { count: access.pods.length })].filter(Boolean).join(' · ')}
     </div>
   );
@@ -401,7 +409,7 @@ const V2AgentSettingsPage: React.FC = () => {
               <div className="lrow">
                 <span className="lb"><V2AgentSettingsIcon name="key" />{t('agentSettings.runtimeKey')}</span>
                 <span className="vl">
-                  {keysForbidden ? t('agentSettings.keyUnavailable') : <>
+                  {keysForbidden ? t('agentSettings.keyUnavailable') : runsOnCommonly && !activeKeys.length ? t('agentSettings.keyNotNeeded') : <>
                     <span className={`dot${disconnected || !activeKeys.length ? ' dot--off' : ''}`} aria-hidden="true" />
                     {activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}
                     {newestUse && <span className="mo">{t('agentSettings.keyUsed', { when: localizeRelativeTime(newestUse, t, { pastEvent: true }) })}</span>}
@@ -503,7 +511,7 @@ const V2AgentSettingsPage: React.FC = () => {
                 <summary>
                   <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
                   <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}
-                    <span className="mo">{t(`agentManage.controls.${processState}`)}</span>
+                    {!(runsOnCommonly && processState === 'notReported') && <span className="mo">{t(`agentManage.controls.${processState}`)}</span>}
                   </span>
                   <V2AgentSettingsIcon name="chev" className="chev" />
                 </summary>

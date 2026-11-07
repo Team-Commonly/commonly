@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 import { AuthContext } from '../../context/AuthContext';
+import i18n from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -777,6 +778,94 @@ describe('one Identity & access list (d215 frame)', () => {
     }] });
     return Promise.resolve({ data: [] });
   };
+
+  test('a hosted agent that is ready reads as healthy, not like one that never connected', async () => {
+    const base = fleet({ runtimeType: 'hosted', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    const { container } = renderPage();
+    const status = await screen.findByText(/Ready on Commonly/);
+    expect(status.querySelector('.dot')).not.toHaveClass('dot--idle');
+    expect(await screen.findByText('Not needed')).toBeInTheDocument();
+    expect(screen.queryByText('No active keys.')).not.toBeInTheDocument();
+    expect(screen.getByText('Not needed').closest('.lrow').querySelector('.dot')).toBeNull();
+    const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+    expect(summary).toHaveTextContent('hosted');
+    expect(summary).not.toHaveTextContent('not reported');
+    expect(container.querySelector('.st .dot--off')).toBeNull();
+  });
+
+  test('an agent that never connected keeps the idle dot', async () => {
+    axios.get.mockImplementation(fleet({ state: 'never' }));
+    renderPage();
+    const status = await screen.findByText(/Not connected yet/);
+    expect(status.querySelector('.dot')).toHaveClass('dot--idle');
+    expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).toHaveTextContent('not reported');
+  });
+
+  test('a native agent reads the same way, because the server calls it available too', async () => {
+    const base = fleet({ runtimeType: 'native', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    await screen.findByText(/Ready on Commonly/);
+    expect(await screen.findByText('Not needed')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).not.toHaveTextContent('not reported');
+  });
+
+  test.each(['never', 'stopped'])('a hosted agent in state %s with no key keeps the warning, since it may poll with one', async (state) => {
+    const base = fleet({ runtimeType: 'hosted', state });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Not needed')).not.toBeInTheDocument();
+  });
+
+  test('a hosted agent that does hold a key still shows it', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'hosted', state: 'available' }));
+    renderPage();
+    await screen.findByText(/Ready on Commonly/);
+    await waitFor(() => expect(screen.queryByText('Not needed')).not.toBeInTheDocument());
+    expect(await screen.findByText(/^active/)).toBeInTheDocument();
+  });
+
+  test('How it runs reads the runtime in the app language', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'hosted', state: 'available' }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      await screen.findByText(/可在 Commonly 使用/);
+      const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+      expect(summary).toHaveTextContent('托管');
+      expect(summary).not.toHaveTextContent('hosted');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('a webhook reads Webhook in How it runs under zh-CN', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'webhook', state: 'never' }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      await screen.findByText(/尚未连接/);
+      const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+      expect(summary).toHaveTextContent('Webhook');
+      expect(summary).not.toHaveTextContent('webhook');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('the short wake label reads 真人消息 under zh-CN', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      expect(i18n.t('agentSettings.messageWakeShort_human')).toBe('真人消息');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
 
   test('How it runs opens by itself when the machine was revoked, and stays closed when it is healthy', async () => {
     axios.get.mockImplementation(fleet({ runtimeType: 'wrapper', placement: 'revoked' }));
