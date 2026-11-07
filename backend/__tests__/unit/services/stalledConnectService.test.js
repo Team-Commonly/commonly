@@ -49,6 +49,7 @@ jest.mock('../../../services/attentionItemService', () => ({
 const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
+jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
 jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
   find: (...a) => mockEpFind(...a),

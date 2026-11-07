@@ -251,6 +251,7 @@ export const scan = async ({
   });
   const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
   const explained = await explainedTokens((candidates as Array<Record<string, any>>).map((row) => seatOf(row).agentName));
+  const activeRows = new Set((candidates as Array<Record<string, any>>).map((row) => String(row._id)));
 
   for (const install of candidates as Array<Record<string, any>>) {
     const { agentName, instanceId } = seatOf(install);
@@ -284,37 +285,56 @@ export const scan = async ({
     // post when asked, and answering @mentions takes the listener.
     const mcpConnected = Boolean(latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt));
     // One token can back the person's pod and their own room. The explanation
-    // is for them, so it lands once, on whichever row reached it first.
+    // is for them, so a line they can still read on another row covers this
+    // one. Anything less, and this row says it: silence is the failure here.
     const told = tokenKey(agentName, instanceId, install.installedBy, issuedAt);
-    if (explained.has(told) && explained.get(told) !== String(install._id)) {
+    const line = explained.get(told);
+    if (line && line.installationId !== String(install._id) && activeRows.has(line.installationId)
+      && await readsPod(line.podId, install.installedBy)) {
       result.skippedSameToken += 1;
       continue;
     }
-    explained.set(told, String(install._id));
-    await nudgeOnce({
+    const delivered = await nudgeOnce({
       install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
     });
+    if (delivered) explained.set(told, { installationId: String(install._id), podId: String(install.podId) });
   }
 
   return result;
+};
+
+type ExplainedLine = { installationId: string; podId: string };
+
+/** Leaving a pod keeps the row, so a line posted there may be out of their reach. */
+const readsPod = async (podId: string, userId: unknown): Promise<boolean> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Pod = require('../models/Pod');
+  try {
+    return Boolean(await Pod.exists({ _id: podId, members: userId }));
+  } catch (error) {
+    console.warn('[stalled-connect] could not read pod members:', (error as Error).message);
+    return false;
+  }
 };
 
 const tokenKey = (agentName: string, instanceId: string, installedBy: unknown, issuedAt: Date | string): string => (
   [agentName, instanceId, String(installedBy), new Date(issuedAt).getTime()].join('\n')
 );
 
-/** Which installation already holds the episode for each person's token. A
- * failed read returns none: each row's own episode index still stops a repeat,
- * and the cost is one line said twice (review-checklist rule 19). */
-const explainedTokens = async (agentNames: string[]): Promise<Map<string, string>> => {
-  const explained = new Map<string, string>();
+/** Where each person's token has a nudge that actually posted. An episode alone
+ * proves nothing: it's claimed before the post, and an MCP seat's has no nudge.
+ * A failed read returns none, and the cost is one line said twice (rule 19). */
+const explainedTokens = async (agentNames: string[]): Promise<Map<string, ExplainedLine>> => {
+  const explained = new Map<string, ExplainedLine>();
   try {
-    const episodes = await StalledConnectEpisode.find({ agentName: { $in: [...new Set(agentNames)] } })
-      .select('agentName instanceId installedBy tokenIssuedAt installationId').lean();
+    const episodes = await StalledConnectEpisode.find({
+      agentName: { $in: [...new Set(agentNames)] },
+      nudgeMessageId: { $nin: [null, ''] },
+    }).select('agentName instanceId installedBy tokenIssuedAt installationId podId').lean();
     (episodes as Array<Record<string, any>>).forEach((episode) => {
       explained.set(
         tokenKey(episode.agentName, episode.instanceId, episode.installedBy, episode.tokenIssuedAt),
-        String(episode.installationId),
+        { installationId: String(episode.installationId), podId: String(episode.podId) },
       );
     });
   } catch (error) {
@@ -333,7 +353,7 @@ const nudgeOnce = async ({
   mcpConnected: boolean;
   now: Date;
   result: StalledScanResult;
-}): Promise<void> => {
+}): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -353,7 +373,7 @@ const nudgeOnce = async ({
         byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
       };
     } | null;
-  if (!installer?.username) return; // Nobody to address; a nameless nudge is noise.
+  if (!installer?.username) return false; // Nobody to address; a nameless nudge is noise.
 
   const handle = buildAgentUsername
     ? buildAgentUsername(derived.agentName, derived.instanceId)
@@ -384,12 +404,12 @@ const nudgeOnce = async ({
     // 11000 means this token-episode was already explained — by an earlier
     // pass, or by the reactive responder that shares this record. Correct
     // outcome, not an error.
-    if (error?.code === 11000) return;
+    if (error?.code === 11000) return false;
     throw error;
   }
   // The episode stays open with no nudge, so the same one-per-token record
   // carries the MCP close on the next pass.
-  if (mcpConnected) return;
+  if (mcpConnected) return false;
 
   const content = composeStalledConnectNudge({
     installerName: installer.username,
@@ -427,7 +447,7 @@ const nudgeOnce = async ({
         `[stalled-connect] no message id for episode=${episode._id} `
         + `agent=${derived.agentName} — post skipped or shape changed`,
       );
-      return;
+      return false;
     }
     await StalledConnectEpisode.updateOne(
       { _id: episode._id },
@@ -439,8 +459,10 @@ const nudgeOnce = async ({
       podId,
       installer: installer.username,
     });
+    return true;
   } catch (error) {
     console.warn('[stalled-connect] nudge post failed:', (error as Error).message);
+    return false;
   }
 };
 
