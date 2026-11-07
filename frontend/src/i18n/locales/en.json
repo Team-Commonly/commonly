@@ -1994,6 +1994,7 @@
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
       "statAgents": "hosted agent",
+      "heldNotice": "You already have a hosted agent (beta allows {{cap}}).",
       "openHeld": "Open {{holder}}"
     },
     "preview": {
