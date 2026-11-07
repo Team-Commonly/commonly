@@ -17,6 +17,7 @@ import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
 import { requestFirstRunGuide } from '../firstRunGuide';
 import { V2_THEMES, V2ThemePref, setV2Theme } from '../utils/theme';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import useV2ThemePref from '../hooks/useV2ThemePref';
 
 type TokenStatus = {
@@ -395,10 +396,15 @@ const V2AccountSection: React.FC = () => {
 const V2AccountActions: React.FC = () => {
   const { logout } = useAuth();
   const { t } = useTranslation();
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const [revokingSessions, setRevokingSessions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const signOutEverywhere = async () => {
-    if (!window.confirm(t('settings.sessions.confirm'))) return;
+    const confirmed = await confirm({
+      message: t('settings.sessions.confirm'),
+      confirmLabel: t('settings.sessions.signOutEverywhere'),
+    });
+    if (!confirmed) return;
     setRevokingSessions(true);
     setError(null);
     try {
@@ -418,6 +424,7 @@ const V2AccountActions: React.FC = () => {
         <Chevron />
       </summary>
       <div className="v2-settings__fold-body">
+        {confirmDialog}
         {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
         <div className="v2-settings__actions">
           <button className="v2p-b v2p-b-s v2p-b-sm" type="button" disabled={revokingSessions}

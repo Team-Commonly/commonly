@@ -400,6 +400,34 @@ describe('V2PodBoard', () => {
     ));
   });
 
+  test('unsaved focus changes ask first, in the app dialog, and Cancel keeps the draft', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
+      return Promise.resolve({ data: { tasks: TASKS } });
+    });
+    renderBoard();
+
+    expect(await screen.findByText('Ship the pilot')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit focus' }));
+    const editor = screen.getByDisplayValue('Ship the pilot').closest('.v2-modal');
+    fireEvent.change(screen.getByDisplayValue('Ship the pilot'), { target: { value: 'A new goal' } });
+
+    // The app blurs on any Escape that reaches the document, which would strand focus behind the dialog.
+    const reached = jest.fn();
+    document.addEventListener('keydown', reached);
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    document.removeEventListener('keydown', reached);
+    expect(reached).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('alertdialog', { name: 'Discard your unsaved focus changes?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByDisplayValue('A new goal')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.keyDown(editor, { key: 'Escape' });
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(screen.queryByDisplayValue('A new goal')).not.toBeInTheDocument());
+  });
+
   test('keeps focus on a moved task and announces its new position', async () => {
     const orderedFocus = {
       ...FOCUS,

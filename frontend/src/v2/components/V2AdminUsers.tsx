@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { appDateLocale } from '../utils/appLocale';
 
 interface AdminRef {
@@ -140,6 +141,7 @@ const lifecycleLabel = (
 };
 
 const V2AdminUsers: React.FC = () => {
+  const { confirm, prompt, dialog: confirmDialog } = useV2Confirm();
   const api = useV2Api();
   const { t } = useTranslation();
 
@@ -186,8 +188,9 @@ const V2AdminUsers: React.FC = () => {
 
   const handleBanToggle = async (u: RegisteredUser) => {
     const banning = !u.banned;
-    // eslint-disable-next-line no-alert
-    const reason = banning ? window.prompt(t('adminUsers.prompts.ban', { username: u.username }), '') : null;
+    const reason = banning
+      ? await prompt({ message: t('adminUsers.prompts.ban', { username: u.username }), confirmLabel: t('adminUsers.actions.ban') })
+      : null;
     if (banning && reason === null) return; // prompt cancelled
     setUserBusy(u.id);
     try {
@@ -204,8 +207,11 @@ const V2AdminUsers: React.FC = () => {
   };
 
   const handleDeleteUser = async (u: RegisteredUser) => {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(t('adminUsers.prompts.deleteUser', { username: u.username, email: u.email }))) return;
+    const confirmed = await confirm({
+      message: t('adminUsers.prompts.deleteUser', { username: u.username, email: u.email }),
+      confirmLabel: t('adminUsers.actions.delete'),
+    });
+    if (!confirmed) return;
     setUserBusy(u.id);
     try {
       await api.del(`/api/admin/users/${encodeURIComponent(u.id)}`);
@@ -353,10 +359,11 @@ const V2AdminUsers: React.FC = () => {
   };
 
   const revoke = async (invite: InvitationRow) => {
-    // eslint-disable-next-line no-alert
-    if (typeof window !== 'undefined' && !window.confirm(t('adminUsers.prompts.revokeCode', { code: invite.code }))) {
-      return;
-    }
+    const confirmed = await confirm({
+      message: t('adminUsers.prompts.revokeCode', { code: invite.code }),
+      confirmLabel: t('adminUsers.actions.revoke'),
+    });
+    if (!confirmed) return;
     setInviteBusy(invite.id);
     setInvitesError(null);
     try {
@@ -408,6 +415,7 @@ const V2AdminUsers: React.FC = () => {
 
   return (
     <div className="v2-admin-users">
+      {confirmDialog}
       {/* ---------------- Registered users ---------------- */}
       <section className="v2-admin-users__section">
         <div className="v2-admin-users__section-head">

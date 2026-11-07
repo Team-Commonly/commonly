@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
 import V2DevicesPanel from '../components/V2DevicesPanel';
@@ -32,7 +32,6 @@ afterEach(() => jest.clearAllMocks());
 
 test('the panel, its dates and the revoke confirm read in Chinese', async () => {
   axios.get.mockResolvedValue({ data: { devices: [device] } });
-  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
   render(<V2DevicesPanel />);
 
   await screen.findByText('laptop');
@@ -41,17 +40,18 @@ test('the panel, its dates and the revoke confirm read in Chinese', async () => 
   expect(meta).toHaveTextContent(new Date(device.createdAt).toLocaleString('zh-CN'));
   expect(meta.textContent).not.toMatch(LATIN_WORD);
   fireEvent.click(screen.getByRole('button', { name: '撤销' }));
-  expect(confirm).toHaveBeenCalledWith('撤销 laptop？这个 CLI 需要重新登录。');
+  const dialog = screen.getByRole('alertdialog', { name: '撤销 laptop？这个 CLI 需要重新登录。' });
+  expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: '撤销' })).toBeInTheDocument();
 });
 
 test('a device label with a quote stays as typed in the confirm', async () => {
   axios.get.mockResolvedValue({ data: { devices: [{ ...device, label: `sam's "mac"` }] } });
-  const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
   render(<V2DevicesPanel />);
 
   await screen.findByText(`sam's "mac"`);
   fireEvent.click(screen.getByRole('button', { name: '撤销' }));
-  expect(confirm).toHaveBeenCalledWith(`撤销 sam's "mac"？这个 CLI 需要重新登录。`);
+  expect(screen.getByRole('alertdialog')).toHaveTextContent(`撤销 sam's "mac"？这个 CLI 需要重新登录。`);
 });
 
 test('the folded summary counts devices in Chinese', async () => {

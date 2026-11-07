@@ -121,6 +121,7 @@
     "agent": "智能体",
     "you": "你",
     "close": "关闭",
+    "cancel": "取消",
     "copy": "复制",
     "copied": "已复制",
     "aboutPage": "关于 {{title}}",
@@ -1659,6 +1660,7 @@
       "reviewLatest": "查看最新内容",
       "latestReviewed": "已查看最新内容",
       "discard": "放弃未保存的焦点更改？",
+      "discardAction": "放弃",
       "saveError": "无法保存焦点，请重试。",
       "progress": "{{done}}/{{total}}已完成"
     },

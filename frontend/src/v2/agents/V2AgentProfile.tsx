@@ -10,6 +10,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
 import { roomRefusal } from '../utils/roomRefusal';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 
 // The agent PROFILE — the "meet the agent" page, distinct from the owner-only
 // Settings panel — drawn as d215 section s-agent-profile
@@ -189,12 +190,18 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   // (ADR-001 identity continuity) — it just leaves the pod. Owner-only; the
   // remove control renders only when the private memory index loaded.
   const [removing, setRemoving] = useState<string | null>(null);
+  const [removeFailed, setRemoveFailed] = useState(false);
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const handleRemoveFromPod = useCallback(async (podId: string, podName: string) => {
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
     if (!token || !agentName) return;
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(t('agentProfile.pods.removeConfirm', { agentName, podName }))) return;
+    const confirmed = await confirm({
+      message: t('agentProfile.pods.removeConfirm', { agentName, podName }),
+      confirmLabel: t('agentProfile.pods.remove'),
+    });
+    if (!confirmed) return;
     setRemoving(podId);
+    setRemoveFailed(false);
     try {
       await getClient().delete(
         `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}?instanceId=${encodeURIComponent(instanceId || 'default')}`,
@@ -202,12 +209,11 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
       );
       await Promise.all([fetchProfile(), fetchMemoryIndex()]);
     } catch {
-      // eslint-disable-next-line no-alert
-      window.alert(t('agentProfile.pods.removeError'));
+      setRemoveFailed(true);
     } finally {
       setRemoving(null);
     }
-  }, [t, agentName, fetchProfile, fetchMemoryIndex]);
+  }, [t, agentName, confirm, fetchProfile, fetchMemoryIndex]);
 
   useEffect(() => {
     setShowAllPods(false);
@@ -500,6 +506,7 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
             <span className="v2-aprofile__count">{podList.length}</span>
             {ownerPods && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.everyPod')}</span>}
           </h2>
+          {removeFailed && <p className="v2-aprofile__pod-error" role="alert">{t('agentProfile.pods.removeError')}</p>}
           <ul className="v2-aprofile__list" ref={podListRef}>
             {shownPods.map((p) => (
               <li key={p.id} className="v2-aprofile__row v2-aprofile__pod">
@@ -617,7 +624,12 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
     </main>
   );
 
-  return shell ? <>{shell(<div className="v2-aprofile">{main}</div>)}</> : publicPage(main);
+  return (
+    <>
+      {shell ? shell(<div className="v2-aprofile">{main}</div>) : publicPage(main)}
+      {confirmDialog}
+    </>
+  );
 };
 
 export default V2AgentProfile;

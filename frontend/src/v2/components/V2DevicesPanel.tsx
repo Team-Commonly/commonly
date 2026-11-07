@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { appDateLocale } from '../utils/appLocale';
 import './V2DevicesPanel.css';
 
@@ -20,6 +21,7 @@ interface V2DevicesPanelProps {
 
 const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asFold = false }) => {
   const { t } = useTranslation();
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const dateLabel = (value: string | null) => (
     value ? new Date(value).toLocaleString(appDateLocale()) : t('settings.devices.never')
   );
@@ -43,7 +45,11 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
   useEffect(() => { void load(); }, [load]);
 
   const revoke = async (device: Device) => {
-    if (!window.confirm(t('settings.devices.revokeConfirm', { label: device.label }))) return;
+    const confirmed = await confirm({
+      message: t('settings.devices.revokeConfirm', { label: device.label }),
+      confirmLabel: t('settings.devices.revoke'),
+    });
+    if (!confirmed) return;
     try {
       await axios.delete(`/api/auth/devices/${device.id}`);
       setDevices((current) => current.map((entry) => entry.id === device.id ? { ...entry, revokedAt: new Date().toISOString() } : entry));
@@ -85,6 +91,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
   function renderPanel() {
     return (
     <section className="v2-devices" aria-labelledby="devices-heading">
+      {confirmDialog}
       <div className="v2-devices__heading"><div>{showHeading && <h2 id="devices-heading">{t('settings.devices.title')}</h2>}<p>{t('settings.devices.lead')}</p></div><button type="button" onClick={() => void load()} disabled={loading}>{t('settings.devices.refresh')}</button></div>
       {error && <p className="v2-devices__error">{error}</p>}
       {loading && <p>{t('settings.devices.loading')}</p>}
