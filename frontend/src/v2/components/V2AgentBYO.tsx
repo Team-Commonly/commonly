@@ -28,6 +28,7 @@ import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
+import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
@@ -1754,7 +1755,7 @@ const V2AgentBYO: React.FC = () => {
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
               {pods.map((p) => (
                 <option key={p._id} value={p._id}>
-                  {p.name === 'My Workspace' && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
+                  {isDefaultWorkspaceName(p.name) && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
                     ? t('podNames.otherWorkspace', { name: p.name, owner: p.createdBy.username || t('podNames.shared') })
                     : p.name} ({p.type || DEFAULT_POD_TYPE})
                 </option>
