@@ -5,7 +5,7 @@ import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from
 import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
-import { invalidScheduleField, takesSchedule } from '../../services/agentScheduleService';
+import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/agentScheduleService';
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
@@ -271,6 +271,9 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
       ? { owned: true as const }
       : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId || 'default');
     const config = normalizeConfigMap(installation.config) || {};
+    if (isBareStop(body) && !config.schedule) {
+      return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
+    }
     const onlyStopping = !ownership.owned && body.enabled === false && Boolean(config.schedule)
       && canManage(installation, userId, isAdmin);
     if (!ownership.owned && !onlyStopping) {
@@ -285,7 +288,7 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     }
     // Field by field, so a save can't overwrite the dispatcher's claim on the day.
     const { enabled, time, timezone, prompt } = body;
-    const fields = onlyStopping ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
+    const fields = onlyStopping || isBareStop(body) ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
     const saved = await AgentInstallation.findOneAndUpdate(
       { _id: installation._id },
       { $set: Object.fromEntries(Object.entries(fields).map(([key, value]) => [`config.schedule.${key}`, value])) },

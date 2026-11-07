@@ -164,6 +164,28 @@ describe('a BYO agent schedule', () => {
     expect(row.config.schedule).toMatchObject({ enabled: false, prompt: 'Post the morning count.', time: '07:47' });
   });
 
+  it('stops on enabled alone and keeps the rest', async () => {
+    await seat('bare');
+    await save('bare');
+    expect((await save('bare', owner, { enabled: false })).status).toBe(200);
+    const row = await AgentInstallation.findOne({ agentName: 'bare' }).lean();
+    expect(row.config.schedule).toMatchObject({ enabled: false, prompt: 'Post the morning count.', time: '07:47' });
+  });
+
+  it('won\'t write a bare stop where no schedule exists', async () => {
+    await seat('none');
+    const res = await save('none', owner, { enabled: false });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('no_schedule');
+    const row = await AgentInstallation.findOne({ agentName: 'none' }).lean();
+    expect(row.config.schedule).toBeUndefined();
+  });
+
+  it('still needs every field to start one', async () => {
+    await seat('half');
+    expect((await save('half', owner, { enabled: true })).status).toBe(400);
+  });
+
   it('gives a guest nothing to stop on their own room row', async () => {
     const bot = await User.create({
       username: 'empty-bot', email: 'e@test.com', password: 'password123', isBot: true,
