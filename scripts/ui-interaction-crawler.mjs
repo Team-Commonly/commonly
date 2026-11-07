@@ -16,10 +16,13 @@
  *   navigated | changed (DOM mutations) | requested (network) | dead (none of the three)
  *   | write-refused (the click sent a write and the policy stopped it) | unclickable
  *   | stale (no control with that label and position among its namesakes is left)
+ *   | dialog (it opened a native browser dialog, which the crawler dismisses)
  *   | repeat (a link already clicked at this width, recorded with its first outcome).
  *   A read the policy refused during the click adds "+read-refused" to the outcome.
  *   textOnly      a button-like control with transparent background and no border.
  *   skippedClicks candidates past CRAWL_MAX_CLICKS, reported so a short run cannot look complete.
+ *   untranslated  strings with English left in them, after each load and each click that changed
+ *                 the page. Set only when CRAWL_LANG isn't English, and it includes account content.
  * A capture with no controls, or with fewer than half its clicks judged, is an error, so a blank
  * page or a shifted list cannot pass as zero dead clicks.
  *
@@ -30,6 +33,7 @@
  *   - redirects are followed by hand, one hop at a time, and every hop is checked against the same
  *     list, so an allowed GET cannot reach a write endpoint by redirect;
  *   - WebSockets are closed before they reach the server and counted as `blockedSockets`;
+ *   - a GET the backend can write on is answered here and never sent (STUBBED_GET);
  *   - service workers are blocked, because their requests bypass routing.
  *
  * Reads must share an origin with CRAWL_BASE_URL. Where the API is on its own host, point this at a
@@ -48,6 +52,7 @@
  *   CRAWL_CHROMIUM     optional path to a chromium binary; unset uses Playwright's own
  *   CRAWL_MAX_CLICKS   optional, default 60 per capture
  *   CRAWL_PACE_MS      optional, default 1500, the wait before each reload
+ *   CRAWL_LANG         optional app language, default "en"; "zh-CN" turns on the untranslated scan
  *
  * Usage:
  *   CRAWL_BASE_URL=http://localhost:3000 CRAWL_TARGETS=metrics.json CRAWL_TOKEN="$TOKEN" \
@@ -59,7 +64,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  captureProblem, clickOutcome, needsReload, resolveCandidate, withOccurrences,
+  captureProblem, clickOutcome, needsReload, resolveCandidate, stripAge, untranslatedStrings, withOccurrences,
 } from './ui-crawl-verdicts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +84,7 @@ const TOKEN = env.CRAWL_TOKEN || '';
 const POD_ID = env.CRAWL_POD_ID || '';
 const MAX_CLICKS = Number(env.CRAWL_MAX_CLICKS || 60);
 const PACE_MS = Number(env.CRAWL_PACE_MS || 1500);
+const LANG = env.CRAWL_LANG || 'en';
 const OUT = env.CRAWL_OUT || mkdtempSync(join(tmpdir(), 'ui-crawl-'));
 mkdirSync(OUT, { recursive: true });
 
@@ -131,6 +137,9 @@ const SAFE_GET_PREFIX = [
   '/api/pods/', '/api/v1/tasks/', '/api/messages/', '/api/registry/pods/', '/api/registry/agents/',
   '/api/agent-memory/', '/api/stats/', '/api/agent-profile/', '/api/summaries/pod/',
 ];
+// GET routes that can write, answered with the given body so their page still renders. Key reads
+// import key metadata (backend/routes/credentials.ts), and that page has nothing to show without them.
+const STUBBED_GET = { '/api/credentials': [] };
 // Same-origin app routes and static assets. The SPA answers these with HTML or files, never a write.
 const APP_PREFIX = ['/v2/', '/assets/', '/static/', '/src/', '/@', '/node_modules/'];
 const MAX_REDIRECT_HOPS = 5;
@@ -210,7 +219,8 @@ const CANDIDATES = () => {
     .map((el, index) => ({ el, index }))
     .filter(({ el }) => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && !el.disabled;
+      // A control inside a closed <details> still has a box, but a person can't reach it.
+      return r.width > 0 && r.height > 0 && !el.disabled && el.checkVisibility({ visibilityProperty: true });
     })
     .map(({ el, index }) => {
       const cs = getComputedStyle(el);
@@ -226,6 +236,24 @@ const CANDIDATES = () => {
     });
 };
 
+// Text a person can read: rendered text nodes, and the attributes that stand in for text.
+const VISIBLE_STRINGS = () => {
+  const strings = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const text = walker.currentNode.nodeValue.trim();
+    const el = walker.currentNode.parentElement;
+    if (text && el && !el.closest('script,style,code,pre') && el.checkVisibility({ visibilityProperty: true })) strings.push(text);
+  }
+  for (const el of document.querySelectorAll('[aria-label],[title],[placeholder]')) {
+    for (const name of ['aria-label', 'title', 'placeholder']) {
+      const value = el.getAttribute(name);
+      if (value) strings.push(value);
+    }
+  }
+  return strings;
+};
+
 // Same text as the label in CANDIDATES. Passed to handle.evaluate, so it must stand alone.
 const LABEL_OF = (el) => (el.innerText || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 60);
 
@@ -239,6 +267,8 @@ async function openPage(browser, viewport, scheme, record) {
   // Every origin and path, not only /api: a click on a form or a link can send a write anywhere.
   await context.route('**/*', async (r) => {
     const method = r.request().method();
+    const stub = STUBBED_GET[new URL(r.request().url()).pathname];
+    if (method === 'GET' && stub) return r.fulfill({ json: stub });
     if (method === 'OPTIONS') return readAllowed(r.request().url()) ? r.continue() : r.abort();
     if (!SAFE_METHODS.has(method)) {
       record.blockedWrites += 1;
@@ -285,14 +315,24 @@ async function openPage(browser, viewport, scheme, record) {
     record.blockedSockets += 1;
     ws.close();
   });
-  if (TOKEN) {
-    // addInitScript also runs in cross-origin child frames, so the token goes to the configured origin only.
-    await context.addInitScript(({ t, origin }) => {
-      if (location.origin !== origin) return;
-      if (!localStorage.getItem('token')) localStorage.setItem('token', t);
-    }, { t: TOKEN, origin: BASE_ORIGIN });
-  }
+  // Every load starts from the same storage: language, theme and a rail filter all persist, and one
+  // click on any of them would rename or hide the controls after it.
+  // addInitScript also runs in cross-origin child frames, so the token goes to the configured origin only.
+  await context.addInitScript(({ t, origin, lang, theme }) => {
+    if (location.origin !== origin) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    if (t) localStorage.setItem('token', t);
+    localStorage.setItem('v2.lang', lang);
+    localStorage.setItem('v2.theme', theme);
+  }, { t: TOKEN, origin: BASE_ORIGIN, lang: LANG, theme: scheme });
   const page = await context.newPage();
+  // Playwright dismisses a dialog silently unless something listens.
+  page.on('dialog', (d) => {
+    record.dialogText = d.message().slice(0, 160);
+    record.dialogs.push(record.dialogText);
+    d.dismiss().catch(() => {});
+  });
   page.on('console', (m) => { if (m.type() === 'error') record.consoleErrors.push(m.text().slice(0, 200)); });
   page.on('response', (res) => {
     if (res.status() >= 400) record.badResponses.push(`${res.status()} ${res.request().method()} ${new URL(res.url()).pathname}`);
@@ -318,7 +358,7 @@ async function crawlCapture(browser, route, viewport, scheme) {
   const url = BASE + path;
   const record = {
     routeId: route.id, url, viewport: viewport.label, scheme, maxClicks: MAX_CLICKS,
-    blockedWrites: 0, blockedReads: 0, blockedSockets: 0, blockedPaths: [], badResponses: [], consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
+    blockedWrites: 0, blockedReads: 0, blockedSockets: 0, blockedPaths: [], badResponses: [], dialogs: [], dialogText: null, untranslated: [], consoleErrors: [], clicks: [], candidateCount: null, skippedClicks: null,
     helperWords: null, scroll: null, target: null, error: null,
   };
   const { context, page } = await openPage(browser, viewport, scheme, record);
@@ -335,6 +375,12 @@ async function crawlCapture(browser, route, viewport, scheme) {
     record.scroll = await page.evaluate(PANE, target.scroller || null);
     await page.screenshot({ path: join(OUT, `${route.id}-${viewport.label}-${scheme}.png`) });
 
+    const scan = async () => {
+      if (LANG === 'en') return;
+      const strings = await page.evaluate(VISIBLE_STRINGS).catch(() => []);
+      record.untranslated = untranslatedStrings([...record.untranslated, ...strings, ...record.dialogs]);
+    };
+    await scan();
     const candidates = withOccurrences(await page.evaluate(CANDIDATES));
     const slice = candidates.slice(0, MAX_CLICKS);
     record.candidateCount = candidates.length;
@@ -361,10 +407,11 @@ async function crawlCapture(browser, route, viewport, scheme) {
       const handle = match ? handles[match.index] : null;
       const current = handle ? await handle.evaluate(LABEL_OF).catch(() => null) : null;
       let outcome = 'stale';
-      if (handle && current === cand.label) {
+      if (handle && current !== null && stripAge(current) === cand.label) {
         let clicked = true;
         const writesBefore = record.blockedWrites;
         const readsBefore = record.blockedReads;
+        record.dialogText = null;
         await handle.click({ timeout: 2000 }).catch(() => { clicked = false; });
         await page.waitForTimeout(400);
         const mut = await page.evaluate(() => window.__mut || 0);
@@ -375,11 +422,13 @@ async function crawlCapture(browser, route, viewport, scheme) {
           navigated: page.url() !== before,
           mutated: mut > 0,
           requested: requests > 0,
+          dialog: Boolean(record.dialogText),
         });
       }
       page.off('request', onRequest);
       record.clicks.push({ label: cand.label, href: cand.href, textOnly: cand.textOnly, outcome });
       if (linkKey) clickedLinks.set(linkKey, outcome);
+      if (outcome === 'changed' || outcome === 'dialog') await scan();
       if (needsReload(outcome)) {
         // Whatever the click opened or refused stays out of the next candidate's way.
         await page.waitForTimeout(PACE_MS);
@@ -390,6 +439,7 @@ async function crawlCapture(browser, route, viewport, scheme) {
         await page.keyboard.press('Escape').catch(() => {});
       }
     }
+    await scan();
     record.error = captureProblem(record);
   } catch (err) {
     record.error = String(err && err.message ? err.message : err).slice(0, 200);
