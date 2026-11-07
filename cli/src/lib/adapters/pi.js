@@ -23,7 +23,8 @@
  *   - Provider config is a per-seat models.json under
  *     `~/.commonly/pi-homes/<hash>/agent`, pointed at by
  *     PI_CODING_AGENT_DIR — never the operator's ~/.pi. The API key is an
- *     env reference (`$COMMONLY_LITELLM_KEY`), so it never lands on disk.
+ *     env reference (`$COMMONLY_LITELLM_KEY`, or `$COMMONLY_PI_PROVIDER_KEY`
+ *     for a seat with its own provider.keyFile), so it never lands on disk.
  *   - Commonly's tools reach pi through pi-commonly-mcp.mjs, an extension
  *     that speaks MCP over stdio to every server in `environment.mcp` and
  *     registers each tool. The token rides through the child env, never argv
@@ -47,9 +48,11 @@ import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { existsSync, readFileSync, realpathSync, rmSync } from 'fs';
-import { mkdir, readdir, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
-import { dirname, isAbsolute, join } from 'path';
+import {
+  dirname, isAbsolute, join, relative, sep,
+} from 'path';
 import { fileURLToPath } from 'url';
 import {
   adapterFailure,
@@ -57,14 +60,16 @@ import {
   spawnCredentials,
 } from '../upstream-refusal.js';
 import { buildMemoryPreamble } from '../memory-bridge.js';
-import { effectiveSandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
+import {
+  effectiveSandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec,
+} from '../environment.js';
 import { GRANT_BROKER_PUBLIC_ONLY_REFUSAL, isGrantBrokerUrl } from './pi-mcp-client.mjs';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { removeCredentialFile, writeCredentialFile } from '../credential-file.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
-import { startProviderProxy } from '../provider-proxy.js';
+import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
@@ -82,6 +87,21 @@ export const DEFAULT_PROVIDER = Object.freeze({
   baseUrl: 'https://litellm.commonly.me/v1',
   api: 'openai-completions',
   apiKeyEnv: 'COMMONLY_LITELLM_KEY',
+});
+
+// What a seat with its own `provider.keyFile` calls its key inside pi. A private
+// turn holds the key here, and pi-shell-env.mjs keeps it out of pi's shells. A
+// public turn holds the proxy's token here. models.json holds only `$` + this.
+const OWN_KEY_ENV = 'COMMONLY_PI_PROVIDER_KEY';
+
+// The shared provider shape's `api` (environment.js PROVIDER_APIS) in pi's own
+// words. Both measured on pi 0.84.1 against a local stub: `openai-completions`
+// calls `<baseURL>/chat/completions` with a Bearer, `anthropic-messages` calls
+// `<baseURL>/v1/messages` with x-api-key, so an Anthropic baseURL is the host,
+// as it is for OpenCode and for the provider proxy.
+const PI_PROVIDER_APIS = Object.freeze({
+  'openai-chat': 'openai-completions',
+  'anthropic-messages': 'anthropic-messages',
 });
 
 // ADR-008 `effort` → pi `--thinking`. pi's ladder is off/minimal/low/medium/high/xhigh/max.
@@ -117,8 +137,10 @@ export const PUBLIC_EXCLUDED_TOOLS = Object.freeze([...PI_BUILTIN_TOOLS, ...PUBL
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
 const safeEnv = (env) => Object.fromEntries(Object.entries(env).filter(([name]) => PUBLIC_SAFE_ENV.test(name)));
 
-// The one provider API the loopback proxy carries for pi.
+// The one provider API the loopback proxy carries for pi. The proxy's model pin
+// checks chat completions only, and a public turn must not run unpinned.
 const PUBLIC_PROVIDER_API = 'openai-completions';
+const publicApiRefusal = (api) => `pi adapter: a public seat reaches its provider through a loopback proxy that carries the ${PUBLIC_PROVIDER_API} API only, not ${api}`;
 
 // Same substitution contract as claude.js / codex.js: ${COMMONLY_*}
 // placeholders in the declared MCP env are the wrapper's per-(agent, pod)
@@ -298,9 +320,59 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
   return carried;
 };
 
+/**
+ * Two provider shapes reach this adapter. The shared one, `{ id, baseURL,
+ * keyFile, models, api }`, is what `--env` accepts and validateEnvironmentSpec
+ * checks. pi's own, `{ name, baseUrl, api, apiKeyEnv }`, is a token-file
+ * override older than that validation, and its `api` is pi's word for it. A key
+ * only the shared shape has decides; a block with keys from both is then judged
+ * as shared, and validation refuses it rather than reading half of each.
+ */
+const SHARED_PROVIDER_KEYS = ['id', 'baseURL', 'keyFile', 'models'];
+const isSharedProvider = (spec) => Boolean(spec) && SHARED_PROVIDER_KEYS.some((key) => spec[key] !== undefined);
+
+/** The real key file of a shared provider, validated without reading it; null for any other seat. */
+const sharedProviderKeyFile = async (environment, workspacePath) => {
+  if (!isSharedProvider(environment?.provider)) return null;
+  const validation = validateEnvironmentSpec(environment);
+  if (!validation.ok) throw new Error(validation.errors.join('; '));
+  return resolveProviderKeyFile(environment.provider, workspacePath, 'pi');
+};
+
+/**
+ * The proxy reads a public seat's key file from this process, so the file stays
+ * out of the jail, and nothing here admits it. The jail does admit these
+ * directories, and the seat home is a stable path a key file could be put in,
+ * so a key under one of them would be readable from inside.
+ */
+const refuseKeyFileInJail = (keyFile, readableDirectories) => {
+  for (const directory of readableDirectories) {
+    const fromDirectory = relative(realpathSync(directory), keyFile);
+    if (fromDirectory !== '..' && !fromDirectory.startsWith(`..${sep}`) && !isAbsolute(fromDirectory)) {
+      throw new Error(`pi adapter: provider.keyFile ${keyFile} is inside the sandbox of a public seat; move it outside ${directory}`);
+    }
+  }
+};
+
+/** The private turn's key, read the way goose reads it, refused if empty. */
+const readOwnKey = async (keyFile) => {
+  const key = (await readFile(keyFile, 'utf8')).trim();
+  if (!key) throw new Error('pi adapter: provider.keyFile must not be empty');
+  return key;
+};
+
 /** The provider block for models.json: the env spec's `provider` over the LiteLLM default. */
 export const resolveProvider = (environment = {}) => {
   const spec = environment?.provider || {};
+  if (isSharedProvider(spec)) {
+    return {
+      name: spec.id,
+      baseUrl: spec.baseURL,
+      api: PI_PROVIDER_APIS[spec.api || 'openai-chat'],
+      apiKeyEnv: OWN_KEY_ENV,
+      reasoning: spec.models?.[environment.model]?.reasoning !== false,
+    };
+  }
   return {
     name: spec.name || DEFAULT_PROVIDER.name,
     baseUrl: spec.baseUrl || DEFAULT_PROVIDER.baseUrl,
@@ -320,7 +392,7 @@ export const buildModelsJson = (provider, model) => ({
       models: [{
         id: model,
         name: model,
-        reasoning: true,
+        reasoning: provider.reasoning ?? true,
         input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         contextWindow: 128000,
@@ -607,12 +679,29 @@ export default {
   // into its login service and fail loudly at bind when it is absent, instead
   // of the seat dying at line ~406 with nothing naming the missing variable at
   // daemon level.
+  // A seat with its own provider.keyFile doesn't need it; spawn doesn't ask.
   providerKeyEnv: DEFAULT_PROVIDER.apiKeyEnv,
 
+  supportsProvider: true,
+  providerApis: Object.keys(PI_PROVIDER_APIS),
+
+  // The rule pi adds to the shared provider check. Its own shape names pi's
+  // api, which the shared list doesn't hold. A public seat can't take a wire
+  // the proxy doesn't pin. Anything else goes to the shared check (undefined).
+  providerVerdict(environment) {
+    const spec = environment?.provider;
+    if (!isSharedProvider(spec)) return null;
+    if (effectiveSandboxTrust(environment?.sandbox?.trust) !== 'public') return undefined;
+    const api = PI_PROVIDER_APIS[spec.api || 'openai-chat'];
+    return api && api !== PUBLIC_PROVIDER_API ? publicApiRefusal(api) : undefined;
+  },
+
   // Attach runs this before anything is published, so a public pi seat this
-  // host cannot confine is refused there rather than at its first turn.
-  async validateEnvironment(environment) {
+  // host cannot confine is refused there rather than at its first turn, and so
+  // is a provider block or key file that couldn't be used.
+  async validateEnvironment(environment, workspacePath) {
     assertSandboxSupported(environment);
+    return sharedProviderKeyFile(environment, workspacePath);
   },
 
   async detect() {
@@ -631,11 +720,15 @@ export default {
     assertSandboxSupported(ctx.environment, platform);
     const sandbox = normalizeSandboxTrust(ctx.environment?.sandbox);
     const isPublic = effectiveSandboxTrust(sandbox?.trust) === 'public';
+    const keyFile = await sharedProviderKeyFile(ctx.environment, ctx.cwd);
     const provider = resolveProvider(ctx.environment);
     const model = seatModel;
     const thinking = thinkingFor(ctx.environment?.effort);
     const baseEnv = ctx.env || process.env;
-    if (!baseEnv[provider.apiKeyEnv]) {
+    // A public turn leaves the key file to the proxy, so this process holds the
+    // value only for a private pi, which is the one that is handed it.
+    const ownKey = keyFile && !isPublic ? await readOwnKey(keyFile) : null;
+    if (!keyFile && !baseEnv[provider.apiKeyEnv]) {
       throw new Error(`pi adapter: ${provider.apiKeyEnv} is not set — the seat's environment must carry the provider key (LiteLLM virtual key)`);
     }
 
@@ -646,7 +739,7 @@ export default {
     let nodePath = null;
     if (isPublic) {
       if (provider.api !== PUBLIC_PROVIDER_API) {
-        throw new Error(`pi adapter: a public seat reaches its provider through a loopback proxy that carries the ${PUBLIC_PROVIDER_API} API only, not ${provider.api}`);
+        throw new Error(publicApiRefusal(provider.api));
       }
       if (!ctx.cwd || !isAbsolute(ctx.cwd)) {
         throw new Error('pi adapter: a public seat needs an absolute workspace path');
@@ -676,6 +769,7 @@ export default {
     // the token from the child copy below, and after that there is nothing left
     // to compare a refusal against.
     const credentials = spawnCredentials(ctx, [provider.apiKeyEnv]);
+    if (ownKey) credentials.push(ownKey);
 
     // Per-seat pi home: models.json holds the provider by env reference.
     const home = seatHome(ctx, { publicSeat: isPublic });
@@ -712,7 +806,7 @@ export default {
       if (isPublic) {
         proxy = await (ctx._startProviderProxy || startProviderProxy)({
           provider: { baseURL: provider.baseUrl },
-          keyMaterial: baseEnv[provider.apiKeyEnv],
+          ...(keyFile ? { keyFile } : { keyMaterial: baseEnv[provider.apiKeyEnv] }),
           adapterLabel: 'pi',
           pinnedModel: model,
         });
@@ -734,6 +828,9 @@ export default {
         grantBrokers,
       });
       if (unavailableMcp.length) throw publicMcpUnavailableError(unavailableMcp);
+      if (keyFile && isPublic) {
+        refuseKeyFileInJail(keyFile, [home, packageRoot, EXTENSION_CODE_ROOT, ...mcpReadDirectories]);
+      }
       const childEnv = isPublic ? {
         // A scrubbed environment: nothing of the operator's crosses into the
         // jail, and the provider variable holds the proxy's token, not the key.
@@ -751,7 +848,10 @@ export default {
         // A variable NAME, never its value. The always-loaded extension uses
         // this to scrub custom provider keys as well as the default LiteLLM key.
         COMMONLY_PI_PROVIDER_KEY_ENV: provider.apiKeyEnv,
+        ...(ownKey ? { [provider.apiKeyEnv]: ownKey } : {}),
       };
+      // This seat brought its own key, so it has no use for ours.
+      if (ownKey) delete childEnv[DEFAULT_PROVIDER.apiKeyEnv];
       // `baseEnv` is normally the process environment, which carries the
       // bootstrap export. Nothing below this process needs the value: the bridge
       // is handed the servers, their resolved values included, over fd 3. It has

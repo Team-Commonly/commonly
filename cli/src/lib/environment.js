@@ -196,10 +196,14 @@ export const environmentForServer = (environment) => {
 export const PROVIDER_APIS = Object.freeze(['openai-chat', 'anthropic-messages']);
 
 // One provider check for config, attach, run and the daemon's adapter swap: the adapter must take a
-// provider block at all, and speak its `provider.api` (default openai-chat).
+// provider block at all, and speak its `provider.api` (default openai-chat). An adapter's
+// `providerVerdict(environment)` answers first when it returns a refusal or null (accepted);
+// undefined leaves the seat to this check.
 export const providerRefusal = (environment, adapter) => {
   if (environment?.provider === undefined) return null;
   if (!adapter?.supportsProvider) return 'environment.provider requires a provider-capable adapter';
+  const verdict = adapter.providerVerdict?.(environment);
+  if (verdict !== undefined) return verdict;
   const api = environment.provider?.api || 'openai-chat';
   const apis = adapter.providerApis || ['openai-chat'];
   return apis.includes(api) ? null

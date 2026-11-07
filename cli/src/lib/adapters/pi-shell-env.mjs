@@ -9,7 +9,7 @@ export default function commonlyShellEnvironment(pi) {
   const providerKey = process.env.COMMONLY_PI_PROVIDER_KEY_ENV;
   if (!providerKey) throw new Error('pi adapter: missing provider key environment name');
   const excluded = new Set([
-    providerKey, 'COMMONLY_LITELLM_KEY', 'COMMONLY_PI_PROVIDER_KEY_ENV',
+    providerKey, 'COMMONLY_LITELLM_KEY', 'COMMONLY_PI_PROVIDER_KEY', 'COMMONLY_PI_PROVIDER_KEY_ENV',
   ].map((key) => key.toUpperCase()));
   const cleanEnv = (env) => {
     const clean = { ...env };

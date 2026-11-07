@@ -335,7 +335,7 @@ export const installDaemonService = async ({
     if (lingerUser) startsAtBoot = await ensureLinger({ username: lingerUser, existsFile, execCmd, warn });
   }
   for (const name of missing) {
-    warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+    warn(`${name} is not set in this shell, so it is NOT in the service file. A seat that relies on it will fail to start (one with its own provider.keyFile won't); export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
   }
   log(`Installed ${target.kind} service (${target.file}). Logs: ${daemonLogPath(home)}`);
   return { ...target, startsAtBoot };
