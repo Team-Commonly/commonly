@@ -133,7 +133,7 @@ describe('the stopped line', () => {
   it("says a paused agent won't answer this message, and looks for its own action", async () => {
     await emitPausedLine(line);
     const [, params] = mockQuery.mock.calls[0];
-    expect(params[2]).toBe("Nova is paused, so it won't answer this. Try again once its owner resumes it.");
+    expect(params[2]).toBe("Nova is paused, so it won't answer this.");
     expect(JSON.parse(params[3])).toMatchObject({
       kind: 'system-action', action: 'agent-paused', agentKey: 'nova:default',
     });

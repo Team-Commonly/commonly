@@ -651,7 +651,7 @@
       "agentStopped": "{{name}} 已停止，要等所有者启动后才能回复。",
       "agentRemoved": "{{name}} 已被移除，无法在这里回复。",
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
-      "agentPaused": "{{name}} 已暂停，不会回复这条消息。等所有者恢复后再试。",
+      "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。请运行它页面上的连接命令。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"

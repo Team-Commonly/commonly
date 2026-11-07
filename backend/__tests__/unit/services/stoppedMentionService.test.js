@@ -11,7 +11,7 @@ const mockHasRemovedSince = jest.fn();
 
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockFindBot(...args) }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { distinct: () => ({ collation: async () => [] }) },
+  AgentInstallation: { exists: () => ({ collation: async () => null }) },
 }));
 jest.mock('../../../services/agentEventService', () => ({
   resolveEffectiveInstallation: (...args) => mockEffectiveInstall(...args),

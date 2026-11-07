@@ -312,7 +312,7 @@ describe('V2MessageRow', () => {
     ['agent-stopped', "Forge is stopped, so it can't answer until its owner starts it."],
     ['agent-removed', "Forge was removed, so it can't answer here."],
     ['agent-offline', "Forge looks offline, so it may not answer for now."],
-    ['agent-paused', "Forge is paused, so it won't answer this. Try again once its owner resumes it."],
+    ['agent-paused', "Forge is paused, so it won't answer this."],
     ['agent-not-connected', "Forge isn't connected yet, so it won't see this until it runs. Run the connect command shown on its page."],
     ['mention-unanswered', "Forge didn't answer this and may be offline. Ask again later, or ask someone else in the pod."],
   ])('renders %s as a quiet line from the action, not the stored text', (action, text) => {

@@ -211,12 +211,12 @@ export async function emitOfflineLine(line: OfflineLine): Promise<void> {
 }
 
 /**
- * F270. A DM to an agent whose rows are all paused. It promises no answer, because
- * a paused agent queues nothing: the message isn't there when it resumes. Callers
- * dedupe with `hasPausedLineSince`.
+ * F270. A DM to an agent whose rows are all paused. It promises nothing: a paused
+ * agent queues nothing, its owner may have gone, and a resume may land in a pod
+ * this person isn't in. Callers dedupe with `hasPausedLineSince`.
  */
 export async function emitPausedLine(line: RemovedLine): Promise<void> {
-  await insertSystemLine(line, `${line.agentLabel} is paused, so it won't answer this. Try again once its owner resumes it.`, {
+  await insertSystemLine(line, `${line.agentLabel} is paused, so it won't answer this.`, {
     kind: 'system-action',
     action: 'agent-paused',
     actorName: line.agentLabel,

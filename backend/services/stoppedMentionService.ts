@@ -121,13 +121,13 @@ export async function noteUnreachableAgentDm({
 }): Promise<boolean> {
   if (messageId === null) return false;
   const agentName = rawAgentName.toLowerCase();
-  const statuses: string[] = await AgentInstallation.distinct('status', {
+  const rows = {
     ...installationIdentityFilter(agentName, instanceId),
     agentName: { $in: AgentIdentityService.identityNames(agentName) },
-  }).collation(IDENTITY_COLLATION);
-  const live = statuses.filter((status) => status !== 'uninstalled');
-  if (live.some((status) => status !== 'paused')) return false;
-  const paused = live.length > 0;
+  };
+  if (await AgentInstallation.exists({ ...rows, status: { $nin: ['uninstalled', 'paused'] } })
+    .collation(IDENTITY_COLLATION)) return false;
+  const paused = Boolean(await AgentInstallation.exists({ ...rows, status: 'paused' }).collation(IDENTITY_COLLATION));
   const agent = await findAgent(agentName, instanceId);
   if (!agent) return false;
 

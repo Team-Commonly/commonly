@@ -85,6 +85,12 @@ it('says paused once a day', async () => {
   await expectQuiet();
 });
 
+it('stays quiet for a row with no status, which is not a removed one', async () => {
+  const { insertedId } = await row();
+  await AgentInstallation.collection.updateOne({ _id: insertedId }, { $unset: { status: '' } });
+  await expectQuiet();
+});
+
 it('stays quiet when a paused row sits beside a stale one, since neither line is sure', async () => {
   await row({ status: 'paused' });
   await row({ status: 'stale' });
