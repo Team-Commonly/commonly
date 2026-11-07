@@ -1,5 +1,6 @@
 import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
+import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
 
 // eslint-disable-next-line global-require
@@ -946,11 +947,14 @@ class AgentMessageService {
   static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
     try {
       const row = await AgentInstallation.findOne({
-        agentName: { $eq: String(agentName).toLowerCase() },
-        instanceId: { $eq: String(instanceId || 'default') },
+        ...installationIdentityFilter(String(agentName).toLowerCase(), String(instanceId || 'default').toLowerCase()),
         podId: { $eq: podId },
         status: 'active',
-      }).select('config.schedule.lastFiredAt').lean();
+      }, null, { collation: IDENTITY_COLLATION })
+        // The unique index lets a legacy row sit beside a current one, and the
+        // wake is on whichever the schedule route wrote.
+        .sort({ 'config.schedule.lastFiredAt': -1 })
+        .select('config.schedule.lastFiredAt').lean();
       const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
       if (!firedAt) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;

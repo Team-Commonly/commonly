@@ -37,6 +37,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
       lean: jest.fn().mockResolvedValue([]),
     })),
     findOne: jest.fn(() => ({
+      sort: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue(null),
     })),
