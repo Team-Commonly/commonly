@@ -218,7 +218,7 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // markdown, a fence opens on a line of its own (indented inside a list) and runs to
 // its closing line or the end of the message. Backticks anywhere else are a span
 // on one line, so a stray ``` mid-sentence can't pair with a real fence below it.
-const CODE_RE = /^[ \t]*```[^`\n]*$[\s\S]*?(?:^[ \t]*```[ \t]*$|(?![\s\S]))|```[^\n]*?```|``[^\n]*?``|`[^`\n]*`/gm;
+const CODE_RE = /^[ \t]*(`{3,})[^`\n]*$[\s\S]*?(?:^[ \t]*\1`*[ \t]*$|(?![\s\S]))|```[^\n]*?```|``[^\n]*?``|`[^`\n]*`/gm;
 const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
   const spans: string[] = [];
   const masked = content.replace(/\u0000/g, '').replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });

@@ -73,6 +73,12 @@ describe('a URL inside code stays as written, because people copy it', () => {
     expect(links).toEqual([]);
   });
 
+  it('a longer fence holds a shorter one and keeps its URL', () => {
+    const { code, links } = rendered(linkifyBareUrls('````\n```\nrun https://a.example/x\n```\n````\n'));
+    expect(code).toEqual(['```\nrun https://a.example/x\n```\n']);
+    expect(links).toEqual([]);
+  });
+
   it('a fence indented inside a list keeps its URL', () => {
     const { code, links } = rendered(linkifyBareUrls('1. Run:\n\n   ```\n   curl https://a.example/x\n   ```\n'));
     expect(code).toEqual(['curl https://a.example/x\n']);
