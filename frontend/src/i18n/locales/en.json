@@ -187,6 +187,26 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "devices": {
+      "title": "Devices",
+      "lead": "CLI device tokens are long-lived until you revoke them.",
+      "refresh": "Refresh",
+      "loading": "Loading devices…",
+      "loadingShort": "Loading…",
+      "empty": "No CLI devices are connected.",
+      "never": "Never",
+      "none": "None",
+      "created": "Created {{created}} · Last used {{used}}",
+      "revoked": "Revoked {{date}}",
+      "revoke": "Revoke",
+      "revokeConfirm": "Revoke {{label}}? This CLI will need to sign in again.",
+      "loadFailed": "Couldn’t load your devices.",
+      "loadFailedShort": "Couldn’t load",
+      "revokeFailed": "Couldn’t revoke that device.",
+      "count_one": "{{count}} CLI device",
+      "count_other": "{{count}} CLI devices",
+      "countUsed": "{{devices}} · used {{when}}"
+    },
     "deleteAccount": {
       "title": "Delete account",
       "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive. This cannot be undone.",
@@ -3237,6 +3257,8 @@
     "removeLastConfirm": "Remove this agent from its last pod, {{podName}}? Every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "removeDisconnectConfirm": "Remove this agent from {{podName}}? No active installation will remain, so every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "forbidden": "Only the installer or an admin can change this setting.",
+    "keysLoadFailed": "Couldn’t load keys.",
+    "keysRetry": "Try again",
     "keyUnavailable": "Key management is unavailable for this agent. Ask an admin for access.",
     "noPods": "No pods to manage",
     "loadError": "Could not load settings.",

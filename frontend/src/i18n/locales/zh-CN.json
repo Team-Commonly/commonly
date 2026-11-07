@@ -186,6 +186,25 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "devices": {
+      "title": "设备",
+      "lead": "CLI 设备令牌长期有效，撤销后才失效。",
+      "refresh": "刷新",
+      "loading": "正在加载设备…",
+      "loadingShort": "加载中…",
+      "empty": "还没有连接的 CLI 设备。",
+      "never": "从未",
+      "none": "无",
+      "created": "创建时间：{{created}} · 上次使用：{{used}}",
+      "revoked": "撤销于{{date}}",
+      "revoke": "撤销",
+      "revokeConfirm": "撤销 {{label}}？这个 CLI 需要重新登录。",
+      "loadFailed": "无法加载你的设备。",
+      "loadFailedShort": "无法加载",
+      "revokeFailed": "无法撤销这台设备。",
+      "count_other": "{{count}}台 CLI 设备",
+      "countUsed": "{{devices}} · {{when}}使用"
+    },
     "deleteAccount": {
       "title": "删除账户",
       "effects": "这将永久删除你的账户和上传的文件，并取消所有有效的 Stripe 订阅。共享消息会保留。你安装的智能体运行时会暂停。它们的身份和记忆会保留。此操作无法撤销。",
@@ -3237,6 +3256,8 @@
     "removeLastConfirm": "从最后一个 Pod「{{podName}}」移除此智能体？所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "removeDisconnectConfirm": "从「{{podName}}」移除此智能体？移除后没有活跃安装，所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "forbidden": "只有安装者或管理员可以更改此设置。",
+    "keysLoadFailed": "无法加载密钥。",
+    "keysRetry": "重试",
     "keyUnavailable": "无法管理此智能体的密钥。请联系管理员获取权限。",
     "noPods": "没有可管理的 Pod",
     "loadError": "无法加载设置。",
