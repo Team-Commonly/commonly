@@ -16,6 +16,8 @@ interface Props {
   /** Page errors and notices: on a phone the sheet covers the page body, so they show here. */
   notices?: React.ReactNode;
   children: React.ReactNode;
+  /** The drawer is opening for something other than a person's own click, so focus stays where they left it. */
+  holdFocus?: boolean;
   /** Set by ConnectorDrawerPresence while the drawer animates out. */
   exit?: {
     leaving: boolean;
@@ -24,7 +26,7 @@ interface Props {
   };
 }
 
-const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, notices, children, exit }) => {
+const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, notices, children, exit, holdFocus }) => {
   const { t } = useTranslation();
   const ref = useRef<HTMLElement | null>(null);
   const exitRef = exit?.ref;
@@ -41,7 +43,11 @@ const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, notices, child
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, leaving]);
 
-  useEffect(() => { ref.current?.focus(); }, [type]);
+  // Moving on to another tile re-focuses. A later `holdFocus` change must not.
+  useEffect(() => {
+    if (!holdFocus) ref.current?.focus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type]);
 
   return (
     <section

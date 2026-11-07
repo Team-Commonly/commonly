@@ -18,7 +18,7 @@ const pods = [{ _id: 'p1', name: 'Launch pod', type: 'chat', members: [{ _id: 'u
 
 const READ_TOOLS = ['linear.get_issue', 'linear.list_issues', 'linear.list_projects'];
 const WRITE_TOOLS = ['linear.save_issue', 'linear.delete_comment'];
-// The server's own English description, and tools in the catalogue's own shape.
+// A row seeded with the server's old English description, and tools in the catalogue's own shape.
 const linear = {
   installableId: 'linear', list: 'tools', label: 'Linear', description: 'Read Linear issues and projects; changes require your approval.',
   available: true, connectionType: 'hosted-mcp', entryId: 'linear', broker: { id: 'commonly-grant-broker' },
@@ -214,30 +214,113 @@ describe('after Grant', () => {
     await within(drawer).findByRole('button', { name: 'View Linear in Launch pod' });
   });
 
-  // The mint succeeded and the re-read has not: nothing on the drawer may still offer it.
-  it('while the re-read keeps failing, the drawer holds the confirmation and no offer', async () => {
-    const older = [revoked('g-1')];
-    const state = mock({ grants: older });
-    mintFrom(state, older);
-    axios.get.mockImplementation(((get) => (url, config) => (state.failing && url === '/api/grants'
+  // The mint succeeded and the re-read has not. Without its own copy of the new
+  // grant the page said nobody had it and offered it again.
+  describe('when the re-read fails', () => {
+    const failingReads = (state) => axios.get.mockImplementation(((get) => (url, config) => (state.failing && url === '/api/grants'
       ? Promise.reject(new Error('Network Error')) : get(url, config)))(axios.get.getMockImplementation()));
-    renderPage();
-    const drawer = await openDrawerOf('Linear');
-    fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
-    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
-    state.failing = true;
-    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    const mintWhileFailing = async (state) => {
+      failingReads(state);
+      renderPage();
+      const drawer = await openDrawerOf('Linear');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
+      const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
+      state.failing = true;
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      await within(drawer).findByText('Linear granted to Scout in Launch pod.');
+      await settle();
+      return drawer;
+    };
+    const tabComesBack = async () => {
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await settle();
+    };
+    let visibility;
+    beforeEach(() => {
+      visibility = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    });
+    afterEach(() => visibility.mockRestore());
 
-    expect(await within(drawer).findByText('Linear granted to Scout in Launch pod.')).toBeInTheDocument();
-    await settle();
-    expect(within(drawer).queryByRole('note')).toBeNull();
-    expect(drawer).not.toHaveTextContent("isn't granted to any agent");
-    expect(drawer.querySelector('.v2-cx-drawer__offer')).toBeNull();
-    expect(within(drawer).queryByRole('button', { name: 'Grant to agents' })).toBeNull();
-    expect(within(drawer).queryByRole('button', { name: 'Grant again' })).toBeNull();
-    // Its count is still one click away; the header keeps what it last read.
-    expect(within(drawer).getByRole('button', { name: 'inactive · 1' })).toHaveAttribute('aria-expanded', 'false');
-    expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available');
+    it('the drawer and the header keep the grant, and nothing offers it again', async () => {
+      const older = [revoked('g-1')];
+      const state = mock({ grants: older });
+      mintFrom(state, older);
+      const drawer = await mintWhileFailing(state);
+
+      expect(meta().textContent).toBe('1 on · 0 available');
+      expect(drawer).not.toHaveTextContent("isn't granted to any agent");
+      expect(drawer.querySelector('.v2-cx-drawer__offer')).toBeNull();
+      expect(within(drawer).queryByRole('button', { name: 'Grant to agents' })).toBeNull();
+      expect(within(drawer).queryByRole('button', { name: 'Grant again' })).toBeNull();
+      expect(within(drawer).getByRole('note')).toHaveTextContent('Agents can read Linear');
+      expect(within(drawer).getByRole('button', { name: 'View Linear in Launch pod' })).toBeInTheDocument();
+      expect(within(drawer).getByRole('button', { name: 'inactive · 1' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('closing and reopening still shows the grant, not the offer', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      mintFrom(state, state.grants);
+      const drawer = await mintWhileFailing(state);
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(screen.queryByText('Linear granted to Scout in Launch pod.')).toBeNull());
+
+      fireEvent.click(tileNode('Linear'));
+      const reopened = await findDrawer('Linear');
+      expect(reopened).not.toHaveTextContent("isn't granted to any agent");
+      expect(within(reopened).queryByRole('button', { name: 'Grant to agents' })).toBeNull();
+      expect(within(reopened).getByRole('button', { name: 'View Linear in Launch pod' })).toBeInTheDocument();
+    });
+
+    it('holds what was minted: the grant reads as this person\'s, for this agent and pod', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      mintFrom(state, state.grants);
+      const drawer = await mintWhileFailing(state);
+      fireEvent.click(within(drawer).getByRole('button', { name: 'View Linear in Launch pod' }));
+      // Only the granter is offered this, so the local copy has to name them.
+      expect(await within(drawer).findByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    });
+
+    it('a later good read replaces it with what the server says', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      mintFrom(state, state.grants);
+      const drawer = await mintWhileFailing(state);
+      expect(meta().textContent).toBe('1 on · 0 available');
+
+      // The server's answer wins even when it does not list the grant at all.
+      state.failing = false;
+      await tabComesBack();
+      expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available');
+      expect(within(drawer).queryByRole('button', { name: 'View Linear in Launch pod' })).toBeNull();
+    });
+
+    it('does not double the row when a good read brings the grant', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      mintFrom(state, state.grants);
+      const drawer = await mintWhileFailing(state);
+      state.grants = [grant({ grantId: 'g-new' })];
+      state.failing = false;
+      await tabComesBack();
+      expect(within(drawer).getAllByRole('button', { name: 'View Linear in Launch pod' })).toHaveLength(1);
+      expect(meta().textContent).toBe('1 on · 0 available');
+    });
+
+    it('a grant revoked after it stays revoked, with reads failing or not', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      mintFrom(state, state.grants);
+      const drawer = await mintWhileFailing(state);
+      fireEvent.click(within(drawer).getByRole('button', { name: 'View Linear in Launch pod' }));
+      fireEvent.click(await within(drawer).findByRole('button', { name: 'Revoke' }));
+      fireEvent.click(await within(drawer).findByRole('button', { name: 'Yes, revoke it' }));
+      await waitFor(() => expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available'));
+      await tabComesBack();
+      expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available');
+
+      // A stale good read still naming it live does not bring it back either.
+      state.grants = [grant({ grantId: 'g-new' })];
+      state.failing = false;
+      await tabComesBack();
+      expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available');
+    });
   });
 
   it('moves focus to the confirmation when the form closes, so it is read out and focus is not lost', async () => {
@@ -253,7 +336,11 @@ describe('after Grant', () => {
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
     const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     state.hold = true;
-    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    // A click focuses its button in a browser, and fireEvent's does not. The form
+    // takes that button with it, which is the focus this rescues.
+    const submit = within(form).getByRole('button', { name: 'Grant' });
+    submit.focus();
+    fireEvent.click(submit);
     const status = await within(drawer).findByText('Linear granted to Scout in Launch pod.');
     await waitFor(() => expect(status).toHaveFocus());
     expect(status).toHaveAttribute('role', 'status');
@@ -296,6 +383,56 @@ describe('after Grant', () => {
     const form = await screen.findByRole('complementary', { name: 'Change access' });
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     expect(await within(drawer).findByText('Access to Linear changed for Scout in Launch pod.')).toBeInTheDocument();
+  });
+
+  describe('someone who moved on while the grant was minting', () => {
+    const heldMint = (state, next) => {
+      let release;
+      const held = new Promise((resolve) => { release = resolve; });
+      axios.post.mockImplementation(async (url) => {
+        if (url === '/api/grants') {
+          await held;
+          state.grants = next;
+        }
+        return { data: { grantId: 'g-new' } };
+      });
+      return () => act(async () => { release(); });
+    };
+    const search = () => screen.getByLabelText('Search');
+
+    it('keeps their place in search, and the confirmation stays where it can be read', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      const release = heldMint(state, [revoked('g-1'), grant({ grantId: 'g-new' })]);
+      renderPage();
+      const drawer = await openDrawerOf('Linear');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
+      const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      search().focus();
+      await release();
+      const status = await within(drawer).findByText('Linear granted to Scout in Launch pod.');
+      await settle();
+      expect(status).not.toHaveFocus();
+      expect(search()).toHaveFocus();
+    });
+
+    it('closing the form mid-mint and going to search: the drawer comes back without taking focus', async () => {
+      const state = mock({ grants: [revoked('g-1')] });
+      const release = heldMint(state, [revoked('g-1'), grant({ grantId: 'g-new' })]);
+      renderPage();
+      const drawer = await openDrawerOf('Linear');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
+      const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
+      fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Close' }));
+      await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Grant Linear to agents' })).toBeNull());
+      search().focus();
+      await release();
+      const reopened = await findDrawer('Linear');
+      await within(reopened).findByText('Linear granted to Scout in Launch pod.');
+      await settle();
+      expect(search()).toHaveFocus();
+    });
   });
 
   it('takes the confirmation back once that grant is revoked', async () => {

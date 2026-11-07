@@ -169,8 +169,11 @@ const ConnectorsPage: React.FC = () => {
   }, [grantNotice, freshRowShown]);
   // The form that held focus is gone. Once per grant, so the row arriving later
   // can't pull focus back; a focused status is read out even though it mounts full.
+  // Someone who moved elsewhere during the mint stays there: a focus that landed
+  // anywhere but nowhere was put there by them.
   useEffect(() => {
-    if (grantNotice) confirmRef.current?.focus({ preventScroll: true });
+    const active = document.activeElement;
+    if (grantNotice && (!active || active === document.body)) confirmRef.current?.focus({ preventScroll: true });
   }, [grantNotice]);
 
   // Opening the phone search puts the cursor in the box.
@@ -527,7 +530,7 @@ const ConnectorsPage: React.FC = () => {
     const awaitingRead = Boolean(confirmed && !freshRow);
     const foldInactive = liveGrants.length > 0 || awaitingRead;
     return (
-      <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
+      <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools} holdFocus={Boolean(confirmed)}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
         {toolGranted(toolEntry) && !awaitingRead && tp.renderAccessNote(toolEntry)}
         {/* A granted operator-key entry still takes a key for an agent that has none. */}

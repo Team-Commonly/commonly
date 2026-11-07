@@ -2701,7 +2701,12 @@
       "started": "{{age}}前开始",
       "since": "{{age}}前起",
       "paused": "{{age}}前暂停",
-      "slackAnswered": "Slack 于{{age}}前回应"
+      "slackAnswered": "Slack 于{{age}}前回应",
+      "addedJustNow": "刚刚添加",
+      "startedJustNow": "刚刚开始",
+      "sinceJustNow": "刚刚起",
+      "pausedJustNow": "刚刚暂停",
+      "slackAnsweredJustNow": "Slack 刚刚回应"
     },
     "activeTag": "当前",
     "alreadyBound": "你的 {{connector}} 频道已绑定到 {{pod}}。其他 Pod 通过「接入此频道的 Pod」接入——在那里把某个 Pod 打开即可。",

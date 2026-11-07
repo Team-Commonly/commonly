@@ -991,6 +991,14 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
 
+  // Who approves, and whether anything can write at all, depends on the grant and
+  // the connection, so a line about the whole connector cannot promise it. The
+  // broker parks a hosted write for the connection's owner, and a read grant has none.
+  test('the Linear entry\'s description says what it holds and promises no approval', () => {
+    const [entry] = HOSTED_MCP_ENTRIES;
+    expect(entry.description).toBe('Issues, projects, cycles and releases in your own Linear workspace.');
+  });
+
   test('the shipped Linear entry pins approval-required writers and names a revoke page', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
     // 68 captured tools minus two external fetches and four excluded writers.

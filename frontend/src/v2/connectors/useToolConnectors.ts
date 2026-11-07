@@ -86,6 +86,9 @@ export const useToolConnectors = (
   // revoked on this page whatever a later read returns. Without this, the card
   // kept saying "granted" when the reload came back stale or failed.
   const [revokedHere, setRevokedHere] = useState<Record<string, string>>({});
+  // The same for a mint: the server said yes, so a failed re-read can't make the
+  // page say nobody has it and offer it again. Any good read replaces these.
+  const [mintedHere, setMintedHere] = useState<ToolGrant[]>([]);
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
   // `stillListed`: the provider was never told (TASK-339), so its own page
   // still lists Commonly and the notice must say so.
@@ -99,11 +102,14 @@ export const useToolConnectors = (
     ...entry,
     connections: entry.connections.filter((connection) => !disconnectedHere.includes(connection.connectionId)),
   }))), [rawCatalog, disconnectedHere]);
-  const grants = useMemo(() => (rawGrants === null ? null : rawGrants.map((grant) => (
+  const grants = useMemo(() => (rawGrants === null ? null : [
+    ...mintedHere.filter((minted) => !rawGrants.some((grant) => grant.grantId === minted.grantId)),
+    ...rawGrants,
+  ].map((grant) => (
     revokedHere[grant.grantId] && !grant.revokedAt
       ? { ...grant, revokedAt: revokedHere[grant.grantId], revokedBy: grant.revokedBy ?? (viewerId || null) }
       : grant
-  ))), [rawGrants, revokedHere, viewerId]);
+  ))), [rawGrants, mintedHere, revokedHere, viewerId]);
   // Grants and trail rows carry relative ages; they must advance while the
   // page sits open and be re-read when the tab comes back (TASK-131).
   const now = useRelativeNow();
@@ -162,7 +168,12 @@ export const useToolConnectors = (
     ]);
     const ownedGrants = grantRes?.grants || [];
     // A failed read must not blank a list the person is looking at.
-    if (grantRes) setGrants(ownedGrants); else setGrants((current) => current ?? []);
+    if (grantRes) {
+      setGrants(ownedGrants);
+      setMintedHere([]);
+    } else {
+      setGrants((current) => current ?? []);
+    }
     setSeats(Object.fromEntries(seatResults.map((row) => [row.podId, row.seats])));
     setSeatLookupFailed(seatResults.some((row) => row.failed));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
@@ -589,13 +600,15 @@ export const useToolConnectors = (
     setPolicyFixedPodId(null);
     try {
       const expiresAt = new Date(Date.now() + draft.expiryDays * 86_400_000).toISOString();
+      const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools);
+      const writeMode = draftPrWrite ? 'write-with-confirm' : draft.writeMode;
       // The mint's body, as routes/grants.ts takes it: the server names the broker
       // and takes the installation from the Connection (#1677) — neither is the caller's.
       const minted = await api.post<{ grantId?: string }>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
-        tools: draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools),
-        writeMode: draftPrWrite ? 'write-with-confirm' : draft.writeMode,
+        tools,
+        writeMode,
         ...(draftPrWrite ? { prWrite: true } : {}),
         audience: selectedAgentIds,
         expiresAt,
@@ -609,6 +622,27 @@ export const useToolConnectors = (
         setError(t('tools.grantError', { defaultValue: 'Could not grant it.' }));
         return;
       }
+      // Before anything else can fail: the mint stands from here on.
+      setMintedHere((current) => [...current, {
+        grantId: minted.grantId as string,
+        // A hosted grant's installationId is its connection's id (openDraft).
+        installationId: draft.connectionId,
+        connectionId: draft.connectionId,
+        target: { kind: 'pod', id: draft.podId },
+        tools,
+        writeMode,
+        ...(draftPrWrite ? { prWrite: true } : {}),
+        budget: null,
+        effectiveAudience: selectedAgentIds,
+        expiresAt,
+        revokedAt: null,
+        revokedBy: null,
+        parentGrantId: null,
+        rootGrantId: null,
+        createdAt: new Date().toISOString(),
+        grantedBy: viewerId || null,
+        ...(draftByoNamed.length > 0 ? { byoAgents: draftByoNamed.map((agent) => agent.userId) } : {}),
+      }]);
       // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
       // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone
       // (0368992e), never by minting a third grant.

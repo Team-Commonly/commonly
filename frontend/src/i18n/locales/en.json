@@ -2715,7 +2715,12 @@
       "started": "started {{age}}",
       "since": "since {{age}}",
       "paused": "paused {{age}}",
-      "slackAnswered": "Slack answered {{age}}"
+      "slackAnswered": "Slack answered {{age}}",
+      "addedJustNow": "added just now",
+      "startedJustNow": "started just now",
+      "sinceJustNow": "since just now",
+      "pausedJustNow": "paused just now",
+      "slackAnsweredJustNow": "Slack answered just now"
     },
     "activeTag": "active",
     "alreadyBound": "Your {{connector}} channel is bound to {{pod}}. Other pods reach it through \"Pods that reach this channel\" — switch a pod on there.",
