@@ -308,6 +308,7 @@ const V2AgentBYO: React.FC = () => {
   const [hasCopied, setHasCopied] = useState(false);
   const [showHostedOffer, setShowHostedOffer] = useState(false);
   const offeredPanels = useRef(new Set<string>());
+  const resultRef = useRef<HTMLDivElement | null>(null);
   const offerSessionKey = issued
     ? `commonly:byo-hosted-offer:${currentUser?._id || ''}:${issued.podId}:${issued.agentName}`
     : null;
@@ -1163,6 +1164,14 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
+  // The form above a result collapses as the result arrives, and on a phone the
+  // scroller keeps its offset, so the command would land above the fold with
+  // only Copy in view. Start at the heading, so a person sees what they're copying.
+  const resultKind = issued ? 'issued' : placed ? 'placed' : hosted ? 'hosted' : reconnectRequest ? 'reconnect' : null;
+  useEffect(() => {
+    if (resultKind) resultRef.current?.scrollIntoView?.({ block: 'start' });
+  }, [resultKind, issued]);
+
   // "Run it here" is on screen from first paint whenever the instance hosts
   // (the chooser, or the compact hosted form), so its exposure is counted
   // here, once per page view. The post-issue fallback below counts a separate,
@@ -1852,7 +1861,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {reconnectRequest && (
-        <div className="v2-byo__result" data-testid="byo-reconnect-result">
+        <div className="v2-byo__result" data-testid="byo-reconnect-result" ref={resultRef}>
           <h2>{reconnectRequest.agentName}</h2>
           <p>{t(`agentConnection.reconnect${reconnectRequest.state === 'connected' ? 'Done'
             : reconnectRequest.state === 'slow' ? 'Slow' : 'Waiting'}`)}</p>
@@ -1860,7 +1869,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {placed && (
-        <div className="v2-byo__result" data-testid="byo-machine-result">
+        <div className="v2-byo__result" data-testid="byo-machine-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
             <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running'} />
             <h2>{t('agentByo.machine.heading')} <code>{placed.agentName}</code></h2>
@@ -1885,7 +1894,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {hosted && (
-        <div className="v2-byo__result" data-testid="byo-hosted-result">
+        <div className="v2-byo__result" data-testid="byo-hosted-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
             <V2Avatar name={hosted.agentName} size="lg" kind={AGENT_KIND} seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
             <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
@@ -1942,7 +1951,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {issued && (
-        <div className="v2-byo__result">
+        <div className="v2-byo__result" data-testid="byo-issued-result" ref={resultRef}>
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
 
 

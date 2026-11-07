@@ -6585,4 +6585,15 @@ describe('the landing stylesheet parses as written', () => {
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
+
+  test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
+    const settings = read('../components/V2SettingsPage.css');
+    // Desktop reaches the guide from the rail, so the row is for phones only.
+    expect(settings).toContain('.v2-settings__guide { display: none; }');
+    const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));
+    expect(phone).toContain('.v2-settings__guide { display: grid;');
+    const activity = read('../components/V2ActivityPage.css');
+    expect(ruleBody(activity, '.v2-root .v2-activity__compose textarea::placeholder')).toContain('text-overflow: ellipsis');
+    expect(read('../components/V2AgentBYO.css')).toContain('.v2-byo__result { scroll-margin-top: 12px; }');
+  });
 });
