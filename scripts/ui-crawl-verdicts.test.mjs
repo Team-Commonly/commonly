@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  captureProblem, clickOutcome, needsReload, resolveCandidate, withOccurrences,
+  captureProblem, clickOutcome, needsReload, resolveCandidate, stripAge, untranslatedStrings, withOccurrences,
 } from './ui-crawl-verdicts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -18,6 +18,25 @@ test('a control is found after an earlier control removes itself from the list',
   const after = withOccurrences([{ index: 0, label: 'Connect' }, { index: 1, label: 'Connect' }]);
   assert.equal(resolveCandidate(after, before[3]).index, 1);
   assert.equal(resolveCandidate(after, before[0]), null);
+});
+
+test('a row keeps its name when its age ticks over', () => {
+  assert.equal(stripAge('Docs 5h'), 'Docs');
+  assert.equal(stripAge('Top 10'), 'Top 10');
+  const [before] = withOccurrences([{ index: 0, label: 'Docs 5h' }]);
+  const after = withOccurrences([{ index: 3, label: 'Docs 6h' }]);
+  assert.equal(resolveCandidate(after, before).index, 3);
+});
+
+test('a native dialog is a response, not a dead control', () => {
+  assert.equal(clickOutcome({ ...base, dialog: true }), 'dialog');
+  assert.equal(clickOutcome({ ...base, dialog: true, writesRefused: 1 }), 'write-refused');
+  assert.equal(needsReload('dialog'), false);
+});
+
+test('English left in a Chinese string is reported, and the kept names are not', () => {
+  assert.deepEqual(untranslatedStrings(['在 GitHub 上打开', '同一个 Pod 中', 'CLI 设备', '设备']), []);
+  assert.deepEqual(untranslatedStrings(['Revoke', '撤销 Devices']), ['Revoke', '撤销 Devices']);
 });
 
 test('a refused write outranks everything else the click did', () => {
