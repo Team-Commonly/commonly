@@ -9,6 +9,7 @@
 
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
 import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
+import { modelUnavailableFailure } from './model-unavailable.js';
 
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
@@ -170,11 +171,15 @@ export const classifySpawnFailure = (error) => {
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.RATE_LIMIT;
   }
+  // A model the provider won't run fails the same way until someone changes it.
+  // A 403 for that reads as configuration below; a 404 has no status of its own
+  // there, so without this it retried in seconds against the same answer.
   if (
     error?.code === 'ENOENT'
     || error?.status === 401
     || error?.status === 403
     || CONFIGURATION_RE.test(text)
+    || modelUnavailableFailure(error)
   ) {
     return SPAWN_FAILURE_CLASS.CONFIGURATION;
   }

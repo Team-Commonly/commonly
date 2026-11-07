@@ -9,6 +9,11 @@ import {
   spawnRetryPolicy,
 } from '../src/lib/spawn-retry.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
+import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
+
+const publicToolFailure = () => Object.assign(new Error('model: gpt-9'), {
+  code: PUBLIC_TOOL_FAILED_CODE, status: 404, providerCode: 'model_not_found',
+});
 
 describe('spawn retry policy', () => {
   test.each([
@@ -359,6 +364,30 @@ describe('a public witness failure is a runtime failure, whatever its text says'
   test('positive control: the same text without the code still classes as a refusal', () => {
     expect(classifySpawnFailure(new Error('{"status":500,"message":"content_policy_violation"}')))
       .toBe(SPAWN_FAILURE_CLASS.CONTENT_REFUSED);
+  });
+});
+
+describe('a model the provider will not run waits like a 403 does', () => {
+  const body404 = '{"type":"error","error":{"type":"not_found_error","message":"model: claude-opus-9"}}';
+  test.each([
+    ['an attached 404', Object.assign(new Error('model: claude-opus-9'), { status: 404 })],
+    ['a 404 written on the line', new Error('API Error: 404 The model `gpt-9` does not exist')],
+    ['an Anthropic 404 body', new Error(body404)],
+    ['the OpenAI code on a 400', Object.assign(new Error('bad request'), { status: 400, providerCode: 'model_not_found' })],
+  ])('%s opens the circuit for the long wait on the first failure', (_label, error) => {
+    expect(spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 })).toEqual({
+      failureClass: SPAWN_FAILURE_CLASS.CONFIGURATION,
+      circuitOpen: true,
+      delayMs: SPAWN_RETRY_MAX_MS,
+    });
+  });
+
+  test.each([
+    ['a bare 404', Object.assign(new Error('not found'), { status: 404 })],
+    ['a wrong route', new Error('HTTP 404: no route for /v1/messages')],
+    ['the model code in a public tool failure', publicToolFailure()],
+  ])('%s stays a runtime failure', (_label, error) => {
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
 });
 
