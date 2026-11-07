@@ -950,7 +950,11 @@ class AgentMessageService {
         ...installationIdentityFilter(String(agentName).toLowerCase(), String(instanceId || 'default').toLowerCase()),
         podId: { $eq: podId },
         status: 'active',
-      }, null, { collation: IDENTITY_COLLATION }).select('config.schedule.lastFiredAt').lean();
+      }, null, { collation: IDENTITY_COLLATION })
+        // The unique index lets a legacy row sit beside a current one, and the
+        // wake is on whichever the schedule route wrote.
+        .sort({ 'config.schedule.lastFiredAt': -1 })
+        .select('config.schedule.lastFiredAt').lean();
       const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
       if (!firedAt) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;

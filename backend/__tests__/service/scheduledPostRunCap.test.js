@@ -1,6 +1,7 @@
 // A daily job in a quiet pod is the same author every day, so the run cap would
 // refuse it from the fourth day. Real Mongo and the real postMessage.
 process.env.PG_HOST = '';
+const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 const User = require('../../models/User');
@@ -85,5 +86,27 @@ describe('a scheduled post and the run cap', () => {
     await firedAt(new Date());
     await tick();
     expect(await AgentMessageService.owedScheduledPost(pod._id, 'daily', 'morning', bot._id)).toBe(true);
+  });
+
+  it('reads the row that carries the wake when a legacy row sits beside it', async () => {
+    const legacy = await AgentInstallation.findOne({ agentName: 'daily' }).lean();
+    await AgentInstallation.collection.insertOne({
+      ...legacy, _id: new mongoose.Types.ObjectId(), instanceId: 'Default',
+    });
+    await tick();
+    await AgentInstallation.collection.updateOne(
+      { agentName: 'daily', instanceId: 'Default' },
+      { $set: { 'config.schedule.lastFiredAt': new Date() } },
+    );
+    await tick();
+    expect(await AgentMessageService.owedScheduledPost(pod._id, 'daily', 'default', bot._id)).toBe(true);
+  });
+
+  it('gives no exemption for a wake on another instance', async () => {
+    await AgentInstallation.collection.updateOne({ agentName: 'daily' }, { $set: { instanceId: 'evening' } });
+    await tick();
+    await firedAt(new Date());
+    await tick();
+    expect(await AgentMessageService.owedScheduledPost(pod._id, 'daily', 'default', bot._id)).toBe(false);
   });
 });
