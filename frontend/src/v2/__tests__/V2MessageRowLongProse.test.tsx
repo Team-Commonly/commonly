@@ -38,6 +38,11 @@ describe('CollapsibleProse', () => {
     expect(folded(<ul><li>One</li><li>Ready to ship?</li></ul>).container.querySelector('.v2-msg__closing')).toHaveTextContent('Ready to ship?');
   });
 
+  it('keeps a closing quote with its question', () => {
+    setScrollHeight(900);
+    expect(folded(<p>报告很长。他问：“要合并吗？”</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^他问：“要合并吗？”$/);
+  });
+
   it('keeps an abbreviation inside the question', () => {
     setScrollHeight(900);
     expect(folded(<p>All done. Should I use one, e.g. the new API?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. the new API\?$/);
