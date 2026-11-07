@@ -1249,6 +1249,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-first-run__lede {
+  /* zh-CN at 1440 otherwise leaves one character on the last line. */
+  text-wrap: pretty;
   max-width: 560px;
   margin: 10px 0 0;
   color: var(--v2-text-secondary);
