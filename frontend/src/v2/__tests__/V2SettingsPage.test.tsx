@@ -575,7 +575,7 @@ describe('Settings in Chinese', () => {
 
   test('the page, its folds and the API token read in Chinese', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
-    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: '2026-11-03T10:00:00.000Z' } });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: new Date(2026, 10, 3, 12).toISOString() } });
     renderSettings();
 
     expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeInTheDocument();
@@ -590,5 +590,26 @@ describe('Settings in Chinese', () => {
     expect(screen.getByText('有效 · 尾号 1234')).toBeInTheDocument();
     expect(screen.getByText('创建时间：2026年11月3日')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '隐藏' })).toBeInTheDocument();
+  });
+
+  test('a notice on screen follows a language switch', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: new Date(2026, 10, 3, 12).toISOString() } });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole('button', { name: '生成' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('新的 API 令牌已生成');
+    await act(async () => { await i18n.changeLanguage('en'); });
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t('settings.apiToken.generated'));
+  });
+
+  test('a language switch leaves a name being typed alone on an account with no name yet', async () => {
+    renderSettings({ ...auth.currentUser, username: '' });
+
+    expect(screen.getByText('Your account')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily' } });
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(screen.getByLabelText('名称')).toHaveValue('Lily');
   });
 });
