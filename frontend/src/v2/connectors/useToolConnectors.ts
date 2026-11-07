@@ -19,6 +19,7 @@ import {
   isDead,
   entryCovers,
   boundAgentOf,
+  accessStatement,
 } from './toolModel';
 import type {
   GrantWriteMode,
@@ -35,6 +36,7 @@ import type {
   GithubAppSetup,
   GithubAppIntegrationResponse,
   HostedMcpManualRevokeNotice,
+  GrantNotice,
 } from './toolModel';
 import type { KeyAgent, OperatorKeyResult } from './OperatorKeyForm';
 
@@ -72,6 +74,7 @@ export const useToolConnectors = (
   const [trailError, setTrailError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftGrant | null>(null);
+  const [grantNotice, setGrantNotice] = useState<GrantNotice | null>(null);
   const [githubAppSetup, setGithubAppSetup] = useState<GithubAppSetup | null>(null);
   const [repositoryConnect, setRepositoryConnect] = useState<RepositoryConnect | null>(null);
   const repositoryReadRef = useRef(0);
@@ -366,6 +369,20 @@ export const useToolConnectors = (
       : t('tools.readOrWrite', { defaultValue: 'Read, or read and write' });
   };
 
+  // F321: one sentence, for this connection's offer or its live grants. Read
+  // from the modes and grants themselves, so it cannot disagree with the form.
+  const accessCopy = (entry: ToolCatalogEntry): string => {
+    const live = (grants || []).filter((grant) => !isDead(grant, now) && entryCovers(entry, grant));
+    const label = entry.label;
+    return ({
+      offerRead: t('tools.access.offerRead', { label }),
+      offerAsk: t('tools.access.offerAsk', { label }),
+      grantedRead: t('tools.access.grantedRead', { label }),
+      grantedAsk: t('tools.access.grantedAsk', { label }),
+      grantedMixed: t('tools.access.grantedMixed', { label }),
+    })[accessStatement(entryGrantModes(entry), live)];
+  };
+
   const usedRecently = (grant: ToolGrant): boolean => {
     const at = lastUse[grant.grantId];
     return Boolean(at) && Date.now() - new Date(at as string).getTime() < USED_RECENTLY_MS;
@@ -441,6 +458,7 @@ export const useToolConnectors = (
     setSelectedId(null);
     setConfirmRevoke(null);
     setError(null);
+    setGrantNotice(null);
     setJoinPolicyFixPodId(null);
     setPolicyFixedPodId(null);
   };
@@ -608,6 +626,16 @@ export const useToolConnectors = (
           return;
         }
       }
+      // Set with the draft's close, so the drawer holds through the re-read
+      // even when the form opened from a tile's reveal.
+      setGrantNotice({
+        grantId: minted.grantId,
+        installableId: draftEntry.installableId,
+        tool: draftEntry.label,
+        pod: podName(draft.podId),
+        agents: joinList(selectedAgentIds.map((id) => seatLabel(draft.podId, id))),
+        changed: Boolean(draft.replaces),
+      });
       setDraft(null);
       await load();
     } catch (err) {
@@ -884,6 +912,8 @@ export const useToolConnectors = (
     setSelectedId,
     draft,
     setDraft,
+    grantNotice,
+    setGrantNotice,
     githubAppSetup,
     repositoryConnect,
     setRepositoryConnect,
@@ -935,6 +965,7 @@ export const useToolConnectors = (
     grantModeLabel,
     entryGrantModes,
     entryModeCopy,
+    accessCopy,
     usedRecently,
     q,
     selected,

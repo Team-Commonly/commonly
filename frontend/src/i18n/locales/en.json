@@ -2672,6 +2672,7 @@
     "channelsGroup": "Channels",
     "addChannelTile": "Channel",
     "meta": "{{on}} on · {{available}} available",
+    "metaConnected": "{{on}} on · {{connected}} connected, no grant · {{available}} available",
     "offCount": "+{{n}} off",
     "filter": {
       "all": "All",
@@ -2750,6 +2751,9 @@
     "hostedMcpAccessNext": "On GitHub, choose 'Only select repositories'.",
     "hostedMcpAccessAll": "GitHub's install page opens on All repositories. Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones. Public repos are readable either way.",
     "hostedMcpAccessOpen": "Open {{provider}}",
+    "catalogDescriptions": {
+      "linear": "Issues, projects, cycles and releases in your own Linear workspace."
+    },
     "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
@@ -2896,7 +2900,20 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
-    "linearWriteReconnect": "Agents can read Linear from here, but they can't write to it.",
+    "access": {
+      "offerRead": "This {{label}} connection isn't granted to any agent yet. A grant lets agents read it, not change it.",
+      "offerAsk": "This {{label}} connection isn't granted to any agent yet. A grant can be read only, or read and write. With write access, each write waits for your approval.",
+      "grantedRead": "Agents can read {{label}} from here, but they can't write to it.",
+      "grantedAsk": "Agents can read {{label}} from here. Each write waits for your approval.",
+      "grantedMixed": "Agents can read {{label}} from here. Where a grant allows writes, each write waits for your approval."
+    },
+    "grantedConfirm": "{{tool}} granted to {{agents}} in {{pod}}.",
+    "grantChangedConfirm": "Access to {{tool}} changed for {{agents}} in {{pod}}.",
+    "coverRead_one": "Covers {{count}} read tool. Agents can look things up in {{label}} but can't change anything.",
+    "coverRead_other": "Covers {{count}} read tools. Agents can look things up in {{label}} but can't change anything.",
+    "coverWrite_one": "Covers {{count}} tool. Agents can use it to change things in {{label}}.",
+    "coverWrite_other": "Covers {{count}} tools. Agents can look things up in {{label}}, and {{writes}} of the tools can change things there.",
+    "toolNames": "Tool names",
     "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
@@ -2906,10 +2923,11 @@
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",
     "grantedAge": "granted {{age}}",
+    "grantedJustNow": "granted just now",
     "aPod": "a pod",
     "aSeat": "an agent",
-    "add": "Add",
-    "addTool": "Add {{tool}}",
+    "grantToAgents": "Grant to agents",
+    "grantTool": "Grant {{tool}} to agents",
     "adminSetup": "administrator setup",
     "agents": "agents",
     "agentsAllowed": "agents allowed",
@@ -3002,7 +3020,7 @@
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
     "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
     "multiGrantPodPostingBlocked": "{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.",
-    "grantPodPostingNarrowed": "{{agents}} can post only in one of their pods while that pod has connector access.",
+    "grantPodPostingNarrowed": "{{agents}} can post only in one of their pods. That pod has a connector grant that can bring in outside text, so this applies to every agent in it, even one that wasn't granted the connector.",
     "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "Install the GitHub App first · an admin does this once",

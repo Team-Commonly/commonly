@@ -11,10 +11,12 @@ import GithubInstallWarning from './GithubInstallWarning';
 import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   shortAge,
+  isJustNow,
   isExpired,
   isDead,
   boundAgentOf,
   entryOffersPrWrite,
+  writeToolCount,
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
@@ -108,6 +110,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     grantModeLabel,
     entryGrantModes,
     entryModeCopy,
+    accessCopy,
     usedRecently,
     openDraft,
     openGithubAppSetup,
@@ -285,7 +288,9 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     // (TASK-179, ux-lead's gate at 07873c19) — two nouns, so two expressions.
     const targetLabel = grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id);
     // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
-    const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
+    const when = isJustNow(grant.createdAt, now)
+      ? t('tools.grantedJustNow')
+      : t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
     const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
     const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
@@ -444,7 +449,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
         )}
         {canAdd && (
           <button type="button" className="v2-connector-row__action" onClick={() => openDraft(entry)}>
-            {t('tools.add', { defaultValue: 'Add' })}
+            {t('tools.grantToAgents')}
           </button>
         )}
         {renderDisconnect(entry, 'row')}
@@ -458,12 +463,13 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     );
   };
 
-  // F213: the form offers Linear no write, so the line says that. When write
-  // mode returns, a connection made before write access needs reconnecting: the
-  // server refuses it the mode, and the page cannot see a connection's scope.
-  const renderLinearWriteNote = (entry: ToolCatalogEntry) => (
-    entry.connectionType === 'hosted-mcp' && entry.entryId === 'linear' && entry.connections.length > 0
-      ? <p className="v2-cx-note" role="note">{t('tools.linearWriteReconnect')}</p>
+  // F321: the one line about writing on a connected hosted entry. A connection
+  // made before its entry gained writes is still refused ask-first at the mint
+  // (write_scope_required): the page cannot see a connection's scope, so the
+  // form shows that refusal rather than this line guessing at it.
+  const renderAccessNote = (entry: ToolCatalogEntry) => (
+    entry.connectionType === 'hosted-mcp' && entry.connections.length > 0
+      ? <p className="v2-cx-note" role="note">{accessCopy(entry)}</p>
       : null
   );
 
@@ -496,12 +502,12 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     };
     return (
       <>
-        {entry.available && (
+        {entry.available && !(isHosted && entry.connections.length > 0) && (
           <p className="v2-cx-note">
             {entry.connections.length === 0 ? unconnectedNote() : entryModeCopy(entry)}
           </p>
         )}
-        {renderLinearWriteNote(entry)}
+        {renderAccessNote(entry)}
         {renderReachNote(entry, entry.connections)}
         {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && (entry.entryId === 'github-mcp'
@@ -673,6 +679,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
     const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools);
     const irreversible = irreversibleTools(draftEntry, tools);
+    const writes = writeToolCount(draftEntry, tools);
     const asks = draftPrWrite
       ? t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' })
       : draft.writeMode === 'read' ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
@@ -680,7 +687,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
         ? t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' })
         : (irreversible.length ? t('tools.asksList', { defaultValue: '{{tools}} ask first', tools: joinList(irreversible) }) : t('tools.asksNothing', { defaultValue: 'nothing asks first' }));
     return (
-      <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.addTool', { defaultValue: 'Add {{tool}}', tool: draftEntry.label })}>
+      <aside className="v2-connectors__aside v2-tools__aside" aria-label={draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grantTool', { tool: draftEntry.label })}>
         <section className="v2-connector-aside__card">
           <p className="v2-connector-aside__eyebrow">{draft.replaces ? t('tools.changeAccess', { defaultValue: 'Change access' }) : t('tools.grant', { defaultValue: 'grant' })}</p>
           <h2>{draftEntry.label} · {podName(draft.podId)}</h2>
@@ -745,7 +752,19 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
               {draft.losesPrWrite && !draftPrWrite && (
                 <span className="v2-tools__hint" role="status">{t('tools.prWriteEnds', { defaultValue: 'This change ends pull-request access on this grant.' })}</span>
               )}
-              <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
+              {/* The list below is the one the mint sends; only its presentation is folded. */}
+              <span className="v2-tools__hint">
+                {tools.length === 0 && t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}
+                {tools.length > 0 && (writes === 0
+                  ? t('tools.coverRead', { count: tools.length, label: draftEntry.label })
+                  : t('tools.coverWrite', { count: tools.length, writes, label: draftEntry.label }))}
+              </span>
+              {tools.length > 0 && (
+                <details className="v2-tools__names">
+                  <summary>{t('tools.toolNames')}</summary>
+                  <span className="v2-tools__hint">{tools.map((tool) => <code key={tool}>{tool}</code>)}</span>
+                </details>
+              )}
               <span className="v2-tools__hint">{asks}</span>
             </div>
             {!keyPending && (
@@ -954,5 +973,5 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     );
   };
 
-  return { renderRepositoryConnect, renderRepositoryConnectAction, renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderRepositoryConnect, renderRepositoryConnectAction, renderManualRevokeNotice, renderAccessNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

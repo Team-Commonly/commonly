@@ -18,7 +18,7 @@ const pods = [
 const scout = { name: 'scout', displayName: 'Scout', userId: 'a1' };
 const BLOCKED = /cannot post in any pod while connectors reach more than one of their pods/;
 const UNKNOWN = /Could not check whether connector grants limit agent posting/;
-const ONE_POD = /can post only in one of their pods while that pod has connector access/;
+const ONE_POD = /can post only in one of their pods. That pod has a connector grant/;
 
 afterEach(() => jest.restoreAllMocks());
 
