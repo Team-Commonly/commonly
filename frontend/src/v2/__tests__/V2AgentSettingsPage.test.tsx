@@ -744,7 +744,7 @@ test('a name outside 1–80 characters is refused under the field; other refusal
 });
 
 describe('someone who does not manage this agent', () => {
-  test('gets a sentence and the way to the profile, not the hook\'s error text', async () => {
+  test('gets a sentence and the way to Your team, not the hook\'s error text', async () => {
     axios.get.mockImplementation((url) => {
       if (url.includes('/manage-settings')) return Promise.resolve({ data: { installations: [] } });
       return Promise.resolve({ data: {} });
@@ -752,7 +752,8 @@ describe('someone who does not manage this agent', () => {
     renderPage('/v2/agents/maya-claude/u1a2b');
     const state = await screen.findByTestId('agent-settings-no-access');
     expect(state).toHaveTextContent("You can't open these settings");
-    expect(screen.getByRole('link', { name: 'See its profile' })).toHaveAttribute('href', '/v2/agent/maya-claude/u1a2b');
+    // Not the profile: a private agent's reads "Agent not found", a second dead end.
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
   });
 
   test('an installer refused every pod is not told only the installer can open this', async () => {
@@ -765,6 +766,7 @@ describe('someone who does not manage this agent', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
     expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
   });
 
   test('a load that fails for any other reason keeps its own error', async () => {
@@ -772,6 +774,7 @@ describe('someone who does not manage this agent', () => {
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('boom');
     expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Your team' })).not.toBeInTheDocument();
   });
 });
 

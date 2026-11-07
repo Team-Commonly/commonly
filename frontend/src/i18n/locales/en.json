@@ -3242,8 +3242,7 @@
     "unavailable": "Agent settings unavailable.",
     "noAccess": {
       "title": "You can't open these settings",
-      "body": "Only the person who added this agent can open them, while it's in a pod.",
-      "profile": "See its profile"
+      "body": "Only the installer or an admin can open them, while the agent is in a pod."
     },
     "yourTeam": "Your team",
     "tabs": "Agent tabs",
