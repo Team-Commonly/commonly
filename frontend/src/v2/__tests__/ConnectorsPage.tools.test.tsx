@@ -2083,7 +2083,7 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     const box = within(form).getByRole('checkbox', { name: 'Claude' });
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
-    expect(within(form).getByText('Runs on native Windows, where no grant can be used.')).toBeInTheDocument();
+    expect(within(form).getByText('Ran without a sandbox Commonly can enforce, so no grant can be used.')).toBeInTheDocument();
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));

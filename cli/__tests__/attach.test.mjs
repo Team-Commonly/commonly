@@ -27,6 +27,7 @@ await jest.unstable_mockModule('os', () => {
 
 const {
   performAttach,
+  clearUnsandboxedMark,
   setWakeOnMessage,
   updateAgentConfiguration,
   saveAgentToken,
@@ -234,6 +235,34 @@ describe('setWakeOnMessage', () => {
     await expect(setWakeOnMessage({ client, record: { agentName: 'x' }, enabled: true }))
       .rejects.toThrow(/podId/);
     expect(client.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('clearUnsandboxedMark', () => {
+  const record = {
+    agentName: 'juno', podId: 'pod-9', instanceId: 'work one', runtimeToken: 'cm_agent_j',
+  };
+
+  test('DELETEs the mark for this instance and reports what the machine still says', async () => {
+    const client = { del: jest.fn(async () => ({ cleared: true, machineUnconfined: true })) };
+    const result = await clearUnsandboxedMark({ client, record });
+    expect(client.del).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno/host-unconfined?instanceId=work%20one',
+    );
+    expect(result).toEqual({ agentName: 'juno', machineUnconfined: true });
+  });
+
+  test('a record with no instance clears the default one', async () => {
+    const client = { del: jest.fn(async () => ({ cleared: true, machineUnconfined: false })) };
+    const result = await clearUnsandboxedMark({ client, record: { agentName: 'juno', podId: 'pod-9' } });
+    expect(client.del.mock.calls[0][0]).toMatch(/\?instanceId=default$/);
+    expect(result.machineUnconfined).toBe(false);
+  });
+
+  test('refuses a token record without a pod', async () => {
+    const client = { del: jest.fn() };
+    await expect(clearUnsandboxedMark({ client, record: { agentName: 'x' } })).rejects.toThrow(/podId/);
+    expect(client.del).not.toHaveBeenCalled();
   });
 });
 
