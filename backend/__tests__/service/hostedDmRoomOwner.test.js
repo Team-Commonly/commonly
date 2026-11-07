@@ -347,6 +347,9 @@ describe('a hosted agent DM', () => {
 
     it('does the same when the pod is deleted', async () => {
       const room = await openRoom(guest);
+      // The real-database job has a Postgres, whose tables only exist if an earlier
+      // suite on that worker made them.
+      jest.spyOn(require('../../models/pg/Pod'), 'delete').mockResolvedValue(null);
       await deletePodCascade(String(workspace._id));
       expect((await roomRow(room)).status).toBe('uninstalled');
       await expect(hostedRuntime.countHostedAgentsForUser(owner._id)).resolves.toBe(0);
