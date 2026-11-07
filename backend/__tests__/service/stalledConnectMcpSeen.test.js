@@ -46,7 +46,7 @@ const botRow = (agentName, tokens) => User.create({
   agentRuntimeTokens: tokens,
 });
 
-describe('a seat that an MCP client has used is not nudged as never connected', () => {
+describe('a seat that an MCP client has used hears the MCP close, not the nudge', () => {
   beforeAll(setupMongoDb);
   afterAll(closeMongoDb);
   beforeEach(async () => {
@@ -55,6 +55,24 @@ describe('a seat that an MCP client has used is not nudged as never connected', 
     mockPost.mockResolvedValue({ success: true, message: { id: 'm1' } });
   });
 
+  const expectMcpClose = async () => {
+    const first = await scan({ now: NOW });
+    expect(first.nudged).toEqual([]);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(1);
+
+    const second = await scan({ now: NOW });
+    expect(second.resolved).toHaveLength(1);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    const { content, metadata } = mockPost.mock.calls[0][0];
+    expect(metadata.kind).toBe('stalled-connect-resolved');
+    expect(content).toContain('connected from your MCP client');
+    expect(content).toContain('that takes the listener');
+
+    await scan({ now: NOW });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  };
+
   it('a stamp on the installation token, read through the scan', async () => {
     await seat('mcp-install', [{ tokenHash: 'a', createdAt: ISSUED }]);
     await AgentInstallation.updateOne(
@@ -62,12 +80,7 @@ describe('a seat that an MCP client has used is not nudged as never connected', 
       { $set: usageStamp('runtimeTokens.$', mcpClient) },
     );
 
-    const r = await scan({ now: NOW });
-
-    expect(r.nudged).toEqual([]);
-    expect(r.skippedNotStalled).toBe(1);
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(await StalledConnectEpisode.countDocuments({})).toBe(0);
+    await expectMcpClose();
   });
 
   it('a stamp on the bot row token, read through the scan', async () => {
@@ -78,11 +91,7 @@ describe('a seat that an MCP client has used is not nudged as never connected', 
       { $set: usageStamp('agentRuntimeTokens.$', mcpClient) },
     );
 
-    const r = await scan({ now: NOW });
-
-    expect(r.nudged).toEqual([]);
-    expect(r.skippedNotStalled).toBe(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    await expectMcpClose();
   });
 
   it('another client using the token still gets the nudge', async () => {
@@ -101,9 +110,13 @@ describe('a seat that an MCP client has used is not nudged as never connected', 
   it('an MCP call on a superseded token does not stop the new token\'s nudge', async () => {
     const older = new Date(ISSUED.getTime() - 60 * MINUTE);
     await seat('reissued', [
-      { tokenHash: 'old', createdAt: older, lastMcpSeenAt: new Date(older.getTime() + MINUTE) },
+      { tokenHash: 'old', createdAt: older },
       { tokenHash: 'new', createdAt: ISSUED },
     ]);
+    await AgentInstallation.updateOne(
+      { 'runtimeTokens.tokenHash': 'old' },
+      { $set: usageStamp('runtimeTokens.$', mcpClient) },
+    );
 
     const r = await scan({ now: NOW });
 

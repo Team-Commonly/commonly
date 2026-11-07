@@ -269,26 +269,26 @@ export const scan = async ({
       continue;
     }
     // An MCP client never listens, so it derives never-connected however often
-    // it calls in. One that connected inside the patience window did connect,
-    // so telling its person nothing is running would be false.
-    if (latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt)) {
-      result.skippedNotStalled += 1;
-      continue;
-    }
-
-    await nudgeOnce({ install, derived, issuedAt, tokenSource: source, now, result });
+    // it calls in. "Nothing is running" would be false for one that has called
+    // on this token, and the next pass's MCP close says what's true: it can
+    // post when asked, and answering @mentions takes the listener.
+    const mcpConnected = Boolean(latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt));
+    await nudgeOnce({
+      install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
+    });
   }
 
   return result;
 };
 
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
+  mcpConnected: boolean;
   now: Date;
   result: StalledScanResult;
 }): Promise<void> => {
@@ -345,6 +345,9 @@ const nudgeOnce = async ({
     if (error?.code === 11000) return;
     throw error;
   }
+  // The episode stays open with no nudge, so the same one-per-token record
+  // carries the MCP close on the next pass.
+  if (mcpConnected) return;
 
   const content = composeStalledConnectNudge({
     installerName: installer.username,
