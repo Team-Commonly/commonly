@@ -557,6 +557,88 @@ describe('performRun', () => {
     expect(ackPosts(post).map(([route]) => route)).toEqual(['/api/agents/runtime/events/evt-refused/ack']);
   });
 
+  // F192: a seat that reasons aloud and closes on NO_REPLY has declined. The
+  // server would strip the token as leakage and post the reasoning. A person
+  // waiting keeps the answer, because losing that is the worse error.
+  describe('a reply that closes on a bare NO_REPLY', () => {
+    const turn = async (event, text) => {
+      const get = jest.fn(async (route) => (
+        route.endsWith('/messages') ? { messages: [] } : { events: [event], inboxCount: 1 }
+      ));
+      const post = jest.fn(async () => ({}));
+      createClient.mockReturnValue({ get, post });
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn(async () => ({ text })) },
+        agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      stop();
+      return post.mock.calls.filter(([route]) => route === '/api/agents/runtime/pods/pod-abc/messages');
+    };
+    const REASONING = 'This is a periodic heartbeat. Nothing here needs me, so I will stay quiet.';
+
+    test('a heartbeat posts nothing', async () => {
+      const posts = await turn(makeEvent({ _id: 'evt-hb', type: 'heartbeat', payload: {} }), `${REASONING}\n\nNO_REPLY`);
+      expect(posts).toEqual([]);
+    });
+
+    test('a wake nobody asked posts nothing', async () => {
+      const posts = await turn(
+        makeEvent({ _id: 'evt-amb', type: 'message.posted', payload: { content: 'fyi' } }),
+        `${REASONING}\n\nNO_REPLY`,
+      );
+      expect(posts).toEqual([]);
+    });
+
+    test('a person who asked keeps the answer', async () => {
+      const posts = await turn(makeEvent({ _id: 'evt-ask', payload: { content: 'done?' } }), 'Yes, it merged.\n\nNO_REPLY');
+      expect(posts).toHaveLength(1);
+    });
+
+    test.each(['addressed', 'repliesToYourMessage', 'someoneWaiting'])('a %s wake keeps the answer', async (flag) => {
+      const posts = await turn(
+        makeEvent({ _id: `evt-${flag}`, type: 'message.posted', payload: { content: 'done?', [flag]: true } }),
+        'Yes, it merged.\n\nNO_REPLY',
+      );
+      expect(posts).toHaveLength(1);
+    });
+
+    test('a turn silenced this way acks as no_action', async () => {
+      await turn(makeEvent({ _id: 'evt-hb3', type: 'heartbeat', payload: {} }), `${REASONING}\n\nNO_REPLY`);
+      const { post } = createClient.mock.results.at(-1).value;
+      expect(post).toHaveBeenCalledWith(
+        '/api/agents/runtime/events/evt-hb3/ack',
+        { result: expect.objectContaining({ outcome: 'no_action' }) },
+      );
+    });
+
+    test('a private ask keeps its reply', async () => {
+      const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : {
+        events: [makeEvent({ _id: 'evt-pa', type: 'agent.ask', payload: { requestId: 'req-1', question: 'done?' } })],
+        inboxCount: 1,
+      }));
+      const post = jest.fn(async () => ({}));
+      createClient.mockReturnValue({ get, post });
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+        adapter: { name: 'stub', detect: stubAdapter.detect, spawn: jest.fn(async () => ({ text: 'Yes.\n\nNO_REPLY' })) },
+        agentName: 'my-stub', setTimeoutImpl: noopTimeout,
+      });
+      await drainMicrotasks();
+      stop();
+      expect(post).toHaveBeenCalledWith('/api/agents/runtime/asks/req-1/respond', { content: 'Yes.\n\nNO_REPLY' });
+    });
+
+    test('a sentinel mentioned in the last line still posts', async () => {
+      const posts = await turn(
+        makeEvent({ _id: 'evt-hb2', type: 'heartbeat', payload: {} }),
+        'Two issues opened today. I answer with `NO_REPLY` when nothing needs saying.',
+      );
+      expect(posts).toHaveLength(1);
+    });
+  });
+
   // The server answers an intentional NO_REPLY with `silent_or_empty`. That
   // seat read the batch and chose silence, so its digest is read; any other
   // skip leaves the digest for the next turn.
