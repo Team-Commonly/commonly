@@ -51,6 +51,13 @@ describe('a scheduled post and the run cap', () => {
     expect((await post('Another line.')).reason).toBe('consecutive_run_cap');
   });
 
+  it('fails toward posting when the schedule can\'t be read', async () => {
+    jest.spyOn(console, 'warn').mockImplementationOnce(() => {});
+    const findOne = jest.spyOn(AgentInstallation, 'findOne').mockImplementationOnce(() => { throw new Error('read failed'); });
+    await expect(AgentMessageService.owedScheduledPost(pod._id, 'daily', 'default', bot._id)).resolves.toBe(true);
+    findOne.mockRestore();
+  });
+
   it('lets one post through for a wake since the last post, and only one', async () => {
     await tick();
     await firedAt(new Date());

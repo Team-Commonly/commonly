@@ -957,9 +957,10 @@ class AgentMessageService {
       const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
       return firedAt > new Date(own[own.length - 1]?.createdAt || 0).valueOf();
     } catch (error) {
-      // The cap then refuses as usual, rather than the post failing.
+      // Toward posting (review-checklist rule 19): a refusal here is a job's
+      // result nobody sees, and the cost is one post past the cap.
       console.warn('Could not read the agent\'s schedule:', (error as Error).message);
-      return false;
+      return true;
     }
   }
 

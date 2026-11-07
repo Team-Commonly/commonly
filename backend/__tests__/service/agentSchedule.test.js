@@ -209,6 +209,17 @@ describe('a BYO agent schedule', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
+  it('hands the day back when the enqueue fails, and the next tick fires it', async () => {
+    await seat('retried');
+    await save('retried');
+    jest.spyOn(console, 'error').mockImplementationOnce(() => {});
+    mockEnqueue.mockRejectedValueOnce(new Error('queue down'));
+    expect(await dispatchSchedules(AT)).toBe(0);
+    const row = await AgentInstallation.findOne({ agentName: 'retried' }).lean();
+    expect(row.config.schedule.lastFiredOn).toBeUndefined();
+    expect(await dispatchSchedules(new Date(AT.getTime() + 60 * 1000))).toBe(1);
+  });
+
   it('does not add to a wake the seat has not picked up, and spends the day', async () => {
     await seat('offline');
     await save('offline');

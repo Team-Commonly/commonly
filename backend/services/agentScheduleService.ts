@@ -115,8 +115,7 @@ export const buildScheduleContent = (prompt: string, podId: unknown): string => 
 
 /**
  * Enqueues each due wake once. The day is claimed before the enqueue, so two
- * dispatchers can't both fire it. A failed enqueue costs that day's wake, and
- * says so in the log.
+ * dispatchers can't both fire it, and handed back if the enqueue fails.
  */
 export const dispatchSchedules = async (now: Date = new Date()): Promise<number> => {
   const rows = await AgentInstallation.find({ status: 'active', 'config.schedule.enabled': true })
@@ -145,24 +144,36 @@ export const dispatchSchedules = async (now: Date = new Date()): Promise<number>
         { $set: { 'config.schedule.lastFiredOn': day } },
       );
       if (!claim.modifiedCount) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const undelivered = await AgentEvent.exists({
-        agentName: row.agentName,
-        instanceId: row.instanceId || 'default',
-        podId: row.podId,
-        type: 'heartbeat',
-        status: 'pending',
-        'payload.trigger': 'schedule',
-      });
-      if (undelivered) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await AgentEventService.enqueue({
-        agentName: row.agentName,
-        instanceId: row.instanceId || 'default',
-        podId: row.podId,
-        type: 'heartbeat',
-        payload: { trigger: 'schedule', content: buildScheduleContent(schedule.prompt, row.podId) },
-      });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const undelivered = await AgentEvent.exists({
+          agentName: row.agentName,
+          instanceId: row.instanceId || 'default',
+          podId: row.podId,
+          type: 'heartbeat',
+          status: 'pending',
+          'payload.trigger': 'schedule',
+        });
+        if (undelivered) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await AgentEventService.enqueue({
+          agentName: row.agentName,
+          instanceId: row.instanceId || 'default',
+          podId: row.podId,
+          type: 'heartbeat',
+          payload: { trigger: 'schedule', content: buildScheduleContent(schedule.prompt, row.podId) },
+        });
+      } catch (error) {
+        // Hand the day back, so the next tick tries again inside the catch-up.
+        // eslint-disable-next-line no-await-in-loop
+        await AgentInstallation.updateOne(
+          { _id: row._id, 'config.schedule.lastFiredOn': day },
+          schedule.lastFiredOn
+            ? { $set: { 'config.schedule.lastFiredOn': schedule.lastFiredOn } }
+            : { $unset: { 'config.schedule.lastFiredOn': 1 } },
+        );
+        throw error;
+      }
       // eslint-disable-next-line no-await-in-loop
       await AgentInstallation.updateOne({ _id: row._id }, { $set: { 'config.schedule.lastFiredAt': now } });
       enqueued += 1;
