@@ -27,6 +27,7 @@
 
 import { Types } from 'mongoose';
 import { SCOUT_OFFER_COPY, normalizeScoutLocale, startLabel } from '../config/native-agents/scout';
+import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
@@ -2138,6 +2139,34 @@ export const resolveSeatUserId = async (
   }
 };
 
+// A card's stored text says "[approval needed]" for good, and only its payload
+// moves on. Read as written, a declined card reads as still waiting (Growth's
+// walk, 2026-11-07: "still waiting above" under a Declined card). An approval
+// whose action failed mustn't read as done, so the action's ending comes first.
+const cardOutcome = (card: Record<string, unknown>): string | null => {
+  if (card.status === 'expired') return 'expired';
+  if (card.status === 'moot') return 'closed';
+  if (card.status !== 'resolved') return null;
+  if (card.decision === 'declined') return 'declined';
+  // It may have run, so calling it failed would invite a second write.
+  if (card.toolCallCode === APPROVAL_OUTCOME_UNKNOWN) return 'outcome unknown';
+  const result = card.executionResult as { isError?: unknown } | undefined;
+  const failed = Boolean(card.executionError) || result?.isError === true
+    || card.toolCallEnding === 'failed' || card.toolCallEnding === 'refused';
+  if (failed) return 'failed';
+  // Approved, and nothing recorded how it ended: not the same as done.
+  if (card.actionType === 'tool_call' && !card.toolCallEnding && result === undefined) return 'outcome unknown';
+  return 'approved';
+};
+
+const contentWithCardOutcome = (row: Record<string, unknown>): string => {
+  const content = String(row.content || '');
+  const card = row.payload as Record<string, unknown> | null | undefined;
+  if (card?.kind !== 'approval-card') return content;
+  const outcome = cardOutcome(card);
+  return outcome ? content.replace(/^\s*\[approval needed\]/, `[approval ${outcome}]`) : content;
+};
+
 /**
  * The pod's most recent messages, oldest first, from the one configured store — the
  * single read behind both `commonly_read_context` and the inline recent-messages
@@ -2164,7 +2193,7 @@ export async function fetchRecentPodMessages(
       author: (user.username as string) || (row.username as string) || 'unknown',
       authorId: authorId ? String(authorId) : null,
       authorIsBot,
-      content: String(row.content || ''),
+      content: contentWithCardOutcome(row),
       createdAt: row.createdAt || row.created_at || null,
     };
   });
