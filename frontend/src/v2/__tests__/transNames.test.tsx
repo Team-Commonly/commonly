@@ -112,7 +112,14 @@ test.each([
 
 beforeAll(async () => { await i18nReady; });
 
-test.each([['Growth pod'], ['Ops & Design']])('a grant line shows a pod name exactly: %s', (name) => {
+// As component children, all of these stay literal. Through `values`, a tag named in `components`
+// with a `style` attribute makes React throw, and a template would be filled in a second time.
+test.each([
+  ['Growth pod'],
+  ['Ops & Design'],
+  ['<pod style="color:red">x</pod>'],
+  ['{{username}}'],
+])('a grant line shows a pod name exactly: %s', (name) => {
   const { container } = render(
     <Trans i18nKey="tools.grantedToPodBy" components={{ pod: <b>{name}</b>, member: <b>sam</b> }} />,
   );
