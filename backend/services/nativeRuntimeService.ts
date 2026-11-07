@@ -3282,10 +3282,12 @@ export async function runAgent(
       }
       // A heartbeat that called the post tool and never got a post through
       // meant to say something, so it did not decline: the run fails, and its
-      // digest is not settled as answered.
+      // digest is not settled as answered. A duplicate is the exception: those
+      // words are already in the pod, and the guidance tells it to drop them.
       if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
         && run.turns.some((t: any) => (t.toolCalls || []).some(
-          (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed',
+          (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed'
+            && !/^duplicate_/.test(String(c.result?.result?.reason)),
         ))) {
         run.status = 'failed';
         run.errorKind = 'tool_error';
