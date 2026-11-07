@@ -122,6 +122,7 @@
 .v2-agent-settings-page .wt td:last-child { text-align: right; width: 44px; }
 .v2-agent-settings-page details.disc > summary .lb svg.i { width: 16px; height: 16px; color: var(--se); flex: none; }
 
+.v2-agent-settings-page .lrow .vl code { font: 12px/1.4 var(--v2-font-mono); overflow-wrap: anywhere; }
 /* wake table controls: the message-wake segment, board and heartbeat toggles, the interval select */
 .v2-agent-settings-page .wt .seg { display: inline-flex; flex-wrap: wrap; }
 .v2-agent-settings-page .seg > label { position: relative; cursor: pointer; height: 24px; padding: 0 8px; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--f-body); color: var(--se); white-space: nowrap; }
