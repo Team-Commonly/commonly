@@ -23,12 +23,14 @@ for (const width of [1440, 390]) {
       await route.fulfill({ json: data });
     });
     await page.goto('/v2/agents/byo');
-    const initialReservedHeight = await page.locator('.v2-byo__layout').evaluate((el) =>
-      parseFloat(getComputedStyle(el).paddingBottom) - 40);
+    // The form reserves nothing: only a result can show the bar.
+    expect(await page.locator('.v2-byo__layout').evaluate((el) => parseFloat(getComputedStyle(el).paddingBottom))).toBe(40);
     await page.getByTestId('byo-mode-byo').click();
     await page.getByRole('button', { name: 'Get my connect command', exact: true }).click();
     const result = page.locator('.v2-byo__result');
     await expect(result).toBeVisible();
+    const initialReservedHeight = await page.locator('.v2-byo__layout').evaluate((el) =>
+      parseFloat(getComputedStyle(el).paddingBottom) - 40);
     // Fix the setup OS, independently of the runner's emulated user agent.
     await page.getByRole('button', { name: 'Mac', exact: true }).click();
     // Include commands inside Other ways: checking only the first command
