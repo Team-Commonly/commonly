@@ -11,12 +11,14 @@ jest.mock('../../../models/pg/Message', () => ({
   hasMessageByUserInPod: jest.fn(),
   recentContentByUser: jest.fn(),
 }));
-jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn(), exists: jest.fn() }));
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 
 const AgentFirstContact = require('../../../models/AgentFirstContact');
 const AgentEventService = require('../../../services/agentEventService');
 const Message = require('../../../models/pg/Message');
 const User = require('../../../models/User');
+const Pod = require('../../../models/Pod');
 const { maybeFireFirstContact } = require('../../../services/firstContactService');
 
 const USER_ID = new mongoose.Types.ObjectId().toString();
@@ -50,6 +52,53 @@ describe('firstContactService', () => {
     Message.hasMessageByUserInPod.mockResolvedValue(false);
     Message.recentContentByUser.mockResolvedValue([]);
     User.findById.mockReturnValue({ select: () => ({ lean: async () => ({ timezone: 'UTC' }) }) });
+    User.exists.mockResolvedValue(null);
+    Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ members: [USER_ID] }) }) });
+  });
+
+  // An expert added to a team pod opened with "What would you most like to
+  // understand?", as if the people there had just arrived.
+  describe('a pod with someone else in it', () => {
+    const OTHER_ID = new mongoose.Types.ObjectId().toString();
+    const contentOf = () => AgentEventService.enqueue.mock.calls[0][0].payload.content;
+    const withTeammate = () => {
+      Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ members: [USER_ID, OTHER_ID] }) }) });
+      User.exists.mockResolvedValue({ _id: OTHER_ID });
+    };
+
+    test('the agent tells the team it has arrived, and asks nobody anything', async () => {
+      withTeammate();
+      await expect(maybeFireFirstContact(baseOptions())).resolves.toBe(true);
+      const content = contentOf();
+      expect(content).toContain('a pod where people are already working');
+      expect(content).toContain('Do not welcome anyone');
+      expect(content).toMatch(/Post it top-level in the pod/);
+      expect(content).not.toContain('first impression');
+      expect(content).not.toContain('ONE specific, answerable question');
+      expect(User.exists.mock.calls[0][0].isBot).toEqual({ $ne: true });
+      expect(User.exists.mock.calls[0][0]._id.$in).toEqual([OTHER_ID]);
+    });
+
+    test('other agents in the pod leave it a newcomer greeting', async () => {
+      Pod.findById.mockReturnValue({ select: () => ({ lean: async () => ({ members: [USER_ID, OTHER_ID] }) }) });
+      await maybeFireFirstContact(baseOptions());
+      expect(contentOf()).toContain('ONE specific, answerable question');
+    });
+
+    test('a hosted agent keeps its own greeting and costs no pod read', async () => {
+      withTeammate();
+      await maybeFireFirstContact(baseOptions({ hostedAgentUserId: 'agent-user-1' }));
+      expect(contentOf()).toContain('ONE specific, answerable question');
+      expect(Pod.findById).not.toHaveBeenCalled();
+    });
+
+    test('a failed read still greets, as for a newcomer', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      Pod.findById.mockImplementation(() => { throw new Error('read failed'); });
+      await expect(maybeFireFirstContact(baseOptions())).resolves.toBe(true);
+      warn.mockRestore();
+      expect(contentOf()).toContain('ONE specific, answerable question');
+    });
   });
 
   test('first install creates the durable marker and enqueues first_contact once', async () => {

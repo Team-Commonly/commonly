@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import AgentFirstContact from '../models/AgentFirstContact';
 import Message from '../models/pg/Message';
+import Pod from '../models/Pod';
 import User from '../models/User';
 import AgentEventService from './agentEventService';
 
@@ -31,11 +32,20 @@ const FIRST_CONTACT_CUE =
   'Do NOT list your capabilities. Post a SHORT, '
   + 'warm greeting that ends with exactly ONE specific, answerable question that invites '
   + 'them to reply — something that gets them talking about what they want help with. '
-  + 'One question mark, at the end.'
-  // Launch walk 2026-11-05: a seat attached hours after the person joined
-  // threaded its greeting under their join post, and it read as a late
-  // welcome. The greeting answers no message, so it says where it goes.
-  + ' Post it top-level in the pod: do not set threadRootId or replyToMessageId, and do not reply to any earlier message.';
+  + 'One question mark, at the end.';
+
+// Launch walk 2026-11-05: a seat attached hours after the person joined
+// threaded its greeting under their join post, and it read as a late
+// welcome. The greeting answers no message, so it says where it goes.
+const TOP_LEVEL_CUE =
+  ' Post it top-level in the pod: do not set threadRootId or replyToMessageId, and do not reply to any earlier message.';
+
+// A team pod isn't meeting the agent the way a newcomer is. The D244 experts
+// opened with "What would you most like to understand?" to people mid-work.
+const TEAM_POD_CUE =
+  'You were just added to a pod where people are already working. Post ONE short line saying you are '
+  + 'here and what you are for. Do not welcome anyone, do not treat anyone as a visitor, and do not '
+  + 'ask what they want: if they need you, they will mention you.';
 
 // The greeting's question invites a reply, and an agent that sees only its
 // mentions would never see a plain one. So that greeting says how to reach it.
@@ -51,6 +61,18 @@ const LOW_SIGNAL_REPLY = /^(?:ok|okay|lgtm|yes|no|thanks|thank you|thx|hi|hey|he
 const hasLanguageSignal = (words: string): boolean => (
   /[\p{L}\p{N}]/u.test(words) && !LOW_SIGNAL_REPLY.test(words.trim())
 );
+
+// Bots don't count: a solo workspace holds its person and their agents.
+const hasAnotherPerson = async (podId: Types.ObjectId, userId: Types.ObjectId): Promise<boolean> => {
+  try {
+    const pod = await Pod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
+    const others = (pod?.members || []).filter((member) => String(member) !== String(userId));
+    return others.length > 0 && Boolean(await User.exists({ _id: { $in: others }, isBot: { $ne: true } }));
+  } catch (error) {
+    console.warn('[first-contact] pod members unavailable', (error as Error).message);
+    return false;
+  }
+};
 
 const greetingLanguage = async (userId: Types.ObjectId): Promise<string | null> => {
   let zone = '';
@@ -186,13 +208,16 @@ export async function maybeFireFirstContact({
       : 'A human just added you to this workspace and is seeing you for the first time. '
         + 'This is your one first impression. ';
     const mentionCue = MENTION_HANDLE.test(handle) ? mentionLineCue(handle) : '';
+    const greeting = !hostedAgentUserId && await hasAnotherPerson(safePodId, safeUserId)
+      ? `${TEAM_POD_CUE}${TOP_LEVEL_CUE}`
+      : `${opening}${FIRST_CONTACT_CUE}${TOP_LEVEL_CUE}${languageCue}${mentionCue}`;
     await AgentEventService.enqueue({
       agentName: safeAgentName,
       instanceId: safeInstanceId,
       podId: safePodId,
       type: 'first_contact',
       payload: {
-        content: `${opening}${FIRST_CONTACT_CUE}${languageCue}${mentionCue}`,
+        content: greeting,
         userId: String(safeUserId),
         kind: 'first-contact',
       },
