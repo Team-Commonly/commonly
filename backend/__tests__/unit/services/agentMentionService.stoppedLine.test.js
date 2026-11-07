@@ -21,7 +21,7 @@ jest.mock('../../../models/pg/ThreadUserState', () => ({
 }));
 jest.mock('../../../services/stoppedMentionService', () => ({
   noteStoppedMention: jest.fn(),
-  noteRemovedAgentDm: jest.fn(),
+  noteUnreachableAgentDm: jest.fn(),
 }));
 jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
@@ -36,7 +36,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
-const { noteStoppedMention, noteRemovedAgentDm } = require('../../../services/stoppedMentionService');
+const { noteStoppedMention, noteUnreachableAgentDm } = require('../../../services/stoppedMentionService');
 const { noteNeverConnectedMention, noteOfflineMention } = require('../../../services/neverConnectedMentionService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
@@ -75,7 +75,7 @@ const setup = ({ sender = human, podType = 'chat', members = [human, nova, peer]
   AgentEvent.countDocuments.mockResolvedValue(0);
   AgentEventService.enqueue.mockResolvedValue({});
   noteStoppedMention.mockResolvedValue(true);
-  noteRemovedAgentDm.mockResolvedValue(true);
+  noteUnreachableAgentDm.mockResolvedValue(true);
 };
 
 const mention = ({
@@ -257,7 +257,7 @@ describe('a DM to an agent with no active install left (F270)', () => {
   it('tells the person, where a message used to get a 200 and nothing else', async () => {
     removed();
     const result = await dm();
-    expect(noteRemovedAgentDm.mock.calls[0][0]).toMatchObject({
+    expect(noteUnreachableAgentDm.mock.calls[0][0]).toMatchObject({
       podId: 'pod-1', agentName: 'nova', instanceId: 'default', messageId: '901',
     });
     expect(result.enqueued).toEqual([]);
@@ -272,24 +272,24 @@ describe('a DM to an agent with no active install left (F270)', () => {
       userId: human._id,
       username: human.username,
     });
-    expect(noteRemovedAgentDm.mock.calls[0][0].podId).toBe('pod-1');
+    expect(noteUnreachableAgentDm.mock.calls[0][0].podId).toBe('pod-1');
   });
 
   it('says nothing while the agent is installed somewhere', async () => {
     setup({ podType: 'agent-room', members: [human, nova] });
     await dm();
-    expect(noteRemovedAgentDm).not.toHaveBeenCalled();
+    expect(noteUnreachableAgentDm).not.toHaveBeenCalled();
   });
 
   it('an agent in a DM with another agent hears nothing', async () => {
     removed({ podType: 'agent-dm', sender: peer, members: [peer, nova] });
     await dm(peer);
-    expect(noteRemovedAgentDm).not.toHaveBeenCalled();
+    expect(noteUnreachableAgentDm).not.toHaveBeenCalled();
   });
 
   it('a failed notice does not fail the send', async () => {
     removed();
-    noteRemovedAgentDm.mockRejectedValue(new Error('pg down'));
+    noteUnreachableAgentDm.mockRejectedValue(new Error('pg down'));
     await expect(dm()).resolves.toMatchObject({ enqueued: [] });
   });
 });

@@ -652,6 +652,7 @@
       "agentStopped": "{{name}} is stopped, so it can't answer until its owner starts it.",
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
+      "agentPaused": "{{name}} is paused, so it won't answer this.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Run the connect command shown on its page.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"

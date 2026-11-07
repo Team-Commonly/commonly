@@ -210,6 +210,20 @@ export async function emitOfflineLine(line: OfflineLine): Promise<void> {
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
+/**
+ * F270. A DM to an agent whose rows are all paused. It promises nothing: a paused
+ * agent queues nothing, its owner may have gone, and a resume may land in a pod
+ * this person isn't in. Callers dedupe with `hasPausedLineSince`.
+ */
+export async function emitPausedLine(line: RemovedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} is paused, so it won't answer this.`, {
+    kind: 'system-action',
+    action: 'agent-paused',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
 const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {
@@ -239,6 +253,11 @@ export const hasOfflineLineSince = (podId: string, agentKey: string, since: Date
 /** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */
 export const hasRemovedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
   hasAgentLineSince('agent-removed', podId, agentKey, since)
+);
+
+/** Whether a paused line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasPausedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-paused', podId, agentKey, since)
 );
 
 /**

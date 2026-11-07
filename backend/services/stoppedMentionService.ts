@@ -1,5 +1,5 @@
 import {
-  emitRemovedLine, emitStoppedLine, hasRemovedLineSince, hasStoppedLineSince,
+  emitPausedLine, emitRemovedLine, emitStoppedLine, hasPausedLineSince, hasRemovedLineSince, hasStoppedLineSince,
 } from './systemActionLineService';
 import { hostedStoppedAt } from './hostedEngine';
 import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
@@ -102,12 +102,14 @@ export async function noteStoppedMention({
 
 /**
  * F270. A person wrote in a DM with an agent that has no active install left.
- * Nothing will read the message, so the room says so, once a UTC day. Only when
- * every row is uninstalled: a paused or stale row has an owner who can bring it
- * back, and the caller's exact-match query misses a row with no instanceId or a
- * stored name in another case. The caller checks the sender is a person.
+ * Nothing will read the message and no wake waits for it, so the room says so,
+ * once a UTC day, and says only what every row bears out: removed when they're
+ * all uninstalled, paused when the only others are paused. An error or stale row
+ * stays quiet, and so does an active one the caller's exact-match query missed,
+ * with no instanceId or a stored name in another case. The caller checks the
+ * sender is a person.
  */
-export async function noteRemovedAgentDm({
+export async function noteUnreachableAgentDm({
   podId, agentName: rawAgentName, instanceId, messageId, threadRootId, now = new Date(),
 }: {
   podId: string;
@@ -119,22 +121,24 @@ export async function noteRemovedAgentDm({
 }): Promise<boolean> {
   if (messageId === null) return false;
   const agentName = rawAgentName.toLowerCase();
-  const standing = await AgentInstallation.exists({
+  const rows = {
     ...installationIdentityFilter(agentName, instanceId),
     agentName: { $in: AgentIdentityService.identityNames(agentName) },
-    status: { $ne: 'uninstalled' },
-  }).collation(IDENTITY_COLLATION);
-  if (standing) return false;
+  };
+  if (await AgentInstallation.exists({ ...rows, status: { $nin: ['uninstalled', 'paused'] } })
+    .collation(IDENTITY_COLLATION)) return false;
+  const paused = Boolean(await AgentInstallation.exists({ ...rows, status: 'paused' }).collation(IDENTITY_COLLATION));
   const agent = await findAgent(agentName, instanceId);
   if (!agent) return false;
 
   const agentKey = `${agentName}:${instanceId}`;
-  const flightKey = `removed:${podId}:${agentKey}`;
+  const flightKey = `${paused ? 'paused' : 'removed'}:${podId}:${agentKey}`;
   if (inFlight.has(flightKey)) return false;
   inFlight.add(flightKey);
   try {
-    if (await hasRemovedLineSince(podId, agentKey, startOfUtcDay(now))) return false;
-    await emitRemovedLine({
+    const hasLineSince = paused ? hasPausedLineSince : hasRemovedLineSince;
+    if (await hasLineSince(podId, agentKey, startOfUtcDay(now))) return false;
+    await (paused ? emitPausedLine : emitRemovedLine)({
       podId,
       actorUserId: String(agent._id),
       actorUsername: agent.username || agentName,

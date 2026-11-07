@@ -18,7 +18,7 @@ const line = (action) => ({
 });
 
 it.each([
-  'agent-stopped', 'agent-removed', 'agent-offline', 'agent-not-connected', 'mention-unanswered',
+  'agent-stopped', 'agent-removed', 'agent-paused', 'agent-offline', 'agent-not-connected', 'mention-unanswered',
 ])('leaves %s out of what an agent reads', async (action) => {
   mockListPodMessages.mockResolvedValue([{ id: 'a', content: '@nova hello' }, line(action)]);
   expect((await fetchRecentPodMessages('pod-1', 10)).map((row) => row.id)).toEqual(['a']);

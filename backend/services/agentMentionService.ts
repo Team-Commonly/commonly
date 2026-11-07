@@ -31,12 +31,12 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { noteStoppedMention, noteRemovedAgentDm } = require('./stoppedMentionService') as {
+const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMentionService') as {
   noteStoppedMention: (args: {
     podId: string; agentName: string; instanceId: string;
     messageId: string | null; threadRootId?: string | number | null;
   }) => Promise<boolean>;
-  noteRemovedAgentDm: (args: {
+  noteUnreachableAgentDm: (args: {
     podId: string; agentName: string; instanceId: string;
     messageId: string | null; threadRootId?: string | number | null;
   }) => Promise<boolean>;
@@ -2742,13 +2742,13 @@ const enqueueDmEvent = async ({
     if (!Array.isArray(installations) || installations.length === 0) {
       // F270: nothing reads this room any more. Not awaited, like the line below.
       if (sender?.isBot === false) {
-        noteRemovedAgentDm({
+        noteUnreachableAgentDm({
           podId: String(podId),
           agentName,
           instanceId,
           messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
           threadRootId: resolveThreadRootId(message),
-        }).catch((error: Error) => console.warn('[agent-removed] notice failed:', error?.message));
+        }).catch((error: Error) => console.warn('[agent-unreachable] notice failed:', error?.message));
       }
       continue;
     }
