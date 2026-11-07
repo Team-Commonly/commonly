@@ -1097,8 +1097,11 @@ describe('adoptEnvToken', () => {
     expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://saved.example', token: 'cm_agent_old' });
   });
 
-  test('a saved token that can\'t be checked stands', async () => {
-    const { record, lines } = await adopt(fresh, identity, new Error('socket hang up'));
+  test.each([
+    ['a network failure', new Error('socket hang up')],
+    ['a 403 from in front of the app', Object.assign(new Error('Forbidden'), { status: 403 })],
+  ])('a saved token that can\'t be checked stands: %s', async (_label, failure) => {
+    const { record, lines } = await adopt(fresh, identity, failure);
     expect(record).toBe(saved);
     expect(lines.join()).toContain('could not be checked');
   });

@@ -254,7 +254,9 @@ export const adoptEnvToken = async ({
     await whoIs(record.instanceUrl, record.runtimeToken);
     return keepSaved('differs from the saved token, which still works');
   } catch (err) {
-    if (err?.status !== 401 && err?.status !== 403) {
+    // 401 alone, unlike the poller: every token refusal here is a 401, a 403
+    // comes from something in front of the app, and this one call overwrites.
+    if (err?.status !== 401) {
       return keepSaved(`was not used, because the saved token could not be checked (${err.message})`);
     }
   }
