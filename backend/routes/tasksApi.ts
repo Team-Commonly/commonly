@@ -223,7 +223,7 @@ async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: num
   // Native runtime rows are N-<num>-<agent>-<ts>, and parse to NaN here.
   // Read as numbers: as text, TASK-999 sorts after TASK-1000. Prod has TASK rows
   // with no taskNum, so that field can't order them.
-  const rows = await Task.find({ podId, taskId: /^TASK-/ }).select('taskId -_id').lean() as Array<{ taskId?: string }>;
+  const rows = await Task.find({ podId, taskId: /^TASK-\d+$/ }).select('taskId -_id').lean() as Array<{ taskId?: string }>;
   const lastNum = rows.reduce((max, row) => Math.max(max, parseInt((row.taskId || '').replace('TASK-', ''), 10) || 0), 0);
   const num = lastNum + 1;
   return { taskId: `TASK-${String(num).padStart(3, '0')}`, taskNum: num };

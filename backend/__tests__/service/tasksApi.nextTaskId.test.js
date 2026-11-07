@@ -9,6 +9,7 @@ const Task = require('../../models/Task');
 const { nextTaskId } = require('../../routes/tasksApi');
 
 const POD = '507f1f77bcf86cd799439011';
+const OTHER_POD = '507f1f77bcf86cd799439022';
 const row = (taskId, taskNum) => Task.create({ podId: POD, taskId, taskNum, title: taskId, status: 'done' });
 
 describe('nextTaskId', () => {
@@ -25,18 +26,21 @@ describe('nextTaskId', () => {
   test('counts past 999, where taskId no longer sorts by number', async () => {
     await row('TASK-999', 999);
     await row('TASK-1000', 1000);
+    await Task.create({ podId: OTHER_POD, taskId: 'TASK-5000', taskNum: 5000, title: 'other pod' });
 
     await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-1001', taskNum: 1001 });
   });
 
   test('a TASK row with no taskNum still counts', async () => {
     await Task.collection.insertOne({ podId: new Task.base.Types.ObjectId(POD), taskId: 'TASK-007', title: 'legacy' });
+    await row('TASK-003', 3);
 
     await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-008', taskNum: 8 });
   });
 
   test('a non-numeric TASK id is ignored', async () => {
     await row('TASK-WATCHED', 1);
+    await row('TASK-2000-ARCHIVE', 4);
     await row('TASK-002', 2);
 
     await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-003', taskNum: 3 });
