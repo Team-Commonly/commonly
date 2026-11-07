@@ -5,6 +5,7 @@ import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from
 import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
+import { invalidScheduleField, takesSchedule } from '../../services/agentScheduleService';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
@@ -78,6 +79,12 @@ const settings = (installation: any, podName: string, podType?: string) => {
       && Number(config.heartbeat?.everyMinutes) > 0
       ? Math.max(1, Math.min(1440, Math.trunc(Number(config.heartbeat.everyMinutes)))) : 60,
     hostedHeartbeat: hostedHeartbeatFor(installation),
+    schedule: config.schedule ? {
+      enabled: config.schedule.enabled === true,
+      time: config.schedule.time,
+      timezone: config.schedule.timezone,
+      prompt: config.schedule.prompt,
+    } : null,
   };
 };
 
@@ -236,6 +243,41 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
   } catch (error) {
     console.error('Error saving agent settings:', error);
     return res.status(500).json({ error: 'Failed to save agent settings' });
+  }
+});
+
+router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLimit, auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const invalid = invalidScheduleField(body);
+    if (invalid) return res.status(400).json(invalid);
+    const installation = await AgentInstallation.findOne({
+      agentName: String(req.params.name).toLowerCase(),
+      instanceId: normalizeInstanceId(req.query.instanceId),
+      podId: req.params.podId,
+      status: { $ne: 'uninstalled' },
+    });
+    if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
+    const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
+    if (!canManage(installation, userId, isAdmin)) return res.status(403).json({ error: 'Installer or admin required' });
+    const config = normalizeConfigMap(installation.config) || {};
+    if (!takesSchedule({ ...installation.toObject(), config })) {
+      return res.status(400).json({ code: 'schedule_byo_only', error: 'A schedule is for an agent you run yourself' });
+    }
+    const { enabled, time, timezone, prompt } = body;
+    installation.config = new Map(Object.entries({
+      ...config,
+      schedule: {
+        ...config.schedule, enabled, time, timezone, prompt: prompt.trim(),
+      },
+    }));
+    await installation.save();
+    return res.json({ settings: settings(installation, '') });
+  } catch (error) {
+    console.error('Error saving agent schedule:', error);
+    return res.status(500).json({ error: 'Failed to save agent schedule' });
   }
 });
 

@@ -26,6 +26,9 @@ const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
 const AgentEnsembleService = require('./agentEnsembleService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { dispatchSchedules } = require('./agentScheduleService') as {
+  dispatchSchedules: (now?: Date) => Promise<number>;
+};
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
   buildHeartbeatContent: (heartbeatPodId: unknown) => string;
 };
@@ -1250,7 +1253,8 @@ class SchedulerService {
 
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
     const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
-    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+    const scheduledWakes = await dispatchSchedules(now);
+    return { ...result, enqueued: result.enqueued + unreadWakes + scheduledWakes, skippedByLease: false };
   }
 
   /**
