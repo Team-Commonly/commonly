@@ -56,6 +56,35 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     mockPost.mockResolvedValue({ success: true, message: { id: 'm1' } });
   });
 
+  describe('an agent made on the page', () => {
+    const made = { runtime: { host: 'byo', runtimeType: 'webhook', adapter: 'claude' } };
+    const person = (name) => User.create({ username: name, email: `${name}@people.test`, password: 'not-a-login' });
+    const row = (podId, installedBy) => AgentInstallation.create({
+      agentName: 'shared-agent', instanceId: 'default', podId, version: '1.0.0', installedBy, status: 'active', config: made,
+    });
+    const team = (owner, bot) => Pod.create({ name: `${owner.username} team`, type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
+
+    it('sends its one owner to Connect', async () => {
+      const owner = await person('dana');
+      const bot = await botRow('shared-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+      await row((await team(owner, bot))._id, owner._id);
+
+      await scan({ now: NOW });
+      expect(mockPost.mock.calls[0][0].content).toContain('press Connect');
+    });
+
+    it('keeps two installers on the command: a replacement would be refused', async () => {
+      const [dana, river] = [await person('dana'), await person('river')];
+      const bot = await botRow('shared-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+      await row((await team(dana, bot))._id, dana._id);
+      await row((await team(river, bot))._id, river._id);
+
+      await scan({ now: NOW });
+      expect(mockPost).toHaveBeenCalledTimes(2);
+      mockPost.mock.calls.forEach(([post]) => expect(post.content).toContain('commonly agent run shared-agent'));
+    });
+  });
+
   it('nudges the owner, not a guest whose room row names them', async () => {
     const owner = await User.create({ username: 'dana', email: 'dana@people.test', password: 'not-a-login' });
     const guest = await User.create({ username: 'river', email: 'river@people.test', password: 'not-a-login' });

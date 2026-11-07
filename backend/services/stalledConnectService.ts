@@ -1,6 +1,6 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
-import { deriveAgentState } from './agentStateService';
-import { isGuestOfIdentity } from './runtimeIdentityOwnership';
+import { deriveAgentState, keyOnlyOnPage } from './agentStateService';
+import { isGuestOfIdentity, ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
   composeStalledConnectMcpResolution,
@@ -119,7 +119,7 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
-type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; createdAt?: Date }>;
+type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
 
 /**
  * The latest MCP-client call, at or after `since`, on a token issued at or
@@ -142,6 +142,13 @@ const latestMcpSeenSince = (tokenLists: BotTokens[], since: Date): Date | null =
 };
 
 
+// Any call on a token still on the row. Settings stops offering Connect once it
+// sees one, whatever the token's age, and replacing that key could cut off
+// whatever made the call. Revoking a token removes its row.
+const anyCallRecorded = (tokenLists: BotTokens[]): boolean => tokenLists.some(
+  (list) => (list || []).some((row) => row?.lastUsedAt),
+);
+
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
 
 /**
@@ -158,6 +165,8 @@ const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${i
  */
 const botTokensForMany = async (
   pairs: Array<{ agentName: string; instanceId: string }>,
+  // Filled when given: a seat on a machine starts there, not from the page's Connect.
+  machines?: Map<string, unknown>,
 ): Promise<Map<string, BotTokens>> => {
   const byKey = new Map<string, BotTokens>();
   if (!pairs.length) return byKey;
@@ -171,12 +180,18 @@ const botTokensForMany = async (
       'botMetadata.instanceId': p.instanceId,
     })),
   }).select(
-    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt '
-      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.createdAt',
-  ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
+    'botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
+      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt',
+  ).lean() as Array<{
+    botMetadata?: { agentName?: string; instanceId?: string; machineId?: unknown };
+    agentRuntimeTokens?: BotTokens;
+  }>;
   for (const row of rows) {
     const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
-    if (!byKey.has(key)) byKey.set(key, row.agentRuntimeTokens || []);
+    if (!byKey.has(key)) {
+      byKey.set(key, row.agentRuntimeTokens || []);
+      machines?.set(key, row.botMetadata?.machineId);
+    }
   }
   return byKey;
 };
@@ -249,7 +264,8 @@ export const scan = async ({
     agentName: String(install.agentName || '').toLowerCase(),
     instanceId: String(install.instanceId || 'default'),
   });
-  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
+  const machinesBySeat = new Map<string, unknown>();
+  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf), machinesBySeat);
   const explained = await explainedTokens((candidates as Array<Record<string, any>>).map((row) => seatOf(row).agentName));
   const activeRows = new Set((candidates as Array<Record<string, any>>).map((row) => String(row._id)));
 
@@ -294,8 +310,23 @@ export const scan = async ({
       result.skippedSameToken += 1;
       continue;
     }
+    // Connect only for its one owner: anyone else's replacement is refused.
+    const connectable = keyOnlyOnPage(install as any, machinesBySeat.get(botKey(agentName, instanceId)))
+      && !anyCallRecorded([install.runtimeTokens || [], userTokens])
+      && (await ownsRuntimeIdentity(install.installedBy, agentName, instanceId.toLowerCase())
+        .catch((error: Error) => {
+          console.warn('Could not read the stalled agent\'s owner:', error.message);
+          return { owned: false };
+        })).owned;
     const delivered = await nudgeOnce({
-      install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
+      install,
+      derived,
+      issuedAt,
+      tokenSource: source,
+      mcpConnected,
+      connectable,
+      now,
+      result,
     });
     if (delivered) explained.set(told, { installationId: String(install._id), podId: String(install.podId) });
   }
@@ -344,13 +375,14 @@ const explainedTokens = async (agentNames: string[]): Promise<Map<string, Explai
 };
 
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, mcpConnected, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, connectable, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
   mcpConnected: boolean;
+  connectable: boolean;
   now: Date;
   result: StalledScanResult;
 }): Promise<boolean> => {
@@ -416,6 +448,7 @@ const nudgeOnce = async ({
     displayName: derived.displayName,
     handle,
     fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
+    connectable,
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
