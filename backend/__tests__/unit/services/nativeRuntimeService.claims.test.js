@@ -300,7 +300,7 @@ describe('nativeRuntimeService claim-before-act (ADR-018 D3)', () => {
         status: 200, headers: {}, data: { choices: [{ message: { role: 'assistant', content: 'Heartbeat note.' } }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } },
       });
 
-      await runAgent(installation, { type: 'heartbeat', eventId: 'evt-3', payload: {} });
+      await runAgent(installation, { type: 'pod.join', eventId: 'evt-3', payload: {} });
 
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({ content: 'Heartbeat note.' }));
       expect(AgentMessageService.postMessage.mock.calls[0][0].answeringMessageId).toBeUndefined();

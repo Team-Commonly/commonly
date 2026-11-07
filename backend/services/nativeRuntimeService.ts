@@ -1953,10 +1953,10 @@ export function buildUserMessage(
   const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
 
   // TASK-779: a heartbeat always ends with the native prompt, which names
-  // NO_REPLY. A hosted turn posts any final text that is not a silent
-  // sentinel, so "otherwise do nothing" was no instruction: Triage's
+  // NO_REPLY. A hosted turn posted any final text that was not a silent
+  // sentinel then, so "otherwise do nothing" was no instruction: Triage's
   // 22:28:01Z heartbeat called no post tool, and its prose posted ten seconds
-  // later. The scheduler's cue never reached that prompt anyway, because it
+  // later. F304 stopped a heartbeat's final text posting at all. The scheduler's cue never reached that prompt anyway, because it
   // rides in payload.content and won as the inline cue. Its seat lines
   // ("Read your HEARTBEAT.md", "HEARTBEAT_OK is a return value") are for
   // agents with that file, so they are cut; its cycle frame names a tool
@@ -1968,7 +1968,8 @@ export function buildUserMessage(
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
-      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+      + 'If nothing needs a post, reply with exactly NO_REPLY. Only commonly_post_message reaches the pod; '
+      + 'your final text never does.'
     );
     const kept = inlineCue.split('\n')
       .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
@@ -2062,6 +2063,9 @@ function servedModelOf(
     ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}),
   };
 }
+
+// The last line of a final text is nothing but the sentinel.
+const CLOSES_ON_BARE_SENTINEL = /(?:^|\n)[ \t]*NO_REPLY[ \t]*$/;
 
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
   if (raw === 'chat.mention' || raw === 'thread.mention' || raw === 'mention') return 'mention';
@@ -3219,6 +3223,14 @@ export async function runAgent(
       run.totalTokens += Number(usage.total_tokens || 0);
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
+      // F304: a heartbeat's final text is reasoning, however it ends. In 30 days
+      // 96 ended that way: 17 closed on NO_REPLY, which lost the sentinel as
+      // leakage and posted the rest, and a keyword read (not a hand check) puts
+      // the other 79 as narration too. A heartbeat posts through the tool. Any
+      // other wake with no person asking gets the closing sentinel read as the
+      // decline it is.
+      const declinedInText = !personAsked
+        && (trigger.type === 'heartbeat' || CLOSES_ON_BARE_SENTINEL.test(textOut));
       // The fallback post is a post like any other: after an external result,
       // re-read the bridge before letting it through. A silent reply (NO_REPLY)
       // is a decline, not a held-back answer: it would post nothing anyway.
@@ -3232,7 +3244,7 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
-      if (textOut && !postedViaTool && !fallbackBlocked) {
+      if (textOut && !postedViaTool && !fallbackBlocked && !declinedInText) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
         try {

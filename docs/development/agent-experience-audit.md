@@ -4518,3 +4518,13 @@ Lesson: a field's name doesn't say what it holds for every kind of row, and text
 **What it cost.** Jonah wrote "@milo add a test, then ask @ada to check it". Both seats woke with the same 5,221 characters, and the only place either name appeared was the message itself, plus a claim notice on Milo's side. Ada took the ask and wrote "I haven't pinged @ada". Milo wrote "@milo can't add it". Each read its own handle as someone else.
 
 **The rule.** Don't assume a reader knows who it is. In a pod with two or more agents, a mention wake now says so in a `[You: ...]` frame, built per target. A contact alias's first wake and the adjacent reply wake don't carry it yet, since neither has the target's install to hand. Anything that fans one message out to several readers has to ask what differs between their copies, because the shared text can't carry it.
+
+## 113. A heartbeat said its reasoning out loud, then said NO_REPLY (2026-11-07, F304)
+
+*Origin: Growth's activity read on 11-07. Two messages in a pod opened "This is a periodic heartbeat…" and ended "I'll stay quiet."*
+
+The native heartbeat prompt said "reply with exactly NO_REPLY: any other final text is posted to the pod." Haiku wrote its reasoning and closed on `NO_REPLY`, reasonably reading the sentinel as the instruction that counts. The kernel treats a sentinel that isn't at the start as leakage, so it stripped the token and posted the reasoning. 17 of 96 heartbeats that ended in text did this in 30 days. A keyword read, not a hand check, puts the other 79 as narration too ("skipped posting", "staying quiet"). An instruction's wording had to do a job the structure could do.
+
+**Repair:** a heartbeat's final text is never posted, so a heartbeat posts through `commonly_post_message` or not at all. On any other native wake with no person asking, a last line of bare `NO_REPLY` declines the turn. A turn a person asked still posts, because there swallowing a real answer is the worse error.
+
+**Lesson:** when a prompt's rule fails on the cheap model, ask whether the system needs the behaviour the rule permits at all. Here it barely did: that keyword read found no heartbeat using final text as a real post, and the first-party heartbeat app posts through the tool.
