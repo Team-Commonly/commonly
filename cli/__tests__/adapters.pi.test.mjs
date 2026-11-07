@@ -406,10 +406,56 @@ describe('spawn', () => {
       await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
     });
 
+    // pi prints this on every fresh session. It isn't why the turn failed.
+    const startupWarning = "Warning: No project session found with id 's1'; creating a new session with that id.";
+    test.each([
+      [429, '429: {"message":"Budget has been exceeded"}', /upstream refused 429: Budget has been exceeded/],
+      [401, '401: Invalid key', /upstream refused 401/],
+    ])('a refused %s names the refusal, not the startup warning', async (status, finalError, wording) => {
+      const refused = event({
+        type: 'auto_retry_end', success: false, attempt: 3, finalError,
+      });
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', finalError) + ended + refused, stderr: startupWarning, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBe(status);
+      expect(err.message).toMatch(wording);
+      expect(err.message).not.toMatch(/No project session/);
+    });
+    test('stderr cannot name the status of a refused turn', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'upstream refused') + ended + refused429,
+        stderr: 'mcp: code 500 from server',
+        code: 0,
+      });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
+    });
+    test('an interim message then a failure with no status still fails the turn', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'fetch failed') + ended, stderr: startupWarning, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.message).toMatch(/stopped before it finished/);
+      expect(err.message).not.toMatch(/No project session/);
+    });
+    // In pi's own order: the failed attempt, a retry, then the answer.
+    const failedAttempt = stopped('error', '429: {"message":"Budget has been exceeded"}')
+      + event({ type: 'agent_end', messages: [], willRetry: true })
+      + event({ type: 'auto_retry_start', attempt: 1 });
     test('a refusal pi recovered from still posts the answer it finished on', async () => {
-      const { impl } = makeSpawnImpl({ stdout: refused429 + final('done') + ended, code: 0 });
+      const { impl } = makeSpawnImpl({
+        stdout: failedAttempt + final('done') + event({ type: 'auto_retry_end', success: true }) + ended, code: 0,
+      });
       const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
       expect(result.text).toBe('done');
+    });
+    test('a recovered refusal does not fail an answer cut off at the token cap', async () => {
+      const cutOff = event({
+        type: 'message_end', message: { role: 'assistant', stopReason: 'length', content: [{ type: 'text', text: 'most of it' }] },
+      });
+      const { impl } = makeSpawnImpl({ stdout: failedAttempt + cutOff + ended, code: 0 });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('most of it');
     });
 
     test('a clean exit still posts its reply without agent_end', async () => {

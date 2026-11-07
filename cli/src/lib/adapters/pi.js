@@ -56,6 +56,7 @@ import {
 import { fileURLToPath } from 'url';
 import {
   adapterFailure,
+  describeUpstreamRefusal,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
@@ -549,22 +550,27 @@ export const extractReply = (stdout) => {
     if (event?.type === 'agent_end') finished = event.willRetry !== true && lastStop === 'stop';
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
-  return { text, sawAssistant, finished, errors };
+  return { text, sawAssistant, finished, lastStop, errors };
 };
 
 // A turn that printed an interim message and then ended without finishing. A
 // crash keeps its cause, so a quota line in stderr or a refusal on the stream
 // still classifies. A signal (143, 129, or a null code) has neither: stderr then
 // holds pi's startup warnings, and a refusal on the stream may be one pi was
-// recovering from, like an overflow's 400.
+// recovering from, like an overflow's 400. A clean exit that ended on an error
+// has only the stream: its stderr is those warnings too, and the refusal stands.
 const stoppedTurnFailure = (reply, {
   code, signal, stderr, credentials,
 }) => {
   const killed = Boolean(signal) || code === 143 || code === 129;
+  const cleanExit = code === 0;
   const upstream = killed ? null : reply.upstream;
   const failure = adapterFailure(
     'pi',
-    reply.errors.join(' | ') || (killed ? '' : stderr.trim().slice(-600)) || upstream?.detail
+    reply.errors.join(' | ')
+      || (cleanExit ? describeUpstreamRefusal(upstream) : '')
+      || (killed || cleanExit ? '' : stderr.trim().slice(-600))
+      || upstream?.detail
       || 'the turn stopped before it finished',
     { credentials, exitCode: code, limit: 600 },
   );
@@ -666,8 +672,9 @@ const runPi = ({
       return reject(new Error(`pi exited ${code}: ${tail}`));
     }
     // A refused turn exits 0 too, so here the stream is what says the text was
-    // interim. Posting it would answer with half a turn (F258).
-    if (code === 0 && reply.sawAssistant && !reply.finished && reply.upstream) {
+    // interim. Posting it would answer with half a turn (F258). The last stop
+    // decides, not `reply.upstream`, which outlives a refusal pi recovered from.
+    if (code === 0 && reply.sawAssistant && !reply.finished && reply.lastStop === 'error') {
       return reject(stoppedTurnFailure(reply, {
         code, signal, stderr, credentials,
       }));
