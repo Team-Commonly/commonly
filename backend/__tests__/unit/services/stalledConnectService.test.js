@@ -958,8 +958,9 @@ describe('keeping the forward promise', () => {
       lean: () => Promise.resolve(install({ status: 'uninstalled' })),
     });
 
-    await scan({ now: NOW });
+    const result = await scan({ now: NOW });
 
+    expect(result.resolved).toHaveLength(1);
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate.mock.calls[0][1].$set.status).toBe('resolved');
     // Its "needs you" row goes too, and not as acted on.

@@ -504,6 +504,9 @@ const resolveConnected = async ({
         { _id: ep._id, status: 'open' },
         { $set: { status: 'resolved', resolvedAt: now } },
       );
+      result.resolved.push({
+        episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
+      });
       return;
     }
     const userTokens = tokensBySeat.get(botKey(String(ep.agentName), String(ep.instanceId))) || [];
