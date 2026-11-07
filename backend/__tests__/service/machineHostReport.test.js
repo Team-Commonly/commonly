@@ -263,15 +263,14 @@ describe('a machine records when one of its agents first answered a person', () 
     expect((await row(machine._id)).firstAnswerAt).toBeNull();
   });
 
-  // The unanswered line has no room to go to here. The answer still happened.
-  it('stamps on a comment on a post with no pod', async () => {
+  // No messageId: on a comment wake that field would name a Postgres chat row.
+  it('stamps on a comment on a post in a pod', async () => {
     const { machine, seat } = await setup();
     const waiting = await person();
     await ack(seat, await deliveredEvent(seat, 'thread.mention', {
-      messageId: '49',
       content: 'a comment',
       userId: String(waiting._id),
-      thread: { postId: 'post-1', postPodId: null },
+      thread: { postId: 'post-1', postPodId: String(seat.podId), commentId: 'comment-1', commentText: 'a comment' },
     }), 'posted');
     expect((await row(machine._id)).firstAnswerAt).toBeInstanceOf(Date);
   });
