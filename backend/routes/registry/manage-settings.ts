@@ -5,7 +5,7 @@ import { hostedCapsForOwner, isHostedInstallation, userRunCeilingForOwner } from
 import { HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, hostedHeartbeatRunsPerDay, hostedRunsNative } from '../../services/hostedEngine';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
 import { HARNESS_CATALOG } from '../../config/harnessCatalog';
-import { invalidScheduleField, takesSchedule } from '../../services/agentScheduleService';
+import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/agentScheduleService';
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
@@ -276,6 +276,9 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     if (!ownership.owned && !onlyStopping) {
       return res.status(403).json({ code: ownership.failure, error: 'Only the agent\'s owner can schedule it' });
     }
+    if (isBareStop(body) && !config.schedule) {
+      return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
+    }
     // Stopping one needs no seat in the pod, starting one does, admins included.
     if (body.enabled && !(await Pod.exists({ _id: installation.podId, members: userId }))) {
       return res.status(403).json({ code: 'not_pod_member', error: 'Join this pod to schedule an agent in it' });
@@ -285,12 +288,16 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     }
     // Field by field, so a save can't overwrite the dispatcher's claim on the day.
     const { enabled, time, timezone, prompt } = body;
-    const fields = onlyStopping ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
+    const stopping = onlyStopping || isBareStop(body);
+    const fields = stopping ? { enabled } : { enabled, time, timezone, prompt: prompt.trim() };
     const saved = await AgentInstallation.findOneAndUpdate(
-      { _id: installation._id },
+      // A reinstall can clear the schedule after the read, and a stop on its own
+      // must not leave a schedule of just `enabled` behind.
+      { _id: installation._id, ...(stopping ? { 'config.schedule': { $exists: true } } : {}) },
       { $set: Object.fromEntries(Object.entries(fields).map(([key, value]) => [`config.schedule.${key}`, value])) },
       { new: true },
     );
+    if (!saved) return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
     return res.json({ settings: settings(saved, '') });
   } catch (error) {
     console.error('Error saving agent schedule:', error);
