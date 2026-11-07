@@ -2621,10 +2621,15 @@ export const performRun = ({
   // past its duplicate guard, since a second cut-off has no open ask to carry it.
   // A turn only agents woke gets no line: "ask me again" isn't for them, and in
   // an agent-dm the line would wake the peer into a paid turn.
-  const noticeCutOff = async (lostEvents) => {
+  // F279: an event let go after three failures counts too, from the first
+  // attempt's snapshot, because the server's retry is 10 to 20 minutes off and
+  // the kernel skips its own line once the agent has posted. It may come back
+  // and fail again, so it hears this once.
+  const noticeCutOff = async (lostEvents, { released = [], since = null } = {}) => {
     const turnArgs = failedTurn;
     failedTurn = null;
-    const waiting = lostEvents.filter((event) => event.deliveryMode !== 'digest'
+    const waiting = [...lostEvents, ...released].filter((event) => event.deliveryMode !== 'digest'
+      && !cutOffTold.has(String(event._id))
       && (someoneIsWaiting(event) || PERSON_WAITING_EVENT_TYPES.has(event.type)));
     if (!turnArgs || turnArgs.trigger === 'agent' || waiting.length === 0) return;
     const { eventPodId } = turnArgs;
@@ -2636,8 +2641,9 @@ export const performRun = ({
         // prove this seat replied, and this has no own-post check.
         // It stands on the prompt instead: a person's direct @ isn't offered
         // silence, so their item checkpoints only after a reply. That holds only
-        // for a known person, which an 'unknown' comment isn't.
-        if (turnArgs.trigger !== 'human') return;
+        // for a known person, which an 'unknown' comment isn't, and for an item
+        // that checkpointed, which a released one didn't.
+        if (turnArgs.trigger !== 'human' || !lostEvents.includes(waiting[0])) return;
         delivery = await deliverCommentReply({
           client, ...target, text: CUT_OFF_NOTICE, onlyIfUnanswered: false,
         });
@@ -2645,7 +2651,7 @@ export const performRun = ({
         const tail = turnArgs.preSpawnIds ? await turnArgs.snapshotMessages(50) : null;
         // Nothing of this seat's in the pod means no half answer to explain: a
         // deliberate silence checkpoints too, and a requeue takes a row as well.
-        const ownPost = tail && newestOwnPostSince(tail, turnArgs.preSpawnIds);
+        const ownPost = tail && newestOwnPostSince(tail, since || turnArgs.preSpawnIds);
         if (!ownPost) return;
         delivery = await deliverChatReply({
           client,
@@ -2660,7 +2666,10 @@ export const performRun = ({
       if (delivery.skipped || delivery.refused) {
         log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: `
           + `${delivery.reason || 'the notice was not posted'}`);
-      } else log(`[inbox.batch] told pod ${eventPodId} this agent was cut off before it finished`);
+      } else {
+        waiting.forEach((event) => cutOffTold.add(String(event._id)));
+        log(`[inbox.batch] told pod ${eventPodId} this agent was cut off before it finished`);
+      }
     } catch (noticeError) {
       log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: ${noticeError.message}`);
     }
@@ -3460,6 +3469,9 @@ export const performRun = ({
   let tickUnsettled = [];
   // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
   const heldRetryFailures = new Map();
+  // Event id to the pod ids seen before its first failed attempt, for noticeCutOff.
+  const heldRetrySnapshots = new Map();
+  const cutOffTold = new Set();
   // eventId → turns passed over, for PAST_CAP_MAX_CARRIES.
   const pastCapCarries = new Map();
   // The current batch's items past the cap. Kept out here because the tick needs
@@ -3514,6 +3526,7 @@ export const performRun = ({
   // tick adds to the carry, never replaces it.
   const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
     const released = [];
+    let since = null;
     const carry = [];
     const seen = new Set();
     for (const event of failedEvents) {
@@ -3523,8 +3536,11 @@ export const performRun = ({
         const failures = (heldRetryFailures.get(id) || 0) + 1;
         // A stop wins over the local limit: the sweep would make this event
         // wait 10–20 minutes, and the server's ceiling bounds a hand-back.
-        if (running && failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
-        else {
+        if (!heldRetrySnapshots.has(id)) heldRetrySnapshots.set(id, failedTurn?.preSpawnIds || null);
+        if (running && failures >= HELD_RETRY_MAX_FAILURES) {
+          released.push(event);
+          since = since || heldRetrySnapshots.get(id);
+        } else {
           heldRetryFailures.set(id, failures);
           carry.push(event);
         }
@@ -3565,6 +3581,7 @@ export const performRun = ({
     if (!running) {
       heldRetry = [...heldRetry, ...carry];
       heldRetryFailures.clear();
+      heldRetrySnapshots.clear();
       pastCapCarries.clear();
       const confirmed = await renewHeldDeliveries(failedEvents);
       return {
@@ -3578,7 +3595,7 @@ export const performRun = ({
     const dropped = carry.filter((event) => !stillHeld(event, confirmed));
     heldRetry = [...heldRetry, ...held];
     const heldIds = new Set(heldRetry.map((event) => String(event._id)));
-    for (const counts of [heldRetryFailures, pastCapCarries]) {
+    for (const counts of [heldRetryFailures, heldRetrySnapshots, pastCapCarries]) {
       for (const id of [...counts.keys()]) {
         if (!heldIds.has(id)) counts.delete(id);
       }
@@ -3590,7 +3607,7 @@ export const performRun = ({
       );
     }
     return {
-      held, released, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
+      held, released, since, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
     };
   };
 
@@ -3648,6 +3665,7 @@ export const performRun = ({
     heldGreeting = [];
     tickUnsettled = [];
     heldRetryFailures.clear();
+    heldRetrySnapshots.clear();
     clearHeldRenewal();
     return carry.length ? handBackDeliveries(carry, 'stop') : Promise.resolve([]);
   };
@@ -4337,7 +4355,7 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
-            await noticeCutOff(hold.lost);
+            await noticeCutOff(hold.lost, { released: hold.released, since: hold.since });
             await noticeCantAnswer(err, [...failedEvents, ...untriedAfter(groupIndex)]);
           };
           let batch;

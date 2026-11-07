@@ -122,6 +122,8 @@ const fakeServer = ({
   createClient.mockReturnValue({ get, post });
   return {
     acks, released, wrapperPosts, comments,
+    // The server's requeue putting an event back on the next poll.
+    deliver: (page) => queue.push(page),
     // What a child does through commonly_post_message.
     childPosts: (id, extra = {}) => tail.push(seatSaid(id, extra)),
     somebodyPosts: (id, extra = {}) => tail.push(personSaid(id, extra)),
@@ -176,6 +178,85 @@ const runToTheEnd = async (spawn) => {
   run.handle.stop();
   return run;
 };
+
+// F279: three failures hand the event to the server's requeue, 10 to 20 minutes
+// away, so this is the first the person hears after part of an answer.
+describe('a third failure on an answer already started', () => {
+  const fireRetries = async (run, times) => {
+    for (let i = 0; i < times; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await run.scheduled.pop().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+  };
+
+  test('leaves one line, even if the part came from the first attempt', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-three')]] });
+    let attempt = 0;
+    const spawn = jest.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 1);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(noticesIn(server)).toEqual([]);
+      await fireRetries(run, 1);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(noticesIn(server)).toEqual([{ content: CUT_OFF_NOTICE }]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says nothing when no attempt posted', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-none')]] });
+    const spawn = jest.fn(async () => { throw killed(); });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says it once when the requeued event fails three more times', async () => {
+    const event = makeEvent('evt-again');
+    const server = fakeServer({ pages: [[event]] });
+    const spawn = jest.fn(async () => {
+      server.childPosts(`part-${spawn.mock.calls.length}`);
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(noticesIn(server)).toHaveLength(1);
+      server.deliver([event]);
+      await fireRetries(run, 3);
+      expect(spawn).toHaveBeenCalledTimes(6);
+      expect(noticesIn(server)).toHaveLength(1);
+    } finally { run.handle.stop(); }
+  });
+
+  test('leaves no comment, because a comment read cannot show a reply', async () => {
+    const server = fakeServer({ pages: [[commentEvent('evt-comment')]] });
+    const spawn = jest.fn(async () => {
+      server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.comments).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+});
 
 describe('a turn killed after it posted and checkpointed', () => {
   test('leaves one plain line in the pod, and is not retried', async () => {
