@@ -317,7 +317,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                     ? t('approvalCard.toolCall.unavailable')
                     : t('approvalCard.toolCall.loading')}
               </div>
-            ) : (
+            ) : isOwner ? null : (
               <div className="v2-approval__pitch" data-testid="approval-tool-call-owner-only">
                 {t('approvalCard.toolCall.ownerOnly')}
               </div>

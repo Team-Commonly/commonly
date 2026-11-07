@@ -481,6 +481,35 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByTestId('approval-tool-call-owner-only')).toHaveTextContent(en.approvalCard.toolCall.ownerOnly);
   });
 
+  test('a decided card does not tell its own owner the arguments are for the owner', () => {
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-3',
+      status: 'approved',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      toolCall: { tool: 'linear.save_comment' },
+      summary: 'Comment on the issue',
+    });
+
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('linear.save_comment');
+    expect(screen.queryByTestId('approval-tool-call-owner-only')).not.toBeInTheDocument();
+  });
+
+  test('a decided card still tells anyone else the arguments are the owner\'s', () => {
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-4',
+      status: 'approved',
+      ownerUserId: 'another-user',
+      actionType: 'tool_call',
+      toolCall: { tool: 'linear.save_comment' },
+      summary: 'Comment on the issue',
+    });
+
+    expect(screen.getByTestId('approval-tool-call-owner-only')).toHaveTextContent(en.approvalCard.toolCall.ownerOnly);
+  });
+
   test('a failed args fetch disables Approve while leaving Decline available', async () => {
     mockGet.mockRejectedValue(new Error('offline'));
     renderCard({
