@@ -1,5 +1,5 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
-import { deriveAgentState } from './agentStateService';
+import { deriveAgentState, offersConnect } from './agentStateService';
 import { isGuestOfIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
@@ -158,6 +158,8 @@ const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${i
  */
 const botTokensForMany = async (
   pairs: Array<{ agentName: string; instanceId: string }>,
+  // Filled when given: a seat on a machine starts there, not from the page's Connect.
+  machines?: Map<string, unknown>,
 ): Promise<Map<string, BotTokens>> => {
   const byKey = new Map<string, BotTokens>();
   if (!pairs.length) return byKey;
@@ -171,12 +173,18 @@ const botTokensForMany = async (
       'botMetadata.instanceId': p.instanceId,
     })),
   }).select(
-    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt '
+    'botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
       + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.createdAt',
-  ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
+  ).lean() as Array<{
+    botMetadata?: { agentName?: string; instanceId?: string; machineId?: unknown };
+    agentRuntimeTokens?: BotTokens;
+  }>;
   for (const row of rows) {
     const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
-    if (!byKey.has(key)) byKey.set(key, row.agentRuntimeTokens || []);
+    if (!byKey.has(key)) {
+      byKey.set(key, row.agentRuntimeTokens || []);
+      machines?.set(key, row.botMetadata?.machineId);
+    }
   }
   return byKey;
 };
@@ -249,7 +257,8 @@ export const scan = async ({
     agentName: String(install.agentName || '').toLowerCase(),
     instanceId: String(install.instanceId || 'default'),
   });
-  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
+  const machinesBySeat = new Map<string, unknown>();
+  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf), machinesBySeat);
   const explained = await explainedTokens((candidates as Array<Record<string, any>>).map((row) => seatOf(row).agentName));
   const activeRows = new Set((candidates as Array<Record<string, any>>).map((row) => String(row._id)));
 
@@ -295,7 +304,14 @@ export const scan = async ({
       continue;
     }
     const delivered = await nudgeOnce({
-      install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
+      install,
+      derived,
+      issuedAt,
+      tokenSource: source,
+      mcpConnected,
+      machineId: machinesBySeat.get(botKey(agentName, instanceId)),
+      now,
+      result,
     });
     if (delivered) explained.set(told, { installationId: String(install._id), podId: String(install.podId) });
   }
@@ -344,13 +360,14 @@ const explainedTokens = async (agentNames: string[]): Promise<Map<string, Explai
 };
 
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, mcpConnected, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, machineId, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
   mcpConnected: boolean;
+  machineId?: unknown;
   now: Date;
   result: StalledScanResult;
 }): Promise<boolean> => {
@@ -416,6 +433,7 @@ const nudgeOnce = async ({
     displayName: derived.displayName,
     handle,
     fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
+    connectable: offersConnect(install as any, machineId),
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
