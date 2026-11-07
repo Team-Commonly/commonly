@@ -9,6 +9,7 @@ const { resolveAgentDisplayLabel } = require('../../services/agentIdentityServic
 const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const { PLACEHOLDER_AGENT_DESCRIPTION } = require('../../services/agentInstallationIdentity');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -339,6 +340,7 @@ const composeInstallIntro = ({
   // the name.
   const trimmed = String(blurb || '').trim().replace(/\s+/g, ' ');
   const meaningless = !trimmed
+    || trimmed === PLACEHOLDER_AGENT_DESCRIPTION
     || trimmed.toLowerCase() === String(displayName).toLowerCase();
   const lead = meaningless
     ? `Hi all — I'm ${displayName}, just joined the pod.`

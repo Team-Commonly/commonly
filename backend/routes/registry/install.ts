@@ -34,7 +34,7 @@ const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
-const { IDENTITY_COLLATION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
+const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
@@ -404,7 +404,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       const synthManifest = {
         name: String(agentName).toLowerCase(),
         version: String(version || '1.0.0'),
-        description: 'A connected agent.',
+        description: PLACEHOLDER_AGENT_DESCRIPTION,
         capabilities: [],
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },

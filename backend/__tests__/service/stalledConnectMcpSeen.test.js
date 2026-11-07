@@ -74,6 +74,96 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     expect(result.skippedGuest).toBe(1);
   });
 
+  it('tells one person about one token once, across their pod and their room', async () => {
+    const owner = await User.create({ username: 'ori', email: 'ori@people.test', password: 'not-a-login' });
+    const bot = await botRow('ori-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    const row = (podId) => AgentInstallation.create({
+      agentName: 'ori-agent', instanceId: 'default', podId, version: '1.0.0', installedBy: owner._id, status: 'active',
+      config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    });
+    const team = await Pod.create({ name: 'Team', type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
+    const room = await Pod.create({ name: 'Ori agent', type: 'agent-room', createdBy: owner._id, members: [owner._id, bot._id] });
+    await row(team._id);
+    await row(room._id);
+
+    const first = await scan({ now: NOW });
+    expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    expect(first.skippedSameToken).toBe(1);
+
+    await scan({ now: NOW });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(await StalledConnectEpisode.countDocuments({})).toBe(1);
+  });
+
+  describe('a sibling row still speaks when the line did not reach them', () => {
+    let owner;
+    let team;
+    let room;
+    const row = (podId) => AgentInstallation.create({
+      agentName: 'sol-agent', instanceId: 'default', podId, version: '1.0.0', installedBy: owner._id, status: 'active',
+      config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    });
+    const postedTo = () => mockPost.mock.calls.map(([post]) => post.podId);
+
+    beforeEach(async () => {
+      owner = await User.create({ username: 'sol', email: 'sol@people.test', password: 'not-a-login' });
+      const bot = await botRow('sol-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+      team = await Pod.create({ name: 'Team', type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
+      room = await Pod.create({ name: 'Sol agent', type: 'agent-room', createdBy: owner._id, members: [owner._id, bot._id] });
+      await row(team._id);
+      await row(room._id);
+    });
+
+    it('the first post failed', async () => {
+      mockPost.mockRejectedValueOnce(new Error('pod_not_found'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await scan({ now: NOW });
+      warn.mockRestore();
+      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
+    });
+
+    it('the post was declined', async () => {
+      mockPost.mockResolvedValueOnce({ success: true, skipped: true });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await scan({ now: NOW });
+      warn.mockRestore();
+      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
+    });
+
+    it('the row that heard it was uninstalled', async () => {
+      // A second team pod: with only a room left, the owner reads as a guest.
+      const other = await Pod.create({ name: 'Other', type: 'chat', createdBy: owner._id, members: [owner._id] });
+      await AgentInstallation.updateOne({ podId: room._id }, { $set: { status: 'uninstalled' } });
+      await row(other._id);
+      await scan({ now: NOW });
+      await AgentInstallation.updateOne({ podId: team._id }, { $set: { status: 'uninstalled' } });
+      await scan({ now: NOW });
+      expect(postedTo()).toEqual([String(team._id), String(other._id)]);
+    });
+
+    it('they have left the pod that heard it', async () => {
+      await scan({ now: NOW });
+      await Pod.updateOne({ _id: team._id }, { $pull: { members: owner._id } });
+      await scan({ now: NOW });
+      expect(postedTo()).toEqual([String(team._id), String(room._id)]);
+    });
+  });
+
+  it('a reissued token earns one more line', async () => {
+    const owner = await User.create({ username: 'ivy', email: 'ivy@people.test', password: 'not-a-login' });
+    const bot = await botRow('ivy-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    await AgentInstallation.create({
+      agentName: 'ivy-agent', instanceId: 'default', podId: new mongoose.Types.ObjectId(), version: '1.0.0', installedBy: owner._id, status: 'active',
+      config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    });
+    await scan({ now: NOW });
+    await User.updateOne({ _id: bot._id }, {
+      $set: { agentRuntimeTokens: [{ tokenHash: 'h2', createdAt: new Date(ISSUED.getTime() + MINUTE) }] },
+    });
+    await scan({ now: NOW });
+    expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
   const expectMcpClose = async () => {
     const first = await scan({ now: NOW });
     expect(first.nudged).toEqual([]);
