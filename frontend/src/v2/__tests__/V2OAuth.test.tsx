@@ -2,6 +2,7 @@
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useNavigationType } from 'react-router-dom';
+import i18n from '../../i18n';
 import V2OAuthButtons from '../components/V2OAuthButtons';
 import V2OAuthComplete from '../components/V2OAuthComplete';
 import V2Login from '../components/V2Login';
@@ -74,7 +75,7 @@ describe('V2OAuthButtons', () => {
     const fields = Object.fromEntries(Array.from(form.elements)
       .filter((el) => el.name)
       .map((el) => [el.name, el.value]));
-    expect(fields).toEqual({ next: '/v2/pods/abc', invite: 'CODE1' });
+    expect(fields).toEqual({ next: '/v2/pods/abc', invite: 'CODE1', locale: 'en' });
 
     expect(sessionStorage.getItem('commonly.pendingInviteOAuth')).toBe('1');
     form.remove();
@@ -97,6 +98,21 @@ describe('V2OAuthButtons', () => {
     act(() => { github.click(); });
     expect(submit).not.toHaveBeenCalled();
     submit.mockRestore();
+  });
+
+  test('a provider start carries the language the page is in', async () => {
+    axios.get.mockResolvedValue({ data: { providers: [{ id: 'github', label: 'GitHub' }] } });
+    const localeOf = (link: HTMLElement) => new URL(link.getAttribute('href') || '', 'http://x').searchParams.get('locale');
+
+    const first = render(<MemoryRouter><V2OAuthButtons /></MemoryRouter>);
+    expect(localeOf(await screen.findByRole('link', { name: /continue with github/i }))).toBe('en');
+    first.unmount();
+
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    render(<MemoryRouter><V2OAuthButtons /></MemoryRouter>);
+    const zh = await screen.findByRole('link', { name: /GitHub/ });
+    expect(localeOf(zh)).toBe('zh-CN');
+    await act(async () => { await i18n.changeLanguage('en'); });
   });
 
   test('posts first-touch attribution into the provider start, never in its URL', async () => {
