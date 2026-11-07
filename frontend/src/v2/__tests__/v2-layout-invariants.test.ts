@@ -6636,3 +6636,9 @@ test('the app confirm sits above a modal that opened it', () => {
   expect(ruleBody(css, '.v2-confirm__overlay')).toContain('z-index: 110');
   expect(ruleBody(css, '.v2-confirm__message')).toContain('overflow-wrap: anywhere');
 });
+
+test('the CLI approval page never clips the hostname being approved', () => {
+  const host = ruleBody(read('../components/V2CliAuthorize.css'), '.v2-cli-authorize__host');
+  expect(host).toContain('overflow-wrap: anywhere');
+  expect(host).not.toContain('nowrap');
+});
