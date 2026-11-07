@@ -80,7 +80,7 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
       await row((await team(river, bot))._id, river._id);
 
       await scan({ now: NOW });
-      expect(mockPost).toHaveBeenCalled();
+      expect(mockPost).toHaveBeenCalledTimes(2);
       mockPost.mock.calls.forEach(([post]) => expect(post.content).toContain('commonly agent run shared-agent'));
     });
   });
