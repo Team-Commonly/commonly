@@ -416,7 +416,8 @@ const V2YourTeamPage: React.FC = () => {
     const where = runsOn(a, user?._id ? String(user._id) : undefined);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
     // The card already names who's asking, so "Mia mentioned you" reads "mentioned you".
-    const askTitle = ask?.actorName && ask.title?.startsWith(`${ask.actorName} `)
+    // Other titles keep their name: "Mia is blocked" needs its subject.
+    const askTitle = ask?.kind === 'mention' && ask.actorName && ask.title?.startsWith(`${ask.actorName} `)
       ? ask.title.slice(ask.actorName.length + 1) : ask?.title;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
