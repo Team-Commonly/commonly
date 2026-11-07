@@ -271,13 +271,13 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
       ? { owned: true as const }
       : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId || 'default');
     const config = normalizeConfigMap(installation.config) || {};
-    if (isBareStop(body) && !config.schedule) {
-      return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
-    }
     const onlyStopping = !ownership.owned && body.enabled === false && Boolean(config.schedule)
       && canManage(installation, userId, isAdmin);
     if (!ownership.owned && !onlyStopping) {
       return res.status(403).json({ code: ownership.failure, error: 'Only the agent\'s owner can schedule it' });
+    }
+    if (isBareStop(body) && !config.schedule) {
+      return res.status(400).json({ code: 'no_schedule', error: 'This agent has no schedule to stop' });
     }
     // Stopping one needs no seat in the pod, starting one does, admins included.
     if (body.enabled && !(await Pod.exists({ _id: installation.podId, members: userId }))) {

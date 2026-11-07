@@ -181,6 +181,13 @@ describe('a BYO agent schedule', () => {
     expect(row.config.schedule).toBeUndefined();
   });
 
+  it('tells someone without rights nothing about whether a schedule exists', async () => {
+    await seat('quiet');
+    expect((await save('quiet', other, { enabled: false })).status).toBe(403);
+    await save('quiet');
+    expect((await save('quiet', other, { enabled: false })).status).toBe(403);
+  });
+
   it('still needs every field to start one', async () => {
     await seat('half');
     expect((await save('half', owner, { enabled: true })).status).toBe(400);

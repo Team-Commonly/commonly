@@ -53,12 +53,12 @@ const isTimeZone = (value: unknown): value is string => {
   }
 };
 
-/** Names the first field a schedule write got wrong, or null when it's valid. */
 /** `{ enabled: false }` alone: stopping shouldn't need the rest of the schedule. */
 export const isBareStop = (body: Record<string, unknown>): boolean => (
   body.enabled === false && [body.time, body.timezone, body.prompt].every((field) => field === undefined)
 );
 
+/** Names the first field a schedule write got wrong, or null when it's valid. */
 export const invalidScheduleField = (body: Record<string, unknown>) => {
   if (typeof body.enabled !== 'boolean') {
     return { field: 'enabled', error: 'Invalid schedule: enabled must be true or false' };
