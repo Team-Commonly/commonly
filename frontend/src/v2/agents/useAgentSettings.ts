@@ -65,6 +65,13 @@ interface ManageSettingsResponse {
 export const NOTHING_MANAGEABLE = 'agent-settings:nothing-manageable';
 export const PODS_REFUSED = 'agent-settings:pods-refused';
 
+/** The text for a failed read or save; a marker falls back, since a person can't read one. */
+export const agentSettingsErrorText = (error: unknown, fallback: string): string => (
+  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+  || (error instanceof Error && ![NOTHING_MANAGEABLE, PODS_REFUSED].includes(error.message) && error.message)
+  || fallback
+);
+
 /** The generic PATCH writes across this identity's accessible installations. */
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);

@@ -12,6 +12,7 @@
 
 .v2-agent-settings__state { padding: 32px; color: var(--v2-text-secondary); }
 .v2-agent-settings__state--no-access h1 { margin: 0 0 6px; color: var(--v2-text-primary); font-family: var(--v2-font-display); font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; }
+.v2-agent-settings__state--no-access .v2p-b { color: var(--v2-text-primary); }
 .v2-agent-settings__state--no-access p { margin: 0 0 14px; font-size: 14px; line-height: 1.45; text-wrap: pretty; }
 @media (max-width: 760px) {
   .v2-agent-settings__state--no-access { padding: 24px 16px; }

@@ -10,7 +10,7 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { NOTHING_MANAGEABLE, PODS_REFUSED, useAgentSettings } from './useAgentSettings';
+import { agentSettingsErrorText as errorLabel, NOTHING_MANAGEABLE, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
@@ -41,12 +41,6 @@ const dateLabel = (value: string | null | undefined, t: (key: string) => string)
 
 // The owner memory index the Memory tab reads; only its counts are used here.
 interface MemoryIndex { sections?: Array<{ updatedAt?: string | null; notes?: unknown[] }> }
-
-const errorLabel = (error: unknown, fallback: string): string => (
-  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && ![NOTHING_MANAGEABLE, PODS_REFUSED].includes(error.message) && error.message)
-  || fallback
-);
 
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
