@@ -530,9 +530,9 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
 
 /**
  * GET /:podId/agent-states — #891 surface 1, the mention-time honesty read.
- * Thin shell: membership gate + two fetches; the per-runtime-class honesty
- * rules (and the owner-only fix-copy split) live in agentStateService, where
- * they are pure and unit-tested.
+ * Membership gate + two fetches, then an agent room's Connect pod; the
+ * per-runtime-class honesty rules (and the owner-only fix-copy split) live in
+ * agentStateService, where they are pure and unit-tested.
  */
 const agentStatesRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -558,6 +558,8 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
     const { deriveAgentState, offersConnect } = require('../services/agentStateService');
+    // eslint-disable-next-line global-require
+    const { connectPodFor } = require('../services/roomConnectService');
 
     const installations = await AgentInstallation.find({ podId, status: 'active' })
       .select('agentName instanceId displayName installedBy config runtimeTokens')
@@ -588,30 +590,14 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       callerId,
     ));
 
-    // An agent room's Connect goes to the pod holding the agent: Bring your own
-    // lists neither DM pods nor public ones, and would land on another pod.
     if (pod.type === 'agent-room') {
       await Promise.all(installations.map(async (inst: any, index: number) => {
         const row = agents[index];
         const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
         if (row.state !== 'never-connected' || !row.fixCommand
           || !offersConnect(inst, machineByIdentity.get(key))) return;
-        const homes = await AgentInstallation.find({
-          agentName: inst.agentName,
-          instanceId: inst.instanceId,
-          installedBy: callerId,
-          status: 'active',
-          podId: { $ne: podId },
-        }).select('podId').sort({ createdAt: 1 }).lean();
-        const installable = await Pod.find({
-          _id: { $in: homes.map((home: any) => home.podId) },
-          members: callerId,
-          type: { $nin: ['agent-room', 'agent-dm', 'agent-admin'] },
-          publicRead: { $ne: true },
-        }).select('_id').lean();
-        const ids = new Set(installable.map((home: any) => String(home._id)));
-        const home = homes.find((candidate: any) => ids.has(String(candidate.podId)));
-        if (home) row.connectPodId = String(home.podId);
+        const connectPodId = await connectPodFor(inst, callerId, podId);
+        if (connectPodId) row.connectPodId = connectPodId;
       }));
     }
 

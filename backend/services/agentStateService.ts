@@ -115,12 +115,16 @@ export function runInstructionFor(installation: InstallationRow): string | null 
   return null;
 }
 
-// Whether Bring your own's Connect can help a never-connected agent. A seat
-// bound to a machine, or installed as a wrapper, can't: Reconnect refuses one
-// never bound to a computer, so the command is all it has.
+// Whether Bring your own's Connect can help a never-connected agent. It can't
+// for a wrapper, which Reconnect refuses unless it was bound to a computer, or
+// for a seat on a machine, which starts from that machine. Nor for a second
+// instance: the page installs the default one, so it would make a sibling.
 export function offersConnect(installation: InstallationRow, machineId?: unknown): boolean {
   const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
-  return classifyRuntime(installation).isByo && runtimeType !== 'wrapper' && !machineId;
+  return classifyRuntime(installation).isByo
+    && runtimeType !== 'wrapper'
+    && String(installation.instanceId || 'default') === 'default'
+    && !machineId;
 }
 
 export function deriveAgentState(

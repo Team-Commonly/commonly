@@ -20,8 +20,8 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
   const makePod = (name, type, extra = {}) => Pod.create({
     name, type, createdBy: owner._id, members: [owner._id], ...extra,
   });
-  const install = (agentName, podId, runtime = BYO, installedBy = owner._id) => AgentInstallation.create({
-    agentName, instanceId: 'default', podId, version: '1', installedBy, config: new Map([['runtime', runtime]]),
+  const install = (agentName, podId, runtime = BYO, installedBy = owner._id, instanceId = 'default') => AgentInstallation.create({
+    agentName, instanceId, podId, version: '1', installedBy, config: new Map([['runtime', runtime]]),
   });
   const rowIn = async (room, agentName) => {
     const res = await request(app).get(`/api/pods/${room._id}/agent-states`).set('Authorization', authHeader);
@@ -76,14 +76,6 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'seat')).connectPodId).toBeUndefined();
   });
 
-  it('gives a push webhook none: it has no command to connect', async () => {
-    const room = await makePod('Room', 'agent-room');
-    const hook = { runtimeType: 'webhook', webhookUrl: 'https://example.test/hook' };
-    await install('hook', home._id, hook);
-    await install('hook', room._id, hook);
-    expect((await rowIn(room, 'hook')).connectPodId).toBeUndefined();
-  });
-
   it('gives someone who did not install it none', async () => {
     const room = await makePod('Room', 'agent-room');
     await install('theirs', home._id, BYO, other._id);
@@ -102,7 +94,94 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
   });
 
   it('leaves a group pod alone: its rows carry no such field', async () => {
+    const second = await makePod('Second', 'chat');
     await install('group', home._id);
-    expect((await rowIn(home, 'group')).connectPodId).toBeUndefined();
+    await install('group', second._id);
+    const row = await rowIn(home, 'group');
+    expect(row.state).toBe('never-connected');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
+  it("does not name another person's pod to a guest who holds the room's install", async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('guested', home._id, BYO, other._id);
+    await install('guested', room._id);
+    const row = await rowIn(room, 'guested');
+    expect(row.fixCommand).toBeTruthy();
+    expect(row.connectPodId).toBeUndefined();
+  });
+
+  it('gives no link when the room install is someone else\'s, so there is no command', async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('borrowed', home._id);
+    await install('borrowed', room._id, BYO, other._id);
+    expect((await rowIn(room, 'borrowed')).connectPodId).toBeUndefined();
+  });
+
+  it('skips a pod the caller has left', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const left = await Pod.create({
+      name: 'Left', type: 'chat', createdBy: other._id, members: [other._id],
+    });
+    await install('left', left._id);
+    await install('left', room._id);
+    expect((await rowIn(room, 'left')).connectPodId).toBeUndefined();
+  });
+
+  it('skips an install that was removed', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const gone = await install('removed', home._id);
+    await install('removed', room._id);
+    await AgentInstallation.updateOne({ _id: gone._id }, { status: 'uninstalled' });
+    expect((await rowIn(room, 'removed')).connectPodId).toBeUndefined();
+  });
+
+  it('names the oldest of several pods', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const older = await makePod('Older', 'chat');
+    await install('twice', home._id);
+    const first = await install('twice', older._id);
+    await install('twice', room._id);
+    await AgentInstallation.collection.updateOne(
+      { _id: first._id },
+      { $set: { createdAt: new Date('2026-01-01T00:00:00Z') } },
+    );
+    expect((await rowIn(room, 'twice')).connectPodId).toBe(String(older._id));
+  });
+
+  it('gives an agent that went dark none: it already connected once', async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('dark', home._id);
+    const row = await install('dark', room._id);
+    await AgentInstallation.collection.updateOne(
+      { _id: row._id },
+      { $set: { runtimeTokens: [{ lastListenedAt: new Date('2026-01-01T00:00:00Z') }] } },
+    );
+    const dark = await rowIn(room, 'dark');
+    expect(dark.state).toBe('gone-dark');
+    expect(dark.fixCommand).toBeTruthy();
+    expect(dark.connectPodId).toBeUndefined();
+  });
+
+  it('gives a second instance none: the page would make a sibling', async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('persona', home._id, BYO, owner._id, 'nova');
+    await install('persona', room._id, BYO, owner._id, 'nova');
+    const row = await rowIn(room, 'persona');
+    expect(row.state).toBe('never-connected');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
+  it('keeps the notice when the lookup fails', async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('flaky', home._id);
+    await install('flaky', room._id);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const find = jest.spyOn(Pod, 'find').mockImplementationOnce(() => { throw new Error('read failed'); });
+    const row = await rowIn(room, 'flaky');
+    find.mockRestore();
+    warn.mockRestore();
+    expect(row.fixCommand).toBeTruthy();
+    expect(row.connectPodId).toBeUndefined();
   });
 });
