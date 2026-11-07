@@ -75,6 +75,18 @@ it('stays quiet for an active row whose stored name differs in case', async () =
   await expectQuiet();
 });
 
+it('stays quiet for a row under the name this agent used to have', async () => {
+  await User.collection.insertOne({
+    username: 'commonly-bot',
+    email: 'bot@example.test',
+    isBot: true,
+    botMetadata: { agentName: 'commonly-bot', instanceId: 'default' },
+  });
+  await row({ status: 'active', agentName: 'commonly-summarizer' });
+  expect(await noteRemovedAgentDm({ ...args, agentName: 'commonly-bot' })).toBe(false);
+  expect(mockEmitRemoved).not.toHaveBeenCalled();
+});
+
 it("doesn't let another agent's row speak for this one", async () => {
   await row({ status: 'active', agentName: 'milo' });
   expect(await noteRemovedAgentDm(args)).toBe(true);

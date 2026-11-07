@@ -2741,6 +2741,19 @@ const enqueueDmEvent = async ({
       continue;
     }
 
+    // F270: the agent is back but this room's row ended with it. A hosted room is
+    // reopened by the person using it, against whoever hosts the agent now.
+    if (pod.type === 'agent-room' && sender?.isBot === false
+      && !installations.some((entry) => String(entry?.podId || '') === String(podId))) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        await require('./dmService').restoreHostedRoomRow(podId, agentName, instanceId, userId);
+      } catch (error) {
+        // The message is already persisted; reopening the room must never drop it.
+        console.warn('[agent-dm] reopening the room failed:', (error as Error).message);
+      }
+    }
+
     const senderScopedPodIds = new Set<string>(
       installations
         .filter((entry) => String(entry?.installedBy || '') === senderIdStr)

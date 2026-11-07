@@ -815,4 +815,90 @@ describe('a hosted agent DM', () => {
       expect((await roomRow(room)).installedBy).toEqual(guest._id);
     });
   });
+
+  describe('a room whose agent came back (F270)', () => {
+    const AgentEventService = require('../../services/agentEventService');
+    const AgentMentionService = require('../../services/agentMentionService');
+    const removed = async () => {
+      const room = await openRoom(guest);
+      expect((await removeFromPod(owner, workspace._id)).status).toBe(200);
+      expect(await roomRow(room)).toMatchObject({ status: 'uninstalled' });
+      return room;
+    };
+    const comesBack = () => AgentInstallation.updateOne({ podId: workspace._id }, { $set: { status: 'active' } });
+    const type = (room) => AgentMentionService.enqueueDmEvent({
+      podId: room._id,
+      message: { _id: '901', content: 'are you back?' },
+      userId: guest._id,
+      username: guest.username,
+    });
+
+    it('answers again when the person reopens it, on the owner\'s line', async () => {
+      const room = await removed();
+      await comesBack();
+      const reopened = await openRoom(guest);
+      expect(String(reopened._id)).toBe(String(room._id));
+      expect(await roomRow(room)).toMatchObject({ status: 'active', installedBy: owner._id });
+    });
+
+    it('answers again when the person just keeps typing in it', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const room = await removed();
+      await comesBack();
+      expect((await type(room)).enqueued).toEqual([NAME]);
+      expect(await roomRow(room)).toMatchObject({ status: 'active', installedBy: owner._id });
+      expect(enqueue).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays closed while the agent is gone', async () => {
+      const room = await removed();
+      await openRoom(guest);
+      expect(await roomRow(room)).toMatchObject({ status: 'uninstalled' });
+    });
+
+    it('names whoever hosts it now, so the turns go on their line', async () => {
+      const room = await removed();
+      const theirs = await pod('Theirs', [third._id, guest._id]);
+      await seedRow(third._id, theirs._id);
+      await openRoom(guest);
+      expect(await roomRow(room)).toMatchObject({ status: 'active', installedBy: third._id });
+    });
+
+    it('stays closed for someone who shares no pod with whoever hosts it now, and still opens', async () => {
+      const room = await removed();
+      await Pod.updateOne({ _id: workspace._id }, { $pull: { members: guest._id } });
+      await comesBack();
+      expect(String((await openRoom(guest))._id)).toBe(String(room._id));
+      expect(await roomRow(room)).toMatchObject({ status: 'uninstalled' });
+    });
+
+    it('comes back paused when the owner has it paused', async () => {
+      const room = await removed();
+      await AgentInstallation.updateOne({ podId: workspace._id }, { $set: { status: 'paused' } });
+      await openRoom(guest);
+      expect(await roomRow(room)).toMatchObject({ status: 'paused', installedBy: owner._id });
+    });
+
+    it('leaves a row on another runtime alone', async () => {
+      await AgentInstallation.updateOne({ podId: workspace._id }, { $set: { config: { runtime: { runtimeType: 'native' } } } });
+      const room = await openRoom(guest);
+      await AgentInstallation.updateOne({ _id: (await roomRow(room))._id }, { $set: { status: 'uninstalled' } });
+      await openRoom(guest);
+      expect(await roomRow(room)).toMatchObject({ status: 'uninstalled' });
+    });
+
+    it('leaves a paused room row for whoever paused it', async () => {
+      const room = await openRoom(guest);
+      await AgentInstallation.updateOne({ _id: (await roomRow(room))._id }, { $set: { status: 'paused' } });
+      await openRoom(guest);
+      expect(await roomRow(room)).toMatchObject({ status: 'paused' });
+    });
+
+    it('never touches a row that is already answering', async () => {
+      const room = await openRoom(guest);
+      const before = await roomRow(room);
+      await openRoom(guest);
+      expect(await roomRow(room)).toEqual(before);
+    });
+  });
 });

@@ -120,7 +120,9 @@ export async function noteRemovedAgentDm({
   if (messageId === null) return false;
   const agentName = rawAgentName.toLowerCase();
   const standing = await AgentInstallation.exists({
-    ...installationIdentityFilter(agentName, instanceId), status: { $ne: 'uninstalled' },
+    ...installationIdentityFilter(agentName, instanceId),
+    agentName: { $in: AgentIdentityService.identityNames(agentName) },
+    status: { $ne: 'uninstalled' },
   }).collation(IDENTITY_COLLATION);
   if (standing) return false;
   const agent = await findAgent(agentName, instanceId);
