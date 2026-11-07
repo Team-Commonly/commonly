@@ -21,6 +21,16 @@ describe('logInstallRefusal', () => {
     });
   });
 
+  it('never throws, so a refusal stays a 403', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const circular = {};
+    circular.self = circular;
+    expect(() => logInstallRefusal('hosted.provision', 'hosted_cap_reached', {
+      userId: Object.create(null), agentName: circular, used: BigInt(1),
+    })).not.toThrow();
+    expect(warn).toHaveBeenCalledWith('[install-refused] {"code":"hosted_cap_reached","route":"hosted.provision"}');
+  });
+
   it('keeps a typed agent name on one line', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     logInstallRefusal('personas.hire', 'cloud_agents_not_entitled', { userId: 'u', agentName: 'a\n[install-refused] forged' });

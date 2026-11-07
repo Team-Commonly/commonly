@@ -15,10 +15,15 @@ export const logInstallRefusal = (
     cap?: unknown;
   },
 ): void => {
-  console.warn(`[install-refused] ${JSON.stringify({
-    code,
-    route,
-    ...fields,
-    userId: String(fields.userId),
-  })}`);
+  try {
+    console.warn(`[install-refused] ${JSON.stringify({
+      code,
+      route,
+      ...fields,
+      userId: String(fields.userId),
+    })}`);
+  } catch {
+    // The log must not turn the 403 it describes into a 500.
+    console.warn(`[install-refused] ${JSON.stringify({ code, route })}`);
+  }
 };
