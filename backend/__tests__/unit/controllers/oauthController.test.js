@@ -201,7 +201,9 @@ describe('OAuth Controller', () => {
         params: { provider: 'github' },
         // A query invite on a POST is ignored: only the body counts.
         query: { invite: 'FROM-QUERY' },
-        body: { next: '/v2/pods/abc', invite: 'CODE2', ref: 'x' },
+        body: {
+          next: '/v2/pods/abc', invite: 'CODE2', ref: 'x', locale: 'zh-CN',
+        },
         protocol: 'https',
         get: () => 'api.test.local',
       }, res);
@@ -213,6 +215,7 @@ describe('OAuth Controller', () => {
       expect(state.invitationCode).toBe('CODE2');
       expect(state.next).toBe('/v2/pods/abc');
       expect(state.signupRef).toBe('x');
+      expect(state.locale).toBe('zh-CN');
     });
 
     it('serves consecutive starts — pending rows must not collide on the exchangeCode index', async () => {
@@ -537,8 +540,14 @@ describe('OAuth Controller', () => {
       const post = jest.spyOn(AgentMessageService, 'postMessage').mockResolvedValue({});
       await seedState({ locale });
       mockGithubProfile();
+      const res = mockRes();
 
-      await oauthController.oauthCallback(callbackReq(), mockRes());
+      await oauthController.oauthCallback(callbackReq(), res);
+
+      const completion = new URL(res.redirect.mock.calls[0][0]);
+      expect(completion.pathname).toBe('/v2/oauth/complete');
+      expect(completion.searchParams.get('code')).toBeTruthy();
+      expect(completion.searchParams.get('locale')).toBeNull();
 
       // Onboarding finishes after the response, so an earlier test's welcome can land here too.
       const user = await User.findOne({ email: 'octo@example.com' });
