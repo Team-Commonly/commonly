@@ -75,9 +75,10 @@ const says = (content) => ({
 const REASONING = 'This is a periodic heartbeat. Nothing here is addressed to me, so I will stay quiet.';
 
 /**
- * F304: over 30 days all 96 native heartbeats that ended in text and called no
- * post tool were narration, and 17 of them closed on NO_REPLY. The sentinel
- * was stripped as leakage, so a reader saw the reasoning for staying silent.
+ * F304: over 30 days 96 native heartbeats ended in text and called no post tool.
+ * 17 closed on NO_REPLY, and a keyword read puts the other 79 as narration. The
+ * sentinel was stripped as leakage, so a reader saw the reasoning for staying
+ * silent.
  */
 describe('a turn nobody is waiting on', () => {
   const savedEnv = { ...process.env };

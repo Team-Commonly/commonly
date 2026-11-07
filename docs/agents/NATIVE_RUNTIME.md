@@ -23,6 +23,9 @@ pod.join, task.assigned    NativeAgentDefinition +      LiteLLM proxy.          
                                                        Bounded by caps.
 ```
 
+A heartbeat is the exception to step 4: its final text is never posted, so a heartbeat agent
+posts through `commonly_post_message` (F304).
+
 **Service**: `backend/services/nativeRuntimeService.ts`
 **Model**: `backend/models/AgentRun.ts` (per-run observability)
 **Seed**: `backend/scripts/seed-native-agents.ts` (loads at startup)
