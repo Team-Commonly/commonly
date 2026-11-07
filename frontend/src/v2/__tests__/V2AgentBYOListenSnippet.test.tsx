@@ -270,9 +270,10 @@ describe('BYO listener snippet', () => {
     expect(lines.filter((l) => l.trimStart().startsWith('#'))).toHaveLength(0);
   });
 
-  // Where the listener runs: Mac with either CLI, and Linux with Claude Code in
-  // any pod (F96, #3395: a public Claude Code seat runs in the bubblewrap jail
-  // on the person's own login). Codex on Linux is not tested yet. Native Windows has no sandbox, so the
+  // Where the listener runs: Mac and Linux with either CLI, in any pod (F96,
+  // #3395: a public Claude Code seat runs in the bubblewrap jail on the
+  // person's own login; Codex on Linux walked on prod 11-05, run 41994906534,
+  // with an API key through a model gateway). Native Windows has no sandbox, so the
   // listener runs unconfined there and the page says so beside the PowerShell
   // lines (D245). The Windows MCP command goes through cmd /c (windows-latest).
   describe('where the listener runs', () => {
@@ -391,13 +392,30 @@ describe('BYO listener snippet', () => {
       expect(reach).toHaveTextContent(/In the project-folder case only, you can add --allow write to the last line to let it edit files and run commands, or --allow web/);
     });
 
-    test('Linux with Codex: no listener command, and Codex says it is not tested yet', async () => {
+    // Walked on prod 11-05 (run 41994906534): published CLI, Codex 0.164.0,
+    // fresh Ubuntu, an API key through a model gateway. A person's own ChatGPT
+    // sign-in or OpenAI key is not walked there, and the note says so.
+    test('Linux with Codex: the listener command, the bubblewrap line, and what was walked', async () => {
       setUserAgent(LINUX);
       await issueToken('codex');
-      expect(listener()).toBeUndefined();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI has been tested only on a Mac and may not answer @mentions from Linux yet\. Choose “Run it here”/);
-      expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
-      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
+      const lines = (listener()?.textContent || '').split('\n');
+      expect(lines[1]).toMatch(/^export COMMONLY_API_URL=/);
+      expect(lines[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
+      expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent(/the Codex CLI signed in\..*On Linux, install bubblewrap \(bwrap\) first\./);
+      expect(screen.getByTestId('byo-listen-linux-codex')).toHaveTextContent(
+        'On Nov 5 we ran Codex on a fresh Ubuntu machine against Commonly, through a model gateway with an API key, and it answered its first @mention. With your own ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet.',
+      );
+      expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/its own scratch folder/);
+      expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
+    });
+
+    test('Mac with Codex: no Linux note', async () => {
+      setUserAgent(MAC);
+      await issueToken('codex');
+      expect(listener()).toBeDefined();
+      expect(screen.queryByTestId('byo-listen-linux-codex')).toBeNull();
     });
 
     const PRIVATE_POD = { joinPolicy: 'invite-only', publicRead: false, communityListed: false };
@@ -422,12 +440,10 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/On Linux/);
     });
 
-    // #2783: Codex stays Mac only, even in a pod the Claude Code check accepts.
-    test('Linux with Codex in an invite-only pod: still no listener command', async () => {
+    test('Linux with Codex in an invite-only pod: the same listener command', async () => {
       setUserAgent(LINUX);
       await issueToken('codex', PRIVATE_POD);
-      expect(listener()).toBeUndefined();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI has been tested only on a Mac and may not answer @mentions from Linux yet/);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/ --adapter codex$/);
     });
 
     // The pod rule is gone with F96: a pod's join policy no longer decides
@@ -477,10 +493,10 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/can run only in an invite-only pod/);
     });
 
-    // No listener is now Codex on Linux.
+    // No listener is now Codex on Windows in a pod that isn't private.
     test('no listener: the first line says it will not answer @mentions, no Run it here without hosting', async () => {
-      setUserAgent(LINUX);
-      await issueToken('codex');
+      setUserAgent(WINDOWS);
+      await issueToken('codex', { ...PRIVATE_POD, joinPolicy: 'open' });
       const wont = screen.getByTestId('byo-listen-wont-answer');
       expect(wont).toHaveTextContent(/will not answer @mentions from here/);
       expect(wont.compareDocumentPosition(screen.getByTestId('byo-listen-unavailable')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -490,10 +506,10 @@ describe('BYO listener snippet', () => {
     });
 
     test('no listener with hosting on: the first line carries a Run it here button', async () => {
-      setUserAgent(LINUX);
+      setUserAgent(WINDOWS);
       hostedConfigured = true;
       try {
-        await issueToken('codex');
+        await issueToken('codex', { ...PRIVATE_POD, joinPolicy: 'open' });
         expect(within(screen.getByTestId('byo-listen-wont-answer')).getByRole('button', { name: 'Run it here' })).toBeInTheDocument();
         // The hosted offer section would repeat the same action: one button only.
         expect(screen.getAllByRole('button', { name: /Run it here/ })).toHaveLength(1);
@@ -507,13 +523,15 @@ describe('BYO listener snippet', () => {
       }
     });
 
-    test('the switch overrides the browser: Linux to Mac brings the Codex listener back', async () => {
+    test('the switch overrides the browser: Linux to Mac drops the Linux lines and note', async () => {
       setUserAgent(LINUX);
       await issueToken('codex');
+      expect(screen.getByTestId('byo-listen-linux-codex')).toBeInTheDocument();
       fireEvent.click(screen.getByTestId('byo-setup-os-mac'));
       expect(screen.getByTestId('byo-setup-os-mac')).toHaveAttribute('aria-pressed', 'true');
       expect(listener()).toBeDefined();
-      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-linux-codex')).toBeNull();
+      expect(screen.getByTestId('byo-listen-needs')).not.toHaveTextContent(/On Linux/);
     });
   });
 });
@@ -573,11 +591,17 @@ describe('Codex platform copy', () => {
   const en = require('../../i18n/locales/en.json');
   const zh = require('../../i18n/locales/zh-CN.json');
   const guides = JSON.stringify(require('../../content/guides.json'));
-  test('says tested on a Mac, never Mac only or cannot', () => {
-    expect(en.agentByo.listen.unavailableCodex).toMatch(/tested only on a Mac/);
-    expect(en.agentByo.listen.unavailableCodex).not.toMatch(/can’t|cannot|Mac only/i);
-    expect(zh.agentByo.listen.unavailableCodex).toMatch(/Mac/);
-    expect(zh.agentByo.listen.unavailableCodex).not.toMatch(/不能回复|尚未测试/);
+  // Codex answers from a Mac and Linux (walked 11-05). No copy may still say
+  // it is tested only on a Mac, or call it Mac only.
+  test('no copy says Codex is Mac only or tested only on a Mac; the Linux note says what was walked', () => {
+    const copy = JSON.stringify(en.agentByo) + JSON.stringify(zh.agentByo);
+    expect(en.agentByo.listen.unavailableCodex).toBeUndefined();
+    expect(zh.agentByo.listen.unavailableCodex).toBeUndefined();
+    expect(copy).not.toMatch(/Codex[^"]{0,60}tested only on a Mac|Codex[^"]{0,40}Mac only|Codex CLI 目前只在 Mac/);
     expect(guides).not.toMatch(/Codex[^.]{0,40}Mac only/i);
+    expect(en.agentByo.listen.linuxCodex).toMatch(/ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet/);
+    expect(zh.agentByo.listen.linuxCodex).toMatch(/ChatGPT/);
+    expect(zh.agentByo.listen.linuxCodex).toMatch(/Linux/);
+    expect(zh.agentByo.listen.linuxCodex).not.toMatch(/您/);
   });
 });

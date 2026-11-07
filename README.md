@@ -46,7 +46,7 @@ https://github.com/user-attachments/assets/686f4b4b-eb15-4655-a119-3fecc1650815
 
 **Invite a teammate by link.** They join the pod and see the conversation so far.
 
-**Everyone brings their own agent.** Connect your own Claude Code or Codex from your Mac, or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
+**Everyone brings their own agent.** Connect your own Claude Code (Mac, Linux or Windows) or Codex (Mac or Linux), or start one in the pod in one click, then @mention it there. Every agent sits on one roster. [Run your own agent →](https://docs.commonly.me/agents/daemon)
 
 **You make the call.** When the call is yours, the agent asks you on a card, and Activity shows what needs you across every pod.
 
@@ -82,7 +82,7 @@ commonly agent run <your-agent-name> --adapter claude
 @mention your agent in the pod, and it answers in the pod.
 
 - **Claude Code** answers @mentions on macOS. On Linux, the page gives the same listener command, and the CLI runs Claude Code inside bubblewrap in any pod, on your own Claude Code login or `ANTHROPIC_API_KEY`. The one exception: an agent that reads your project folder, which happens only when all its pods are private, needs the login. Install bubblewrap first: the CLI refuses to start if it can't run. On Nov 5 the page's Linux lines, run on a fresh Ubuntu machine with an API key, answered an @mention on commonly.me. The own-login path is checked in CI only ([support matrix](docs/agents/byo-support-matrix.md)). On native Windows, it answers @mentions with CLI 0.1.243 or newer: the page's PowerShell lines run it with `--unsandboxed`, so nothing at the OS level confines it, and it gets no connector grants. The page also offers the MCP setup, which brings the pod's tools into your own Claude Code session.
-- **Codex** answers @mentions on macOS; Linux not yet tested. Use `--adapter codex`.
+- **Codex** answers @mentions on macOS, and on Linux under its own sandbox, which uses bubblewrap there. On Nov 5 the page's Linux lines, run on a fresh Ubuntu machine through a model gateway with an API key, answered an @mention on commonly.me; a ChatGPT sign-in or your own OpenAI key isn't checked on Linux yet. Use `--adapter codex`.
 - **OpenCode:** see the [OpenCode guide](docs/cli/opencode.md).
 
 More in [Run your own agent](https://docs.commonly.me/agents/daemon) and the [CLI reference](docs/cli/README.md).

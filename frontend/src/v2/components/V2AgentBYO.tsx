@@ -163,9 +163,9 @@ type MachineAdapter = string;
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
 // Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
-// On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
-// workspace seat, which the CLI allows only while every pod it answers in is
-// invite-only (TASK-027); a public Claude Code seat there is refused. Native
+// On Linux (WSL included) Claude Code runs in a bubblewrap jail, in any pod
+// since F96 (#3395), and Codex under its own sandbox, which uses bubblewrap
+// there (walked on prod 11-05, run 41994906534). Native
 // Windows has no sandbox for either, so there the listener runs unconfined and
 // the page says so (D245). PowerShell has no `export`, so a Windows visitor
 // gets PowerShell lines for both commands (windows-latest, 2026-10-16).
@@ -202,11 +202,14 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 ];
 // Windows runs either CLI without a sandbox (D245): the command is PowerShell
 // lines, and the page says beside it that nothing confines the agent there.
-// Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
-// tested"), so no listener.
+// Codex on Linux walked on prod 11-05 (run 41994906534: published CLI, Codex
+// 0.164.0, a fresh Ubuntu runner, an API key through a model gateway). A
+// person's own ChatGPT sign-in or OpenAI key is not walked there; the Linux
+// Codex note says so beside the command.
 // Claude Code on Linux runs in any pod since F96 (#3395): a public seat runs in
-// the bubblewrap jail on the person's own login. Tested in CI with a stand-in
-// model; no person's walk yet, and the reach note says so.
+// the bubblewrap jail on the person's own login. That login is tested in CI
+// with a stand-in model, an API key answered on prod on 11-05, and the reach
+// note says both.
 // A pod confirmed private (workspace-trust.js podIsConfirmedPrivate): both
 // flags reported and false, and invite-only. A pod that omits a flag is not.
 const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
@@ -228,7 +231,7 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // out: `podPrivate` is undefined until then.
 const listenerRunsOn = (os: SetupOs, adapter: string, podPrivate?: boolean): boolean => {
   if (adapter === 'claude') return true;
-  if (adapter === 'codex') return os === 'mac' || (os === 'windows' && podPrivate !== false);
+  if (adapter === 'codex') return os !== 'windows' || podPrivate !== false;
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -1799,7 +1802,9 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
-          ) : canReconnect ? (
+          ) : canReconnect && !byoAlternative ? (
+              // A runner the page has no listener for shows its own way first:
+              // a reconnected key would land in a command view with nothing to run.
               <button type="button" className="v2-byo__submit" disabled={submitting || !podId}
                 onMouseDown={(event) => event.preventDefault()} onClick={() => {
                 if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
@@ -1841,13 +1846,7 @@ const V2AgentBYO: React.FC = () => {
             <summary>{t('agentByo.otherWays.title')}</summary>
             {addComputerBlock}
           <p className="v2-byo__footnote">
-            {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              // Only Codex on Linux has no listener among the page's two.
-              : 'agentByo.footnote.cliRouteCodexUnavailable', {
-              byo: t('agentByo.mode.byo'),
-              hosted: t('agentByo.mode.hosted'),
-              os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
-            })}{' '}
+            {listenerAvailable && <>{t('agentByo.footnote.cliRoute', { byo: t('agentByo.mode.byo') })}{' '}</>}
             {t('agentByo.footnote.notSure')}{' '}
             <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
@@ -2035,7 +2034,6 @@ const V2AgentBYO: React.FC = () => {
                 : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
                 : t(listenAdapter === 'codex' && setupOs === 'windows' ? 'agentByo.listen.unavailableCodexWindows'
-                    : listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
                     : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                   tool: listenTool,
@@ -2049,7 +2047,13 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
-            {/* Directly above the lines it explains: both last lines carry --unsandboxed. */}
+            {/* Directly above the lines it explains. Codex on Linux keeps its own profile and no flag. */}
+            {listenerAvailable && setupOs === 'linux' && listenAdapter === 'codex' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-linux-codex">
+                {t('agentByo.listen.linuxCodex')}
+              </p>
+            )}
+            {/* Both Windows last lines carry --unsandboxed. */}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 <Trans

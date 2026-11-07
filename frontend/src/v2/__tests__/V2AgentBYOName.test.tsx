@@ -113,6 +113,20 @@ describe('BYO default agent name follows where it runs', () => {
     ));
   });
 
+  // Gate review of the Linux Codex page PR: Reconnect was checked before the
+  // runner's alternative, so a revoked agent's name with OpenCode picked
+  // issued a key into a command view that has no listener for OpenCode.
+  test('a reconnect with a runner the page has no listener for shows that runner\'s way, not Reconnect', async () => {
+    mockGet([{ name: 'local', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=local&reconnect=1&adapter=opencode');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+    expect(screen.queryByTestId('byo-opencode') || screen.queryByTestId('byo-opencode-unavailable')).not.toBeNull();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   test('a nondefault webhook reconnect selects and rotates only that instance', async () => {
     mockGet([
       { name: 'local', instanceId: 'default', installedBy: 'u1', runtime: { runtimeType: 'webhook' },
