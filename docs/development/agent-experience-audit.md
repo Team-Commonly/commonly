@@ -4577,3 +4577,15 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **Fix:** the guide names the condition, and a public seat's preamble says so on every turn it can't write, because a resumed session may still hold an earlier turn's offer.
 
 **Lesson:** a capability that depends on the turn can't be taught once per session. Say it on the turn it applies to.
+
+## 119. OpenCode's permission rule spelled the broker's name differently from OpenCode (2026-11-07, F334)
+
+*Origin: a prod walk. A public OpenCode seat with a live Linear grant named only `commonly_*` and its builtins, while a direct MCP call to the broker worked and the spawn config held the remote server and an allow rule.*
+
+**Surface:** `permissionMcpName` in `cli/src/lib/adapters/opencode.js`, and a unit test that asserted `commonly_grant_broker_*`.
+
+**False model:** a server's hyphens become underscores in OpenCode's tool names. OpenCode 1.19.4 keeps them: `Ey=(e)=>e.replace(/[^a-zA-Z0-9_-]/g,"_")`, joined as `<server>_<tool>`. The rule matched nothing, the `'*'` deny won, and a tool whose last matching rule is a wildcard deny is removed from the list before the model sees it. OpenCode logs nothing about this, because the server connected and listed its tools. `commonly` has no hyphen, so that server worked and hid the fault. The dot in `linear.list_teams` was not involved: OpenCode rewrites it, and a dotless tool was dropped the same way.
+
+**Fix:** the adapter uses OpenCode's own character set, so the allow and the withheld-tool denies both match. A real-binary test reads the `tools` array the binary sends to the model route.
+
+**Lesson:** a test that compares config to the adapter's own idea of a name proves only that the two agree. A rule meant for another program needs that program to read it.

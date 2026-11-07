@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'cli/src/lib/sandbox/seatbelt.js'
+      - 'cli/src/lib/adapters/opencode.js'
+      - 'cli/__tests__/adapters.opencode.seatbelt.smoke.test.mjs'
       - 'cli/__tests__/seatbelt.system-keychains.smoke.test.mjs'
       - 'cli/__tests__/seatbelt.claude-keychain-read.smoke.test.mjs'
       - '.github/workflows/seatbelt-system-keychains.yml'
