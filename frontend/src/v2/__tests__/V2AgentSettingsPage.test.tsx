@@ -751,9 +751,20 @@ describe('someone who does not manage this agent', () => {
     });
     renderPage('/v2/agents/maya-claude/u1a2b');
     const state = await screen.findByTestId('agent-settings-no-access');
-    expect(state).toHaveTextContent("You can't manage this agent");
-    expect(screen.queryByText('No accessible installation')).not.toBeInTheDocument();
+    expect(state).toHaveTextContent("You can't open these settings");
     expect(screen.getByRole('link', { name: 'See its profile' })).toHaveAttribute('href', '/v2/agent/maya-claude/u1a2b');
+  });
+
+  test('an installer refused every pod is not told only the installer can open this', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) {
+        return Promise.resolve({ data: { installations: [{ podId: 'pod-1', podName: 'Left pod' }] } });
+      }
+      return Promise.reject(Object.assign(new Error('refused'), { response: { status: 403 } }));
+    });
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
   });
 
   test('a load that fails for any other reason keeps its own error', async () => {

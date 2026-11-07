@@ -58,10 +58,14 @@ interface ManageSettingsResponse {
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
-/** The generic PATCH writes across this identity's accessible installations. */
-// The page matches this to show the no-access state, so it is never read as copy.
-export const NO_AGENT_ACCESS = 'No accessible installation';
+// Markers the page turns into translated text, so neither is shown as it stands.
+// Nothing manageable means no rows at all: not this person's agent, or an agent
+// with no pod left. Refused means rows exist, but no pod could be read, as when
+// the installer left the pod.
+export const NOTHING_MANAGEABLE = 'agent-settings:nothing-manageable';
+export const PODS_REFUSED = 'agent-settings:pods-refused';
 
+/** The generic PATCH writes across this identity's accessible installations. */
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
   const [installation, setInstallation] = useState<AgentSettingsInstallation | null>(null);
@@ -125,7 +129,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    throw new Error(NO_AGENT_ACCESS);
+    throw new Error(rows.length ? PODS_REFUSED : NOTHING_MANAGEABLE);
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {
@@ -175,7 +179,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   }, [agentName, instanceId, podId]);
 
   const update = useCallback(async (patch: AgentSettingsPatch) => {
-    if (!podId) throw new Error(NO_AGENT_ACCESS);
+    if (!podId) throw new Error(PODS_REFUSED);
     const response = await axios.patch(installationUrl(podId), { ...patch, instanceId });
     await refresh();
     return response.data;

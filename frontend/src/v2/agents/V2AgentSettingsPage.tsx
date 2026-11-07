@@ -10,7 +10,7 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { NO_AGENT_ACCESS, useAgentSettings } from './useAgentSettings';
+import { NOTHING_MANAGEABLE, PODS_REFUSED, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
@@ -44,7 +44,7 @@ interface MemoryIndex { sections?: Array<{ updatedAt?: string | null; notes?: un
 
 const errorLabel = (error: unknown, fallback: string): string => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && error.message)
+  || (error instanceof Error && ![NOTHING_MANAGEABLE, PODS_REFUSED].includes(error.message) && error.message)
   || fallback
 );
 
@@ -266,7 +266,7 @@ const V2AgentSettingsPage: React.FC = () => {
 
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
   if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
-  if ((!access || !podId) && loadError instanceof Error && loadError.message === NO_AGENT_ACCESS) {
+  if ((!access || !podId) && loadError instanceof Error && loadError.message === NOTHING_MANAGEABLE) {
     return (
       <div className="v2-agent-settings__state v2-agent-settings__state--no-access" data-testid="agent-settings-no-access">
         <h1>{t('agentSettings.noAccess.title')}</h1>

@@ -3241,8 +3241,8 @@
     "loading": "Loading agent settings…",
     "unavailable": "Agent settings unavailable.",
     "noAccess": {
-      "title": "You can't manage this agent",
-      "body": "Only the person who added it can open its settings.",
+      "title": "You can't open these settings",
+      "body": "Only the person who added this agent can open them, while it's in a pod.",
       "profile": "See its profile"
     },
     "yourTeam": "Your team",
