@@ -212,6 +212,11 @@ export const scoutApp = {
     // Linux: Claude Code runs in the bubblewrap jail since F96 (#3395). The
     // page's lines answered an @mention on prod on an API key through a model
     // gateway (byo-linux.yml run 41945040493); the own-login path is CI only.
+    // Codex on Linux runs under its own sandbox (its permission profile, whose
+    // Linux sandbox uses bubblewrap), not Commonly's jail: the page's lines answered on prod
+    // with CLI 0.1.255 and codex-cli 0.164.0 through the gateway on an API key
+    // (byo-linux.yml run 41994906534); a ChatGPT sign-in or OpenAI key is not
+    // walked there. Codex on native Windows has no sandbox and answers only in confirmed private pods.
     + '- Where their own agent can be connected as a teammate that answers '
     + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
     + 'Claude Code on native Windows too, with CLI 0.1.243 or newer: the connect '
@@ -223,7 +228,13 @@ export const scoutApp = {
     + 'not fully private, the page\'s Linux lines answered an @mention on Commonly '
     + 'from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is '
     + 'checked only in CI with a stand-in model, so say which. '
-    + 'Codex off a Mac is not tested. For Claude Code on Linux or '
+    + 'Codex on Linux (WSL 2 included) runs under its own sandbox, which uses bubblewrap '
+    + 'there (not the jail Claude Code runs in): on Nov 5 '
+    + 'the page\'s Linux lines answered an @mention on Commonly from a fresh Ubuntu '
+    + 'machine through a model gateway on an API key; with their own ChatGPT sign-in '
+    + 'or OpenAI key it is not checked on Linux yet, so say which. Codex on native '
+    + 'Windows has no sandbox: it can run only in an invite-only pod that isn\'t public or '
+    + 'listed. For Claude Code on Linux or '
     + 'WSL, do not propose a connect card: point them to "Use my own agent" on the '
     + 'Bring your own page, which shows the Linux command (it needs bubblewrap '
     + 'installed), offer "Run it here" with '
@@ -231,9 +242,15 @@ export const scoutApp = {
     + 'own Claude Code sessions with the MCP command on the connect page (not '
     + 'yet walked on Linux). `claude mcp list` '
     + 'showing Connected means the server started, not that a tool was used: '
-    + 'it shows up here once they use a commonly tool. For Codex off a Mac, do '
-    + 'not propose a connect card either: offer "Run it here", or running Codex '
-    + 'on a Mac. Say plainly why: it is not tested there yet.\n'
+    + 'it shows up here once they use a commonly tool. For Codex on Linux or WSL, '
+    + 'do not propose a connect card either: point them to "Use my own agent" on '
+    + 'the Bring your own page, where they choose Codex under Adapter, press "Get my '
+    + 'connect command", and then pick Linux among the operating-system buttons '
+    + 'above the command (the page starts on Claude, and a WSL user\'s browser '
+    + 'reports Windows), then copy the Linux command (it needs bubblewrap '
+    + 'installed), or offer "Run it here". For Codex on native Windows, offer '
+    + 'running it in WSL 2 or "Run it here", and say plainly why: it has no sandbox '
+    + 'there, so it runs with their own access and anyone in the pod can direct it.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
     // Gemini has no verified path yet: the Bring your own page does not offer
@@ -281,7 +298,7 @@ export const scoutApp = {
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
     + 'Claude Code or Codex on macOS, and Claude Code on native Windows. Any other pair, such as either '
-    + 'one on Linux or WSL, Codex off a Mac, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
+    + 'one on Linux or WSL, Codex on native Windows, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '
     + 'Code, and the ChatGPT app, chatgpt.com and Codex in ChatGPT are not the '
