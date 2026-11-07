@@ -80,7 +80,7 @@ afterEach(async () => {
 });
 
 describe('one true statement about writing', () => {
-  const OFFER_ASK = "No agent can use Linear yet. A grant can be read only, or read and write. With write access, each write waits for your approval.";
+  const OFFER_ASK = "This Linear connection isn't granted to any agent yet. A grant can be read only, or read and write. With write access, each write waits for your approval.";
   const READ = "Agents can read Linear from here, but they can't write to it.";
   const ASK = 'Agents can read Linear from here. Each write waits for your approval.';
   const MIXED = 'Agents can read Linear from here. Where a grant allows writes, each write waits for your approval.';
@@ -99,8 +99,32 @@ describe('one true statement about writing', () => {
     mock({ entries: [readOnlyEntry] });
     renderPage();
     const popover = await openPopoverOf('Linear');
-    expect(popover).toHaveTextContent("No agent can use Linear yet. A grant lets agents read it, not change it.");
+    expect(popover).toHaveTextContent("This Linear connection isn't granted to any agent yet. A grant lets agents read it, not change it.");
     expect(popover).not.toHaveTextContent('approval');
+  });
+
+  // Two connections, one product: a grant on the GitHub App says nothing about this
+  // person's hosted GitHub connection, and the panel can't see other members' grants.
+  it('speaks for this connection, so a live grant on the other GitHub does not make it false', async () => {
+    const githubApp = {
+      installableId: 'github', list: 'tools', label: 'GitHub', description: 'Issues.', available: true, connectionType: 'github-app',
+      broker: { id: 'commonly-grant-broker' }, tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }],
+      connections: [{ connectionId: 'conn-app', owner: 'Team-Commonly', repo: 'commonly' }],
+    };
+    const githubMcp = {
+      ...readOnlyEntry, installableId: 'github-mcp', entryId: 'github-mcp', label: 'GitHub', description: 'Files.',
+      tools: [{ name: 'github-mcp.get_file', requiredWriteMode: 'read', irreversible: false }],
+      connections: [{ connectionId: 'conn-mcp', owner: 'Team-Commonly', repo: 'mcp' }],
+    };
+    mock({ entries: [githubApp, githubMcp], grants: [grant({ grantId: 'g-app', tools: ['github.list_issues'] })] });
+    renderPage();
+    await findTile('GitHub');
+    await settle();
+    const hostedTile = [...document.querySelectorAll('button.v2-cx-tile[title="GitHub"]')].find((tile) => !tile.querySelector('.v2-cx-tile__dot'));
+    fireEvent.click(hostedTile);
+    const popover = await findPopover('GitHub');
+    expect(within(popover).getByRole('note')).toHaveTextContent("This GitHub connection isn't granted to any agent yet.");
+    expect(popover).not.toHaveTextContent('No agent can use');
   });
 
   it('the form does not promise approval over a read grant', async () => {
@@ -188,6 +212,78 @@ describe('after Grant', () => {
     const drawer = await findDrawer('Linear');
     expect(await within(drawer).findByText('Linear granted to Scout in Launch pod.')).toBeInTheDocument();
     await within(drawer).findByRole('button', { name: 'View Linear in Launch pod' });
+  });
+
+  // The mint succeeded and the re-read has not: nothing on the drawer may still offer it.
+  it('while the re-read keeps failing, the drawer holds the confirmation and no offer', async () => {
+    const older = [revoked('g-1')];
+    const state = mock({ grants: older });
+    mintFrom(state, older);
+    axios.get.mockImplementation(((get) => (url, config) => (state.failing && url === '/api/grants'
+      ? Promise.reject(new Error('Network Error')) : get(url, config)))(axios.get.getMockImplementation()));
+    renderPage();
+    const drawer = await openDrawerOf('Linear');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
+    state.failing = true;
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+
+    expect(await within(drawer).findByText('Linear granted to Scout in Launch pod.')).toBeInTheDocument();
+    await settle();
+    expect(within(drawer).queryByRole('note')).toBeNull();
+    expect(drawer).not.toHaveTextContent("isn't granted to any agent");
+    expect(drawer.querySelector('.v2-cx-drawer__offer')).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Grant to agents' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Grant again' })).toBeNull();
+    // Its count is still one click away; the header keeps what it last read.
+    expect(within(drawer).getByRole('button', { name: 'inactive · 1' })).toHaveAttribute('aria-expanded', 'false');
+    expect(meta().textContent).toBe('0 on · 1 connected, no grant · 0 available');
+  });
+
+  it('moves focus to the confirmation when the form closes, so it is read out and focus is not lost', async () => {
+    const state = mock({ grants: [revoked('g-1')] });
+    mintFrom(state, [revoked('g-1'), grant({ grantId: 'g-new' })]);
+    // Holds the re-read, so focus can move on before the new row arrives.
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    axios.get.mockImplementation(((get) => (url, config) => (state.hold && url === '/api/grants'
+      ? held.then(() => get(url, config)) : get(url, config)))(axios.get.getMockImplementation()));
+    renderPage();
+    const drawer = await openDrawerOf('Linear');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
+    state.hold = true;
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    const status = await within(drawer).findByText('Linear granted to Scout in Launch pod.');
+    await waitFor(() => expect(status).toHaveFocus());
+    expect(status).toHaveAttribute('role', 'status');
+    // The row arriving with the re-read does not take focus back from wherever it went.
+    const close = within(drawer).getByRole('button', { name: 'Close' });
+    close.focus();
+    await act(async () => { release(); });
+    await within(drawer).findByRole('button', { name: 'View Linear in Launch pod' });
+    await settle();
+    expect(close).toHaveFocus();
+  });
+
+  it('a grant made a moment ago reads as one phrase in Chinese', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    mock({ grants: [grant({ grantId: 'g-new', createdAt: new Date().toISOString() })] });
+    renderPage();
+    const drawer = await openDrawerOf('Linear');
+    const kicker = drawer.querySelector('.v2-connector-row__kicker');
+    expect(kicker).toHaveTextContent('刚刚授予');
+    expect(kicker).not.toHaveTextContent('刚刚前');
+  });
+
+  it('an older grant keeps its age, and English keeps its words', async () => {
+    mock({ grants: [grant({ grantId: 'g-new', createdAt: new Date().toISOString() }), grant({ grantId: 'g-older', createdAt: iso(-7200000) })] });
+    renderPage();
+    const drawer = await openDrawerOf('Linear');
+    const kickers = [...drawer.querySelectorAll('.v2-connector-row__kicker')].map((node) => node.textContent);
+    expect(kickers[0]).toContain('granted just now');
+    expect(kickers[1]).toContain('granted 2h');
   });
 
   it('says a change was a change', async () => {

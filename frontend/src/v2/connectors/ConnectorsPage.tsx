@@ -63,6 +63,7 @@ const ConnectorsPage: React.FC = () => {
   // Ended grants fold under a live one, so a grant is never below its own history.
   const [inactiveOpen, setInactiveOpen] = useState(false);
   const freshRef = useRef<HTMLDivElement | null>(null);
+  const confirmRef = useRef<HTMLParagraphElement | null>(null);
   const phone = usePhone();
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -166,6 +167,11 @@ const ConnectorsPage: React.FC = () => {
   useEffect(() => {
     if (grantNotice) freshRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [grantNotice, freshRowShown]);
+  // The form that held focus is gone. Once per grant, so the row arriving later
+  // can't pull focus back; a focused status is read out even though it mounts full.
+  useEffect(() => {
+    if (grantNotice) confirmRef.current?.focus({ preventScroll: true });
+  }, [grantNotice]);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -515,11 +521,15 @@ const ConnectorsPage: React.FC = () => {
     const confirmed = grantNotice && grantNotice.installableId === toolEntry.installableId && !(freshGrant && isDead(freshGrant, m.now))
       ? grantNotice : null;
     const freshRow = confirmed ? liveGrants.find((grant) => grant.grantId === confirmed.grantId) || null : null;
-    const foldInactive = liveGrants.length > 0;
+    // The mint went through but no read has shown it yet, and if GET /api/grants
+    // keeps failing none will. Until one does, the old grants are out of date, so
+    // nothing here may describe them or offer what was just done.
+    const awaitingRead = Boolean(confirmed && !freshRow);
+    const foldInactive = liveGrants.length > 0 || awaitingRead;
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
-        {toolGranted(toolEntry) && tp.renderAccessNote(toolEntry)}
+        {toolGranted(toolEntry) && !awaitingRead && tp.renderAccessNote(toolEntry)}
         {/* A granted operator-key entry still takes a key for an agent that has none. */}
         {grantedKeyForm && (
           <>
@@ -527,7 +537,7 @@ const ConnectorsPage: React.FC = () => {
             <div className="v2-cx-pop__acts">{grantedKeyForm}</div>
           </>
         )}
-        {!toolGranted(toolEntry) && (
+        {!toolGranted(toolEntry) && !awaitingRead && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>
             {tp.renderEntryNote(toolEntry)}
@@ -540,7 +550,7 @@ const ConnectorsPage: React.FC = () => {
         <div className="v2-cx-list">
           {confirmed && (
             <div className="v2-cx-fresh" ref={freshRef}>
-              <p className="v2-cx-confirm" role="status">
+              <p className="v2-cx-confirm" role="status" tabIndex={-1} ref={confirmRef}>
                 {t(confirmed.changed ? 'tools.grantChangedConfirm' : 'tools.grantedConfirm', {
                   tool: confirmed.tool, agents: confirmed.agents, pod: confirmed.pod,
                 })}

@@ -248,6 +248,11 @@ export const entryOffersPrWrite = (entry: ToolCatalogEntry): boolean => (
   && entry.tools.some((tool) => tool.prWrite && tool.name === 'github.create_pull_request')
 );
 
+/** Under a minute old: `shortAge` reads "just now", which zh can't put before 前. */
+export const isJustNow = (date: string | null | undefined, now: number): boolean => (
+  relativeParts(date, { includeFuture: false, now }).kind !== 'rel'
+);
+
 /**
  * The age as a unit-suffixed number ("23d", "5m", "just now"). Rounds through
  * relativeParts, the same rule as the "revoked … ago" line, so one timestamp
@@ -300,7 +305,9 @@ export const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now
  * The one thing a hosted entry's panel says about writing, for what is on
  * screen. A hosted grant is read or ask-first: the mint refuses `write`, so a
  * hosted write always parks for the connection's owner. An offer has no grant
- * to describe, so it says what a grant can be.
+ * to describe, so it says what a grant can be. `liveGrants` is the viewer's own
+ * connections' grants on this entry only, so the copy speaks for this connection:
+ * another GitHub, or another member's grant, is out of its sight.
  */
 export type AccessStatement = 'offerRead' | 'offerAsk' | 'grantedRead' | 'grantedAsk' | 'grantedMixed';
 

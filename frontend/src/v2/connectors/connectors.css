@@ -106,6 +106,7 @@ div.v2-cx-warning p { margin: 0; color: inherit; font-size: inherit; line-height
 /* the confirmation after Grant, with the grant it names right under it */
 .v2-cx-fresh { display: grid; gap: 10px; }
 .v2-cx-confirm { margin: 0; padding: 10px 12px; border: 1px solid var(--v2-success); border-radius: var(--v2-radius-sm); background: var(--v2-success-soft); color: var(--v2-text-primary); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; }
+.v2-cx-confirm:focus { outline: none; }
 /* the ended grants' count, as a fold under a live grant */
 .v2-cx-off--fold { margin-left: 0; font: inherit; }
 /* a mode's raw tool ids, for anyone who wants them */

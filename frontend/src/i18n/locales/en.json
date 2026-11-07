@@ -2901,8 +2901,8 @@
   },
   "tools": {
     "access": {
-      "offerRead": "No agent can use {{label}} yet. A grant lets agents read it, not change it.",
-      "offerAsk": "No agent can use {{label}} yet. A grant can be read only, or read and write. With write access, each write waits for your approval.",
+      "offerRead": "This {{label}} connection isn't granted to any agent yet. A grant lets agents read it, not change it.",
+      "offerAsk": "This {{label}} connection isn't granted to any agent yet. A grant can be read only, or read and write. With write access, each write waits for your approval.",
       "grantedRead": "Agents can read {{label}} from here, but they can't write to it.",
       "grantedAsk": "Agents can read {{label}} from here. Each write waits for your approval.",
       "grantedMixed": "Agents can read {{label}} from here. Where a grant allows writes, each write waits for your approval."
@@ -2923,6 +2923,7 @@
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
     "joinPolicyError": "Could not make this pod invite-only.",
     "grantedAge": "granted {{age}}",
+    "grantedJustNow": "granted just now",
     "aPod": "a pod",
     "aSeat": "an agent",
     "grantToAgents": "Grant to agents",

@@ -2898,8 +2898,8 @@
   },
   "tools": {
     "access": {
-      "offerRead": "还没有智能体可以使用 {{label}}。授权后，智能体只能读取，不能更改。",
-      "offerAsk": "还没有智能体可以使用 {{label}}。授权时可以选只读，或读取和写入；如果允许写入，每次写入都要等你批准。",
+      "offerRead": "这个 {{label}} 连接还没有授权给任何智能体。授权后，智能体只能读取，不能更改。",
+      "offerAsk": "这个 {{label}} 连接还没有授权给任何智能体。授权时可以选只读，或读取和写入；如果允许写入，每次写入都要等你批准。",
       "grantedRead": "智能体可以在这里读取 {{label}}，但不能写入。",
       "grantedAsk": "智能体可以在这里读取 {{label}}，每次写入都要等你批准。",
       "grantedMixed": "智能体可以在这里读取 {{label}}。如果授权允许写入，每次写入都要等你批准。"
@@ -2918,6 +2918,7 @@
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
     "joinPolicyError": "无法将此 Pod 设为仅限邀请。",
     "grantedAge": "{{age}}前授予",
+    "grantedJustNow": "刚刚授予",
     "aPod": "一个 Pod",
     "aSeat": "一个智能体",
     "grantToAgents": "授权给智能体",

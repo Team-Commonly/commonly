@@ -1585,7 +1585,7 @@ describe('Linear read note', () => {
     renderPage();
     const pop = await openToolPopover('Linear');
     expect(within(pop).getAllByRole('note')).toHaveLength(1);
-    expect(within(pop).getByRole('note')).toHaveTextContent("No agent can use Linear yet. A grant lets agents read it, not change it.");
+    expect(within(pop).getByRole('note')).toHaveTextContent("This Linear connection isn't granted to any agent yet. A grant lets agents read it, not change it.");
   });
 
   it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
@@ -1608,7 +1608,7 @@ describe('Linear read note', () => {
     mockTools({ entries: [atlassian], grants: [] });
     renderPage();
     const pop = await openToolPopover('Atlassian');
-    expect(within(pop).getByRole('note')).toHaveTextContent('No agent can use Atlassian yet.');
+    expect(within(pop).getByRole('note')).toHaveTextContent("This Atlassian connection isn't granted to any agent yet.");
   });
 });
 

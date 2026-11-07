@@ -11,6 +11,7 @@ import GithubInstallWarning from './GithubInstallWarning';
 import { grantHarnessNames } from '../utils/harnessCatalog';
 import {
   shortAge,
+  isJustNow,
   isExpired,
   isDead,
   boundAgentOf,
@@ -287,7 +288,9 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     // (TASK-179, ux-lead's gate at 07873c19) — two nouns, so two expressions.
     const targetLabel = grant.target.kind === 'pod' ? podName(grant.target.id) : seatLabel(podId, grant.target.id);
     // Direction A rule 3: `pod · verb age` — the verb from a key, the age from the timestamp.
-    const when = t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
+    const when = isJustNow(grant.createdAt, now)
+      ? t('tools.grantedJustNow')
+      : t('tools.grantedAge', { defaultValue: 'granted {{age}}', age: shortAge(grant.createdAt, now, t) });
     const kicker = `${podId ? podName(podId) : seatLabel(null, grant.target.id)} · ${when}`;
     const revokedBy = grant.revokedBy ? memberName(grant.revokedBy) : null;
     const line2 = dead
