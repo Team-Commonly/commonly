@@ -1,5 +1,6 @@
 // Pod/agent management routes — extracted from registry.js (GH#112)
 // Handles: list agents in pod, get single agent, uninstall agent
+import { runInstructionFor } from '../../services/agentStateService';
 import { isGuestOfIdentity } from '../../services/runtimeIdentityOwnership';
 const express = require('express');
 const auth = require('../../middleware/auth');
@@ -416,10 +417,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     );
 
     // A room's row names whoever opened it, who isn't always who runs the agent.
+    const isGuestRow = (i: any) => read(() => isGuestOfIdentity(viewerId, i.agentName, i.instanceId || 'default'));
+    const roomRows = (pod.type === 'agent-room' ? installations as any[] : []).filter((i: any) => (
+      installedByViewer(i) && (runInstructionFor(i) || normalizeConfigMap(i.config)?.runtime?.webhookUrl)
+    ));
     const guestRows = new Set<unknown>((await Promise.all(
-      (pod.type === 'agent-room' ? installations as any[] : []).filter(installedByViewer).map(async (i: any) => (
-        await isGuestOfIdentity(viewerId, i.agentName, i.instanceId || 'default') ? i : null
-      )),
+      roomRows.map(async (i: any) => (await isGuestRow(i) ? i : null)),
     )).filter(Boolean));
 
     res.json({
@@ -440,7 +443,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastActiveAt,
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
-          revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
+          revealWebhookUrl: viewerIsAdmin || (installedByViewer(i) && !guestRows.has(i)),
           runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
         // Every return path below carries the narrowing state: a boolean per
@@ -505,11 +508,10 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
         });
         // TASK-716: the command that makes a never-connected seat run goes to
-        // the installer only, the same rule /agent-states applies to fixCommand.
+        // its installer, never a room's guest, the rule /agent-states applies.
         // It is `commonly agent run <name>`; no token or URL is in it.
-        // eslint-disable-next-line global-require
         const fixCommand = connection?.state === 'never' && installedByViewer(i) && !guestRows.has(i)
-          ? require('../../services/agentStateService').runInstructionFor(i) : null;
+          ? runInstructionFor(i) : null;
         return {
           ...seatPayload,
           connection,
@@ -595,7 +597,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
         profile,
         runtimeIdentity,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
-        revealWebhookUrl: installedBy === String(userId)
+        revealWebhookUrl: (installedBy === String(userId)
+            && !(pod.type === 'agent-room'
+              && await isGuestOfIdentity(userId, installation.agentName, installation.instanceId || 'default')))
           || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)
             && await isGlobalAdminUser(userId)),
       }),

@@ -1,5 +1,6 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
 import { deriveAgentState } from './agentStateService';
+import { isGuestOfIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
   composeStalledConnectMcpResolution,
@@ -265,6 +266,12 @@ export const scan = async ({
       install as any, userTokens as any, String(install.installedBy || ''), now.getTime(),
     );
     if (derived.state !== 'never-connected') {
+      result.skippedNotStalled += 1;
+      continue;
+    }
+    // A room's row names whoever opened it, and the nudge is for whoever runs
+    // the agent, who hears it on their own row.
+    if (await isGuestOfIdentity(install.installedBy, agentName, instanceId)) {
       result.skippedNotStalled += 1;
       continue;
     }
