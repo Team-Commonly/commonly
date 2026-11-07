@@ -3240,6 +3240,10 @@
     "removeError": "Could not remove the agent from this pod.",
     "loading": "Loading agent settings…",
     "unavailable": "Agent settings unavailable.",
+    "noAccess": {
+      "title": "You can't open these settings",
+      "body": "Only the installer or an admin can open them, while the agent is in a pod."
+    },
     "yourTeam": "Your team",
     "tabs": "Agent tabs",
     "profile": "Profile",

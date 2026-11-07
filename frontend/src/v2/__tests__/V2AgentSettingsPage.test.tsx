@@ -743,6 +743,43 @@ test('a name outside 1–80 characters is refused under the field; other refusal
   expect(screen.queryByText('Enter a display name of 1–80 characters.')).toBeNull();
 });
 
+describe('someone who does not manage this agent', () => {
+  test('gets a sentence and the way to Your team, not the hook\'s error text', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) return Promise.resolve({ data: { installations: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/v2/agents/maya-claude/u1a2b');
+    const state = await screen.findByTestId('agent-settings-no-access');
+    expect(state).toHaveAttribute('role', 'alert');
+    expect(state).toHaveTextContent("You can't open these settings");
+    expect(state).toHaveTextContent('Only the installer or an admin can open them, while the agent is in a pod.');
+    // Not the profile: a private agent's reads "Agent not found", a second dead end.
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+  });
+
+  test('an installer refused every pod is not told only the installer can open this', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) {
+        return Promise.resolve({ data: { installations: [{ podId: 'pod-1', podName: 'Left pod' }] } });
+      }
+      return Promise.reject(Object.assign(new Error('refused'), { response: { status: 403 } }));
+    });
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+  });
+
+  test('a load that fails for any other reason keeps its own error', async () => {
+    axios.get.mockRejectedValue(new Error('boom'));
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('boom');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Your team' })).not.toBeInTheDocument();
+  });
+});
+
 describe('one Identity & access list (d215 frame)', () => {
   // A connected webhook agent with one active key, a memory index and no skills or grants.
   const fleet = ({ state = 'connected', memory = 'ok', skills = 'ok', runtimeType = 'webhook', placement = null } = {}) => (url) => {

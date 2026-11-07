@@ -10,7 +10,7 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { useAgentSettings } from './useAgentSettings';
+import { agentSettingsErrorText as errorLabel, NOTHING_MANAGEABLE, PODS_REFUSED, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
@@ -41,12 +41,6 @@ const dateLabel = (value: string | null | undefined, t: (key: string) => string)
 
 // The owner memory index the Memory tab reads; only its counts are used here.
 interface MemoryIndex { sections?: Array<{ updatedAt?: string | null; notes?: unknown[] }> }
-
-const errorLabel = (error: unknown, fallback: string): string => (
-  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && error.message)
-  || fallback
-);
 
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
@@ -266,9 +260,30 @@ const V2AgentSettingsPage: React.FC = () => {
 
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
   if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
-  if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
-    {error || errorLabel(loadError, t('agentSettings.unavailable'))}
-  </div>;
+  if (!access || !podId) {
+    const marker = loadError instanceof Error ? loadError.message : null;
+    // Your team always opens. A profile doesn't: a private agent's reads "Agent not found".
+    const wayOut = <Link className="v2p-b v2p-b-s" to="/v2/agents">{t('agentSettings.yourTeam')}</Link>;
+    if (marker === NOTHING_MANAGEABLE) {
+      return (
+        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" role="alert" data-testid="agent-settings-no-access">
+          <h1>{t('agentSettings.noAccess.title')}</h1>
+          <p>{t('agentSettings.noAccess.body')}</p>
+          {wayOut}
+        </div>
+      );
+    }
+    const text = error || errorLabel(loadError, t('agentSettings.unavailable'));
+    if (marker === PODS_REFUSED) {
+      return (
+        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" role="alert">
+          <p>{text}</p>
+          {wayOut}
+        </div>
+      );
+    }
+    return <div className="v2-agent-settings__state" role="alert">{text}</div>;
+  }
   if (keysReadyFor !== identityKey) return <div className="v2-agent-settings__state" role={error ? 'alert' : 'status'}>
     {error || t('agentSettings.loading')}
   </div>;

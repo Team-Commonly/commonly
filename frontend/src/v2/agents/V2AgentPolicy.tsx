@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { agentSettingsErrorText as message } from './useAgentSettings';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import './v2-agent-policy.css';
@@ -12,11 +13,6 @@ const memorySections: MemorySection[] = ['long_term', 'soul', 'shared'];
 const trustAdapters = new Set(['claude', 'codex', 'opencode', 'qwen']);
 // A 403 is an answer, not a failure: the viewer can't edit this memory, and a retry won't change that.
 const forbidden = (error: unknown): boolean => (error as { response?: { status?: number } })?.response?.status === 403;
-
-const message = (error: unknown, fallback: string) => (
-  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && error.message) || fallback
-);
 
 interface Props {
   agentName: string;
