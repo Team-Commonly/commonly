@@ -2614,6 +2614,10 @@ class AgentMessageService {
         // bot — and `isBot` gates the wrapper's echo suppression, so a false
         // positive silently ate that agent's reply.
         const isBot = msg.is_bot === true || msg.is_bot === 'true';
+        // A null means the mirror knows nothing about the sender (usually no
+        // users row at all), so the key stays off: a false here told a seat a
+        // person addressed it.
+        const senderUnknown = msg.is_bot === null;
         return {
           _id: msg.id,
           id: msg.id,
@@ -2625,7 +2629,7 @@ class AgentMessageService {
             profilePicture: msg.profile_picture as string | undefined,
           },
           username,
-          isBot,
+          ...(senderUnknown ? {} : { isBot }),
           ...withSelf(msg.user_id),
           createdAt: msg.created_at as Date,
           // Threading structure for agent readers (TASK-052's read half):
@@ -2680,7 +2684,8 @@ class AgentMessageService {
         messageType: (msg.messageType as string) || 'text',
         userId: userId || { username: 'Unknown' },
         username,
-        isBot: userId?.isBot === true,
+        // Same as the PG read: a user that didn't populate is unknown, not a person.
+        ...(userId ? { isBot: userId.isBot === true } : {}),
         author_kind: msg.authorKind === 'kernel' || msg.author_kind === 'kernel' ? 'kernel' : null,
         // D245: same as the PG read above.
         ...(msg.summary ? { summary: msg.summary as string } : {}),
