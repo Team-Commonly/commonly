@@ -10,7 +10,7 @@ const mockDbPg = {};
 jest.mock('../../config/db-pg', () => mockDbPg);
 
 const {
-  emitRemovedLine, emitStoppedLine, hasRemovedLineSince, hasStoppedLineSince,
+  emitOfflineLine, emitRemovedLine, emitStoppedLine, hasOfflineLineSince, hasRemovedLineSince, hasStoppedLineSince,
 } = require('../../services/systemActionLineService');
 
 const { findPreviousNonSilentMessage } = require('../../services/systemExchangeTriggers');
@@ -86,6 +86,22 @@ real('the stopped line on real PostgreSQL (F297)', () => {
     });
     expect(await hasRemovedLineSince(POD, 'nova:default', anHourAgo())).toBe(true);
     expect(await hasRemovedLineSince(OTHER_POD, 'nova:default', anHourAgo())).toBe(false);
+  });
+
+  it('keeps an offline line apart from the others', async () => {
+    expect(await hasOfflineLineSince(POD, 'nova:default', anHourAgo())).toBe(false);
+    await emitOfflineLine({
+      podId: POD,
+      actorUserId: USER,
+      actorUsername: 'nova',
+      actorIsBot: true,
+      agentLabel: 'Nova',
+      agentKey: 'nova:default',
+      messageId,
+    });
+    expect(await hasOfflineLineSince(POD, 'nova:default', anHourAgo())).toBe(true);
+    expect(await hasOfflineLineSince(OTHER_POD, 'nova:default', anHourAgo())).toBe(false);
+    expect(await hasRemovedLineSince(POD, 'nova:default', anHourAgo())).toBe(false);
   });
 
   it('ignores a line from before the window, so a second stop is told again', async () => {

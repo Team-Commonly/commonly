@@ -1,5 +1,7 @@
-import { emitNotConnectedLine, hasNotConnectedLineToday } from './systemActionLineService';
-import { deriveAgentState } from './agentStateService';
+import {
+  emitNotConnectedLine, emitOfflineLine, hasNotConnectedLineToday, hasOfflineLineSince,
+} from './systemActionLineService';
+import { deriveAgentState, type AgentReachState } from './agentStateService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const User = require('../models/User');
@@ -15,15 +17,15 @@ type NeverConnectedAgent = {
 };
 
 /**
- * The agent's bot row when its active install in this pod has never polled
- * (`deriveAgentState` → `never-connected`), else null. The one derivation the
- * notice below and the wake fan-out (agentMentionService) both read.
+ * The agent's bot row and `deriveAgentState` verdict for its active install in
+ * this pod, the one derivation the notices below and the wake fan-out
+ * (agentMentionService) all read. Null when either row is missing.
  */
-async function neverConnectedAgent({
+async function agentReach({
   podId, agentName, instanceId, now = new Date(),
 }: {
   podId: string; agentName: string; instanceId: string; now?: Date;
-}): Promise<NeverConnectedAgent | null> {
+}): Promise<{ agent: NeverConnectedAgent; state: AgentReachState } | null> {
   const install = await AgentInstallation.findOne({
     podId, agentName, instanceId, status: 'active',
   }).lean() as Record<string, unknown> | null;
@@ -36,14 +38,19 @@ async function neverConnectedAgent({
   }).select('username profilePicture botMetadata agentRuntimeTokens').lean() as NeverConnectedAgent | null;
   if (!agent) return null;
 
-  const derived = deriveAgentState(
+  const { state } = deriveAgentState(
     install as Parameters<typeof deriveAgentState>[0],
     agent.agentRuntimeTokens || [],
     '',
     now.getTime(),
   );
-  return derived.state === 'never-connected' ? agent : null;
+  return { agent, state };
 }
+
+const neverConnectedAgent = async (args: Parameters<typeof agentReach>[0]): Promise<NeverConnectedAgent | null> => {
+  const reach = await agentReach(args);
+  return reach?.state === 'never-connected' ? reach.agent : null;
+};
 
 /** Has this agent's install in this pod never connected? */
 export async function isNeverConnectedAgent(args: {
@@ -131,4 +138,54 @@ async function postOnce(
     threadRootId: threadRootId ?? null,
   });
   return true;
+}
+
+/**
+ * F300. A person addressed a Bring your own agent that has stopped checking in
+ * (`deriveAgentState` → `gone-dark`). Its wake stays pending, so the retire pass
+ * never reaches it and the room would say nothing. Told once a UTC day, as a reply
+ * to the message. Silent for an agent sender, with no message to reply to, and for
+ * any other state: a never-connected agent has its own line above.
+ */
+export async function noteOfflineMention({
+  podId, agentName, instanceId, senderId, messageId, threadRootId, now = new Date(),
+}: {
+  podId: string;
+  agentName: string;
+  instanceId: string;
+  senderId: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+  now?: Date;
+}): Promise<boolean> {
+  if (messageId === null) return false;
+  const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
+  if (!sender || sender.isBot) return false;
+
+  const reach = await agentReach({ podId, agentName, instanceId, now });
+  if (reach?.state !== 'gone-dark') return false;
+  const { agent } = reach;
+
+  const agentKey = `${agentName}:${instanceId}`;
+  const flightKey = `offline:${podId}:${agentKey}`;
+  if (inFlight.has(flightKey)) return false;
+  inFlight.add(flightKey);
+  try {
+    const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    if (await hasOfflineLineSince(podId, agentKey, midnight)) return false;
+    await emitOfflineLine({
+      podId,
+      actorUserId: String(agent._id),
+      actorUsername: agent.username || agentName,
+      actorAvatarUrl: agent.profilePicture || null,
+      actorIsBot: true,
+      agentLabel: AgentIdentityService.resolveAgentDisplayLabel(agent, agentName),
+      agentKey,
+      messageId,
+      threadRootId: threadRootId ?? null,
+    });
+    return true;
+  } finally {
+    inFlight.delete(flightKey);
+  }
 }

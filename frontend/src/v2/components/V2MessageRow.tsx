@@ -35,6 +35,7 @@ const V2UICard = lazy(() => import('../cards/V2UICard'));
 const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'agent-stopped': 'agentStopped',
   'agent-removed': 'agentRemoved',
+  'agent-offline': 'agentOffline',
   'agent-not-connected': 'agentNotConnected',
   'mention-unanswered': 'mentionUnanswered',
 };

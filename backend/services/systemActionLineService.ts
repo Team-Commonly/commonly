@@ -193,6 +193,23 @@ export async function emitRemovedLine(line: RemovedLine): Promise<void> {
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
+/**
+ * F300. A person addressed a Bring your own agent whose listener has stopped
+ * checking in. Its wake stays pending, so nothing else would ever speak up. It
+ * promises nothing: the agent may never come back. Callers dedupe with
+ * `hasOfflineLineSince`.
+ */
+export type OfflineLine = StoppedLine;
+
+export async function emitOfflineLine(line: OfflineLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} looks offline, so it may not answer for now.`, {
+    kind: 'system-action',
+    action: 'agent-offline',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
 const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {
@@ -212,6 +229,11 @@ const hasAgentLineSince = async (action: string, podId: string, agentKey: string
 /** Whether a stopped line for this agent sits in the pod since `since`; no pool reads as yes. */
 export const hasStoppedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
   hasAgentLineSince('agent-stopped', podId, agentKey, since)
+);
+
+/** Whether an offline line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasOfflineLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-offline', podId, agentKey, since)
 );
 
 /** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */

@@ -25,6 +25,7 @@ jest.mock('../../../services/stoppedMentionService', () => ({
 }));
 jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
+  noteOfflineMention: jest.fn().mockResolvedValue(false),
   isNeverConnectedAgent: jest.fn().mockResolvedValue(false),
 }));
 
@@ -36,7 +37,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { noteStoppedMention, noteRemovedAgentDm } = require('../../../services/stoppedMentionService');
-const { noteNeverConnectedMention } = require('../../../services/neverConnectedMentionService');
+const { noteNeverConnectedMention, noteOfflineMention } = require('../../../services/neverConnectedMentionService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const peer = {
@@ -290,5 +291,85 @@ describe('a DM to an agent with no active install left (F270)', () => {
     removed();
     noteRemovedAgentDm.mockRejectedValue(new Error('pg down'));
     await expect(dm()).resolves.toMatchObject({ enqueued: [] });
+  });
+});
+
+describe('an agent that went offline (F300)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setup({ podType: 'agent-room', members: [human, nova] });
+    noteOfflineMention.mockResolvedValue(false);
+  });
+
+  it('is noted on a mention, with a plain pod id, and the wake still queues', async () => {
+    setup();
+    await AgentMentionService.enqueueMentions({
+      podId: { toString: () => 'pod-1' },
+      message: { _id: '900', content: '@nova hello', createdAt: new Date() },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(noteOfflineMention.mock.calls[0][0]).toMatchObject({
+      podId: 'pod-1', agentName: 'nova', senderId: human._id, messageId: '900',
+    });
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+
+  it('is noted on a reply with no @, which counts as addressing it', async () => {
+    setup();
+    await mention({
+      content: 'and the other one?',
+      replyToMessageId: '899',
+      message: { replyTo: { userId: nova._id } },
+    });
+    expect(noteOfflineMention.mock.calls.map(([args]) => args.agentName)).toEqual(['nova']);
+  });
+
+  it('waits for no notice: one that never finishes holds up neither the send nor the wake', async () => {
+    setup();
+    noteOfflineMention.mockReturnValue(new Promise(() => {}));
+    await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { _id: '900', content: '@nova hello', createdAt: new Date() },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+
+  it('a failed notice never drops the mention', async () => {
+    setup();
+    noteOfflineMention.mockRejectedValue(new Error('pg down'));
+    await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { _id: '900', content: '@nova hello', createdAt: new Date() },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(AgentEventService.enqueue).toHaveBeenCalled();
+  });
+
+  it('is noted on a DM, and the wake still queues', async () => {
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-1',
+      message: { _id: '901', content: 'hello' },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(noteOfflineMention.mock.calls[0][0]).toMatchObject({
+      podId: 'pod-1', agentName: 'nova', instanceId: 'default', senderId: human._id, messageId: '901',
+    });
+    expect(result.enqueued).toEqual(['nova']);
+  });
+
+  it('a failed notice never drops the DM', async () => {
+    noteOfflineMention.mockRejectedValue(new Error('pg down'));
+    const result = await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-1',
+      message: { _id: '901', content: 'hello' },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(result.enqueued).toEqual(['nova']);
   });
 });
