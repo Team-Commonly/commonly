@@ -146,12 +146,32 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'left')).connectPodId).toBeUndefined();
   });
 
+  it('keeps the command for a co-installer, whose saved key still runs it', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const theirs = await makePod('Theirs', 'chat', { createdBy: other._id, members: [other._id] });
+    await install('shared', home._id);
+    await install('shared', theirs._id, BYO, other._id);
+    await install('shared', room._id);
+    const row = await rowIn(room, 'shared');
+    expect(row.fixCommand).toBe('commonly agent run shared');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
   it('skips an install that was removed', async () => {
+    await User.create({
+      username: 'removed',
+      email: 'removed@test.com',
+      password: 'password123',
+      isBot: true,
+      botMetadata: { agentName: 'removed', instanceId: 'default', ownerUserId: owner._id },
+    });
     const room = await makePod('Room', 'agent-room');
     const gone = await install('removed', home._id);
     await install('removed', room._id);
     await AgentInstallation.updateOne({ _id: gone._id }, { status: 'uninstalled' });
-    expect((await rowIn(room, 'removed')).connectPodId).toBeUndefined();
+    const row = await rowIn(room, 'removed');
+    expect(row.fixCommand).toBeTruthy();
+    expect(row.connectPodId).toBeUndefined();
   });
 
   it('names the oldest of several pods', async () => {

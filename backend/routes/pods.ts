@@ -599,13 +599,19 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
         if (!row.fixCommand) return;
         // A room's row names whoever opened it, so a guest reads as the
         // installer here. The command is the owner's, and a guest can't run it.
-        // A failed read keeps it: an owner losing it is worse than a guest seeing it.
-        const { owned } = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId)
-          .catch(() => ({ owned: true }));
-        if (!owned) {
+        // A co-installer's saved key still runs it, so only having no install of
+        // their own takes the command off. A failed read keeps it: an owner
+        // losing it is worse than a guest seeing it.
+        const ownership = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId.toLowerCase())
+          .catch((error: Error) => {
+            console.warn('Could not read the room agent\'s owner:', error.message);
+            return { owned: true };
+          });
+        if (!ownership.owned && ownership.failure === 'owner_installation_missing') {
           delete row.fixCommand;
           return;
         }
+        if (!ownership.owned) return;
         if (row.state !== 'never-connected' || !offersConnect(inst, machineByIdentity.get(key))) return;
         const connectPodId = await connectPodFor(inst, callerId, podId);
         if (connectPodId) row.connectPodId = connectPodId;
