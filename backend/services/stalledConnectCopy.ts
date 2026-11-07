@@ -114,7 +114,7 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  const start = connectable ? 'the command from Connect in my Settings' : `\`${fixCommand}\``;
+  const start = connectable ? 'the command Connect gives you in my Settings' : `\`${fixCommand}\``;
   // Per-kind copies say which command is missing (TASK-721). A per-kind mark
   // is the FIRST copy of that kind ever, per USER, so it can prove a copy
   // happened but never that none did. Two readings follow:

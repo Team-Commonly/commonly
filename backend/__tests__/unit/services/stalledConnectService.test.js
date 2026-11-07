@@ -87,6 +87,7 @@ const setup = ({ installs = [install()], userTokens = [], open = [], machineId }
       expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
       expect(fields).toContain('agentRuntimeTokens.createdAt');
       expect(fields).toContain('agentRuntimeTokens.lastMcpSeenAt');
+      expect(fields).toContain('agentRuntimeTokens.lastUsedAt');
       expect(fields).toContain('botMetadata.machineId');
       const rows = (filter.$or || []).map((pair) => ({
         botMetadata: {
@@ -133,24 +134,42 @@ describe('resolveTokenEpisode', () => {
 });
 
 describe('stalledConnectService.scan', () => {
+  const madeOnPage = { config: { runtime: { runtimeType: 'webhook', adapter: 'claude', host: 'byo' } } };
+
   it('sends an agent made on the page to Connect, since its key is on no computer', async () => {
-    setup({ installs: [install({ config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } })] });
+    setup({ installs: [install(madeOnPage)] });
     await scan({ now: NOW });
 
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('Run the command from Connect in my Settings on the machine where I should live');
+    expect(content).toContain('Run the command Connect gives you in my Settings on the machine where I should live');
     expect(content).not.toContain('commonly agent run');
   });
 
   it.each([
-    ['a seat on a machine', { config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, 'machine-1'],
-    ['a wrapper', { config: { runtime: { runtimeType: 'wrapper', host: 'byo' } } }, undefined],
-    ['a second instance', { instanceId: 'other', config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, undefined],
-  ])('keeps the command for %s, which the page can\'t connect', async (_label, over, machineId) => {
+    ['an attached agent, whose key is saved', { config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, undefined],
+    ['an agent init bot, whose key is saved', { config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }, undefined],
+    ['a seat on a machine', madeOnPage, 'machine-1'],
+    ['a second instance', { ...madeOnPage, instanceId: 'other' }, undefined],
+  ])('keeps the command for %s', async (_label, over, machineId) => {
     setup({ installs: [install(over)], machineId });
     await scan({ now: NOW });
 
     expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
+  it('keeps the command once this token has made any call, because Settings stops offering Connect', async () => {
+    setup({ installs: [install(madeOnPage)], userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: new Date(NOW.getTime() - 60 * 1000) }] });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
+  it('offers Connect when only a replaced token had been used', async () => {
+    const replaced = new Date(OLD_TOKEN.getTime() - 60 * 1000);
+    setup({ installs: [install(madeOnPage)], userTokens: [{ createdAt: replaced, lastUsedAt: replaced }] });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('Connect gives you');
   });
 
   it('nudges a seat whose token was issued long ago and never used', async () => {
@@ -163,7 +182,7 @@ describe('stalledConnectService.scan', () => {
     expect(posted.podId).toBe('pod1');
     expect(posted.authorKind).toBe('kernel');
     expect(posted.content).toContain('@alice');
-    expect(posted.content).toContain('won\'t reach anyone yet');
+    expect(posted.content).toContain('commonly agent run ai1-agent');
     expect(posted.content).toContain("I'll post here the moment I connect");
   });
 
@@ -189,7 +208,7 @@ describe('stalledConnectService.scan', () => {
     );
     expect(posted.content).toContain('no connection arrived');
     // Nothing here knows the OS, so the copy doesn't claim to.
-    expect(posted.content).toContain('here is the one thing to check: run the command from Connect in my Settings');
+    expect(posted.content).toContain('here is the one thing to check: run `commonly agent run ai1-agent`');
     expect(posted.content).not.toContain('for your OS');
   });
 
@@ -218,7 +237,7 @@ describe('stalledConnectService.scan', () => {
       expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.`);
       // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
       expect(content).not.toContain('sandbox');
-      expect(content).toContain('Run the command from Connect in my Settings on a Mac');
+      expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
       expect(content).toContain('or choose “Run it here” on the Bring your own page for a hosted agent');
       expect(content).toContain("I'll post here the moment I connect");
       expect(content).not.toContain('one thing to check');
@@ -297,7 +316,7 @@ describe('stalledConnectService.scan', () => {
     expect(content).toContain('you copied the MCP command');
     expect(content).toContain('but not the listener command that starts me');
     expect(content).toContain('MCP-only clients can call Commonly, but they do not answer @mentions');
-    expect(content).toContain('Run the command from Connect in my Settings in a Terminal on the machine where I should live');
+    expect(content).toContain('Run `commonly agent run ai1-agent` in a Terminal on the machine where I should live');
     expect(content).toContain("I'll post here the moment I connect");
   });
 

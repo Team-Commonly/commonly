@@ -1,5 +1,5 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
-import { deriveAgentState, offersConnect } from './agentStateService';
+import { deriveAgentState, keyOnlyOnPage } from './agentStateService';
 import { isGuestOfIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
@@ -119,7 +119,7 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
-type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; createdAt?: Date }>;
+type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
 
 /**
  * The latest MCP-client call, at or after `since`, on a token issued at or
@@ -141,6 +141,14 @@ const latestMcpSeenSince = (tokenLists: BotTokens[], since: Date): Date | null =
   return latest;
 };
 
+
+// Any call at all on a token of this episode. Settings stops offering Connect
+// once it sees one, and replacing that key could cut off whatever made the call.
+const usedSince = (tokenLists: BotTokens[], since: Date): boolean => tokenLists.some(
+  (list) => (list || []).some(
+    (row) => row?.lastUsedAt && row.createdAt && new Date(row.createdAt) >= since,
+  ),
+);
 
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
 
@@ -174,7 +182,7 @@ const botTokensForMany = async (
     })),
   }).select(
     'botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
-      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.createdAt',
+      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt',
   ).lean() as Array<{
     botMetadata?: { agentName?: string; instanceId?: string; machineId?: unknown };
     agentRuntimeTokens?: BotTokens;
@@ -309,7 +317,8 @@ export const scan = async ({
       issuedAt,
       tokenSource: source,
       mcpConnected,
-      machineId: machinesBySeat.get(botKey(agentName, instanceId)),
+      connectable: keyOnlyOnPage(install as any, machinesBySeat.get(botKey(agentName, instanceId)))
+        && !usedSince([install.runtimeTokens || [], userTokens], issuedAt),
       now,
       result,
     });
@@ -360,14 +369,14 @@ const explainedTokens = async (agentNames: string[]): Promise<Map<string, Explai
 };
 
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, mcpConnected, machineId, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, connectable, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
   mcpConnected: boolean;
-  machineId?: unknown;
+  connectable: boolean;
   now: Date;
   result: StalledScanResult;
 }): Promise<boolean> => {
@@ -433,7 +442,7 @@ const nudgeOnce = async ({
     displayName: derived.displayName,
     handle,
     fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
-    connectable: offersConnect(install as any, machineId),
+    connectable,
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
