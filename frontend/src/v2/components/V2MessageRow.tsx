@@ -453,7 +453,8 @@ export const closingQuestion = (el: HTMLElement): string | null => {
   const blocks = el.querySelectorAll('p, li');
   const last = blocks[blocks.length - 1]?.textContent?.trim();
   if (!last || !ENDS_IN_QUESTION.test(last) || !el.textContent?.trim().endsWith(last)) return null;
-  return last.split(/(?<=[.!?。！？])\s+/).pop() ?? null;
+  // Lowercase after a stop means an abbreviation ("e.g. the new API"), not a new sentence.
+  return last.split(/(?<=[.!?])\s+(?=[^a-z])|(?<=[。！？])\s*/).filter(Boolean).pop() ?? null;
 };
 export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.ReactNode }> = ({ collapsible, children }) => {
   const { t } = useTranslation();

@@ -34,8 +34,13 @@ describe('CollapsibleProse', () => {
 
   it('keeps a Chinese closing question, and one that ends a list', () => {
     setScrollHeight(900);
-    expect(folded(<p>报告很长。要现在合并吗？</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^报告很长。要现在合并吗？$/);
+    expect(folded(<p>报告很长。要现在合并吗？</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^要现在合并吗？$/);
     expect(folded(<ul><li>One</li><li>Ready to ship?</li></ul>).container.querySelector('.v2-msg__closing')).toHaveTextContent('Ready to ship?');
+  });
+
+  it('keeps an abbreviation inside the question', () => {
+    setScrollHeight(900);
+    expect(folded(<p>All done. Should I use one, e.g. the new API?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. the new API\?$/);
   });
 
   it('adds nothing when the message ends in a statement, or a question is followed by code', () => {

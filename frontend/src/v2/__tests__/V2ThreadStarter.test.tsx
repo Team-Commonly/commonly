@@ -752,6 +752,14 @@ describe('second-person prompt placements', () => {
       renderChat(withReply());
       expect(document.querySelector('.v2-chat__messages').scrollTop).toBe(2000);
     });
+    test('lands again on coming back through a pod with no messages', () => {
+      const settled = withReply();
+      const view = renderChat(settled);
+      document.querySelector('.v2-chat__messages').scrollTop = 300;
+      rerenderChat(view, { ...settled, pod: { ...settled.pod, _id: 'empty' }, messages: [] });
+      rerenderChat(view, settled);
+      expect(document.querySelector('.v2-chat__messages').scrollTop).toBe(2000);
+    });
     test('waits for the first read to finish, then lands once, leaving a reader alone after that', () => {
       const settled = withReply();
       const view = renderChat({ ...settled, initialLoadComplete: false });

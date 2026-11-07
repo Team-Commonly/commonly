@@ -1180,6 +1180,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // the edge sentinel in view, so it loads the older page, and that prepend stops the follow
   // thousands of pixels short. A deep link has its own landing.
   const landedPodRef = useRef<string | null>(null);
+  useLayoutEffect(() => { landedPodRef.current = null; }, [currentPodId]);
   useLayoutEffect(() => {
     if (!initialLoadComplete || !newestMessageId || landedPodRef.current === currentPodId) return;
     landedPodRef.current = currentPodId;
