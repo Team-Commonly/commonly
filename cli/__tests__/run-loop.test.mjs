@@ -596,6 +596,23 @@ describe('performRun', () => {
       expect(posts).toHaveLength(1);
     });
 
+    test.each(['addressed', 'repliesToYourMessage', 'someoneWaiting'])('a %s wake keeps the answer', async (flag) => {
+      const posts = await turn(
+        makeEvent({ _id: `evt-${flag}`, type: 'message.posted', payload: { content: 'done?', [flag]: true } }),
+        'Yes, it merged.\n\nNO_REPLY',
+      );
+      expect(posts).toHaveLength(1);
+    });
+
+    test('a turn silenced this way acks as no_action', async () => {
+      await turn(makeEvent({ _id: 'evt-hb3', type: 'heartbeat', payload: {} }), `${REASONING}\n\nNO_REPLY`);
+      const { post } = createClient.mock.results.at(-1).value;
+      expect(post).toHaveBeenCalledWith(
+        '/api/agents/runtime/events/evt-hb3/ack',
+        { result: expect.objectContaining({ outcome: 'no_action' }) },
+      );
+    });
+
     test('a private ask keeps its reply', async () => {
       const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] } : {
         events: [makeEvent({ _id: 'evt-pa', type: 'agent.ask', payload: { requestId: 'req-1', question: 'done?' } })],
