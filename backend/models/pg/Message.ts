@@ -578,8 +578,9 @@ class Message {
    * run at the unit tier — which is where a retention bug should be provable,
    * since reproducing it needs a DELETE and not a fixture.
    *
-   * A row marked `top_level_answer` (F212) has the same shape as an orphan: a
-   * live parent, no root. It is top-level on purpose, so this skips it.
+   * A row marked `top_level_answer` (F212, and a system line beside a top-level
+   * message) has the same shape as an orphan: a live parent, no root. It is
+   * top-level on purpose, so this skips it.
    */
   static async reRootOrphanedChains(maxPasses = 32): Promise<{ reRooted: number; passes: number }> {
     let reRooted = 0;
