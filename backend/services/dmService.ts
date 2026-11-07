@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
@@ -67,6 +68,44 @@ interface AgentDmUpsertResult {
   };
 }
 
+
+/**
+ * The installation that lets an agent post in its agent-room. `stampInstaller`
+ * is for a row coming back: it names whoever hosts the agent now, not whoever it
+ * named when it ended.
+ */
+const writeRoomRow = async ({
+  agentName, instanceId, podId, inherited, installedBy, label, paused, stampInstaller,
+}: {
+  agentName: string;
+  instanceId: string;
+  podId: unknown;
+  inherited: Record<string, unknown> | null;
+  installedBy: unknown;
+  label?: string;
+  paused: boolean;
+  stampInstaller?: boolean;
+}): Promise<void> => {
+  await AgentInstallation.install(agentName.toLowerCase(), podId as Types.ObjectId, {
+    version: '1.0.0',
+    config: {
+      ...(inherited || {}),
+      heartbeat: { enabled: false },
+      autoJoinSource: AGENT_ROOM_AUTO_JOIN_SOURCE,
+    } as unknown as Map<string, unknown>,
+    scopes: ['context:read', 'summaries:read', 'messages:write'],
+    installedBy: installedBy as Types.ObjectId,
+    instanceId,
+    displayName: label,
+    stampInstaller,
+  });
+  if (paused) {
+    await AgentInstallation.updateOne(
+      { agentName: agentName.toLowerCase(), podId, instanceId },
+      { $set: { status: 'paused' } },
+    );
+  }
+};
 
 class DMService {
   static agentDmPairKey(a: unknown, b: unknown): string {
@@ -308,7 +347,10 @@ class DMService {
       type: 'agent-room',
       members: { $all: [agentId, userId] },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (agentName) await DMService.restoreHostedRoomRow(existing._id, agentName, instanceId || 'default', userId);
+      return existing;
+    }
 
     // Resolve the agent's curated display label (botMetadata.displayName,
     // then instanceId if identity-bearing, then username). Avoids the
@@ -392,26 +434,17 @@ class DMService {
           console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
           return roomPod;
         }
-        await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
-          version: '1.0.0',
-          config: {
-            ...(inherited || {}),
-            heartbeat: { enabled: false },
-            autoJoinSource: AGENT_ROOM_AUTO_JOIN_SOURCE,
-          } as unknown as Map<string, unknown>,
-          scopes: ['context:read', 'summaries:read', 'messages:write'],
-          installedBy: (hostedOwner?.ownerId || requestingUserId) as unknown as import('mongoose').Types.ObjectId,
+        await writeRoomRow({
+          agentName,
           instanceId: instanceId || 'default',
+          podId: roomPod._id,
+          inherited,
+          installedBy: hostedOwner?.ownerId || requestingUserId,
           // Curated label for the inspector / chat surfaces — same source as
           // the pod name above. NOT `${agentName} (${instanceId})`.
-          displayName: label,
+          label,
+          paused: paused || Boolean(hostedOwner?.paused),
         });
-        if (paused || hostedOwner?.paused) {
-          await AgentInstallation.updateOne(
-            { agentName: agentName.toLowerCase(), podId: roomPod._id, instanceId: instanceId || 'default' },
-            { $set: { status: 'paused' } },
-          );
-        }
       } catch (installErr) {
         console.error(
           `[dm-service] AgentInstallation.install failed for agent-room pod=${roomPod._id}:`,
@@ -426,6 +459,43 @@ class DMService {
     );
 
     return roomPod;
+  }
+
+  /**
+   * F270. A hosted agent's room rows end with it when its owner removes it
+   * (retireHostedRoomRows), and they aren't revived with the DM rows, because a
+   * row names who pays: the person who adds the agent back may not be who the row
+   * names. So a room is reopened by someone using it, against whoever hosts the
+   * agent now. Only a hosted room row that ended: nothing else is touched. Never
+   * throws, because the room is still theirs to open and read.
+   */
+  static async restoreHostedRoomRow(
+    podId: unknown, agentName: string, instanceId: string, requestingUserId: unknown,
+  ): Promise<boolean> {
+    const name = agentName.toLowerCase();
+    try {
+      const row = await AgentInstallation.rowInPod(name, podId as Types.ObjectId, instanceId);
+      if (row?.status !== 'uninstalled') return false;
+      const paused = await identityIsPaused(name, instanceId);
+      const inherited = await resolveInstallInheritance(name, instanceId, paused ? 'paused' : 'active');
+      // Null for an agent nobody hosts, and not live once its last row has gone.
+      const hostedOwner = await resolveHostedOwner(name, instanceId, requestingUserId);
+      if (!hostedOwner?.live || !hostedOwner.ownerId) return false;
+      await writeRoomRow({
+        agentName: name,
+        instanceId,
+        podId,
+        inherited,
+        installedBy: hostedOwner.ownerId,
+        label: row.displayName,
+        paused: paused || hostedOwner.paused,
+        stampInstaller: true,
+      });
+      return true;
+    } catch (error) {
+      console.warn('[dm-service] reopening a hosted room failed:', (error as Error).message);
+      return false;
+    }
   }
 
   /**
