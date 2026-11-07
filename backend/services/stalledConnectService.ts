@@ -494,7 +494,8 @@ const resolveConnected = async ({
   })));
   const resolveEpisode = async (ep: Record<string, any>): Promise<void> => {
     const install = await AgentInstallation.findById(ep.installationId).lean();
-    if (!install) {
+    // An uninstall keeps the row, and a post here would put the bot back in the pod.
+    if (!install || install.status === 'uninstalled') {
       // Uninstalled while stalled: close it silently. There is no room to
       // congratulate and nobody waiting on the promise.
       await StalledConnectEpisode.updateOne(

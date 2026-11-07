@@ -948,6 +948,18 @@ describe('keeping the forward promise', () => {
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
   });
+
+  it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {
+    setup({ installs: [], open: [openEpisode] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ status: 'uninstalled' })),
+    });
+
+    await scan({ now: NOW });
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEpUpdate).toHaveBeenCalled();
+  });
 });
 
 describe('the resolution copy', () => {
