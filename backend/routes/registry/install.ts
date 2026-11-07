@@ -1025,7 +1025,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // First contact belongs to the durable human↔agent relationship, not the
     // replaceable installation row. Best-effort by design: neither a marker
     // write nor event enqueue failure may turn a successful install into 500.
-    // Awaited (one upsert, one enqueue) so the intro below knows whether the
+    // Awaited (an upsert, at most a member read, an enqueue) so the intro below knows whether the
     // agent's own greeting is coming.
     let firstContactFired = false;
     try {
@@ -1035,6 +1035,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
+        ...(isPersonalPodType(pod?.type) ? {} : { teamPodMembers: pod?.members }),
         // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
         // plain reply to the agent, so the greeting must not tell the person to
         // @mention it there. Only a team pod needs the handle.
