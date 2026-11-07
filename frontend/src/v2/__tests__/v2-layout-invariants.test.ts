@@ -5075,6 +5075,14 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
     expect(landingTsx).toContain("v2-landing__brand-name");
   });
 
+  test('the listing badge sits under the footer wordmark, on our own origin, and can narrow on a phone', () => {
+    // nginx's img-src refuses a third-party host, so a hotlinked badge never paints here.
+    expect(landingTsx).toContain('<img src="/badge-osa.svg"');
+    expect(landingTsx.indexOf('v2-landing__footer-badge')).toBeGreaterThan(landingTsx.indexOf('v2-landing__footer-brand'));
+    expect(landingTsx.indexOf('v2-landing__footer-badge')).toBeLessThan(landingTsx.indexOf('v2-landing__footer-cols'));
+    expect(ruleBody(landing, '.v2-landing__footer-badge img')).toContain('max-width: 100%');
+  });
+
   test('the close is type on the page, not a navy band', () => {
     const cta = lastRuleBody('.v2-landing__cta');
     expect(cta).toContain('display: flex');
