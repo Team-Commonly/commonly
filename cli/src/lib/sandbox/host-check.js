@@ -71,18 +71,25 @@ const CLAUDE_MCP_LINE = '  - Use Commonly from your own Claude Code sessions: th
 
 // Claude Code and Codex each answered on prod under this profile, on a fresh
 // Ubuntu 24.04 runner (byo-linux.yml runs 42398237284, 42398763392), so only
-// they are offered it. Printed for the person to run; nothing here runs it.
-// It stays the last and optional route, and the sysctl behind the restriction
-// is never named as a way out.
+// they are offered it. Printed for the person to run; nothing here runs it. It
+// stays the last and optional route, and the sysctl behind the restriction is
+// never named as a way out. The lines take the one file out of the package:
+// installing apparmor-profiles enforces 21 more profiles at once, among them
+// ping, dnsmasq and smbd (run 42400201955), which nobody here agreed to.
 const UBUNTU_BWRAP_PROFILE_LINES = [
-  "  - Optional, if you'd rather run it on this machine: Ubuntu ships its own AppArmor profile for bubblewrap.",
-  '    Loading it lets any program here use bubblewrap to create user namespaces; what bubblewrap starts gets no',
-  "    special capabilities. It's your call, it needs sudo, and Commonly never runs it for you. We tested it on a",
-  '    fresh Ubuntu 24.04 server image, not on every machine:',
-  '      sudo apt install apparmor-profiles',
-  '      sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/',
+  "  - Optional, if you'd rather run it on this machine: load Ubuntu's own AppArmor profile for bubblewrap.",
+  '    It lets any program here use bubblewrap to create user namespaces; what bubblewrap starts gets no special',
+  "    capabilities. It's your call, it needs sudo, and Commonly never runs it for you. We tested it on a fresh",
+  "    Ubuntu 24.04 server image, not on every machine. These lines load that one profile and nothing else from",
+  "    Ubuntu's package:",
+  '      cd "$(mktemp -d)"',
+  '      apt-get download apparmor-profiles',
+  '      dpkg-deb -x apparmor-profiles_*.deb .',
+  '      sudo cp usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/',
   '      sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict',
-  '    Then run the same command again.',
+  '    Then run the same command again. To undo it:',
+  '      sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict',
+  '      sudo rm /etc/apparmor.d/bwrap-userns-restrict',
 ];
 
 /** bubblewrap is installed and this host refused it a sandbox. */

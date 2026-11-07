@@ -38,10 +38,14 @@ Last reviewed 2026-11-07, against main `a0db74604`.
 
 | | As the image comes | With Ubuntu's `bwrap-userns-restrict` loaded |
 |---|---|---|
-| **Claude Code** | stops at start, clear cause, no next step (run 42397343530) | answered an @mention in 13 s (run 42398237284) |
+| **Claude Code** | stopped at start, clear cause, no next step (run 42397343530) | answered an @mention in 13 s (run 42398237284) |
 | **Codex** | started polling, then every turn failed and the pod heard nothing (run 42398478814) | ran `pwd` in the sandbox and answered in 14 s (run 42398763392) |
 
-Since the next CLI release, both stop at start with one message, routes that change nothing on the machine first and Ubuntu's profile last and optional. `hostSandboxRefusal` prints the commands and nothing runs them. The profile lets any local program use bubblewrap to create user namespaces, with no capabilities for what it starts. The ruling behind the message: never the sysctl, and never a looser grant, though `sandbox-report` measures a bare `userns` grant for comparison. Not walked: a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
+Since the next CLI release, both stop at start with one message, routes that change nothing on the machine first and Ubuntu's profile last and optional. `hostSandboxRefusal` prints the commands and nothing runs them. The ruling behind the message: never the sysctl, and never a looser grant.
+
+The profile lets any local program use bubblewrap to create user namespaces, with no capabilities for what it starts. **The lines take one file out of `apparmor-profiles` and don't install the package.** Installing it enforces 21 more profiles at once, among them ping, dnsmasq and smbd: 28 enforced before, 49 after (run 42400201955). The one file adds 2 profiles, survives an AppArmor reload, and undoes cleanly (run 42400323320). Those two walks loaded the same file from the installed package; the one-file lines themselves passed the namespace and jail checks, not a full @mention.
+
+Not walked: a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
 
 ## Other harnesses
 

@@ -155,7 +155,11 @@ describe('hostSandboxRefusal', () => {
         expect(message.indexOf(ROUTE)).toBeGreaterThan(-1);
         expect(message.indexOf(ROUTE)).toBeLessThan(message.indexOf('Optional,'));
         expect(message.indexOf('Optional,')).toBeLessThan(message.indexOf(PROFILE));
-        expect(message).toMatch(/fresh\s+Ubuntu 24\.04 server image, not on every machine/);
+        expect(message.replace(/\s+/g, ' ')).toMatch(/fresh Ubuntu 24\.04 server image, not on every machine/);
+        // The package would enforce 21 more profiles; the lines take one file.
+        expect(message).not.toMatch(/apt(-get)? install/);
+        expect(message).toMatch(/lets any program here use bubblewrap to create user namespaces/);
+        expect(message).toContain('sudo rm /etc/apparmor.d/bwrap-userns-restrict');
         expect(message).toMatch(/needs sudo/);
         expect(message).toMatch(/Commonly never runs it for you/);
       }

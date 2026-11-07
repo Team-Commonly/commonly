@@ -106,8 +106,10 @@ jobs:
       - name: Load Ubuntu's bwrap profile
         if: github.event_name == 'workflow_dispatch' && inputs.bwrap_profile
         run: |
-          sudo apt-get install -y -qq apparmor-profiles
-          sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
+          cd "$(mktemp -d)"
+          apt-get download apparmor-profiles
+          dpkg-deb -x apparmor-profiles_*.deb .
+          sudo cp usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
