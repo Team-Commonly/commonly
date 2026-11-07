@@ -111,8 +111,22 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('guested', home._id, BYO, other._id);
     await install('guested', room._id);
     const row = await rowIn(room, 'guested');
-    expect(row.fixCommand).toBeTruthy();
+    expect(row.state).toBe('never-connected');
+    expect(row.fixCommand).toBeUndefined();
     expect(row.connectPodId).toBeUndefined();
+  });
+
+  it("gives a guest no command on an agent that went dark", async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('guest-dark', home._id, BYO, other._id);
+    await install('guest-dark', room._id);
+    await AgentInstallation.updateMany(
+      { agentName: 'guest-dark' },
+      { $set: { runtimeTokens: [{ tokenHash: 'h2', createdAt: new Date(), lastListenedAt: new Date(Date.now() - 864e5) }] } },
+    );
+    const row = await rowIn(room, 'guest-dark');
+    expect(row.state).toBe('gone-dark');
+    expect(row.fixCommand).toBeUndefined();
   });
 
   it('gives no link when the room install is someone else\'s, so there is no command', async () => {
@@ -189,7 +203,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('flaky', home._id);
     await install('flaky', room._id);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const find = jest.spyOn(Pod, 'find').mockImplementationOnce(() => { throw new Error('read failed'); });
+    const find = jest.spyOn(Pod, 'find').mockImplementation(() => { throw new Error('read failed'); });
     const row = await rowIn(room, 'flaky');
     find.mockRestore();
     warn.mockRestore();

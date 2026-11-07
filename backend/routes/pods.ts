@@ -560,6 +560,8 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     const { deriveAgentState, offersConnect } = require('../services/agentStateService');
     // eslint-disable-next-line global-require
     const { connectPodFor } = require('../services/roomConnectService');
+    // eslint-disable-next-line global-require
+    const { ownsRuntimeIdentity } = require('../services/runtimeIdentityOwnership');
 
     const installations = await AgentInstallation.find({ podId, status: 'active' })
       .select('agentName instanceId displayName installedBy config runtimeTokens')
@@ -594,8 +596,17 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       await Promise.all(installations.map(async (inst: any, index: number) => {
         const row = agents[index];
         const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
-        if (row.state !== 'never-connected' || !row.fixCommand
-          || !offersConnect(inst, machineByIdentity.get(key))) return;
+        if (!row.fixCommand) return;
+        // A room's row names whoever opened it, so a guest reads as the
+        // installer here. The command is the owner's, and a guest can't run it.
+        // A failed read keeps it: an owner losing it is worse than a guest seeing it.
+        const { owned } = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId)
+          .catch(() => ({ owned: true }));
+        if (!owned) {
+          delete row.fixCommand;
+          return;
+        }
+        if (row.state !== 'never-connected' || !offersConnect(inst, machineByIdentity.get(key))) return;
         const connectPodId = await connectPodFor(inst, callerId, podId);
         if (connectPodId) row.connectPodId = connectPodId;
       }));
