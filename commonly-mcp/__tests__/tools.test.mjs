@@ -1038,6 +1038,61 @@ describe('per-event inbox checkpoint', () => {
     expect(acks(fetchSpy)).toHaveLength(0);
   });
 
+  test('a post started while the checkpoint waits is waited for too', async () => {
+    const answers = [];
+    const fetchSpy = installFetch((url) => (String(url).includes('/messages')
+      ? new Promise((resolve) => { answers.push(resolve); })
+      : Promise.resolve(okResponse({ success: true }))));
+    const tools = freshTools();
+    const first = post(tools);
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    const second = post(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    answers[0](okResponse({ id: 'm1' }));
+    await first;
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    answers[1](held());
+    await second;
+    expect((await checkpointing).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a checkpoint waits for a decision card still posting', async () => {
+    let answer;
+    const fetchSpy = installFetch((url) => (String(url).includes('/decisions')
+      ? new Promise((resolve) => { answer = resolve; })
+      : Promise.resolve(okResponse({ success: true }))));
+    const tools = freshTools();
+    const deciding = tools.commonly_request_decision.call({
+      podId: 'pod-1', decisionClass: 'strategy', title: 't', question: 'q', options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+    });
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    answer(okResponse({ id: 'd1' }));
+    await deciding;
+    await checkpointing;
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a let-go whose ack fails keeps the hold', async () => {
+    let ack = () => ({ ok: false, status: 409, text: async () => JSON.stringify({ code: 'stale_delivery' }) });
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).includes('/ack')) return ack();
+      return held();
+    });
+    const tools = freshTools();
+    await post(tools);
+    await checkpoint(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(1);
+    ack = () => okResponse({ success: true });
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'later', deliveryId: 'nonce' })).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
   test('a hold the seat let go of does not turn back a later event', async () => {
     const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
     const tools = freshTools();

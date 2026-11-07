@@ -296,19 +296,22 @@ export const buildTools = (config) => {
           || typeof deliveryId !== 'string' || !deliveryId.trim()) {
           throw new Error('eventId and deliveryId from the current inbox item are required');
         }
-        await Promise.allSettled([...postsInFlight]);
+        while (postsInFlight.size) await Promise.allSettled([...postsInFlight]);
+        let lettingGo = [];
         if (heldPods.size) {
           if (!turnedBack.has(eventId)) {
             turnedBack.add(eventId);
             throw new Error('Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.');
           }
-          heldPods.clear();
+          lettingGo = [...heldPods];
         }
-        return request(config, {
+        const acked = await request(config, {
           method: 'POST',
           path: `/api/agents/runtime/events/${encodeURIComponent(eventId)}/ack`,
           body: { deliveryId, result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } },
         });
+        lettingGo.forEach((podId) => heldPods.delete(podId));
+        return acked;
       }),
     },
     {
@@ -706,13 +709,13 @@ export const buildTools = (config) => {
       }, ['podId', 'decisionClass', 'title', 'question', 'options']),
       call: wrap(async ({
         podId, decisionClass, title, question, options, threadRootId, context,
-      }) => request(config, {
+      }) => trackPost(podId, request(config, {
         method: 'POST',
         path: '/api/agents/runtime/decisions',
         body: {
           podId, decisionClass, title, question, options, threadRootId, context,
         },
-      })),
+      }))),
     },
     {
       name: 'commonly_respond_to_ask',
