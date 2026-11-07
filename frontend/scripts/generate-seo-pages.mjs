@@ -254,7 +254,7 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
           <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.starGithub)}</a></p>
         </section>${faqSection}
       </main>
-      <footer class="seo-footer">Commonly is open source under Apache-2.0.${siteLinks}</footer>
+      <footer class="seo-footer">Commonly is open source under Apache-2.0. <a href="https://www.opensourcealternatives.to"><img src="/badge-osa.svg" alt="As seen on Open Source Alternatives" width="270" height="20"></a>${siteLinks}</footer>
     </div>`;
 };
 
