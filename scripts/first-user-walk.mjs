@@ -59,6 +59,13 @@ const NOT_COVERED = 'Bring your own connect step is not implemented yet';
 
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
+// A step can decline to run rather than fail. runStep records a SkipStep as
+// result 'skipped' and does not rethrow, so the run continues and stays
+// incomplete rather than going red. Used when the hosted runtime worker is not
+// ready on this instance — staging before its worker is deployed, where
+// provision returns 503 hosted_runtime_unconfigured or 502 hosted_runtime_unreachable.
+class SkipStep extends Error { constructor(message) { super(message); this.skip = true; } }
+
 /**
  * One walk run. Every dependency is injectable so the production path can be
  * exercised under test without the network or the clock.
@@ -98,6 +105,10 @@ export const runWalk = async ({
   // Null until chooseWalkMode accepts the run, so a refused run is never reported as signup.
   let walkMode = null;
   let cleanupRan = false;
+  // True only once provision returned 200: a worker + runtime token were actually
+  // created, so cleanup must treat a FAILED deprovision as a survivor even on staging.
+  // False when provision was skipped or failed — nothing was created to leak.
+  let hostedProvisioned = false;
   // Signup returns no user id, so the manifest carries the exact username instead:
   // SRE finds the account by that name, not by a prefix. Never the email.
   const manifest = { mode: null, userId: null, username: null, podIds: [], unresolvedPodNames: [], agentName: null, botIds: [], survivors: [], status: 'running' };
@@ -143,11 +154,25 @@ export const runWalk = async ({
       log(`PASS ${name} (${now() - started} ms)`);
       return value;
     } catch (caught) {
+      if (caught instanceof SkipStep) {
+        const reason = redact(caught.message);
+        results.push({ name, result: 'skipped', ms: now() - started, reason });
+        log(`SKIP ${name} (${now() - started} ms): ${reason}`);
+        return undefined;
+      }
       const reason = redact(caught.message);
       results.push({ name, result: 'fail', ms: now() - started, reason });
       error(`FAIL ${name} (${now() - started} ms): ${reason}`);
       throw caught;
     }
+  };
+
+  // Record a downstream step as skipped without running it — used when an
+  // earlier skipped step means this one cannot run (hosted-reply needs the
+  // provision that hosted-install skipped).
+  const skipStep = (name, reason) => {
+    results.push({ name, result: 'skipped', ms: 0, reason });
+    log(`SKIP ${name}: ${reason}`);
   };
 
   // Per-run manifest: ids only, outside the repo, for SRE's admin purge of what
@@ -198,6 +223,11 @@ export const runWalk = async ({
         agentName,
         podIds: manifest.podIds,
         deleteAccount: walkMode.deleteAccount,
+        // A not-ready deprovision (503/502 by code) is exempt from survivor-tracking
+        // ONLY when provisioning did not succeed — nothing was created to leak. If
+        // provision returned 200, a failed deprovision IS a leak (the backend revokes
+        // the token only after a successful stop), so it stays a survivor, staging or not.
+        hostedProvisioned,
         // Persist each pod's bot ids before that pod is deleted, so a throw
         // later in the loop still leaves the ids SRE needs.
         onBotIds: (podId, bots) => {
@@ -324,6 +354,14 @@ export const runWalk = async ({
         return created;
       });
 
+      // The not-ready skip is scoped to the STAGING run (mode 'signin', the shared
+      // account on api-staging), which is the only place the worker may legitimately
+      // be undeployed during rollout. On prod (signin-prod) and on signup the worker
+      // is expected to be live, so a not-ready provision there is a genuine outage and
+      // must FAIL — never be hidden as a skip. This walk is advisory; staging-smoke,
+      // not it, gates the deploy.
+      const hostedOptional = walkMode.mode === 'signin';
+      let hostedSkipped = false;
       await runStep('hosted-install', async () => {
         manifest.agentName = agentName;
         writeManifest();
@@ -333,10 +371,22 @@ export const runWalk = async ({
         });
         expect(r.status < 400, `install ${r.status}: ${JSON.stringify(r.data)}`);
         const p = await api('POST', '/api/hosted/provision', { token, body: { agentName } });
+        // Not-ready comes back in two shapes: 503 hosted_runtime_unconfigured (URL or
+        // admin token unset) or 502 hosted_runtime_unreachable (configured, but the
+        // worker is not deployed yet — the backend maps every worker fetch/non-ok to
+        // 502, see hostedRuntimeService). Keyed on the error CODE so a 503/502 from a
+        // proxy without that code, or a genuine 500 (token_mint_failed), still fails.
+        const notReady = p.status >= 400
+          && (p.data?.code === 'hosted_runtime_unconfigured' || p.data?.code === 'hosted_runtime_unreachable');
+        if (hostedOptional && notReady) { hostedSkipped = true; throw new SkipStep(`no staging worker (${p.data.code})`); }
         expect(p.status === 200 && p.data?.provisioned, `provision ${p.status}: ${JSON.stringify(p.data)}`);
+        // Provision succeeded: a worker + token now exist, so a failed deprovision in
+        // cleanup is a real leak (survivor), staging or not.
+        hostedProvisioned = true;
       });
 
-      await runStep('hosted-reply', async () => {
+      if (hostedSkipped) skipStep('hosted-reply', 'no staging worker (hosted runtime not ready)');
+      else await runStep('hosted-reply', async () => {
         const m = await api('POST', `/api/messages/${pod._id}`, {
           token,
           body: { content: `@${agentName} walk check: reply with one short sentence containing KINGFISHER.` },
