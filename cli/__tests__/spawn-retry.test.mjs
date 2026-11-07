@@ -10,6 +10,7 @@ import {
 } from '../src/lib/spawn-retry.js';
 import { publicCodexVersionError } from '../src/lib/adapters/tested-version.js';
 import { PUBLIC_TOOL_FAILED_CODE } from '../src/lib/public-tool-error.js';
+import { adapterFailure } from '../src/lib/upstream-refusal.js';
 
 const publicToolFailure = () => Object.assign(new Error('model: gpt-9'), {
   code: PUBLIC_TOOL_FAILED_CODE, status: 404, providerCode: 'model_not_found',
@@ -380,6 +381,17 @@ describe('a model the provider will not run waits like a 403 does', () => {
       circuitOpen: true,
       delayMs: SPAWN_RETRY_MAX_MS,
     });
+  });
+
+  test('a gateway 404 naming a model it has no route for waits too', () => {
+    const error = new Error('{"error":{"message":"Route not registered for model: gpt-5","type":"not_found_error","code":"404"}}');
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.CONFIGURATION);
+  });
+
+  test('a plain-text body with the model below its status keeps the short retry', () => {
+    const error = adapterFailure('codex turn failed', 'unexpected status 404 Not Found\nThe model `gpt-9` does not exist', { exitCode: 1 });
+    expect(error.status).toBe(404);
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
   });
 
   test.each([
