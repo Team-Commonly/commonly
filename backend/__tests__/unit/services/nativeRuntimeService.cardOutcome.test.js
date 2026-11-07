@@ -35,10 +35,22 @@ describe('fetchRecentPodMessages reads a card by its outcome', () => {
     ['approved, and it may have run',
       { status: 'resolved', decision: 'approved', toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown' },
       '[approval outcome unknown] Connect your Claude Code'],
+    ['approved, an old call with an error result',
+      { status: 'resolved', decision: 'approved', actionType: 'tool_call', executionResult: { isError: true } },
+      '[approval failed] Connect your Claude Code'],
+    ['approved, the call has not ended', { status: 'resolved', decision: 'approved', actionType: 'tool_call' },
+      '[approval outcome unknown] Connect your Claude Code'],
+    ['approved, the call ran', { status: 'resolved', decision: 'approved', actionType: 'tool_call', toolCallEnding: 'ran' },
+      '[approval approved] Connect your Claude Code'],
     ['waiting', { status: 'flagged' }, '[approval needed] Connect your Claude Code'],
     ['no status on an old row', {}, '[approval needed] Connect your Claude Code'],
   ])('%s', async (_name, payload, expected) => {
     await expect(contentOf(card(payload))).resolves.toBe(expected);
+  });
+
+  test('leading whitespace does not hide the outcome', async () => {
+    await expect(contentOf({ ...card({ status: 'expired' }), content: '  [approval needed] Connect' }))
+      .resolves.toBe('[approval expired] Connect');
   });
 
   test('a person quoting the words keeps them', async () => {

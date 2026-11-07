@@ -2150,9 +2150,13 @@ const cardOutcome = (card: Record<string, unknown>): string | null => {
   if (card.decision === 'declined') return 'declined';
   // It may have run, so calling it failed would invite a second write.
   if (card.toolCallCode === APPROVAL_OUTCOME_UNKNOWN) return 'outcome unknown';
-  const failed = Boolean(card.executionError)
+  const result = card.executionResult as { isError?: unknown } | undefined;
+  const failed = Boolean(card.executionError) || result?.isError === true
     || card.toolCallEnding === 'failed' || card.toolCallEnding === 'refused';
-  return failed ? 'failed' : 'approved';
+  if (failed) return 'failed';
+  // Approved, and nothing recorded how it ended: not the same as done.
+  if (card.actionType === 'tool_call' && !card.toolCallEnding && result === undefined) return 'outcome unknown';
+  return 'approved';
 };
 
 const contentWithCardOutcome = (row: Record<string, unknown>): string => {
@@ -2160,7 +2164,7 @@ const contentWithCardOutcome = (row: Record<string, unknown>): string => {
   const card = row.payload as Record<string, unknown> | null | undefined;
   if (card?.kind !== 'approval-card') return content;
   const outcome = cardOutcome(card);
-  return outcome ? content.replace(/^\[approval needed\]/, `[approval ${outcome}]`) : content;
+  return outcome ? content.replace(/^\s*\[approval needed\]/, `[approval ${outcome}]`) : content;
 };
 
 /**
