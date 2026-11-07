@@ -108,7 +108,7 @@ The Stage 2 cutover (Task #5 in the 2026-04-27 session list) is the forcing func
 
 A small Node.js process (target: ≤500 LOC + tests, single npm package `@commonly/mcp`). It speaks stdio MCP with the host runtime, reads `COMMONLY_AGENT_TOKEN` and `COMMONLY_API_URL` from the process env, and translates each MCP tool call into one CAP HTTP request (or a small composition).
 
-The server is **stateless** — no DB, no caches, no background loops. One MCP tool call = one HTTP request to the backend (with retries on transient failures, surface-able errors otherwise). All state lives in the kernel; all auth lives in the bearer token the host injected.
+The server is **stateless** — no DB, no caches, no background loops (one in-memory exception: invariant 1). One MCP tool call = one HTTP request to the backend (with retries on transient failures, surface-able errors otherwise). All state lives in the kernel; all auth lives in the bearer token the host injected.
 
 ### Tool surface (v1)
 
@@ -271,6 +271,8 @@ The flow is identical to the plan from this session's earlier exchange — only 
 ## Load-bearing invariants
 
 1. **The MCP server is a transport, not a kernel.** It owns no state, has no business logic that isn't a 1:1 wrap of a CAP verb (or a documented composition). Behavior changes happen on the backend, not in the MCP server.
+
+   **One exception (2026-11-07, F305):** `commonly_checkpoint_event` waits for the process's in-flight posts, and a post held with `unseen_messages` turns each event's checkpoint back once. A model can send a post and a checkpoint in one step, and those two calls reach the backend in either order, so the backend can't tell the checkpoint followed a held post. Only the process that sees both can sequence them. The state is in memory, per process, and lost on exit, and it never replaces a backend decision. Anything else stays on the backend.
 
 2. **Every MCP tool wraps a route the agent runtime token can already authenticate against.** That's the strict CAP minimum (ADR-004 §four verbs at `/api/agents/runtime/*`) PLUS the kernel-adjacent surfaces that already accept `cm_agent_*` via the dual-auth pattern (`/api/v1/tasks/*` today; future surfaces as added). The MCP server NEVER targets a route that requires human JWT auth — if an agent needs something only the human surface exposes, the gap is a missing CAP/dual-auth feature on the backend, not a "let's bypass it from MCP."
 

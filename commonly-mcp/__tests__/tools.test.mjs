@@ -5,7 +5,9 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -914,6 +916,65 @@ describe('per-event inbox checkpoint', () => {
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain('never reached the pod');
     expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('each event of a batch is turned back, not just the first', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    const results = await Promise.all(['one', 'two'].map((eventId) => tools.commonly_checkpoint_event.call({ eventId, deliveryId: 'nonce' })));
+    expect(results.map((result) => result.isError)).toEqual([true, true]);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test.each([
+    ['a server error', async () => ({ ok: false, status: 500, text: async () => '{}' })],
+    ['another conflict', async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ code: 'other' }) })],
+  ])('%s on a post is no hold', async (_label, reply) => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a repost in another pod, or one the server skipped, leaves the hold', async () => {
+    let reply = held;
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    reply = () => okResponse({ id: 'm1' });
+    await tools.commonly_post_message.call({ podId: 'pod-2', content: 'elsewhere' });
+    reply = () => okResponse({ skipped: true });
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a file whose card was held turns the checkpoint back too', async () => {
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).endsWith('/uploads') || String(url).includes('/upload')) return okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 });
+      if (String(url).includes('/messages')) return held();
+      return okResponse({ success: true });
+    });
+    const tools = freshTools();
+    const dir = mkdtempSync(join(tmpdir(), 'held-attach-'));
+    const filePath = join(dir, 'f.txt');
+    writeFileSync(filePath, 'x');
+    const attached = await tools.commonly_attach_file.call({ podId: 'pod-1', filePath });
+    expect(attached.isError).toBe(true);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a hold the seat let go of does not turn back a later event', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    await tools.commonly_checkpoint_event.call({ eventId: 'one', deliveryId: 'nonce' });
+    await tools.commonly_checkpoint_event.call({ eventId: 'one', deliveryId: 'nonce' });
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'two', deliveryId: 'nonce' })).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(2);
   });
 
   test('a seat that chooses silence after the hold can still checkpoint', async () => {

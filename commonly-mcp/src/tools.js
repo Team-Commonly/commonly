@@ -9,7 +9,8 @@
  * not a rewrite of every HEARTBEAT.md.
  *
  * Invariant #1: this module is a transport. No state, no business logic that
- * isn't a 1:1 wrap of one CAP / dual-auth route.
+ * isn't a 1:1 wrap of one CAP / dual-auth route. The one exception is the
+ * in-memory sequencing of a checkpoint after its posts (ADR-010, invariant 1).
  *
  * Invariant #2: every route here accepts `cm_agent_*` runtime tokens. CAP
  * routes (`/api/agents/runtime/*`), the dual-auth tasks surface
@@ -183,15 +184,17 @@ export const buildTools = (config) => {
 
   // A checkpoint sent beside a post used to land even when the post came back
   // held, and a model could stop there with its answer unsent. So it waits for
-  // those posts, and a held one turns it back once: the model may have read the
-  // hold and chosen to say nothing, and that can't be a trap.
+  // those posts, and a held one turns each event back once: the model may have
+  // read the hold and chosen to say nothing, and that can't be a trap.
   const postsInFlight = new Set();
   const heldPods = new Set();
+  const turnedBack = new Set();
   const trackPost = async (podId, posting) => {
     postsInFlight.add(posting);
     try {
       const posted = await posting;
-      heldPods.delete(podId);
+      if (!posted?.skipped) heldPods.delete(podId);
+      if (!heldPods.size) turnedBack.clear();
       return posted;
     } catch (error) {
       if (error instanceof HttpError && error.status === 409 && error.body?.code === 'unseen_messages') heldPods.add(podId);
@@ -283,7 +286,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_checkpoint_event',
-      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. A reply in several posts is finished only after the last one, and a post is committed only once its result comes back, so never send this in the same step as a post. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
+      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. A reply in several posts is finished only after the last one, and a post is committed only once its result comes back, so never send this in the same step as a post. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending, unless the error says a held post no longer needs saying. This posts no chat message and does not complete a task.',
       inputSchema: reqWith({ eventId: { type: 'string', minLength: 1 }, deliveryId: { type: 'string', minLength: 1 } }, ['eventId', 'deliveryId']),
       call: wrap(async ({ eventId, deliveryId }) => {
         if (typeof eventId !== 'string' || !eventId.trim()
@@ -292,8 +295,12 @@ export const buildTools = (config) => {
         }
         await Promise.allSettled([...postsInFlight]);
         if (heldPods.size) {
+          if (!turnedBack.has(eventId)) {
+            turnedBack.add(eventId);
+            throw new Error('Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.');
+          }
           heldPods.clear();
-          throw new Error('Not checkpointed: a post from this step came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint again.');
+          turnedBack.clear();
         }
         return request(config, {
           method: 'POST',
@@ -401,11 +408,11 @@ export const buildTools = (config) => {
         const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
         const content = message ? `${message} ${directive}` : directive;
         try {
-          await request(config, {
+          await trackPost(podId, request(config, {
             method: 'POST',
             path: `${podPath}/messages`,
             body: { content, continueAnyway },
-          });
+          }));
         } catch (postError) {
           // The upload is a separate pod artifact. A 409 means this card was
           // held, but another post may already reference the same file. Keep
