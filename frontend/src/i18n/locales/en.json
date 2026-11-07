@@ -644,6 +644,7 @@
     }
   },
   "podChat": {
+    "copyCode": "Copy code",
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },

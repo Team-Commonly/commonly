@@ -371,6 +371,45 @@ const FileChip: React.FC<{
 
 // Code past six lines collapses in place; Show more expands it, Show less folds it.
 const COLLAPSE_AFTER_LINES = 6;
+
+// Copies the block's own text, so what lands in Terminal is what the agent wrote.
+const V2CodeCopy: React.FC<{ text: string }> = ({ text }) => {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timeout = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = text;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        const accepted = document.execCommand('copy');
+        document.body.removeChild(input);
+        if (!accepted) throw new Error('Copy refused');
+      }
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const label = t(copied ? 'common.copied' : 'podChat.copyCode');
+  return (
+    <button type="button" className="v2-msg__code-copy" aria-label={label} title={label} onClick={() => { void copy(); }}>
+      <ShellGlyph name={copied ? 'check' : 'copy'} size={14} />
+    </button>
+  );
+};
+
 export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({ children, ...props }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -382,11 +421,19 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
     }
     return '';
   }).join('');
-  const lines = text.replace(/\n$/, '').split('\n').length;
-  if (lines <= COLLAPSE_AFTER_LINES) return <pre {...props}>{children}</pre>;
+  // Markdown ends every fence with a newline the agent didn't write.
+  const raw = text.replace(/\n$/, '');
+  const lines = raw.split('\n').length;
+  const block = (
+    <div className="v2-msg__code">
+      <pre {...props}>{children}</pre>
+      <V2CodeCopy text={raw} />
+    </div>
+  );
+  if (lines <= COLLAPSE_AFTER_LINES) return block;
   return (
     <div className={`v2-msg__collapse${open ? ' v2-msg__collapse--open' : ' v2-msg__collapse--closed'}`}>
-      <pre {...props}>{children}</pre>
+      {block}
       <button type="button" className="v2-msg__more" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         {open ? t('podChat.attachment.showLess') : t('podChat.attachment.showMore', { count: lines - COLLAPSE_AFTER_LINES })}
       </button>
