@@ -73,11 +73,13 @@ const setupMongoDb = async () => {
       // drop the DB per-suite so each file starts with a clean slate and is
       // isolated from data seeded by prior files. Connecting starts each loaded
       // model's index build, so wait for those, or the drop can take a unique
-      // index with it and the file runs without it, then build them again.
+      // index with it and the file runs without it, then build them again. A
+      // schema's own conflict stays as quiet as it is in autoIndex: User declares
+      // username twice under one index name.
       const models = Object.values(mongoose.models);
       await Promise.allSettled(models.map((model) => model.init()));
       await mongoose.connection.dropDatabase();
-      await Promise.all(models.map((model) => model.createIndexes()));
+      await Promise.allSettled(models.map((model) => model.createIndexes()));
       console.log('[tier1] Connected to real MongoDB and dropped DB:', uri);
       return;
     }
