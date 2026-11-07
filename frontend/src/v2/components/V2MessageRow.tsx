@@ -214,10 +214,11 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // image send posted as bare content (`/api/uploads/<key>.png`).
 // Code spans and fences are quoted grammar, not attachments or links: mask them
 // while directives and URLs are rewritten, then put them back verbatim. Inside
-// code a link's brackets show as text and break a command someone copies. A fence
-// opened at the start of a line and never closed runs to the end, as markdown
-// renders it. A stray ``` mid-sentence is plain text, so it hides nothing after it.
-const CODE_RE = /```[\s\S]*?```|^```[\s\S]*|``[^\n]*?``|`[^`\n]*`/gm;
+// code a link's brackets show as text and break a command someone copies. As in
+// markdown, a fence opens on a line of its own (indented inside a list) and runs to
+// its closing line or the end of the message. Backticks anywhere else are a span
+// on one line, so a stray ``` mid-sentence can't pair with a real fence below it.
+const CODE_RE = /^[ \t]*```[^`\n]*$[\s\S]*?(?:^[ \t]*```[ \t]*$|(?![\s\S]))|```[^\n]*?```|``[^\n]*?``|`[^`\n]*`/gm;
 const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
   const spans: string[] = [];
   const masked = content.replace(/\u0000/g, '').replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
@@ -294,7 +295,8 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
   const reactions: ParsedReaction[] = [];
-  const stripped = content.replace(REACTION_TOKEN_RE, (_match, body) => {
+  const { masked, restore } = maskCode(content);
+  const stripped = masked.replace(REACTION_TOKEN_RE, (_match, body) => {
     String(body).split(',').forEach((entry: string) => {
       const trimmed = entry.trim();
       if (!trimmed) return;
@@ -309,7 +311,7 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
     });
     return '';
   }).trim();
-  return { stripped, reactions };
+  return { stripped: restore(stripped), reactions };
 };
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);

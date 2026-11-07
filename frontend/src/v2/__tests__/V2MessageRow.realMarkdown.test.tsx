@@ -67,6 +67,27 @@ describe('a URL inside code stays as written, because people copy it', () => {
       .toEqual(['https://b.example/docs']);
   });
 
+  it('a stray fence mid-sentence does not pair with a real fence below it', () => {
+    const { code, links } = rendered(linkifyBareUrls(`Use \`\`\` to fence code:\n\n\`\`\`\n${CLI_LINE}\n\`\`\`\n`));
+    expect(code).toEqual([`${CLI_LINE}\n`]);
+    expect(links).toEqual([]);
+  });
+
+  it('a fence indented inside a list keeps its URL', () => {
+    const { code, links } = rendered(linkifyBareUrls('1. Run:\n\n   ```\n   curl https://a.example/x\n   ```\n'));
+    expect(code).toEqual(['curl https://a.example/x\n']);
+    expect(links).toEqual([]);
+  });
+
+  it('text after a closed fence still links', () => {
+    expect(rendered(linkifyBareUrls('```\ncurl https://a.example/x\n```\n\nsee https://b.example/docs')).links)
+      .toEqual(['https://b.example/docs']);
+  });
+
+  it('a one-line triple-backtick span keeps its URL', () => {
+    expect(rendered(linkifyBareUrls('run ```curl https://a.example/x``` first')).links).toEqual([]);
+  });
+
   it('a NUL already in the message cannot be taken for a masked span', () => {
     expect(linkifyBareUrls('a\u00000\u0000b `c`')).toBe('a0b `c`');
     expect(prUrlsToRefLinks('a\u00005\u0000b')).toBe('a5b');

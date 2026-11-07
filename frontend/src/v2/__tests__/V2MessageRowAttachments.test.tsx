@@ -85,6 +85,18 @@ describe('V2MessageRow attachments (direction C)', () => {
     expect(document.querySelector('.v2-msg__content')).toHaveTextContent('[[upload:abc.png|abc.png|12|image]]');
   });
 
+  test('a reactions token quoted in code stays text and adds no chip', () => {
+    renderRow(message('The grammar is `[[reactions:👍 3]]` here'));
+    expect(document.querySelector('.v2-msg__content')).toHaveTextContent('[[reactions:👍 3]]');
+    expect(document.querySelector('.v2-msg__reaction')).toBeNull();
+  });
+
+  test('a real reactions token still becomes a chip', () => {
+    renderRow(message('Nice [[reactions:👍 3]]'));
+    expect(document.querySelector('.v2-msg__content')).not.toHaveTextContent('reactions');
+    expect(document.querySelector('.v2-msg__reaction')).toHaveTextContent('3');
+  });
+
   test('a stray fence mid-sentence leaves the attachment after it alone', () => {
     renderRow(message('Use ``` to fence code. [[upload:9-plan.pdf|plan.pdf|1024|document]]'));
     expect(screen.getByRole('button', { name: 'Open plan.pdf' })).toHaveClass('v2-msg__chip');
