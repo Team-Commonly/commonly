@@ -1,9 +1,9 @@
 import mongoose, { Types } from 'mongoose';
 import AgentFirstContact from '../models/AgentFirstContact';
 import Message from '../models/pg/Message';
-import Pod from '../models/Pod';
 import User from '../models/User';
 import AgentEventService from './agentEventService';
+import { HUMAN_FILTER } from './userClassification';
 
 interface FirstContactOptions {
   agentName: string;
@@ -11,6 +11,8 @@ interface FirstContactOptions {
   podId: string | Types.ObjectId;
   installedByUserId: string | Types.ObjectId;
   installerIsAgent: boolean;
+  /** The pod's members, where another person in them means a team. Not a personal pod's. */
+  teamPodMembers?: unknown[];
   /**
    * For an agent that sees only messages that mention it (a hosted agent):
    * the handle its greeting tells the person to use. Without it, an answer
@@ -44,8 +46,7 @@ const TOP_LEVEL_CUE =
 // opened with "What would you most like to understand?" to people mid-work.
 const TEAM_POD_CUE =
   'You were just added to a pod where people are already working. Post ONE short line saying you are '
-  + 'here and what you are for. Do not welcome anyone, do not treat anyone as a visitor, and do not '
-  + 'ask what they want: if they need you, they will mention you.';
+  + 'here and what you are for. Do not welcome anyone, do not treat anyone as a visitor, and ask no questions.';
 
 // The greeting's question invites a reply, and an agent that sees only its
 // mentions would never see a plain one. So that greeting says how to reach it.
@@ -62,12 +63,12 @@ const hasLanguageSignal = (words: string): boolean => (
   /[\p{L}\p{N}]/u.test(words) && !LOW_SIGNAL_REPLY.test(words.trim())
 );
 
-// Bots don't count: a solo workspace holds its person and their agents.
-const hasAnotherPerson = async (podId: Types.ObjectId, userId: Types.ObjectId): Promise<boolean> => {
+// Agents don't count: a solo workspace holds its person and their agents.
+const hasAnotherPerson = async (members: unknown[], userId: Types.ObjectId): Promise<boolean> => {
+  const others = members.filter((member) => String(member) !== String(userId));
+  if (!others.length) return false;
   try {
-    const pod = await Pod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
-    const others = (pod?.members || []).filter((member) => String(member) !== String(userId));
-    return others.length > 0 && Boolean(await User.exists({ _id: { $in: others }, isBot: { $ne: true } }));
+    return Boolean(await User.exists({ _id: { $in: others }, ...HUMAN_FILTER }));
   } catch (error) {
     console.warn('[first-contact] pod members unavailable', (error as Error).message);
     return false;
@@ -119,6 +120,7 @@ export async function maybeFireFirstContact({
   podId,
   installedByUserId,
   installerIsAgent,
+  teamPodMembers,
   mentionHandle,
   hostedAgentUserId,
 }: FirstContactOptions): Promise<boolean> {
@@ -208,7 +210,7 @@ export async function maybeFireFirstContact({
       : 'A human just added you to this workspace and is seeing you for the first time. '
         + 'This is your one first impression. ';
     const mentionCue = MENTION_HANDLE.test(handle) ? mentionLineCue(handle) : '';
-    const greeting = !hostedAgentUserId && await hasAnotherPerson(safePodId, safeUserId)
+    const greeting = !hostedAgentUserId && await hasAnotherPerson(teamPodMembers || [], safeUserId)
       ? `${TEAM_POD_CUE}${TOP_LEVEL_CUE}`
       : `${opening}${FIRST_CONTACT_CUE}${TOP_LEVEL_CUE}${languageCue}${mentionCue}`;
     await AgentEventService.enqueue({
