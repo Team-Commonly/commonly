@@ -76,6 +76,7 @@ interface QueueItem {
   title: string;
   podId?: string;
   actorUserId?: string;
+  actorName?: string;
   messageId?: string;
 }
 
@@ -414,6 +415,9 @@ const V2YourTeamPage: React.FC = () => {
     const key = agentKey(a);
     const where = runsOn(a, user?._id ? String(user._id) : undefined);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
+    // The card already names who's asking, so "Mia mentioned you" reads "mentioned you".
+    const askTitle = ask?.actorName && ask.title?.startsWith(`${ask.actorName} `)
+      ? ask.title.slice(ask.actorName.length + 1) : ask?.title;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
     // An ask still waits on a seat that dropped off, so its card keeps the ring.
@@ -424,7 +428,7 @@ const V2YourTeamPage: React.FC = () => {
     const statusText = offline && !askOffline
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
-      ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
+      ? `${t('yourTeam.card.needsYou')} · ${askTitle || ''}`.replace(/ · $/, '')
       : state === 'working'
         ? `${t('yourTeam.card.working')} · ${task?.taskId || shortPodName(task?.podName || a.podName || '')}`.replace(/ · $/, '')
         : `${t('yourTeam.card.idle')} · ${formatRelative(lastSeenIso(a), t).toLowerCase()}`;

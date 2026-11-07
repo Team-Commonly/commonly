@@ -235,6 +235,12 @@ describe('Your Team (direction C)', () => {
     expect(card.textContent).not.toMatch(/[“”]/);
   });
 
+  test("the needs-you line doesn't repeat the name on the card", async () => {
+    renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('● needs you · mentioned you');
+  });
+
   test('without a matching actorUserId nobody needs you, even if a name would match', async () => {
     renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p1' }] });
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
