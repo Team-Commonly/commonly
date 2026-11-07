@@ -175,6 +175,7 @@ describe('the "Approval needed" badge', () => {
   test('shows while the card can still be answered', () => {
     renderCard({ ...card, status: 'flagged' });
     expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).toHaveClass('v2-approval--open');
   });
 
   test.each([
@@ -186,6 +187,7 @@ describe('the "Approval needed" badge', () => {
     renderCard({ ...card, ...state });
     expect(screen.getByText(line)).toBeInTheDocument();
     expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).not.toHaveClass('v2-approval--open');
   });
 
   test('stays on an aged proposal, which can still be decided', () => {
