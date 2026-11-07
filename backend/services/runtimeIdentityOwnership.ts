@@ -279,6 +279,24 @@ export const ownsRuntimeIdentity = async (
 };
 
 /**
+ * Does this person hold no installation of the agent that counts? A room or a
+ * mention writes a row naming whoever opened it, so `installedBy` alone reads a
+ * guest as the owner. A failed read says no: the caller keeps what it had.
+ */
+export const isGuestOfIdentity = async (
+  userId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<boolean> => {
+  const ownership = await ownsRuntimeIdentity(userId, agentName.toLowerCase(), instanceId.toLowerCase())
+    .catch((error: Error): OwnershipCheck => {
+      console.warn('Could not read the agent\'s owner:', error.message);
+      return { owned: true };
+    });
+  return ownership.owned === false && ownership.failure === 'owner_installation_missing';
+};
+
+/**
  * The same rule for what belongs to the identity whichever pod it runs in, its
  * memory and its name, where paused rows count: a paused installation is still
  * somebody's. `unknown_installer` comes first so an owner hears what to repair.

@@ -14,6 +14,7 @@ jest.mock('../../services/agentMessageService', () => ({ postMessage: (...args) 
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const StalledConnectEpisode = require('../../models/StalledConnectEpisode');
 const User = require('../../models/User');
+const Pod = require('../../models/Pod');
 const { usageStamp } = require('../../middleware/agentRuntimeAuth');
 const { scan } = require('../../services/stalledConnectService');
 
@@ -53,6 +54,24 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await clearMongoDb();
     mockPost.mockReset();
     mockPost.mockResolvedValue({ success: true, message: { id: 'm1' } });
+  });
+
+  it('nudges the owner, not a guest whose room row names them', async () => {
+    const owner = await User.create({ username: 'dana', email: 'dana@people.test', password: 'not-a-login' });
+    const guest = await User.create({ username: 'river', email: 'river@people.test', password: 'not-a-login' });
+    const bot = await botRow('dana-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    const runtime = { runtime: { host: 'byo', runtimeType: 'local-cli' } };
+    const row = (podId, installedBy) => AgentInstallation.create({
+      agentName: 'dana-agent', instanceId: 'default', podId, version: '1.0.0', installedBy, status: 'active', config: runtime,
+    });
+    const room = await Pod.create({ name: 'Dana agent', type: 'agent-room', createdBy: guest._id, members: [guest._id, bot._id] });
+    const team = await Pod.create({ name: 'Team', type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
+    await row(room._id, guest._id);
+    await row(team._id, owner._id);
+
+    const result = await scan({ now: NOW });
+    expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    expect(result.skippedGuest).toBe(1);
   });
 
   const expectMcpClose = async () => {
