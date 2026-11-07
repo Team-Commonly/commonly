@@ -90,6 +90,10 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('stranded', room._id);
     await install('stranded', secondRoom._id);
     await install('stranded', open._id);
+    const dm = await makePod('Agent DM', 'agent-dm');
+    const admin = await makePod('Agent admin', 'agent-admin');
+    await install('stranded', dm._id);
+    await install('stranded', admin._id);
     expect((await rowIn(room, 'stranded')).connectPodId).toBeUndefined();
   });
 
