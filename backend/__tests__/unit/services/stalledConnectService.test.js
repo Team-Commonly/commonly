@@ -15,6 +15,7 @@ const OLD_TOKEN = new Date(NOW.getTime() - 30 * MINUTE);
 const FRESH_TOKEN = new Date(NOW.getTime() - 2 * MINUTE);
 
 const mockInstallFind = jest.fn();
+const mockOwns = jest.fn();
 const mockInstallFindById = jest.fn();
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
@@ -54,7 +55,7 @@ const mockEpUpdate = jest.fn();
 jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
-  ownsRuntimeIdentity: () => Promise.resolve({ owned: true }),
+  ownsRuntimeIdentity: (...args) => mockOwns(...args),
 }));
 jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
@@ -78,6 +79,7 @@ const install = (over = {}) => ({
 });
 
 const setup = ({ installs = [install()], userTokens = [], open = [], machineId } = {}) => {
+  mockOwns.mockResolvedValue({ owned: true });
   mockInstallFind.mockReturnValue({
     limit: () => ({ lean: () => Promise.resolve(installs) }),
   });
@@ -156,6 +158,14 @@ describe('stalledConnectService.scan', () => {
     ['a second instance', { ...madeOnPage, instanceId: 'other' }, undefined],
   ])('keeps the command for %s', async (_label, over, machineId) => {
     setup({ installs: [install(over)], machineId });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
+  it('keeps the command when the owner can\'t be read: Connect could be refused', async () => {
+    setup({ installs: [install(madeOnPage)] });
+    mockOwns.mockRejectedValue(new Error('read failed'));
     await scan({ now: NOW });
 
     expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
