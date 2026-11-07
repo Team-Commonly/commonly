@@ -788,7 +788,7 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(status.querySelector('.dot')).not.toHaveClass('dot--idle');
     expect(await screen.findByText('Not needed')).toBeInTheDocument();
     expect(screen.queryByText('No active keys.')).not.toBeInTheDocument();
-    expect(screen.getByText('Not needed').querySelector('.dot--off')).toBeNull();
+    expect(screen.getByText('Not needed').closest('.lrow').querySelector('.dot')).toBeNull();
     const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
     expect(summary).toHaveTextContent('hosted');
     expect(summary).not.toHaveTextContent('not reported');
@@ -839,6 +839,29 @@ describe('one Identity & access list (d215 frame)', () => {
       const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
       expect(summary).toHaveTextContent('托管');
       expect(summary).not.toHaveTextContent('hosted');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('a webhook reads Webhook in How it runs under zh-CN', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'webhook', state: 'never' }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      await screen.findByText(/尚未连接/);
+      const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+      expect(summary).toHaveTextContent('Webhook');
+      expect(summary).not.toHaveTextContent('webhook');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('the short wake label reads 真人消息 under zh-CN', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      expect(i18n.t('agentSettings.messageWakeShort_human')).toBe('真人消息');
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
