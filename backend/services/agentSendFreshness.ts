@@ -149,7 +149,7 @@ async function unseenMessages(
     code: 'unseen_messages',
     unseenCount,
     messages,
-    message: `${countSentence} That didn't go through. Read the conversation and try again, or call again with continueAnyway:true to continue. If you were asked by name, another agent's reply doesn't answer for you.`,
+    message: `${countSentence} That didn't go through. Read the conversation and try again if it still fits, or call again with continueAnyway:true to continue. If you were asked by name, another agent's reply doesn't answer for you unless one answer was all that was asked.`,
   };
 }
 
