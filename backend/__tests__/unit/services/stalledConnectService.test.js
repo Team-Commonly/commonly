@@ -42,8 +42,10 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 const mockAttentionResolve = jest.fn();
+const mockAttentionDismiss = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   resolveActioned: (...a) => mockAttentionResolve(...a),
+  resolve: (...a) => mockAttentionDismiss(...a),
 }));
 
 const mockEpCreate = jest.fn();
@@ -947,6 +949,23 @@ describe('keeping the forward promise', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+  });
+
+  it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {
+    mockAttentionDismiss.mockClear();
+    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'nudge9' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ status: 'uninstalled' })),
+    });
+
+    const result = await scan({ now: NOW });
+
+    expect(result.resolved).toHaveLength(1);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEpUpdate.mock.calls[0][1].$set.status).toBe('resolved');
+    // Its "needs you" row goes too, and not as acted on.
+    expect(mockAttentionDismiss).toHaveBeenCalledWith('message', 'nudge9');
+    expect(mockAttentionResolve).not.toHaveBeenCalled();
   });
 });
 
