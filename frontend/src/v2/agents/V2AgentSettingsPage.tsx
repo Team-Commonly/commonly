@@ -10,7 +10,7 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { NO_ACCESSIBLE_INSTALLATION, useAgentSettings } from './useAgentSettings';
+import { NO_ACCESSIBLE_INSTALLATION, NOT_MANAGED, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
@@ -267,10 +267,14 @@ const V2AgentSettingsPage: React.FC = () => {
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
   if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
   if (!access || !podId) {
-    const notManaged = !error && (loadError as Error | null)?.message === NO_ACCESSIBLE_INSTALLATION;
+    const marker = error ? null : (loadError as Error | null)?.message;
+    const notManaged = marker === NOT_MANAGED;
+    const refused = marker === NO_ACCESSIBLE_INSTALLATION;
     return <div className="v2-agent-settings__state" role="alert">
-      {notManaged ? t('agentSettings.notManaged') : error || errorLabel(loadError, t('agentSettings.unavailable'))}
-      {notManaged && (
+      {notManaged && t('agentSettings.notManaged')}
+      {refused && t('agentSettings.unavailable')}
+      {!notManaged && !refused && (error || errorLabel(loadError, t('agentSettings.unavailable')))}
+      {(notManaged || refused) && (
         <Link className="v2-agent-settings__state-link" to="/v2/agents">{t('agentSettings.yourTeam')}</Link>
       )}
     </div>;

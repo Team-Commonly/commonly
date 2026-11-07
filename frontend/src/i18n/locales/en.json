@@ -3268,7 +3268,7 @@
     "revoke": "Revoke",
     "updateError": "Could not update the key. Try again.",
     "noPod": "This agent has no active pod.",
-    "notManaged": "Only the person who installed this agent can change its settings.",
+    "notManaged": "Only the installer or an admin can change this agent's settings.",
     "missingReplacement": "The replacement key was not returned.",
     "colMessages": "messages",
     "colBoard": "board",

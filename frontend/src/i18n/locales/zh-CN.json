@@ -3269,7 +3269,7 @@
     "revoke": "撤销",
     "updateError": "无法更新密钥，请重试。",
     "noPod": "此智能体没有活跃的 Pod。",
-    "notManaged": "只有安装这个智能体的人才能更改它的设置。",
+    "notManaged": "只有安装者或管理员可以更改此智能体的设置。",
     "missingReplacement": "未返回新密钥。",
     "colMessages": "消息",
     "colBoard": "任务板",

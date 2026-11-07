@@ -56,10 +56,29 @@ test('someone who cannot manage the agent is told so, in the app language, with 
     ? Promise.resolve({ data: { writablePodId: null, installations: [] } })
     : Promise.reject({ response: { status: 404 } })));
   renderPage();
-  expect(await screen.findByRole('alert')).toHaveTextContent('Only the person who installed this agent can change its settings.');
+  expect(await screen.findByRole('alert')).toHaveTextContent("Only the installer or an admin can change this agent's settings.");
   expect(screen.queryByText('No accessible installation')).toBeNull();
   // Not the profile: a private agent's reads "Agent not found", another dead end.
   expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+});
+
+test('an installer every pod refuses is not told someone else installed it', async () => {
+  axios.get.mockImplementation((url) => (url.includes('/manage-settings')
+    ? Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } })
+    : Promise.reject({ response: { status: 403 } })));
+  renderPage();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+  expect(screen.queryByText('No accessible installation')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+});
+
+test('a load failure still reads as itself, with no way-back link', async () => {
+  axios.get.mockRejectedValue({ response: { status: 500, data: { error: 'Server error' } } });
+  renderPage();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Server error');
+  expect(screen.queryByRole('link', { name: 'Your team' })).toBeNull();
 });
 
 test('Identity shows the listing state and links to the public profile without publishing', async () => {

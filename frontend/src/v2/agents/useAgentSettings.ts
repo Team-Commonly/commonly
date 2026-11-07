@@ -58,10 +58,13 @@ interface ManageSettingsResponse {
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
-/** The generic PATCH writes across this identity's accessible installations. */
-// Nothing here this person can manage. The page words it; this is only the marker.
+// Markers for the page to word. Not managed: no installation lists this person.
+// No accessible installation: one does, but every pod refused them, as when an
+// installer has left the pod.
+export const NOT_MANAGED = 'Not managed by this person';
 export const NO_ACCESSIBLE_INSTALLATION = 'No accessible installation';
 
+/** The generic PATCH writes across this identity's accessible installations. */
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
   const [installation, setInstallation] = useState<AgentSettingsInstallation | null>(null);
@@ -93,6 +96,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     // identity memory can be private to another installer and is not a safe
     // source for discovering this viewer's settings.
     const rows = settingsResponse.data.installations || [];
+    if (!rows.length) throw new Error(NOT_MANAGED);
     const preferredPodId = settingsResponse.data.writablePodId;
     const candidates = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
       - Number(left.podId === preferredPodId));
