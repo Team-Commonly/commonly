@@ -1,5 +1,6 @@
 const { MongoBinary } = require('mongodb-memory-server');
 const { MONGO_BINARY_VERSION, MONGOMS_DOWNLOAD_DIR } = require('./mongoBinaryConfig');
+const { installStreamEnvRedaction } = require('./redactEnv');
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
@@ -9,6 +10,13 @@ const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // cached binary and never race the download lock — the root cause of the flaky
 // "Cannot unlock file ... .lock" failures in CI.
 module.exports = async () => {
+  // Redact secret env values from this (main) process's stdout/stderr before
+  // anything else runs. Jest's failure diff and forwarded console output are
+  // printed here, below setup.js's per-worker console mock, so this is the hook
+  // that keeps a leaked env value out of a run's captured output. See
+  // __tests__/utils/redactEnv.js (earned 2026-11-07).
+  installStreamEnvRedaction();
+
   // Name the remedy before the failure, because the failure does not. On Node
   // 25+ every suite whose require graph reaches jsonwebtoken dies with a bare
   // `TypeError: Cannot read properties of undefined (reading 'prototype')`
