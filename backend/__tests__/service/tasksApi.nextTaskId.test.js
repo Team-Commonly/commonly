@@ -22,6 +22,26 @@ describe('nextTaskId', () => {
     await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-001', taskNum: 1 });
   });
 
+  test('counts past 999, where taskId no longer sorts by number', async () => {
+    await row('TASK-999', 999);
+    await row('TASK-1000', 1000);
+
+    await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-1001', taskNum: 1001 });
+  });
+
+  test('a TASK row with no taskNum still counts', async () => {
+    await Task.collection.insertOne({ podId: new Task.base.Types.ObjectId(POD), taskId: 'TASK-007', title: 'legacy' });
+
+    await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-008', taskNum: 8 });
+  });
+
+  test('a non-numeric TASK id is ignored', async () => {
+    await row('TASK-WATCHED', 1);
+    await row('TASK-002', 2);
+
+    await expect(nextTaskId(POD)).resolves.toEqual({ taskId: 'TASK-003', taskNum: 3 });
+  });
+
   test('counts on from the last TASK row beside a native row', async () => {
     await row('N-1-scout-abc', 1);
     await row('TASK-004', 4);
