@@ -34,6 +34,7 @@ const V2UICard = lazy(() => import('../cards/V2UICard'));
 // An npm scope such as @commonlyai/mcp is a package, not a person.
 const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'agent-stopped': 'agentStopped',
+  'agent-removed': 'agentRemoved',
   'agent-not-connected': 'agentNotConnected',
   'mention-unanswered': 'mentionUnanswered',
 };

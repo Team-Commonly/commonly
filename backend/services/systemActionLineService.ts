@@ -177,8 +177,23 @@ export async function emitStoppedLine(line: StoppedLine): Promise<void> {
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
-/** Whether a stopped line for this agent sits in the pod since `since`; no pool reads as yes. */
-export async function hasStoppedLineSince(podId: string, agentKey: string, since: Date): Promise<boolean> {
+/**
+ * F270. A person wrote in a DM with an agent that no longer has an active install
+ * anywhere. The room stays open, and the message would get a 200 and nothing else.
+ * Callers dedupe with `hasRemovedLineSince`.
+ */
+export type RemovedLine = StoppedLine;
+
+export async function emitRemovedLine(line: RemovedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} was removed, so it can't answer here.`, {
+    kind: 'system-action',
+    action: 'agent-removed',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {
     pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> } | null;
@@ -187,12 +202,22 @@ export async function hasStoppedLineSince(podId: string, agentKey: string, since
   const { rows } = await pool.query(
     `SELECT 1 FROM messages
      WHERE pod_id = $1 AND message_type = 'system' AND created_at >= $2
-       AND payload->>'action' = 'agent-stopped' AND payload->>'agentKey' = $3
+       AND payload->>'action' = $4 AND payload->>'agentKey' = $3
      LIMIT 1`,
-    [podId, since, agentKey],
+    [podId, since, agentKey, action],
   );
   return rows.length > 0;
-}
+};
+
+/** Whether a stopped line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasStoppedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-stopped', podId, agentKey, since)
+);
+
+/** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasRemovedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-removed', podId, agentKey, since)
+);
 
 /**
  * Whether a not-connected line for this agent already sits in the pod since
