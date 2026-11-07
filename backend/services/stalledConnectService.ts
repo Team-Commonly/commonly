@@ -268,20 +268,27 @@ export const scan = async ({
       result.skippedNotStalled += 1;
       continue;
     }
-
-    await nudgeOnce({ install, derived, issuedAt, tokenSource: source, now, result });
+    // An MCP client never listens, so it derives never-connected however often
+    // it calls in. "Nothing is running" would be false for one that has called
+    // on this token, and the next pass's MCP close says what's true: it can
+    // post when asked, and answering @mentions takes the listener.
+    const mcpConnected = Boolean(latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt));
+    await nudgeOnce({
+      install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
+    });
   }
 
   return result;
 };
 
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
+  mcpConnected: boolean;
   now: Date;
   result: StalledScanResult;
 }): Promise<void> => {
@@ -338,6 +345,9 @@ const nudgeOnce = async ({
     if (error?.code === 11000) return;
     throw error;
   }
+  // The episode stays open with no nudge, so the same one-per-token record
+  // carries the MCP close on the next pass.
+  if (mcpConnected) return;
 
   const content = composeStalledConnectNudge({
     installerName: installer.username,
@@ -467,6 +477,7 @@ const resolveConnected = async ({
     const lastCheckInAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : null;
     const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
     let resolutionMessageId = '';
+    let closeFailed = false;
     try {
       const posted = await AgentMessageService.postMessage({
         agentName: String(ep.agentName),
@@ -495,7 +506,11 @@ const resolveConnected = async ({
       resolutionMessageId = extractMessageId(posted) || '';
     } catch (error) {
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
+      closeFailed = true;
     }
+    // With no nudge in the room, this close is the only line the seat gets, so
+    // a failed post stays open for the next pass.
+    if (closeFailed && !ep.nudgeMessageId) return;
     // The nudge asked the installer to start the agent, and they did. Its
     // "needs you" row resolves now as `actioned`, whether or not the
     // confirmation post above went out: a thread reply was never going to be
