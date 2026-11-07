@@ -14,6 +14,7 @@
  */
 
 import { spawnSync } from 'child_process';
+import { readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
@@ -60,7 +61,21 @@ const DEFAULT_RO_BINDS = [
 // ubuntu run 38982219348). Starting one empty namespace is the real check.
 const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
 
-export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } = {}) => {
+const APPARMOR_USERNS_SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
+
+const readApparmorRestriction = () => {
+  try {
+    return readFileSync(APPARMOR_USERNS_SYSCTL, 'utf8').trim() === '1';
+  } catch {
+    return false;
+  }
+};
+
+export const detectBwrap = ({
+  spawn = spawnSync,
+  platform = process.platform,
+  readRestriction = readApparmorRestriction,
+} = {}) => {
   if (platform !== 'linux') {
     return { available: false, error: nonLinuxMessage(platform) };
   }
@@ -78,6 +93,11 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
       const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
       return {
         available: false,
+        // Set only when bwrap ran and was refused, so a caller can tell this
+        // host from one without bubblewrap.
+        namespaceRefused: true,
+        reason,
+        apparmorRestricted: readRestriction(),
         error: `bubblewrap is installed but cannot start a sandbox on this machine (${reason}). `
           + 'On Ubuntu 24.04 and later, AppArmor restricts the unprivileged user namespaces it needs.',
       };

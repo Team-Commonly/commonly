@@ -29,7 +29,7 @@ export const UNSANDBOXED_FLAG = '--unsandboxed';
 // added there is not silently missing here.
 const SEATBELT_MODES = PUBLIC_SANDBOX_MODES;
 
-const ADAPTER_LABELS = { claude: 'Claude Code', opencode: 'OpenCode', qwen: 'Qwen Code' };
+const ADAPTER_LABELS = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', qwen: 'Qwen Code' };
 
 const HOSTED_LINE = '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.';
 
@@ -66,6 +66,40 @@ const CODEX_WINDOWS_PUBLIC_MESSAGE = [
   CODEX_WSL_LINE,
   HOSTED_LINE,
 ].join('\n');
+
+const CLAUDE_MCP_LINE = '  - Use Commonly from your own Claude Code sessions: the Connect page shows a `claude mcp add` command.';
+
+// Claude Code and Codex each answered on prod under this profile, on a fresh
+// Ubuntu 24.04 runner (byo-linux.yml runs 42398237284, 42398763392), so only
+// they are offered it. Printed for the person to run; nothing here runs it.
+// It stays the last and optional route, and the sysctl behind the restriction
+// is never named as a way out.
+const UBUNTU_BWRAP_PROFILE_LINES = [
+  "  - Optional, if you'd rather run it on this machine: Ubuntu ships its own AppArmor profile for bubblewrap.",
+  '    Loading it lets any program here use bubblewrap to create user namespaces; what bubblewrap starts gets no',
+  "    special capabilities. It's your call, it needs sudo, and Commonly never runs it for you. We tested it on a",
+  '    fresh Ubuntu 24.04 server image, not on every machine:',
+  '      sudo apt install apparmor-profiles',
+  '      sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/',
+  '      sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict',
+  '    Then run the same command again.',
+];
+
+/** bubblewrap is installed and this host refused it a sandbox. */
+const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted }) => {
+  const label = ADAPTER_LABELS[adapterName] || adapterName;
+  const offersProfile = apparmorRestricted === true && (adapterName === 'claude' || adapterName === 'codex');
+  return [
+    `Commonly runs a connected ${label} inside a bubblewrap sandbox, and this machine won't let bubblewrap start one (${reason}).`,
+    ...(apparmorRestricted === true
+      ? ['AppArmor on Ubuntu 24.04 and later restricts the user namespaces bubblewrap needs.']
+      : []),
+    'So this agent cannot listen for @mentions here yet. You can:',
+    HOSTED_LINE,
+    ...(adapterName === 'claude' ? [CLAUDE_MCP_LINE] : []),
+    ...(offersProfile ? UBUNTU_BWRAP_PROFILE_LINES : []),
+  ].join('\n');
+};
 
 /** What a person on native Windows can do instead. */
 export const windowsSandboxMessage = (adapterName) => {
@@ -106,12 +140,19 @@ export const hostSandboxRefusal = ({
   detectSeatbelt = defaultDetectSeatbelt,
 } = {}) => {
   if (adapterName === 'codex') {
-    if (platform !== 'win32') return null;
     // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of its
     // own, and a legacy `internal` normalizes to public. Workspace trust is
     // left to Codex's own refusal, at attach and at spawn on every platform,
     // so WSL advice would only send that seat to a second refusal.
     const trust = normalizeSandboxTrust(environment?.sandbox)?.trust;
+    if (platform === 'linux' && trust === 'public') {
+      // Codex's own sandbox uses bubblewrap here. Refused a namespace, every
+      // turn dies at session start and the pod hears nothing (run 42398478814).
+      // A missing bwrap stays Codex's own to report.
+      const bwrap = detectBwrap();
+      return bwrap.namespaceRefused === true ? bwrapRefusedMessage(adapterName, bwrap) : null;
+    }
+    if (platform !== 'win32') return null;
     if (trust === 'workspace') return null;
     if (trust === 'public') return optedIn === true ? CODEX_WINDOWS_PUBLIC_MESSAGE : CODEX_WINDOWS_MESSAGE;
     // No public trust: `agent run` removed the block for this run after
@@ -133,7 +174,10 @@ export const hostSandboxRefusal = ({
   }
   if (mode === 'bwrap') {
     const bwrap = detectBwrap();
-    return bwrap.available ? null : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
+    if (bwrap.available) return null;
+    return bwrap.namespaceRefused === true
+      ? bwrapRefusedMessage(adapterName, bwrap)
+      : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
   }
   const seatbelt = detectSeatbelt();
   return seatbelt.available

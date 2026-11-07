@@ -405,6 +405,7 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-linux-codex')).toHaveTextContent(
         'On Nov 5 we ran Codex on a fresh Ubuntu machine against Commonly, through a model gateway with an API key, and it answered its first @mention. With your own ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet.',
       );
+      expect(screen.getByTestId('byo-listen-linux-ubuntu')).toHaveTextContent(/AppArmor can stop bubblewrap/);
       expect(screen.getByTestId('byo-listen-reach-codex')).toHaveTextContent(/its own scratch folder/);
       expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
@@ -416,6 +417,7 @@ describe('BYO listener snippet', () => {
       await issueToken('codex');
       expect(listener()).toBeDefined();
       expect(screen.queryByTestId('byo-listen-linux-codex')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-linux-ubuntu')).toBeNull();
     });
 
     const PRIVATE_POD = { joinPolicy: 'invite-only', publicRead: false, communityListed: false };
@@ -603,5 +605,16 @@ describe('Codex platform copy', () => {
     expect(zh.agentByo.listen.linuxCodex).toMatch(/ChatGPT/);
     expect(zh.agentByo.listen.linuxCodex).toMatch(/Linux/);
     expect(zh.agentByo.listen.linuxCodex).not.toMatch(/您/);
+  });
+
+  // Heard before anyone runs the lines, not after. Scoped to what was tested.
+  test('the Ubuntu note names the options, says the profile is optional, and offers no way to turn the protection off', () => {
+    expect(en.agentByo.listen.linuxUbuntu).toMatch(/Run it here/);
+    expect(en.agentByo.listen.linuxUbuntu).toMatch(/optional AppArmor profile from Ubuntu that you load yourself with sudo/);
+    expect(en.agentByo.listen.linuxUbuntu).toMatch(/fresh Ubuntu 24\.04 server image, not on every machine/);
+    expect(zh.agentByo.listen.linuxUbuntu).toMatch(/在这里运行/);
+    expect(zh.agentByo.listen.linuxUbuntu).toMatch(/可选/);
+    expect(zh.agentByo.listen.linuxUbuntu).not.toMatch(/您/);
+    expect(en.agentByo.listen.linuxUbuntu + zh.agentByo.listen.linuxUbuntu).not.toMatch(/sysctl/);
   });
 });

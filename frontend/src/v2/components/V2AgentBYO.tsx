@@ -2048,6 +2048,12 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
+            {/* Before anyone runs the lines: both adapters stop on this host until they choose a route. */}
+            {listenerAvailable && setupOs === 'linux' && (listenAdapter === 'claude' || listenAdapter === 'codex') && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-linux-ubuntu">
+                {t('agentByo.listen.linuxUbuntu')}
+              </p>
+            )}
             {/* Directly above the lines it explains. Codex on Linux keeps its own profile and no flag. */}
             {listenerAvailable && setupOs === 'linux' && listenAdapter === 'codex' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-linux-codex">

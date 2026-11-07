@@ -136,6 +136,12 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).not.toMatch(/Codex off a Mac/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: point them to "Use my own agent" on the Bring your own page, which shows the Linux command \(it needs bubblewrap installed\), offer "Run it here" with commonly_offer_hosted_agent/);
+    // Heard before running anything; "Run it here" first, the profile last and
+    // theirs to choose, the protection never turned off.
+    expect(prompt).toMatch(/On Ubuntu 24\.04 and later, AppArmor can stop bubblewrap from starting, for Claude Code and Codex alike, so tell a person on Ubuntu this before they run the Linux command\./);
+    expect(prompt).toMatch(/"Run it here" first, the MCP command for Claude Code, and last, optional and their own call, Ubuntu's own AppArmor profile/);
+    expect(prompt).toMatch(/tested on a fresh Ubuntu 24\.04 server image, not on every machine\. Commonly never runs it for them, and never tell anyone to turn that AppArmor restriction off\./);
+    expect(prompt).not.toMatch(/sysctl/);
     expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).toMatch(/`claude mcp list` showing Connected means the server started, not that a tool was used/);
   });

@@ -58,11 +58,20 @@ describe('detectBwrap namespace probe', () => {
     expect(res.available).toBe(false);
     expect(res.error).toMatch(/^bubblewrap is installed but cannot start a sandbox on this machine \(bwrap: setting up uid map: Permission denied\)\./);
     expect(res.error).toMatch(/AppArmor restricts the unprivileged user namespaces/);
+    expect(res).toMatchObject({ namespaceRefused: true, reason: 'bwrap: setting up uid map: Permission denied' });
+  });
+
+  test('a refused namespace says whether the AppArmor restriction is on', () => {
+    const refused = () => linux([ok, { status: 1, stdout: '', stderr: 'bwrap: nope\n' }]).spawn;
+    expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => true }).apparmorRestricted).toBe(true);
+    expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => false }).apparmorRestricted).toBe(false);
   });
 
   test('not installed: the install line, and no probe', () => {
     const { spawn, calls } = linux([{ status: null, error: Object.assign(new Error('spawn bwrap ENOENT'), { code: 'ENOENT' }) }]);
-    expect(detectBwrap({ spawn, platform: 'linux' }).error).toMatch(/^bwrap not found on PATH\. Install bubblewrap/);
+    const res = detectBwrap({ spawn, platform: 'linux' });
+    expect(res.error).toMatch(/^bwrap not found on PATH\. Install bubblewrap/);
+    expect(res.namespaceRefused).toBeUndefined();
     expect(calls).toHaveLength(1);
   });
 });
