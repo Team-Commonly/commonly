@@ -6585,4 +6585,8 @@ describe('the landing stylesheet parses as written', () => {
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
+
+  test('the first-run lede keeps a last line longer than one character', () => {
+    expect(ruleBody(readV2Css(), '.v2-first-run__lede')).toContain('text-wrap: pretty');
+  });
 });
