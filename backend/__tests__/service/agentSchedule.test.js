@@ -209,6 +209,16 @@ describe('a BYO agent schedule', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
+  it('saves on a row from before instance ids were stored', async () => {
+    await AgentInstallation.collection.insertOne({
+      agentName: 'legacy', podId: pod._id, version: '1', installedBy: owner._id, status: 'active',
+      config: { runtime: { runtimeType: 'local-cli', host: 'byo' } },
+    });
+    expect((await save('legacy')).status).toBe(200);
+    expect(await dispatchSchedules(AT)).toBe(1);
+    expect(mockEnqueue.mock.calls[0][0].instanceId).toBe('default');
+  });
+
   it('hands the day back when the enqueue fails, and the next tick fires it', async () => {
     await seat('retried');
     await save('retried');

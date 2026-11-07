@@ -9,6 +9,7 @@ import { invalidScheduleField, takesSchedule } from '../../services/agentSchedul
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
+const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
@@ -255,8 +256,7 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     const invalid = invalidScheduleField(body);
     if (invalid) return res.status(400).json(invalid);
     const installation = await AgentInstallation.findOne({
-      agentName: String(req.params.name).toLowerCase(),
-      instanceId: normalizeInstanceId(req.query.instanceId),
+      ...installationIdentityFilter(String(req.params.name).toLowerCase(), normalizeInstanceId(req.query.instanceId)),
       podId: req.params.podId,
       status: { $ne: 'uninstalled' },
     });
@@ -269,7 +269,7 @@ router.put('/agents/:name/manage-settings/pods/:podId/schedule', settingsRateLim
     const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
     const ownership = isAdmin
       ? { owned: true as const }
-      : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId);
+      : await ownsRuntimeIdentity(userId, installation.agentName, installation.instanceId || 'default');
     const config = normalizeConfigMap(installation.config) || {};
     const onlyStopping = !ownership.owned && body.enabled === false && Boolean(config.schedule)
       && canManage(installation, userId, isAdmin);
