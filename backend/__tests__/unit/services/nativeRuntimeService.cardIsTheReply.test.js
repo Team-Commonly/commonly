@@ -93,6 +93,16 @@ describe('the approval card is the reply', () => {
   });
   afterAll(() => { process.env = savedEnv; });
 
+  // The MCP line follows the card, so the note can't forbid every later post.
+  test('the note after a card leaves room for something else they asked for', async () => {
+    axios.post.mockResolvedValueOnce(card).mockResolvedValueOnce(says('NO_REPLY'));
+
+    await runAgent(scoutInstall, ask);
+
+    const toolResult = axios.post.mock.calls[1][1].messages.find((message) => message.role === 'tool');
+    expect(toolResult.content).toContain('anything else they asked for still gets its own post');
+  });
+
   test('a card keeps the closing text from posting as a second message', async () => {
     axios.post.mockResolvedValueOnce(card).mockResolvedValueOnce(says('Approve the card above to connect.'));
 

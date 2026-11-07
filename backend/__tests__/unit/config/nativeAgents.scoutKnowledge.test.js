@@ -253,17 +253,19 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Where the connect card applies, the card is the whole reply: propose it and write no MCP line/);
   });
 
-  // F290: asked for the MCP line too, it goes before the card. That is when
-  // Codex needs a line of its own: the Claude Code one does not configure Codex.
-  test('posts the MCP line before the card only when they asked for it', () => {
+  // Asked for the MCP line too is when Codex needs a line of its own: the Claude
+  // Code one does not configure Codex.
+  test('gives the MCP line only when they asked for it, after the card', () => {
     expect(prompt).toMatch(/unless they asked about both directions or for Commonly inside their own sessions/);
-    expect(prompt).toMatch(/post the MCP line with commonly_post_message first, propose the card last, and post nothing after it/);
+    expect(prompt).toMatch(/propose the card first and post the MCP line after it with commonly_post_message/);
   });
 
-  // Growth's re-walk: a line outside a code block chipped `@commonlyai`, and one
-  // saying "the card below" stood alone when a pending card refused the next.
-  test('keeps the MCP line whole and free of any promise of a card', () => {
-    expect(prompt).toMatch(/Put that line in a code block so it copies as one command, and do not mention the card in that message/);
+  // Growth's re-walks: outside a code block `@commonlyai` chipped. With the line
+  // first it said "the card below" twice, once under a pending card and once
+  // with none, so the card goes first and the line can't point down at it.
+  test('keeps the MCP line whole and posts it whatever became of the card', () => {
+    expect(prompt).toMatch(/in a code block so it copies as one command/);
+    expect(prompt).toMatch(/If the card is refused because one is already pending, still post the line/);
     expect(prompt).toMatch(/Post the line each time they ask, even after they declined a card/);
   });
 
