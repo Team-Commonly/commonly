@@ -63,7 +63,7 @@ echo "=== the one profile, without the package"
 dir=$(mktemp -d)
 (cd "$dir" && apt-get download apparmor-profiles && dpkg-deb -x apparmor-profiles_*.deb x)
 profile=/etc/apparmor.d/bwrap-userns-restrict
-sudo cp "$dir/usr/share/apparmor/extra-profiles/bwrap-userns-restrict" "$profile"
+sudo cp "$dir/x/usr/share/apparmor/extra-profiles/bwrap-userns-restrict" "$profile"
 sudo apparmor_parser -r "$profile" && probe "with bwrap-userns-restrict loaded"
 profiles "with one profile"
 sudo systemctl reload apparmor
