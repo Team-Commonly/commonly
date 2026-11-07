@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
 import { usePhone } from '../connectors/usePhone';
+import { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import { useTalkToAgent } from './useTalkToAgent';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import '../primitives/primitives.css';
@@ -73,7 +74,8 @@ export const groupSections = (sections: MemorySection[]) => {
 };
 
 // Frame icons (docs/design/artboards/d215, #s-memory): stroke-only, 1.8 weight.
-const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'id' | 'share' | 'search' | 'info' | 'chev' | 'chat' | 'back', React.ReactNode> = {
+const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'id' | 'share' | 'search' | 'info' | 'chev' | 'chat' | 'back' | 'edit', React.ReactNode> = {
+  edit: <path d="M4 20h4l10-10-4-4L4 16v4zM13 7l4 4" />,
   chev: <path d="m6 9 6 6 6-6" />,
   back: <path d="M19 12H5M12 19l-7-7 7-7" />,
   chat: <path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" />,
@@ -222,6 +224,17 @@ const V2AgentMemory: React.FC = () => {
         <span className="sp" />
         {!phone && tabs}
         <span className="sp" />
+        {state === 'ready' && (
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2p-ib"
+            title={t('agentProfile.memory.edit')}
+            aria-label={t('agentProfile.memory.edit')}
+            onClick={() => navigate(`${settingsHref}#${AGENT_MEMORY_EDITOR_ID}`)}
+          >
+            <MemIcon name="edit" size={17} />
+          </button>
+        )}
         <button
           type="button"
           className="v2p-b v2p-b-s v2p-ib"

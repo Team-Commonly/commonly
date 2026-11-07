@@ -18,6 +18,67 @@ describe('CollapsibleProse', () => {
     return i18n.changeLanguage('en');
   });
 
+  const folded = (body: React.ReactNode) => render(
+    <CollapsibleProse collapsible><div className="v2-msg__content">{body}</div></CollapsibleProse>,
+  );
+
+  it('keeps a closing question visible under the fold, and drops the copy when opened', () => {
+    setScrollHeight(900);
+    const { container } = folded(<><p>Long report.</p><p>Here is the plan. Should I merge it?</p></>);
+    const closing = container.querySelector('.v2-msg__closing');
+    expect(closing).toHaveTextContent(/^Should I merge it\?$/);
+    expect(closing).toHaveAttribute('aria-hidden', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    expect(container.querySelector('.v2-msg__closing')).toBeNull();
+  });
+
+  it('keeps a Chinese closing question, and one that ends a list', () => {
+    setScrollHeight(900);
+    expect(folded(<p>报告很长。要现在合并吗？</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^要现在合并吗？$/);
+    expect(folded(<ul><li>One</li><li>Ready to ship?</li></ul>).container.querySelector('.v2-msg__closing')).toHaveTextContent('Ready to ship?');
+  });
+
+  it('keeps a closing quote with its question', () => {
+    setScrollHeight(900);
+    expect(folded(<p>报告很长。他问：“要合并吗？”</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^他问：“要合并吗？”$/);
+  });
+
+  it('keeps a corner quote with its question, and a question in a heading', () => {
+    setScrollHeight(900);
+    expect(folded(<p>报告很长。他问：「要合并吗？」</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^他问：「要合并吗？」$/);
+    expect(folded(<><p>Long report.</p><h3>Ready to ship?</h3></>).container.querySelector('.v2-msg__closing')).toHaveTextContent('Ready to ship?');
+  });
+
+  it('shows the end of a very long question, not the whole paragraph again', () => {
+    setScrollHeight(900);
+    const text = `${'word '.repeat(200)}is this right?`;
+    const closing = folded(<p>{text}</p>).container.querySelector('.v2-msg__closing');
+    expect(closing.textContent.length).toBeLessThanOrEqual(241);
+    expect(closing.textContent.startsWith('…')).toBe(true);
+    expect(closing.textContent.endsWith('is this right?')).toBe(true);
+  });
+
+  it('keeps an abbreviation before a capitalised word', () => {
+    setScrollHeight(900);
+    expect(folded(<p>All done. Should I use one, e.g. HTTP?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. HTTP\?$/);
+  });
+
+  it('keeps an abbreviation inside the question', () => {
+    setScrollHeight(900);
+    expect(folded(<p>All done. Should I use one, e.g. the new API?</p>).container.querySelector('.v2-msg__closing')).toHaveTextContent(/^Should I use one, e\.g\. the new API\?$/);
+  });
+
+  it('adds nothing when the message ends in a statement, or a question is followed by code', () => {
+    setScrollHeight(900);
+    expect(folded(<p>All done. No action needed.</p>).container.querySelector('.v2-msg__closing')).toBeNull();
+    expect(folded(<><p>Is this right?</p><pre>npm test</pre></>).container.querySelector('.v2-msg__closing')).toBeNull();
+  });
+
+  it('adds nothing to a short message, which already shows its question', () => {
+    setScrollHeight(100);
+    expect(folded(<p>Should I merge it?</p>).container.querySelector('.v2-msg__closing')).toBeNull();
+  });
+
   it('folds a long agent message past six lines behind a real Show more button', () => {
     setScrollHeight(900);
     const { container } = render(

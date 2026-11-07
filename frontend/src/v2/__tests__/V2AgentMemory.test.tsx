@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import V2AgentMemory, { groupSections, journalDay, latestDay } from '../agents/V2AgentMemory';
 
 jest.mock('axios', () => {
@@ -28,6 +28,33 @@ const renderPage = () => render(
   </MemoryRouter>,
 );
 const headersOf = (groups, id) => groups.find((g) => g.id === id).sections.flatMap((s) => s.notes.map((n) => n.header));
+
+describe('Edit', () => {
+  const editButton = () => screen.queryByRole('button', { name: 'Edit memory' });
+  const Where = () => { const { pathname, hash } = useLocation(); return <p>at {pathname}{hash}</p>; };
+
+  it('opens the existing editor on Settings', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 0, sections: [] } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+          <Route path="/v2/agents/:agentName/:instanceId" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(editButton()).toBeInTheDocument());
+    fireEvent.click(editButton());
+    expect(screen.getByText('at /v2/agents/maya-claude/default#agent-memory-editor')).toBeInTheDocument();
+  });
+
+  it('is not offered to a viewer who can\'t read this memory', async () => {
+    axios.get.mockRejectedValue({ response: { status: 403 } });
+    renderPage();
+    await screen.findByText(/owner|private|admin/i);
+    expect(editButton()).toBeNull();
+  });
+});
 
 describe('groupSections', () => {
   it('gives soul its own Identity group, shared its own Shared group, and journal sections to Journal', () => {

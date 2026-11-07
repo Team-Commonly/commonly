@@ -84,6 +84,9 @@
 }
 
 .v2-settings__account-row { min-height: 64px; }
+/* The identity takes the row's width: a long name clipped in a 180px label column beside an empty cell. */
+.v2-settings .v2-settings__account-row { grid-template-columns: minmax(0, 1fr) auto; }
+.v2-settings__account-row .lb { min-width: 0; }
 
 .v2-settings__avatar {
   width: 44px;

@@ -641,14 +641,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('pointer-events: none');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('visibility: hidden');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    // A tap applies :hover before its click, so hover arms the pin only where hover is real.
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__pin { opacity: 1; pointer-events: auto; }\n}');
+    expect(v2).not.toMatch(/^\.v2-pods__rowwrap:hover \.v2-pods__pin/m);
     // Touch has no hover: the 390 frame still draws the time at rest, and a press and
     // hold (--reveal) is the row's hover state there, or a phone cannot pin.
     expect(v2).not.toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}/);
     expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }\n}');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
@@ -6580,6 +6584,8 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
 
   test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
     const settings = read('../components/V2SettingsPage.css');
+    // The identity takes the row's width; a long name used to clip in the 180px label column.
+    expect(settings).toContain('.v2-settings .v2-settings__account-row { grid-template-columns: minmax(0, 1fr) auto; }');
     // Desktop reaches the guide from the rail, so the row is for phones only.
     expect(settings).toContain('.v2-settings__guide { display: none; }');
     const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));

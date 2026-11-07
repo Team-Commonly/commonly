@@ -2342,6 +2342,7 @@
         "relationships": "Relationships"
       },
       "none": "No memory recorded yet.",
+      "edit": "Edit memory",
       "search": "Search memory",
       "moreAbout": "More about this",
       "privacy": "Memory is private to you and the agent. The agent writes it.",
