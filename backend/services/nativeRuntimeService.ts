@@ -28,6 +28,7 @@
 import { Types } from 'mongoose';
 import { SCOUT_OFFER_COPY, normalizeScoutLocale, startLabel } from '../config/native-agents/scout';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
+import { isRoomNotice } from './roomNoticeLines';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
 import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
@@ -2181,7 +2182,7 @@ export async function fetchRecentPodMessages(
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { listPodMessages } = require('../repositories/messageRepository');
   const rows = await listPodMessages(String(podId), { limit }) as Array<Record<string, unknown>>;
-  return rows.map((row) => {
+  return rows.filter((row) => !isRoomNotice(row)).map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
     // Only the raw `is_bot` is trusted: the PG mapper's `userId.isBot` reads

@@ -19,8 +19,12 @@ const { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } = require
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { noteNeverConnectedMention, isNeverConnectedAgent } = require('./neverConnectedMentionService') as {
+const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } = require('./neverConnectedMentionService') as {
   noteNeverConnectedMention: (args: {
+    podId: string; agentName: string; instanceId: string; senderId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+  noteOfflineMention: (args: {
     podId: string; agentName: string; instanceId: string; senderId: string;
     messageId: string | null; threadRootId?: string | number | null;
   }) => Promise<boolean>;
@@ -2585,6 +2589,14 @@ const enqueueMentions = async ({
         messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
         threadRootId,
       }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+      noteOfflineMention({
+        podId: String(podId),
+        agentName: target.agentName,
+        instanceId: target.instanceId || 'default',
+        senderId: String(userId),
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId,
+      }).catch((error: Error) => console.warn('[agent-offline] notice failed:', error?.message));
     });
   }
 
@@ -2861,6 +2873,14 @@ const enqueueDmEvent = async ({
         messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
         threadRootId: resolveThreadRootId(message),
       }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+      noteOfflineMention({
+        podId: String(podId),
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        senderId: String(userId),
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId: resolveThreadRootId(message),
+      }).catch((error: Error) => console.warn('[agent-offline] notice failed:', error?.message));
     }
   }
 

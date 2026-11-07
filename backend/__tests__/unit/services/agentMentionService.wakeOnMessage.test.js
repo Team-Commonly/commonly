@@ -60,6 +60,7 @@ jest.mock('../../../models/pg/Message', () => ({
 
 jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
+  noteOfflineMention: jest.fn().mockResolvedValue(false),
   isNeverConnectedAgent: jest.fn().mockResolvedValue(false),
 }));
 
