@@ -138,6 +138,16 @@ export const hostedIsStopped = (installation: any): boolean => {
 };
 
 /**
+ * When the owner stopped this install, or null while it isn't stopped. A stop
+ * whose time can't be read is still a stop, and reads as long ago.
+ */
+export const hostedStoppedAt = (installation: any): Date | null => {
+  if (!hostedIsStopped(installation)) return null;
+  const stoppedAt = new Date(readHostedConfig(installation).deprovisionedAt as string | Date);
+  return Number.isNaN(stoppedAt.getTime()) ? new Date(0) : stoppedAt;
+};
+
+/**
  * True for a provisioned hosted install whose turns run on the native
  * runtime. A deprovisioned one routes nowhere, as a stopped Durable Object
  * answered nothing.

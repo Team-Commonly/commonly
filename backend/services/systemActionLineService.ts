@@ -156,6 +156,45 @@ export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void
 }
 
 /**
+ * F297. A person addressed an agent its owner stopped. Without this line the
+ * mention waits and the room says nothing, which to anyone but the owner reads
+ * as being ignored. It promises no reply: a wake can age out before a Start.
+ * Callers dedupe with `hasStoppedLineSince`.
+ */
+export interface StoppedLine extends SystemLineActor {
+  agentLabel: string;
+  agentKey: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitStoppedLine(line: StoppedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} is stopped, so it can't answer until its owner starts it.`, {
+    kind: 'system-action',
+    action: 'agent-stopped',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/** Whether a stopped line for this agent sits in the pod since `since`; no pool reads as yes. */
+export async function hasStoppedLineSince(podId: string, agentKey: string, since: Date): Promise<boolean> {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { pool } = require('../config/db-pg') as {
+    pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> } | null;
+  };
+  if (!pool) return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM messages
+     WHERE pod_id = $1 AND message_type = 'system' AND created_at >= $2
+       AND payload->>'action' = 'agent-stopped' AND payload->>'agentKey' = $3
+     LIMIT 1`,
+    [podId, since, agentKey],
+  );
+  return rows.length > 0;
+}
+
+/**
  * Whether a not-connected line for this agent already sits in the pod since
  * UTC midnight. A missing pool reads as "already posted": no line is better
  * than a second line the person did not need.

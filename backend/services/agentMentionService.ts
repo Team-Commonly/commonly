@@ -27,6 +27,13 @@ const { noteNeverConnectedMention, isNeverConnectedAgent } = require('./neverCon
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { noteStoppedMention } = require('./stoppedMentionService') as {
+  noteStoppedMention: (args: {
+    podId: string; agentName: string; instanceId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
   maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
 };
@@ -2040,6 +2047,7 @@ const enqueueMentions = async ({
   // also records a reply-edge delivery, which is addressing but not an
   // explicit @mention and therefore must not create a follow.
   const deliveredAgentMentionTargets = new Map<string, MentionTarget>();
+  const addressedTargets = new Map<string, MentionTarget>();
   // Mentioned agents that have never connected. A person @mentioning one is
   // still waiting on an answer nobody can give yet, so that mention does not
   // count as addressing the message away from the room's opt-ins: Scout keeps
@@ -2055,6 +2063,7 @@ const enqueueMentions = async ({
   ): void => {
     enqueuedIdentityKeys.add(identityKey(target));
     enqueued.push(resultLabel);
+    addressedTargets.set(identityKey(target), target);
     if (isExplicitMention) deliveredAgentMentionTargets.set(identityKey(target), target);
   };
 
@@ -2558,6 +2567,20 @@ const enqueueMentions = async ({
     }
   }
 
+  // F297: a person addressing a stopped agent is told. Not awaited, and after
+  // every wake, so a slow or failed notice can't reach them or the sender.
+  if (sender?.isBot === false) {
+    addressedTargets.forEach((target) => {
+      noteStoppedMention({
+        podId: String(podId),
+        agentName: target.agentName,
+        instanceId: target.instanceId || 'default',
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId,
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+    });
+  }
+
   return {
     enqueued, implicit, skipped, woken,
   };
@@ -2811,6 +2834,15 @@ const enqueueDmEvent = async ({
       },
     });
     enqueued.push(agentName);
+    if (sender?.isBot === false) {
+      noteStoppedMention({
+        podId: String(podId),
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId: resolveThreadRootId(message),
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+    }
   }
 
   return { enqueued, skipped: [] };
