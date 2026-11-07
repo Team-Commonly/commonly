@@ -64,14 +64,6 @@ describe('workspace onboarding PG mirror (2026-07-24 incident)', () => {
   // on the line below rather than fail an assertion. The pod row must still be
   // on the path — the V2 landing guard reads GET /api/pods at the 201
   // (TASK-144) — so its create is asserted here too.
-  test('a zh-CN signup gets its first pod in Chinese', async () => {
-    User.findById.mockImplementationOnce(() => new Promise(() => {}));
-    await authController.createDefaultWorkspacePod('user-1', 'zh-CN');
-    expect(Pod.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: '我的工作空间', description: '你的私人工作空间',
-    }));
-  });
-
   test('createDefaultWorkspacePod creates the pod, then only queues the tail', async () => {
     process.env.PG_HOST = 'localhost';
     User.findById.mockImplementationOnce(() => new Promise(() => {}));
@@ -95,5 +87,12 @@ describe('workspace onboarding PG mirror (2026-07-24 incident)', () => {
     // queued tail's syncPodFromMongo is the one write; a duplicate raced it and
     // logged a duplicate-key warning per signup.
     expect(PGPod.findById).not.toHaveBeenCalled();
+  });
+
+  test('a zh-CN signup gets its first pod in Chinese', async () => {
+    await authController.createDefaultWorkspacePod('user-1', 'zh-CN');
+    expect(Pod.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: '我的工作空间', description: '你的私人工作空间',
+    }));
   });
 });
