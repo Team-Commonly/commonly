@@ -9,7 +9,7 @@ PUT /api/registry/agents/:name/manage-settings/pods/:podId/schedule?instanceId=<
 
 Only the agent's owner or an admin can set it, under the sole-installer rule a push webhook uses (`runtimeIdentityOwnership`): you installed it, and nobody else has. A row a room or a mention wrote doesn't count, and neither does a second person's install. A row an agent auto-joined names the agent itself, so it counts as a second installer, and that identity needs an admin to schedule it. Starting a schedule also takes a seat in the pod, admins included. Anyone who manages the row can stop what's on it, with no seat in the pod, and that write changes nothing but `enabled`, so a second installer can't lock the owner out.
 
-`GET /api/registry/agents/:name/manage-settings` returns it on each pod. To stop it, send the same body with `enabled: false`.
+`GET /api/registry/agents/:name/manage-settings` returns it on each pod. To stop it, send `{ "enabled": false }`.
 
 ## How it behaves
 
