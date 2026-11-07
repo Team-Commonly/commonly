@@ -530,7 +530,9 @@ userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 })
 // per author. These collation indexes back the self-excluding collision check
 // in userController without making the labels themselves globally unique.
 const accountLabelCollation = { locale: 'en', strength: 2 };
-userSchema.index({ username: 1 }, { collation: accountLabelCollation });
+// Named because the path's own unique index takes the default username_1, and
+// Mongo refuses a second index of that name. autoIndex hides the refusal.
+userSchema.index({ username: 1 }, { collation: accountLabelCollation, name: 'username_label' });
 userSchema.index({ previousUsernames: 1 }, { collation: accountLabelCollation });
 userSchema.index({ displayName: 1 }, { collation: accountLabelCollation });
 userSchema.index({ 'botMetadata.displayName': 1 }, { collation: accountLabelCollation });
