@@ -18,7 +18,7 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { describeMcpCommand } from '../mcp-server-version.js';
@@ -49,12 +49,19 @@ const EXCLUDED_TOOLS = [
 ];
 // Qwen can read its own config directory. That directory also contains the
 // per-spawn MCP credential file, so public turns cannot expose OS read tools.
-const PUBLIC_READ_TOOLS = [
-  'read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp',
-  // Both spellings of a Commonly MCP tool, as with the aliases above
-  // (public-withheld-tools.js; self-install and memory writes, F118).
-  ...PUBLIC_SEAT_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
-];
+const PUBLIC_READ_TOOLS = ['read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp'];
+
+// What a public turn adds to --exclude-tools. Both spellings of a Commonly MCP
+// tool, under the usual server name and any this turn declares, as with the
+// aliases above (public-withheld-tools.js; self-install and memory writes, F118,
+// F145).
+export const publicExcludedTools = (serverNames, ctx) => {
+  const names = [...new Set(['commonly', ...serverNames])];
+  return [
+    ...PUBLIC_READ_TOOLS,
+    ...publicSeatWithheldTools(ctx).flatMap((tool) => [tool, ...names.map((name) => `mcp__${name}__${tool}`)]),
+  ];
+};
 
 const parseVersion = (output) => {
   const match = String(output || '').trim().match(/^(?:qwen(?:\s+code|-code)?\s+)?v?(\d+\.\d+\.\d+)$/i);
@@ -161,7 +168,7 @@ export const buildQwenMcpConfig = (servers, ctx) => {
         ...(server.cwd ? { cwd: server.cwd } : {}),
         // `--exclude-tools` refuses these at the call and still lists them for
         // the model (measured on 0.26.2), so the server entry drops them too.
-        ...(ctx.publicSeat ? { excludeTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
+        ...(ctx.publicSeat ? { excludeTools: [...publicSeatWithheldTools(ctx)] } : {}),
       };
       const versionDir = ctx.publicSeat && selectedMcpVersionDir(command);
       if (versionDir) ctx.mcpReadDirectories?.push(versionDir);
@@ -366,6 +373,7 @@ export default {
         instanceUrl: ctx.instanceUrl || '',
         runtimeToken: ctx.runtimeToken || '',
         publicSeat: isPublic,
+        ownerWoken: ctx.ownerWoken,
         unavailableMcp,
         mcpReadDirectories,
         bridgedBrokers,
@@ -383,8 +391,9 @@ export default {
       // be resumed. The kernel memory preamble supplies continuity instead.
       const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
         freshSession: true,
-        // F118: a public seat reads its memory but is not offered a write.
-        memoryReadOnly: isPublic,
+        // F118, F145: a public seat reads its memory, and is offered a write
+        // only on a turn its owner woke.
+        memoryReadOnly: isPublic && ctx.ownerWoken !== true,
       });
       const allowedTools = [
         ...(Object.hasOwn(mcp.mcpServers, 'commonly') ? ['commonly'] : []), ...bridgedBrokers,
@@ -392,7 +401,7 @@ export default {
       const args = [
         '--bare', '--safe-mode', '--auth-type', 'openai', '-m', seatModel,
         '--mcp-config', mcpPath, '--exclude-tools', [
-          ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
+          ...EXCLUDED_TOOLS, ...(isPublic ? publicExcludedTools(Object.keys(mcp.mcpServers), ctx) : []),
         ].join(','),
         // Qwen ignores settings permissions in bare/safe mode, but still
         // honours CLI allow rules. Any seat needs its declared Commonly tools

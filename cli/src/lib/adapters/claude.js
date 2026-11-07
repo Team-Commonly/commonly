@@ -103,7 +103,7 @@ import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '..
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_WITHHELD_TOOLS, publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
@@ -637,7 +637,7 @@ const permissionPath = (path, platform) => (platform === 'win32'
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
 
 const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
-  trust, allow = [], memoryWithheld = false, platform = process.platform, home: homeOverride = null,
+  trust, allow = [], memoryWithheld = false, ownerWoken = false, platform = process.platform, home: homeOverride = null,
   noShell = false,
 } = {}) => {
   const home = homeOverride || homedir();
@@ -685,11 +685,12 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     : [];
   // Nor, on any confined trust, the tools no public seat is offered
   // (public-withheld-tools.js). A public seat also loses self-install and every
-  // memory write (F118). Only a workspace seat is called with its trust at
-  // every call site; the public ones pass none, so "not workspace" is public.
+  // memory write (F118), and gets the writes back on a turn its owner woke
+  // (F145). Only a workspace seat is called with its trust at every call site;
+  // the public ones pass none, so "not workspace" is public.
   const withheldTools = trust === 'workspace'
     ? PUBLIC_WITHHELD_TOOLS
-    : [...PUBLIC_WITHHELD_TOOLS, ...PUBLIC_ONLY_WITHHELD_TOOLS];
+    : publicSeatWithheldTools({ ownerWoken });
   const withheldDenies = withheldTools
     .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
   // A tool can be denied for two reasons (a withheld turn's memory write is
@@ -1408,6 +1409,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...buildPublicClaudePolicyArgs(allowedPatterns, {
         ...(sandboxTrust === 'workspace' ? { trust: sandboxTrust, allow: grants } : {}),
         memoryWithheld: ctx.memoryWithheld === true,
+        ownerWoken: ctx.ownerWoken,
         platform: ctx._platform || process.platform,
         home: ctx._home || null,
         noShell: true,
@@ -1450,7 +1452,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, {
-        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true,
+        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken,
       }),
       ...(ctx.publicSkillArgs || []),
     ];
@@ -1517,8 +1519,8 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, workspaceBwrapSandbox
-        ? { trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true }
-        : { memoryWithheld: ctx.memoryWithheld === true }),
+        ? { trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }
+        : { memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }),
       ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
@@ -1685,8 +1687,9 @@ export default {
     // long-running work in its own project.
     const reapEverything = ctx.environment?.sandbox?.trust === 'public';
     const workCues = publicTrust ? [] : WORK_CUES;
-    // F118: a public seat reads its memory but is not offered a write.
-    const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public';
+    // F118, F145: a public seat reads its memory, and is offered a write only
+    // on a turn its owner woke.
+    const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public' && ctx.ownerWoken !== true;
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,

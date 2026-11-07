@@ -38,7 +38,7 @@ const drain = async () => {
 let eventCount = 0;
 const runOneTurn = async ({
   environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl, codexUnconfined,
-  spawnError, eventType = 'chat.mention', eventPayload = { content: 'read the repo' },
+  spawnError, eventType = 'chat.mention', eventPayload = { content: 'read the repo' }, spawnCredentialLeaseFactory,
 }) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
@@ -76,6 +76,7 @@ const runOneTurn = async ({
     setTimeoutImpl: noopTimeout,
     detectBwrapImpl,
     codexUnconfined,
+    ...(spawnCredentialLeaseFactory ? { spawnCredentialLeaseFactory } : {}),
   });
   await drain();
   stop();
@@ -115,6 +116,40 @@ describe('performRun workspace turn placement', () => {
     expect(ctx.memoryWithheld).toBe(true);
     expect(ctx.memoryLongTerm).toBeUndefined();
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
+  });
+
+  test('F145: a turn that runs public asks for no memory writes, and gets none whatever the mint says', async () => {
+    const leases = [];
+    const { ctx } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+      spawnCredentialLeaseFactory: (args) => {
+        leases.push(args);
+        return {
+          open: async () => ({ token: 'cm_agent_child', credentialId: 'c1', source: 'spawn', ownerWoken: true }),
+          close: async () => ({ revoked: true }),
+        };
+      },
+    });
+    expect(leases[0]).toEqual(expect.objectContaining({ publicSeat: true, eventIds: [] }));
+    expect(ctx.memoryWithheld).toBe(true);
+    expect(ctx).not.toHaveProperty('ownerWoken');
+  });
+
+  test('F145: a workspace turn in private pods is not a public seat', async () => {
+    const leases = [];
+    await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod],
+      spawnCredentialLeaseFactory: (args) => {
+        leases.push(args);
+        return {
+          open: async () => ({ token: 'cm_agent_child', credentialId: 'c1', source: 'spawn' }),
+          close: async () => ({ revoked: true }),
+        };
+      },
+    });
+    expect(leases[0]).not.toHaveProperty('publicSeat');
   });
 
   test('a pod that turned public runs the turn as a public seat in the scratch folder', async () => {

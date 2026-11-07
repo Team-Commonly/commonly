@@ -72,6 +72,7 @@ const spawnCredentialRateLimit = rateLimit({
 type RuntimeReq = express.Request & {
   agentUser?: { _id?: Types.ObjectId | string } | null;
   agentCredential?: { _id?: Types.ObjectId | string; scopes?: string[] } | null;
+  agentInstallation?: { agentName?: string; instanceId?: string } | null;
   agentTokenHash?: string;
 };
 
@@ -126,6 +127,12 @@ router.post('/', spawnCredentialRateLimit, agentRuntimeAuth, async (req: Runtime
       spawnId: (req.body || {}).spawnId,
       ttlSeconds: (req.body || {}).ttlSeconds,
       agentUserId: req.agentUser?._id || null,
+      publicSeat: (req.body || {}).publicSeat,
+      eventIds: (req.body || {}).eventIds,
+      identity: {
+        agentName: req.agentInstallation?.agentName,
+        instanceId: req.agentInstallation?.instanceId || 'default',
+      },
     });
     if (!result.ok) {
       return res.status(REFUSAL_STATUS[result.code] || 400).json({
@@ -140,6 +147,7 @@ router.post('/', spawnCredentialRateLimit, agentRuntimeAuth, async (req: Runtime
       spawnId: result.spawnId,
       expiresAt: result.expiresAt,
       maxExpiresAt: result.maxExpiresAt,
+      ownerWoken: result.ownerWoken,
     });
   } catch (err) {
     console.error('Error minting spawn credential:', err);

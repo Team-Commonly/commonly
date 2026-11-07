@@ -82,6 +82,16 @@ export const isCapacityRefusal = (status) => (
 );
 
 /**
+ * The events a turn reads: its batch, or the one event it ran. A batch's own
+ * `_id` is synthetic, so the batch list is the only real answer for one. Only
+ * the wrapper builds that list, so it counts only on the batch type.
+ */
+export const turnEventIds = (event) => {
+  if (event?.type === 'inbox.batch' && Array.isArray(event.payload?.batchEventIds)) return event.payload.batchEventIds;
+  return event?._id ? [String(event._id)] : [];
+};
+
+/**
  * A 404 with no `code` is the route missing, not this caller being refused.
  *
  * The mint's refusals are always typed (`not_found` → 404 via
@@ -178,13 +188,17 @@ export const revokeOrphanedSpawnCredentials = async ({ client, log = () => {} })
 };
 
 /**
- * Open one lease. Returns `{ token, credentialId, source, expiresAt, grantedSeconds }`.
+ * Open one lease. Returns `{ token, credentialId, source, expiresAt, grantedSeconds, ownerWoken }`.
  *
  * `source` is `'spawn'` when the child got a scoped credential and
  * `'seat-fallback'` when it got the seat token because the server could not
  * mint. A refusal (a verdict — see the header) throws with
  * `spawnCredentialRefused` set and the status attached, so the caller fails the
  * spawn closed rather than falling back.
+ *
+ * `ownerWoken` (F145) is true only when the server said exactly that. A seat
+ * token can't be marked, and an older backend doesn't answer, so both read as
+ * false and the memory tools stay withheld.
  */
 export const openSpawnCredential = async ({
   client,
@@ -192,6 +206,8 @@ export const openSpawnCredential = async ({
   spawnId,
   desiredTtlSeconds = null,
   policy = null,
+  publicSeat = false,
+  eventIds = [],
   log = () => {},
 }) => {
   const cap = typeof policy?.maxTtlSeconds === 'number' ? policy.maxTtlSeconds : null;
@@ -209,18 +225,24 @@ export const openSpawnCredential = async ({
   try {
     minted = await client.post(
       SPAWN_CREDENTIAL_BASE,
-      ask === null ? { spawnId } : { spawnId, ttlSeconds: ask },
+      {
+        spawnId,
+        ...(ask === null ? {} : { ttlSeconds: ask }),
+        ...(publicSeat ? { publicSeat: true, eventIds } : {}),
+      },
     );
   } catch (err) {
     const status = err?.status ?? null;
     if (isCapacityRefusal(status === null ? undefined : status)) {
       log(`spawn credential unavailable (${status === null ? 'no response' : `HTTP ${status}`}) — spawning with the seat token`);
-      return { token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null };
+      return {
+        token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, ownerWoken: false,
+      };
     }
     if (isRouteAbsentRefusal(status, err?.body)) {
       log('spawn credential route absent on this backend (HTTP 404 with no code) — spawning with the seat token');
       return {
-        token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, reason: 'route-absent',
+        token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, ownerWoken: false, reason: 'route-absent',
       };
     }
     const code = err?.body?.code ? ` code=${err.body.code}` : '';
@@ -240,7 +262,7 @@ export const openSpawnCredential = async ({
   if (typeof minted?.token !== 'string' || !minted.token.trim()) {
     log('spawn credential response carried no token — spawning with the seat token');
     return {
-      token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, reason: 'no-token',
+      token: seatToken, credentialId: null, source: 'seat-fallback', expiresAt: null, grantedSeconds: null, ownerWoken: false, reason: 'no-token',
     };
   }
 
@@ -253,6 +275,7 @@ export const openSpawnCredential = async ({
     source: 'spawn',
     expiresAt: minted.expiresAt || null,
     grantedSeconds,
+    ownerWoken: minted.ownerWoken === true,
   };
 };
 
@@ -275,6 +298,8 @@ export const createSpawnCredentialLease = ({
   spawnId,
   desiredTtlSeconds = null,
   policy = null,
+  publicSeat = false,
+  eventIds = [],
   log = () => {},
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
@@ -337,7 +362,9 @@ export const createSpawnCredentialLease = ({
 
   return {
     async open() {
-      const opened = await openSpawnCredential({ client, seatToken, spawnId, desiredTtlSeconds, policy, log });
+      const opened = await openSpawnCredential({
+        client, seatToken, spawnId, desiredTtlSeconds, policy, publicSeat, eventIds, log,
+      });
       credentialId = opened.credentialId;
       grantedSeconds = opened.grantedSeconds;
       if (opened.source === 'spawn' && credentialId) startRenewal();

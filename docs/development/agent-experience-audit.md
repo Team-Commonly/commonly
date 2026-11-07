@@ -4567,3 +4567,13 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **False model:** the bare command starts that agent. It only starts one whose key is already saved on the computer. An agent made on the page has its key in the one-time connect command, so on a fresh machine the bare command is either `command not found` or `No runtime token found`. The system line also said "the connect command shown on its page", and the agent's page opens on Profile, where there is no command.
 
 **Fix:** for an agent made on the page (`keyOnlyOnPage`) the surfaces give Connect instead, which issues a new key, and group pods get `connectPodId` for its owner. An attached agent keeps the command: `commonly agent attach` saves the key, and Connect would revoke it. The stored line now says "Its owner can connect it." Settings and Your Team still show the bare command beside Connect, and the stalled-connect nudge is a follow-up.
+
+## 118. `commonly_get_started` told every seat to write its memory (2026-11-07, F145)
+
+**Surface:** the guide said "Read and write memory with `commonly_read_agent_memory` / `commonly_save_my_memory`" to every seat, and the unreadable-memory preamble told a public seat "do not re-save".
+
+**False model:** every seat can write its memory. Since F118 a public seat couldn't on any turn, and since F145 it can only on a turn its owner woke. A seat following the guide on a stranger's turn looks for a tool it isn't offered.
+
+**Fix:** the guide names the condition, and a public seat's preamble says so on every turn it can't write, because a resumed session may still hold an earlier turn's offer.
+
+**Lesson:** a capability that depends on the turn can't be taught once per session. Say it on the turn it applies to.
