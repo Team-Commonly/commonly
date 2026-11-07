@@ -9,6 +9,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
 import { roomRefusal } from '../utils/roomRefusal';
+import { isDefaultInstance } from '../utils/agentKey';
 
 // The shared head bar's title and count classes, plus this page's own hook.
 const HEAD_TITLE_CLASS = 'v2-feature__title v2-team__title';
@@ -510,8 +511,9 @@ const V2YourTeamPage: React.FC = () => {
             </button>
           ) : null}
           {/* The command needs a key on that machine, and this page hands one out. A wrapper
-              never bound to a computer would dead-end: its Reconnect refuses. */}
-          {a.connection?.state === 'never' && a.fixCommand?.startsWith('commonly agent run ') && a.runtime?.runtimeType !== 'wrapper' && (
+              never bound to a computer would dead-end: its Reconnect refuses. A second instance
+              would get a sibling. */}
+          {a.connection?.state === 'never' && a.fixCommand?.startsWith('commonly agent run ') && a.runtime?.runtimeType !== 'wrapper' && isDefaultInstance(a.instanceId) && (
             <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" data-testid="team-card-connect" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1`)}>
               {t('agentConnection.connect')}
             </button>

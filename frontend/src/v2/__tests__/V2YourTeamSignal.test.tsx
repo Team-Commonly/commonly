@@ -127,6 +127,17 @@ describe('Your Team (direction C)', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&instanceId=default&reconnect=1');
   });
 
+  test('a second instance keeps its command and gets no Connect: the page would install a sibling', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'nova', displayName: 'Nova', userId: 'nova-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+    ] });
+    await waitFor(() => expect(screen.getByText('Nova')).toBeInTheDocument());
+    expect(within(cardOf('Nova')).getByTestId('team-card-fix-command')).toHaveTextContent('commonly agent run local');
+    expect(within(cardOf('Nova')).queryByTestId('team-card-connect')).toBeNull();
+  });
+
   test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
     renderPage({ p1Agents: [{
       name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',

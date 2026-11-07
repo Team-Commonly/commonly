@@ -18,3 +18,12 @@ export const agentKeyFor = (
   const name = agent.agentName || agent.name || '';
   return `${name}:${agent.instanceId || 'default'}`;
 };
+
+/**
+ * Bring your own installs the default instance, so sending a second instance
+ * there makes a sibling with its own key and leaves this one unconnected.
+ * The server's offersConnect keeps the same rule for agent rooms.
+ */
+export const isDefaultInstance = (instanceId?: string): boolean => (
+  (instanceId || 'default').toLowerCase() === 'default'
+);
