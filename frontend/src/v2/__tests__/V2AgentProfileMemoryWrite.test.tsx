@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import V2AgentProfile from '../agents/V2AgentProfile';
 import i18n, { i18nReady } from '../../i18n';
@@ -187,5 +187,23 @@ describe('V2AgentProfile memory-write visibility', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Join a pod where someone hosts it to talk to it.');
     expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
+
+  it('says why in the app language, not in English', async () => {
+    window.localStorage.setItem('token', 'viewer-token');
+    profileClient.post.mockRejectedValue({
+      response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } },
+    });
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderProfile(true);
+
+      fireEvent.click(await screen.findByRole('button', { name: '与 Observer 对话' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('你所在的 Pod 里没有人托管这个智能体。');
+      expect(screen.queryByText('server text')).not.toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 });
