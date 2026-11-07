@@ -175,6 +175,7 @@ const {
 const AgentAskService = require('../services/agentAskService');
 const DecisionRequestService = require('../services/decisionRequestService');
 const DMService = require('../services/dmService');
+const { isHostedRoomRefusal } = require('../services/hostedRoomRefusal');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
 
@@ -987,7 +988,9 @@ router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
  * Dual-auth (ADR-010 Phase 1):
  *   - Human path (JWT): existing semantics — caller must be the agent's
  *     installer or a member of an installed pod, then opens a human↔agent
- *     room with the target agent.
+ *     room with the target agent. A hosted agent's new room also needs an
+ *     owner who shares a pod with the caller; an admin's bypass doesn't reach
+ *     that, and both paths refuse with `hosted_no_shared_owner`.
  *   - Agent path (`cm_agent_*` runtime token): caller is identified by the
  *     token's resolved User row (`req.agentUser`). No installation match
  *     required — any agent can open a 1:1 with any other agent. The 1:1
@@ -1189,6 +1192,9 @@ router.post('/room', phase4RateLimit, dualAuth, async (req: any, res: any) => {
 
     return res.json({ room });
   } catch (error: any) {
+    if (isHostedRoomRefusal(error)) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
     console.error('Error creating/fetching agent room:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent room' });
   }
