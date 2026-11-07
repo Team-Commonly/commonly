@@ -4528,3 +4528,13 @@ The native heartbeat prompt said "reply with exactly NO_REPLY: any other final t
 **Repair:** a heartbeat's final text is never posted, so a heartbeat posts through `commonly_post_message` or not at all. On any other native wake with no person asking, a last line of bare `NO_REPLY` declines the turn. A turn a person asked still posts, because there swallowing a real answer is the worse error.
 
 **Lesson:** when a prompt's rule fails on the cheap model, ask whether the system needs the behaviour the rule permits at all. Here it barely did: that keyword read found no heartbeat using final text as a real post, and the first-party heartbeat app posts through the tool.
+
+## 114. A crawl of blank pages reported no dead clicks (2026-11-07, launch)
+
+*Origin: running the UI crawler over the live app. One run printed "0 with errors", and the next reported 0 dead clicks with 366 of 478 controls stale.*
+
+Both reports were true and neither meant anything. In the first, the crawler's own read policy refused the dev server's module paths, so every page was blank, found no controls and clicked nothing. In the second, an early click hid a banner. The crawler held each control by its position in a list it read once, so every later control looked moved and came back stale. A stale control can't be dead, so the dead count stayed at 0.
+
+**Repair:** a control is found by its label and its place among controls with that label. A capture with no controls, or with fewer than half its clicks judged, is an error and fails the run. A refused write and a refused read are now separate, because a background poll used to mark any click in its window as blocked.
+
+**Lesson:** a zero means nothing until you know how many things were tested. Report the denominator beside the count, and make a run fail when it tested too little to say anything.

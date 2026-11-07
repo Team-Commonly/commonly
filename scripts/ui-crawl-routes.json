@@ -24,10 +24,6 @@
     "path": "/v2/agents"
   },
   {
-    "id": "agents-manage",
-    "path": "/v2/agents/manage"
-  },
-  {
     "id": "agents-byo",
     "path": "/v2/agents/byo"
   },
@@ -50,13 +46,5 @@
   {
     "id": "settings",
     "path": "/v2/settings"
-  },
-  {
-    "id": "settings-devices",
-    "path": "/v2/settings/devices"
-  },
-  {
-    "id": "profile",
-    "path": "/v2/profile"
   }
 ]
