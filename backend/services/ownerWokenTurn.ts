@@ -28,8 +28,11 @@ type WakeEvent = {
   payload?: Record<string, unknown> | null;
 };
 
-const sameIdentityPart = (left: unknown, right: unknown): boolean => (
-  String(left).toLowerCase() === String(right).toLowerCase()
+// Agent names are stored lowercase. An instance id isn't, and memory is keyed on
+// it verbatim, so it matches exactly.
+const sameAgent = (event: WakeEvent, agentName: string, instanceId: string): boolean => (
+  String(event.agentName).toLowerCase() === agentName.toLowerCase()
+  && (event.instanceId || 'default') === instanceId
 );
 
 /**
@@ -41,7 +44,7 @@ const sameIdentityPart = (left: unknown, right: unknown): boolean => (
 const senderOf = (event: WakeEvent): string | null => {
   const payload = event.payload;
   if (!payload || !PERSON_WAKE_TYPES.has(String(event.type))) return null;
-  if (event.deliveryMode === 'digest' || payload.triggerAuthor || carriesOtherAuthors(payload)) return null;
+  if (payload.triggerAuthor || carriesOtherAuthors(payload)) return null;
   const sender = String(payload.userId);
   return OBJECT_ID.test(sender) ? sender : null;
 };
@@ -54,8 +57,10 @@ const readTurnSenders = async ({ agentName, instanceId, eventIds }: {
   if (events.length !== eventIds.length) return null;
   const senders = new Set<string>();
   for (const event of events) {
-    if (!sameIdentityPart(event.agentName, agentName)
-      || !sameIdentityPart(event.instanceId || 'default', instanceId)) return null;
+    if (!sameAgent(event, agentName, instanceId)) return null;
+    // A digest row wakes nothing: the wrapper batches it with the wake that
+    // shows it. A digest alone leaves no sender, so it can't mark a turn.
+    if (event.deliveryMode === 'digest') continue;
     const sender = senderOf(event);
     if (!sender) return null;
     senders.add(sender);

@@ -175,6 +175,28 @@ describe('F145 owner-woken memory writes on a public seat', () => {
       expect((await mint({ publicSeat: true, eventIds: [String(event._id)] })).body.ownerWoken).toBe(false);
     });
 
+    it('marks the owner\'s wake when digest rows ride along, and no wake means no mark', async () => {
+      const ownerWake = await mentionFrom(owner);
+      const digest = await mentionFrom(stranger);
+      await AgentEvent.updateOne({ _id: digest._id }, { $set: { type: 'message.posted', deliveryMode: 'digest' } });
+      expect((await mint({ publicSeat: true, eventIds: [String(ownerWake._id), String(digest._id)] }))
+        .body.ownerWoken).toBe(true);
+    });
+
+    it('does not take a digest row from another agent as a companion', async () => {
+      const ownerWake = await mentionFrom(owner);
+      const digest = await mentionFrom(owner);
+      await AgentEvent.updateOne({ _id: digest._id }, { $set: { agentName: 'other', deliveryMode: 'digest' } });
+      expect((await mint({ publicSeat: true, eventIds: [String(ownerWake._id), String(digest._id)] }))
+        .body.ownerWoken).toBe(false);
+    });
+
+    it('takes the instance id exactly, as memory does', async () => {
+      const event = await mentionFrom(owner);
+      await AgentEvent.updateOne({ _id: event._id }, { $set: { instanceId: INSTANCE.toUpperCase() } });
+      expect((await mint({ publicSeat: true, eventIds: [String(event._id)] })).body.ownerWoken).toBe(false);
+    });
+
     it('does not mark a kernel wake that carries the owner\'s id', async () => {
       const event = await mentionFrom(owner, { triggerAuthor: 'kernel' });
       expect((await mint({ publicSeat: true, eventIds: [String(event._id)] })).body.ownerWoken).toBe(false);

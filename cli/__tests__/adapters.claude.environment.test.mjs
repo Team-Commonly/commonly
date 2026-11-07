@@ -1413,9 +1413,9 @@ describe('claude adapter — a workspace seat', () => {
   });
 
   const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }, extra = {}) => claude.spawn('hi', {
-    ...extra,
     agentName: 'workspace-test',
     sessionId: null,
+    ...extra,
     cwd,
     skillMountDir: scratch,
     env: { PATH: process.env.PATH, COMMONLY_HOST_SECRET: 'must-not-inherit' },
@@ -1515,8 +1515,10 @@ describe('claude adapter — a workspace seat', () => {
     });
 
     test('a turn that resumes the owner\'s session has them taken away again', async () => {
-      await publicTurn({ ownerWoken: true });
+      const owner = await publicTurn({ ownerWoken: true });
+      for (const tool of MEMORY) expect(owner.denied).not.toContain(`mcp__commonly__${tool}`);
       const { args, denied } = await publicTurn({ sessionId: 'not-used' });
+      expect(args).toContain('--resume');
       for (const tool of MEMORY) expect(denied).toContain(`mcp__commonly__${tool}`);
       expect(args[args.lastIndexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
     });

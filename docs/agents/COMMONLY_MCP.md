@@ -143,6 +143,8 @@ A public seat answers strangers, so a message from one must not be able to rewri
 - An owner-woken turn still reads the pod, so a stranger's earlier message can reach it through the prompt or `commonly_get_messages`. The check is on who woke the turn, not on everything the turn reads.
 - A seat that falls back to its own token, or an older wrapper that doesn't send `publicSeat`, has an unmarked credential the routes can't refuse. Its adapter still withholds the tools.
 - The wrapper's own summary sync (`syncBack`) stays off on every public seat turn, owner-woken ones too.
+- A digest row in the turn's batch wakes nothing, so it doesn't count against the owner's wake, even though the turn reads it.
+- `/api/dev/agents/events`, on an instance that sets `COMMONLY_ENABLE_DEV_ROUTES=true`, lets a pod member choose a wake's payload. Production never sets it.
 
 Each adapter sets its list per spawn from `publicSeatWithheldTools(ctx)`, so a resumed session gets that turn's list rather than the last one's. `adapters.codex.public-tools.test.mjs` shows this on the real Codex binary.
 
