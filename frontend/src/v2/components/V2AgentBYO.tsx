@@ -1465,17 +1465,29 @@ const V2AgentBYO: React.FC = () => {
     </>
   ) : null;
 
+  const heldReason = t('agentByo.hosted.heldNotice', { cap: hosting?.caps.agentsPerUser ?? 1 });
+  const heldHolder = hostedHeld ? hostedHeld.displayName || hostedHeld.agentName : '';
+  const openHeld = () => {
+    if (hostedHeld) navigate(`/v2/agents/${encodeURIComponent(hostedHeld.agentName)}/${encodeURIComponent(hostedHeld.instanceId)}`);
+  };
+  // A hosted link has come for this slot, so the reason is the page's whole message.
   const hostedHeldNotice = hostedHeld && (
     <p className="v2-byo__hint" data-testid="byo-hosted-held">
-      {t('agentByo.hosted.heldNotice', { cap: hosting?.caps.agentsPerUser ?? 1 })}
+      {heldReason}
       {' '}
-      <button
-        type="button"
-        className="v2-byo__link"
-        onClick={() => navigate(`/v2/agents/${encodeURIComponent(hostedHeld.agentName)}/${encodeURIComponent(hostedHeld.instanceId)}`)}
-      >
-        {t('agentByo.hosted.openHeld', { holder: hostedHeld.displayName || hostedHeld.agentName })}
+      <button type="button" className="v2-byo__link" onClick={openHeld}>
+        {t('agentByo.hosted.openHeld', { holder: heldHolder })}
       </button>
+    </p>
+  );
+  // On the form the person is connecting something else, so the reason Run it
+  // here is missing waits behind the (i), and the line is the way to their agent.
+  const hostedHeldLine = hostedHeld && (
+    <p className="v2-byo__held" data-testid="byo-hosted-held">
+      <button type="button" className="v2-byo__link" onClick={openHeld}>
+        {t('agentByo.hosted.heldLink', { holder: heldHolder })}
+      </button>
+      <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>{heldReason}</V2Hint>
     </p>
   );
 
@@ -1621,7 +1633,7 @@ const V2AgentBYO: React.FC = () => {
       )}
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
-          {hostedHeldNotice}
+          {hostedHeldLine}
           {(hostedOffered || machines.length > 0) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>

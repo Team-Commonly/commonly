@@ -5534,7 +5534,9 @@ test('TASK-482 sticky bar overlays reserved space with a top border and no shado
   expect(bar).not.toContain('box-shadow');
   // The frame's layout rule carries no padding; the reserved space is its own
   // rule after it, so the bar's height is still read back by the e2e spec.
-  expect(lastRuleBody(css, '.v2-feature--byo .v2-byo__layout')).toContain('padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px))');
+  expect(ruleBody(css, '.v2-feature--byo .v2-byo__layout:has(.v2-byo__result)')).toContain('padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px))');
+  // Only a result can show the bar, so the form doesn't scroll into empty space.
+  expect(lastRuleBody(css, '.v2-feature--byo .v2-byo__layout')).toContain('padding-bottom: 40px');
   // The bar is the page's last block: its rules sit in the page's own sheet.
   expect(read('../v2.css')).not.toContain('.v2-byo__hosted-offer');
 });

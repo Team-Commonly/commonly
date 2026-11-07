@@ -2008,7 +2008,8 @@
       "statTurns": "turns / day",
       "statAgents": "hosted agent",
       "heldNotice": "You already have a hosted agent (beta allows {{cap}}).",
-      "openHeld": "Open {{holder}}"
+      "openHeld": "Open {{holder}}",
+      "heldLink": "Your hosted agent: {{holder}}"
     },
     "preview": {
       "title": "your agent",

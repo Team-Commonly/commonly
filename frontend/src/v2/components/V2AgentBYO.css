@@ -25,6 +25,8 @@
 .v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
 .v2-feature--byo .v2-byo__link { all: unset; align-self: flex-start; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
+.v2-feature--byo .v2-byo__held { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.v2-feature--byo .v2-byo__held .v2-byo__link { align-self: center; }
 .v2-feature--byo .v2-byo__more { margin-top: 8px; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-feature--byo .v2-byo__more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 18px 8px 16px; font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
 .v2-feature--byo .v2-byo__more > summary::-webkit-details-marker { display: none; }
@@ -82,8 +84,10 @@
 
 /* Live behaviour the frame does not draw, kept working. The hosted offer bar
    is sticky over the last screen of the result; its space is reserved at the
-   bottom of the layout before it appears (e2e/byo-offer-layout.spec.ts). */
-.v2-feature--byo .v2-byo__layout { padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px)); }
+   bottom of the layout before it appears (e2e/byo-offer-layout.spec.ts). Only a
+   result can show the bar: on the form, the same space is an empty scroll. */
+.v2-feature--byo .v2-byo__layout { padding-bottom: 40px; }
+.v2-feature--byo .v2-byo__layout:has(.v2-byo__result) { padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px)); }
 
 /* Exceptions to the frame, each for a floor the frame's drawing does not meet
    in production:

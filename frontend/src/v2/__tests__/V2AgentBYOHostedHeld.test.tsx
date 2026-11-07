@@ -3,7 +3,7 @@
 // /api/hosted/availability names the held agent; the 403 stays behind it for a
 // page that went stale.
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -83,6 +83,7 @@ const actButton = () => screen.queryAllByRole('button', { name: /^run it here$/i
   .find((b) => !b.hasAttribute('aria-pressed')) ?? null;
 
 const NOTICE = /^You already have a hosted agent \(beta allows 1\)\. Open Maya$/;
+const REASON = 'You already have a hosted agent (beta allows 1).';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -97,11 +98,13 @@ afterEach(() => {
 });
 
 describe('V2AgentBYO — the hosted slot is held', () => {
-  test('the mode choice drops Run it here, says why, and bring-your-own is the path', async () => {
+  test('the mode choice drops Run it here, keeps why behind the (i), and bring-your-own is the path', async () => {
     mockGet({ machines: [{ id: 'm1', machineId: 'm1', name: 'Mac', status: 'online' }] });
     renderAt('/v2/agents/byo?pod=p1');
 
-    expect(await screen.findByTestId('byo-hosted-held')).toHaveTextContent(NOTICE);
+    const line = await screen.findByTestId('byo-hosted-held');
+    expect(within(line).getByRole('button', { name: 'Your hosted agent: Maya' })).toBeInTheDocument();
+    expect(within(line).getByRole('button', { name: 'More about Run it here' })).toHaveAccessibleDescription(REASON);
     expect(screen.queryByTestId('byo-mode-hosted')).not.toBeInTheDocument();
     expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument();
     expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument();
@@ -137,7 +140,7 @@ describe('V2AgentBYO — the hosted slot is held', () => {
     mockGet({ held: { ...HELD, agentName: '@acme/maya', instanceId: 'night' } });
     renderAt('/v2/agents/byo?pod=p1');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Maya' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Your hosted agent: Maya' }));
     expect(await screen.findByTestId('where')).toHaveTextContent('/v2/agents/%40acme%2Fmaya/night');
   });
 
