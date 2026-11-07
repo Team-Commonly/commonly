@@ -114,7 +114,9 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  const start = connectable ? 'the command Connect gives you in my Settings' : `\`${fixCommand}\``;
+  const run = (where: string, verb = 'Run') => (connectable
+    ? `${verb === 'Run' ? 'Open' : 'open'} my Settings, press Connect, and run the command it gives you ${where}`
+    : `${verb} \`${fixCommand}\` ${where}`);
   // Per-kind copies say which command is missing (TASK-721). A per-kind mark
   // is the FIRST copy of that kind ever, per USER, so it can prove a copy
   // happened but never that none did. Two readings follow:
@@ -160,6 +162,7 @@ export const composeStalledConnectNudge = ({
       return `@${installerName} — you copied the MCP command ${when}. `
         + `MCP-only clients can call Commonly, but they do not answer @mentions; the listener does. `
         + `You first opened this page on Windows. ${WINDOWS_LISTENER_NOTE} `
+        + (connectable ? 'Open my Settings and press Connect to get those lines. ' : '')
         + `Or ${HOSTED_FALLBACK} `
         + `I'll post here the moment I connect.`;
     }
@@ -169,13 +172,13 @@ export const composeStalledConnectNudge = ({
       return `@${installerName} — you copied the MCP command ${when}. `
         + `MCP-only clients can call Commonly, but they do not answer @mentions. `
         + `The listener that does ${LISTENER_PLATFORM_NOTE} You first opened this page on ${unavailableOs}. `
-        + `Run ${start} in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `${run('in a Terminal on a Mac')}, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
     return `@${installerName} — you copied the MCP command ${when}, but not the listener command that starts me. `
       + `MCP-only clients can call Commonly, but they do not answer @mentions, `
       + `so nothing is listening for @${handle} yet. `
-      + `Run ${start} in a Terminal on the machine where I should live. `
+      + `${run('in a Terminal on the machine where I should live')}. `
       + `I'll post here the moment I connect.`;
   }
   if (offsetSeconds !== null) {
@@ -189,7 +192,9 @@ export const composeStalledConnectNudge = ({
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
         + `If you ran it on Windows: ${WINDOWS_LISTENER_FACTS.replace('answers @mentions with', 'answers @mentions there with')} `
-        + 'Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window. '
+        + (connectable
+          ? 'Check yours with `commonly --version`, then open my Settings, press Connect, and run all the lines it gives you in one PowerShell window. '
+          : 'Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window. ')
         + `Or ${HOSTED_FALLBACK} `
         + `I'll post here the moment I connect.`;
     }
@@ -197,13 +202,13 @@ export const composeStalledConnectNudge = ({
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
         + `If you ran it on ${unavailableOs}, that may be why: the listener ${LISTENER_PLATFORM_NOTE} `
-        + `Run ${start} on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `${run('on a Mac')}, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
     return `@${installerName} — you copied the ${copiedThing} `
       + `${copiedAtDescription(offsetSeconds)}; `
       + `no connection arrived — here is the one thing to check: `
-      + `run ${start} on the machine where I should live.`
+      + `${run('on the machine where I should live', 'run')}.`
       + (effective.commandType === 'mcp'
         ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'
         : '')
@@ -211,7 +216,7 @@ export const composeStalledConnectNudge = ({
   }
   return `@${installerName} — I'm installed here, but nothing has ever started me, `
     + `so mentioning @${handle} won't reach anyone yet. `
-    + `Run ${start} on the machine where I should live and I'll come online. `
+    + `${run('on the machine where I should live')} and I'll come online. `
     + `I'll post here the moment I connect.`;
 };
 

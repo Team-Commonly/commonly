@@ -1,6 +1,6 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
 import { deriveAgentState, keyOnlyOnPage } from './agentStateService';
-import { isGuestOfIdentity } from './runtimeIdentityOwnership';
+import { isGuestOfIdentity, ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
   composeStalledConnectMcpResolution,
@@ -142,12 +142,11 @@ const latestMcpSeenSince = (tokenLists: BotTokens[], since: Date): Date | null =
 };
 
 
-// Any call at all on a token of this episode. Settings stops offering Connect
-// once it sees one, and replacing that key could cut off whatever made the call.
-const usedSince = (tokenLists: BotTokens[], since: Date): boolean => tokenLists.some(
-  (list) => (list || []).some(
-    (row) => row?.lastUsedAt && row.createdAt && new Date(row.createdAt) >= since,
-  ),
+// Any call on a token still on the row. Settings stops offering Connect once it
+// sees one, whatever the token's age, and replacing that key could cut off
+// whatever made the call. Revoking a token removes its row.
+const anyCallRecorded = (tokenLists: BotTokens[]): boolean => tokenLists.some(
+  (list) => (list || []).some((row) => row?.lastUsedAt),
 );
 
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
@@ -311,14 +310,21 @@ export const scan = async ({
       result.skippedSameToken += 1;
       continue;
     }
+    // Connect only for its one owner: anyone else's replacement is refused.
+    const connectable = keyOnlyOnPage(install as any, machinesBySeat.get(botKey(agentName, instanceId)))
+      && !anyCallRecorded([install.runtimeTokens || [], userTokens])
+      && (await ownsRuntimeIdentity(install.installedBy, agentName, instanceId.toLowerCase())
+        .catch((error: Error) => {
+          console.warn('Could not read the stalled agent\'s owner:', error.message);
+          return { owned: false };
+        })).owned;
     const delivered = await nudgeOnce({
       install,
       derived,
       issuedAt,
       tokenSource: source,
       mcpConnected,
-      connectable: keyOnlyOnPage(install as any, machinesBySeat.get(botKey(agentName, instanceId)))
-        && !usedSince([install.runtimeTokens || [], userTokens], issuedAt),
+      connectable,
       now,
       result,
     });

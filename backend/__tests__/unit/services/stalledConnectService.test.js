@@ -52,6 +52,10 @@ const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
 jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  ownsRuntimeIdentity: () => Promise.resolve({ owned: true }),
+}));
 jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
   find: (...a) => mockEpFind(...a),
@@ -141,7 +145,7 @@ describe('stalledConnectService.scan', () => {
     await scan({ now: NOW });
 
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('Run the command Connect gives you in my Settings on the machine where I should live');
+    expect(content).toContain('Open my Settings, press Connect, and run the command it gives you on the machine where I should live');
     expect(content).not.toContain('commonly agent run');
   });
 
@@ -157,19 +161,16 @@ describe('stalledConnectService.scan', () => {
     expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
   });
 
-  it('keeps the command once this token has made any call, because Settings stops offering Connect', async () => {
-    setup({ installs: [install(madeOnPage)], userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: new Date(NOW.getTime() - 60 * 1000) }] });
+  it.each([
+    ['the bot row', { userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: OLD_TOKEN }] }],
+    ['an older token', { userTokens: [{ createdAt: new Date(OLD_TOKEN.getTime() - 60 * 1000), lastUsedAt: OLD_TOKEN }] }],
+    ['a token with no issue time', { userTokens: [{ lastUsedAt: OLD_TOKEN }] }],
+    ['the installation', { runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: OLD_TOKEN }] }],
+  ])('keeps the command once %s shows a call, because Settings stops offering Connect', async (_label, { userTokens, runtimeTokens }) => {
+    setup({ installs: [install({ ...madeOnPage, ...(runtimeTokens ? { runtimeTokens } : {}) })], userTokens });
     await scan({ now: NOW });
 
     expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
-  });
-
-  it('offers Connect when only a replaced token had been used', async () => {
-    const replaced = new Date(OLD_TOKEN.getTime() - 60 * 1000);
-    setup({ installs: [install(madeOnPage)], userTokens: [{ createdAt: replaced, lastUsedAt: replaced }] });
-    await scan({ now: NOW });
-
-    expect(mockPost.mock.calls[0][0].content).toContain('Connect gives you');
   });
 
   it('nudges a seat whose token was issued long ago and never used', async () => {
