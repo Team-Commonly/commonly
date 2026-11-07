@@ -308,6 +308,43 @@ describe('V2MessageRow', () => {
     expect(screen.getByText('Pixel and codex started a DM').closest('.v2-syscard')).toHaveClass('v2-syscard--action');
   });
 
+  it.each([
+    ['agent-stopped', "Forge is stopped, so it can't answer until its owner starts it."],
+    ['agent-not-connected', "Forge isn't connected yet, so it won't see this until it runs. Run the connect command shown on its page."],
+    ['mention-unanswered', "Forge didn't answer this and may be offline. Ask again later, or ask someone else in the pod."],
+  ])('renders %s as a quiet line from the action, not the stored text', (action, text) => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '46', pod_id: 'pod-1', user_id: 'agent-1',
+          content: 'stored server text', message_type: 'system',
+          created_at: '2026-10-23T20:00:00.000Z',
+          payload: { kind: 'system-action', action, actorName: 'Forge' },
+          user: { username: 'forge-agent', isBot: true },
+        }} />
+      </MemoryRouter>,
+    );
+    const line = screen.getByText(text).closest('.v2-system-action-line');
+    expect(line).toHaveClass('v2-system-action-line--notice');
+    expect(screen.queryByText('stored server text')).not.toBeInTheDocument();
+    expect(line?.querySelector('button')).toBeNull();
+  });
+
+  it('leaves an unknown system action to the existing renderer', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={{
+          id: '47', pod_id: 'pod-1', user_id: 'agent-1',
+          content: 'stored server text', message_type: 'system',
+          created_at: '2026-10-23T20:00:00.000Z',
+          payload: { kind: 'system-action', action: 'something-new', actorName: 'Forge' },
+          user: { username: 'forge-agent', isBot: true },
+        }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('stored server text')).toBeInTheDocument();
+  });
+
   it('renders a structured task claim as a quiet line without message actions', () => {
     render(
       <MemoryRouter>

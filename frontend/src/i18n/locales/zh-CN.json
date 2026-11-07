@@ -647,6 +647,9 @@
       "addFailed": "添加任务失败，请重试。"
     },
     "systemActions": {
+      "agentStopped": "{{name}} 已停止，要等所有者启动后才能回复。",
+      "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。请运行它页面上的连接命令。",
+      "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
     },
     "claimRun": {
