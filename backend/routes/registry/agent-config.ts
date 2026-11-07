@@ -529,9 +529,20 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       // A DM's row is its opener's, so the save above skipped it, and pausing an
       // agent means everywhere. Only whoever owns the agent can say that.
       if (status === 'active' || status === 'paused') {
-        const ownsAgent = isInstanceAdmin
-          || (await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId)).owned;
-        const dmPodIds = ownsAgent ? await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status) : [];
+        const ownership = isInstanceAdmin
+          ? { owned: true }
+          : await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId);
+        // One of several owners can't speak for the agent, but a room that
+        // started paused on their line would otherwise never wake: their resume
+        // reaches the rooms they pay for and no others.
+        const coOwnerResume = status === 'active' && ownership.failure === 'another_installer'
+          && installationsToUpdate.length > 0;
+        let dmPodIds: unknown[] = [];
+        if (ownership.owned) {
+          dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status);
+        } else if (coOwnerResume) {
+          dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status, userId);
+        }
         if (dmPodIds.length) {
           await AgentProfile.updateMany(
             { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },

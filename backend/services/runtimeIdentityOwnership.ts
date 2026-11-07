@@ -335,7 +335,7 @@ export const relabelIdentityDmRows = async (
  * write catches up, and a row retired meanwhile stays out.
  */
 export const setIdentityDmRowsStatus = async (
-  agentName: string, instanceId: string, status: 'active' | 'paused',
+  agentName: string, instanceId: string, status: 'active' | 'paused', chargedTo?: unknown,
 ): Promise<unknown[]> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { AgentInstallation } = require('../models/AgentRegistry');
@@ -348,8 +348,9 @@ export const setIdentityDmRowsStatus = async (
   const { installations, dmPodTypes } = await identityRows(agentName, instanceId, KEPT_ROWS);
   const rowIds = installations.filter((installation) => dmPodTypes.has(String(installation.podId))).map((row) => row._id);
   const from = status === 'paused' ? 'active' : 'paused';
+  const chargedRows = chargedTo ? { installedBy: { $eq: chargedTo } } : {};
   const moving: Array<{ _id: unknown; podId: unknown; config?: unknown; installedBy?: unknown }> = await AgentInstallation.find({
-    _id: { $in: rowIds }, status: from,
+    _id: { $in: rowIds }, status: from, ...chargedRows,
   }).select('podId config installedBy').lean();
   const tokenHeld = status === 'active' && moving.length
     ? await identityHoldsRuntimeToken(agentName, instanceId)
@@ -370,7 +371,7 @@ export const setIdentityDmRowsStatus = async (
   if (dmRows.length) {
     await AgentInstallation.updateMany({ _id: { $in: dmRows.map((row) => row._id) }, status: from }, { $set: { status } });
   }
-  const settled: Array<{ podId: unknown }> = await AgentInstallation.find({ _id: { $in: rowIds }, status: { $eq: status } })
+  const settled: Array<{ podId: unknown }> = await AgentInstallation.find({ _id: { $in: rowIds }, status: { $eq: status }, ...chargedRows })
     .select('podId').lean();
   return settled.map((row) => row.podId);
 };

@@ -293,9 +293,12 @@ export const resolveHostedOwner = async (
   if (own) return { ownerId: own.installedBy, live, paused };
   const podIds = [...new Set(pool.map((candidate) => String(candidate.podId)))].slice(0, HOSTED_OWNER_POD_SCAN);
   const shared = await Pod.find({ _id: { $in: podIds }, members: { $eq: requesterId } })
-    .select('_id').limit(HOSTED_OWNER_POD_SCAN).lean();
-  const sharedIds = new Set(shared.map((pod: any) => String(pod._id)));
-  const row = pool.find((candidate) => sharedIds.has(String(candidate.podId)));
+    .select('_id members').limit(HOSTED_OWNER_POD_SCAN).lean();
+  const membersOf = new Map<string, Set<string>>(shared.map((pod: any) => [
+    String(pod._id), new Set<string>((pod.members || []).map(String)),
+  ]));
+  // An owner who left the pod no longer shares it, though their row stays.
+  const row = pool.find((candidate) => membersOf.get(String(candidate.podId))?.has(String(candidate.installedBy)));
   return { ownerId: row ? row.installedBy : null, live, paused };
 };
 

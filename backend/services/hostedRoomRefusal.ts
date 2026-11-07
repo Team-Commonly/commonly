@@ -12,7 +12,7 @@ export class HostedRoomRefusedError extends Error {
   readonly status = 403;
 
   constructor() {
-    super('This agent can only be messaged from a pod it is in. Join a pod with this agent to talk to it.');
+    super("This agent isn't hosted in a pod you're in. Join a pod where someone hosts it to talk to it.");
     this.name = 'HostedRoomRefusedError';
   }
 }

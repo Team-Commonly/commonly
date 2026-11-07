@@ -65,10 +65,10 @@ export const reassignHostedRoomOwners = async ({ apply = false }: { apply?: bool
         else report.unchanged += 1;
       } else if (owner.live && !owner.ownerId) {
         report.unresolved.push(id);
-      } else if (owner.live && String(owner.ownerId) === String(row.installedBy)) {
-        report.unchanged += 1;
       } else if (owner.paused && row.status !== 'paused') {
         report.unresolved.push(id);
+      } else if (owner.live && String(owner.ownerId) === String(row.installedBy)) {
+        report.unchanged += 1;
       } else {
         (owner.live ? report.reassigned : report.retired).push(id);
         if (apply) {

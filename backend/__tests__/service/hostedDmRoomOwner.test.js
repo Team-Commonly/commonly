@@ -420,6 +420,13 @@ describe('a hosted agent DM', () => {
       expect(String((await roomRow(room)).installedBy)).toBe(String(owner._id));
     });
 
+    it('does not charge an owner who has left the pod, though their row stays in it', async () => {
+      await Pod.updateOne({ _id: workspace._id }, { $pull: { members: owner._id } });
+      const found = await hostedRuntime.resolveHostedOwner(NAME, 'default', guest._id);
+      expect(found).toMatchObject({ ownerId: null, live: true });
+      await expect(openRoom(guest)).rejects.toMatchObject({ code: 'hosted_no_shared_owner' });
+    });
+
     it('takes the oldest of the owners sharing a pod, however the rows were inserted', async () => {
       await AgentInstallation.deleteMany({});
       const late = await pod('Late', [third._id, guest._id, bot._id]);
@@ -597,6 +604,60 @@ describe('a hosted agent DM', () => {
       expect(report).toMatchObject({ scanned: 2, unchanged: 2, reassigned: [], retired: [], unresolved: [] });
       expect(await AgentInstallation.find({}).sort({ _id: 1 }).lean()).toEqual(before);
       expect((await roomRow(room)).status).toBe('paused');
+    });
+
+    it('reports a running room on a paused agent, even when it names the right owner', async () => {
+      const legacy = await pod('Room of guest', [bot._id, guest._id], 'agent-room');
+      await seedRow(owner._id, legacy._id, { config: hostedConfig({ autoJoinSource: ROOM_SOURCE }) });
+      await AgentInstallation.updateOne({ podId: workspace._id }, { $set: paused });
+      const before = await roomRow(legacy);
+      const report = await reassignHostedRoomOwners({ apply: true });
+      expect(report).toMatchObject({ unchanged: 0, reassigned: [], unresolved: [String(before._id)] });
+      expect(await roomRow(legacy)).toEqual(before);
+    });
+
+    describe('when an agent has more than one owner and all of them paused', () => {
+      const resume = (user, podId) => request(app)
+        .patch(`/api/registry/pods/${podId}/agents/${NAME}`)
+        .set('Authorization', bearer(user))
+        .send({ status: 'active' });
+      let ownerPod;
+      let thirdPod;
+      let ownerRoom;
+      let thirdRoom;
+
+      beforeEach(async () => {
+        await twoOwners();
+        ownerPod = await Pod.findOne({ name: 'Paused owner' });
+        thirdPod = await Pod.findOne({ name: 'Running owner' });
+        await AgentInstallation.updateMany({}, { $set: paused });
+        ownerRoom = await pod('Room on the owner', [bot._id, guest._id], 'agent-room');
+        thirdRoom = await pod('Room on the other owner', [bot._id, admin._id], 'agent-room');
+        const roomConfig = hostedConfig({ autoJoinSource: ROOM_SOURCE });
+        await seedRow(owner._id, ownerRoom._id, { ...paused, config: roomConfig });
+        await seedRow(third._id, thirdRoom._id, { ...paused, config: roomConfig });
+      });
+
+      it('wakes the rooms a resuming owner pays for and leaves the other owner\'s', async () => {
+        const res = await resume(owner, ownerPod._id);
+        expect(res.status).toBe(200);
+        expect((await roomRow(ownerRoom)).status).toBe('active');
+        expect((await roomRow(thirdRoom)).status).toBe('paused');
+        expect((await AgentInstallation.findOne({ podId: thirdPod._id }).lean()).status).toBe('paused');
+      });
+
+      it('gives the person in the room no say over a row someone else pays for', async () => {
+        const res = await resume(guest, ownerRoom._id);
+        expect(res.status).toBe(403);
+        expect((await roomRow(ownerRoom)).status).toBe('paused');
+      });
+
+      it('leaves a co-owner\'s pause where it is: only a resume crosses that line', async () => {
+        await AgentInstallation.updateMany({}, { $set: { status: 'active' } });
+        await request(app).patch(`/api/registry/pods/${ownerPod._id}/agents/${NAME}`)
+          .set('Authorization', bearer(owner)).send({ status: 'paused' });
+        expect((await roomRow(ownerRoom)).status).toBe('active');
+      });
     });
 
     it('leaves a running guest row unresolved rather than put it on a paused owner', async () => {
