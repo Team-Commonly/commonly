@@ -226,6 +226,66 @@ export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
     || (typeof record.environment === 'object' && !Array.isArray(record.environment)
       && withDefaultSandbox(record.environment) !== record.environment));
 
+/**
+ * A key reissued for an agent that already ran here reaches `run` in the
+ * environment, beside the saved token it replaced. The fresh one wins only when
+ * the saved one is rejected and the server says the fresh one is this agent's.
+ * The server keeps only a hash, so overwriting a saved token that works can't be
+ * undone: an export for a same-named agent on another instance would lose it.
+ */
+export const adoptEnvToken = async ({
+  record,
+  name,
+  env = process.env,
+  clientFactory = createClient,
+  log = () => {},
+}) => {
+  const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
+  if (!runtimeToken || runtimeToken === record.runtimeToken) return record;
+  const keepSaved = (why) => {
+    log(`COMMONLY_AGENT_TOKEN ${why}, so this run uses the saved token`);
+    return record;
+  };
+  if (!runtimeToken.startsWith('cm_agent_')) return keepSaved('is not a runtime token');
+
+  const whoIs = (instance, token) => clientFactory({ instance, token })
+    .get('/api/agents/runtime/installations');
+  try {
+    await whoIs(record.instanceUrl, record.runtimeToken);
+    return keepSaved('differs from the saved token, which still works');
+  } catch (err) {
+    // 401 alone, unlike the poller: every token refusal here is a 401, a 403
+    // comes from something in front of the app, and this one call overwrites.
+    if (err?.status !== 401) {
+      return keepSaved(`was not used, because the saved token could not be checked (${err.message})`);
+    }
+  }
+
+  const instanceUrl = (env.COMMONLY_API_URL || '').trim() || record.instanceUrl;
+  let identity;
+  try {
+    identity = await whoIs(instanceUrl, runtimeToken);
+  } catch (err) {
+    return keepSaved(`could not be checked against ${instanceUrl} (${err.message})`);
+  }
+  const lower = (value) => String(value).toLowerCase();
+  if (lower(identity?.agentName) !== lower(record.agentName || name)
+    || lower(identity?.instanceId || 'default') !== lower(record.instanceId || 'default')) {
+    return keepSaved(`belongs to another agent (${identity?.agentName}, instance ${identity?.instanceId || 'default'})`);
+  }
+
+  // A reinstall can move the agent, and the saved pod is then gone.
+  const active = (identity?.installations || []).filter((row) => row?.status === 'active');
+  const stillThere = active.some((row) => String(row.podId) === String(record.podId));
+  const podId = stillThere
+    ? record.podId
+    : (active.find((row) => row.type === 'installation') || active[0])?.podId || record.podId;
+  log('the saved token was rejected, so this run uses COMMONLY_AGENT_TOKEN and saves it');
+  return {
+    ...record, runtimeToken, instanceUrl, podId,
+  };
+};
+
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
   if (!Array.isArray(installations) || !podId) return null;
@@ -2134,7 +2194,7 @@ export const performRun = ({
   let running = true;
   // Stop-after-N-auth-failures: without this, a revoked token leaves the
   // poller hammering 401s forever at 60s backoff — invisible to the user.
-  // Exiting tells them to run `commonly agent detach <name>`.
+  // Exiting names the two ways out: a reissued key, or detach.
   // 3 is deliberate — 1 would churn on a token-rotation race during
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
@@ -4572,7 +4632,8 @@ export const performRun = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
-            + `Run: commonly agent detach ${agentName}`,
+            + `If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. `
+            + `To remove the agent from its pod: commonly agent detach ${agentName}`,
           ));
           running = false;
           return;
@@ -5242,7 +5303,14 @@ Docs:
       }
       let record = loadAgentToken(name);
       let bootstrapped = false;
-      if (!record) {
+      const saved = record;
+      if (record) {
+        record = await adoptEnvToken({
+          record,
+          name,
+          log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        });
+      } else {
         // First run on this machine: the BYO connect page hands out env vars,
         // not a token file — bootstrap the record from them (#913).
         try {
@@ -5334,6 +5402,7 @@ Docs:
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
       }
+      if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
         saveAgentToken(record.agentName, record);
         console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
