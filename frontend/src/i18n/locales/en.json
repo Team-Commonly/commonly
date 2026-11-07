@@ -306,6 +306,8 @@
     "approval": {
       "approve": "Approve",
       "deny": "Deny",
+      "review": "Review",
+      "needsReview": "Open this request and check it before you approve.",
       "working": "Saving…",
       "actionFailed": "That approval could not be updated. Try again."
     },
@@ -1792,7 +1794,8 @@
         "newCommit": "New commit",
         "bundleSize": "Bundle size"
       },
-      "exactArgs": "Exact arguments"
+      "exactArgs": "Exact arguments",
+      "longValue": "{{length}} characters. Scroll to read all of it."
     },
     "approve": "Approve",
     "decline": "Decline",
@@ -1809,6 +1812,7 @@
     "openConnect": "Get my connect command",
     "errors": {
       "expired": "This approval expired before the decision landed.",
+      "needsReview": "This request couldn't be matched to what's shown here. Refresh before deciding.",
       "failed": "Couldn't record the decision. Try again."
     }
   },

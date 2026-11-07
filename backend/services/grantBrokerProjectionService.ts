@@ -27,9 +27,11 @@
 
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
 import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
-import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
+import {
+  allToolDefinitions, executionErrorOutcome, withoutToolsConnectionCannotRun, type ToolDefinition,
+} from './toolBrokerService';
 import { isLimitedUseTool } from './limitedUseConnectors';
-import { grantHoldsPrWrite } from './prWriteScope';
+import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 import { PENDING_APPROVAL_NOTE } from './brokerResultMarker';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
@@ -51,6 +53,10 @@ export interface LiveGrant {
   byoConsent?: unknown;
   /** TASK-783: read through `grantHoldsPrWrite`, which honours only `true`. */
   prWrite?: unknown;
+  /** F215: what `withoutToolsConnectionCannotRun` resolves the grant's connection from. */
+  connectionId?: unknown;
+  ownerId?: unknown;
+  createdAt?: unknown;
 }
 
 /**
@@ -121,7 +127,7 @@ export const selectLiveGrantsForIdentities = async (
     expiresAt: { $gt: new Date() },
     audience: { $in: ids },
   }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId ownerId '
-    + 'byoAgents byoConsent prWrite').lean() as LiveGrant[];
+    + 'byoAgents byoConsent prWrite connectionId createdAt').lean() as LiveGrant[];
   if (!grants.length) return output;
 
   const pods = scopedPodIds.length
@@ -186,12 +192,13 @@ export interface HostedBrokerProjection {
  *
  * Two deliberate narrowings, both fail-closed:
  *
- *  - **Reads, plus the hosted PR writes on a `prWrite` grant**. A definition
- *    whose `requiredWriteMode` is `read` is offered; of the writes, only
- *    `HOSTED_PR_WRITE_TOOLS` and only on a grant that holds `prWrite`
- *    (TASK-783). Both park every call for the owner, so no hosted write runs
- *    unattended (ADR-020 D1). `callTool` re-checks the scope, the mode and the
- *    write rule on every call regardless — this is the surface, not the gate.
+ *  - **Reads, plus the writes this grant parks**. A definition whose
+ *    `requiredWriteMode` is `read` is offered. A `prWrite` grant adds
+ *    `HOSTED_PR_WRITE_TOOLS` (TASK-783); any other `write-with-confirm` grant
+ *    adds its other writes (F215, `parkedWrites`). Each parks every call for
+ *    the owner, so no hosted write runs unattended (ADR-020 D1). `callTool`
+ *    re-checks the scope, the mode and the write rule on every call regardless
+ *    — this is the surface, not the gate.
  *  - **The grant's `tools` list is authoritative** (`assertGrantUsable` refuses
  *    a tool the grant does not name). Filtering here keeps the model from
  *    seeing a tool that would only be refused; it is not what enforces it.
@@ -226,14 +233,13 @@ export const hostedBrokerToolsForRun = async (
 
   const definitions = allToolDefinitions();
   const readable = definitions.filter((definition) => definition.requiredWriteMode === 'read');
-  const prWrites = definitions.filter((definition) => HOSTED_PR_WRITE_TOOLS.includes(definition.name)
-    && definition.requiresApproval === true);
   const ordered = [...grants].sort((a, b) => String(a.grantId).localeCompare(String(b.grantId)));
 
   for (const grant of ordered) {
     const allowed = new Set((grant.tools || []).map(String));
-    const offered = grantHoldsPrWrite(grant) ? [...readable, ...prWrites] : readable;
-    for (const definition of offered) {
+    // eslint-disable-next-line no-await-in-loop -- one grant's connection, at most once per run
+    const writes = await withoutToolsConnectionCannotRun(grant, parkedWrites(grant, definitions));
+    for (const definition of [...readable, ...writes]) {
       if (!allowed.has(definition.name)) continue;
       if (!limitedUse && isLimitedUseTool(definition.name)) continue;
       const exposed = sanitizeGrantBrokerToolName(definition.name);
@@ -266,6 +272,29 @@ export const hostedBrokerToolsForRun = async (
   }
 
   return { tools, dispatch, limitedUse };
+};
+
+/**
+ * The writes a hosted run is offered on one grant: only ones whose every call
+ * parks for the connection owner under `callTool`'s own predicate.
+ *
+ *  - A `prWrite` grant holds the PR writes and nothing else.
+ *  - Any other `write-with-confirm` grant holds every other write it names. The
+ *    PR writes stay out: they need `prWrite`, and `github.push_branch` carries a
+ *    git bundle a hosted turn cannot make.
+ *  - A `read` grant holds none, and neither does a `write` grant: a reversible
+ *    write there would run unattended, and the pod gate refuses that mode on
+ *    every call anyway. A grant that names a BYO seat holds none either, since
+ *    the write rule refuses it.
+ */
+const parkedWrites = (grant: LiveGrant, definitions: ToolDefinition[]): ToolDefinition[] => {
+  if (grantHoldsPrWrite(grant)) {
+    return definitions.filter((definition) => HOSTED_PR_WRITE_TOOLS.includes(definition.name)
+      && definition.requiresApproval === true);
+  }
+  if (grant.writeMode !== 'write-with-confirm' || grant.byoConsent) return [];
+  return definitions.filter((definition) => definition.requiredWriteMode === 'write-with-confirm'
+    && !isPrWriteTool(definition.name));
 };
 
 /**

@@ -13,10 +13,12 @@
 //     in JS would look identical today and drift on the next change.
 const mockRoomGrant = { find: jest.fn() };
 const mockPod = { find: jest.fn() };
+const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockCallTool = jest.fn();
 
 jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockRoomGrant }));
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
+jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
 jest.mock('../../../services/toolBrokerService', () => ({
   ...jest.requireActual('../../../services/toolBrokerService'),
   callTool: (...args) => mockCallTool(...args),
@@ -171,6 +173,84 @@ describe('hostedBrokerToolsForRun', () => {
     const { tools, dispatch } = await hostedBrokerToolsForRun({ identityId: SEAT, podId: POD_A });
     expect(tools.map((tool) => tool.function.name)).toEqual(['github_list_issues']);
     expect(dispatch.has('github_create_issue')).toBe(false);
+  });
+
+  describe('the writes a write-with-confirm grant parks (F215)', () => {
+    const names = async () => (await hostedBrokerToolsForRun({ identityId: SEAT, podId: POD_A }))
+      .tools.map((tool) => tool.function.name);
+
+    test('a catalogue write is offered under its function name, on the grant that names it', async () => {
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm', tools: ['sentry.find_organizations', 'sentry.update_issue'],
+      })]);
+      const { tools, dispatch } = await hostedBrokerToolsForRun({ identityId: SEAT, podId: POD_A });
+      expect(tools.map((tool) => tool.function.name))
+        .toEqual(['sentry_find_organizations', 'sentry_update_issue']);
+      expect(dispatch.get('sentry_update_issue')).toEqual({ grantId: 'grant-pod', tool: 'sentry.update_issue' });
+    });
+
+    test('a write the grant does not name stays out', async () => {
+      grantQuery([podGrant({ writeMode: 'write-with-confirm', tools: ['sentry.find_organizations'] })]);
+      expect(await names()).toEqual(['sentry_find_organizations']);
+    });
+
+    test.each(['read', 'write'])('a %s grant is offered no write', async (writeMode) => {
+      grantQuery([podGrant({ writeMode, tools: ['sentry.find_organizations', 'sentry.update_issue'] })]);
+      expect(await names()).toEqual(['sentry_find_organizations']);
+    });
+
+    test('the PR writes need prWrite, and push_branch is never offered', async () => {
+      process.env.SEAT_GITHUB_PUSH_ENABLED = 'true';
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm',
+        tools: ['github.create_pull_request', 'github.commit_files', 'github.push_branch'],
+      })]);
+      expect(await names()).toEqual([]);
+      delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+    });
+
+    test('a prWrite grant holds the PR writes and no other write', async () => {
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm', prWrite: true,
+        tools: ['github.create_pull_request', 'github.merge_pull_request'],
+      })]);
+      expect(await names()).toEqual(['github_create_pull_request']);
+    });
+
+    test('a grant that names a BYO seat is offered no write', async () => {
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm', byoConsent: { by: 'owner' }, tools: ['sentry.update_issue'],
+      })]);
+      expect(await names()).toEqual([]);
+    });
+
+    test('an issue write stays off a Connect row, and its other writes are still offered', async () => {
+      mockIntegration.findOne.mockResolvedValue(null);
+      mockIntegration.findById.mockResolvedValue({
+        _id: 'row-1', type: 'github-app', status: 'connected', createdBy: 'owner-1', createdAt: new Date(0),
+        config: { installationId: 'inst-1', owner: 'o', repo: 'r', app: 'connect' },
+      });
+      process.env.GITHUB_CONNECT_APP_ID = '1';
+      process.env.GITHUB_CONNECT_APP_PRIVATE_KEY = 'test-only';
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm', connectionId: '507f1f77bcf86cd799439015', ownerId: 'owner-1',
+        createdAt: new Date(1000),
+        tools: ['github.create_issue', 'github.comment_on_issue', 'github.comment_on_pull_request'],
+      })]);
+      expect(await names()).toEqual(['github_comment_on_pull_request']);
+      delete process.env.GITHUB_CONNECT_APP_ID;
+      delete process.env.GITHUB_CONNECT_APP_PRIVATE_KEY;
+    });
+
+    test('a connection that will not resolve drops the issue writes rather than offer a dead tool', async () => {
+      mockIntegration.findOne.mockResolvedValue(null);
+      mockIntegration.findById.mockResolvedValue(null);
+      grantQuery([podGrant({
+        writeMode: 'write-with-confirm', connectionId: '507f1f77bcf86cd799439015',
+        tools: ['github.create_issue'],
+      })]);
+      expect(await names()).toEqual([]);
+    });
   });
 
   test('the grant tools list is the boundary: an unlisted read tool stays unoffered', async () => {

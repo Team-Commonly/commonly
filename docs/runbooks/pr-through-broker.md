@@ -176,15 +176,18 @@ ends `prWrite`, and the form says so, on a child grant or when the connection is
 no longer offered. A named agent's consent is recorded as `byo-pr-v1` on a
 `prWrite` grant.
 
-Apart from that checkbox, the form offers `read` and nothing else for now, on
-every connector type (`FORM_OFFERS_WRITES` in
-`frontend/src/v2/connectors/toolModel.ts`). Without the checkbox, no grant it
-mints gives an agent a write: `hostedBrokerToolsForRun` offers a hosted run
-read tools, plus the PR tools on a `prWrite` grant; `checkByoNaming` refuses a
-write on a named seat without `prWrite`; `outsiderGrantPodRefusal` refuses any
-other outside agent in the pod, and refuses `write` on every pod, with no admin
-or GitHub App exception. A stored write grant keeps its mode in the list and the
-detail, but **Change access** reopens it on `read`, with pull-request access
+Apart from that checkbox, the form offers a GitHub App connection `read` and
+nothing else for now (`FORM_OFFERS_WRITES` in
+`frontend/src/v2/connectors/toolModel.ts`). A hosted-MCP connection with write
+tools also offers **read and write, ask first** (F215). Without the checkbox, a
+grant minted here gives an agent a write only on that hosted path:
+`hostedBrokerToolsForRun` offers a hosted run read tools, the PR tools on a
+`prWrite` grant, and a `write-with-confirm` grant's other writes, each of which
+parks for the owner; `checkByoNaming` refuses a write on a named seat without
+`prWrite`; `outsiderGrantPodRefusal` refuses any other outside agent in the pod,
+and refuses `write` on every pod, with no admin or GitHub App exception. A
+stored write grant keeps its mode in the list and the detail, but on a GitHub
+App connection **Change access** reopens it on `read`, with pull-request access
 kept if it held it.
 
 ## What the agent does

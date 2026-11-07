@@ -1,7 +1,7 @@
 const { HostedRoomRefusedError } = require('../../../services/hostedRoomRefusal');
 
 const mockRoomGrant = { findOne: jest.fn() };
-const mockPod = { findById: jest.fn() };
+const mockPod = { findById: jest.fn(), exists: async () => true };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockToolCall = { create: jest.fn(), digestArgs: (args) => `digest:${JSON.stringify(args || {})}` };
 const mockReserveBudgetLineage = jest.fn().mockResolvedValue(true);

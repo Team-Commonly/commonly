@@ -1,4 +1,4 @@
-import { canShowToolCall, prWriteView, toolCallView } from '../components/toolCallView';
+import { canShowToolCall, prWriteView, showInvisibles, toolCallView } from '../components/toolCallView';
 
 // The card is a consent surface: the readable view may relabel, but it must
 // show every pinned argument, and it may only link to github.com paths built
@@ -267,5 +267,45 @@ describe('a PR write summary', () => {
     ['a summary on a PR write', { tool: 'github.commit_files', summary: { repo: 'a/b' } }, true],
   ])('canShowToolCall with %s', (_label, envelope, expected) => {
     expect(canShowToolCall(envelope)).toBe(expected);
+  });
+});
+
+describe('what the owner reads is what runs (F215)', () => {
+  const row = (args: Record<string, unknown>, key: string) => toolCallView('sentry.update_issue', args)
+    .rows.find((candidate) => candidate.keys.includes(key));
+
+  test.each([
+    ['a right-to-left override', 'safe‮txt.exe', 'safe\\u{202E}txt.exe'],
+    ['a zero-width space', 'res​olved', 'res\\u{200B}olved'],
+    ['a tag character', 'ok\u{E0041}', 'ok\\u{E0041}'],
+    ['a line separator', 'one two', 'one\\u{2028}two'],
+    ['a bare control character', 'a\u0007b', 'a\\u{7}b'],
+  ])('%s is shown, not obeyed', (_name, raw, shown) => {
+    expect(row({ reason: raw }, 'reason')?.value).toBe(shown);
+  });
+
+  test('an invisible character inside a structured value is shown too', () => {
+    expect(row({ assignedTo: { name: 'a‮b' } }, 'assignedTo')?.value).toContain('\\u{202E}');
+  });
+
+  test('the text people actually write comes through untouched', () => {
+    const text = '第一行\n\tsecond line, café 🙂';
+    expect(row({ reason: text }, 'reason')?.value).toBe(text);
+  });
+
+  test('showInvisibles covers what the exact-arguments box prints', () => {
+    expect(showInvisibles(JSON.stringify({ reason: 'a‮b' }))).toBe('{"reason":"a\\u{202E}b"}');
+  });
+
+  test('a value too long for its box says how long it is, on one line or many', () => {
+    const oneLine = row({ reason: 'x'.repeat(5000) }, 'reason');
+    expect(oneLine).toMatchObject({ kind: 'block', fullLength: 5000 });
+    expect(oneLine?.value).toHaveLength(5000);
+    expect(row({ reason: 'line\n'.repeat(20) }, 'reason')).toMatchObject({ kind: 'block', fullLength: 100 });
+  });
+
+  test('a short value carries no length', () => {
+    expect(row({ reason: 'fixed' }, 'reason')?.fullLength).toBeUndefined();
+    expect(row({ reason: 'one\ntwo' }, 'reason')?.fullLength).toBeUndefined();
   });
 });

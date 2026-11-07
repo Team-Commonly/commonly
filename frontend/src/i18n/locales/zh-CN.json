@@ -305,6 +305,8 @@
     "approval": {
       "approve": "批准",
       "deny": "拒绝",
+      "review": "查看",
+      "needsReview": "先打开这条请求，核对后再批准。",
       "working": "正在保存…",
       "actionFailed": "无法更新该审批，请重试。"
     },
@@ -1782,7 +1784,8 @@
         "newCommit": "新提交",
         "bundleSize": "推送包大小"
       },
-      "exactArgs": "原始参数"
+      "exactArgs": "原始参数",
+      "longValue": "共{{length}}个字符，滚动查看全部。"
     },
     "approve": "批准",
     "decline": "拒绝",
@@ -1799,6 +1802,7 @@
     "openConnect": "获取接入命令",
     "errors": {
       "expired": "该批准在决定生效前已过期。",
+      "needsReview": "这条请求和页面显示的内容对不上，刷新后再决定。",
       "failed": "决定未能保存，请重试。"
     }
   },

@@ -2902,7 +2902,7 @@ export async function runAgent(
             disable_fallbacks: true,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
-            // The manifest's allowlist, plus the grant broker's read tools for
+            // The manifest's allowlist, plus the grant broker's tools for
             // THIS run. The broker is deliberately not reachable through
             // `TOOLS`/`toolsForConfig`: it is not the agent's
             // declared capability, it is a live grant that can be revoked

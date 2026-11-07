@@ -106,7 +106,10 @@ router.post('/:approvalId/resolve', approvalResolveLimit, auth, async (req: Auth
     if (decision !== 'approved' && decision !== 'declined') {
       return res.status(400).json({ error: "decision must be 'approved' or 'declined'" });
     }
-    const result = await resolveApproval({ approvalId, callerUserId, decision });
+    const { argsDigest } = (req.body || {}) as { argsDigest?: unknown };
+    const result = await resolveApproval({
+      approvalId, callerUserId, decision, reviewedArgsDigest: typeof argsDigest === 'string' ? argsDigest : null,
+    });
     return res.status(result.status).json(result.body);
   } catch (err) {
     console.error('POST /approvals/:id/resolve error:', err);

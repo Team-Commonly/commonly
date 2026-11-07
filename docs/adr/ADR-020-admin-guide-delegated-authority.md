@@ -39,6 +39,13 @@ Billing, auth, and token operations are never available to the Guide regardless 
 New capabilities are classified by the rule at review time — the rule itself only changes by
 amending this ADR.
 
+> **Note 2026-11-06 (F215):** a hosted agent's connector writes now follow this rule. Until
+> F215 a hosted run could reach a read tool or, on a `prWrite` grant, a pull-request tool. A
+> `write-with-confirm` grant now also offers its other writes. Each one parks as an approval
+> card for the connection's owner and runs nothing until that person approves it, with the
+> exact arguments the card showed. A `read` grant offers no write, a `write` grant offers no
+> hosted run a write, and a brought-your-own agent's rules are unchanged.
+
 ### D2 — Delegated authority: agent identity executes, user authority owns
 When an approved action creates a resource, the resource belongs to the **user** (e.g.
 `Pod.createdBy = user`, Guide added as a member), the executing identity remains the

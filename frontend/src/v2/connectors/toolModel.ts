@@ -220,11 +220,12 @@ export const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
-// F213 stopgap: no grant this form can mint gives an agent a write. Hosted runs
-// are offered read tools only, a named agent's grant must be read, any other
-// outside agent in the pod refuses the mint, and `write` refuses on every pod.
-// F214 added pull-request access beside this, on a GitHub App connection. F215
-// restores the modes; turning this on brings the choice back.
+// F213 stopgap, for connections other than hosted MCP: this form offers them
+// read, because a named agent's grant must be read, any other outside agent in
+// the pod refuses the mint, and `write` refuses on every pod. F214 added
+// pull-request access beside this, on a GitHub App connection. F215 lets a
+// hosted connection offer ask-first, since a hosted run parks those writes for
+// the owner; turning this on brings the other modes back, `write` included.
 export const FORM_OFFERS_WRITES: boolean = false;
 
 /**

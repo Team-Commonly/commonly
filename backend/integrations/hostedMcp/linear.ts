@@ -1,11 +1,9 @@
 /**
  * Linear — TASK-238. Pins transcribed from connector-ops's consenting
  * 2026-10-19T07:00:52.954Z tools/list at read write openid (68 tools).
- * The entry asks for read and openid only (F224, 2026-11-06): no agent can reach
- * an approved Linear write yet, so the consent shouldn't list one. F215 puts
- * `write` back. The write pins stay, and writeScope keeps them `not_granted`.
  * 36 reads and 26 writes, per Wren's 2026-10-24 pin ruling. Every writer maps
  * to write-with-confirm, with the exact arguments approved by the credential owner before a vendor call.
+ * Existing read-scoped connections must reconnect after deployment.
  *
  * get_attachment and extract_images remain excluded: they can fetch external
  * caller-chosen targets into agent context. Upload preparation exposes upload
@@ -26,12 +24,13 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 export const LINEAR_ENTRY: HostedMcpEntry = {
   id: "linear",
   title: "Linear",
-  description: "Read Linear issues and projects.",
+  description: "Read Linear issues and projects; changes require your approval.",
   resource: "https://mcp.linear.app/mcp",
   issuer: "https://mcp.linear.app",
   client: "cimd",
   scopes: [
     "read",
+    "write",
     "openid",
   ],
   writeScope: "write",
