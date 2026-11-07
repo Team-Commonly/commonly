@@ -111,7 +111,14 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // F298: a Start answers what waited for it. The room was told the agent can't
 // answer until its owner starts it, so the half hour above would close the very
 // mention that line was about. Past a day it's closed, and the person is told.
+// Only a person gets the day: a kernel wake is worth nothing that late.
 const START_PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const PERSON_WAITING_FILTER = {
+  type: { $in: PERSON_WAITING_EVENT_TYPES },
+  'payload.triggerAuthor': { $ne: 'kernel' },
+  'payload.assignedTaskWake': { $ne: true },
+  'payload.boardWake': { $ne: true },
+};
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -1365,10 +1372,9 @@ class AgentEventService {
     ));
     if (!targets.length) return { rescued: 0, closed: 0 };
     const targetFilter = { $or: targets };
-    const ceiling = new Date(now.getTime() - (only ? START_PENDING_MAX_AGE_MS : STRANDED_PENDING_MAX_AGE_MS));
-    const overdue = {
-      status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter,
-    };
+    const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
+    const personCeiling = only ? new Date(now.getTime() - START_PENDING_MAX_AGE_MS) : ceiling;
+    const open = { status: 'pending', deliveryMode: { $ne: 'digest' }, ...targetFilter };
     const closing = {
       $set: {
         status: 'failed',
@@ -1377,7 +1383,8 @@ class AgentEventService {
       },
     };
     // A person's mention closes on its own, so whoever closed it tells them once.
-    const mentions = await AgentEvent.find({ ...overdue, type: { $in: PERSON_WAITING_EVENT_TYPES } })
+    // Past this batch they wait for the next pass rather than close in silence.
+    const mentions = await AgentEvent.find({ ...open, ...PERSON_WAITING_FILTER, createdAt: { $lt: personCeiling } })
       .sort({ createdAt: -1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
     let closed = 0;
     for (const mention of mentions) {
@@ -1393,20 +1400,33 @@ class AgentEventService {
         });
       }
     }
-    const closedResult = await AgentEvent.updateMany(overdue, closing) as { modifiedCount?: number };
+    const closedResult = await AgentEvent.updateMany(
+      { ...open, $nor: [PERSON_WAITING_FILTER], createdAt: { $lt: ceiling } },
+      closing,
+    ) as { modifiedCount?: number };
     closed += closedResult?.modifiedCount || 0;
-    const stranded = await AgentEvent.find({
-      status: 'pending',
-      deliveryMode: { $ne: 'digest' },
-      createdAt: {
-        $lte: new Date(now.getTime() - (only ? 0 : STRANDED_PENDING_MIN_AGE_MS)),
-        $gte: ceiling,
-      },
-      $and: [
-        targetFilter,
-        { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
-      ],
-    }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+    const youngest = new Date(now.getTime() - (only ? 0 : STRANDED_PENDING_MIN_AGE_MS));
+    const runnable = (match: Record<string, unknown>, limit: number) => (limit > 0
+      ? AgentEvent.find({
+        status: 'pending',
+        deliveryMode: { $ne: 'digest' },
+        ...match,
+        $and: [
+          targetFilter,
+          { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
+        ],
+      }).sort({ createdAt: 1 }).limit(limit).lean() as Promise<EventDoc[]>
+      : Promise.resolve([] as EventDoc[]));
+    // A person first, so a pod full of wakes can't use up the batch.
+    const people = await runnable(
+      { ...PERSON_WAITING_FILTER, createdAt: { $lte: youngest, $gte: personCeiling } },
+      STUCK_REDISPATCH_BATCH,
+    );
+    const others = await runnable(
+      { $nor: [PERSON_WAITING_FILTER], createdAt: { $lte: youngest, $gte: ceiling } },
+      STUCK_REDISPATCH_BATCH - people.length,
+    );
+    const stranded = [...people, ...others];
     let rescued = 0;
     for (const event of stranded) {
       const agentName = String(event.agentName || '');

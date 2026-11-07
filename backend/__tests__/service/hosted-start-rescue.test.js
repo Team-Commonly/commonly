@@ -121,6 +121,63 @@ describe('a Start', () => {
   });
 });
 
+describe('a Start with more waiting than it can run', () => {
+  const many = (count, ageMs, overrides) => Promise.all(
+    Array.from({ length: count }, () => waiting(ageMs, overrides)),
+  );
+
+  it('answers the person ahead of older wakes nobody is waiting on', async () => {
+    await many(60, 20 * HOUR, { type: 'message.posted' });
+    const event = await waiting(HOUR);
+    expect(await start()).toMatchObject({ rescued: 1, closed: 60 });
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(await statusOf(event)).toBe('acked');
+  });
+
+  it('answers the person ahead of newer wakes that fill the batch', async () => {
+    await many(60, 20 * 60 * 1000, { type: 'message.posted' });
+    const event = await waiting(60 * 1000);
+    expect(await start()).toMatchObject({ rescued: 50, closed: 0 });
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(await statusOf(event)).toBe('acked');
+  });
+
+  it('runs no more than the batch when people alone fill it', async () => {
+    await many(50, HOUR);
+    await many(5, 20 * 60 * 1000, { type: 'message.posted' });
+    expect(await start()).toMatchObject({ rescued: 50, closed: 0 });
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(await AgentEvent.countDocuments({ type: 'message.posted', status: 'pending' })).toBe(5);
+  });
+
+  it('gives a kernel wake the half hour, since nobody is waiting on it', async () => {
+    const event = await waiting(2 * HOUR, { payload: { content: 'task assigned', triggerAuthor: 'kernel' } });
+    expect(await start()).toMatchObject({ rescued: 0, closed: 1 });
+    expect(await statusOf(event)).toBe('failed');
+    expect(noteUnansweredMention).not.toHaveBeenCalled();
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it('runs a thread mention and a DM the same as a pod mention', async () => {
+    const thread = await waiting(HOUR, { type: 'thread.mention' });
+    const dm = await waiting(HOUR, { type: 'dm.message' });
+    expect(await start()).toMatchObject({ rescued: 2, closed: 0 });
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(await statusOf(thread)).toBe('acked');
+    expect(await statusOf(dm)).toBe('acked');
+  });
+
+  it('leaves mentions past the line batch for the next pass, so each person is still told', async () => {
+    await many(60, 25 * HOUR);
+    expect(await start()).toMatchObject({ rescued: 0, closed: 50 });
+    expect(noteUnansweredMention).toHaveBeenCalledTimes(50);
+    expect(await AgentEvent.countDocuments({ status: 'pending' })).toBe(10);
+
+    expect(await start()).toMatchObject({ rescued: 0, closed: 10 });
+    expect(noteUnansweredMention).toHaveBeenCalledTimes(60);
+  });
+});
+
 describe('the sweep', () => {
   const sweep = () => Service.rescueStrandedPendingInProcess(new Date(), 5);
 
