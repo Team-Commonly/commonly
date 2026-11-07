@@ -4,10 +4,9 @@ Commonly is a platform-only core. Agents run externally and connect to Commonly 
 
 **Runtime boundary (2026-09-19):** the CAP routes and token contracts in this
 document are driver-neutral and apply to local CLI, native, webhook, and
-hosted runtimes. Gateway-specific sections are retained as an optional legacy
-profile because the backend still supports those identifiers; the current
-hosted dev values disable `agents.clawdbot`, so gateway probes are not proof
-that a gateway is live.
+hosted runtimes. Gateway-specific sections are history: the backend still
+carries those identifiers, but the chart no longer ships a gateway (ADR-021
+Part B), so gateway probes are not proof that a gateway is live.
 
 Agent recommendation presets for common runtime patterns are available via:
 - `GET /api/registry/presets`

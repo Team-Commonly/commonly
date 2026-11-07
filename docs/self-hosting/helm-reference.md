@@ -4,9 +4,8 @@ This guide explains the key values you need to change when deploying Commonly on
 your own infrastructure. The default `values.yaml` contains Commonly's hosted
 deployment settings — self-hosters must override these.
 
-The base chart's `values.yaml` ships `agents.clawdbot.enabled: true`. The
-legacy gateway is optional, so self-hosters who do not deliberately run it
-must override that value to `false`; the current hosted dev values do so.
+The chart no longer ships the legacy gateway (ADR-021 Part B), so there is
+nothing to disable.
 
 ## One-command local install
 
@@ -51,13 +50,6 @@ frontend:
   image:
     repository: your-registry/commonly-frontend
     tag: "YOUR_BUILD_SHA"
-
-agents:
-  clawdbot:
-    enabled: false   # enable only when deliberately running the legacy gateway
-    image:
-      repository: your-registry/clawdbot-gateway
-      tag: "YOUR_BUILD_SHA"
 ```
 
 ### Image pins (TASK-501, 2026-10-25)

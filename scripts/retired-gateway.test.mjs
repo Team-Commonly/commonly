@@ -2,9 +2,10 @@
 // workflow that names it again would either nil-pointer the render (the values
 // are gone) or start building and rolling a workload nobody runs.
 //   node --test scripts/retired-gateway.test.mjs
-// RETIRED_GATEWAY_ROOT points the scan at another checkout, to prove it fails.
+// RETIRED_GATEWAY_ROOT points the scan at another git checkout, to prove it fails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,8 +35,22 @@ test('no deploy workflow names the retired gateway', () => {
   assert.deepEqual(hits(workflows), []);
 });
 
+// A test that reads a deleted template fails with ENOENT, far from the deletion.
+// Docs may keep the history; code, config and tests may not name these files.
+const DELETED = /clawdbot-deployment\.yaml|clawdbot-service\.yaml|clawdbot-(config|workspace)-pvc\.yaml|filestore-storageclass\.yaml|agent-provisioning\/pvc\.yaml|verify-moltbot-tool-contract|moltbotToolContract/;
+
+test('no tracked file outside docs names a deleted file', () => {
+  const { status, stdout, stderr } = spawnSync('git', [
+    'grep', '-n', '-I', '-E', DELETED.source.replaceAll('\\/', '/'),
+    '--', '.', ':!docs', ':!*.md', ':!scripts/retired-gateway.test.mjs',
+  ], { cwd: ROOT, encoding: 'utf8' });
+  assert.ok(status === 0 || status === 1, `git grep failed: ${stderr}`);
+  assert.equal(stdout, '');
+});
+
 test('the pattern catches what it is for', () => {
   for (const line of ['{{- if .Values.agents.clawdbot.enabled }}', 'key: clawdbot-gateway-token', 'docker build _external/clawdbot']) {
     assert.match(line, RETIRED);
   }
+  assert.match("'templates/agents/clawdbot-deployment.yaml',", DELETED);
 });

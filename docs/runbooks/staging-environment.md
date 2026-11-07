@@ -34,9 +34,9 @@ render references **47** keys across four ExternalSecrets — **43 staging-prefi
     token + account id were dropped from the ring on 11-03 with the route (D81).
   - **Deliberately NOT shared — the prod GitHub PAT.** `commonly-github-pat` has
     write power over prod repos, and staging auto-deploys every merge (the reckless
-    lane), so `githubPat.enabled: false` in values-staging omits the `GITHUB_PAT`
-    ref from the staging render entirely (the same principle
-    that keeps atlasAdmin off staging). The backend reads GITHUB_PAT lazily and
+    lane), so it was never projected here (the same principle that keeps
+    atlasAdmin off staging). ADR-021 Part B removed the `GITHUB_PAT` ref from the
+    chart for every environment. The backend reads GITHUB_PAT lazily and
     degrades (GitHub routes report not-configured) rather than crashing. Staging
     agents that ever need git get a separate fine-grained PAT on a throwaway repo,
     post-11/1.

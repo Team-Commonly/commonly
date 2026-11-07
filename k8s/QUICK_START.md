@@ -158,14 +158,6 @@ externalSecrets:
 ### 8. Deploy Commonly (2 minutes)
 
 ```bash
-# Deploy with agents disabled (recommended for first deployment)
-helm install commonly k8s/helm/commonly --namespace commonly --create-namespace --values k8s/helm/commonly/values-dev.yaml --set backend.image.tag=v1.0.0 --set frontend.image.tag=v1.0.0 --set agents.clawdbot.enabled=false
-```
-
-Or if you set up Filestore and want agents:
-
-```bash
-# Deploy with agents enabled
 helm install commonly k8s/helm/commonly --namespace commonly --create-namespace --values k8s/helm/commonly/values-dev.yaml --set backend.image.tag=v1.0.0 --set frontend.image.tag=v1.0.0
 ```
 
