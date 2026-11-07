@@ -114,7 +114,8 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.v2-root .v2-activity__compose textarea::placeholder { color: var(--v2-text-placeholder); }
+/* A textarea's own text-overflow doesn't reach its placeholder. */
+.v2-root .v2-activity__compose textarea::placeholder { color: var(--v2-text-placeholder); overflow: hidden; text-overflow: ellipsis; }
 /* The ring belongs to the composer, not the text area inside it. */
 .v2-root .v2-activity__compose textarea:focus-visible { outline: none; box-shadow: none; }
 .v2-activity__compose-foot { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; }

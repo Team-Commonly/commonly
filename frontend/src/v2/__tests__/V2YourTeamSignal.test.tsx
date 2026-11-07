@@ -107,6 +107,26 @@ describe('Your Team (direction C)', () => {
     expect(within(cardOf('Mate')).queryByTestId('team-card-fix-command')).toBeNull();
   });
 
+  test('a never-connected card links to the page that hands out its key, keeping the agent\'s name', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+      { name: 'bound', instanceId: 'default', displayName: 'Bound', userId: 'bound-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'wrapper' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run bound' },
+      { name: 'hook', instanceId: 'default', displayName: 'Hook', userId: 'hook-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'Start your webhook service.' },
+    ] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    // A wrapper's Reconnect refuses an agent never bound to a computer, and a webhook has no command.
+    expect(within(cardOf('Bound')).queryByTestId('team-card-connect')).toBeNull();
+    expect(within(cardOf('Hook')).queryByTestId('team-card-connect')).toBeNull();
+    fireEvent.click(within(cardOf('Local')).getByTestId('team-card-connect'));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&instanceId=default&reconnect=1');
+  });
+
   test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
     renderPage({ p1Agents: [{
       name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',

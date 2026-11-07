@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
@@ -15,6 +15,7 @@ import V2AvatarCropDialog from './V2AvatarCropDialog';
 import V2Segmented from './V2Segmented';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
+import { requestFirstRunGuide } from '../firstRunGuide';
 import { V2_THEMES, V2ThemePref, setV2Theme } from '../utils/theme';
 import useV2ThemePref from '../hooks/useV2ThemePref';
 
@@ -80,6 +81,7 @@ const Card = () => <Svg><path d="M3 6h18v12H3zM3 10h18" /></Svg>;
 const Globe = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></Svg>;
 const Moon = () => <Svg><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z" /></Svg>;
 const Next = () => <Svg><path d="m9 6 6 6-6 6" /></Svg>;
+const Book = () => <Svg><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4zM5 17a3 3 0 0 1 3-3h11" /></Svg>;
 const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 
 const V2AccountSection: React.FC = () => {
@@ -604,6 +606,8 @@ const V2AdminSection: React.FC = () => (
 const V2SettingsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
+  const { t } = useTranslation();
+  const navigate = useNavigate();
 
   return (
     <div className="v2-settings" aria-label="Settings">
@@ -630,7 +634,19 @@ const V2SettingsPage: React.FC = () => {
             )}
           </SettingsSection>
           <SettingsSection id="look" title="Look"><V2LanguageSection /></SettingsSection>
-          <div className="v2p-list v2-settings__actions-list"><V2AccountActions /></div>
+          <div className="v2p-list v2-settings__actions-list">
+            {/* Phones have no rail, so Feedback's Guide entry isn't reachable there. */}
+            <button
+              type="button"
+              className="v2p-lrow v2-settings__link v2-settings__guide"
+              onClick={() => { if (!requestFirstRunGuide()) navigate('/v2'); }}
+            >
+              <span className="lb"><Book />{t('firstRun.reopen')}</span>
+              <span className="vl" />
+              <span className="ac"><span className="v2p-b v2p-b-g v2p-ib v2p-b-sm" aria-hidden="true"><Next /></span></span>
+            </button>
+            <V2AccountActions />
+          </div>
           {isAdmin && (
             <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
           )}

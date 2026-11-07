@@ -191,6 +191,8 @@
    snippet its own rhythm. (ux-lead's TASK-169 render gate measured 28 at 1200
    and 390 with exactly these declarations.) */
 .v2-byo__result > p { margin: 0; }
+/* The landing after a key is issued stops short of the header. */
+.v2-byo__result { scroll-margin-top: 12px; }
 /* An agent's name in mono is a mark (Signal rule 1), so the name carries the
    accent — it is already named once in the sentence above it. */
 .v2-byo__result h2 code {

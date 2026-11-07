@@ -2,9 +2,10 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import i18n, { i18nReady, LANGUAGE_REGISTRY } from '../../i18n';
 import axios from '../../utils/axiosConfig';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import V2SettingsPage from '../components/V2SettingsPage';
+import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -78,6 +79,38 @@ const renderSettings = (currentUser = auth.currentUser) => render(
 afterEach(() => jest.clearAllMocks());
 
 describe('V2SettingsPage', () => {
+  describe('Guide', () => {
+    const Where = () => <span data-testid="where">{useLocation().pathname}</span>;
+    const renderAtSettings = () => render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter initialEntries={['/v2/settings']}><V2SettingsPage /><Where /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const guide = () => screen.getByRole('button', { name: 'Guide', hidden: true });
+
+    beforeEach(async () => {
+      await i18nReady;
+      localStorage.removeItem(FIRST_RUN_STARTED_KEY);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    });
+
+    test('opens a guide that is already mounted, and stays on the page', () => {
+      const reopen = (event: Event) => { (event as CustomEvent).detail.handled = true; };
+      window.addEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+      renderAtSettings();
+      fireEvent.click(guide());
+      window.removeEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+      expect(screen.getByTestId('where')).toHaveTextContent('/v2/settings');
+    });
+
+    test('with no guide mounted, carries the request to the shell', () => {
+      renderAtSettings();
+      fireEvent.click(guide());
+      expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+      expect(screen.getByTestId('where').textContent).toBe('/v2');
+    });
+  });
+
   test('names the language choices in the active language', async () => {
     await i18nReady;
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });

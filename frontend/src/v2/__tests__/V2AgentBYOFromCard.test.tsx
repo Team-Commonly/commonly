@@ -106,6 +106,23 @@ describe('BYO from an approved connect card', () => {
     expect(axios.post.mock.calls.some(([url]) => /pods\/bbb222\/agents\/sam-claude\/runtime-tokens/.test(url))).toBe(true);
   });
 
+  test('the click lands on the result heading, so the command is on screen with its Copy', async () => {
+    const scrolled = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(options) { scrolled.push([this, options]); };
+    try {
+      renderAt(CARD);
+      const act = await screen.findByRole('button', { name: /get my connect command/i });
+      await waitFor(() => expect(act).toBeEnabled());
+      expect(scrolled).toEqual([]);
+      fireEvent.click(act);
+      const result = await screen.findByTestId('byo-issued-result');
+      await waitFor(() => expect(scrolled).toEqual([[result, { block: 'start' }]]));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   test('a card for Codex opens on Codex: the title and the command say so', async () => {
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
