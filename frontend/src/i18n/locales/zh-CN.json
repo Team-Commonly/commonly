@@ -3087,6 +3087,8 @@
       "noTurn": "未报告回合",
       "saveRuntime": "保存运行设置",
       "spawnFailed": "启动失败 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "runtimeKind_hosted": "托管",
+      "runtimeKind_webhook": "Webhook",
       "notReported": "未报告"
     },
     "providerKey": {
@@ -3125,6 +3127,7 @@
     "identityTitle": "身份",
     "identityAccess": "身份与访问",
     "keyActive": "已启用",
+    "keyNotNeeded": "不需要",
     "openMemory": "打开记忆",
     "heartbeatOff": "关闭",
     "connection": "连接",
@@ -3261,7 +3264,7 @@
     "colBoard": "任务板",
     "colHeartbeat": "心跳",
     "messageWakeShort_mentions": "仅提及",
-    "messageWakeShort_human": "真人",
+    "messageWakeShort_human": "真人消息",
     "messageWakeShort_all": "全部",
     "heartbeatTurns_other": "心跳{{count}}次/天 · 上限{{cap}}轮/天",
     "heartbeatTurnsNoCap_other": "心跳{{count}}次/天 · 上限不可用",

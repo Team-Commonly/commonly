@@ -3086,6 +3086,8 @@
       "noTurn": "no turn reported",
       "saveRuntime": "Save runtime",
       "spawnFailed": "spawn failed · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "runtimeKind_hosted": "hosted",
+      "runtimeKind_webhook": "webhook",
       "notReported": "not reported"
     },
     "providerKey": {
@@ -3124,6 +3126,7 @@
     "identityTitle": "Identity",
     "identityAccess": "Identity & access",
     "keyActive": "active",
+    "keyNotNeeded": "Not needed",
     "openMemory": "Open memory",
     "heartbeatOff": "Off",
     "connection": "Connection",
