@@ -1,4 +1,4 @@
-import { agentKeyFor } from '../utils/agentKey';
+import { agentKeyFor, isDefaultInstance } from '../utils/agentKey';
 
 describe('agentKeyFor — the member-identity key', () => {
   test('two agents sharing instanceId "default" get DISTINCT keys', () => {
@@ -19,5 +19,21 @@ describe('agentKeyFor — the member-identity key', () => {
 
   test('registry rows that carry name instead of agentName still key correctly', () => {
     expect(agentKeyFor({ name: 'sage', instanceId: 'sage-seo-lead' })).toBe('sage:sage-seo-lead');
+  });
+});
+
+describe('isDefaultInstance', () => {
+  test('a missing id or any casing of default counts', () => {
+    expect(isDefaultInstance(undefined)).toBe(true);
+    expect(isDefaultInstance('')).toBe(true);
+    expect(isDefaultInstance('Default')).toBe(true);
+  });
+
+  test('a named instance does not', () => {
+    expect(isDefaultInstance('nova')).toBe(false);
+  });
+
+  test('a numeric instance id reads as another instance and does not throw', () => {
+    expect(isDefaultInstance(7 as unknown as string)).toBe(false);
   });
 });

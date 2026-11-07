@@ -34,6 +34,13 @@ describe('a never-connected agent on Settings', () => {
       '/v2/agents/byo?pod=pod-1&name=maple&instanceId=default&reconnect=1');
   });
 
+  test('a second instance keeps its command and gets no link: the page would install a sibling', () => {
+    render(<MemoryRouter><V2AgentControlSection agentName="maple" instanceId="nova" podId="pod-1" runtimeType="webhook"
+      connection={{ state: 'never', lastSeenAt: null }} fixCommand="commonly agent run maple" /></MemoryRouter>);
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
   test('a wrapper gets no link, because that page would offer it Reconnect', () => {
     showFix('commonly agent run maple', 'never', 'wrapper');
     expect(screen.getByTestId('agent-connect-command')).toBeInTheDocument();
