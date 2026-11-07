@@ -2051,6 +2051,7 @@
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
       "statAgents": "托管智能体",
+      "heldNotice": "你已有一个托管智能体（测试期允许{{cap}}个）。",
       "openHeld": "打开 {{holder}}"
     },
     "preview": {

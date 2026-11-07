@@ -153,7 +153,7 @@ describe('Your Team (direction C)', () => {
     expect(answer.compareDocumentPosition(reconnect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test.each([['stale'], ['revoked']])('a %s agent with nothing to ask stays idle, with one filled Reconnect', async (state) => {
+  test.each([['stale'], ['revoked']])('a %s agent with nothing to ask stays idle, and Reconnect stays bordered', async (state) => {
     renderPage({ queue: [], p1Agents: [{
       name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user',
       installedBy: 'u1', runtime: { runtimeType: 'webhook' },
@@ -164,7 +164,10 @@ describe('Your Team (direction C)', () => {
     expect(card).toHaveClass('v2-team-card--idle');
     expect(within(card).queryByRole('button', { name: 'Answer' })).toBeNull();
     expect(within(card).queryByTestId('team-card-offline')).toBeNull();
-    expect(within(card).getByRole('button', { name: 'Reconnect' })).toHaveClass('v2p-b-p');
+    // Ink on a team card is for an ask, so a run of dropped seats doesn't outweigh one.
+    const reconnect = within(card).getByRole('button', { name: 'Reconnect' });
+    expect(reconnect).toHaveClass('v2p-b-s');
+    expect(reconnect).not.toHaveClass('v2p-b-p');
   });
 
   test('the agent waiting on you: ring, cobalt mark, `● needs you · <ask>`, Answer ink + Talk bordered — keyed on actorUserId, not a name', async () => {

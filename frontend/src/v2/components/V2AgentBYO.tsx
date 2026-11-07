@@ -1451,7 +1451,7 @@ const V2AgentBYO: React.FC = () => {
 
   const hostedHeldNotice = hostedHeld && (
     <p className="v2-byo__hint" data-testid="byo-hosted-held">
-      {hostedCapNotice(t, { holders: [hostedHeld] }, hosting?.caps.agentsPerUser)}
+      {t('agentByo.hosted.heldNotice', { cap: hosting?.caps.agentsPerUser ?? 1 })}
       {' '}
       <button
         type="button"

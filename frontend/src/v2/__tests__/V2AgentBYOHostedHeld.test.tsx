@@ -82,7 +82,7 @@ const renderAt = (url) => {
 const actButton = () => screen.queryAllByRole('button', { name: /^run it here$/i })
   .find((b) => !b.hasAttribute('aria-pressed')) ?? null;
 
-const NOTICE = /Maya already holds your hosted agent slot \(beta allows 1\)/;
+const NOTICE = /^You already have a hosted agent \(beta allows 1\)\. Open Maya$/;
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -247,6 +247,6 @@ describe('V2AgentBYO — the hosted slot is held', () => {
 
     await waitFor(() => expect(actButton()).toBeEnabled());
     fireEvent.click(actButton());
-    expect(await screen.findByText(NOTICE)).toBeInTheDocument();
+    expect(await screen.findByText(/Maya already holds your hosted agent slot \(beta allows 1\)/)).toBeInTheDocument();
   });
 });
