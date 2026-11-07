@@ -91,7 +91,9 @@ describe('a URL inside code stays as written, because people copy it', () => {
   });
 
   it('a one-line triple-backtick span keeps its URL', () => {
-    expect(rendered(linkifyBareUrls('run ```curl https://a.example/x``` first')).links).toEqual([]);
+    const { code, links } = rendered(linkifyBareUrls('run ```curl https://a.example/x``` first'));
+    expect(code).toEqual(['curl https://a.example/x']);
+    expect(links).toEqual([]);
   });
 
   it('a NUL already in the message cannot be taken for a masked span', () => {
