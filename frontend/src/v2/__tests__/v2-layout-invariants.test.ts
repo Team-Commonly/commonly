@@ -6642,3 +6642,16 @@ test('the CLI approval page never clips the hostname being approved', () => {
   expect(host).toContain('overflow-wrap: anywhere');
   expect(host).not.toContain('nowrap');
 });
+
+// White on the dark accent is 3.44:1. On-ink is dark there and white in light.
+test('small text on the raw accent uses on-ink, so it reads in dark too', () => {
+  const css = readV2Css();
+  [
+    '.v2-root button.v2-pods__row--selected .v2-pods__row-mark:not(.v2-avatar)',
+    '.v2-mobile-tabs__count',
+    '.v2-rail__item-icon .MuiBadge-badge',
+  ].forEach((selector) => expect(ruleBody(css, selector)).toContain('color: var(--v2-on-ink)'));
+  expect(ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card__mark--needsYou'))
+    .toContain('color: var(--v2-on-ink)');
+  expect(ruleBody(read('../primitives/primitives.css'), '.v2p-badge')).toContain('color: var(--v2-on-ink)');
+});

@@ -120,7 +120,7 @@
   padding: 0 4px;
   border-radius: var(--v2-r-8);
   background: var(--v2-accent);
-  color: #fff;
+  color: var(--v2-on-ink);
   font: 600 11px/15px var(--v2-font-mono);
 }
 .v2p-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--v2-accent); flex: none; display: inline-block; }
