@@ -310,6 +310,7 @@ const V2AgentBYO: React.FC = () => {
   const [showHostedOffer, setShowHostedOffer] = useState(false);
   const offeredPanels = useRef(new Set<string>());
   const resultRef = useRef<HTMLDivElement | null>(null);
+  const listenCopyRef = useRef<HTMLButtonElement | null>(null);
   const offerSessionKey = issued
     ? `commonly:byo-hosted-offer:${currentUser?._id || ''}:${issued.podId}:${issued.agentName}`
     : null;
@@ -1168,9 +1169,14 @@ const V2AgentBYO: React.FC = () => {
   // The form above a result collapses as the result arrives, and on a phone the
   // scroller keeps its offset, so the command would land above the fold with
   // only Copy in view. Start at the heading, so a person sees what they're copying.
+  // A short phone can't hold heading to Copy (443px with a two-line heading, 427px
+  // under the verify-email banner), and Copy is the next step, so it wins by the
+  // few pixels it takes. Elsewhere Copy is already in view and nothing moves.
   const resultKind = issued ? 'issued' : placed ? 'placed' : hosted ? 'hosted' : reconnectRequest ? 'reconnect' : null;
   useEffect(() => {
-    if (resultKind) resultRef.current?.scrollIntoView?.({ block: 'start' });
+    if (!resultKind) return;
+    resultRef.current?.scrollIntoView?.({ block: 'start' });
+    listenCopyRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [resultKind, issued]);
 
   // "Run it here" is on screen from first paint whenever the instance hosts
@@ -2044,6 +2050,7 @@ const V2AgentBYO: React.FC = () => {
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
+                  ref={listenCopyRef}
                   onClick={() => copy('listen', listenSnippet)}
                   className="v2-byo__copy"
                 >
