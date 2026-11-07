@@ -755,6 +755,11 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
   });
 
+  test('the creator gets the note with a populated creator too', () => {
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u1' } } });
+    expect(screen.getByText(NOTE)).toBeInTheDocument();
+  });
+
   test('the owner is recognised from a populated creator too', async () => {
     answer({ '/api/hosted/welcome-start': [refusal(503, { code: 'hosted_runtime_unconfigured' })] });
     renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u1', username: 'maya' } } });
