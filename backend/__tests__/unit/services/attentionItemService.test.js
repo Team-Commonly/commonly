@@ -90,6 +90,33 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
+  describe('a [BLOCKED] post where its installer isn\'t a member (F270)', () => {
+    const post = async (type) => {
+      mockPodFindById.mockReturnValue(chain({
+        _id: 'pod-1', name: 'Scout', type, members: ['guest', 'scout'],
+      }));
+      mockUserFind.mockReturnValue(chain([{ _id: 'guest', username: 'Guest', isBot: false }]));
+      mockUserFindById.mockReturnValue(chain({
+        _id: 'scout', username: 'scout', isBot: true, botMetadata: { displayName: 'Scout', ownerUserId: 'sam' },
+      }));
+      mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+      await AttentionItemService.recordMentionedUsers({
+        id: 45, podId: 'pod-1', userId: 'scout', content: '[BLOCKED] I need the staging key.',
+      });
+    };
+
+    it('tells the person in the agent\'s room, who is the one waiting', async () => {
+      await post('agent-room');
+      expect(mockUpdateOne.mock.calls[0][0].recipientUserId).toBe('guest');
+      expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'guest' }));
+    });
+
+    it('stays with the installer in any other pod', async () => {
+      await post('team');
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+  });
+
   it('routes a [BLOCKED] agent post to its installer without needing an @mention', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'creator', members: ['creator', 'sam'] }));
     mockUserFind.mockReturnValue(chain([
