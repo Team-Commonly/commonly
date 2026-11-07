@@ -99,6 +99,22 @@ describe('V2InviteRedeem', () => {
     expect(screen.queryByText('你的私人工作空间')).not.toBeInTheDocument();
   });
 
+  test('does the same after the owner renames the pod, since the description stays', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      token: 'a'.repeat(32),
+      pod: { _id: 'other-workspace', name: 'Launch notes', description: 'Your private workspace', type: 'chat', memberCount: 2 },
+      alreadyMember: false,
+      isOwner: false,
+    });
+    render(
+      <MemoryRouter initialEntries={[`/v2/invite/${'a'.repeat(32)}`]}>
+        <Routes><Route path="/v2/invite/:token" element={<V2InviteRedeem />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('A private workspace shared with you')).toBeInTheDocument();
+    expect(screen.queryByText('Your private workspace')).not.toBeInTheDocument();
+  });
+
   test('keeps the owner\'s private-workspace description on their own invite', async () => {
     mockApi.get.mockResolvedValueOnce({
       token: 'a'.repeat(32),

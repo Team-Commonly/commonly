@@ -6575,6 +6575,17 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-run-trace h2')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
   });
+
+  test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
+    const settings = read('../components/V2SettingsPage.css');
+    // Desktop reaches the guide from the rail, so the row is for phones only.
+    expect(settings).toContain('.v2-settings__guide { display: none; }');
+    const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));
+    expect(phone).toContain('.v2-settings__guide { display: grid;');
+    const activity = read('../components/V2ActivityPage.css');
+    expect(ruleBody(activity, '.v2-root .v2-activity__compose textarea::placeholder')).toContain('text-overflow: ellipsis');
+    expect(read('../components/V2AgentBYO.css')).toContain('.v2-byo__result { scroll-margin-top: 12px; }');
+  });
 });
 
 describe('the landing stylesheet parses as written', () => {
@@ -6593,16 +6604,5 @@ describe('the landing stylesheet parses as written', () => {
       lowest = Math.min(lowest, depth);
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
-  });
-
-  test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
-    const settings = read('../components/V2SettingsPage.css');
-    // Desktop reaches the guide from the rail, so the row is for phones only.
-    expect(settings).toContain('.v2-settings__guide { display: none; }');
-    const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));
-    expect(phone).toContain('.v2-settings__guide { display: grid;');
-    const activity = read('../components/V2ActivityPage.css');
-    expect(ruleBody(activity, '.v2-root .v2-activity__compose textarea::placeholder')).toContain('text-overflow: ellipsis');
-    expect(read('../components/V2AgentBYO.css')).toContain('.v2-byo__result { scroll-margin-top: 12px; }');
   });
 });
