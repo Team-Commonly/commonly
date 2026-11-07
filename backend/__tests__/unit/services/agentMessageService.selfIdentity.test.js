@@ -138,10 +138,12 @@ describe('getRecentMessages — PG path', () => {
     PGMessage.findByPodId.mockResolvedValue([
       { id: 1, user_id: OTHER, user_db_id: null, is_bot: null, content: 'no mirror row' },
       { id: 2, user_id: SELF, user_db_id: SELF, username: 'a-person', is_bot: false, content: 'known' },
+      { id: 3, user_id: OTHER, user_db_id: OTHER, username: 'no-flag', is_bot: null, content: 'null flag' },
     ]);
     const out = await AgentMessageService.getRecentMessages(POD, 10);
     expect(out[0]).not.toHaveProperty('isBot');
     expect(out[1].isBot).toBe(false);
+    expect(out[2]).not.toHaveProperty('isBot');
   });
 
   test('a human whose name merely ENDS IN "bot" is not reported as a bot', async () => {
@@ -186,6 +188,14 @@ describe('getRecentMessages — Mongo fallback path', () => {
     await AgentMessageService.getRecentMessages(POD, 10);
 
     expect(populate).toHaveBeenCalledWith('userId', expect.stringContaining('isBot'));
+  });
+
+  test('a user that did not populate says nothing about isBot', async () => {
+    mockMongoChain([{ _id: 'm1', content: 'x', userId: null }]);
+
+    const out = await AgentMessageService.getRecentMessages(POD, 10);
+
+    expect(out[0]).not.toHaveProperty('isBot');
   });
 
   test('reports isBot truthfully for a bot author', async () => {
