@@ -1,7 +1,7 @@
 import { normalizeRuntimeInventory, HarnessInventory } from './runtimeInventory';
 import crypto from 'crypto';
 import { Types } from 'mongoose';
-import Machine, { IMachine, IMachineAgentState } from '../models/Machine';
+import Machine, { IMachine, IMachineAgentState, IMachineHost } from '../models/Machine';
 import AgentCredential from '../models/AgentCredential';
 import User from '../models/User';
 import { issueDaemonCredential } from './daemonCredentialService';
@@ -54,6 +54,73 @@ export function normalizeAgentStates(raw: unknown): IMachineAgentState[] | null 
     .filter((entry): entry is IMachineAgentState => entry !== null);
 }
 
+// TASK-784 (D164): what a daemon says its computer runs. Every field is
+// checked against a fixed shape, and anything else is dropped, so the row can
+// only ever hold a platform name, a number, an arch name and a version: no
+// hostname, path or user name, whatever a caller sends. The names are Node's
+// own process.platform and process.arch values.
+const HOST_PLATFORMS = new Set([
+  'aix', 'android', 'cygwin', 'darwin', 'freebsd', 'haiku', 'linux', 'netbsd', 'openbsd', 'sunos', 'win32',
+]);
+const HOST_ARCHES = new Set([
+  'arm', 'arm64', 'ia32', 'loong64', 'mips', 'mipsel', 'ppc', 'ppc64', 'riscv64', 's390', 's390x', 'x64',
+]);
+const CLI_VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9A-Za-z.-]{1,32})?$/;
+
+/**
+ * The host report a CLI sent, reduced to the four fields it may carry. Null
+ * when it sent none (an older CLI) or nothing in it passes, so a report never
+ * clears a good one with nulls.
+ */
+export function normalizeHostReport(raw: unknown): IMachineHost | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const host: IMachineHost = {
+    platform: typeof r.platform === 'string' && HOST_PLATFORMS.has(r.platform) ? r.platform : null,
+    osMajor: Number.isInteger(r.osMajor) && (r.osMajor as number) >= 0 && (r.osMajor as number) < 10_000
+      ? r.osMajor as number : null,
+    arch: typeof r.arch === 'string' && HOST_ARCHES.has(r.arch) ? r.arch : null,
+    cliVersion: typeof r.cliVersion === 'string' && CLI_VERSION.test(r.cliVersion) ? r.cliVersion : null,
+  };
+  return Object.values(host).some((value) => value !== null) ? host : null;
+}
+
+/**
+ * TASK-784: an agent bound to a machine acked an event a person was waiting
+ * on (an @mention or a DM from a person, not from an agent or the kernel) with
+ * a posted reply. The machine's first such answer is kept and never moved.
+ * Telemetry: a failure here never fails the ack.
+ */
+export async function noteMachineAnswered(
+  agentUser: { botMetadata?: { machineId?: unknown } } | null | undefined,
+  event: {
+    type?: unknown;
+    delivery?: { outcome?: unknown } | null;
+    payload?: Record<string, unknown> | null;
+    createdAt?: Date | string;
+  } | null | undefined,
+): Promise<void> {
+  try {
+    const machineId = agentUser?.botMetadata?.machineId;
+    if (typeof machineId !== 'string' || !machineId) return;
+    // Required here, not at the top: machineService loads on the auth path, and
+    // the unanswered-mention service pulls in the identity and pod-line services.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { PERSON_WAITING_EVENT_TYPES, messagesFromPeople } = require('./unansweredMentionService') as {
+      PERSON_WAITING_EVENT_TYPES: readonly string[];
+      messagesFromPeople: (row: NonNullable<typeof event>) => Promise<unknown[]>;
+    };
+    if (!event || !PERSON_WAITING_EVENT_TYPES.includes(String(event.type || ''))) return;
+    if (event.delivery?.outcome !== 'posted') return;
+    // Checked first, so a machine that has already answered reads no senders.
+    if (!await Machine.exists({ machineId, firstAnswerAt: null })) return;
+    if ((await messagesFromPeople(event)).length === 0) return;
+    await Machine.updateOne({ machineId, firstAnswerAt: null }, { $set: { firstAnswerAt: new Date() } });
+  } catch (err) {
+    console.warn('[machine] first-answer stamp failed:', (err as Error).message);
+  }
+}
+
 export interface MachineListView {
   machines: MachineView[];
   offlineAfterMs: number;
@@ -88,14 +155,22 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
   };
 };
 
+// The host and the time it was reported, or nothing for an older CLI.
+const hostFields = (raw: unknown): { host?: IMachineHost; hostReportedAt?: Date } => {
+  const host = normalizeHostReport(raw);
+  return host ? { host, hostReportedAt: new Date() } : {};
+};
+
 export async function registerMachine({
   ownerUserId,
   name,
   deviceTokenHash,
+  host,
 }: {
   ownerUserId: Types.ObjectId | string;
   name: unknown;
   deviceTokenHash?: string;
+  host?: unknown;
 }): Promise<{ machine: MachineView; token: string }> {
   const normalizedName = String(name || '').trim();
   if (!normalizedName || normalizedName.length > 120) {
@@ -115,6 +190,7 @@ export async function registerMachine({
     // pre-binding rows, whose missing field cannot be attributed to a device.
     registeredByDeviceTokenHash: deviceTokenHash || null,
     status: 'offline',
+    ...hostFields(host),
   });
 
   try {
@@ -215,8 +291,13 @@ export async function recordMachineHeartbeat(
   agentStates?: unknown,
   runtimeInventory?: unknown,
   hostSandbox?: unknown,
+  hostReport?: unknown,
 ): Promise<MachineView> {
   machine.lastSeenAt = new Date();
+  // TASK-784: a check-in with a host report replaces the last one; an older
+  // daemon's check-in carries none and leaves it standing.
+  const { host, hostReportedAt } = hostFields(hostReport);
+  if (host) { machine.host = host; machine.hostReportedAt = hostReportedAt || new Date(); }
   machine.status = 'online';
   // A heartbeat WITHOUT an agents array leaves the last report standing (a
   // Phase-1 daemon keeps working); one WITH the array replaces it wholesale.
@@ -297,3 +378,52 @@ module.exports = {
   removeMachinesForDeviceToken,
 };
 Object.assign(module.exports, exports);
+
+export interface MachinePlatformStats {
+  total: number;
+  // null is "not reported": a machine an older CLI registered and that has not
+  // checked in from a newer one since.
+  byPlatform: Array<{ platform: string | null; machines: number; answered: number }>;
+  byCliVersion: Array<{ cliVersion: string | null; machines: number }>;
+}
+
+// Largest first, unreported last, then by name (newest version first).
+const byCountThenName = <T extends { machines: number }>(key: (row: T) => string | null) => (a: T, b: T): number => {
+  if (b.machines !== a.machines) return b.machines - a.machines;
+  const ka = key(a);
+  const kb = key(b);
+  if (ka === null || kb === null) return ka === kb ? 0 : (ka === null ? 1 : -1);
+  return kb.localeCompare(ka, 'en', { numeric: true });
+};
+
+/**
+ * TASK-784 admin stats: machines by platform, with how many of them had an
+ * agent answer a person, and machines by CLI version. Counts only, from the
+ * machine rows; no owner, name or id leaves this function.
+ */
+export async function readMachinePlatformStats(): Promise<MachinePlatformStats> {
+  const [platforms, versions] = await Promise.all([
+    Machine.aggregate([
+      {
+        $group: {
+          _id: { $ifNull: ['$host.platform', null] },
+          machines: { $sum: 1 },
+          answered: { $sum: { $cond: [{ $ifNull: ['$firstAnswerAt', false] }, 1, 0] } },
+        },
+      },
+    ]),
+    Machine.aggregate([
+      { $group: { _id: { $ifNull: ['$host.cliVersion', null] }, machines: { $sum: 1 } } },
+    ]),
+  ]) as [
+    Array<{ _id: string | null; machines: number; answered: number }>,
+    Array<{ _id: string | null; machines: number }>,
+  ];
+  const byPlatform = platforms
+    .map((row) => ({ platform: row._id, machines: row.machines, answered: row.answered }))
+    .sort(byCountThenName((row) => row.platform));
+  const byCliVersion = versions
+    .map((row) => ({ cliVersion: row._id, machines: row.machines }))
+    .sort(byCountThenName((row) => row.cliVersion));
+  return { total: byPlatform.reduce((sum, row) => sum + row.machines, 0), byPlatform, byCliVersion };
+}

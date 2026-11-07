@@ -16,6 +16,16 @@ export interface IMachineAgentState {
 
 import type { HarnessInventory } from '../services/runtimeInventory';
 
+// TASK-784 (D164): what the daemon's computer runs, as metadata only. Each
+// field is checked against a fixed shape on the way in (machineService
+// normalizeHostReport), so no hostname, path or user name can be stored here.
+export interface IMachineHost {
+  platform: string | null;
+  osMajor: number | null;
+  arch: string | null;
+  cliVersion: string | null;
+}
+
 export interface IMachine extends Document {
   ownerUserId: Types.ObjectId;
   // Opaque server-assigned identifier. Agent identities bind to this value in
@@ -34,6 +44,12 @@ export interface IMachine extends Document {
   // sandbox (native Windows, `commonly daemon install --unsandboxed`). Grants
   // are refused for every seat bound to this machine while it is true.
   hostUnconfined: boolean;
+  // TASK-784: null until a CLI that reports it registers or checks in.
+  host: IMachineHost | null;
+  hostReportedAt: Date | null;
+  // TASK-784: when an agent bound to this machine first acked a person-waiting
+  // event (an @mention or a DM) with a posted reply. Set once, never moved.
+  firstAnswerAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +69,17 @@ const MachineSchema = new Schema<IMachine>(
     runtimeInventory: { type: Schema.Types.Mixed, default: [] },
     inventoryAt: { type: Date, default: null },
     hostUnconfined: { type: Boolean, default: false },
+    host: {
+      type: new Schema({
+        platform: { type: String, default: null },
+        osMajor: { type: Number, default: null },
+        arch: { type: String, default: null },
+        cliVersion: { type: String, default: null },
+      }, { _id: false }),
+      default: null,
+    },
+    hostReportedAt: { type: Date, default: null },
+    firstAnswerAt: { type: Date, default: null },
     agentStates: {
       type: [{
         _id: false,

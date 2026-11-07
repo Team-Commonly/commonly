@@ -54,6 +54,7 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
       ownerUserId,
       name: req.body?.name,
       deviceTokenHash: req.deviceTokenHash,
+      host: req.body?.host,
     });
     // First registration per person only: the mark and the funnel row are both
     // write-once, so a second machine writes nothing. Written after success, so a
@@ -95,7 +96,11 @@ router.post(
         ownerUserId: req.machine?.ownerUserId,
       });
       if (!machine) return res.status(403).json({ message: 'Access denied' });
-      return res.json({ machine: await recordMachineHeartbeat(machine, req.body?.agents, req.body?.runtimeInventory, req.body?.sandbox) });
+      return res.json({
+        machine: await recordMachineHeartbeat(
+          machine, req.body?.agents, req.body?.runtimeInventory, req.body?.sandbox, req.body?.host,
+        ),
+      });
     } catch (error) {
       console.error('Error recording machine heartbeat:', error);
       return res.status(500).json({ message: 'Server error' });
