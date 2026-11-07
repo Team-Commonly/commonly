@@ -89,20 +89,25 @@ const V2AgentWakePods: React.FC<{
   const committedRef = useRef<Record<string, InstallationSettings>>({});
   const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
   const sendingRef = useRef<Record<string, boolean>>({});
+  const readIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setInstallations([]);
-    setRuntimeNarrowing(null);
-    setHostedHeartbeat(null);
-    setBusyPod(null);
     setError(null);
-    setDraftMinutes({});
-    setDraftOff({});
-    committedRef.current = {};
-    queuedRef.current = {};
-    sendingRef.current = {};
+    // A re-read of the same agent keeps its rows on screen until the new ones land.
+    if (readIdentity.current !== identity) {
+      readIdentity.current = null;
+      setLoading(true);
+      setInstallations([]);
+      setRuntimeNarrowing(null);
+      setHostedHeartbeat(null);
+      setBusyPod(null);
+      setDraftMinutes({});
+      setDraftOff({});
+      committedRef.current = {};
+      queuedRef.current = {};
+      sendingRef.current = {};
+    }
     const load = async () => {
       try {
         const settingsResult = await axios.get<{
@@ -110,6 +115,7 @@ const V2AgentWakePods: React.FC<{
           runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
         }>(`${base}?${query}`);
         if (!active) return;
+        readIdentity.current = identity;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
         committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));

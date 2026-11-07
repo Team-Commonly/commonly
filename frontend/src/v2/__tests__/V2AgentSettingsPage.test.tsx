@@ -1113,22 +1113,18 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
     });
 
-    test('the header keeps the connection while an add re-reads the settings', async () => {
+    test('the page stays up through an add, and the new pod lands in the list', async () => {
       const base = fleet({ state: 'connected' });
-      let rosterReads = 0;
       let added = false;
-      let releaseKeys = () => {};
       axios.get.mockImplementation((url, ...rest) => {
         if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
-        // A resolved mock lands before React renders the reload, and with no reload
-        // there's no second roster read. The keys read is a network call in the app.
-        if (url === '/api/credentials' && added) {
-          return new Promise((resolve) => { releaseKeys = () => resolve(base(url, ...rest)); });
-        }
-        if (url === '/api/registry/pods/pod-1/agents') {
-          rosterReads += 1;
-          // The read after the add never lands, as on a slow connection.
-          if (rosterReads > 1) return new Promise(() => {});
+        if (url.includes('/manage-settings')) {
+          const read = base(url.split('?')[0], ...rest).then(({ data }) => ({ data: added ? {
+            ...data,
+            installations: [...data.installations, { podId: 'pod-2', podName: 'Design', status: 'active' }],
+          } : data }));
+          // A network read, so React renders whatever shows while it's out.
+          return added ? new Promise((resolve) => { setTimeout(() => resolve(read), 20); }) : read;
         }
         return base(url, ...rest);
       });
@@ -1146,12 +1142,52 @@ describe('one Identity & access list (d215 frame)', () => {
       await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
       fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
       await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      const frames = [];
+      const watch = new MutationObserver(() => frames.push({
+        page: document.body.textContent.includes('Loading agent settings'),
+        rows: document.querySelectorAll('.v2-agent-wake-pods__pod').length,
+        status: document.querySelector('.st')?.textContent,
+      }));
+      watch.observe(document.body, { childList: true, subtree: true, characterData: true });
       fireEvent.click(screen.getByRole('button', { name: 'Add' }));
-      await screen.findByText('Loading agent settings…');
-      releaseKeys();
       await screen.findByText('Added to Design.');
-      await waitFor(() => expect(rosterReads).toBeGreaterThan(1));
-      expect(document.querySelector('.st')).toHaveTextContent('Connected · 1 pod');
+      await waitFor(() => expect(document.querySelectorAll('.v2-agent-wake-pods__pod')).toHaveLength(2));
+      watch.disconnect();
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.filter((frame) => frame.page)).toHaveLength(0);
+      expect(frames.filter((frame) => frame.rows === 0)).toHaveLength(0);
+      expect(frames.filter((frame) => !frame.status?.startsWith('Connected'))).toHaveLength(0);
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
+    });
+
+    test('an add after a failed first read shows the list loading, not an empty list', async () => {
+      const base = fleet({ state: 'connected' });
+      let added = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.includes('/manage-settings?')) {
+          if (!added) return Promise.reject(new Error('down'));
+          return new Promise((resolve) => { setTimeout(() => resolve(base(url.split('?')[0], ...rest)), 20); });
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText('Could not load settings.')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await waitFor(() => expect(document.querySelector('.v2-agent-wake-pods__loading')).toBeInTheDocument());
+      await waitFor(() => expect(document.querySelectorAll('.v2-agent-wake-pods__pod')).toHaveLength(1));
     });
 
     test('the header keeps the connection when an add moves the writable pod', async () => {

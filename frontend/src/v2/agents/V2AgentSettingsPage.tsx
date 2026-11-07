@@ -56,12 +56,13 @@ const V2AgentSettingsPage: React.FC = () => {
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
+  const quietRefresh = useRef(false);
   const [keysForbidden, setKeysForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
-  // Held here, not in the Wake list: the refresh after an add swaps the page for its loading state.
+  // Held here, not in the Wake list: a refresh that moves the writable pod swaps the page for its loading state.
   const [addedPod, setAddedPod] = useState<{ identity: string; name: string } | null>(null);
   const [connection, setConnection] = useState<AgentConnection | null>(null);
   const connectionState = connection?.state ?? null;
@@ -120,6 +121,11 @@ const V2AgentSettingsPage: React.FC = () => {
   }, [agentName, instanceId]);
 
   useEffect(() => {
+    // An add changes the pod list and nothing else this effect resets, so the
+    // page stays up. A move to another writable pod is a new identity and reloads.
+    const quiet = quietRefresh.current && keysReadyFor === identityKey;
+    quietRefresh.current = false;
+    if (quiet) return undefined;
     let active = true;
     setKeys([]);
     setKeysReadyFor(null);
@@ -380,10 +386,13 @@ const V2AgentSettingsPage: React.FC = () => {
             displayName={displayName}
             addedPod={addedPod?.identity === `${agentName}:${instanceId}` ? addedPod.name : null}
             onAdded={(name) => {
-              // After the refresh, so the note doesn't blink while the page reloads.
+              // After the refresh, so the note lands with the header's new count.
               const added = { identity: `${agentName}:${instanceId}`, name };
-              void refresh().catch((requestError) => setError(errorLabel(requestError, t('agentSettings.unavailable'))))
-                .finally(() => setAddedPod(added));
+              quietRefresh.current = true;
+              void refresh().catch((requestError) => {
+                quietRefresh.current = false;
+                setError(errorLabel(requestError, t('agentSettings.unavailable')));
+              }).finally(() => setAddedPod(added));
             }} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
             <h2 id="agent-identity-access" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityAccess')}</h2>
