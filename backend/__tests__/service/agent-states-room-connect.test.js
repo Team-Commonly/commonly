@@ -12,7 +12,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const podsRouter = require('../../routes/pods');
 
 const SECRET = 'agent-states-room-connect-test';
-const BYO = { runtimeType: 'webhook', host: 'byo' };
+const BYO = { runtimeType: 'webhook', adapter: 'claude', host: 'byo' };
 
 describe('GET /api/pods/:podId/agent-states in an agent room', () => {
   let app; let owner; let other; let home; let authHeader;
@@ -97,13 +97,86 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'stranded')).connectPodId).toBeUndefined();
   });
 
-  it('leaves a group pod alone: its rows carry no such field', async () => {
+  it('sends a group pod\'s installer to that pod', async () => {
     const second = await makePod('Second', 'chat');
     await install('group', home._id);
     await install('group', second._id);
     const row = await rowIn(home, 'group');
     expect(row.state).toBe('never-connected');
+    expect(row.connectPodId).toBe(String(home._id));
+    expect(row.noSavedKey).toBe(true);
+  });
+
+  it('leaves an attached agent its command: the key is saved on that computer', async () => {
+    await install('kept', home._id, { runtimeType: 'claude-code', host: 'byo' });
+    const row = await rowIn(home, 'kept');
+    expect(row.fixCommand).toBe('commonly agent run kept');
     expect(row.connectPodId).toBeUndefined();
+    expect(row.noSavedKey).toBeUndefined();
+  });
+
+  it('leaves an agent init bot its command: Connect would revoke the key it saved', async () => {
+    await install('inited', home._id, { runtimeType: 'webhook', host: 'byo' });
+    const row = await rowIn(home, 'inited');
+    expect(row.connectPodId).toBeUndefined();
+    expect(row.noSavedKey).toBeUndefined();
+  });
+
+  it('gives a group pod\'s wrapper none', async () => {
+    await install('wrapped', home._id, { runtimeType: 'wrapper', host: 'byo' });
+    expect((await rowIn(home, 'wrapped')).connectPodId).toBeUndefined();
+  });
+
+  it('keeps a group pod\'s co-installer on the command: Connect would refuse them', async () => {
+    const theirs = await makePod('Theirs', 'chat', { createdBy: other._id, members: [other._id] });
+    await install('published', theirs._id, BYO, other._id);
+    await install('published', home._id);
+    const row = await rowIn(home, 'published');
+    expect(row.fixCommand).toBe('commonly agent run published');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
+  it.each(['agent-dm', 'agent-admin'])('gives a %s pod none', async (type) => {
+    const pod = await makePod('Direct', type);
+    await install('direct', pod._id);
+    expect((await rowIn(pod, 'direct')).connectPodId).toBeUndefined();
+  });
+
+  it('gives a group pod\'s second instance and machine seat none', async () => {
+    await install('second', home._id, BYO, owner._id, 'other');
+    expect((await rowIn(home, 'second')).connectPodId).toBeUndefined();
+    await install('placed', home._id);
+    await User.create({
+      username: 'placed-bot', email: 'placed@test.com', password: 'password123', isBot: true,
+      botMetadata: { agentName: 'placed', instanceId: 'default', machineId: new mongoose.Types.ObjectId() },
+    });
+    expect((await rowIn(home, 'placed')).connectPodId).toBeUndefined();
+  });
+
+  it('gives a group pod\'s agent that went dark none: it already connected once', async () => {
+    await install('gone', home._id);
+    await User.create({
+      username: 'gone-bot', email: 'gone@test.com', password: 'password123', isBot: true,
+      botMetadata: { agentName: 'gone', instanceId: 'default' },
+      agentRuntimeTokens: [{ tokenHash: 'h', lastListenedAt: new Date('2026-01-01') }],
+    });
+    const row = await rowIn(home, 'gone');
+    expect(row.state).toBe('gone-dark');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
+  it('gives someone else in a group pod none', async () => {
+    const pod = await makePod('Shared', 'chat', { members: [owner._id, other._id] });
+    await install('theirs', pod._id, BYO, other._id);
+    expect((await rowIn(pod, 'theirs')).connectPodId).toBeUndefined();
+  });
+
+  it('sends a public pod\'s installer to a pod the page lists, or nowhere', async () => {
+    const open = await makePod('Open', 'chat', { publicRead: true });
+    await install('listed', open._id);
+    expect((await rowIn(open, 'listed')).connectPodId).toBeUndefined();
+    await install('listed', home._id);
+    expect((await rowIn(open, 'listed')).connectPodId).toBe(String(home._id));
   });
 
   it("does not name another person's pod to a guest who holds the room's install", async () => {

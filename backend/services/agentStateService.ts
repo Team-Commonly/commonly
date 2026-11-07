@@ -43,7 +43,7 @@ interface InstallationRow {
   instanceId?: string;
   displayName?: string;
   installedBy?: unknown;
-  config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
+  config?: { runtime?: { runtimeType?: string; host?: string; adapter?: string; webhookUrl?: string } };
   runtimeTokens?: TokenRow[];
 }
 
@@ -62,10 +62,12 @@ export interface AgentStateRow {
   hosted: boolean;
   fixCommand?: string;
   /**
-   * Agent rooms only: the pod Bring your own can hand this agent a key in. The
-   * room's own install is a copy, and that page refuses a DM pod.
+   * The pod Bring your own can hand this agent a key in. In an agent room it's
+   * another pod: the room's install is a copy, and that page refuses a DM pod.
    */
   connectPodId?: string;
+  /** Made on the page, so no computer has its key and the bare command can't start it. */
+  noSavedKey?: boolean;
 }
 
 const latestListen = (tokenLists: TokenRow[][]): Date | null => {
@@ -125,6 +127,20 @@ export function offersConnect(installation: InstallationRow, machineId?: unknown
     && runtimeType !== 'wrapper'
     && String(installation.instanceId || 'default').toLowerCase() === 'default'
     && !machineId;
+}
+
+// Made on the Bring your own page: its key went out once, in the connect
+// command, so no computer has it saved. `commonly agent attach` and `agent init`
+// each save one, and neither writes this shape: attach names the real runtime,
+// and init sets no adapter. Both keep their bare command, because Connect would
+// revoke the saved key.
+export function keyOnlyOnPage(installation: InstallationRow, machineId?: unknown): boolean {
+  const runtime = installation.config?.runtime;
+  return offersConnect(installation, machineId)
+    && String(runtime?.runtimeType || '').toLowerCase() === 'webhook'
+    && String(runtime?.host || '').toLowerCase() === 'byo'
+    && Boolean(runtime?.adapter)
+    && !runtime?.webhookUrl;
 }
 
 export function deriveAgentState(

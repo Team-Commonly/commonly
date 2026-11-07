@@ -88,6 +88,17 @@ describe('group pod agent liveness', () => {
     expect(row).toHaveTextContent("Sam Agent isn't connected yet");
   });
 
+  test('gives the installer a way back to the connect command', async () => {
+    mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true, connectPodId: 'pod-1' }]);
+    renderChat(makeDetail());
+
+    const row = await screen.findByTestId('pod-agent-liveness');
+    expect(row.querySelector('a')).toHaveAttribute(
+      'href',
+      '/v2/agents/byo?pod=pod-1&name=sam-agent&instanceId=default&reconnect=1',
+    );
+  });
+
   test('says when an agent that went quiet last checked in', async () => {
     mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false }]);
     renderChat(makeDetail());

@@ -345,6 +345,21 @@ describe('V2Thread agent-room liveness', () => {
     expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
   });
 
+  test('an agent made on the page offers Connect alone: no computer has its key', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria', connectPodId: 'home-pod', noSavedKey: true,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    await screen.findByRole('link', { name: 'Connect' });
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
+  });
+
   test('with no pod from the server the notice keeps the command and offers no Connect', async () => {
     axios.get.mockResolvedValue({
       data: {

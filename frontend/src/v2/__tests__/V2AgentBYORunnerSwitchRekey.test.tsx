@@ -88,6 +88,24 @@ describe('BYO runner switch and key replacement (TASK-645 item 5, #3019 HOLD)', 
     expect(tokenCalls().some(([, body]) => body && body.force)).toBe(false);
   });
 
+  test('a key nothing ever used isn\'t called a running agent\'s', async () => {
+    mockAlreadyKeyed(() => Promise.resolve({ data: { existing: true } }));
+    const rosterless = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/p1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'default', connection: { state: 'never' } }] } })
+      : rosterless(url)));
+    window.history.pushState({}, '', '/?name=sam-claude&reconnect=1');
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+    await screen.findByText('Not connected yet');
+    fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+
+    const confirm = await screen.findByTestId('byo-replace-key-confirmation');
+    expect(confirm).not.toHaveTextContent(/running agent/i);
+    expect(confirm).toHaveTextContent('Get a new connect command');
+    window.history.pushState({}, '', '/');
+  });
+
   test('the runner picker is disabled while an issue is in flight', async () => {
     let release;
     mockAlreadyKeyed(() => new Promise((resolve) => { release = resolve; }));

@@ -4559,3 +4559,11 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **Repair:** `adoptEnvToken` replaces the saved token only when the server answers 401 for it and confirms the env token is this agent's. Otherwise the saved token stands, with a line naming why, because the server keeps only a hash and a working token can't be got back. The stop line now names the reissue path first.
 
 **Lesson:** when a command reads the same credential from two places, the log must name the one it used. An error about a key the person didn't supply reads as a fault in the key they did.
+
+## 117. Three pod surfaces offered `commonly agent run <name>` to someone with no key on that computer (2026-11-07, Linux BYO walk)
+
+**Surface:** the install intro, the composer's "Fix:" line and the agent room's notice all gave `commonly agent run <name>` for an agent made on the Bring your own page.
+
+**False model:** the bare command starts that agent. It only starts one whose key is already saved on the computer. An agent made on the page has its key in the one-time connect command, so on a fresh machine the bare command is either `command not found` or `No runtime token found`. The system line also said "the connect command shown on its page", and the agent's page opens on Profile, where there is no command.
+
+**Fix:** for an agent made on the page (`keyOnlyOnPage`) the surfaces give Connect instead, which issues a new key, and group pods get `connectPodId` for its owner. An attached agent keeps the command: `commonly agent attach` saves the key, and Connect would revoke it. The stored line now says "Its owner can connect it." Settings and Your Team still show the bare command beside Connect, and the stalled-connect nudge is a follow-up.

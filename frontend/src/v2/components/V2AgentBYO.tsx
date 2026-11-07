@@ -333,6 +333,7 @@ const V2AgentBYO: React.FC = () => {
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
   const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
+  const neverConnected = existingConnection?.connection.state === 'never';
   const listenerAvailable = listenerRunsOn(setupOs, listenAdapter, repoPod ? podIsConfirmedPrivate(repoPod) : undefined);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
@@ -1870,10 +1871,10 @@ const V2AgentBYO: React.FC = () => {
       {pendingReplacement && !issued && (
         <div className="v2-byo__form" data-testid="byo-replace-key-confirmation">
           <p className="v2-byo__error">
-            {t('agentByo.rekey.warning', { name: pendingReplacement.agentName })}
+            {t(neverConnected ? 'agentByo.rekey.warningNever' : 'agentByo.rekey.warning', { name: pendingReplacement.agentName })}
           </p>
           <button type="button" className="v2-byo__submit" disabled={submitting} onClick={() => { void replaceRunningKey(); }}>
-            {submitting ? t('agentByo.actions.issuing') : t('agentByo.rekey.replace')}
+            {submitting ? t('agentByo.actions.issuing') : t(neverConnected ? 'agentByo.rekey.replaceNever' : 'agentByo.rekey.replace')}
           </button>
           <button type="button" className="v2-byo__link" onClick={() => setPendingReplacement(null)}>
             {t('agentByo.rekey.cancel')}
@@ -2065,7 +2066,7 @@ const V2AgentBYO: React.FC = () => {
                   type="button"
                   ref={listenCopyRef}
                   onClick={() => copy('listen', listenSnippet)}
-                  className="v2-byo__copy"
+                  className={`v2-byo__copy${listenState === 'listening' ? '' : ' v2-byo__copy--next'}`}
                 >
                   {copied === 'listen' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
                 </button>
@@ -2280,7 +2281,9 @@ const V2AgentBYO: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate(`/v2/pods/${issued.podId}`)}
-              className="v2-byo__submit"
+              // Copy carries the fill until the agent can answer: the fill read
+              // as the next step, and people wrote to an agent nothing was running.
+              className={listenState !== 'listening' && listenerAvailable ? 'v2-byo__secondary v2-byo__secondary--waiting' : 'v2-byo__submit'}
             >
               {t('agentByo.actions.goToPod')}
             </button>

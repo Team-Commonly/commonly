@@ -773,7 +773,7 @@
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
-      "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Run the connect command shown on its page.",
+      "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"
     },
@@ -836,6 +836,7 @@
       "typeaheadNever": "Agent · @{{handle}} — not connected, can't answer",
       "typeaheadDark": "Agent · @{{handle}} — hasn't checked in lately",
       "neverOwner": "@{{handle}} isn't connected — it won't see this. Fix: {{command}}",
+      "neverOwnerConnect": "@{{handle}} isn't connected — it won't see this.",
       "neverPeer": "@{{handle}} isn't connected — it won't see this. Its owner can connect it.",
       "darkOwner": "@{{handle}} hasn't checked in for a while and may not answer. Wake it: {{command}}",
       "darkPeer": "@{{handle}} hasn't checked in for a while and may not answer."
@@ -2022,6 +2023,8 @@
     "rekey": {
       "warning": "{{name}} already has a key. Replacing it will disconnect the running agent until you run the new connect command.",
       "replace": "Replace the running agent’s key",
+      "warningNever": "{{name}}’s key hasn’t been used. Replacing it stops the old key and gives you a new connect command.",
+      "replaceNever": "Get a new connect command",
       "cancel": "Keep the current key"
     },
     "snippets": {

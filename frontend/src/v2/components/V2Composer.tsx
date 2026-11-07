@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { ShellGlyph } from '../icons/glyphs';
 import type { V2Message } from '../hooks/useV2PodDetail';
@@ -18,6 +19,8 @@ export interface V2ComposerWarning {
   agentName: string;
   state: 'gone-dark' | 'never-connected';
   fixCommand?: string;
+  /** Bring your own, where this agent can get a key; only its installer has one. */
+  connectLink?: string;
 }
 
 interface V2ComposerProps {
@@ -237,13 +240,20 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         <div className="v2-composer__warnings" data-testid="mention-state-warning">
           {warnings.map((warning) => (
             <span key={warning.agentName}>
-              {warning.state === 'never-connected'
+              {warning.connectLink && (
+                <>
+                  {t('podChat.mentionState.neverOwnerConnect', { handle: warning.agentName })}
+                  {' '}
+                  <Link to={warning.connectLink}>{t('agentConnection.connect')}</Link>
+                </>
+              )}
+              {!warning.connectLink && (warning.state === 'never-connected'
                 ? (warning.fixCommand
                   ? t('podChat.mentionState.neverOwner', { handle: warning.agentName, command: warning.fixCommand })
                   : t('podChat.mentionState.neverPeer', { handle: warning.agentName }))
                 : (warning.fixCommand
                   ? t('podChat.mentionState.darkOwner', { handle: warning.agentName, command: warning.fixCommand })
-                  : t('podChat.mentionState.darkPeer', { handle: warning.agentName }))}
+                  : t('podChat.mentionState.darkPeer', { handle: warning.agentName })))}
             </span>
           ))}
         </div>

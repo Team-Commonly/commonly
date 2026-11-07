@@ -60,9 +60,9 @@ const buildSelectLeanChain = (result) => ({
 const makeRes = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() });
 
 const AGENT = 'acme-bot';
-const makeReq = (instanceId, displayName) => ({
+const makeReq = (instanceId, displayName, runtime = { runtimeType: 'webhook', adapter: 'claude' }) => ({
   body: {
-    agentName: AGENT, podId: 'pod-1', instanceId, displayName, config: { runtime: { runtimeType: 'webhook' } }, scopes: [],
+    agentName: AGENT, podId: 'pod-1', instanceId, displayName, config: { runtime }, scopes: [],
   },
   user: { id: 'user-1', username: 'installer' },
   userId: 'user-1',
@@ -117,6 +117,22 @@ describe('registry install: the intro names the handle that routes in this pod',
     User.findById.mockReturnValue(buildSelectLeanChain({ username: 'installer', role: 'user' }));
     AgentTemplate.find.mockReturnValue(buildSelectLeanChain([]));
     Activity.create.mockResolvedValue(true);
+  });
+
+  it('sends an agent made on the page to its Settings', async () => {
+    await installHandler(makeReq('default', 'Rivet'), makeRes());
+    expect(introText()).toContain('connect me from my Settings');
+    expect(introText()).not.toContain('commonly agent run');
+  });
+
+  it('keeps the command for an agent init bot, whose key is saved', async () => {
+    await installHandler(makeReq('default', 'Rivet', { runtimeType: 'webhook' }), makeRes());
+    expect(introText()).toContain('commonly agent run acme-bot');
+  });
+
+  it('keeps the command for a second instance, which the page can\'t connect', async () => {
+    await installHandler(makeReq('swe-page', 'Rivet'), makeRes());
+    expect(introText()).toContain('commonly agent run acme-bot');
   });
 
   it('names the username, not the display name or the bare instance id', async () => {
