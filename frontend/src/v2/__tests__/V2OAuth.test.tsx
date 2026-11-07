@@ -108,11 +108,14 @@ describe('V2OAuthButtons', () => {
     expect(localeOf(await screen.findByRole('link', { name: /continue with github/i }))).toBe('en');
     first.unmount();
 
-    await act(async () => { await i18n.changeLanguage('zh-CN'); });
-    render(<MemoryRouter><V2OAuthButtons /></MemoryRouter>);
-    const zh = await screen.findByRole('link', { name: /GitHub/ });
-    expect(localeOf(zh)).toBe('zh-CN');
-    await act(async () => { await i18n.changeLanguage('en'); });
+    try {
+      await act(async () => { await i18n.changeLanguage('zh-CN'); });
+      render(<MemoryRouter><V2OAuthButtons /></MemoryRouter>);
+      const zh = await screen.findByRole('link', { name: /GitHub/ });
+      expect(localeOf(zh)).toBe('zh-CN');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 
   test('posts first-touch attribution into the provider start, never in its URL', async () => {
