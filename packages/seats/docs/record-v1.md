@@ -255,10 +255,10 @@ request, and the OTLP export places it there.
 
 | kind | data | default actor |
 |---|---|---|
-| `attempt.started` | `{attempt, adapter, cli?: {name, version}, sessionId?}` | run |
+| `attempt.started` | `{attempt, adapter, cli?: {name, version}, sessionId?, workspace?: {base}}` | run |
 | `session.opened` | `{method, sessionId, requestedSessionId?, fallback?}` | `system` |
 | `attempt.settled` | `{attempt, outcome, failure?: {kind, detail}}` | `system` |
-| `run.settled` | `{outcome, failure?, durationMs, attempts}` | `system` |
+| `run.settled` | `{outcome, failure?, durationMs, attempts, workspace?: {base, head, removed, kept?}}` | `system` |
 | `harness.switched` | `{from, to, reason}` | `system` |
 
 - `outcome` is `ok`, `failed`, `stuck` or `cancelled`.
@@ -275,6 +275,14 @@ request, and the OTLP export places it there.
     nor session/load`, or `session/<resume|load> answered error <code>`
     with the JSON-RPC error's integer code;
   - no other field is allowed.
+- `workspace` is set when the run had its own git worktree (`src/workspace.js`):
+  - `base` is the commit SHA it was checked out at;
+  - `head` is its HEAD when the run settled, or `null` if that could not be read;
+  - `removed` says whether it was removed at settle;
+  - `kept` says why not: `dirty` (tracked changes or untracked files),
+    `committed` (HEAD moved off base), `abandoned` (the adapter ignored the
+    cancel, so its process may still be running) or `error`.
+  The worktree's path is not recorded.
 - `harness.switched` comes before the `attempt.started` of an attempt that
   runs on another entry of the seat's run config than the one the seat was on
   (`src/harness-plan.js`):
@@ -621,7 +629,9 @@ to that commit. `error.type` is Stable.
     `seats.attempt.outcome`, `seats.adapter`, `seats.cli.name`,
     `seats.usage.context_tokens`, `seats.usage.context_size` (the last
     known values in the attempt),
-    `seats.cli.version`, `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
+    `seats.cli.version`, `seats.workspace.base` (attempt span, and the run
+    span with `seats.workspace.head`, `.removed` and `.kept` from
+    `run.settled`), `seats.agent.owner`, `seats.agent.on_behalf_of.id`,
     `seats.agent.on_behalf_of.role`, `seats.tool.kind`,
     `seats.tool.surface` and `seats.tool.args_digest`;
   - on every event, `seats.seq` and `seats.actor.type`, `.id`, `.owner`,

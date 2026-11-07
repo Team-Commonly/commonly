@@ -20,3 +20,6 @@ export {
 } from './record/format.js';
 export { toOtlpJson } from './record/otel.js';
 export { superviseRun, SUPERVISOR_DEFAULTS, DEFAULT_RETRY_ON } from './supervisor.js';
+export {
+  prepareWorktree, settleWorktree, sweepWorktrees, usesWorktreeHelper, defaultWorktreeRoot, lockReasonOf,
+} from './workspace.js';

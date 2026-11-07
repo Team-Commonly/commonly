@@ -148,6 +148,7 @@ const spansOfRun = (entries) => {
           ['seats.agent.on_behalf_of.id', entry.actor?.onBehalfOf?.id], ['seats.agent.on_behalf_of.role', entry.actor?.onBehalfOf?.role],
           ['seats.attempt.number', data.attempt], ['seats.adapter', data.adapter],
           ['seats.cli.name', data.cli?.name], ['seats.cli.version', data.cli?.version],
+          ['seats.workspace.base', data.workspace?.base],
         ]),
       });
       spans.push(s);
@@ -160,6 +161,8 @@ const spansOfRun = (entries) => {
       closeAttempt(entry.ts);
     } else if (kind === 'run.settled') {
       run.attributes.push(...attrs([['seats.run.outcome', data.outcome], ['seats.run.attempts', data.attempts]]));
+      // The run's own worktree, when it had one: base, head, removed, kept.
+      if (data.workspace && typeof data.workspace === 'object') run.attributes.push(...flatten(data.workspace, 'seats.workspace'));
       if (FAILED_OUTCOMES.has(data.outcome)) {
         const errorType = data.failure?.kind || data.outcome;
         fail(run, errorType);

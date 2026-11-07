@@ -18,6 +18,7 @@
 import { RunFailure, runFailure, failureKindOf, FAILURE_KINDS } from './failures.js';
 import { redactKnownCredentials, scrubAdapterFailure, spawnCredentials } from './upstream-refusal.js';
 import { killProcessTree, trackSupervisedGroup, OWN_PROCESS_GROUP } from './process-group.js';
+import { prepareWorktree, settleWorktree, usesWorktreeHelper } from './workspace.js';
 
 export const SUPERVISOR_DEFAULTS = Object.freeze({
   // Longer than the quiet stretches a healthy turn has: a long-context first
@@ -239,6 +240,9 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
  * @param {object} [args.ctx]  passed to adapter.spawn; `trace`, `signal` and `onSpawn` are wrapped,
  *   and `ownProcessGroup` is set to true.
  *   `ctx.signal`, when given, cancels the run (outcome `cancelled`).
+ *   `ctx.workspace = {repo, base?, root?}` runs the turn in its own git worktree (workspace.js):
+ *   the adapter gets its path as `ctx.cwd` and no `workspace`, unless it declares
+ *   `nativeWorktree`, in which case it gets `workspace` unchanged and makes its own.
  * @param {ReturnType<import('./trace/store.js').createTraceStore>} args.store
  * @param {object} [args.policy]
  * @param {number} [args.policy.stallMs]        no-progress window; 0 turns it off
@@ -253,7 +257,8 @@ const runAttempt = ({ adapter, prompt, ctx, run, settings, attempt, sessionId, e
  * @param {object} [args.actor]   the run's own party, {type, id, owner?, onBehalfOf?};
  *   entries the run writes without naming an actor (run.started, tool calls,
  *   permission requests) record this one instead of null
- * @returns {Promise<{ runId: string, outcome: string, attempts: number, result?: object, failure?: Error }>}
+ * @returns {Promise<{ runId: string, outcome: string, attempts: number, result?: object, failure?: Error,
+ *   workspace?: { path, base, head, removed, kept? } }>}
  */
 export const superviseRun = async ({
   adapter, prompt, ctx = {}, store, policy = {}, runId, label, taskId, podId, actor,
@@ -274,12 +279,24 @@ export const superviseRun = async ({
   let attempt = 0;
   let sessionId = ctx.sessionId || null;
   let last = { failure: null };
+  let worktree = null;
+  let workspace = null;
+  let spawnCtx = ctx;
 
   try {
+    if (usesWorktreeHelper(adapter, ctx)) {
+      worktree = prepareWorktree({ ...ctx.workspace, runId: run.runId });
+      const { workspace: _consumed, ...rest } = ctx;
+      spawnCtx = { ...rest, cwd: worktree.path };
+    }
     for (;;) {
       attempt += 1;
-      run.emit('run.started', { adapter: adapter.name, ...(sessionId ? { sessionId } : {}), attempt });
-      last = await runAttempt({ adapter, prompt, ctx, run, settings, attempt, sessionId, external });
+      run.emit('run.started', {
+        adapter: adapter.name, ...(sessionId ? { sessionId } : {}), attempt, ...(worktree ? { workspace: { base: worktree.base } } : {}),
+      });
+      last = await runAttempt({
+        adapter, prompt, ctx: spawnCtx, run, settings, attempt, sessionId, external,
+      });
       if (!last.failure || external?.aborted || !shouldRetry(last.failure, attempt, settings)) break;
       sessionId = sessionIdOf(last.failure) || sessionId;
       run.emit('liveness.recovery', { action: 'retry', attempt: attempt + 1 });
@@ -289,6 +306,15 @@ export const superviseRun = async ({
     last = { failure: error };
   }
 
+  // Every verdict but an abandoned run means no process of this run is left,
+  // so a clean worktree goes now; an abandoned one waits, locked, for the sweep.
+  if (worktree) {
+    try {
+      workspace = settleWorktree(worktree, { abandoned: !!last.failure?.adapterIgnoredCancel });
+    } catch {
+      workspace = { path: worktree.path, base: worktree.base, head: null, removed: false, kept: 'error' };
+    }
+  }
   const outcome = outcomeOf(last.failure);
   const credentials = spawnCredentials(ctx, [adapter.providerKeyEnv].filter(Boolean));
   try {
@@ -297,6 +323,12 @@ export const superviseRun = async ({
       ...(last.failure ? { failure: failureData(last.failure, credentials) } : {}),
       durationMs: Date.now() - startedAt,
       attempts: attempt,
+      // The host path stays out of the record; the caller gets it below.
+      ...(workspace ? {
+        workspace: {
+          base: workspace.base, head: workspace.head, removed: workspace.removed, ...(workspace.kept ? { kept: workspace.kept } : {}),
+        },
+      } : {}),
     });
   } catch { /* the outcome is still returned */ }
   return {
@@ -304,5 +336,6 @@ export const superviseRun = async ({
     outcome,
     attempts: attempt,
     ...(last.failure ? { failure: last.failure } : { result: last.result }),
+    ...(workspace ? { workspace } : {}),
   };
 };

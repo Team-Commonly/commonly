@@ -256,3 +256,22 @@ test('session.opened is an event that names the attempt\'s conversation; context
   assert.deepEqual(second.attributes.filter((a) => a.key === 'gen_ai.conversation.id').map((a) => a.value.stringValue), ['ses-9']);
   assert.equal(attrOf(second, 'seats.usage.context_tokens'), undefined);
 });
+
+test('a run\'s worktree reaches the export: base on the attempt, base/head/removed/kept on the run', () => {
+  const base = { v: 1, schema: 'seats.record', runId: 'run-wt-00001', actor: null, prev: null };
+  const sha = (c) => c.repeat(40);
+  const entries = [
+    { ...base, seq: 1, ts: '2026-10-25T12:00:00.000Z', kind: 'attempt.started', data: { attempt: 1, workspace: { base: sha('a') } } },
+    { ...base, seq: 2, ts: '2026-10-25T12:00:01.000Z', kind: 'run.settled', data: { outcome: 'ok', attempts: 1, workspace: { base: sha('a'), head: sha('b'), removed: false, kept: 'committed' } } },
+  ];
+  const [run, attempt] = spansOf(toOtlpJson(entries));
+  assert.equal(attrOf(attempt, 'seats.workspace.base').stringValue, sha('a'));
+  assert.equal(attrOf(run, 'seats.workspace.base').stringValue, sha('a'));
+  assert.equal(attrOf(run, 'seats.workspace.head').stringValue, sha('b'));
+  assert.equal(attrOf(run, 'seats.workspace.removed').boolValue, false);
+  assert.equal(attrOf(run, 'seats.workspace.kept').stringValue, 'committed');
+  // A head that could not be read is left out, not exported as null.
+  const unread = spansOf(toOtlpJson([entries[0], { ...entries[1], data: { outcome: 'ok', attempts: 1, workspace: { base: sha('a'), head: null, removed: false, kept: 'error' } } }]));
+  assert.equal(attrOf(unread[0], 'seats.workspace.head'), undefined);
+  assert.equal(attrOf(unread[0], 'seats.workspace.kept').stringValue, 'error');
+});
