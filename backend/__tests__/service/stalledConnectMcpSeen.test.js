@@ -18,7 +18,8 @@ const { usageStamp } = require('../../middleware/agentRuntimeAuth');
 const { scan } = require('../../services/stalledConnectService');
 
 const MINUTE = 60 * 1000;
-const NOW = new Date('2026-11-07T12:00:00Z');
+// The real clock, because usageStamp stamps with it.
+const NOW = new Date();
 const ISSUED = new Date(NOW.getTime() - 20 * MINUTE);
 const mcpClient = { headers: { 'user-agent': 'commonly-mcp/1.0.0' } };
 const otherClient = { headers: { 'user-agent': 'node' } };
