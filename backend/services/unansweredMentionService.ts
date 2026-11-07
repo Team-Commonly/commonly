@@ -1,3 +1,4 @@
+import { askedSomeoneElse } from './mentionCoalesce';
 import { emitUnansweredMentionLine } from './systemActionLineService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,16 +29,19 @@ interface PgPool {
 
 /**
  * A message a retired row was carrying: its own, then any joined to it
- * (ADR-018 D6.5). Each person waiting gets their own line.
+ * (ADR-018 D6.5). Each person waiting gets their own line, and one who asked
+ * someone else isn't waiting on this agent. Not `notAnAsk`: a message that
+ * carried on from the agent is one too, and that person is waiting.
  */
 const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageId: unknown; since: Date }> => {
   const payload = (event.payload || {}) as Record<string, unknown>;
   const rowSince = new Date(event.createdAt || 0);
   const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as unknown[];
   return [
-    { userId: payload.userId, messageId: payload.messageId, since: rowSince },
+    ...(askedSomeoneElse(payload) ? [] : [{ userId: payload.userId, messageId: payload.messageId, since: rowSince }]),
     ...joined
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+      .filter((entry) => !entry.askedSomeoneElse)
       .map((entry) => {
         const sentAt = new Date(entry.createdAt as string);
         return {
