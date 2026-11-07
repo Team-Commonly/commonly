@@ -61,6 +61,11 @@ export interface AgentStateRow {
   /** A Commonly-hosted agent ("Run it here"); the beta allows one per account. */
   hosted: boolean;
   fixCommand?: string;
+  /**
+   * Agent rooms only: the pod Bring your own can hand this agent a key in. The
+   * room's own install is a copy, and that page refuses a DM pod.
+   */
+  connectPodId?: string;
 }
 
 const latestListen = (tokenLists: TokenRow[][]): Date | null => {
@@ -108,6 +113,18 @@ export function runInstructionFor(installation: InstallationRow): string | null 
   if (isByo) return `commonly agent run ${String(installation.agentName || '').toLowerCase()}`;
   if (isPushWebhook) return WEBHOOK_RUN_INSTRUCTION;
   return null;
+}
+
+// Whether Bring your own's Connect can help a never-connected agent. It can't
+// for a wrapper, which Reconnect refuses unless it was bound to a computer, or
+// for a seat on a machine, which starts from that machine. Nor for a second
+// instance: the page installs the default one, so it would make a sibling.
+export function offersConnect(installation: InstallationRow, machineId?: unknown): boolean {
+  const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
+  return classifyRuntime(installation).isByo
+    && runtimeType !== 'wrapper'
+    && String(installation.instanceId || 'default').toLowerCase() === 'default'
+    && !machineId;
 }
 
 export function deriveAgentState(
