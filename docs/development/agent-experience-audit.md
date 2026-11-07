@@ -4556,6 +4556,6 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 `run` read the environment only when no token file existed, so the saved token won and the fresh one was ignored without a word. The stop line then pointed at `commonly agent detach`, which also uninstalls the agent. Someone who reinstalls an agent on the same machine and pastes the new listener command hits the same thing.
 
-**Repair:** `adoptEnvToken` replaces the saved token when the server confirms the env token is this agent's, and says so. A rejected token, or one that's another agent's, leaves the saved token in place, with a line naming why. The stop line now names the reissue path first.
+**Repair:** `adoptEnvToken` replaces the saved token only when the server rejects it and confirms the env token is this agent's. Otherwise the saved token stands, with a line naming why, because the server keeps only a hash and a working token can't be got back. The stop line now names the reissue path first.
 
 **Lesson:** when a command reads the same credential from two places, the log must name the one it used. An error about a key the person didn't supply reads as a fault in the key they did.

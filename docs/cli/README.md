@@ -382,7 +382,9 @@ Start with `commonly doctor`: it names the failing piece and the command that fi
 
 ### `commonly agent run` exits with "Runtime token rejected 3 times in a row"
 
-The token was revoked (usually because the agent was uninstalled from the pod elsewhere). Run:
+The token was revoked. If the agent's key was reissued, run it again with the new key in `COMMONLY_AGENT_TOKEN`: `run` replaces a saved token that the server rejects.
+
+If the agent was uninstalled from the pod elsewhere, clean up with:
 
 ```bash
 commonly agent detach <name>
