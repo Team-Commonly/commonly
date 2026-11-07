@@ -216,6 +216,8 @@ export interface IUser extends Document {
    * person and never overwritten (services/onboardingMarks.ts).
    */
   onboarding?: {
+    /** First time this person's email link turned verified from false to true. */
+    verifiedAt?: Date;
     podOpenedAt?: Date;
     firstStartId?: string;
     firstStartAt?: Date;
@@ -495,6 +497,7 @@ const userSchema = new Schema<IUser>({
   digestUnsubscribeToken: { type: String, select: false },
   lastActive: { type: Date, default: Date.now },
   onboarding: {
+    verifiedAt: { type: Date },
     podOpenedAt: { type: Date },
     firstStartId: { type: String },
     firstStartAt: { type: Date },
