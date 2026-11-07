@@ -393,6 +393,25 @@ describe('spawn', () => {
       expect(extractReply(stdout).finished).toBe(true);
     });
 
+    // F258: pi ends a refused turn with exit 0, so the exit code can't say the
+    // interim message was never answered.
+    const refused429 = event({
+      type: 'auto_retry_end', success: false, attempt: 3, finalError: '429: {"message":"Budget has been exceeded"}',
+    });
+
+    test('a clean exit after an interim message and a refused model fails the turn', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'upstream refused') + ended + refused429, code: 0,
+      });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
+    });
+
+    test('a refusal pi recovered from still posts the answer it finished on', async () => {
+      const { impl } = makeSpawnImpl({ stdout: refused429 + final('done') + ended, code: 0 });
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.text).toBe('done');
+    });
+
     test('a clean exit still posts its reply without agent_end', async () => {
       const { impl } = makeSpawnImpl({ stdout: assistant('done') });
       expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('done');

@@ -665,6 +665,13 @@ const runPi = ({
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
       return reject(new Error(`pi exited ${code}: ${tail}`));
     }
+    // A refused turn exits 0 too, so here the stream is what says the text was
+    // interim. Posting it would answer with half a turn (F258).
+    if (code === 0 && reply.sawAssistant && !reply.finished && reply.upstream) {
+      return reject(stoppedTurnFailure(reply, {
+        code, signal, stderr, credentials,
+      }));
+    }
     return resolve(reply);
   });
 });
