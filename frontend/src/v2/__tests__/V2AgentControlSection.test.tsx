@@ -12,8 +12,8 @@ const api = jest.requireMock('../../utils/axiosConfig').default;
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
 
-const showFix = (fixCommand?: string, state: 'never' | 'connected' = 'never') => render(
-  <MemoryRouter><V2AgentControlSection agentName="maple" instanceId="default" podId="pod-1" runtimeType="wrapper" actionsOnly
+const showFix = (fixCommand?: string, state: 'never' | 'connected' = 'never', runtimeType = 'webhook') => render(
+  <MemoryRouter><V2AgentControlSection agentName="maple" instanceId="default" podId="pod-1" runtimeType={runtimeType} actionsOnly
     connection={{ state, lastSeenAt: null }} fixCommand={fixCommand} /></MemoryRouter>,
 );
 
@@ -31,7 +31,13 @@ describe('a never-connected agent on Settings', () => {
   test('links to the page that hands out the key the command needs, keeping the agent\'s name', () => {
     showFix('commonly agent run maple');
     expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href',
-      '/v2/agents/byo?pod=pod-1&name=maple&instanceId=default&reconnect=1&mode=machine');
+      '/v2/agents/byo?pod=pod-1&name=maple&instanceId=default&reconnect=1');
+  });
+
+  test('a wrapper gets no link, because that page would offer it Reconnect', () => {
+    showFix('commonly agent run maple', 'never', 'wrapper');
+    expect(screen.getByTestId('agent-connect-command')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
   });
 
   test('a webhook gets its sentence and nothing to copy', () => {

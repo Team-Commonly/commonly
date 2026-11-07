@@ -50,8 +50,9 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
             {t(copied ? 'common.copied' : 'common.copy')}
           </button>
         )}
-        {/* The command needs a key on that machine, and this page hands one out. */}
-        {copyable && <Link className="b b-g b-sm" to={byoLink}>{t('agentConnection.connect')}</Link>}
+        {/* The command needs a key on that machine, and this page hands one out. On a wrapper
+            it would offer Reconnect, which refuses an agent never bound to a computer. */}
+        {copyable && runtimeType !== 'wrapper' && <Link className="b b-g b-sm" to={byoLink}>{t('agentConnection.connect')}</Link>}
         {(needsReconnect || canRegenerateMachineKey) && (
           <Link className="b b-g b-sm" to={byoLink}>
             {t(needsReconnect ? 'agentConnection.reconnect' : 'agentSettings.regenerate')}
