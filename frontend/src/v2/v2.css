@@ -4624,7 +4624,7 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-mark:not(.v2-avatar) {
   background: var(--v2-row-active-mark);
-  color: var(--v2-on-accent);
+  color: var(--v2-on-ink);
 }
 
 .v2-pods__row-name {
@@ -4816,7 +4816,7 @@ body.modern-ui.v2-canvas {
     padding: 0 3px;
     border-radius: 8px;
     background: var(--v2-accent);
-    color: var(--v2-on-accent);
+    color: var(--v2-on-ink);
     font: 600 11px/15px var(--v2-font-mono);
     text-align: center;
   }
@@ -4908,7 +4908,7 @@ body.modern-ui.v2-canvas {
   border-radius: 8px;
   background: var(--v2-accent);
   box-shadow: 0 0 0 2px var(--v2-shell-bg);
-  color: var(--v2-on-accent);
+  color: var(--v2-on-ink);
   font: 600 11px/15px var(--v2-font-mono);
   transform: none;
   white-space: nowrap;
