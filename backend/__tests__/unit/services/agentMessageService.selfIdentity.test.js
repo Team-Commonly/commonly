@@ -134,6 +134,16 @@ describe('getRecentMessages — PG path', () => {
     expect(out[0]).not.toHaveProperty('self');
   });
 
+  test('a sender with no users row says nothing about isBot, so a reader can tell it does not know', async () => {
+    PGMessage.findByPodId.mockResolvedValue([
+      { id: 1, user_id: OTHER, user_db_id: null, is_bot: null, content: 'no mirror row' },
+      { id: 2, user_id: SELF, user_db_id: SELF, username: 'a-person', is_bot: false, content: 'known' },
+    ]);
+    const out = await AgentMessageService.getRecentMessages(POD, 10);
+    expect(out[0]).not.toHaveProperty('isBot');
+    expect(out[1].isBot).toBe(false);
+  });
+
   test('a human whose name merely ENDS IN "bot" is not reported as a bot', async () => {
     // The old substring heuristic ('-bot' / endsWith 'bot' / 'openclaw-')
     // misread these as bots, and isBot gates the wrapper's echo suppression.

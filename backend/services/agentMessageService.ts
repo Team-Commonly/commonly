@@ -2614,6 +2614,9 @@ class AgentMessageService {
         // bot — and `isBot` gates the wrapper's echo suppression, so a false
         // positive silently ate that agent's reply.
         const isBot = msg.is_bot === true || msg.is_bot === 'true';
+        // No users row means the LEFT JOIN knows nothing about the sender, so
+        // the key stays off: a false here told a seat a person addressed it.
+        const senderUnknown = msg.user_db_id === null;
         return {
           _id: msg.id,
           id: msg.id,
@@ -2625,7 +2628,7 @@ class AgentMessageService {
             profilePicture: msg.profile_picture as string | undefined,
           },
           username,
-          isBot,
+          ...(senderUnknown ? {} : { isBot }),
           ...withSelf(msg.user_id),
           createdAt: msg.created_at as Date,
           // Threading structure for agent readers (TASK-052's read half):
