@@ -85,6 +85,21 @@ describe('V2MessageRow attachments (direction C)', () => {
     expect(document.querySelector('.v2-msg__content')).toHaveTextContent('[[upload:abc.png|abc.png|12|image]]');
   });
 
+  test('a stray fence mid-sentence leaves the attachment after it alone', () => {
+    renderRow(message('Use ``` to fence code. [[upload:9-plan.pdf|plan.pdf|1024|document]]'));
+    expect(screen.getByRole('button', { name: 'Open plan.pdf' })).toHaveClass('v2-msg__chip');
+  });
+
+  test('a third fence mid-line leaves the attachment after it alone', () => {
+    renderRow(message('```a``` text ``` [[upload:9-plan.pdf|plan.pdf|1024|document]]'));
+    expect(screen.getByRole('button', { name: 'Open plan.pdf' })).toHaveClass('v2-msg__chip');
+  });
+
+  test('a fence never closed keeps a quoted directive as text', () => {
+    renderRow(message('Grammar:\n```\n[[upload:9-plan.pdf|plan.pdf|1024|document]]'));
+    expect(document.querySelector('.v2-msg__chip')).toBeNull();
+  });
+
   test('a legacy image message becomes one thumbnail, not a bare link', () => {
     renderRow(message('/api/uploads/avatar.png', { message_type: 'image' }));
     const thumb = screen.getByRole('button', { name: 'Open image' });

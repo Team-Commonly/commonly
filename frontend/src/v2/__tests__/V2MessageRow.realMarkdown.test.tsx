@@ -62,6 +62,16 @@ describe('a URL inside code stays as written, because people copy it', () => {
     expect(links).toEqual(['https://b.example/docs']);
   });
 
+  it('a stray fence mid-sentence hides nothing after it', () => {
+    expect(rendered(linkifyBareUrls('Use ``` to fence code, see https://b.example/docs')).links)
+      .toEqual(['https://b.example/docs']);
+  });
+
+  it('a NUL already in the message cannot be taken for a masked span', () => {
+    expect(linkifyBareUrls('a\u00000\u0000b `c`')).toBe('a0b `c`');
+    expect(prUrlsToRefLinks('a\u00005\u0000b')).toBe('a5b');
+  });
+
   it('a PR URL in code is not turned into a ref link', () => {
     const line = '`gh pr view https://github.com/o/r/pull/12`';
     expect(prUrlsToRefLinks(`${line} and https://github.com/o/r/pull/13`)).toBe(`${line} and [o/r#13](https://github.com/o/r/pull/13)`);

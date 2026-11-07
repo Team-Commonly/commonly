@@ -215,11 +215,12 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // Code spans and fences are quoted grammar, not attachments or links: mask them
 // while directives and URLs are rewritten, then put them back verbatim. Inside
 // code a link's brackets show as text and break a command someone copies. A fence
-// the message never closed runs to the end, as markdown renders it.
-const CODE_RE = /```[\s\S]*?(?:```|$)|``[^\n]*?``|`[^`\n]*`/g;
+// opened at the start of a line and never closed runs to the end, as markdown
+// renders it. A stray ``` mid-sentence is plain text, so it hides nothing after it.
+const CODE_RE = /```[\s\S]*?```|^```[\s\S]*|``[^\n]*?``|`[^`\n]*`/gm;
 const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
   const spans: string[] = [];
-  const masked = content.replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
+  const masked = content.replace(/\u0000/g, '').replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
   return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
 };
 
