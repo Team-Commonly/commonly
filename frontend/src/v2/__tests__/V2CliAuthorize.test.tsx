@@ -211,7 +211,7 @@ describe('V2CliAuthorize in Chinese', () => {
     const title = await reachConfirm('lilys-mac.local');
     expect(title).toHaveTextContent('要以 @lily 的身份授权 lilys-mac.local 吗？');
     expect(screen.getByText('如果设备码不是你自己在终端里申请的，请不要授权。')).toBeInTheDocument();
-    expect(screen.queryByText(/ago$/)).not.toBeInTheDocument();
+    expect(screen.getByText('5分钟前')).toBeInTheDocument();
   });
 });
 
