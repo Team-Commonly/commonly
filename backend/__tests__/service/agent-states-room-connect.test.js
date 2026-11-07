@@ -111,8 +111,22 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('guested', home._id, BYO, other._id);
     await install('guested', room._id);
     const row = await rowIn(room, 'guested');
-    expect(row.fixCommand).toBeTruthy();
+    expect(row.state).toBe('never-connected');
+    expect(row.fixCommand).toBeUndefined();
     expect(row.connectPodId).toBeUndefined();
+  });
+
+  it("gives a guest no command on an agent that went dark", async () => {
+    const room = await makePod('Room', 'agent-room');
+    await install('guest-dark', home._id, BYO, other._id);
+    await install('guest-dark', room._id);
+    await AgentInstallation.updateMany(
+      { agentName: 'guest-dark' },
+      { $set: { runtimeTokens: [{ tokenHash: 'h2', createdAt: new Date(), lastListenedAt: new Date(Date.now() - 864e5) }] } },
+    );
+    const row = await rowIn(room, 'guest-dark');
+    expect(row.state).toBe('gone-dark');
+    expect(row.fixCommand).toBeUndefined();
   });
 
   it('gives no link when the room install is someone else\'s, so there is no command', async () => {
@@ -132,12 +146,32 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'left')).connectPodId).toBeUndefined();
   });
 
+  it('keeps the command for a co-installer, whose saved key still runs it', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const theirs = await makePod('Theirs', 'chat', { createdBy: other._id, members: [other._id] });
+    await install('shared', home._id);
+    await install('shared', theirs._id, BYO, other._id);
+    await install('shared', room._id);
+    const row = await rowIn(room, 'shared');
+    expect(row.fixCommand).toBe('commonly agent run shared');
+    expect(row.connectPodId).toBeUndefined();
+  });
+
   it('skips an install that was removed', async () => {
+    await User.create({
+      username: 'removed',
+      email: 'removed@test.com',
+      password: 'password123',
+      isBot: true,
+      botMetadata: { agentName: 'removed', instanceId: 'default', ownerUserId: owner._id },
+    });
     const room = await makePod('Room', 'agent-room');
     const gone = await install('removed', home._id);
     await install('removed', room._id);
     await AgentInstallation.updateOne({ _id: gone._id }, { status: 'uninstalled' });
-    expect((await rowIn(room, 'removed')).connectPodId).toBeUndefined();
+    const row = await rowIn(room, 'removed');
+    expect(row.fixCommand).toBeTruthy();
+    expect(row.connectPodId).toBeUndefined();
   });
 
   it('names the oldest of several pods', async () => {
@@ -189,7 +223,7 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('flaky', home._id);
     await install('flaky', room._id);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    const find = jest.spyOn(Pod, 'find').mockImplementationOnce(() => { throw new Error('read failed'); });
+    const find = jest.spyOn(Pod, 'find').mockImplementation(() => { throw new Error('read failed'); });
     const row = await rowIn(room, 'flaky');
     find.mockRestore();
     warn.mockRestore();
