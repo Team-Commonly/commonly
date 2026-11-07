@@ -173,6 +173,8 @@ describe('the approval card states read on both themes', () => {
     expect(light).toContain('--v2-warning-text: #b45309;');
     expect(dark).toContain('--v2-warning-text: #f4a23a;');
     expect(media).toContain('--v2-warning-text: #f4a23a;');
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    expect(valueIn(ds, 'c-warning-text')).toBe(valueIn(light, 'v2-warning-text'));
   });
   test('the states take their colour from tokens', () => {
     expect(states).toMatch(/\.v2-approval__state--approved\s*\{\s*color:\s*var\(--v2-success-text\)/);
