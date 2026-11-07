@@ -95,6 +95,23 @@ describe('register through verify', () => {
     expect(await mark(user._id)).toBeUndefined();
   });
 
+  test('a password reset verifies the account without the mark, and a later link adds none', async () => {
+    const user = await register();
+    const link = await linkFromEmail();
+    sendEmail.mockClear();
+
+    await request(app).post('/api/auth/forgot-password').send({ email }).expect(200);
+    await waitFor(() => sendEmail.mock.calls.length > 0);
+    const reset = new URL(sendEmail.mock.calls[0][0].textBody.match(/https?:\/\/\S+/)[0]);
+    await request(app).post('/api/auth/reset-password')
+      .send({ token: reset.searchParams.get('token'), password: 'Different123!' }).expect(200);
+    expect((await User.findById(user._id)).verified).toBe(true);
+
+    await click(link).expect(200);
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(await mark(user._id)).toBeUndefined();
+  });
+
   test('an account that never took the step gets no mark, even from a link', async () => {
     delete process.env.SMTP2GO_API_KEY;
     const user = await register();

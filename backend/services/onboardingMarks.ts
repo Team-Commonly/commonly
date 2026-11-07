@@ -352,12 +352,12 @@ export function markSurface(userId: unknown, mark: SurfaceMark): void {
   }
 }
 
-/** Test seam: forget which people this process has marked. */
 /**
  * verifiedAt is the first time a person's email link turned `verified` from
  * false to true, so the email-verify leg can be timed from register (D141). It
  * records nothing for an account that never took that step: Google and GitHub
- * sign-ups, an instance with no mail configured, a password reset.
+ * sign-ups, an instance with no mail configured, a password reset, and anyone
+ * verified before this mark shipped. Measuring starts at deploy.
  */
 export function markEmailVerified(userId: unknown): void {
   const id = String(userId || '');
@@ -372,6 +372,7 @@ export function markEmailVerified(userId: unknown): void {
   }
 }
 
+/** Test seam: forget which people this process has marked. */
 export function resetOnboardingMarksForTest(): void {
   podOpenedMarked.clear();
   startPickedMarked.clear();

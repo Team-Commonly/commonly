@@ -22,6 +22,7 @@ confirm, for example against `lastActive` or whether they sent a message
 
 | mark | set when | tells you |
 |---|---|---|
+| `verifiedAt` | the click on the emailed link that turned `verified` from false to true (`GET /api/auth/verify-email`). | how long the email-verify leg took from `createdAt`. Absence is normal for Google and GitHub sign-ups, an instance with no mail, a password reset, and anyone verified before this mark shipped on 2026-11-07. |
 | `podOpenedAt` | the first authorized first-page fetch (no `before` cursor) of the messages of any pod they created; for a new signup that is normally My Workspace. It is set before the messages are read, so it records the request, not a render | their client asked for a pod's messages; for a new signup, very likely the welcome |
 | `welcomeShownAt` | the browser first commits Scout's welcome to the transcript, with a start still open, in a pod they created (`POST /api/stats/byo-step`, step `welcome-shown`). It records the mount, not that it was scrolled into view | the welcome really reached their screen. Unset for anyone who only opened a pod they were invited to |
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
