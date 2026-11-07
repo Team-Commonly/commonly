@@ -36,6 +36,11 @@ the setting is missing or the card can't be delivered, the alert fails with a
 `console.error` naming the reason, at most once an hour while it lasts. It's
 never silently dropped. `tool_unavailable` never files a card.
 
+Set it through the `SystemSetting` model, or use the collection name
+`system_settings`. Mongoose's default plural isn't that name, so a raw write to
+`systemsettings` succeeds and the alert still reads as `unconfigured`. Read it
+back through the model before calling the alert live.
+
 ## Census: how far a drift reaches
 
 Use what the broker has already assessed. **Never take a list with someone
