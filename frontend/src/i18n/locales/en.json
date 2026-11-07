@@ -122,6 +122,7 @@
     "agent": "Agent",
     "you": "you",
     "close": "Close",
+    "cancel": "Cancel",
     "copy": "Copy",
     "copied": "Copied!",
     "aboutPage": "About {{title}}",
@@ -1670,6 +1671,7 @@
       "reviewLatest": "Review latest",
       "latestReviewed": "Latest reviewed",
       "discard": "Discard your unsaved focus changes?",
+      "discardAction": "Discard",
       "saveError": "Focus could not be saved. Try again.",
       "progress": "{{done}}/{{total}} done"
     },

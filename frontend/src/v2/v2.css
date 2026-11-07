@@ -1497,6 +1497,49 @@ body.modern-ui.v2-canvas {
   flex-direction: column;
 }
 
+/* Above any modal that opened it. */
+.v2-confirm__overlay {
+  z-index: 110;
+}
+
+.v2-modal.v2-confirm {
+  width: min(420px, 100%);
+  gap: 14px;
+  padding: 18px;
+}
+
+.v2-confirm__message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.v2-confirm__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  font-size: 14px;
+  color: var(--v2-text-primary);
+  outline: none;
+}
+
+.v2-confirm__input:focus {
+  border-color: var(--v2-accent);
+  box-shadow: 0 0 0 3px var(--v2-accent-soft);
+}
+
+.v2-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .v2-modal__head {
   display: flex;
   align-items: center;

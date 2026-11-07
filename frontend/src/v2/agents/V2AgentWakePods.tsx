@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
@@ -85,6 +86,7 @@ const V2AgentWakePods: React.FC<{
   const identity = `${agentName}:${instanceId}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
+  const { confirm, dialog: confirmDialog } = useV2Confirm(identity);
   // Per-pod save state; see save() below.
   const committedRef = useRef<Record<string, InstallationSettings>>({});
   const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
@@ -194,12 +196,14 @@ const V2AgentWakePods: React.FC<{
   };
 
   const remove = async (entry: InstallationSettings) => {
-    // eslint-disable-next-line no-alert
     const willRevokeKeys = activePodCount <= (entry.status === 'active' ? 1 : 0);
     const confirmKey = podCount === 1 ? 'agentSettings.removeLastConfirm'
       : willRevokeKeys ? 'agentSettings.removeDisconnectConfirm' : 'agentSettings.removeConfirm';
-    if (!window.confirm(t(confirmKey,
-      { podName: entry.podName }))) return;
+    const confirmed = await confirm({
+      message: t(confirmKey, { podName: entry.podName }),
+      confirmLabel: t('agentSettings.remove'),
+    });
+    if (!confirmed) return;
     const requestedIdentity = identity;
     setBusyPod(entry.podId);
     setError(null);
@@ -257,6 +261,7 @@ const V2AgentWakePods: React.FC<{
 
   return (
     <div className="v2-agent-wake-pods">
+      {confirmDialog}
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
       <h2 className="gtitle">
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>

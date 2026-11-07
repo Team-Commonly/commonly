@@ -151,7 +151,6 @@ describe('V2AgentProfile (d215 s-agent-profile)', () => {
   it('owner: tabs, the Settings key, every pod with Remove, the private memory line', async () => {
     window.localStorage.setItem('token', 'owner-token');
     mockApi({ owner: true });
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     profileClient.delete.mockResolvedValue({ data: {} });
     renderProfile(true);
 
@@ -187,12 +186,23 @@ describe('V2AgentProfile (d215 s-agent-profile)', () => {
     expect(document.querySelector('.v2-aprofile__stat-num')).toBeNull();
 
     fireEvent.click(within(pods).getByRole('button', { name: 'Remove claude-code from Sharpen' }));
-    expect(confirm).toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(profileClient.delete).toHaveBeenCalledWith(
       '/api/registry/agents/claude-code/pods/own-0?instanceId=ux-lead',
       { headers: { Authorization: 'Bearer owner-token' } },
     ));
-    confirm.mockRestore();
+  });
+
+  it('a pod that cannot be removed says so in the Pods list', async () => {
+    window.localStorage.setItem('token', 'owner-token');
+    mockApi({ owner: true });
+    profileClient.delete.mockRejectedValue(new Error('nope'));
+    renderProfile(true);
+
+    const pods = await waitFor(() => lane(/^Pods/));
+    fireEvent.click(await within(pods).findByRole('button', { name: 'Remove claude-code from Sharpen' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
+    expect(await within(pods).findByRole('alert')).toHaveTextContent('Could not remove the agent from that pod.');
   });
 
   it('signed out: the public bar, and the key leads to sign-up', async () => {

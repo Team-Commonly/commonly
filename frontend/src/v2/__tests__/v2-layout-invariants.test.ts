@@ -6629,3 +6629,10 @@ test('a long held name wraps inside the link, so it cannot push the (i) off the 
   expect(link).toContain('min-width: 0');
   expect(link).toContain('overflow-wrap: anywhere');
 });
+
+test('the app confirm sits above a modal that opened it', () => {
+  const css = readV2Css();
+  expect(ruleBody(css, '.v2-modal__overlay')).toContain('z-index: 100');
+  expect(ruleBody(css, '.v2-confirm__overlay')).toContain('z-index: 110');
+  expect(ruleBody(css, '.v2-confirm__message')).toContain('overflow-wrap: anywhere');
+});

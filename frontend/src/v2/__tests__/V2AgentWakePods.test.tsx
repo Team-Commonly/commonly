@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentWakePods from '../agents/V2AgentWakePods';
 import i18n, { i18nReady } from '../../i18n';
@@ -164,14 +164,13 @@ describe('per-agent Wake and Pods settings', () => {
   });
 
   it('removes a pod installation and leaves the settings view open', async () => {
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();
     fireEvent.click(await screen.findByRole('button', { name: 'Remove from pod' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove from pod' }));
     await waitFor(() => expect(client.delete).toHaveBeenCalledWith(
       '/api/registry/agents/test-agent/pods/pod-1?instanceId=my-machine',
     ));
     expect(await screen.findByText('No pods to manage')).toBeInTheDocument();
-    confirm.mockRestore();
   });
 
   it('does not show or restore the previous agent’s pod after identity changes', async () => {
@@ -352,11 +351,12 @@ describe('per-agent Wake and Pods settings', () => {
         { podId: 'pod-2', podName: 'Paused', status: 'paused', wakeOnMessage: false,
           humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
       ] } });
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
     renderSettings();
     fireEvent.click((await screen.findAllByRole('button', { name: 'Remove from pod' }))[0]);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('No active installation will remain'));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('No active installation will remain');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(client.delete).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 });
