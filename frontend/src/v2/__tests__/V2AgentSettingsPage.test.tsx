@@ -1004,6 +1004,21 @@ describe('one Identity & access list (d215 frame)', () => {
     }
   });
 
+  test('Talk to says why when no shared owner hosts the agent', async () => {
+    axios.get.mockImplementation(fleet());
+    axios.post.mockRejectedValue({ response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } } });
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+          <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /^Talk to/ }));
+    expect(await screen.findByText(/Join a pod where someone hosts it to talk to it\./)).toBeInTheDocument();
+    expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
+
   test('Talk to opens the agent room from the header', async () => {
     axios.get.mockImplementation(fleet());
     axios.post.mockResolvedValue({ data: { room: { _id: 'room-1' } } });

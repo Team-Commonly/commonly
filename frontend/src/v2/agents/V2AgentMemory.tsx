@@ -233,7 +233,7 @@ const V2AgentMemory: React.FC = () => {
           <MemIcon name="chat" size={17} />
         </button>
       </header>
-      {roomError && <p className="v2m-state" role="alert">{t('agentProfile.hero.openRoomFailed')}</p>}
+      {roomError && <p className="v2m-state" role="alert">{roomError}</p>}
       <div className="v2m-pbody">
       {phone && tabs}
       {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={shellMessage} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={searchLabel} navLabel={memoryLabel} groupLabel={groupLabel} />}

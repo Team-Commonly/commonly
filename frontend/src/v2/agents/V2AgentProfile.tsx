@@ -9,6 +9,7 @@ import { characterAvatarFor } from '../utils/avatars';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
+import { roomRefusal } from '../utils/roomRefusal';
 
 // The agent PROFILE — the "meet the agent" page, distinct from the owner-only
 // Settings panel — drawn as d215 section s-agent-profile
@@ -302,11 +303,12 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
       const roomId = room.data?.room?._id;
       if (!roomId) throw new Error('Agent room not returned');
       navigate(`/v2/pods/${roomId}`);
-    } catch {
+    } catch (error) {
       // The profile is a human-facing entry point. Server diagnostics (for
       // example, installation-selection detail) belong in observability, not
-      // as raw red copy on the profile page.
-      setRoomError(t('agentProfile.hero.openRoomFailed'));
+      // as raw red copy on the profile page. A refusal the person can act on
+      // still says so.
+      setRoomError(roomRefusal(error, t) || t('agentProfile.hero.openRoomFailed'));
       setOpeningRoom(false);
     }
   }, [data, navigate, t]);
