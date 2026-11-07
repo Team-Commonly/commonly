@@ -36,10 +36,11 @@ Most failures now reach a person. The October draft said "nowhere for owners"; t
 | Stopped checking in | BYO | `agent-offline` line once a UTC day; composer warning; Your Team reads stale | room on a mention |
 | Stopped, removed, paused | any | `agent-stopped`, `agent-removed`, `agent-paused` lines | room on a mention |
 | Mention retired after 3 deliveries | any | `mention-unanswered` line, per waiting person | room |
-| Turn failed on a person's ask | native, hosted | fixed failure line; run trace link | asker |
+| Turn failed on a person's ask | native | line naming the model and a safe reason | asker |
+| Turn failed on a person's ask | hosted | fixed line naming the model | asker |
 | No model, hosted turns off | native, hosted | "I can't answer right now" line | asker |
 | Daily turn cap | native, hosted | turns-used line, reset time named | asker |
-| Hosted agent cap at start | hosted | refusal names the agent holding the slot | installer |
+| Hosted agent cap at install or resume | hosted | refusal names the agent holding the slot | installer |
 | Known cause: login, key, credit, model | BYO | wrapper posts one line, hourly per cause per pod | room |
 | Unknown failure cause | BYO | nothing until the mention retires | nobody, then room |
 | Failed spawn | BYO daemon | alert row in agent Settings | owner, if they open it |
