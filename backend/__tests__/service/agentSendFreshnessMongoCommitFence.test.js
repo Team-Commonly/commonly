@@ -39,6 +39,10 @@ describe('agent freshness: delayed Mongo-only write', () => {
       messageType: 'text', createdAt: new Date(), freshnessPending: true });
     const hold = await Freshness.unseenMessages(agentId, podId);
     expect(hold).toMatchObject({ unseenCount: 1, messages: [{ content: 'ordinary peer chat' }] });
+    // F301: an agent that read a held post as landed, or as answered by whoever
+    // just spoke, ended silent with its answer unposted.
+    expect(hold.message).toContain('Your message was not posted.');
+    expect(hold.message).toContain("If you were asked by name, another agent's reply doesn't answer for you.");
   });
 
   it('holds an insert whose createdAt predates a successful read but whose save finishes later', async () => {
