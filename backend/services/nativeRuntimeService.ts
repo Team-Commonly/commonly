@@ -1968,7 +1968,8 @@ export function buildUserMessage(
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
-      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+      + 'If nothing needs a post, reply with exactly NO_REPLY. Only commonly_post_message reaches the pod; '
+      + 'your final text never does.'
     );
     const kept = inlineCue.split('\n')
       .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
@@ -2062,6 +2063,9 @@ function servedModelOf(
     ...(Number.isInteger(hops) && hops > 0 ? { fallbacks: hops } : {}),
   };
 }
+
+// The last line of a final text is nothing but the sentinel.
+const CLOSES_ON_BARE_SENTINEL = /(?:^|\n)[ \t]*NO_REPLY[ \t]*$/;
 
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
   if (raw === 'chat.mention' || raw === 'thread.mention' || raw === 'mention') return 'mention';
@@ -3232,7 +3236,14 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
-      if (textOut && !postedViaTool && !fallbackBlocked) {
+      // F304: a heartbeat's final text is its reasoning, however it ends: all 96
+      // that reached here in 30 days were narration, and the 17 that closed on
+      // NO_REPLY lost the sentinel as leakage and posted the rest. A heartbeat
+      // posts through the tool. Any other wake with no person asking gets the
+      // closing sentinel read as the decline it is.
+      const declinedInText = !personAsked
+        && (trigger.type === 'heartbeat' || CLOSES_ON_BARE_SENTINEL.test(textOut));
+      if (textOut && !postedViaTool && !fallbackBlocked && !declinedInText) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
         try {
