@@ -169,6 +169,35 @@ describe('the approval card consents to the action, not the prose', () => {
   });
 });
 
+describe('the "Approval needed" badge', () => {
+  const card = { kind: 'approval-card', approvalId: 'badge', ownerUserId: 'viewer-1', actionType: 'create_pod', params: { name: 'x', type: 'chat' } };
+
+  test('shows while the card can still be answered', () => {
+    renderCard({ ...card, status: 'flagged' });
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).toHaveClass('v2-approval--open');
+  });
+
+  test.each([
+    ['declined', { status: 'resolved', decision: 'declined' }, en.approvalCard.declined],
+    ['expired', { status: 'expired' }, en.approvalCard.expired],
+    ['a tool call that aged out', { status: 'flagged', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+      expiresAt: new Date(Date.now() - 1000).toISOString() }, en.approvalCard.toolCall.expiredPending],
+  ])('is gone once the card is %s', (_name, state, line) => {
+    renderCard({ ...card, ...state });
+    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).not.toHaveClass('v2-approval--open');
+  });
+
+  test('stays on an aged proposal, which can still be decided', () => {
+    renderCard({ ...card, status: 'flagged', expiresAt: new Date(Date.now() - 1000).toISOString() });
+    expect(screen.getByText(en.approvalCard.aged)).toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+  });
+});
+
 describe('both locales carry the action phrasings', () => {
   describe.each([['en', en as any], ['zh-CN', zhCN as any]])('%s', (_locale, bundle) => {
     const action = bundle.approvalCard?.action;
@@ -214,8 +243,10 @@ describe('tool-call approval details stay owner-scoped', () => {
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       });
       expect(screen.queryByText(en.approvalCard.toolCall.expiredPending)).not.toBeInTheDocument();
+      expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
       act(() => { jest.advanceTimersByTime(60_001); });
       expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+      expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
       expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
       expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
     } finally {

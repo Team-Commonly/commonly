@@ -117,6 +117,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     return () => window.clearTimeout(timer);
   }, [expiresMs, expiryTick]);
   const aged = Number.isFinite(expiresMs) && expiresMs < Date.now();
+  // The ring and the badge ask for an answer, so they last only while one can be given. Past
+  // that, the state line says what happened. An aged proposal stays decidable; an aged tool call doesn't.
+  const decidable = status === 'flagged' && !(isToolCall && aged);
   const needsToolCall = isOwner && status === 'flagged' && isToolCall && !aged;
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
   const [toolCallLoading, setToolCallLoading] = useState(false);
@@ -239,9 +242,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
 
   return (
     <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
-      <div className="v2-approval">
+      <div className={`v2-approval${decidable ? ' v2-approval--open' : ''}`}>
         <div className="v2-approval__head">
-          <span className="v2-approval__badge">{t('approvalCard.badge')}</span>
+          {decidable && <span className="v2-approval__badge">{t('approvalCard.badge')}</span>}
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>

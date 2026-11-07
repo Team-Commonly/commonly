@@ -2462,6 +2462,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('offset: 0');
     });
 
+    test('an approval card wears the ring only while it can be answered', () => {
+      const states = read('../chat/chat-states.css');
+      expect(ruleBody(states, '.v2-approval--open')).toContain('box-shadow: 0 0 0 2px var(--v2-accent)');
+      expect(ruleBody(states, '.v2-approval')).not.toContain('box-shadow');
+    });
+
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {
       const prefixes = [
         '.v2-chat',
