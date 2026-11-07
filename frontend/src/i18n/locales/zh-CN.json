@@ -1896,6 +1896,7 @@
     "staleDays_other": "已{{count}}天未连接",
     "never": "尚未连接",
     "stopped": "已停止",
+    "connect": "连接",
     "reconnect": "重新连接",
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
     "reconnectDone": "已连接。",

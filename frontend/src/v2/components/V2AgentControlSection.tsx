@@ -34,6 +34,8 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
       setCopied(false);
     }
   };
+  // Reconnect=1 keeps the agent's own name, so the page cannot allocate "<name>-2".
+  const byoLink = `/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`;
   // A connected wrapper keeps the row: its machine-key regeneration lives here.
   if (actionsOnly && !needsReconnect && !canRegenerateMachineKey && !toRun) return null;
   return (
@@ -48,9 +50,10 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
             {t(copied ? 'common.copied' : 'common.copy')}
           </button>
         )}
+        {/* The command needs a key on that machine, and this page hands one out. */}
+        {copyable && <Link className="b b-g b-sm" to={byoLink}>{t('agentConnection.connect')}</Link>}
         {(needsReconnect || canRegenerateMachineKey) && (
-          <Link className="b b-g b-sm"
-            to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+          <Link className="b b-g b-sm" to={byoLink}>
             {t(needsReconnect ? 'agentConnection.reconnect' : 'agentSettings.regenerate')}
           </Link>
         )}

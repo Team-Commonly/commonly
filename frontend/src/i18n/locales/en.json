@@ -1839,6 +1839,7 @@
     "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
     "stopped": "Stopped",
+    "connect": "Connect",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
     "reconnectDone": "Connected.",

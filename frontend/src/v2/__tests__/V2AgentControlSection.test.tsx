@@ -28,8 +28,15 @@ describe('a never-connected agent on Settings', () => {
     expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
   });
 
+  test('links to the page that hands out the key the command needs, keeping the agent\'s name', () => {
+    showFix('commonly agent run maple');
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href',
+      '/v2/agents/byo?pod=pod-1&name=maple&instanceId=default&reconnect=1&mode=machine');
+  });
+
   test('a webhook gets its sentence and nothing to copy', () => {
     showFix('Run the program behind your webhook URL.');
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
     expect(screen.getByTestId('agent-control-section')).toHaveTextContent('Run the program behind your webhook URL.');
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
@@ -43,6 +50,7 @@ describe('a never-connected agent on Settings', () => {
   test('a connected agent does not show the command', () => {
     showFix('commonly agent run maple', 'connected');
     expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
   });
 
   test('the loader passes the roster command through', async () => {
