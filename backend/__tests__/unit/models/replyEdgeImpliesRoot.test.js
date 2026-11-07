@@ -23,8 +23,9 @@
  * not hypothetical here.
  *
  * One exception, written in the same statement: a row marked top_level_answer
- * keeps its edge with no root (F212, models/pg/Message.create). The retention
- * repair and the backfill both skip the mark.
+ * keeps its edge with no root (F212, models/pg/Message.create, and a system
+ * line beside a top-level message). The retention repair and the backfill both
+ * skip the mark.
  */
 const fs = require('fs');
 const path = require('path');

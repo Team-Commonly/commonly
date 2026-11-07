@@ -56,12 +56,49 @@ real('the stopped line on real PostgreSQL (F297)', () => {
   });
 
   const anHourAgo = () => new Date(Date.now() - 3600000);
+  // Message.ts binds the pool when it loads, and each test has a new one.
+  const repair = () => {
+    let model;
+    jest.isolateModules(() => { model = require('../../models/pg/Message'); });
+    return model.reRootOrphanedChains();
+  };
 
   it('stores a system line that replies to the mention and finds it again', async () => {
     const { rows } = await pool.query("SELECT * FROM messages WHERE message_type = 'system'");
     expect(rows).toHaveLength(1);
     expect(String(rows[0].reply_to_message_id)).toBe(String(messageId));
     expect(await hasStoppedLineSince(POD, 'nova:default', anHourAgo())).toBe(true);
+  });
+
+  it('stays beside a top-level mention through the retention repair', async () => {
+    await repair();
+    const { rows } = await pool.query("SELECT * FROM messages WHERE message_type = 'system'");
+    expect(rows[0].thread_root_id).toBeNull();
+    expect(String(rows[0].reply_to_message_id)).toBe(String(messageId));
+  });
+
+  it('rejoins what is left of its thread when the root is deleted', async () => {
+    const { rows: [mid] } = await pool.query(
+      `INSERT INTO messages (pod_id, user_id, content, thread_root_id, reply_to_message_id)
+       VALUES ($1, $2, '@milo there?', $3, $3) RETURNING id`,
+      [POD, USER, messageId],
+    );
+    await emitStoppedLine({
+      podId: POD,
+      actorUserId: USER,
+      actorUsername: 'nova',
+      actorIsBot: true,
+      agentLabel: 'Milo',
+      agentKey: 'milo:default',
+      messageId: mid.id,
+      threadRootId: messageId,
+    });
+    await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
+    await repair();
+    const { rows } = await pool.query(
+      "SELECT thread_root_id FROM messages WHERE payload->>'agentKey' = 'milo:default'",
+    );
+    expect(String(rows[0].thread_root_id)).toBe(String(mid.id));
   });
 
   it("doesn't let one agent's line silence another's, or reach another pod", async () => {

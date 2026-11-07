@@ -58,8 +58,11 @@ async function insertSystemLine(
       [line.podId, line.actorUserId, content, JSON.stringify(payload)],
     )
     : await pool.query(
-      `INSERT INTO messages (pod_id, user_id, content, message_type, payload, thread_root_id, reply_to_message_id)
-       VALUES ($1, $2, $3, 'system', $4::jsonb, $5, $6)
+      // A line beside a top-level message has an edge and no root on purpose, so
+      // it carries the same mark as a top-level answer (F212) and the retention
+      // repair leaves it where it is.
+      `INSERT INTO messages (pod_id, user_id, content, message_type, payload, thread_root_id, reply_to_message_id, top_level_answer)
+       VALUES ($1, $2, $3, 'system', $4::jsonb, $5::int, $6, CASE WHEN $5::int IS NULL THEN TRUE END)
        RETURNING id, created_at`,
       [line.podId, line.actorUserId, content, JSON.stringify(payload), threadRootId, replyToMessageId],
     );
