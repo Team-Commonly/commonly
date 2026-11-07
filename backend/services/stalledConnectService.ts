@@ -477,6 +477,7 @@ const resolveConnected = async ({
     const lastCheckInAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : null;
     const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
     let resolutionMessageId = '';
+    let closeFailed = false;
     try {
       const posted = await AgentMessageService.postMessage({
         agentName: String(ep.agentName),
@@ -505,7 +506,11 @@ const resolveConnected = async ({
       resolutionMessageId = extractMessageId(posted) || '';
     } catch (error) {
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
+      closeFailed = true;
     }
+    // With no nudge in the room, this close is the only line the seat gets, so
+    // a failed post stays open for the next pass.
+    if (closeFailed && !ep.nudgeMessageId) return;
     // The nudge asked the installer to start the agent, and they did. Its
     // "needs you" row resolves now as `actioned`, whether or not the
     // confirmation post above went out: a thread reply was never going to be

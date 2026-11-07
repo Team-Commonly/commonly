@@ -94,6 +94,24 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     await expectMcpClose();
   });
 
+  it('a close that fails to post is tried again on the next pass', async () => {
+    await seat('retry-close', [{ tokenHash: 'r', createdAt: ISSUED }]);
+    await AgentInstallation.updateOne(
+      { 'runtimeTokens.tokenHash': 'r' },
+      { $set: usageStamp('runtimeTokens.$', mcpClient) },
+    );
+    await scan({ now: NOW });
+    mockPost.mockRejectedValueOnce(new Error('store down'));
+
+    const failed = await scan({ now: NOW });
+    expect(failed.resolved).toEqual([]);
+    expect(await StalledConnectEpisode.countDocuments({ status: 'open' })).toBe(1);
+
+    const retried = await scan({ now: NOW });
+    expect(retried.resolved).toHaveLength(1);
+    expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
   it('another client using the token still gets the nudge', async () => {
     await seat('not-mcp', [{ tokenHash: 'c', createdAt: ISSUED }]);
     await AgentInstallation.updateOne(
