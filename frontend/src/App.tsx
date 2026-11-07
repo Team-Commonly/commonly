@@ -24,6 +24,7 @@ import './v2/v2.css';
 import './App.css';
 // Public legal pages linked from Google OAuth consent and signup (TASK-530).
 import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
+import i18n from './i18n';
 
 // TASK-145 — route-level split. One 4.18 MB (1.16 MB gzip) entry chunk used to
 // be the whole product for every visitor: the landing carried the authenticated
@@ -57,7 +58,7 @@ const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize')
 const RouteBoot: React.FC = () => (
   <div
     role="status"
-    aria-label="Loading Commonly"
+    aria-label={i18n.t('common.loadingApp')}
     style={{ minHeight: '100vh' }}
   />
 );
@@ -87,7 +88,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
           fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         }}
         >
-          <h1 style={{ marginTop: 0 }}>Something went wrong</h1>
+          <h1 style={{ marginTop: 0 }}>{i18n.t('common.somethingWrong')}</h1>
           <pre style={{ whiteSpace: 'pre-wrap', color: '#fca5a5' }}>
             {this.state.error.message}
           </pre>

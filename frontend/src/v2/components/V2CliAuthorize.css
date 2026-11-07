@@ -23,9 +23,9 @@
   cursor: default;
 }
 
-/* The hostname never breaks at its hyphen. */
+/* The device being approved has to be readable in full, so a long name wraps. */
 .v2-cli-authorize__host {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /* What is asking: a bordered list, label left, value mono right. */
