@@ -74,6 +74,42 @@ describe('a seat that an MCP client has used hears the MCP close, not the nudge'
     expect(result.skippedGuest).toBe(1);
   });
 
+  it('tells one person about one token once, across their pod and their room', async () => {
+    const owner = await User.create({ username: 'ori', email: 'ori@people.test', password: 'not-a-login' });
+    const bot = await botRow('ori-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    const row = (podId) => AgentInstallation.create({
+      agentName: 'ori-agent', instanceId: 'default', podId, version: '1.0.0', installedBy: owner._id, status: 'active',
+      config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    });
+    const team = await Pod.create({ name: 'Team', type: 'chat', createdBy: owner._id, members: [owner._id, bot._id] });
+    const room = await Pod.create({ name: 'Ori agent', type: 'agent-room', createdBy: owner._id, members: [owner._id, bot._id] });
+    await row(team._id);
+    await row(room._id);
+
+    const first = await scan({ now: NOW });
+    expect(mockPost.mock.calls.map(([post]) => post.podId)).toEqual([String(team._id)]);
+    expect(first.skippedSameToken).toBe(1);
+
+    await scan({ now: NOW });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(await StalledConnectEpisode.countDocuments({})).toBe(1);
+  });
+
+  it('a reissued token earns one more line', async () => {
+    const owner = await User.create({ username: 'ivy', email: 'ivy@people.test', password: 'not-a-login' });
+    const bot = await botRow('ivy-agent', [{ tokenHash: 'h1', createdAt: ISSUED }]);
+    await AgentInstallation.create({
+      agentName: 'ivy-agent', instanceId: 'default', podId: new mongoose.Types.ObjectId(), version: '1.0.0', installedBy: owner._id, status: 'active',
+      config: { runtime: { host: 'byo', runtimeType: 'local-cli' } },
+    });
+    await scan({ now: NOW });
+    await User.updateOne({ _id: bot._id }, {
+      $set: { agentRuntimeTokens: [{ tokenHash: 'h2', createdAt: new Date(ISSUED.getTime() + MINUTE) }] },
+    });
+    await scan({ now: NOW });
+    expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
   const expectMcpClose = async () => {
     const first = await scan({ now: NOW });
     expect(first.nudged).toEqual([]);

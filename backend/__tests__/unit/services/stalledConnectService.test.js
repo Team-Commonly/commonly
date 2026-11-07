@@ -589,11 +589,12 @@ describe('stalledConnectService.scan', () => {
       }),
     }));
 
-    await scan({ now: NOW });
+    const result = await scan({ now: NOW });
 
     expect(mockUserFind.mock.calls[0][0].$or).toHaveLength(1);
-    // Both installs got the first row's token, so both are stalled episodes.
-    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user', 'user']);
+    // Both installs got the first row's token: one person, one line.
+    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user']);
+    expect(result.skippedSameToken).toBe(1);
   });
 
   it('only considers BYO seats — nothing else can derive never-connected', async () => {

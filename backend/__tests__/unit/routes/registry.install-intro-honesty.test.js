@@ -101,6 +101,17 @@ describe('install intro — the promise matches reality', () => {
     expect(intro).not.toMatch(/bot\. BOT/i);
   });
 
+  test('a placeholder description is not read as a claim', () => {
+    // The self-serve path writes "A connected agent." on an agent that may
+    // never have connected, and the sentence after it says nothing runs it.
+    const intro = composeInstallIntro({
+      ...base, blurb: 'A connected agent.', state: 'never-connected',
+    });
+
+    expect(intro).not.toMatch(/connected agent/i);
+    expect(intro).toMatch(/just joined the pod/);
+  });
+
   test('the dead-seat copy never blames the reader', () => {
     // Whoever reads this in a shared pod usually cannot run the command. The
     // instruction names the installer rather than commanding the room — the

@@ -22,6 +22,7 @@ import { recordApprovalOutcome } from './brokerRecordService';
 import { nextFreeByoName } from './byoNameAllocator';
 import { prWriteApprovalSummary } from './prWriteScope';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
+import { PLACEHOLDER_AGENT_DESCRIPTION } from './agentInstallationIdentity';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -1993,7 +1994,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
     const synthManifest = {
       name: agentName,
       version: '1.0.0',
-      description: 'A connected agent.',
+      description: PLACEHOLDER_AGENT_DESCRIPTION,
       capabilities: [],
       context: { required: [], optional: [] },
       runtime: { type: 'standalone', connection: 'rest' },

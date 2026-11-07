@@ -14,7 +14,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * more explanation. Keying on the installation instead would explain once and
  * then stay silent through every subsequent attempt; keying on time would
  * repeat at someone who already heard it. So the key is
- * (installationId, tokenIssuedAt).
+ * (installationId, tokenIssuedAt). The scan adds one rule above that key: a token
+ * backing two of one person's rows is explained on the first row only.
  *
  * WHY IT IS SHARED. Two producers can explain the same silence: this timer,
  * and the reactive responder that answers when a human @mentions a seat with

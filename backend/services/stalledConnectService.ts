@@ -66,6 +66,7 @@ export interface StalledScanResult {
   skippedTooRecent: number;
   skippedNotStalled: number;
   skippedGuest: number;
+  skippedSameToken: number;
 }
 
 export interface TokenEpisodeKey {
@@ -209,7 +210,7 @@ export const scan = async ({
   const { AgentInstallation } = require('../models/AgentRegistry');
 
   const result: StalledScanResult = {
-    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0,
+    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0,
   };
 
   await resolveConnected({ now, result });
@@ -249,6 +250,7 @@ export const scan = async ({
     instanceId: String(install.instanceId || 'default'),
   });
   const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
+  const explained = await explainedTokens((candidates as Array<Record<string, any>>).map((row) => seatOf(row).agentName));
 
   for (const install of candidates as Array<Record<string, any>>) {
     const { agentName, instanceId } = seatOf(install);
@@ -281,12 +283,44 @@ export const scan = async ({
     // on this token, and the next pass's MCP close says what's true: it can
     // post when asked, and answering @mentions takes the listener.
     const mcpConnected = Boolean(latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt));
+    // One token can back the person's pod and their own room. The explanation
+    // is for them, so it lands once, on whichever row reached it first.
+    const told = tokenKey(agentName, instanceId, install.installedBy, issuedAt);
+    if (explained.has(told) && explained.get(told) !== String(install._id)) {
+      result.skippedSameToken += 1;
+      continue;
+    }
+    explained.set(told, String(install._id));
     await nudgeOnce({
       install, derived, issuedAt, tokenSource: source, mcpConnected, now, result,
     });
   }
 
   return result;
+};
+
+const tokenKey = (agentName: string, instanceId: string, installedBy: unknown, issuedAt: Date | string): string => (
+  [agentName, instanceId, String(installedBy), new Date(issuedAt).getTime()].join('\n')
+);
+
+/** Which installation already holds the episode for each person's token. A
+ * failed read returns none: each row's own episode index still stops a repeat,
+ * and the cost is one line said twice (review-checklist rule 19). */
+const explainedTokens = async (agentNames: string[]): Promise<Map<string, string>> => {
+  const explained = new Map<string, string>();
+  try {
+    const episodes = await StalledConnectEpisode.find({ agentName: { $in: [...new Set(agentNames)] } })
+      .select('agentName instanceId installedBy tokenIssuedAt installationId').lean();
+    (episodes as Array<Record<string, any>>).forEach((episode) => {
+      explained.set(
+        tokenKey(episode.agentName, episode.instanceId, episode.installedBy, episode.tokenIssuedAt),
+        String(episode.installationId),
+      );
+    });
+  } catch (error) {
+    console.warn('[stalled-connect] could not read past episodes:', (error as Error).message);
+  }
+  return explained;
 };
 
 const nudgeOnce = async ({
