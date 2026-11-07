@@ -75,6 +75,7 @@ const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables
 const { dispatchHostedBrokerTool, hostedBrokerToolsForRun } = require('../../services/grantBrokerProjectionService');
 const { buildCardPayload, buildOwnerCardPayload, resolveApproval } = require('../../services/approvalActionService');
 const { checkByoNaming } = require('../../services/byoGrantNaming');
+const { hostedNativeDecline } = require('../../services/hostedEngine');
 const AgentMessageService = require('../../services/agentMessageService');
 const AgentEventService = require('../../services/agentEventService');
 const github = require('../../services/githubAppService');
@@ -233,6 +234,22 @@ describe('the surface a hosted run is offered', () => {
     }));
   });
 
+  test('a comment body runs with the spacing the owner approved', async () => {
+    await Integration.create({ type: 'github-app', status: 'connected', createdBy: owner._id, podId: pod._id,
+      installationId: 'gh-inst-1', config: { installationId: 'gh-inst-1', owner: 'Team-Commonly', repo: 'commonly' } });
+    await new Promise((resolve) => { setTimeout(resolve, 5); });
+    await mintGrant({
+      connectionId: 'gh-inst-1', installationId: 'gh-inst-1', target: { kind: 'pod', id: String(pod._id) },
+      tools: ['github.comment_on_issue'], writeMode: 'write-with-confirm',
+      audience: [String(seat._id)], expiresAt: new Date(Date.now() + 86400000), brokerId: GRANT_BROKER_ID,
+      ownerId: String(owner._id),
+    });
+    const body = '    indented code\n';
+    const answer = await hostedCall(await project(), 'github_comment_on_issue', { issueNumber: 4, body });
+    await resolveApproval(await reviewed(String(answer.content.approvalId)));
+    expect(github.addIssueComment).toHaveBeenCalledWith(expect.objectContaining({ body }));
+  });
+
   test('a GitHub read result is marked untrusted, as a catalogue read is', async () => {
     await Integration.create({ type: 'github-app', status: 'connected', createdBy: owner._id, podId: pod._id,
       installationId: 'gh-inst-1', config: { installationId: 'gh-inst-1', owner: 'Team-Commonly', repo: 'commonly' } });
@@ -284,10 +301,29 @@ describe('the park and the card', () => {
     expect(mockTrail.map((entry) => entry.reason)).toEqual(['args_too_long_for_card']);
   });
 
-  test('arguments at the cap still park whole', async () => {
-    const long = args({ reason: 'x'.repeat(100 * 1024) });
+  const sizedTo = (bytes) => args({ reason: 'x'.repeat(bytes - Buffer.byteLength(JSON.stringify(args({ reason: '' })), 'utf8')) });
+
+  test('arguments of exactly the cap still park whole', async () => {
+    const long = sizedTo(128 * 1024);
     const row = await ApprovalAction.findById(await park(long));
     expect(row.toolCall.canonicalArgs).toEqual(long);
+  });
+
+  test.each([
+    ['one byte past the cap', () => sizedTo(128 * 1024 + 1)],
+    ['past the cap only in UTF-8 bytes', () => args({ reason: '好'.repeat(50 * 1024) })],
+  ])('arguments %s refuse', async (_case, build) => {
+    const answer = await hostedCall(await project(), 'sentry_update_issue', build());
+    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'args_too_long_for_card' } });
+    expect(await ApprovalAction.countDocuments({})).toBe(0);
+  });
+
+  test('an owner who left the pod is never sent a card they cannot see', async () => {
+    await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
+    const answer = await hostedCall(await project(), 'sentry_update_issue', args());
+    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'approver_not_in_pod' } });
+    expect(await ApprovalAction.countDocuments({})).toBe(0);
+    expect(mockVendorCall).not.toHaveBeenCalled();
   });
 
   test('an empty object survives the park, so the card shows it and the approved call runs', async () => {
@@ -335,6 +371,11 @@ describe('a decision', () => {
       payload: expect.objectContaining({ actionType: 'tool_call', ending: 'ran', decision: 'approved' }),
     });
     expect(JSON.stringify(event)).not.toContain('VENDOR SAYS');
+  });
+
+  test('a hosted run takes the outcome, so what the parked note promises is true', () => {
+    expect(hostedNativeDecline('approval.resolved', 30)).toBeNull();
+    expect(hostedNativeDecline('approval.resolved', 0)).toMatch(/switched off/);
   });
 
   test('a decline runs nothing, and the seat hears it', async () => {

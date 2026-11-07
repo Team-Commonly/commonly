@@ -569,7 +569,7 @@ describe('V2ActivityPage', () => {
       renderPage();
       fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
       expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
-      expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1');
+      expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/pod-1#message-77');
       expect(mockPost).not.toHaveBeenCalled();
     });
 

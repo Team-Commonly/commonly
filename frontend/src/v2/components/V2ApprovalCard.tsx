@@ -269,17 +269,19 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               <dl className="v2-approval__args" data-testid="approval-args">
                 {readable.rows.map((row) => (
                   <div className="v2-approval__arg" key={JSON.stringify(row.keys)} data-testid={`approval-arg-${row.keys.join('-')}`}>
-                    <dt>{row.labelKey ? t(row.labelKey) : row.label}</dt>
-                    <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
-                      {row.href
-                        ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
-                        : (row.valueKey ? t(row.valueKey) : row.value)}
-                      {row.note && <div className="v2-approval__pitch">{t(row.note.key, row.note.vars)}</div>}
+                    <dt>
+                      {row.labelKey ? t(row.labelKey) : row.label}
                       {row.fullLength !== undefined && (
                         <span className="v2-approval__arg-length">
                           {t('approvalCard.toolCall.longValue', { length: row.fullLength })}
                         </span>
                       )}
+                    </dt>
+                    <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
+                      {row.href
+                        ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
+                        : (row.valueKey ? t(row.valueKey) : row.value)}
+                      {row.note && <div className="v2-approval__pitch">{t(row.note.key, row.note.vars)}</div>}
                       {row.detail !== undefined && (
                         <pre className="v2-approval__tool-call v2-approval__arg-value--block">{row.detail}</pre>
                       )}

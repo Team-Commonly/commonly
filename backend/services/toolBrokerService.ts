@@ -224,6 +224,14 @@ const nonEmptyString = (value: unknown, field: string): string => {
   return value.trim();
 };
 
+/** A comment body runs exactly as the owner approved it; leading spaces are Markdown. */
+const nonBlankText = (value: unknown, field: string): string => {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new RoomGrantError('invalid_tool_args', `${field} is required`, 400);
+  }
+  return value;
+};
+
 // Approval envelopes bind the provider destination as well as the visible
 // tool arguments. These fields are server-owned metadata: the executor
 // validates them against the current connection, then removes them before
@@ -520,7 +528,7 @@ const commentPullRequest: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'body']);
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
     // The issue-comment endpoint takes issues too, so confirm the number is a
     // pull request first; otherwise this grant would reach comment_on_issue.
@@ -576,7 +584,7 @@ const reviewPullRequestComment: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'body']);
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
     const review = await GitHubAppService.createPullReview({
       owner: connection.owner,
@@ -690,7 +698,7 @@ const commentIssue: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber', 'body']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     const result = await GitHubAppService.addIssueComment({
       owner: connection.owner,
       repo: connection.repo,
@@ -1848,6 +1856,15 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           input.agentName,
           input.instanceId,
         );
+        // The card lives in this pod, so an owner who left would never see it.
+        if (!await Pod.exists({ _id: approvalPodId, members: connection.ownerUserId })) {
+          throw new RoomGrantError(
+            'approver_not_in_pod',
+            'The connection\'s owner decides this call and is no longer in this pod, so nothing was parked or sent.',
+            403,
+            { retryable: false },
+          );
+        }
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const approvalService = require('./approvalActionService');
         proposal = await approvalService.proposeAction({

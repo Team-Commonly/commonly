@@ -1074,7 +1074,9 @@
 .v2-approval__arg-length {
   display: block;
   margin-top: 4px;
+  font-family: var(--v2-font-sans);
   font-size: 12px;
+  font-weight: 400;
   color: var(--v2-text-muted);
 }
 

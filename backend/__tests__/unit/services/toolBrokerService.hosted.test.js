@@ -19,7 +19,7 @@ jest.mock('../../../services/hostedVendorFetch', () => ({
 }));
 
 const mockRoomGrant = { findOne: jest.fn(), find: jest.fn() };
-const mockPod = { findById: jest.fn(), find: jest.fn() };
+const mockPod = { findById: jest.fn(), find: jest.fn(), exists: async () => true };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockUser = { findById: jest.fn() };
 const mockToolCall = { create: jest.fn() };

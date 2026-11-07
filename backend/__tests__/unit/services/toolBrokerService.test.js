@@ -1,7 +1,7 @@
 const { createHash } = require('crypto');
 
 const mockRoomGrant = { findOne: jest.fn() };
-const mockPod = { findById: jest.fn() };
+const mockPod = { findById: jest.fn(), exists: async () => true };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
 const mockUser = { findById: jest.fn(), find: jest.fn() };
 const mockOwnsRuntimeIdentity = jest.fn();

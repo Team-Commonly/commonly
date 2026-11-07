@@ -1196,6 +1196,7 @@ const enqueueToolCallResolvedEvent = async (
     ...(receipt ? [`Receipt: ${JSON.stringify(receipt)}`] : []),
     ...(row.toolCallCode === APPROVAL_OUTCOME_UNKNOWN
       ? ['This call may have run. Check the result before asking again.'] : []),
+    'The room already shows this outcome. Reply only if there is a next step; otherwise return NO_REPLY.',
   ].join('\n');
   await AgentEventService.enqueue({
     agentName: String(row.agentName),
