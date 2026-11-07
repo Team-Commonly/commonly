@@ -29,7 +29,7 @@ const {
 const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { loadPodMentionMap, routedMentionHandle } = require('../../services/agentMentionService');
-const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
+const { deriveAgentState, offersConnect, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
@@ -1167,6 +1167,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
         // been announced as dead. Same identity match the pod roster uses
         // (routes/pods.ts:437).
         let state = 'unknown';
+        let connectable = false;
         // The default is what the seat's own runtime needs. It used to be the
         // BYO command for every seat, so a webhook agent's intro told its
         // owner to run a command that starts the wrong program.
@@ -1179,8 +1180,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
             isBot: true,
             'botMetadata.agentName': agent.agentName,
             'botMetadata.instanceId': normalizedInstanceId,
-          }).select('agentRuntimeTokens.lastListenedAt').lean() as
-              { agentRuntimeTokens?: { lastListenedAt?: Date | string | null }[] } | null;
+          }).select('agentRuntimeTokens.lastListenedAt botMetadata.machineId').lean() as {
+            agentRuntimeTokens?: { lastListenedAt?: Date | string | null }[];
+            botMetadata?: { machineId?: unknown };
+          } | null;
           // `config` is `{ type: Map, of: Mixed }` (AgentRegistry.ts:235), so
           // on a LIVE Mongoose document `installation.config.runtime` is
           // undefined — a Map needs `.get()`. `deriveAgentState` reads
@@ -1213,6 +1216,10 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           );
           state = derived.state;
           if (derived.fixCommand) fixCommand = derived.fixCommand;
+          connectable = offersConnect(
+            { instanceId: normalizedInstanceId, config: normalizeConfigMap(installation.config) || {} },
+            botRow?.botMetadata?.machineId,
+          );
         } catch (stateErr: unknown) {
           // Fail toward the invitation: wrongly telling a LIVE agent's room
           // that nothing is listening is a worse lie than the one being fixed.
@@ -1229,6 +1236,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
           handle,
           state,
           fixCommand,
+          connectable,
         });
         await AgentMessageService.postMessage({
           agentName: agent.agentName,

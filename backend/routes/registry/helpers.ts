@@ -319,7 +319,7 @@ const snapshotPointer = (handle: string): string =>
   + 'the pod shows my current state.';
 
 const composeInstallIntro = ({
-  displayName, blurb, handle, state, fixCommand,
+  displayName, blurb, handle, state, fixCommand, connectable = false,
 }: {
   displayName: string;
   blurb?: string;
@@ -334,6 +334,9 @@ const composeInstallIntro = ({
   // remove, so the hedge is not decoration (fleet review 2026-08-14).
   state: string;
   fixCommand: string;
+  // Its key isn't saved on any computer yet, so the bare command can't run:
+  // the agent's Settings has the Connect that issues a new one.
+  connectable?: boolean;
 }): string => {
   // Older CLI versions seeded description from displayName, producing intros
   // like "Hi all — I'm bot. bot Ping me ...". Drop a blurb that just repeats
@@ -349,6 +352,11 @@ const composeInstallIntro = ({
   // Certain, and never ran: flat declarative, and SCOPED to the posting. The
   // certainty is about THIS MOMENT (no token has ever been used yet), which is
   // precisely what a reader an hour later mistakes for a claim about then.
+  if (state === 'never-connected' && connectable) {
+    return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
+      + `Whoever installed me can connect me from my Settings — then @${handle} will get through. `
+      + snapshotPointer(handle);
+  }
   if (state === 'never-connected') {
     return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
       + `Whoever installed me can start me with \`${fixCommand}\` on the machine `

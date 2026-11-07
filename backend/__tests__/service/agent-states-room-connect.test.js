@@ -97,13 +97,27 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'stranded')).connectPodId).toBeUndefined();
   });
 
-  it('leaves a group pod alone: its rows carry no such field', async () => {
+  it('sends a group pod\'s installer to that pod', async () => {
     const second = await makePod('Second', 'chat');
     await install('group', home._id);
     await install('group', second._id);
     const row = await rowIn(home, 'group');
     expect(row.state).toBe('never-connected');
-    expect(row.connectPodId).toBeUndefined();
+    expect(row.connectPodId).toBe(String(home._id));
+  });
+
+  it('gives someone else in a group pod none', async () => {
+    const pod = await makePod('Shared', 'chat', { members: [owner._id, other._id] });
+    await install('theirs', pod._id, BYO, other._id);
+    expect((await rowIn(pod, 'theirs')).connectPodId).toBeUndefined();
+  });
+
+  it('sends a public pod\'s installer to a pod the page lists, or nowhere', async () => {
+    const open = await makePod('Open', 'chat', { publicRead: true });
+    await install('listed', open._id);
+    expect((await rowIn(open, 'listed')).connectPodId).toBeUndefined();
+    await install('listed', home._id);
+    expect((await rowIn(open, 'listed')).connectPodId).toBe(String(home._id));
   });
 
   it("does not name another person's pod to a guest who holds the room's install", async () => {

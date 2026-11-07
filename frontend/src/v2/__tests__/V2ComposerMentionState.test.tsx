@@ -96,6 +96,31 @@ describe('V2Composer mention-state honesty (#891 surface 1)', () => {
     expect(warning.textContent).toContain('commonly agent run sam-agent');
   });
 
+  test('an agent Bring your own can connect offers Connect, not a command that can\'t run', async () => {
+    mockStates([{
+      agentName: 'sam-agent',
+      instanceId: 'default',
+      state: 'never-connected',
+      isOwner: true,
+      fixCommand: 'commonly agent run sam-agent',
+      connectPodId: 'pod-1',
+    }]);
+    renderChat(makeDetail());
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+
+    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), {
+      target: { value: 'hey @sam-agent can you look' },
+    });
+
+    const warning = await screen.findByTestId('mention-state-warning');
+    expect(warning).toHaveTextContent("@sam-agent isn't connected");
+    expect(warning).not.toHaveTextContent('commonly agent run');
+    expect(warning.querySelector('a')).toHaveAttribute(
+      'href',
+      '/v2/agents/byo?pod=pod-1&name=sam-agent&instanceId=default&reconnect=1',
+    );
+  });
+
   test('a NON-owner gets the explanation without the instruction', async () => {
     mockStates([{
       agentName: 'sam-agent', instanceId: 'default', state: 'never-connected', isOwner: false,

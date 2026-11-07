@@ -287,6 +287,15 @@ describe('V2Inspector', () => {
     expect(screen.queryByText('u1a9e5ecede')).not.toBeInTheDocument();
   });
 
+  test('an agent that never connected reads as that, not as idle', () => {
+    renderInspector({ detail: { ...detail, agents: [{
+      agentName: 'lark', instanceId: 'default', displayName: 'Lark', connection: { state: 'never' },
+    }] } as any, attentionCount: 0, attentionItems: [] });
+
+    expect(screen.getByRole('button', { name: /Lark Not connected yet/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Lark idle/ })).not.toBeInTheDocument();
+  });
+
   test('labels a per-user agent by its resolved name, never its instance id or agentName', () => {
     renderInspector({ detail: { ...detail, agents: [{
       agentName: 'scout', instanceId: 'ubd1004e0d7', displayName: 'Scout',

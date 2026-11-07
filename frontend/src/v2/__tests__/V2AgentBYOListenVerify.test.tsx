@@ -93,6 +93,9 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-listen-waiting')).toBeInTheDocument();
     expect(screen.getByTestId('byo-cta-warning')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-ok')).not.toBeInTheDocument();
+    // The fill marks the next step: Copy until it's listening, then the pod.
+    expect(screen.getAllByRole('button', { name: 'Copy' })[0]).toHaveClass('v2-byo__copy--next');
+    expect(screen.getByRole('button', { name: 'Go to your pod' })).toHaveClass('v2-byo__secondary--waiting');
 
     // The rail reads the same state as the page (TASK-169). It used to read
     // "not created yet" while the page beside it said the install had
@@ -129,6 +132,7 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument();
     expect(screen.queryByTestId('byo-cta-warning')).not.toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-waiting')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Go to your pod' })).toHaveClass('v2-byo__submit');
     // ...and the rail follows it out of waiting, since it reads the same state.
     expect(rail.querySelector('.v2-byo__preview-status--live')).not.toBeNull();
     expect(rail.querySelector('.v2-byo__preview-status--waiting')).toBeNull();

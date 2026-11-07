@@ -342,7 +342,7 @@ describe('V2Thread agent-room liveness', () => {
 
     const link = await screen.findByRole('link', { name: 'Connect' });
     expect(link).toHaveAttribute('href', '/v2/agents/byo?pod=home-pod&name=openclaw&instanceId=aria&reconnect=1');
-    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
   });
 
   test('with no pod from the server the notice keeps the command and offers no Connect', async () => {

@@ -547,7 +547,7 @@ const agentStatesRateLimit = rateLimit({
 router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as { type?: string } | null;
+    const pod = await Pod.findById(podId) as { type?: string; publicRead?: boolean } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
     const canView = await DMService.canViewPod(req.user?.id, pod);
     if (!canView) return res.status(403).json({ message: 'Not authorized to view pod agent states' });
@@ -614,6 +614,17 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
         if (!ownership.owned) return;
         if (row.state !== 'never-connected' || !offersConnect(inst, machineByIdentity.get(key))) return;
         const connectPodId = await connectPodFor(inst, callerId, podId);
+        if (connectPodId) row.connectPodId = connectPodId;
+      }));
+    } else if (pod.type !== 'agent-dm' && pod.type !== 'agent-admin') {
+      // The installer's way back from a shared pod. The bare command needs a key
+      // saved on that computer, and an agent made on the page has none there.
+      await Promise.all(installations.map(async (inst: any, index: number) => {
+        const row = agents[index];
+        const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
+        if (!row.isOwner || row.state !== 'never-connected') return;
+        if (!offersConnect(inst, machineByIdentity.get(key))) return;
+        const connectPodId = pod.publicRead ? await connectPodFor(inst, callerId, podId) : podId;
         if (connectPodId) row.connectPodId = connectPodId;
       }));
     }

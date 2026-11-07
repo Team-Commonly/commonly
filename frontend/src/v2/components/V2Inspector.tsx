@@ -146,7 +146,7 @@ const agentState = (
   agent: V2Agent,
   attention: V2AttentionItem[],
   tasks: TaskItem[],
-): { kind: 'needs-you' | 'working' | 'idle'; title?: string } => {
+): { kind: 'needs-you' | 'working' | 'not-connected' | 'idle'; title?: string } => {
   const request = attention.find((item) => matchesAgent(agent, item.actorName));
   if (request) return { kind: 'needs-you', title: request.title };
 
@@ -154,6 +154,7 @@ const agentState = (
   if (task) return { kind: 'working', title: task.title };
 
   if (agent.status === 'working') return { kind: 'working' };
+  if (agent.connection?.state === 'never') return { kind: 'not-connected' };
   return { kind: 'idle' };
 };
 
@@ -256,6 +257,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     if (state.kind === 'needs-you') return t('inspector.workspace.agentStatus.needsYou', { title: state.title });
     if (state.kind === 'working' && state.title) return t('inspector.workspace.agentStatus.workingTask', { title: state.title });
     if (state.kind === 'working') return t('inspector.workspace.agentStatus.working');
+    if (state.kind === 'not-connected') return t('agentConnection.never');
     return t('inspector.workspace.agentStatus.idle');
   };
 

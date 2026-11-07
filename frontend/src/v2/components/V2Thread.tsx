@@ -43,6 +43,7 @@ import {
   normalizeAgentSegment,
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
+import { agentConnectLink } from '../utils/agentConnectLink';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
@@ -1595,11 +1596,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? directAgent.state.fixCommand || ''
     : '';
-  // reconnect=1 keeps the agent's own name, so the page can't allocate "<name>-2".
-  const directAgentConnectPod = directAgentFixCommand ? directAgent?.state?.connectPodId : undefined;
-  const directAgentConnectLink = directAgentConnectPod && directAgent?.state
-    ? `/v2/agents/byo?pod=${encodeURIComponent(directAgentConnectPod)}&name=${encodeURIComponent(directAgent.state.agentName)}&instanceId=${encodeURIComponent(directAgent.state.instanceId)}&reconnect=1`
-    : '';
+  const directAgentConnectLink = directAgentFixCommand ? agentConnectLink(directAgent?.state) : '';
   // Group pods name each agent that isn't running, so nobody waits on a reply
   // that can't come: 5 of 7 people who heard nothing in their first pod had an
   // agent that never connected (silence census, 10-30). Only reach states the
@@ -1616,6 +1613,15 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
         age: localizeRelativeTime(row.lastUsedAt, t),
       })
   );
+  const podAgentConnect = (row: typeof podAgentLiveness[number]) => {
+    const link = agentConnectLink(row);
+    return link ? (
+      <>
+        {' '}
+        <Link className="v2-chat__agent-room-connect" to={link}>{t('agentConnection.connect')}</Link>
+      </>
+    ) : null;
+  };
   const awayNames = podAgentLiveness.map((row) => row.displayName || row.agentName);
   const podAgentsAwaySummary = awayNames.length === 2
     ? t('podChat.podAgentLiveness.awayTwo', { first: awayNames[0], second: awayNames[1] })
@@ -2285,7 +2291,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   </span>
                   <div className="v2-chat__agent-room-status-body">
                     {t(directAgentLivenessKey, { agentName: directAgent.displayName })}
-                    {directAgentFixCommand && (
+                    {directAgentConnectLink && (
+                      <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
+                        {t('agentConnection.connect')}
+                      </Link>
+                    )}
+                    {directAgentFixCommand && !directAgentConnectLink && (
                       <>
                         <div className="v2-chat__agent-room-lede">{t('podChat.agentRoomLiveness.runCommand')}</div>
                         <div className="v2-chat__agent-room-command">
@@ -2300,11 +2311,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                             <ShellGlyph name={fixCommandCopied ? 'check' : 'copy'} size={16} />
                           </button>
                         </div>
-                        {directAgentConnectLink && (
-                          <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
-                            {t('agentConnection.connect')}
-                          </Link>
-                        )}
                       </>
                     )}
                   </div>
@@ -2316,7 +2322,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   data-testid="pod-agent-liveness"
                   role="status"
                 >
-                  <div className="v2-chat__agent-room-status-body">{podAgentLivenessLine(podAgentLiveness[0])}</div>
+                  <div className="v2-chat__agent-room-status-body">
+                    {podAgentLivenessLine(podAgentLiveness[0])}
+                    {podAgentConnect(podAgentLiveness[0])}
+                  </div>
                 </div>
               )}
               {/* Two or more agents away fold into one line that opens to the
@@ -2340,7 +2349,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   </summary>
                   <ul>
                     {podAgentLiveness.map((row) => (
-                      <li key={`${row.agentName}:${row.instanceId}`} data-testid="pod-agent-liveness">{podAgentLivenessLine(row)}</li>
+                      <li key={`${row.agentName}:${row.instanceId}`} data-testid="pod-agent-liveness">{podAgentLivenessLine(row)}{podAgentConnect(row)}</li>
                     ))}
                   </ul>
                 </details>
