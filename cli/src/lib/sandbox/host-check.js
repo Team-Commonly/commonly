@@ -76,26 +76,38 @@ const CLAUDE_MCP_LINE = '  - Use Commonly from your own Claude Code sessions: th
 // never named as a way out. The lines take the one file out of the package:
 // installing apparmor-profiles enforces 21 more profiles at once, among them
 // ping, dnsmasq and smbd (run 42400201955), which nobody here agreed to.
+// The subshell keeps the person in their project folder, which a first run on a
+// private pod binds to, and stops at the first failure. byo-linux.yml runs these
+// exact lines.
+export const UBUNTU_BWRAP_PROFILE_COMMANDS = [
+  'sudo apt-get update',
+  '(cd "$(mktemp -d)" && apt-get download apparmor-profiles && dpkg-deb -x apparmor-profiles_*.deb .'
+    + ' && sudo cp usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/)',
+  'sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict',
+];
+
+export const UBUNTU_BWRAP_PROFILE_UNDO = [
+  'sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict',
+  'sudo rm /etc/apparmor.d/bwrap-userns-restrict',
+];
+
 const UBUNTU_BWRAP_PROFILE_LINES = [
   "  - Optional, if you'd rather run it on this machine: load Ubuntu's own AppArmor profile for bubblewrap.",
   '    It lets any program here use bubblewrap to create user namespaces; what bubblewrap starts gets no special',
   "    capabilities. It's your call, it needs sudo, and Commonly never runs it for you. We tested it on a fresh",
   "    Ubuntu 24.04 server image, not on every machine. These lines load that one profile and nothing else from",
   "    Ubuntu's package:",
-  '      cd "$(mktemp -d)"',
-  '      apt-get download apparmor-profiles',
-  '      dpkg-deb -x apparmor-profiles_*.deb .',
-  '      sudo cp usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/',
-  '      sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict',
+  ...UBUNTU_BWRAP_PROFILE_COMMANDS.map((line) => `      ${line}`),
   '    Then run the same command again. To undo it:',
-  '      sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict',
-  '      sudo rm /etc/apparmor.d/bwrap-userns-restrict',
+  ...UBUNTU_BWRAP_PROFILE_UNDO.map((line) => `      ${line}`),
 ];
 
 /** bubblewrap is installed and this host refused it a sandbox. */
-export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted }) => {
+export const bwrapRefusedMessage = (adapterName, { reason, apparmorRestricted, ubuntuRelease }) => {
   const label = ADAPTER_LABELS[adapterName] || adapterName;
-  const offersProfile = apparmorRestricted === true && (adapterName === 'claude' || adapterName === 'codex');
+  // 24.04 only: the file moves or is absent on other releases.
+  const offersProfile = apparmorRestricted === true && ubuntuRelease === '24.04'
+    && (adapterName === 'claude' || adapterName === 'codex');
   return [
     `A connected ${label} runs inside a bubblewrap sandbox, and this machine won't let bubblewrap start one (${reason}).`,
     ...(apparmorRestricted === true

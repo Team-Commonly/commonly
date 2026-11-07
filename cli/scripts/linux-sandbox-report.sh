@@ -59,18 +59,22 @@ refusals
 
 if [ "${ID:-}" != ubuntu ] || [ "${VERSION_ID:-}" = 22.04 ]; then exit 0; fi
 
-echo "=== the one profile, without the package"
-dir=$(mktemp -d)
-(cd "$dir" && apt-get download apparmor-profiles && dpkg-deb -x apparmor-profiles_*.deb x)
-profile=/etc/apparmor.d/bwrap-userns-restrict
-sudo cp "$dir/x/usr/share/apparmor/extra-profiles/bwrap-userns-restrict" "$profile"
-sudo apparmor_parser -r "$profile" && probe "with bwrap-userns-restrict loaded"
+printed() {
+  node --input-type=module -e "
+    import * as sandbox from './cli/src/lib/sandbox/host-check.js';
+    console.log(sandbox['$1'].join('\\n'));
+  "
+}
+
+echo "=== the lines the CLI prints"
+printed UBUNTU_BWRAP_PROFILE_COMMANDS | bash -e
+probe "with the printed lines run"
 profiles "with one profile"
 sudo systemctl reload apparmor
 profiles "after an AppArmor reload"
 probe "after an AppArmor reload"
-sudo apparmor_parser -R "$profile" && sudo rm "$profile"
-probe "after undoing it"
+printed UBUNTU_BWRAP_PROFILE_UNDO | bash -e
+probe "after the printed undo"
 
 echo "=== what the package would add"
 before=$(ls /etc/apparmor.d)

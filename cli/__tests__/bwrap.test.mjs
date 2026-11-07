@@ -65,6 +65,7 @@ describe('detectBwrap namespace probe', () => {
     const refused = () => linux([ok, { status: 1, stdout: '', stderr: 'bwrap: nope\n' }]).spawn;
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => true }).apparmorRestricted).toBe(true);
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => false }).apparmorRestricted).toBe(false);
+    expect(detectBwrap({ spawn: refused(), platform: 'linux', readRelease: () => '24.04' }).ubuntuRelease).toBe('24.04');
   });
 
   test('a probe that timed out reads as unavailable, not as a refused namespace', () => {

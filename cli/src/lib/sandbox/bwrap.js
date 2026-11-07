@@ -74,10 +74,21 @@ const readApparmorRestriction = () => {
   }
 };
 
+const readUbuntuRelease = () => {
+  try {
+    const release = readFileSync('/etc/os-release', 'utf8');
+    if (!/^ID=ubuntu$/m.test(release)) return null;
+    return /^VERSION_ID="?([\d.]+)"?$/m.exec(release)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const detectBwrap = ({
   spawn = spawnSync,
   platform = process.platform,
   readRestriction = readApparmorRestriction,
+  readRelease = readUbuntuRelease,
 } = {}) => {
   if (platform !== 'linux') {
     return { available: false, error: nonLinuxMessage(platform) };
@@ -101,6 +112,7 @@ export const detectBwrap = ({
         namespaceRefused: !probe.error && typeof probe.status === 'number',
         reason,
         apparmorRestricted: readRestriction(),
+        ubuntuRelease: readRelease(),
         error: `bubblewrap is installed but cannot start a sandbox on this machine (${reason}). `
           + 'On Ubuntu 24.04 and later, AppArmor restricts the unprivileged user namespaces it needs.',
       };

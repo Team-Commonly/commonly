@@ -127,11 +127,12 @@ describe('hostSandboxRefusal', () => {
 
   // Ubuntu 24.04 as it comes: bubblewrap installed, the namespace refused.
   describe('a host that refuses bubblewrap a sandbox', () => {
-    const refused = (apparmorRestricted) => () => ({
+    const refused = (apparmorRestricted, ubuntuRelease = '24.04') => () => ({
       available: false,
       namespaceRefused: true,
       reason: 'bwrap: setting up uid map: Permission denied',
       apparmorRestricted,
+      ubuntuRelease,
       error: 'bubblewrap is installed but cannot start a sandbox on this machine',
     });
     const seat = (adapterName, detectBwrap) => hostSandboxRefusal({
@@ -158,6 +159,9 @@ describe('hostSandboxRefusal', () => {
         expect(message.replace(/\s+/g, ' ')).toMatch(/fresh Ubuntu 24\.04 server image, not on every machine/);
         // The package would enforce 21 more profiles; the lines take one file.
         expect(message).not.toMatch(/apt(-get)? install/);
+        // A first run on a private pod binds to the folder the person is in.
+        expect(message).not.toMatch(/^\s*cd /m);
+        expect(message).toContain('sudo apt-get update');
         expect(message).toMatch(/lets any program here use bubblewrap to create user namespaces/);
         expect(message).toContain('sudo rm /etc/apparmor.d/bwrap-userns-restrict');
         expect(message).toMatch(/needs sudo/);
@@ -176,6 +180,8 @@ describe('hostSandboxRefusal', () => {
 
     test('the profile is offered only where the AppArmor restriction is on, and only to adapters walked under it', () => {
       expect(seat('claude', refused(false))).not.toContain(PROFILE);
+      expect(seat('claude', refused(true, '25.10'))).not.toContain(PROFILE);
+      expect(seat('claude', refused(true, null))).not.toContain(PROFILE);
       expect(seat('claude', refused(false))).not.toContain('AppArmor');
       expect(seat('codex', refused(false))).toContain(ROUTE);
       expect(seat('opencode', refused(true))).not.toContain(PROFILE);
