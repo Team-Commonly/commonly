@@ -2519,7 +2519,7 @@
       "category": "{{label}}（{{count}}）"
     },
     "card": {
-      "mentionedYou": "提到了你",
+      "mentionedYou": "提及了你",
       "inProject": "属于",
       "lastSaid": "“{{snippet}}”",
       "roleTitle": "角色：{{role}}",
