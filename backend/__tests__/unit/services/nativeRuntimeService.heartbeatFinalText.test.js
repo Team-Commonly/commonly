@@ -111,7 +111,7 @@ describe('a turn nobody is waiting on', () => {
       .mockResolvedValueOnce(says('I tried to post the update.'));
     const result = await runAgent(scoutInstall, heartbeat);
     expect(result.status).toBe('failed');
-    expect(AgentRun.create.mock.results[0].value).resolves.toMatchObject({ errorKind: 'tool_error' });
+    expect(result.errorKind).toBe('tool_error');
     // The failed tool attempt only: the final text never becomes a fallback post.
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
   });
