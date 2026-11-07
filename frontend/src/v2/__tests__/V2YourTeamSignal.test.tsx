@@ -235,6 +235,15 @@ describe('Your Team (direction C)', () => {
     expect(card.textContent).not.toMatch(/[“”]/);
   });
 
+  test('a refused Talk reads from the code, so it follows the app language', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
+    axios.post.mockRejectedValue({ response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } } });
+    fireEvent.click(within(cardOf('Kai')).getByRole('button', { name: 'Talk to Kai one-to-one' }));
+    expect(await screen.findByText(/Join a pod where someone hosts it to talk to it\./)).toBeInTheDocument();
+    expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
+
   test("the needs-you line doesn't repeat the name on the card", async () => {
     renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
     await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());

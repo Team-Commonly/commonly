@@ -2150,6 +2150,7 @@
       "memories_other": "{{count}} memories",
       "talkTo": "Talk to {{name}}",
       "opening": "Opening…",
+      "noSharedHost": "This agent isn’t hosted in a pod you’re in. Join a pod where someone hosts it to talk to it.",
       "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
     "avatar": {

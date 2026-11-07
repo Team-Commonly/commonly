@@ -175,4 +175,17 @@ describe('V2AgentProfile memory-write visibility', () => {
     );
     expect(screen.queryByText('Multiple installations found. Specify instanceId.')).not.toBeInTheDocument();
   });
+
+  it('says why when no shared owner hosts the agent', async () => {
+    window.localStorage.setItem('token', 'viewer-token');
+    profileClient.post.mockRejectedValue({
+      response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } },
+    });
+    renderProfile(true);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to Observer' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Join a pod where someone hosts it to talk to it.');
+    expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
 });

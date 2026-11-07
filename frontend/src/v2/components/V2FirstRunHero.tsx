@@ -6,6 +6,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 import { ActGlyph, ShellGlyph } from '../icons/glyphs';
+import { roomRefusal } from '../utils/roomRefusal';
 
 const POLL_INTERVAL_MS = 3_000;
 export { FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
@@ -228,7 +229,7 @@ const V2FirstRunHero: React.FC<V2FirstRunHeroProps> = ({ onVisibilityChange }) =
     } catch (error) {
       const message = (error as { response?: { data?: { message?: string } } })
         ?.response?.data?.message;
-      setRoomError(message || t('firstRun.errors.roomFailed'));
+      setRoomError(roomRefusal(error, t) || message || t('firstRun.errors.roomFailed'));
       setOpeningRoom(false);
     }
   };

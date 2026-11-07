@@ -380,7 +380,7 @@ const V2AgentSettingsPage: React.FC = () => {
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
           {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
-          {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
+          {roomFailed && <p role="alert" className="v2-agent-settings__error">{roomFailed}</p>}
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod}
             onRemoved={(...removed) => { setAddedPod(null); onRemoved(...removed); }}
             displayName={displayName}

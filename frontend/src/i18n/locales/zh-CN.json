@@ -2139,6 +2139,7 @@
       "memories_other": "{{count}}条记忆",
       "talkTo": "与 {{name}} 对话",
       "opening": "正在打开…",
+      "noSharedHost": "你所在的 Pod 里没有人托管这个智能体。加入有人托管它的 Pod，就能和它对话了。",
       "openRoomFailed": "无法打开与该智能体的一对一对话。"
     },
     "avatar": {

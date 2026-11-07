@@ -8,6 +8,7 @@ import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
+import { roomRefusal } from '../utils/roomRefusal';
 
 // The shared head bar's title and count classes, plus this page's own hook.
 const HEAD_TITLE_CLASS = 'v2-feature__title v2-team__title';
@@ -387,7 +388,7 @@ const V2YourTeamPage: React.FC = () => {
       navigate(`/v2/pods/${roomId}`);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { message?: string } } })?.response;
-      setError(resp?.data?.message || t('yourTeam.errors.openRoomFailed'));
+      setError(roomRefusal(err, t) || resp?.data?.message || t('yourTeam.errors.openRoomFailed'));
       setOpening(null);
     }
   };
