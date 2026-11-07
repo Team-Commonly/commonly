@@ -766,6 +766,12 @@ const someoneIsWaiting = (event) => ADDRESSED_EVENT_TYPES.has(event.type)
   || event.payload?.repliesToYourMessage === true
   || event.payload?.someoneWaiting === true;
 
+// The last line of a reply is nothing but the sentinel. An unaddressed person's
+// `message.posted` counts as nobody waiting, on purpose: text closing on the
+// sentinel there is far likelier reasoning about an ambient message than an
+// answer, and the seat's prompt already sends ambient messages to NO_REPLY.
+const CLOSES_ON_BARE_SENTINEL = /(?:^|\n)[ \t]*NO_REPLY[ \t]*$/;
+
 // The first message in `messages` that this seat posted and `earlierIds` doesn't
 // hold. The server stamps each message with `self` when it knows who is asking.
 // Trust that over any local guess: the wrapper cannot derive its own bot username
@@ -2997,8 +3003,10 @@ export const performRun = ({
     // output would double-post. Two independent signals suppress the echo:
     //   1. Detection — a new message appeared in the pod during the spawn (the
     //      agent posted via the tool). Automatic; no agent cooperation needed.
-    //   2. NO_REPLY — the agent explicitly asks us to stay silent. Honored only
-    //      when it's the ENTIRE reply; mixed content still posts verbatim.
+    //   2. NO_REPLY — the agent explicitly asks us to stay silent: the ENTIRE
+    //      reply, or (F192) its last line on a turn nobody is waiting on, where
+    //      the text above it is reasoning the server would otherwise post.
+    //      Other mixed content still posts verbatim.
     // Otherwise (a bare CLI with no posting tools, or an agent that chose to
     // reply via its output) the wrapper delivers the text as before.
     const replyText = (result.text || '').trim();
@@ -3013,7 +3021,9 @@ export const performRun = ({
     }
     const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
-    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
+    const declinedInText = event.type !== 'agent.ask' && !someoneIsWaiting(event)
+      && CLOSES_ON_BARE_SENTINEL.test(replyText);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText;
     // A refused model route is not a silent turn. pi reports the refusal on its
     // own JSON stream and exits 0 with no text, so before this the seat log read
     // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
@@ -3058,7 +3068,8 @@ export const performRun = ({
         }
       }
     } else if (silentReply) {
-      const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
+      const reason = heartbeatControlReply ? replyText
+        : declinedInText ? 'NO_REPLY' : (replyText || 'empty output');
       // A turn that posted via tool and THEN ended with the sentinel is not the
       // same event as a turn that produced nothing — but this branch reported
       // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
