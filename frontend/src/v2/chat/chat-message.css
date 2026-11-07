@@ -817,6 +817,11 @@
 
 .v2-thread .v2-msg__head { height: 20px; gap: 8px; }
 
+/* The phone head wraps, so it can't keep the fixed height: a long name put the time over the message. */
+@media (max-width: 640px) {
+  .v2-thread .v2-msg__head { height: auto; min-height: 20px; }
+}
+
 .v2-thread .v2-msg__author,
 .v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
 
