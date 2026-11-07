@@ -32,6 +32,12 @@ const V2UICard = lazy(() => import('../cards/V2UICard'));
 // Used to wrap inline mentions in a styled pill. Capturing group keeps the
 // match in `split()` output so we can render text + pill segments in order.
 // An npm scope such as @commonlyai/mcp is a package, not a person.
+const SYSTEM_NOTICE_KEYS: Record<string, string> = {
+  'agent-stopped': 'agentStopped',
+  'agent-not-connected': 'agentNotConnected',
+  'mention-unanswered': 'mentionUnanswered',
+};
+
 const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;
 
 // Walk a React children tree and replace bare `@name` text segments with a
@@ -585,6 +591,29 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           <span className="v2-system-action-line__verb">{t('podChat.systemActions.taskClaimedVerb')}</span>
           <span className="v2-system-action-line__object" title={message.payload.taskId || ''}>{message.payload.taskId || ''}</span>
         </span>
+        {time && <time dateTime={message.created_at}>{time}</time>}
+      </div>
+    );
+  }
+
+  // A line the kernel posts for an agent that can't answer. It reads from the
+  // action, so it follows the app language, and it wraps: a person has to read it.
+  const noticeKey = (message.message_type === 'system' || message.messageType === 'system')
+    && message.payload?.kind === 'system-action'
+    ? SYSTEM_NOTICE_KEYS[message.payload.action as string] : undefined;
+  if (noticeKey) {
+    const actorLabel = overriddenDisplay || message.payload?.actorName || author;
+    return (
+      <div id={`message-${message.id}`} className={`v2-system-action-line v2-system-action-line--notice${enterClass}`}>
+        <V2Avatar
+          name={actorLabel}
+          src={message.user?.profile_picture || undefined}
+          size="sm"
+          tone="flat"
+          kind="agent"
+          seed={message.user_id || undefined}
+        />
+        <span className="v2-system-action-line__notice">{t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}</span>
         {time && <time dateTime={message.created_at}>{time}</time>}
       </div>
     );

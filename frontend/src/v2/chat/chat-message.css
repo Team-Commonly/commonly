@@ -83,6 +83,21 @@
   font: 400 11px/16px var(--v2-font-mono);
 }
 
+.v2-system-action-line--notice {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.v2-system-action-line__notice {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-secondary);
+}
+
+.v2-system-action-line--notice time {
+  grid-column: 3;
+}
+
 /* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
    column: board glyph, up to four 20px faces, "N claims · first to last",
    the run's time, a chevron. The toggle is a control with its state on

@@ -1442,6 +1442,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
     expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
     expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    // A notice is a sentence a person has to read, so it wraps, and its time sits in its own column.
+    expect(ruleBody(v2, '.v2-system-action-line--notice')).toContain('grid-template-columns: 16px minmax(0, 1fr) auto');
+    expect(ruleBody(v2, '.v2-system-action-line__notice')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(v2, '.v2-system-action-line--notice time')).toContain('grid-column: 3');
     expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
     expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
