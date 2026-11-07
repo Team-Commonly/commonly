@@ -101,7 +101,7 @@ describe('V2AgentMemory', () => {
     expect(screen.queryByRole('heading', { name: /Journal/ })).toBeNull();
   });
 
-  it('shows the section update time once per group and never on a note', async () => {
+  it('stamps one time once, however many groups share it, and never on a note', async () => {
     axios.get.mockResolvedValue({ data: {
       viewerRole: 'owner', totalEntries: 3,
       sections: [
@@ -117,8 +117,11 @@ describe('V2AgentMemory', () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
-    // Rules and How I work each carry the long_term time; Journal has none.
-    expect(document.querySelectorAll('.v2m-saved')).toHaveLength(2);
+    // Rules and How I work share the long_term time, so only Rules says it. Journal has none.
+    const stamps = document.querySelectorAll('.v2m-saved');
+    expect(stamps).toHaveLength(1);
+    expect(stamps[0]).toHaveTextContent(/^Saved /);
+    expect(stamps[0].closest('details')).toHaveAttribute('id', 'memory-group-rules');
     expect(document.querySelectorAll('.v2m-mnote .v2m-saved')).toHaveLength(0);
   });
 

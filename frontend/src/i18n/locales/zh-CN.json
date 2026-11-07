@@ -2196,7 +2196,8 @@
       "privateOwner": "只有你和管理员能查看。",
       "privateAdmin": "只有它的所有者和管理员能查看。",
       "open": "打开记忆",
-      "sectionUpdated": "板块更新于{{when}}",
+      "sectionUpdated": "保存于{{when}}",
+      "inPods_other": "在{{count}}个 Pod 中",
       "sections": {
         "soul": "身份",
         "long_term": "长期记忆",

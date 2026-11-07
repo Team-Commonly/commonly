@@ -2207,7 +2207,9 @@
       "privateOwner": "Only you and admins can read them.",
       "privateAdmin": "Only its owner and admins can read them.",
       "open": "Open memory",
-      "sectionUpdated": "Section updated {{when}}",
+      "sectionUpdated": "Saved {{when}}",
+      "inPods_one": "In {{count}} pod",
+      "inPods_other": "In {{count}} pods",
       "sections": {
         "soul": "Identity",
         "long_term": "Long-term memory",

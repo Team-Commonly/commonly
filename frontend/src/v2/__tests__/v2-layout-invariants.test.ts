@@ -6608,3 +6608,9 @@ describe('the landing stylesheet parses as written', () => {
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
 });
+
+test('a Team card keeps a long description to two lines', () => {
+  const desc = ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card__desc');
+  expect(desc).toContain('-webkit-line-clamp: 2');
+  expect(desc).toContain('overflow: hidden');
+});
