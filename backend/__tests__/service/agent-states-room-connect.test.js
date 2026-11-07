@@ -12,7 +12,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const podsRouter = require('../../routes/pods');
 
 const SECRET = 'agent-states-room-connect-test';
-const BYO = { runtimeType: 'webhook', host: 'byo' };
+const BYO = { runtimeType: 'webhook', adapter: 'claude', host: 'byo' };
 
 describe('GET /api/pods/:podId/agent-states in an agent room', () => {
   let app; let owner; let other; let home; let authHeader;
@@ -111,6 +111,13 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     await install('kept', home._id, { runtimeType: 'claude-code', host: 'byo' });
     const row = await rowIn(home, 'kept');
     expect(row.fixCommand).toBe('commonly agent run kept');
+    expect(row.connectPodId).toBeUndefined();
+    expect(row.noSavedKey).toBeUndefined();
+  });
+
+  it('leaves an agent init bot its command: Connect would revoke the key it saved', async () => {
+    await install('inited', home._id, { runtimeType: 'webhook', host: 'byo' });
+    const row = await rowIn(home, 'inited');
     expect(row.connectPodId).toBeUndefined();
     expect(row.noSavedKey).toBeUndefined();
   });

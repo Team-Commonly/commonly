@@ -628,7 +628,10 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
         if (!row.isOwner || row.state !== 'never-connected') return;
         if (!keyOnlyOnPage(inst, machineByIdentity.get(key))) return;
         const ownership = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId.toLowerCase())
-          .catch(() => ({ owned: false }));
+          .catch((error: Error) => {
+            console.warn('Could not read the pod agent\'s owner:', error.message);
+            return { owned: false };
+          });
         if (!ownership.owned) return;
         const listed = !pod.publicRead && (pod.members || []).some((id) => String(id) === callerId);
         const connectPodId = listed ? podId : await connectPodFor(inst, callerId, podId);

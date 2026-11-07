@@ -43,7 +43,7 @@ interface InstallationRow {
   instanceId?: string;
   displayName?: string;
   installedBy?: unknown;
-  config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
+  config?: { runtime?: { runtimeType?: string; host?: string; adapter?: string; webhookUrl?: string } };
   runtimeTokens?: TokenRow[];
 }
 
@@ -130,13 +130,16 @@ export function offersConnect(installation: InstallationRow, machineId?: unknown
 }
 
 // Made on the Bring your own page: its key went out once, in the connect
-// command, so no computer has it saved. `commonly agent attach` saves one and
-// names the real adapter, so an attached agent keeps its bare command.
+// command, so no computer has it saved. `commonly agent attach` and `agent init`
+// each save one, and neither writes this shape: attach names the real runtime,
+// and init sets no adapter. Both keep their bare command, because Connect would
+// revoke the saved key.
 export function keyOnlyOnPage(installation: InstallationRow, machineId?: unknown): boolean {
   const runtime = installation.config?.runtime;
   return offersConnect(installation, machineId)
     && String(runtime?.runtimeType || '').toLowerCase() === 'webhook'
     && String(runtime?.host || '').toLowerCase() === 'byo'
+    && Boolean(runtime?.adapter)
     && !runtime?.webhookUrl;
 }
 

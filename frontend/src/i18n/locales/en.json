@@ -2023,7 +2023,7 @@
     "rekey": {
       "warning": "{{name}} already has a key. Replacing it will disconnect the running agent until you run the new connect command.",
       "replace": "Replace the running agent’s key",
-      "warningNever": "{{name}}’s key hasn’t been used. Replacing it gives you a new connect command.",
+      "warningNever": "{{name}}’s key hasn’t been used. Replacing it stops the old key and gives you a new connect command.",
       "replaceNever": "Get a new connect command",
       "cancel": "Keep the current key"
     },
