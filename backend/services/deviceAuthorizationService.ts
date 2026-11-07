@@ -38,14 +38,21 @@ const userCodeHash = (value: unknown): string | null => {
 
 const isExpired = (request: IDeviceAuthorization, now = new Date()): boolean => request.expiresAt <= now;
 
+// These fields come from the device and a person reads them on the approval
+// page, so anything that isn't a visible character goes before they're stored.
+const deviceText = (value: unknown, maxLength: number): string => String(value || '')
+  .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '')
+  .trim()
+  .slice(0, maxLength);
+
 export const createDeviceAuthorization = async ({
   clientName,
   clientVersion,
   hostname,
 }: { clientName: unknown; clientVersion?: unknown; hostname: unknown }) => {
-  const safeClientName = String(clientName || '').trim().slice(0, 120);
-  const safeHostname = String(hostname || '').trim().slice(0, 253);
-  const safeClientVersion = String(clientVersion || '').trim().slice(0, 80);
+  const safeClientName = deviceText(clientName, 120);
+  const safeHostname = deviceText(hostname, 253);
+  const safeClientVersion = deviceText(clientVersion, 80);
   if (!safeClientName || !safeHostname) throw new Error('clientName and hostname are required');
 
   // User-code collisions are very unlikely, but the unique index is the
