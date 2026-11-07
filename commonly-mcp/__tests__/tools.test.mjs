@@ -967,6 +967,77 @@ describe('per-event inbox checkpoint', () => {
     expect(acks(fetchSpy)).toHaveLength(0);
   });
 
+  const attachFile = (tools) => {
+    const filePath = join(mkdtempSync(join(tmpdir(), 'held-attach-')), 'f.txt');
+    writeFileSync(filePath, 'x');
+    return tools.commonly_attach_file.call({ podId: 'pod-1', filePath });
+  };
+
+  test('a file held at its first check turns the checkpoint back too', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('send-freshness') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    expect((await attachFile(tools)).isError).toBe(true);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a checkpoint waits for a file still uploading', async () => {
+    let finish;
+    const fetchSpy = installFetch((url) => {
+      if (String(url).includes('/uploads')) return new Promise((resolve) => { finish = resolve; });
+      return Promise.resolve(String(url).includes('/messages') ? held() : okResponse({ success: true }));
+    });
+    const tools = freshTools();
+    const attaching = attachFile(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    finish(okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 }));
+    await attaching;
+    expect((await checkpointing).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a file whose card landed clears the hold, and one the server skipped does not', async () => {
+    let card = held;
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).includes('/uploads')) return okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 });
+      return String(url).includes('/messages') ? card() : okResponse({ success: true });
+    });
+    const tools = freshTools();
+    await post(tools);
+    card = () => okResponse({ skipped: true });
+    await attachFile(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    card = () => okResponse({ id: 'm1' });
+    const attached = await attachFile(tools);
+    expect(JSON.parse(attached.content[0].text).fileName).toBe('f.txt');
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'other', deliveryId: 'nonce' })).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a repost held again beside the second checkpoint turns it back again', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    await checkpoint(tools);
+    const [, again] = await Promise.all([post(tools), checkpoint(tools)]);
+    expect(again.isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a repost the server refused leaves the hold', async () => {
+    let reply = held;
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    reply = () => okResponse({ refused: true });
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
   test('a hold the seat let go of does not turn back a later event', async () => {
     const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
     const tools = freshTools();

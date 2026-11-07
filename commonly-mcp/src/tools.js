@@ -193,11 +193,13 @@ export const buildTools = (config) => {
     postsInFlight.add(posting);
     try {
       const posted = await posting;
-      if (!posted?.skipped) heldPods.delete(podId);
-      if (!heldPods.size) turnedBack.clear();
+      if (!posted?.skipped && !posted?.refused) heldPods.delete(podId);
       return posted;
     } catch (error) {
-      if (error instanceof HttpError && error.status === 409 && error.body?.code === 'unseen_messages') heldPods.add(podId);
+      if (error instanceof HttpError && error.status === 409 && error.body?.code === 'unseen_messages') {
+        heldPods.add(podId);
+        turnedBack.clear();
+      }
       throw error;
     } finally {
       postsInFlight.delete(posting);
@@ -300,7 +302,6 @@ export const buildTools = (config) => {
             throw new Error('Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.');
           }
           heldPods.clear();
-          turnedBack.clear();
         }
         return request(config, {
           method: 'POST',
@@ -386,7 +387,7 @@ export const buildTools = (config) => {
       name: 'commonly_attach_file',
       description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
       inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
-      call: wrap(async ({ podId, filePath, message, continueAnyway }) => {
+      call: wrap(async ({ podId, filePath, message, continueAnyway }) => (await trackPost(podId, (async () => {
         const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
         if (continueAnyway !== true) {
           await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
@@ -408,11 +409,12 @@ export const buildTools = (config) => {
         const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
         const content = message ? `${message} ${directive}` : directive;
         try {
-          await trackPost(podId, request(config, {
+          const card = await request(config, {
             method: 'POST',
             path: `${podPath}/messages`,
             body: { content, continueAnyway },
-          }));
+          });
+          return { ...card, uploaded };
         } catch (postError) {
           // The upload is a separate pod artifact. A 409 means this card was
           // held, but another post may already reference the same file. Keep
@@ -425,8 +427,7 @@ export const buildTools = (config) => {
           }
           throw postError;
         }
-        return uploaded;
-      }),
+      })())).uploaded),
     },
     {
       name: 'commonly_get_posts',
