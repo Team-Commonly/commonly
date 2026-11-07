@@ -115,6 +115,14 @@ it('two mentions racing in one process post one line', async () => {
   expect(mockEmitStopped).toHaveBeenCalledTimes(1);
 });
 
+it('a stop whose time is unreadable still tells the room, checked from midnight', async () => {
+  mockEffectiveInstall.mockResolvedValue(hostedInstall({
+    engine: 'native', provisionedAt: null, deprovisionedAt: 'not a date',
+  }));
+  expect(await noteStoppedMention(args)).toBe(true);
+  expect(mockHasLineSince.mock.calls[0][2]).toEqual(new Date('2026-11-06T00:00:00.000Z'));
+});
+
 it('asks what routing asks, so a row with no runtime of its own reads as its source does', async () => {
   await noteStoppedMention(args);
   expect(mockEffectiveInstall).toHaveBeenCalledWith('nova', 'default', 'pod-1');

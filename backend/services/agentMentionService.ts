@@ -2537,16 +2537,18 @@ const enqueueMentions = async ({
     }
   }
 
-  // F297: a person addressing a stopped agent is told. It runs after every wake
-  // so a slow or failed notice can't reach them.
+  // F297: a person addressing a stopped agent is told. Not awaited, and after
+  // every wake, so a slow or failed notice can't reach them or the sender.
   if (sender?.isBot === false) {
-    await Promise.all([...addressedTargets.values()].map((target) => noteStoppedMention({
-      podId: String(podId),
-      agentName: target.agentName,
-      instanceId: target.instanceId || 'default',
-      messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
-      threadRootId,
-    }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error.message))));
+    addressedTargets.forEach((target) => {
+      noteStoppedMention({
+        podId: String(podId),
+        agentName: target.agentName,
+        instanceId: target.instanceId || 'default',
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId,
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+    });
   }
 
   return {
@@ -2803,12 +2805,13 @@ const enqueueDmEvent = async ({
     });
     enqueued.push(agentName);
     if (sender?.isBot === false) {
-      await noteStoppedMention({
+      noteStoppedMention({
         podId: String(podId),
         agentName: agentName.toLowerCase(),
         instanceId,
         messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
-      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error.message));
+        threadRootId: resolveThreadRootId(message),
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
     }
   }
 

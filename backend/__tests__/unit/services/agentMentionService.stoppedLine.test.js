@@ -141,6 +141,13 @@ describe('a mention of a stopped agent', () => {
     expect(noteStoppedMention).not.toHaveBeenCalled();
   });
 
+  it('a notice that never finishes holds up neither the send nor the wake', async () => {
+    setup();
+    noteStoppedMention.mockReturnValue(new Promise(() => {}));
+    const result = await mention();
+    expect(result.enqueued).toContain('nova');
+  });
+
   it('a failed notice never drops the wake', async () => {
     setup();
     noteStoppedMention.mockRejectedValue(new Error('pg down'));
@@ -178,6 +185,24 @@ describe('a DM to a stopped agent', () => {
     User.findById.mockImplementation(() => chain(null));
     await dm();
     expect(noteStoppedMention).not.toHaveBeenCalled();
+  });
+
+  it('a notice that never finishes holds up neither the send nor the DM', async () => {
+    setup({ podType: 'agent-room', members: [human, nova] });
+    noteStoppedMention.mockReturnValue(new Promise(() => {}));
+    const result = await dm();
+    expect(result.enqueued).toEqual(['nova']);
+  });
+
+  it('lands in the thread the person asked in', async () => {
+    setup({ podType: 'agent-room', members: [human, nova] });
+    await AgentMentionService.enqueueDmEvent({
+      podId: 'pod-1',
+      message: { _id: '902', content: 'hello', thread_root_id: 77 },
+      userId: human._id,
+      username: human.username,
+    });
+    expect(noteStoppedMention.mock.calls[0][0].threadRootId).toBe(77);
   });
 
   it('a failed notice never drops the DM', async () => {
