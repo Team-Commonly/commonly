@@ -110,7 +110,14 @@ const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this cont
 // "thinking budget has been exceeded" stays out. Unmatched, the 422 is RUNTIME
 // and the seat respawns every few seconds against a key that stays refused.
 export const GATEWAY_BUDGET_RE = /Budget has been exceeded!|crossed budget/;
-const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+// `credit_balance_exhausted` is OpenAI's code for a prepaid balance at zero, sent
+// as a 429. `credit balance` has a space, so it needs its own entry. OpenAI:
+// "Retrying billing, spend, or quota errors won't restore API access."
+// This reaches the code only while it's in the text, as a bare code or a body
+// kept whole. A body the keep-list reduces keeps its message and moves the code
+// to `error.providerCode`, which isn't read here because it can come from a
+// tool's JSON. That refusal stays RATE_LIMIT and probes in 60 seconds.
+const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|credit_balance_exhausted|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
 // The status code is not a throttle wording: "429: You've reached your Fable 5
 // limit" is an exhausted allowance that a provider reports as HTTP 429.

@@ -11,9 +11,9 @@
  * The failure classes in spawn-retry.js are too loose for this. They only pick a
  * backoff, so a stray "401" or "billing" in a stack trace costs a slower retry.
  * Here the match becomes a statement to a person, so each line below fires only
- * on a wording a seat has logged, a walk has produced, or the wrapper or our own
- * gateway config writes. A failure that matches none of them posts nothing,
- * which is what it did before.
+ * on a wording a seat has logged, a walk has produced, a vendor publishes, or
+ * the wrapper or our own gateway config writes. A failure that matches none of
+ * them posts nothing, which is what it did before.
  */
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
 import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
@@ -39,11 +39,34 @@ const WONT_START_WORDINGS = [
   /^spawn \S+ ENOENT/,
   /^\w+ adapter: \S+ (?:is not set|is missing)/, // the seat has no provider key
 ];
+// The vendors' credit wordings open at the adapter's own label or the claude
+// adapter's stderr | stdout join, because any `: ` or status number can open a
+// log line. An unknown label stays silent. `upstream refused` is the line the run
+// loop builds for pi. The transports are how a CLI wraps a refusal it keeps whole.
+const ADAPTER_LABEL = String.raw`(?:claude|codex|pi|opencode|goose|qwen|dsh|Hermes)(?: turn failed)?(?: exited(?: with code)? \d+)?(?: \(upstream \d{3}\))?`;
+const OWN_LEAD = String.raw`(?:^(?:${ADAPTER_LABEL}|upstream refused \d{3}): | \| )`;
+const TRANSPORT = String.raw`(?:unexpected status \d{3}[^:\n]*: |API Error: \d{3} |Error code: \d{3} - |Error running remote compact task: )*`;
+const OPENAI_CODE = '(?:insufficient_quota|credit_balance_exhausted)';
+const ownWording = (wording) => new RegExp(`${OWN_LEAD}${TRANSPORT}${wording}`);
+
 // Not the whole of QUOTA_RE, which also holds "billing" and "quota" for backoff.
 const OUT_OF_ALLOWANCE_WORDINGS = [
   /(?:^|: | \| )you['’]?ve (?:hit|reached) your [^\n]{0,40}?limit/i,
   /\bout of credits\b/i,
   GATEWAY_BUDGET_RE,
+  // An API key with no credit left, in the vendors' published text, case-sensitive.
+  // OpenAI's API (openai-cookbook error-codes, codex tests/suite/quota_exceeded.rs).
+  ownWording('You exceeded your current quota, please check your plan and billing details'),
+  // codex-rs source maps insufficient_quota, credit_balance_exhausted and the
+  // spend-limit codes to this text (CodexErr::QuotaExceeded). Not run on a binary.
+  ownWording(String.raw`Quota exceeded\. Check your plan and billing details`),
+  // OpenAI's error.type and error.code (guides/error-codes): bare, or in a body kept whole.
+  ownWording(String.raw`(?:\d{3} )?${OPENAI_CODE}\b`),
+  ownWording(String.raw`\{['"]error['"]: ?\{[^{}\n]{0,400}?['"](?:code|type)['"]: ?['"]${OPENAI_CODE}['"]`),
+  // Anthropic's API (about-claude/api-credits-for-subscribers): reduced, or in its body.
+  ownWording(String.raw`(?:\{"type":"error","error":\{"type":"invalid_request_error","message":")?Your credit balance is too low to access the Anthropic API`),
+  // Claude Code: the same page, and its errors page.
+  ownWording(String.raw`Credit balance (?:is )?too low(?: ·| \||\n|$)`),
 ];
 
 const AGAIN = 'After that, send your message again if I still haven’t answered.';
@@ -75,8 +98,8 @@ export const cantAnswerNotice = (error) => {
   if (error?.code === PUBLIC_CODEX_VERSION_CODE) {
     return { cause: 'codex-version', text: codexVersionNotice(error.requiredVersion) };
   }
-  // A crashed claude turn keeps assistant and tool JSON lines in its tail, and
-  // those are the model's words, or a tool's.
+  // claudeFailureTail drops tool and assistant JSON. This cut is for what can
+  // still arrive: a torn stream line, or an error event after stderr.
   const text = String(error?.message ?? '').split(/(?:^|: | \| |\n)\{"type":/)[0];
   // Before the allowance check: a 401 is settled, whatever else its body says.
   if (matches(LOGIN_FAILED_WORDINGS, text)) return { cause: 'login', text: LOGIN_NOTICE };

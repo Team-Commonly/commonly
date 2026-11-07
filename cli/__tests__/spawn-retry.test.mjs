@@ -15,6 +15,8 @@ describe('spawn retry policy', () => {
     [new Error('insufficient_quota: credit balance exhausted'), SPAWN_FAILURE_CLASS.QUOTA],
     [Object.assign(new Error('429 insufficient_quota'), { status: 429 }), SPAWN_FAILURE_CLASS.QUOTA],
     [Object.assign(new Error('request failed'), { status: 429 }), SPAWN_FAILURE_CLASS.RATE_LIMIT],
+    [new Error('credit_balance_exhausted'), SPAWN_FAILURE_CLASS.QUOTA],
+    [Object.assign(new Error('429 credit_balance_exhausted'), { status: 429 }), SPAWN_FAILURE_CLASS.QUOTA],
     [Object.assign(new Error('spawn claude ENOENT'), { code: 'ENOENT' }), SPAWN_FAILURE_CLASS.CONFIGURATION],
     [new Error('claude exited with code 1: not logged in'), SPAWN_FAILURE_CLASS.CONFIGURATION],
     [new Error('claude exited with code 1:'), SPAWN_FAILURE_CLASS.RUNTIME],
@@ -23,7 +25,7 @@ describe('spawn retry policy', () => {
   });
 
   test('quota and configuration failures open the long circuit immediately', () => {
-    for (const error of [new Error('quota exceeded'), new Error('command not found')]) {
+    for (const error of [new Error('quota exceeded'), new Error('credit_balance_exhausted'), new Error('command not found')]) {
       const policy = spawnRetryPolicy({ error, consecutiveFailures: 1, intervalMs: 5000 });
       expect(policy).toMatchObject({ circuitOpen: true, delayMs: SPAWN_RETRY_MAX_MS });
     }
@@ -333,6 +335,8 @@ describe('a public witness failure is a runtime failure, whatever its text says'
     ['public_tool_failed', '{"status":500,"message":"content_policy_violation"}'],
     ['public_tool_failed', 'this content was flagged'],
     ['public_tool_failed', 'insufficient_quota'],
+    ['public_tool_failed', 'credit_balance_exhausted'],
+    ['public_tool_failed', 'Credit balance is too low'],
     ['public_tool_failed', '403 forbidden'],
     ['public_mcp_not_ready', 'connection reset'],
   ])('%s with "%s" classes as runtime', (code, reason) => {
