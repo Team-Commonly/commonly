@@ -54,7 +54,7 @@ const hostedLinearCatalogEntry = (connectionId = 'i-linear') => ({
   installableId: 'linear',
   list: 'tools',
   label: 'Linear',
-  description: 'Read Linear issues and projects.',
+  description: 'Issues, projects, cycles and releases in your own Linear workspace.',
   connectionType: 'hosted-mcp',
   entryId: 'linear',
   available: true,
@@ -1638,7 +1638,7 @@ describe('Connectors page: channels', () => {
       };
 
       it('reads as one phrase in Chinese', async () => {
-        expect(await linesAt(ago(5_000), 'zh-CN')).toBe('刚刚添加 | 刚刚开始 | 刚刚起 | 刚刚暂停 | Slack 刚刚回应');
+        expect(await linesAt(ago(5_000), 'zh-CN')).toBe('刚刚添加 | 刚刚开始 | 从刚刚起 | 刚刚暂停 | Slack 刚刚回应');
       });
 
       it('never reads 刚刚前 at 45 seconds, or for a missing time', async () => {

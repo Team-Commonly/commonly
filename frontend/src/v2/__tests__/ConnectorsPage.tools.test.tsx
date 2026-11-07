@@ -1076,7 +1076,7 @@ describe('Connectors page: tools', () => {
       const github = await openTool('GitHub');
       expect(within(github).queryByRole('button', { name: 'Grant to agents' })).not.toBeInTheDocument();
       const linear = await openToolPopover('Linear');
-      expect(linear.textContent).toContain('Issues, projects, cycles and releases in your own Linear workspace.');
+      expect(linear.textContent).toContain('Issues in Linear.');
       expect(linear.textContent).not.toContain('GitHub');
     });
 

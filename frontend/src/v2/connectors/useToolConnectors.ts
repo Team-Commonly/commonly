@@ -87,8 +87,10 @@ export const useToolConnectors = (
   // kept saying "granted" when the reload came back stale or failed.
   const [revokedHere, setRevokedHere] = useState<Record<string, string>>({});
   // The same for a mint: the server said yes, so a failed re-read can't make the
-  // page say nobody has it and offer it again. Any good read replaces these.
-  const [mintedHere, setMintedHere] = useState<ToolGrant[]>([]);
+  // page say nobody has it and offer it again. A good read begun after a mint
+  // replaces its row; one begun before can't speak for it, so `mints` tells them apart.
+  const [mintedHere, setMintedHere] = useState<Array<{ mint: number; grant: ToolGrant }>>([]);
+  const mints = useRef(0);
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
   // `stillListed`: the provider was never told (TASK-339), so its own page
   // still lists Commonly and the notice must say so.
@@ -103,7 +105,7 @@ export const useToolConnectors = (
     connections: entry.connections.filter((connection) => !disconnectedHere.includes(connection.connectionId)),
   }))), [rawCatalog, disconnectedHere]);
   const grants = useMemo(() => (rawGrants === null ? null : [
-    ...mintedHere.filter((minted) => !rawGrants.some((grant) => grant.grantId === minted.grantId)),
+    ...mintedHere.map((row) => row.grant).filter((minted) => !rawGrants.some((grant) => grant.grantId === minted.grantId)),
     ...rawGrants,
   ].map((grant) => (
     revokedHere[grant.grantId] && !grant.revokedAt
@@ -149,6 +151,7 @@ export const useToolConnectors = (
     .some((seat) => seat.runtimeNarrowingUnavailable);
 
   const load = useCallback(async () => {
+    const mintsBeforeRead = mints.current;
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
     setHiddenConnections(catalogRes?.hiddenToolConnections || []);
@@ -170,7 +173,7 @@ export const useToolConnectors = (
     // A failed read must not blank a list the person is looking at.
     if (grantRes) {
       setGrants(ownedGrants);
-      setMintedHere([]);
+      setMintedHere((current) => current.filter((row) => row.mint > mintsBeforeRead));
     } else {
       setGrants((current) => current ?? []);
     }
@@ -604,7 +607,7 @@ export const useToolConnectors = (
       const writeMode = draftPrWrite ? 'write-with-confirm' : draft.writeMode;
       // The mint's body, as routes/grants.ts takes it: the server names the broker
       // and takes the installation from the Connection (#1677) — neither is the caller's.
-      const minted = await api.post<{ grantId?: string }>('/api/grants', {
+      const minted = await api.post<Partial<ToolGrant>>('/api/grants', {
         connectionId: draft.connectionId,
         target: { kind: 'pod', id: draft.podId },
         tools,
@@ -622,26 +625,32 @@ export const useToolConnectors = (
         setError(t('tools.grantError', { defaultValue: 'Could not grant it.' }));
         return;
       }
-      // Before anything else can fail: the mint stands from here on.
+      // Before anything else can fail: the mint stands from here on. The reply is
+      // the created grant; the draft fills only what a read derives and it doesn't carry.
+      mints.current += 1;
+      const mint = mints.current;
+      const grantId = minted.grantId;
       setMintedHere((current) => [...current, {
-        grantId: minted.grantId as string,
-        // A hosted grant's installationId is its connection's id (openDraft).
-        installationId: draft.connectionId,
-        connectionId: draft.connectionId,
-        target: { kind: 'pod', id: draft.podId },
-        tools,
-        writeMode,
-        ...(draftPrWrite ? { prWrite: true } : {}),
-        budget: null,
-        effectiveAudience: selectedAgentIds,
-        expiresAt,
-        revokedAt: null,
-        revokedBy: null,
-        parentGrantId: null,
-        rootGrantId: null,
-        createdAt: new Date().toISOString(),
-        grantedBy: viewerId || null,
-        ...(draftByoNamed.length > 0 ? { byoAgents: draftByoNamed.map((agent) => agent.userId) } : {}),
+        mint,
+        grant: {
+          installationId: draft.connectionId,
+          connectionId: draft.connectionId,
+          target: { kind: 'pod', id: draft.podId },
+          tools,
+          writeMode,
+          budget: null,
+          effectiveAudience: selectedAgentIds,
+          expiresAt,
+          revokedAt: null,
+          revokedBy: null,
+          parentGrantId: null,
+          rootGrantId: null,
+          createdAt: new Date().toISOString(),
+          grantedBy: viewerId || null,
+          connector: { id: draftEntry.installableId, label: draftEntry.label },
+          ...minted,
+          grantId,
+        },
       }]);
       // Change access: a change is a new grant and a revoke of the old one, because `tools` is never
       // widened in place. The mint is kept whatever happens next; a failed revoke is retried alone

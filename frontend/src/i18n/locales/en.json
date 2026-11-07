@@ -2756,9 +2756,6 @@
     "hostedMcpAccessNext": "On GitHub, choose 'Only select repositories'.",
     "hostedMcpAccessAll": "GitHub's install page opens on All repositories. Leave it there and Commonly Connect can reach every repository on the account or org you install it on, including new ones. Public repos are readable either way.",
     "hostedMcpAccessOpen": "Open {{provider}}",
-    "catalogDescriptions": {
-      "linear": "Issues, projects, cycles and releases in your own Linear workspace."
-    },
     "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",

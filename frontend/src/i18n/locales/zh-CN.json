@@ -2704,7 +2704,7 @@
       "slackAnswered": "Slack 于{{age}}前回应",
       "addedJustNow": "刚刚添加",
       "startedJustNow": "刚刚开始",
-      "sinceJustNow": "刚刚起",
+      "sinceJustNow": "从刚刚起",
       "pausedJustNow": "刚刚暂停",
       "slackAnsweredJustNow": "Slack 刚刚回应"
     },
