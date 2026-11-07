@@ -503,6 +503,34 @@
   font-size: inherit;
 }
 
+/* The copy key sits over the block's corner, and the right padding keeps it off
+   the end of a long line. On a phone it stays visible, and ::after widens the tap. */
+.v2-msg__code { position: relative; }
+.v2-msg__content .v2-msg__code pre { padding-right: 44px; }
+.v2-root button.v2-msg__code-copy {
+  position: absolute;
+  top: 12px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-tint);
+  /* Fills the gap to the block's border, so a scrolled line can't show past the key. */
+  box-shadow: 5px 0 0 var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+.v2-root button.v2-msg__code-copy:hover { color: var(--v2-text-primary); }
+.v2-root button.v2-msg__code-copy:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+@media (max-width: 600px) {
+  .v2-root button.v2-msg__code-copy::after { content: ''; position: absolute; inset: -8px; }
+}
+
 .v2-msg__content blockquote {
   margin: 6px 0;
   padding: 2px 0 2px 10px;

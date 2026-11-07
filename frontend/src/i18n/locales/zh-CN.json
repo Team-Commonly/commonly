@@ -643,6 +643,7 @@
     }
   },
   "podChat": {
+    "copyCode": "复制代码",
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
     },
