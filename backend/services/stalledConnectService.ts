@@ -268,6 +268,13 @@ export const scan = async ({
       result.skippedNotStalled += 1;
       continue;
     }
+    // An MCP client never listens, so it derives never-connected however often
+    // it calls in. One that connected inside the patience window did connect,
+    // so telling its person nothing is running would be false.
+    if (latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt)) {
+      result.skippedNotStalled += 1;
+      continue;
+    }
 
     await nudgeOnce({ install, derived, issuedAt, tokenSource: source, now, result });
   }
