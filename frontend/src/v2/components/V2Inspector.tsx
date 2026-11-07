@@ -150,11 +150,12 @@ const agentState = (
   const request = attention.find((item) => matchesAgent(agent, item.actorName));
   if (request) return { kind: 'needs-you', title: request.title };
 
+  if (agent.connection?.state === 'never') return { kind: 'not-connected' };
+
   const task = tasks.find((item) => isWorkingTask(item) && matchesAgent(agent, item.assignee));
   if (task) return { kind: 'working', title: task.title };
 
   if (agent.status === 'working') return { kind: 'working' };
-  if (agent.connection?.state === 'never') return { kind: 'not-connected' };
   return { kind: 'idle' };
 };
 

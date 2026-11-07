@@ -133,6 +133,7 @@ describe('V2AgentBYO listening verification', () => {
     expect(screen.queryByTestId('byo-cta-warning')).not.toBeInTheDocument();
     expect(screen.queryByTestId('byo-listen-waiting')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Go to your pod' })).toHaveClass('v2-byo__submit');
+    expect(screen.getAllByRole('button', { name: 'Copy' })[0]).not.toHaveClass('v2-byo__copy--next');
     // ...and the rail follows it out of waiting, since it reads the same state.
     expect(rail.querySelector('.v2-byo__preview-status--live')).not.toBeNull();
     expect(rail.querySelector('.v2-byo__preview-status--waiting')).toBeNull();
