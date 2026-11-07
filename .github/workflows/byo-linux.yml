@@ -57,6 +57,10 @@ on:
         type: choice
         options: [ubuntu-22.04, ubuntu-24.04]
         default: ubuntu-22.04
+      bwrap_profile:
+        description: "load Ubuntu's own bwrap-userns-restrict AppArmor profile before the walk (24.04)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -99,6 +103,12 @@ jobs:
           else
             npm i -g @anthropic-ai/claude-code@2.1.318
           fi
+      - name: Load Ubuntu's bwrap profile
+        if: github.event_name == 'workflow_dispatch' && inputs.bwrap_profile
+        run: |
+          sudo apt-get install -y -qq apparmor-profiles
+          sudo cp /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
         env:

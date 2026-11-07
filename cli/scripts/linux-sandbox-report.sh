@@ -18,6 +18,9 @@ jail() {
     const [cmd, ...args] = wrapArgvWithBwrap(['sh', '-c', 'echo jail-ok; touch /usr/jail-escape 2>&1'], {}, { workspacePath, homePath });
     const run = spawnSync(cmd, args, { encoding: 'utf8' });
     console.log('jail exit', run.status, 'stdout:', JSON.stringify(run.stdout), 'stderr:', JSON.stringify(run.stderr));
+    const net = wrapArgvWithBwrap(['true'], { sandbox: { network: { policy: 'restricted' } } }, { workspacePath, homePath, enableLoopback: true });
+    const bridge = spawnSync(net[0], net.slice(1), { encoding: 'utf8' });
+    console.log('loopback-bridge jail exit', bridge.status, 'stderr:', JSON.stringify(bridge.stderr));
   "
 }
 
