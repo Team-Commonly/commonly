@@ -177,5 +177,6 @@ describe('the approval card states read on both themes', () => {
   test('the states take their colour from tokens', () => {
     expect(states).toMatch(/\.v2-approval__state--approved\s*\{\s*color:\s*var\(--v2-success-text\)/);
     expect(states).toMatch(/\.v2-approval__state--attention\s*\{\s*color:\s*var\(--v2-warning-text\)/);
+    expect(states).toMatch(/\.v2-approval__error\s*\{[^}]*color:\s*var\(--v2-danger-text\)/);
   });
 });
