@@ -184,8 +184,9 @@ export const buildTools = (config) => {
 
   // A checkpoint sent beside a post used to land even when the post came back
   // held, and a model could stop there with its answer unsent. So it waits for
-  // those posts, and a held one turns each event back once: the model may have
-  // read the hold and chosen to say nothing, and that can't be a trap.
+  // those posts, and a held one turns the event back until its second try: the
+  // model may have read the hold and chosen to say nothing, and that can't be a
+  // trap. A newer hold turns it back again, since that one hasn't been read.
   const postsInFlight = new Set();
   const heldPods = new Set();
   const turnedBack = new Set();
