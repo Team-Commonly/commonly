@@ -22,7 +22,7 @@ describe('model indexes', () => {
       const seen = new Map();
       return model.schema.indexes().flatMap(([keys, { background, ...options } = {}]) => {
         const name = options.name || defaultName(keys);
-        const spec = JSON.stringify(options);
+        const spec = JSON.stringify([keys, options]);
         if (seen.has(name) && seen.get(name) !== spec) return [`${model.modelName}.${name}`];
         seen.set(name, spec);
         return [];
