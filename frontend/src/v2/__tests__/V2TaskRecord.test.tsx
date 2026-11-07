@@ -235,7 +235,7 @@ test('Chinese copy covers the page', async () => {
   expect(screen.getByText('TASK-7 · 4条记录', { selector: 'p' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '下载' }));
   expect(screen.getByRole('menuitem', { name: '下载 JSONL' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: '返回看板' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: '返回任务板' })).toBeInTheDocument();
   expect(screen.getByText('原因：受阻')).toBeInTheDocument();
   expect(screen.getByText('由 Ana 完成')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '关于此记录' })).toBeInTheDocument();
@@ -307,6 +307,21 @@ test.each([
   await new Promise((resolve) => { setTimeout(resolve, 0); });
   expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('while the title is on its way the heading is a placeholder, and reads as the id to a screen reader', async () => {
+  wire(() => Promise.resolve(JSONL), undefined, () => new Promise(() => undefined));
+  setup();
+  const heading = await screen.findByRole('heading', { level: 2, name: 'TASK-7' });
+  expect(heading.querySelector('.v2-task-record__sr')).toHaveTextContent('TASK-7');
+  expect(heading.querySelector('.v2-task-record__bone')).not.toBeNull();
+});
+
+test('a long title keeps its full text in the heading\'s tooltip', async () => {
+  const long = 'Long title '.repeat(20).trim();
+  wire(() => Promise.resolve(JSONL), undefined, () => Promise.resolve({ tasks: [{ taskId: 'TASK-7', title: long }] }));
+  setup();
+  expect(await screen.findByRole('heading', { level: 2, name: long })).toHaveAttribute('title', long);
 });
 
 test('the record never waits on the tasks read: it renders with the id, then takes the title', async () => {
