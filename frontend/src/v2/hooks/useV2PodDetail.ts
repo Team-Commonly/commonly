@@ -153,6 +153,7 @@ export interface V2Agent {
   iconUrl?: string;
   status?: string;
   lastHeartbeatAt?: string | null;
+  connection?: { state?: string } | null;
   // Role family — resolved server-side from the agent's preset
   // (Development, Design, Strategy, Marketing, Research, etc.). Renders
   // as a small chip in the inspector and powers the Your Team filters.

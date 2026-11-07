@@ -771,7 +771,7 @@
       "agentRemoved": "{{name}} 已被移除，无法在这里回复。",
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
       "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
-      "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。请运行它页面上的连接命令。",
+      "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
     },
@@ -834,6 +834,7 @@
       "typeaheadNever": "智能体 · @{{handle}} —— 未连接，无法回复",
       "typeaheadDark": "智能体 · @{{handle}} —— 最近没有接入",
       "neverOwner": "@{{handle}} 尚未连接 —— 它看不到这条消息。修复：{{command}}",
+      "neverOwnerConnect": "@{{handle}} 尚未连接 —— 它看不到这条消息。",
       "neverPeer": "@{{handle}} 尚未连接 —— 它看不到这条消息。它的所有者可以将其接入。",
       "darkOwner": "@{{handle}} 已有一段时间没有接入，可能不会回复。唤醒它：{{command}}",
       "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。"
@@ -2077,6 +2078,8 @@
     "rekey": {
       "warning": "{{name}} 已有密钥。替换后，正在运行的智能体会断开连接，直到你运行新的接入命令。",
       "replace": "替换正在运行的智能体密钥",
+      "warningNever": "{{name}} 的密钥还没用过。替换后旧密钥会失效，你会拿到一条新的接入命令。",
+      "replaceNever": "获取新的接入命令",
       "cancel": "保留当前密钥"
     },
     "snippets": {
