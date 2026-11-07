@@ -1786,7 +1786,9 @@ class AgentMessageService {
       // An approval card is not the seat holding the floor: it is the server
       // asking the owner to decide (F180), so the run cap does not apply.
       const failureForPerson = failureNotice === true && personWaiting === true;
-      const runCap = (isOneToOne || approvalCard === true || failureForPerson)
+      // A long answer reaches the cap on its own, and then the cut-off line is
+      // the one post the person still needs (F279).
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
         ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);

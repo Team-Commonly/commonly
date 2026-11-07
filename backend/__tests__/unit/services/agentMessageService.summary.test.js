@@ -255,6 +255,34 @@ describe('AgentMessageService summary persistence', () => {
       expect(Message).toHaveBeenCalled();
     });
 
+    // F279: a long answer reaches the run cap on its own, and the line that says
+    // it stopped short is the one post the person still needs.
+    const pastTheRunCap = (content) => {
+      Pod.findById.mockReturnValue(podLookup('chat'));
+      jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(
+        ['one', 'two', 'three'].map((part) => ({ ...identicalRecentPostBy('agent-user-1')[0], content: part })),
+      );
+      return AgentMessageService.postMessage({
+        agentName: 'hq-support',
+        instanceId: 'commonly-support',
+        podId: 'pod-dm-1',
+        content,
+        metadata: { sourceEventType: 'chat.mention' },
+      });
+    };
+
+    it('posts the cut-off line past the run cap', async () => {
+      const result = await pastTheRunCap(CUT_OFF_LINE);
+      expect(result.refused).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('still refuses anything else past the run cap', async () => {
+      const result = await pastTheRunCap(`${CUT_OFF_LINE} More.`);
+      expect(result).toMatchObject({ refused: true, reason: 'consecutive_run_cap' });
+      expect(Message).not.toHaveBeenCalled();
+    });
+
     it('still skips a repeat that only starts like the cut-off line', async () => {
       const result = await repostText(`${CUT_OFF_LINE} More.`);
       expect(result.skipped).toBe(true);

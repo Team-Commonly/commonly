@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
-const { CUT_OFF_NOTICE } = await import('../src/lib/turn-failure-notice.js');
+const { CUT_OFF_NOTICE, WONT_START_NOTICE } = await import('../src/lib/turn-failure-notice.js');
 
 const drainMicrotasks = async () => {
   for (let i = 0; i < 40; i += 1) {
@@ -111,6 +111,7 @@ const fakeServer = ({
     if (target.endsWith('/messages')) {
       if (skipPosts) return { success: true, skipped: true, reason: 'duplicate_recent' };
       wrapperPosts.push(body);
+      tail.push(seatSaid(`wrapper-${wrapperPosts.length}`, { content: body.content }));
       return { message: { id: 'wrapper-post' } };
     }
     if (target.endsWith('/comments')) {
@@ -122,6 +123,8 @@ const fakeServer = ({
   createClient.mockReturnValue({ get, post });
   return {
     acks, released, wrapperPosts, comments,
+    // The server's requeue putting an event back on the next poll.
+    deliver: (page) => queue.push(page),
     // What a child does through commonly_post_message.
     childPosts: (id, extra = {}) => tail.push(seatSaid(id, extra)),
     somebodyPosts: (id, extra = {}) => tail.push(personSaid(id, extra)),
@@ -156,6 +159,7 @@ const startRun = ({ spawn, ...options }) => {
 };
 
 const killed = () => new Error('pi exited 143: ');
+const REFUSAL_TEXT = 'codex turn failed: This content was flagged for possible cybersecurity risk.';
 const noticesIn = (server) => server.wrapperPosts.filter((body) => body.content === CUT_OFF_NOTICE);
 const toldOrNot = (logs) => logs.filter((line) => /(told pod|was not told)/.test(line));
 const commentEvent = (id, payload = {}) => makeEvent(id, {
@@ -176,6 +180,160 @@ const runToTheEnd = async (spawn) => {
   run.handle.stop();
   return run;
 };
+
+// F279: three failures hand the event to the server's requeue, 10 to 20 minutes
+// away, so this is the first the person hears after part of an answer.
+describe('a third failure on an answer already started', () => {
+  const fireRetries = async (run, times) => {
+    for (let i = 0; i < times; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await run.scheduled.pop().callback();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+  };
+
+  test('leaves one line, even if the part came from the first attempt', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-three')]] });
+    let attempt = 0;
+    const spawn = jest.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 1);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(noticesIn(server)).toEqual([]);
+      await fireRetries(run, 1);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(noticesIn(server)).toEqual([{ content: CUT_OFF_NOTICE }]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says nothing when no attempt posted', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-none')]] });
+    const spawn = jest.fn(async () => { throw killed(); });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the wrapper\'s own notice for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-enoent')]] });
+    const spawn = jest.fn(async () => { throw new Error('spawn pi ENOENT'); });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.map((body) => body.content)).toEqual([WONT_START_NOTICE]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the model hint for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-model')]] });
+    const spawn = jest.fn(async () => {
+      throw Object.assign(new Error('codex turn failed: HTTP 404: model: gpt-5'), { status: 404 });
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.length).toBeGreaterThan(0);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the missing-model notice for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-unset')]] });
+    const spawn = jest.fn();
+    const run = startRun({
+      spawn,
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn, requiresModel: true },
+    });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).not.toHaveBeenCalled();
+      expect(server.wrapperPosts).toHaveLength(1);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes a refusal notice for no part of the next item\'s answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-refused'), makeEvent('evt-next')]] });
+    const refused = () => new Error(REFUSAL_TEXT);
+    const spawn = jest.fn(async () => {
+      if (spawn.mock.calls.length <= 2) throw refused();
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(5);
+      expect(server.wrapperPosts.length).toBeGreaterThan(0);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says it once for a batch whose items are let go one at a time', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a')], [makeEvent('evt-b')]] });
+    const spawn = jest.fn(async () => {
+      if (spawn.mock.calls.length === 2) server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 3);
+      expect(spawn).toHaveBeenCalledTimes(4);
+      expect(noticesIn(server)).toHaveLength(1);
+    } finally { run.handle.stop(); }
+  });
+
+  test('says it once when the requeued event fails three more times', async () => {
+    const event = makeEvent('evt-again');
+    const server = fakeServer({ pages: [[event]] });
+    const spawn = jest.fn(async () => {
+      server.childPosts(`part-${spawn.mock.calls.length}`);
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(noticesIn(server)).toHaveLength(1);
+      server.deliver([event]);
+      await fireRetries(run, 3);
+      expect(spawn).toHaveBeenCalledTimes(6);
+      expect(noticesIn(server)).toHaveLength(1);
+    } finally { run.handle.stop(); }
+  });
+
+  test('leaves no comment, because a comment read cannot show a reply', async () => {
+    const server = fakeServer({ pages: [[commentEvent('evt-comment')]] });
+    const spawn = jest.fn(async () => {
+      server.childPosts('part-one');
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.comments).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+});
 
 describe('a turn killed after it posted and checkpointed', () => {
   test('leaves one plain line in the pod, and is not retried', async () => {
