@@ -2,7 +2,7 @@ import React, {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
 } from 'react';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { ShellGlyph } from '../icons/glyphs';
 import V2Avatar from './V2Avatar';
@@ -32,6 +32,7 @@ import type { V2InviteTab } from './V2InviteModal';
 import { useV2ThreadState } from '../hooks/useV2ThreadState';
 import { useV2ThreadMentions } from '../hooks/useV2ThreadMentions';
 import { useWelcomeHostedStart, WELCOME_HOSTED_ACTION } from '../hooks/useWelcomeHostedStart';
+import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
 import { agentKeyFor } from '../utils/agentKey';
 import { runtimeChipLabel } from '../utils/runtimeChip';
@@ -86,6 +87,8 @@ interface AgentStateRow {
   /** A Commonly-hosted agent; absent from an older backend. */
   hosted?: boolean;
   fixCommand?: string;
+  /** The pod Bring your own can connect this agent in; the server sets it only when Connect can work. */
+  connectPodId?: string;
 }
 const REACH_IS_ACTIVE = new Set<AgentReachState>(['listening', 'reachable']);
 
@@ -198,6 +201,10 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
     </div>
   );
 };
+
+// Scout's welcome is the message offering one of these. Older welcomes carry no
+// ask start, so the connect start identifies them too.
+const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
 
 interface V2ThreadProps {
   detail: UseV2PodDetailResult;
@@ -495,16 +502,19 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [messages, viewerId, onOpenInvite, viewerHoldsHostedAgent, viewerOwnsPod, addedFirstTaskMessages, pod?._id, t]);
   // Only rows that render with their starts count: a flat message or a thread
   // root. A reply folded into a thread card renders without starts.
-  const byoOfferShown = useMemo(() => threadView.some((item) => {
+  const renderedStarts = useMemo(() => threadView.flatMap((item) => {
     // A folded claim run carries no starts, so only a flat message or a root can offer one.
-    if (item.kind === 'claims') return false;
+    if (item.kind === 'claims') return [];
     const id = item.kind === 'message' ? String(item.message.id) : item.rootId;
-    return (startsByMessageId.get(id) || []).some((start) => start.id === 'open-byo');
+    return startsByMessageId.get(id) || [];
   }), [threadView, startsByMessageId]);
+  const byoOfferShown = renderedStarts.some((start) => start.id === 'open-byo');
+  const welcomeShown = viewerOwnsPod && renderedStarts.some(isWelcomeStart);
   useEffect(() => {
-    // Write-once onboarding mark (User.onboarding.byoOfferShownAt).
+    // Write-once onboarding marks (User.onboarding.byoOfferShownAt, .welcomeShownAt).
     if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
-  }, [byoOfferShown, api, viewerId]);
+    if (welcomeShown && viewerId) recordByoStepOnce(api, 'welcome-shown', viewerId);
+  }, [byoOfferShown, welcomeShown, api, viewerId]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -1330,12 +1340,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   }, [agents]);
   // Staging walk 2026-11-02: until the pod's creator sends anything after
   // Scout's welcome, the composer names the agent who just spoke, with an
-  // example, instead of the pod. Older welcomes carry no ask start, so the
-  // connect start identifies them too.
+  // example, instead of the pod.
   const welcomeAgentName = useMemo(() => {
     if (!viewerOwnsPod || !viewerId) return null;
     const index = messages.findIndex((message) => message.payload?.kind === 'starts'
-      && message.payload.starts?.some((start) => start.id === ASK_START_ID || start.id === 'connect-agent'));
+      && message.payload.starts?.some(isWelcomeStart));
     if (index < 0 || messages.slice(index + 1).some((later) => later.user_id === viewerId)) return null;
     const raw = messages[index].user?.username || '';
     return agentDisplayNames.get(raw) || agentDisplayNames.get(raw.toLowerCase()) || raw || null;
@@ -1558,7 +1567,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const soloHuman = isSoloHumanPod(pod, members || [], currentUserId || '');
   // Do not offer the automatic first-reply invite in the private Scout workspace
   // (the placement-B privacy ruling). Group replies and empty pods qualify separately.
-  const scoutWorkspace = viewerOwnsPod && pod.name === 'My Workspace';
+  const scoutWorkspace = viewerOwnsPod && isDefaultWorkspaceName(pod.name);
   const scoutKeys = new Set((agents || []).filter((agent) => agent.agentName === 'scout')
     .map((agent) => buildAgentUsername(agent.agentName, agent.instanceId || 'default').toLowerCase()));
   const teammateMoment = soloHuman && !scoutWorkspace && detail.initialMessagesLoaded === true
@@ -1585,6 +1594,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     : 'podChat.agentRoomLiveness.goneDark';
   const directAgentFixCommand = directAgentReach === 'never-connected' && directAgent?.state?.isOwner
     ? directAgent.state.fixCommand || ''
+    : '';
+  // reconnect=1 keeps the agent's own name, so the page can't allocate "<name>-2".
+  const directAgentConnectPod = directAgentFixCommand ? directAgent?.state?.connectPodId : undefined;
+  const directAgentConnectLink = directAgentConnectPod && directAgent?.state
+    ? `/v2/agents/byo?pod=${encodeURIComponent(directAgentConnectPod)}&name=${encodeURIComponent(directAgent.state.agentName)}&instanceId=${encodeURIComponent(directAgent.state.instanceId)}&reconnect=1`
     : '';
   // Group pods name each agent that isn't running, so nobody waits on a reply
   // that can't come: 5 of 7 people who heard nothing in their first pod had an
@@ -2125,6 +2139,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             }}
             startsDisabled={sending}
             hostedStart={hostedStart.state}
+            viewerOwnsPod={viewerOwnsPod}
             onQuoteNavigate={onQuoteNavigate}
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}
@@ -2285,6 +2300,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                             <ShellGlyph name={fixCommandCopied ? 'check' : 'copy'} size={16} />
                           </button>
                         </div>
+                        {directAgentConnectLink && (
+                          <Link className="v2-chat__agent-room-connect" to={directAgentConnectLink}>
+                            {t('agentConnection.connect')}
+                          </Link>
+                        )}
                       </>
                     )}
                   </div>

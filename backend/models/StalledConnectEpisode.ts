@@ -14,7 +14,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * more explanation. Keying on the installation instead would explain once and
  * then stay silent through every subsequent attempt; keying on time would
  * repeat at someone who already heard it. So the key is
- * (installationId, tokenIssuedAt).
+ * (installationId, tokenIssuedAt). The scan adds one rule above that key: a nudge
+ * the person can read on one row covers another row on the same token.
  *
  * WHY IT IS SHARED. Two producers can explain the same silence: this timer,
  * and the reactive responder that answers when a human @mentions a seat with
@@ -60,6 +61,7 @@ export interface IStalledConnectEpisode extends Document {
   tokenSource?: 'installation' | 'user' | null;
   /** Which producer explained it. See the class comment. */
   producer: 'timer' | 'reactive';
+  /** When the episode opened. A nudge went out only if `nudgeMessageId` is set. */
   nudgedAt: Date;
   nudgeMessageId?: string;
   /**

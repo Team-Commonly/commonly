@@ -14,6 +14,12 @@
  * after staleSince); those are reinstalls, not revivals, and the count here
  * says nothing about them.
  *
+ * One runtime per agent identity: every row here would enter service in
+ * process, so a row whose identity holds a token stays stale, its config
+ * untouched, and is logged and reported under `tokenHeld`. Asked before the
+ * write and again after it, taking the row back
+ * (services/runtimeIdentityOwnership). Nothing is revoked here.
+ *
  * Pre-runtime rows: installs written under the early first-teammate shape
  * (2026-09-01/02) carry no `config.runtime` at all. Reviving those alone is a
  * one-day fix — the sweep's `$nin` treats a missing runtimeType as sweepable,
@@ -36,8 +42,9 @@
 import mongoose from 'mongoose';
 import { AgentInstallation, AgentRegistry } from '../models/AgentRegistry';
 import { STALENESS_EXEMPT_RUNTIME_TYPES } from '../services/agentInstallationCleanupService';
+import { identityHoldsRuntimeToken, takeBackInstallation } from '../services/runtimeIdentityOwnership';
 
-type StaleRow = {
+type StaleRow = Record<string, unknown> & {
   _id: unknown;
   agentName: string;
   instanceId?: string;
@@ -52,6 +59,8 @@ export type ReviveNativeInstallationsResult = {
   /** Every stale row that would be (or was) revived: typed native rows plus eligible pre-runtime rows. */
   candidates: number;
   byAgent: ByAgentRow[];
+  /** Rows left stale, or put back, because their identity holds a token. */
+  tokenHeld: ByAgentRow[];
   /** Stale rows with no `config.runtime.runtimeType`, resolved against the registry. */
   backfill: {
     candidates: number;
@@ -91,11 +100,29 @@ export const declaredExemptRuntime = (
   return '';
 };
 
+const identityKey = (row: StaleRow): string => `${row.agentName}::${String(row.instanceId || 'default')}`;
+
+/** The rows whose identity holds a token, each identity asked once. One that can't be read counts as holding one. */
+const rowsHoldingToken = async (rows: StaleRow[]): Promise<StaleRow[]> => {
+  const holds = new Map<string, boolean>();
+  for (const row of rows) {
+    const key = identityKey(row);
+    if (!holds.has(key)) {
+      // eslint-disable-next-line no-await-in-loop
+      holds.set(key, await identityHoldsRuntimeToken(row.agentName, String(row.instanceId || 'default')).catch((err: unknown) => {
+        console.error(`[revive-native] could not read ${key}:`, (err as { message?: string })?.message || err);
+        return true;
+      }));
+    }
+  }
+  return rows.filter((row) => holds.get(identityKey(row)));
+};
+
 const groupByAgent = (rows: StaleRow[]): ByAgentRow[] => {
   const groups = new Map<string, ByAgentRow>();
   for (const row of rows) {
     const instanceId = String(row.instanceId || 'default');
-    const key = `${row.agentName}::${instanceId}`;
+    const key = identityKey(row);
     const group = groups.get(key) || { agentName: row.agentName, instanceId, count: 0, oldestStaleSince: null };
     group.count += 1;
     const since = row.staleSince ? new Date(row.staleSince) : null;
@@ -115,9 +142,9 @@ export const reviveNativeInstallations = async (
   options: { apply?: boolean } = {},
 ): Promise<ReviveNativeInstallationsResult> => {
   const apply = options.apply === true;
-  const select = '_id agentName instanceId staleSince';
-  const typedRows = await AgentInstallation.find(staleFilter()).select(select).lean() as StaleRow[];
-  const preRuntimeRows = await AgentInstallation.find(preRuntimeFilter()).select(select).lean() as StaleRow[];
+  // Whole rows: the take-back below restores them as they stood.
+  const staleTypedRows = await AgentInstallation.find(staleFilter()).lean() as StaleRow[];
+  const preRuntimeRows = await AgentInstallation.find(preRuntimeFilter()).lean() as StaleRow[];
 
   // Resolve each pre-runtime agent against its registry declaration once.
   const agentNames = Array.from(new Set(preRuntimeRows.map((row) => String(row.agentName || '').toLowerCase())));
@@ -130,13 +157,13 @@ export const reviveNativeInstallations = async (
     declaredByAgent.set(String(registry.agentName).toLowerCase(), declaredExemptRuntime(registry));
   }
 
-  const eligibleRows: StaleRow[] = [];
+  const declaredRows: StaleRow[] = [];
   const skippedCounts = new Map<string, { count: number; reason: string }>();
   for (const row of preRuntimeRows) {
     const agentName = String(row.agentName || '').toLowerCase();
     const declared = declaredByAgent.get(agentName);
     if (declared) {
-      eligibleRows.push(row);
+      declaredRows.push(row);
       continue;
     }
     const reason = declaredByAgent.has(agentName)
@@ -149,6 +176,16 @@ export const reviveNativeInstallations = async (
   const skipped = Array.from(skippedCounts.entries())
     .map(([agentName, entry]) => ({ agentName, ...entry }))
     .sort((a, b) => b.count - a.count || a.agentName.localeCompare(b.agentName));
+
+  const heldRows = await rowsHoldingToken([...staleTypedRows, ...declaredRows]);
+  const notHeld = (row: StaleRow) => !heldRows.includes(row);
+  const typedRows = staleTypedRows.filter(notHeld);
+  const eligibleRows = declaredRows.filter(notHeld);
+  for (const group of groupByAgent(heldRows)) {
+    console.warn(
+      `[revive-native] skipping ${group.agentName}:${group.instanceId} (${group.count} row(s)): the identity holds a token`,
+    );
+  }
 
   let applied = 0;
   let revived = 0;
@@ -179,12 +216,21 @@ export const reviveNativeInstallations = async (
     );
     revived = modifiedCount(result);
   }
+  const lateRows = apply ? await rowsHoldingToken([...typedRows, ...eligibleRows]) : [];
+  for (const row of lateRows) {
+    console.warn(`[revive-native] taking back ${identityKey(row)}: the identity gained a token`);
+    // eslint-disable-next-line no-await-in-loop
+    await takeBackInstallation({ agentName: row.agentName, podId: row.podId, instanceId: row.instanceId }, row);
+  }
+  revived -= lateRows.length;
+  applied -= lateRows.filter((row) => eligibleRows.includes(row)).length;
 
   return {
     apply,
     exemptRuntimeTypes: [...STALENESS_EXEMPT_RUNTIME_TYPES],
     candidates: typedRows.length + eligibleRows.length,
     byAgent: groupByAgent([...typedRows, ...eligibleRows]),
+    tokenHeld: groupByAgent([...heldRows, ...lateRows]),
     backfill: {
       candidates: preRuntimeRows.length,
       eligible: eligibleRows.length,
@@ -202,8 +248,10 @@ export const main = async (): Promise<void> => {
   try {
     const result = await reviveNativeInstallations({ apply: process.argv.includes('--apply') });
     console.log(JSON.stringify(result, null, 2));
+    const heldCount = result.tokenHeld.reduce((sum, group) => sum + group.count, 0);
     const backfillNote = `${result.backfill.eligible} of them pre-runtime rows backfilled from the registry first, `
-      + `${result.backfill.candidates - result.backfill.eligible} pre-runtime row(s) skipped`;
+      + `${result.backfill.candidates - result.backfill.eligible} pre-runtime row(s) skipped, `
+      + `${heldCount} row(s) left stale because the identity holds a token`;
     if (!result.apply) {
       console.log(
         `DRY RUN — ${result.candidates} stale native install(s) would be revived (${backfillNote}). Re-run with --apply.`,

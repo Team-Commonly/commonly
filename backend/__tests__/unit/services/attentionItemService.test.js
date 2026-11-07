@@ -90,6 +90,33 @@ describe('attentionItemService', () => {
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
+  describe('a [BLOCKED] post where its installer isn\'t a member (F270)', () => {
+    const post = async (type) => {
+      mockPodFindById.mockReturnValue(chain({
+        _id: 'pod-1', name: 'Scout', type, members: ['guest', 'scout'],
+      }));
+      mockUserFind.mockReturnValue(chain([{ _id: 'guest', username: 'Guest', isBot: false }]));
+      mockUserFindById.mockReturnValue(chain({
+        _id: 'scout', username: 'scout', isBot: true, botMetadata: { displayName: 'Scout', ownerUserId: 'sam' },
+      }));
+      mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+      await AttentionItemService.recordMentionedUsers({
+        id: 45, podId: 'pod-1', userId: 'scout', content: '[BLOCKED] I need the staging key.',
+      });
+    };
+
+    it('tells the person in the agent\'s room, who is the one waiting', async () => {
+      await post('agent-room');
+      expect(mockUpdateOne.mock.calls[0][0].recipientUserId).toBe('guest');
+      expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'guest' }));
+    });
+
+    it('stays with the installer in any other pod', async () => {
+      await post('team');
+      expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+  });
+
   it('routes a [BLOCKED] agent post to its installer without needing an @mention', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'creator', members: ['creator', 'sam'] }));
     mockUserFind.mockReturnValue(chain([
@@ -269,6 +296,19 @@ describe('attentionItemService', () => {
     const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
     expect(queue.items.find((item) => item.id === 'appr-1')).toMatchObject({ kind: 'approval', sourceType: 'approval_action' });
     expect(queue.items.find((item) => item.id === 'act-1')).toMatchObject({ kind: 'approval', sourceType: 'approval' });
+  });
+
+  it('tells the page which rows are reviewed on their card (F215)', async () => {
+    const row = (id, extra) => ({
+      _id: `attention-${id}`, recipientUserId: '507f191e810c19729de860ea', podId: 'pod-1', kind: 'approval',
+      source: { type: 'approval_action', id }, title: 'Ask', createdAt: new Date(), ...extra,
+    });
+    mockFind.mockReturnValue({ sort: () => ({ lean: async () => [row('t-1', { reviewOnCard: true, messageId: '7' }), row('p-1', {})] }) });
+    mockPodFind.mockReturnValue(chain([{ _id: 'pod-1', name: 'Current', createdBy: '507f191e810c19729de860ea', members: ['507f191e810c19729de860ea'] }]));
+
+    const queue = await AttentionItemService.getOpenQueue('507f191e810c19729de860ea');
+    expect(queue.items.find((item) => item.id === 't-1')).toMatchObject({ reviewOnCard: true, messageId: '7' });
+    expect(queue.items.find((item) => item.id === 'p-1').reviewOnCard).toBeUndefined();
   });
 
   it('returns only rows whose recipient is still a member and resolves by recipient-owned id', async () => {
@@ -482,6 +522,33 @@ describe('attentionItemService', () => {
       expect.objectContaining({ $setOnInsert: expect.objectContaining({ kind: 'approval', title: 'Scout requests approval', detail: 'May I open a room for design work?' }) }),
       { upsert: true },
     );
+  });
+
+  it('a parked tool call is filed for review on its card, and points at that card (F215)', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+
+    await AttentionItemService.recordActionApproval({
+      _id: 'appr-3', podId: 'pod-1', ownerUserId: 'sam', agentName: 'scout', actionType: 'tool_call',
+      summary: 'Update an issue (approval required)', messageId: 77,
+    }, 'Scout');
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ $setOnInsert: expect.objectContaining({ reviewOnCard: true, messageId: '77' }) }),
+      { upsert: true },
+    );
+  });
+
+  it('any other proposal stays decidable from the row', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', createdBy: 'sam', members: ['sam'] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'sam', username: 'Sam', isBot: false }]));
+
+    await AttentionItemService.recordActionApproval({
+      _id: 'appr-4', podId: 'pod-1', ownerUserId: 'sam', agentName: 'scout', actionType: 'create_pod', summary: 'May I open a room?',
+    }, 'Scout');
+
+    expect(mockUpdateOne.mock.calls[0][1].$setOnInsert.reviewOnCard).toBeUndefined();
   });
 
   it('an action proposal whose owner has left the pod projects nothing — no dead row for nobody (#1652)', async () => {

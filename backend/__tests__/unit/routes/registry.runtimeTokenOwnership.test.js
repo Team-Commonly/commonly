@@ -21,6 +21,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 
 const matches = (doc, filter) => Object.entries(filter).every(([key, want]) => {
+  if (key === '$or') return want.some((branch) => matches(doc, branch));
   if (want && typeof want === 'object' && '$ne' in want) return doc[key] !== want.$ne;
   return doc[key] === want;
 });

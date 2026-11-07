@@ -12,7 +12,7 @@ const pg = newDb();
 pg.public.none(`CREATE TABLE messages (
   id SERIAL PRIMARY KEY, pod_id TEXT NOT NULL, user_id TEXT NOT NULL,
   content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', payload JSONB,
-  thread_root_id INTEGER, reply_to_message_id INTEGER,
+  thread_root_id INTEGER, reply_to_message_id INTEGER, top_level_answer BOOLEAN,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`);
 const { Pool } = pg.adapters.createPg();

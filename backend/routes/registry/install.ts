@@ -2,11 +2,13 @@
 // Handles: POST /install
 const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const express = require('express');
+const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
+const { isDefaultWorkspaceName } = require('../../config/defaultWorkspacePod');
 const AgentTemplate = require('../../models/AgentTemplate');
 const Activity = require('../../models/Activity');
 const Pod = require('../../models/Pod');
@@ -32,8 +34,12 @@ const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
+const { IDENTITY_COLLATION, PLACEHOLDER_AGENT_DESCRIPTION, installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
 const { isPersonalPodType } = require('../../services/podTypePolicyService');
+const {
+  hasForeignOwner, inheritablePodConfig, resolveAdditionSource, withRoutedRuntime,
+} = require('../../services/agentPodAddition');
 const {
   getUserId,
   resolveUsername,
@@ -63,6 +69,7 @@ const {
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const {
   previewInstallNarrowing, installNarrowingMessage, NARROWING_CONFIRM_CODE,
@@ -177,7 +184,10 @@ installRouter.get('/install/memory-handoff', installRateLimit, auth, (_req: any,
   res.json({ installTimeMemoryHandoff: true });
 });
 
-installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, async (req: any, res: any) => {
+// `addition` is set only by POST /agents/:name/pods/:podId below: an agent that
+// exists already. Its instanceId is the row's, and losing a race to its own
+// double click answers the route's refusal, not install's 400 or a 500.
+const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Record<string, unknown> }) => {
   let handoffRegistryClaim: { id: unknown; agentName: string; userId: unknown; version: number } | null = null;
   let handoffFinished = false;
   try {
@@ -269,11 +279,30 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     let normalizedInstanceId;
     if (instanceId) {
       normalizedInstanceId = normalizeInstanceId(instanceId);
-      if (normalizedInstanceId === agentName.toLowerCase()) normalizedInstanceId = 'default';
+      if (normalizedInstanceId === agentName.toLowerCase() && !addition) normalizedInstanceId = 'default';
     } else {
       normalizedInstanceId = deriveInstanceId(displayName, agentName);
     }
     if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
+
+    // A personal pod holds the agent it was made with, and only while it's there.
+    // ensureAgentInPod returns null for a DM and adds to an agent-admin pod, so
+    // neither stops the row. Refused here, before any write.
+    if (isPersonalPodType(pod.type)) {
+      const username = AgentIdentityService.buildAgentUsername(
+        AgentIdentityService.resolveAgentType(safeAgentName), normalizedInstanceId,
+      );
+      const bot = await User.findOne({ username, isBot: true }).select('_id').lean();
+      const isMember = Boolean(bot) && pod.members?.some(
+        (member: any) => String(member?.userId || member) === String(bot._id),
+      );
+      if (!isMember) {
+        return res.status(403).json({
+          code: 'dm_membership_refused',
+          error: 'This is a private conversation; another agent can\'t be added to it.',
+        });
+      }
+    }
 
     let agent = await AgentRegistry.getByName(agentName);
 
@@ -327,7 +356,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (requestedRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
         const held = await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId);
         const refusal = await hostedCapRefusal(userId, Boolean(held));
-        if (refusal) return res.status(403).json(refusal);
+        if (refusal) {
+          logInstallRefusal('registry.install', 'hosted_cap_reached', {
+            userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId, used: refusal.used, cap: refusal.cap,
+          });
+          return res.status(403).json(refusal);
+        }
         hostedCapChecked = true;
       }
       // ADR-006 §invariant 7 — self-serve is pod-scope only. The route
@@ -370,7 +404,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       const synthManifest = {
         name: String(agentName).toLowerCase(),
         version: String(version || '1.0.0'),
-        description: 'A connected agent.',
+        description: PLACEHOLDER_AGENT_DESCRIPTION,
         capabilities: [],
         context: { required: [], optional: [] },
         runtime: { type: 'standalone', connection: 'rest' },
@@ -401,11 +435,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const existingInPod = await AgentInstallation.findOne({
-      agentName: agentName.toLowerCase(),
+      ...installationIdentityFilter(agentName.toLowerCase(), normalizedInstanceId),
       podId,
-      instanceId: normalizedInstanceId,
       status: 'active',
-    });
+    }, null, { collation: IDENTITY_COLLATION });
 
     const copyMemory = async () => {
       if (req.body.memoryFrom !== undefined) {
@@ -444,6 +477,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
           displayName: existingInPod.displayName,
         } });
       }
+      if (addition) return res.status(409).json(addition.alreadyInPod);
       return res.status(400).json({ error: 'Agent already installed in this pod' });
     }
 
@@ -462,14 +496,19 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // so reuse would still leak). The owner can always reinstall their own.
     const isFirstPartyShared = !!AgentIdentityService.getAgentTypeConfig(safeAgentName);
     if (!isFirstPartyShared && agent?.ephemeral) {
+      // The caller is this ephemeral entry's publisher by now: the guard above
+      // refuses anyone else, and the self-serve branch only creates an entry
+      // for a bot that is theirs or doesn't exist yet. So what's left to ask is
+      // whether a row names another owner, which a guest's DM row and a row a
+      // mention pulled in don't.
+      //
       // Bare findOne (no .select/.lean chain) to mirror the existingInPod
       // check above and stay compatible with route unit-test mocks.
       const foreignInstall = await AgentInstallation.findOne({
-        agentName: safeAgentName,
-        instanceId: normalizedInstanceId,
+        ...installationIdentityFilter(safeAgentName, normalizedInstanceId),
         installedBy: { $ne: userId },
-      });
-      if (foreignInstall) {
+      }, null, { collation: IDENTITY_COLLATION });
+      if (foreignInstall && await hasForeignOwner(safeAgentName, normalizedInstanceId, userId)) {
         return res.status(409).json({
           code: 'agent_name_taken',
           error: `The agent name "${safeAgentName}" is already in use by another user — please choose a different name.`,
@@ -638,6 +677,9 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     })) {
       const isEntitled = installerUser?.entitlements?.cloudAgents === true;
       if (!isAdminInstaller && !isEntitled) {
+        logInstallRefusal('registry.install', 'cloud_agents_not_entitled', {
+          userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId,
+        });
         return res.status(403).json({
           code: 'cloud_agents_not_entitled',
           message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
@@ -652,7 +694,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // the cap the same way they bypass the entitlement.
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
       const refusal = await hostedCapRefusal(userId, Boolean(heldHostedRow));
-      if (refusal) return res.status(403).json(refusal);
+      if (refusal) {
+        logInstallRefusal('registry.install', 'hosted_cap_reached', {
+          userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId, used: refusal.used, cap: refusal.cap,
+        });
+        return res.status(403).json(refusal);
+      }
     }
 
     // One runtime per agent identity (services/runtimeIdentityOwnership). Asked
@@ -704,7 +751,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
           ),
           // Started and stopped are the agent's state, not one room's: a
           // stopped agent added to another pod stays stopped there too.
-          ...(heldHostedRow ? { provisionedAt: held.provisionedAt ?? null } : {}),
+          ...(heldHostedRow ? {
+            provisionedAt: held.provisionedAt ?? null,
+            ...(held.deprovisionedAt ? { deprovisionedAt: held.deprovisionedAt } : {}),
+          } : {}),
         };
       }
     }
@@ -899,11 +949,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
 
     const installationKey = { agentName: agentName.toLowerCase(), podId, instanceId: normalizedInstanceId };
     const previousRow = installsInProcess
-      ? await AgentInstallation.findOne({
-        agentName: { $eq: installationKey.agentName },
-        podId: { $eq: podId },
-        instanceId: { $eq: normalizedInstanceId },
-      })
+      ? await AgentInstallation.rowInPod(agentName, podId, normalizedInstanceId)
       : null;
     const installation = await AgentInstallation.install(agentName, podId, {
       version: version || agent.latestVersion,
@@ -913,6 +959,9 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
+      // A row brought back here is the caller's, as a new one would be. Not in a
+      // DM: a guest can be the caller, so its row keeps the name it has.
+      stampInstaller: !AgentIdentityService.DM_POD_TYPES_GUARD?.has(String(pod.type)),
     });
     if (installsInProcess && await identityHoldsRuntimeToken(safeAgentName, normalizedInstanceId)) {
       await takeBackInstallation(installationKey, previousRow);
@@ -990,7 +1039,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // First contact belongs to the durable human↔agent relationship, not the
     // replaceable installation row. Best-effort by design: neither a marker
     // write nor event enqueue failure may turn a successful install into 500.
-    // Awaited (one upsert, one enqueue) so the intro below knows whether the
+    // Awaited (an upsert, at most a member read, an enqueue) so the intro below knows whether the
     // agent's own greeting is coming.
     let firstContactFired = false;
     try {
@@ -1000,6 +1049,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
+        ...(isPersonalPodType(pod?.type) ? {} : { teamPodMembers: pod?.members }),
         // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
         // plain reply to the agent, so the greeting must not tell the person to
         // @mention it there. Only a team pod needs the handle.
@@ -1048,12 +1098,14 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       const podDoc = pod;
       // The agent is not counted in `members` (routing goes through
       // AgentInstallation), so a solo workspace reads as one member here.
-      const isOwnWorkspace = podDoc?.name === 'My Workspace';
+      const isOwnWorkspace = isDefaultWorkspaceName(podDoc?.name);
       const introWorthy = podDoc
         && podDoc.type !== 'dm'
         && podDoc.type !== 'agent-room'
         && ((podDoc.members?.length || 0) >= 2 || isOwnWorkspace)
-        && !(greetsItself && firstContactFired);
+        && !(greetsItself && firstContactFired)
+        // A stopped agent can't answer the "ping me" the intro ends on.
+        && !HostedEngine.hostedIsStopped(installation);
       if (introWorthy) {
         // Task #62 follow-up: the intro post passes `displayName` to
         // AgentMessageService.postMessage, which forwards it to
@@ -1197,6 +1249,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         .filter((i: any) => i.podId.toString() !== podId)
         .map((i: any) => i.podId)
       : [];
+    // An agent's rows reach pods the caller isn't in, and the answer has no
+    // reason to name them.
+    const visibleOtherPodIds = otherPodIds.length
+      ? (await Pod.find({
+        _id: { $in: otherPodIds }, $or: [{ members: userId }, { createdBy: userId }],
+      }).select('_id').lean()).map((pod: { _id: unknown }) => pod._id)
+      : otherPodIds;
 
     res.json({
       success: true,
@@ -1212,10 +1271,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       },
       memoryCopy,
       sharedIdentity: isReusingExistingAgent,
-      otherPods: otherPodIds,
+      otherPods: visibleOtherPodIds,
       hasExistingRuntimeToken: globalAgent.agentUser?.agentRuntimeTokens?.length > 0,
     });
   } catch (error) {
+    if (addition && ((error as { code?: number }).code === 11000 || (error as Error).message === 'Agent already installed')) {
+      return res.status(409).json(addition.alreadyInPod);
+    }
     if (handoffRegistryClaim && !handoffFinished) {
       try {
         // Only roll back the claim made by THIS request. Existing/published
@@ -1240,6 +1302,73 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     const status = (error as { status?: number }).status;
     res.status(status === 400 || status === 403 || status === 409 ? status : 500)
       .json({ error: (error as Error).message || 'Failed to install agent' });
+  }
+};
+
+installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), installRateLimit, auth, (req: any, res: any) => installAgent(req, res));
+
+const alreadyInPod = (status = 'active') => ({
+  code: 'agent_already_in_pod',
+  error: 'This agent is already in this pod.',
+  status,
+});
+
+/**
+ * POST /api/registry/agents/:name/pods/:podId?instanceId=
+ * Body: { confirmNarrowing?: true }
+ *
+ * The owner of a running agent adds it to another pod they belong to. It builds
+ * an install body from the agent's own row and runs installAgent, so every
+ * refusal, the membership write and the PG mirror stay install's. Nothing here
+ * creates an identity or a token. What runs before it exists to answer in this
+ * route's terms: ownership, which install can't see, and a DM pod, with the code
+ * install would answer anyway.
+ *
+ * A global admin gets no more than an owner. Settings and agent-config let an
+ * admin edit a row in place, but install stamps the caller as `installedBy`, so
+ * an admin's add would split the agent's owner, cap and engine across two people.
+ */
+installRouter.post('/agents/:name/pods/:podId', logAgentInstallRefusal('/api/registry/agents/:name/pods/:podId'), installRateLimit, auth, async (req: any, res: any) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { podId } = req.params;
+    const agentName = String(req.params.name).toLowerCase();
+    const instanceId = normalizeInstanceId(req.query.instanceId);
+    req.body = { agentName, instanceId, podId, confirmNarrowing: req.body?.confirmNarrowing === true };
+    res.locals.agentInstallInstanceId = instanceId;
+
+    if (!mongoose.isValidObjectId(podId)) return res.status(404).json({ error: 'Pod not found' });
+    const resolved = await resolveAdditionSource(agentName, instanceId, userId);
+    if (resolved.refusal) return res.status(resolved.refusal.status).json(resolved.refusal.body);
+
+    const pod = await Pod.findById(podId).select('type createdBy members').lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const isMember = pod.members?.some((member: any) => (member?.userId || member)?.toString?.() === userId.toString());
+    if (!isCreator && !isMember) {
+      return res.status(403).json({ code: 'pod_membership_required', error: 'You must be a member of this pod' });
+    }
+    if (AgentIdentityService.DM_POD_TYPES_GUARD.has(String(pod.type))) {
+      return res.status(403).json({ code: 'dm_membership_refused', error: 'A DM is between its two members; an agent can\'t be added to one.' });
+    }
+    const here = await AgentInstallation.findOne({
+      ...installationIdentityFilter(agentName, instanceId), podId, status: { $ne: 'uninstalled' },
+    }, null, { collation: IDENTITY_COLLATION }).select('status').lean();
+    if (here) return res.status(409).json(alreadyInPod(here.status));
+
+    const { source, fromProjection } = resolved;
+    req.body = {
+      ...req.body,
+      config: await withRoutedRuntime(inheritablePodConfig(source.config), agentName, instanceId),
+      scopes: source.scopes || [],
+      // A DM row's version is a literal, not one the agent runs.
+      ...(fromProjection ? {} : { version: source.version }),
+    };
+    return await installAgent(req, res, { alreadyInPod: alreadyInPod() });
+  } catch (error) {
+    console.error('Error adding agent to pod:', error);
+    return res.status(500).json({ error: 'Failed to add agent to pod' });
   }
 });
 

@@ -116,12 +116,50 @@
       "cancelled": "cancelled"
     }
   },
+  "cliAuthorize": {
+    "checkingSession": "Checking your session…",
+    "title": "Authorize Commonly CLI",
+    "signInLead": "Sign in to approve this device. The code stays tied to this browser tab.",
+    "deviceCode": "Device code",
+    "signInContinue": "Sign in to continue",
+    "enterCode": "Enter the code shown in your terminal.",
+    "checking": "Checking…",
+    "continue": "Continue",
+    "confirmTitle": "Authorize <host/> as @<user/>?",
+    "fallbackUser": "you",
+    "confirmLead": "This device is asking to use your Commonly account.",
+    "client": "Client",
+    "instance": "Instance",
+    "requested": "Requested",
+    "approveWarning": "Only approve a code you requested from your own terminal.",
+    "deny": "Deny",
+    "authorize": "Authorize",
+    "authorizing": "Authorizing…",
+    "doneTitle": "Device authorized",
+    "doneBody": "You can return to your terminal.",
+    "deniedTitle": "Authorization denied",
+    "deniedBody": "No token was issued for this device.",
+    "expiredTitle": "Code expired",
+    "expiredBody": "Return to your terminal and run <code>commonly login</code> again.",
+    "usedTitle": "Code already used",
+    "usedBody": "This code was already approved or completed. Return to your terminal.",
+    "errorTitle": "Couldn’t authorize this device",
+    "errorBody": "Check the code and try again from your terminal."
+  },
   "common": {
+    "somethingWrong": "Something went wrong",
+    "loadingApp": "Loading Commonly",
     "brandName": "Commonly",
     "brandWordmark": "commonly",
     "agent": "Agent",
     "you": "you",
     "close": "Close",
+    "cancel": "Cancel",
+    "account": {
+      "label": "Account",
+      "open": "Open account menu",
+      "signOut": "Sign out"
+    },
     "copy": "Copy",
     "copied": "Copied!",
     "aboutPage": "About {{title}}",
@@ -129,6 +167,7 @@
       "label": "Language"
     },
     "nav": {
+      "label": "Main navigation",
       "pods": "Pods",
       "agents": "Agents",
       "activity": "Activity",
@@ -140,6 +179,8 @@
       "artifacts": "Artifacts"
     },
     "pageTitle": {
+      "connect": "Connect",
+      "podTools": "Pod tools",
       "agentSettings": "Agent settings",
       "agentMemory": "Agent memory",
       "profile": "Profile",
@@ -187,6 +228,80 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "sections": {
+      "account": "Account",
+      "access": "Access",
+      "look": "Look",
+      "admin": "Administration"
+    },
+    "accountActions": "Account actions",
+    "connectorsDetail": "Manage connected services",
+    "developerApps": "Developer apps",
+    "account": {
+      "fallbackName": "Your account",
+      "noChanges": "No account changes to save.",
+      "saved": "Account saved.",
+      "saveFailed": "Couldn’t save your account. Try again.",
+      "changePhoto": "Change photo",
+      "avatarOf": "{{name}} avatar",
+      "roleAdmin": "administrator",
+      "roleMember": "member",
+      "editName": "Edit name and username",
+      "editProfile": "Edit profile",
+      "email": "Email",
+      "changeEmail": "Change email",
+      "editEmail": "Edit email",
+      "name": "Name",
+      "username": "Username",
+      "change": "Change",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "apiToken": {
+      "title": "API token",
+      "active": "Active",
+      "activeEnding": "Active · ends in {{last4}}",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "regenerate": "Regenerate",
+      "regenerating": "Regenerating…",
+      "revoking": "Revoking…",
+      "show": "Show",
+      "hide": "Hide",
+      "generated": "New API token generated. Copy it now; treat it like a password.",
+      "generateFailed": "Couldn’t generate an API token. Try again.",
+      "revoked": "API token revoked.",
+      "revokeFailed": "Couldn’t revoke the API token. Try again.",
+      "copied": "API token copied.",
+      "copyFailed": "Couldn’t copy the API token. Select and copy it manually.",
+      "created": "Created {{date}}"
+    },
+    "admin": {
+      "users": "Users",
+      "usersDetail": "Registered users, bans, invitation codes",
+      "analytics": "Usage analytics",
+      "analyticsDetail": "Signups, messages, active users, activation funnel"
+    },
+    "devices": {
+      "title": "Devices",
+      "lead": "CLI device tokens are long-lived until you revoke them.",
+      "refresh": "Refresh",
+      "loading": "Loading devices…",
+      "loadingShort": "Loading…",
+      "empty": "No CLI devices are connected.",
+      "never": "Never",
+      "none": "None",
+      "created": "Created {{created}} · Last used {{used}}",
+      "revoked": "Revoked {{date}}",
+      "revoke": "Revoke",
+      "revokeConfirm": "Revoke {{label}}? This CLI will need to sign in again.",
+      "loadFailed": "Couldn’t load your devices.",
+      "loadFailedShort": "Couldn’t load",
+      "revokeFailed": "Couldn’t revoke that device.",
+      "count_one": "{{count}} CLI device",
+      "count_other": "{{count}} CLI devices",
+      "countUsed": "{{devices}} · used {{when}}"
+    },
     "deleteAccount": {
       "title": "Delete account",
       "effects": "This permanently deletes your account and uploads and cancels any active Stripe subscription. Shared messages are retained. Agent runtimes you installed are paused. Their identities and memory survive. This cannot be undone.",
@@ -205,6 +320,9 @@
       "failed": "Could not sign out everywhere. Try again."
     },
     "username": {
+      "noChanges": "No username changes to save.",
+      "saved": "Username saved.",
+      "saveFailed": "Couldn’t save your username. Try again.",
       "save": "Save username",
       "saving": "Saving…",
       "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you."
@@ -306,6 +424,8 @@
     "approval": {
       "approve": "Approve",
       "deny": "Deny",
+      "review": "Review",
+      "needsReview": "Open this request and check it before you approve.",
       "working": "Saving…",
       "actionFailed": "That approval could not be updated. Try again."
     },
@@ -644,10 +764,17 @@
     }
   },
   "podChat": {
+    "copyCode": "Copy code",
     "firstTask": {
       "addFailed": "Couldn’t add the task. Try again."
     },
     "systemActions": {
+      "agentStopped": "{{name}} is stopped, so it can't answer until its owner starts it.",
+      "agentRemoved": "{{name}} was removed, so it can't answer here.",
+      "agentOffline": "{{name}} looks offline, so it may not answer for now.",
+      "agentPaused": "{{name}} is paused, so it won't answer this.",
+      "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Run the connect command shown on its page.",
+      "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"
     },
     "claimRun": {
@@ -658,6 +785,7 @@
     "starts": {
       "label": "Ways to start",
       "openByo": "Open Bring your own",
+      "hostedNote": "Nothing to install. It answers you here.",
       "labels": {
         "ask-scout": "Show me what you can do",
         "connect-agent": "Connect an agent I already use",
@@ -670,8 +798,8 @@
     "messageFallback": "message",
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
-    "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
-    "deliveryHintOthers": "{{woken}} will answer this. Other agents here answer only when you @mention them. Try <handle>@{{handle}}</handle>.",
+    "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle/>.",
+    "deliveryHintOthers": "<woken/> will answer this. Other agents here answer only when you @mention them. Try <handle/>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
     "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
@@ -1640,6 +1768,7 @@
       "reviewLatest": "Review latest",
       "latestReviewed": "Latest reviewed",
       "discard": "Discard your unsaved focus changes?",
+      "discardAction": "Discard",
       "saveError": "Focus could not be saved. Try again.",
       "progress": "{{done}}/{{total}} done"
     },
@@ -1784,7 +1913,8 @@
         "newCommit": "New commit",
         "bundleSize": "Bundle size"
       },
-      "exactArgs": "Exact arguments"
+      "exactArgs": "Exact arguments",
+      "longValue": "{{length}} characters. Scroll to read all of it."
     },
     "approve": "Approve",
     "decline": "Decline",
@@ -1801,6 +1931,7 @@
     "openConnect": "Get my connect command",
     "errors": {
       "expired": "This approval expired before the decision landed.",
+      "needsReview": "This request couldn't be matched to what's shown here. Refresh before deciding.",
       "failed": "Couldn't record the decision. Try again."
     }
   },
@@ -1833,6 +1964,8 @@
     "staleDays_one": "Not seen in {{count}} day",
     "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
+    "stopped": "Stopped",
+    "connect": "Connect",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
     "reconnectDone": "Connected.",
@@ -1920,6 +2053,7 @@
       "tokenEmpty": "Install succeeded but token issuance returned empty. Retry, or contact ops.",
       "installFailed": "Install failed.",
       "nameIsHosted": "{{name}} is your hosted agent's name, and Commonly runs that one. Choose a different name for the agent you run yourself.",
+      "hostedNameTaken": "Commonly already runs an agent called {{name}}. Choose a different name.",
       "fileTooLarge": "That file is over the 256KB import ceiling — trim it or paste the relevant part.",
       "importFailed": "Import failed.",
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
@@ -1945,8 +2079,8 @@
       "stopsOnCloseWithComputerWindows": "This stops when this PowerShell window closes. For an agent that keeps running, start another agent and choose On my computer.",
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "scriptsDisabled": "If PowerShell says running scripts is disabled, run Set-ExecutionPolicy -Scope CurrentUser RemoteSigned once, then run the four lines again.",
-      "windowsNote": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for {{name}}, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the last line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
-      "windowsCodex": "Windows has no sandbox Codex can use here, so nothing confines {{name}}. It runs with your own access to files and commands, and anyone in this pod, people you invite later included, can direct it. You choose that by adding <cmd>--unsandboxed</cmd>, and the last line already has it. It gets no connector grants, and it stops answering if this pod stops being invite-only.",
+      "windowsNote": "Claude Code answers @mentions on Windows with CLI 0.1.243 or newer. Windows has no sandbox for <name/>, so nothing at the OS level confines it. You choose that by adding <cmd>--unsandboxed</cmd>, as the last line does. It keeps Commonly’s restricted tool settings: it only reads its folder unless you add <cmd>--allow write</cmd>, which lets it edit files there. It can’t run commands on Windows, and it gets no connector grants. To run it in the background, <cmd>commonly daemon install --unsandboxed</cmd> sets it up as a task that starts when you log in.",
+      "windowsCodex": "Windows has no sandbox Codex can use here, so nothing confines <name/>. It runs with your own access to files and commands, and anyone in this pod, people you invite later included, can direct it. You choose that by adding <cmd>--unsandboxed</cmd>, and the last line already has it. It gets no connector grants, and it stops answering if this pod stops being invite-only.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
       "needsWindows": "Needs Node 22+ with npm and {{tool}} signed in. Run all four lines in one PowerShell window: the $env lines last only there.",
@@ -1992,7 +2126,10 @@
       "meter": "Beta limits: {{turns}} turns a day, one hosted agent per account.",
       "statTurns": "turns / day",
       "statAgents": "hosted agent",
-      "openHeld": "Open {{holder}}"
+      "heldNotice": "You already have a hosted agent (beta allows {{cap}}).",
+      "openHeld": "Open {{holder}}",
+      "heldLink": "Your hosted agent: {{holder}}",
+      "heldOff": "You already have a hosted agent, and the beta allows {{cap}}, so {{mode}} is off."
     },
     "preview": {
       "title": "your agent",
@@ -2147,6 +2284,7 @@
       "memories_other": "{{count}} memories",
       "talkTo": "Talk to {{name}}",
       "opening": "Opening…",
+      "noSharedHost": "This agent isn’t hosted in a pod you’re in. Join a pod where someone hosts it to talk to it.",
       "openRoomFailed": "The 1:1 with this agent could not be opened."
     },
     "avatar": {
@@ -2184,12 +2322,14 @@
       "lastSavedAgo": "Last saved {{time}}.",
       "ownerLine_one": "<b>{{notes}} notes</b> in {{count}} section.",
       "ownerLine_other": "<b>{{notes}} notes</b> in {{count}} sections.",
-      "ownerLineSaved_one": "<b>{{notes}} notes</b> in {{count}} section, last saved to {{section}} {{time}}.",
-      "ownerLineSaved_other": "<b>{{notes}} notes</b> in {{count}} sections, last saved to {{section}} {{time}}.",
+      "ownerLineSaved_one": "<b>{{notes}} notes</b> in {{count}} section, last saved to <section/> {{time}}.",
+      "ownerLineSaved_other": "<b>{{notes}} notes</b> in {{count}} sections, last saved to <section/> {{time}}.",
       "privateOwner": "Only you and admins can read them.",
       "privateAdmin": "Only its owner and admins can read them.",
       "open": "Open memory",
-      "sectionUpdated": "Section updated {{when}}",
+      "sectionUpdated": "Saved {{when}}",
+      "inPods_one": "In {{count}} pod",
+      "inPods_other": "In {{count}} pods",
       "sections": {
         "soul": "Identity",
         "long_term": "Long-term memory",
@@ -2429,7 +2569,6 @@
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
       "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.",
-      "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },
     "empty": {
@@ -2442,6 +2581,7 @@
       "category": "{{label}} ({{count}})"
     },
     "card": {
+      "mentionedYou": "mentioned you",
       "inProject": "in",
       "lastSaid": "“{{snippet}}”",
       "roleTitle": "Role: {{role}}",
@@ -2803,7 +2943,7 @@
     "changeAccess": "Change access",
     "connect": "Connect",
     "connectError": "Could not begin connecting. Try again in a moment.",
-    "connectOwn": "connect your own {{label}} account",
+    "connectOwn": "Connect your own {{label}} account",
     "chooseAccess": "Choose what {{label}} can reach",
     "connection": "connection",
     "counts": "Call counts",
@@ -2826,12 +2966,12 @@
     "grantError": "Could not grant it.",
     "grantedByOn": "Granted by {{member}} {{rel}}.",
     "grantedOn": "Granted {{rel}}.",
-    "grantedToPod": "granted to <b>{{pod}}</b>",
-    "grantedToPodBy": "granted to <b>{{pod}}</b> by <b>{{member}}</b>",
+    "grantedToPod": "granted to <pod/>",
+    "grantedToPodBy": "granted to <pod/> by <member/>",
     "granting": "Granting…",
     "repoConnect": {
       "action": "Connect a repository",
-      "note": "connect a repository first",
+      "note": "Connect a repository first",
       "loading": "Reading your repositories…",
       "readFailed": "Could not read your repositories from GitHub.",
       "needsGithub": "Connect your GitHub account first. Commonly reads which repositories you can push to from it.",
@@ -2880,7 +3020,7 @@
     "grantPodPostingNarrowed": "{{agents}} can post only in one of their pods while that pod has connector access.",
     "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "openProviderSettings": "Open provider settings",
-    "noConnection": "install the GitHub App first · an admin does this once",
+    "noConnection": "Install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
     "noTools": "no tools on the allow-list",
     "nobody": "no agent",
@@ -2931,7 +3071,7 @@
     "reasonGrantNotFound": "the grant no longer exists",
     "owner": "owner",
     "readInTesting": "read in testing",
-    "readOrWrite": "read, or read and write",
+    "readOrWrite": "Read, or read and write",
     "refused": "refused",
     "repository": "repository",
     "revoke": "Revoke",
@@ -2960,8 +3100,8 @@
     "keyAgentNotInPodUnnamed": "This key's agent isn't in this pod.",
     "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}",
     "operatorKey": {
-      "note": "add a key for one of your agents",
-      "noAgents": "no agent of yours to add a key for yet",
+      "note": "Add a key for one of your agents",
+      "noAgents": "No agent of yours to add a key for yet",
       "agent": "agent",
       "key": "key",
       "submit": "Add key",
@@ -2979,7 +3119,7 @@
         "keyStoreFailed": "Could not save the key. Try again.",
         "generic": "Could not add the key. Try again."
       },
-      "agentsUnavailable": "couldn't read your agents just now · reload to try again"
+      "agentsUnavailable": "Couldn't read your agents just now · reload to try again"
     },
     "chooseKey": "Choose a key",
     "byo": {
@@ -2987,7 +3127,7 @@
       "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
       "readOnlyHint": "An agent on your computer can only read.",
       "prWriteConsent": "{{agents}} can also send commits and pull requests to this repository, each one after you approve it.",
-      "reasonUnconfinedHost": "Runs on native Windows, where no grant can be used.",
+      "reasonUnconfinedHost": "Ran without a sandbox Commonly can enforce, so no grant can be used.",
       "reasonAdapterUnsupported": "Connectors need a sandboxed harness: only {{harnesses}} agents can be named.",
       "namedHeading": "on your computer",
       "named": "{{agent}} runs outside Commonly",
@@ -3003,7 +3143,7 @@
         "notAudience": "Name an agent that this grant reaches.",
         "notAgent": "Only an agent can be named on a grant.",
         "notOwned": "You can name only an agent you installed, and that no one else installed.",
-        "unconfinedHost": "This agent runs on native Windows, where no grant can be used.",
+        "unconfinedHost": "This agent ran without a sandbox Commonly can enforce, so no grant can be used from it.",
         "adapterUnsupported": "Only a {{harnesses}} agent can be named on a grant."
       }
     }
@@ -3097,6 +3237,8 @@
       "noTurn": "no turn reported",
       "saveRuntime": "Save runtime",
       "spawnFailed": "spawn failed · last spawn: {{harness}} · {{model}} · {{effort}}",
+      "runtimeKind_hosted": "hosted",
+      "runtimeKind_webhook": "webhook",
       "notReported": "not reported"
     },
     "providerKey": {
@@ -3135,6 +3277,7 @@
     "identityTitle": "Identity",
     "identityAccess": "Identity & access",
     "keyActive": "active",
+    "keyNotNeeded": "Not needed",
     "openMemory": "Open memory",
     "heartbeatOff": "Off",
     "connection": "Connection",
@@ -3164,7 +3307,8 @@
     "identityMirrorError": "Name saved, but chat has not caught up. Try saving again in a moment.",
     "identityProjectionError": "Name update was interrupted. Save again to finish updating every pod.",
     "identitySaveError": "Could not save identity settings.",
-    "listingTitle": "Marketplace listing",
+    "listingTitle": "Listing",
+    "wakeNote": "{{mentions}} {{heartbeat}}",
     "listingLoading": "Checking listing…",
     "listingPublished": "Published",
     "listingNotInCatalog": "Published, not visible in marketplace browse",
@@ -3174,7 +3318,6 @@
     "listingUnavailable": "Listing status unavailable",
     "viewPublicProfile": "View public profile",
     "listingSeparate": "Publishing a listing is managed separately from Settings.",
-    "ownedTitle": "Your registry listing",
     "ownedName": "Listing name",
     "ownedSave": "Save listing name",
     "ownedRetire": "Retire listing",
@@ -3196,14 +3339,43 @@
     "heartbeatHosted_other": "Your agents that run on Commonly take a heartbeat at most once an hour, and {{count}} a day between them.",
     "heartbeatHostedOff": "Heartbeats aren't available yet for your agents that run on Commonly.",
     "saveInterval": "Save interval",
-    "everyMinutes_one": "Every minute",
-    "everyMinutes_other": "Every {{count}} minutes",
+    "minutesShort": "{{minutes}} min",
+    "hostedRun": {
+      "running": "Running.",
+      "stopped": "Stopped. It won't answer until you start it.",
+      "starting": "Starting…",
+      "slow": "Still starting. If it stays this way, try Start again.",
+      "stop": "Stop",
+      "start": "Start",
+      "stopConfirm": "Stop it",
+      "keep": "Keep running",
+      "confirm": "Stop {{name}}? It won't answer until you start it again. Its memory and pods stay.",
+      "confirmClears": "Stop {{name}}? This clears its conversation history, and it won't answer until you start it again. Its pods stay.",
+      "stopError": "Couldn't stop {{name}}. Try again.",
+      "startError": "Couldn't start {{name}}. Try again."
+    },
+    "addToPod": {
+      "action": "Add to pod",
+      "choose": "Pod to add this agent to",
+      "add": "Add",
+      "addAnyway": "Add anyway",
+      "cancel": "Cancel",
+      "loading": "Loading your pods…",
+      "none": "This agent is already in every pod you can add it to.",
+      "added": "Added to {{pod}}.",
+      "inactive": "This agent is already in {{pod}}, but it isn't active there.",
+      "loadError": "Couldn't load your pods.",
+      "notOwner": "Only this agent's owner can add it to another pod.",
+      "error": "Couldn't add {{name}} to that pod. Try again."
+    },
     "podsTitle": "Pods",
     "remove": "Remove from pod",
     "removeConfirm": "Remove this agent from {{podName}}? Its identity and memory stay intact.",
     "removeLastConfirm": "Remove this agent from its last pod, {{podName}}? Every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "removeDisconnectConfirm": "Remove this agent from {{podName}}? No active installation will remain, so every key will be revoked and the agent will disconnect. Its identity and memory remain.",
     "forbidden": "Only the installer or an admin can change this setting.",
+    "keysLoadFailed": "Couldn’t load keys.",
+    "keysRetry": "Try again",
     "keyUnavailable": "Key management is unavailable for this agent. Ask an admin for access.",
     "noPods": "No pods to manage",
     "loadError": "Could not load settings.",
@@ -3211,6 +3383,10 @@
     "removeError": "Could not remove the agent from this pod.",
     "loading": "Loading agent settings…",
     "unavailable": "Agent settings unavailable.",
+    "noAccess": {
+      "title": "You can't open these settings",
+      "body": "Only the installer or an admin can open them, while the agent is in a pod."
+    },
     "yourTeam": "Your team",
     "tabs": "Agent tabs",
     "profile": "Profile",
@@ -3246,8 +3422,10 @@
     "messageWakeShort_mentions": "Mentions",
     "messageWakeShort_human": "People",
     "messageWakeShort_all": "All",
-    "heartbeatTurns": "{{turns}} / {{cap}} heartbeat turns a day",
-    "heartbeatTurnsNoCap": "{{turns}} heartbeat turns a day · cap unavailable",
+    "heartbeatTurns_one": "{{count}} heartbeat / {{cap}} turns daily",
+    "heartbeatTurns_other": "{{count}} heartbeats / {{cap}} turns daily",
+    "heartbeatTurnsNoCap_one": "{{count}} heartbeat a day · cap unavailable",
+    "heartbeatTurnsNoCap_other": "{{count}} heartbeats a day · cap unavailable",
     "specialtyCount_one": "{{count}} specialty",
     "specialtyCount_other": "{{count}} specialties",
     "boundaryCount_one": "{{count}} boundary",

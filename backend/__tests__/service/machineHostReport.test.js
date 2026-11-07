@@ -249,6 +249,33 @@ describe('a machine records when one of its agents first answered a person', () 
     expect((await row(machine._id)).firstAnswerAt).toBeInstanceOf(Date);
   });
 
+  // A reply under the agent's message that @'d someone else asked them, not it.
+  it('does not stamp on a reply that asked someone else', async () => {
+    const { machine, seat } = await setup();
+    const waiting = await person();
+    await ack(seat, await deliveredEvent(seat, 'chat.mention', {
+      messageId: '48',
+      content: '@pixel can you check this',
+      userId: String(waiting._id),
+      implicitReply: true,
+      mentions: ['pixel'],
+    }), 'posted');
+    expect((await row(machine._id)).firstAnswerAt).toBeNull();
+  });
+
+  // The unanswered line has no room to go to here. The answer still happened.
+  it('stamps on a comment on a post with no pod', async () => {
+    const { machine, seat } = await setup();
+    const waiting = await person();
+    await ack(seat, await deliveredEvent(seat, 'thread.mention', {
+      messageId: '49',
+      content: 'a comment',
+      userId: String(waiting._id),
+      thread: { postId: 'post-1', postPodId: null },
+    }), 'posted');
+    expect((await row(machine._id)).firstAnswerAt).toBeInstanceOf(Date);
+  });
+
   it('keeps the first answer: a later one does not move the stamp', async () => {
     const { machine, seat } = await setup();
     await ack(seat, await deliveredEvent(seat), 'posted');

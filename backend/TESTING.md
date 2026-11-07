@@ -92,6 +92,7 @@ The branch is controlled by `process.env.INTEGRATION_TEST === 'true'`. `__tests_
 - **New test file, which tier?** Put it under `__tests__/service/` if it exercises real query semantics (Mongo index behavior, regex, ObjectId coercion, PG ILIKE, transactions). Put it under `__tests__/unit/` or similar if a mocked DB is sufficient.
 
 - Never use Jest `{ virtual: true }` for a module that exists on disk; under shared workers it can resolve a different module ID and silently bypass the mock (#1691).
+- **A local 401, 404 or 503 that no route explains may not be your app.** `request(app)` binds a port on `::` and used to connect to 127.0.0.1, so on macOS another process's 127.0.0.1 listener on that port answered instead (`provider relay: 404` was a leaked test server). `__tests__/utils/supertestLoopback.js` calls `::1` on macOS. A server you start yourself on `listen(0)` and call by 127.0.0.1 has the same trap: bind it to `127.0.0.1`.
 
 ## Frontend and other suites
 

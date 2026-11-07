@@ -28,6 +28,7 @@ import V2Avatar from './V2Avatar';
 import V2Hint from './V2Hint';
 import { useV2Api } from '../hooks/useV2Api';
 import { useAuth } from '../../context/AuthContext';
+import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import { V2Pod } from '../hooks/useV2Pods';
 import { PERSONA_CARDS } from '../agents/personaCatalogData';
 import { DEFAULT_INSTALL_SCOPES } from '../utils/agentInstallScopes';
@@ -308,6 +309,8 @@ const V2AgentBYO: React.FC = () => {
   const [hasCopied, setHasCopied] = useState(false);
   const [showHostedOffer, setShowHostedOffer] = useState(false);
   const offeredPanels = useRef(new Set<string>());
+  const resultRef = useRef<HTMLDivElement | null>(null);
+  const listenCopyRef = useRef<HTMLButtonElement | null>(null);
   const offerSessionKey = issued
     ? `commonly:byo-hosted-offer:${currentUser?._id || ''}:${issued.podId}:${issued.agentName}`
     : null;
@@ -805,6 +808,10 @@ const V2AgentBYO: React.FC = () => {
     } catch (err) {
       const e = err as { response?: { data?: { error?: string; message?: string; code?: string } }; message?: string };
       const code = e.response?.data?.code;
+      if (code === IN_PROCESS_NAME_CODE) {
+        setError(t('agentByo.errors.hostedNameTaken', { name: cleanName }));
+        return;
+      }
       setError(code === 'hosted_runtime_unconfigured'
         ? t('agentByo.errors.hostedUnavailable')
         : (e.response?.data?.message || e.response?.data?.error || e.message || t('agentByo.errors.installFailed')));
@@ -1159,6 +1166,19 @@ const V2AgentBYO: React.FC = () => {
     recordByoStep(api, 'page-viewed');
   }, [api, currentUser]);
 
+  // The form above a result collapses as the result arrives, and on a phone the
+  // scroller keeps its offset, so the command would land above the fold with
+  // only Copy in view. Start at the heading, so a person sees what they're copying.
+  // A short phone can't hold heading to Copy (443px with a two-line heading, 427px
+  // under the verify-email banner), and Copy is the next step, so it wins by the
+  // few pixels it takes. Elsewhere Copy is already in view and nothing moves.
+  const resultKind = issued ? 'issued' : placed ? 'placed' : hosted ? 'hosted' : reconnectRequest ? 'reconnect' : null;
+  useEffect(() => {
+    if (!resultKind) return;
+    resultRef.current?.scrollIntoView?.({ block: 'start' });
+    listenCopyRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [resultKind, issued]);
+
   // "Run it here" is on screen from first paint whenever the instance hosts
   // (the chooser, or the compact hosted form), so its exposure is counted
   // here, once per page view. The post-issue fallback below counts a separate,
@@ -1417,7 +1437,7 @@ const V2AgentBYO: React.FC = () => {
     // picker, so it keeps the "Adapter" label the page always showed.
     <>
     <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
-    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
+    <p className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
       {orderHarnessIds(harnessCatalog).map((runner) => (
         <button
           key={runner}
@@ -1445,17 +1465,31 @@ const V2AgentBYO: React.FC = () => {
     </>
   ) : null;
 
+  const heldReason = t('agentByo.hosted.heldNotice', { cap: hosting?.caps.agentsPerUser ?? 1 });
+  const heldHolder = hostedHeld ? hostedHeld.displayName || hostedHeld.agentName : '';
+  const openHeld = () => {
+    if (hostedHeld) navigate(`/v2/agents/${encodeURIComponent(hostedHeld.agentName)}/${encodeURIComponent(hostedHeld.instanceId)}`);
+  };
+  // A hosted link has come for this slot, so the reason is the page's whole message.
   const hostedHeldNotice = hostedHeld && (
     <p className="v2-byo__hint" data-testid="byo-hosted-held">
-      {hostedCapNotice(t, { holders: [hostedHeld] }, hosting?.caps.agentsPerUser)}
+      {heldReason}
       {' '}
-      <button
-        type="button"
-        className="v2-byo__link"
-        onClick={() => navigate(`/v2/agents/${encodeURIComponent(hostedHeld.agentName)}/${encodeURIComponent(hostedHeld.instanceId)}`)}
-      >
-        {t('agentByo.hosted.openHeld', { holder: hostedHeld.displayName || hostedHeld.agentName })}
+      <button type="button" className="v2-byo__link" onClick={openHeld}>
+        {t('agentByo.hosted.openHeld', { holder: heldHolder })}
       </button>
+    </p>
+  );
+  // On the form the person is connecting something else, so the reason Run it
+  // here is missing waits behind the (i), and the line is the way to their agent.
+  const hostedHeldLine = hostedHeld && (
+    <p className="v2-byo__held" data-testid="byo-hosted-held">
+      <button type="button" className="v2-byo__link" onClick={openHeld}>
+        {t('agentByo.hosted.heldLink', { holder: heldHolder })}
+      </button>
+      <V2Hint label={t('agentByo.mode.moreAbout', { mode: t('agentByo.mode.hosted') })}>
+        {t('agentByo.hosted.heldOff', { cap: hosting?.caps.agentsPerUser ?? 1, mode: t('agentByo.mode.hosted') })}
+      </V2Hint>
     </p>
   );
 
@@ -1601,7 +1635,7 @@ const V2AgentBYO: React.FC = () => {
       )}
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
-          {hostedHeldNotice}
+          {hostedHeldLine}
           {(hostedOffered || machines.length > 0) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
@@ -1741,7 +1775,7 @@ const V2AgentBYO: React.FC = () => {
               {pods.length === 0 && <option value="">{t('agentByo.form.loadingPods')}</option>}
               {pods.map((p) => (
                 <option key={p._id} value={p._id}>
-                  {p.name === 'My Workspace' && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
+                  {isDefaultWorkspaceName(p.name) && p.createdBy?._id && String(p.createdBy._id) !== String(currentUser?._id)
                     ? t('podNames.otherWorkspace', { name: p.name, owner: p.createdBy.username || t('podNames.shared') })
                     : p.name} ({p.type || DEFAULT_POD_TYPE})
                 </option>
@@ -1848,7 +1882,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {reconnectRequest && (
-        <div className="v2-byo__result" data-testid="byo-reconnect-result">
+        <div className="v2-byo__result" data-testid="byo-reconnect-result" ref={resultRef}>
           <h2>{reconnectRequest.agentName}</h2>
           <p>{t(`agentConnection.reconnect${reconnectRequest.state === 'connected' ? 'Done'
             : reconnectRequest.state === 'slow' ? 'Slow' : 'Waiting'}`)}</p>
@@ -1856,7 +1890,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {placed && (
-        <div className="v2-byo__result" data-testid="byo-machine-result">
+        <div className="v2-byo__result" data-testid="byo-machine-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
             <V2Avatar name={placed.agentName} size="lg" kind={AGENT_KIND} seed={`${placed.agentName}:default`} online={placedState === 'running'} />
             <h2>{t('agentByo.machine.heading')} <code>{placed.agentName}</code></h2>
@@ -1881,7 +1915,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {hosted && (
-        <div className="v2-byo__result" data-testid="byo-hosted-result">
+        <div className="v2-byo__result" data-testid="byo-hosted-result" ref={resultRef}>
           <div className="v2-byo__result-hero">
             <V2Avatar name={hosted.agentName} size="lg" kind={AGENT_KIND} seed={`${hosted.agentName}:default`} online={hostedState === 'running'} />
             <h2>{t('agentByo.hosted.heading')} <code>{hosted.agentName}</code></h2>
@@ -1938,7 +1972,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {issued && (
-        <div className="v2-byo__result">
+        <div className="v2-byo__result" data-testid="byo-issued-result" ref={resultRef}>
           <h2>{t('agentByo.result.heading')} <code>{issued.agentName}</code></h2>
 
 
@@ -2020,8 +2054,7 @@ const V2AgentBYO: React.FC = () => {
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 <Trans
                   i18nKey={listenAdapter === 'codex' ? 'agentByo.listen.windowsCodex' : 'agentByo.listen.windowsNote'}
-                  values={{ name: issued.agentName }}
-                  components={{ cmd: <code /> }}
+                  components={{ cmd: <code />, name: <>{issued.agentName}</> }}
                 />
               </p>
             )}
@@ -2030,6 +2063,7 @@ const V2AgentBYO: React.FC = () => {
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
+                  ref={listenCopyRef}
                   onClick={() => copy('listen', listenSnippet)}
                   className="v2-byo__copy"
                 >

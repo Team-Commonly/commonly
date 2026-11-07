@@ -104,7 +104,7 @@ describe('Connectors page: operator-key entries', () => {
     expect(input).toHaveAttribute('data-1p-ignore');
     expect(input).toHaveAttribute('data-lpignore', 'true');
     expect(within(popover).getByRole('button', { name: 'Add key' })).toBeInTheDocument();
-    expect(within(popover).getByText('add a key for one of your agents')).toBeInTheDocument();
+    expect(within(popover).getByText('Add a key for one of your agents')).toBeInTheDocument();
     expect(within(popover).getByText('Create a key with read scopes only.')).toBeInTheDocument();
     const link = within(popover).getByRole('link', { name: 'Create a key at Latchkey' });
     expect(link).toHaveAttribute('href', 'https://latchkey.example/keys');
@@ -142,8 +142,8 @@ describe('Connectors page: operator-key entries', () => {
     renderPage();
 
     const popover = await openToolPopover('Latchkey');
-    expect(within(popover).getByText("couldn't read your agents just now · reload to try again")).toBeInTheDocument();
-    expect(within(popover).queryByText('no agent of yours to add a key for yet')).toBeNull();
+    expect(within(popover).getByText("Couldn't read your agents just now · reload to try again")).toBeInTheDocument();
+    expect(within(popover).queryByText('No agent of yours to add a key for yet')).toBeNull();
   });
 
   it('a granted entry still offers the key form in its drawer for an agent with no key', async () => {
@@ -218,7 +218,7 @@ describe('Connectors page: operator-key entries', () => {
 
     const popover = await openToolPopover('Linear');
     expect(within(popover).getByRole('button', { name: 'Connect' })).toBeInTheDocument();
-    expect(within(popover).getByText('connect your own Linear account')).toBeInTheDocument();
+    expect(within(popover).getByText('Connect your own Linear account')).toBeInTheDocument();
     expect(within(popover).getByText('Ask your admin to allow this domain.')).toBeInTheDocument();
     expect(within(popover).queryByLabelText('key')).toBeNull();
     expect(within(popover).queryByRole('button', { name: 'Add key' })).toBeNull();
@@ -334,7 +334,7 @@ describe('Connectors page: operator-key entries', () => {
     renderPage();
     const none = await openToolPopover('Latchkey');
     expect(within(none).queryByLabelText('key')).toBeNull();
-    expect(within(none).getByText('no agent of yours to add a key for yet')).toBeInTheDocument();
+    expect(within(none).getByText('No agent of yours to add a key for yet')).toBeInTheDocument();
     expect(within(none).queryByRole('button', { name: 'Connect' })).toBeNull();
   });
 

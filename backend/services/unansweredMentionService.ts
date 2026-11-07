@@ -1,3 +1,4 @@
+import { askedSomeoneElse } from './mentionCoalesce';
 import { emitUnansweredMentionLine } from './systemActionLineService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,16 +29,19 @@ interface PgPool {
 
 /**
  * A message a retired row was carrying: its own, then any joined to it
- * (ADR-018 D6.5). Each person waiting gets their own line.
+ * (ADR-018 D6.5). Each person waiting gets their own line, and one who asked
+ * someone else isn't waiting on this agent. Not `notAnAsk`: a message that
+ * carried on from the agent is one too, and that person is waiting.
  */
 const carriedMessages = (event: RetiredEvent): Array<{ userId: unknown; messageId: unknown; since: Date }> => {
   const payload = (event.payload || {}) as Record<string, unknown>;
   const rowSince = new Date(event.createdAt || 0);
   const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as unknown[];
   return [
-    { userId: payload.userId, messageId: payload.messageId, since: rowSince },
+    ...(askedSomeoneElse(payload) ? [] : [{ userId: payload.userId, messageId: payload.messageId, since: rowSince }]),
     ...joined
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+      .filter((entry) => !entry.askedSomeoneElse)
       .map((entry) => {
         const sentAt = new Date(entry.createdAt as string);
         return {
@@ -82,13 +86,18 @@ export async function messagesFromPeople(
  * Silent for a message when:
  * - the wake came from the kernel (assigned work, a board change) or from an
  *   agent: nobody is waiting on it. A welcome wake is a newcomer's first
- *   message, so it does get the line;
+ *   message, so a row retired here does get this line, but a native turn that
+ *   runs on one and fails posts nothing (personAddressedThisTurn);
+ * - it was a comment on a post with no pod: there is no room to tell them in;
  * - the agent has posted in the pod since the message. It was alive and may
  *   have answered without acknowledging, and a line claiming silence would
  *   then be false. Missing a line is better than a wrong one.
  */
 export async function noteUnansweredMention(event: RetiredEvent): Promise<boolean> {
   const payload = (event.payload || {}) as Record<string, unknown>;
+  // A comment on a post with no pod carries some pod of the commenter's.
+  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  if (comment && !comment.postPodId) return false;
   const waiting = await messagesFromPeople(event);
   if (waiting.length === 0) return false;
 

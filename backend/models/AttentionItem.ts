@@ -21,6 +21,7 @@ export interface IAttentionItem extends Document {
   actorUserId?: Types.ObjectId;
   messageId?: string;
   threadRootId?: string;
+  reviewOnCard?: boolean;
   options?: Array<{ label: string; description?: string; recommended?: boolean }>;
   // The authoritative time of a mention source. It lets a later reply close
   // only attention that predates that reply, instead of treating any message
@@ -62,6 +63,9 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   actorUserId: { type: Schema.Types.ObjectId, ref: 'User' },
   messageId: { type: String },
   threadRootId: { type: String },
+  // A parked tool call: its arguments are owner-only and live on the card, so
+  // Activity sends the owner there instead of offering a one-click approve.
+  reviewOnCard: { type: Boolean },
   options: [optionSchema],
   sourceCreatedAt: { type: Date },
   status: { type: String, enum: ['open', 'resolved'], default: 'open', required: true },

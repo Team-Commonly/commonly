@@ -28,7 +28,7 @@ const openForm = async () => {
       <MemoryRouter><V2YourTeamPage /></MemoryRouter>
     </AuthContext.Provider>,
   );
-  fireEvent.click(await screen.findByRole('button', { name: 'Have an invitation code?' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Hire an agent' }));
   fireEvent.change(screen.getByPlaceholderText('Invitation code'), { target: { value: ' BETA-1 ' } });
   fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
 };
@@ -36,6 +36,35 @@ const openForm = async () => {
 afterEach(() => { jest.clearAllMocks(); window.localStorage.clear(); });
 
 describe('Your Team invitation code', () => {
+  test('an entitled account gets no hint and no form', async () => {
+    axios.get.mockImplementation((url) => Promise.resolve({ data: url === '/api/pods' ? [] : {} }));
+    const entitled = { ...user, entitlements: { cloudAgents: true } };
+    render(
+      <AuthContext.Provider value={{ ...authValue, currentUser: entitled, user: entitled, mergeUser }}>
+        <MemoryRouter><V2YourTeamPage /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    await screen.findByRole('button', { name: 'Hire an agent' });
+    expect(screen.queryByRole('button', { name: 'About Your team' })).toBeNull();
+    expect(screen.queryByPlaceholderText('Invitation code')).toBeNull();
+  });
+
+  test('the page prints no notice: the sentence is the head hint, and Hire opens the form', async () => {
+    axios.get.mockImplementation((url) => Promise.resolve({ data: url === '/api/pods' ? [] : {} }));
+    render(
+      <AuthContext.Provider value={{ ...authValue, mergeUser }}>
+        <MemoryRouter><V2YourTeamPage /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const hire = await screen.findByRole('button', { name: 'Hire an agent' });
+    expect(document.querySelector('.v2-team__notice')).toBeNull();
+    expect(screen.getByText(/needs an invitation code during beta/).closest('.v2-hint__content')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'About Your team' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Invitation code')).toBeNull();
+    fireEvent.click(hire);
+    expect(screen.getByPlaceholderText('Invitation code')).toBeInTheDocument();
+  });
+
   test('sends the trimmed code in the field the server reads, and unlocks the catalog', async () => {
     const entitlements = { cloudAgents: true };
     axios.post.mockResolvedValue({ data: { message: 'Hosted agents unlocked.', entitlements } });
@@ -45,6 +74,7 @@ describe('Your Team invitation code', () => {
     expect(url).toBe('/api/auth/redeem-invitation');
     expect(body).toEqual({ invitationCode: 'BETA-1' });
     expect(await screen.findByText('Catalog unlocked — hire your first agent.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'About Your team' })).toBeNull();
     // Hire leaves this page, and the next page has to read the grant from the auth user.
     expect(mergeUser).toHaveBeenCalledWith({ entitlements });
   });

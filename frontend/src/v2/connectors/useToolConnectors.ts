@@ -351,18 +351,19 @@ export const useToolConnectors = (
     : modeLabel(grant.writeMode));
 
   const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
-    if (!FORM_OFFERS_WRITES) return ['read'];
-    if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
-    return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
-      ? ['read', 'write-with-confirm']
-      : ['read'];
+    if (entry.connectionType === 'hosted-mcp') {
+      return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
+        ? ['read', 'write-with-confirm']
+        : ['read'];
+    }
+    return FORM_OFFERS_WRITES ? WRITE_MODES : ['read'];
   };
 
   const entryModeCopy = (entry: ToolCatalogEntry): string => {
     const modes = entryGrantModes(entry);
     return modes.length === 1
       ? modeLabel(modes[0])
-      : t('tools.readOrWrite', { defaultValue: 'read, or read and write' });
+      : t('tools.readOrWrite', { defaultValue: 'Read, or read and write' });
   };
 
   const usedRecently = (grant: ToolGrant): boolean => {

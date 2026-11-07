@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import Pod from '../models/Pod';
 import User from '../models/User';
@@ -5,25 +6,28 @@ import { AgentInstallation } from '../models/AgentRegistry';
 import {
   AGENT_ROOM_AUTO_JOIN_SOURCE, isHostedInstallation, resolveHostedOwner,
 } from './hostedRuntimeService';
+import { HostedRoomRefusedError } from './hostedRoomRefusal';
+import { identityIsPaused } from './runtimeIdentityOwnership';
 
 /**
  * What a new projection of an agent (agent-room, DM) inherits from the
  * agent's existing active installation: everything the native runtime reads
  * — runtime, model, systemPrompt, tools, triggers, budgets — minus the keys
- * that belong to the projection itself (heartbeat, autoJoinSource). Without
+ * that belong to the projection itself (heartbeat, autoJoinSource, schedule). Without
  * this a room install carried only {heartbeat, autoJoinSource}: the router
  * could not see a runtime (fixed in #1524), and once it could, the run fell
  * to the default model with no system prompt. Returns null when the agent has
  * no install with a runtime (BYO wrappers), which keeps today's behaviour.
  */
-const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource']);
+export const PROJECTION_OWN_KEYS = new Set(['heartbeat', 'autoJoinSource', 'schedule']);
 export const resolveInstallInheritance = async (
   agentName: string,
   instanceId: string,
+  status: 'active' | 'paused' = 'active',
 ): Promise<Record<string, unknown> | null> => {
   try {
     const sibling = await AgentInstallation.findOne({
-      agentName, instanceId, status: 'active', 'config.runtime.runtimeType': { $exists: true },
+      agentName, instanceId, status, 'config.runtime.runtimeType': { $exists: true },
     }).sort({ createdAt: -1 }).lean() as { config?: unknown } | null;
     const raw = sibling?.config as { toObject?: () => Record<string, unknown> } | Record<string, unknown> | Map<string, unknown> | undefined;
     if (!raw) return null;
@@ -64,6 +68,44 @@ interface AgentDmUpsertResult {
   };
 }
 
+
+/**
+ * The installation that lets an agent post in its agent-room. `stampInstaller`
+ * is for a row coming back: it names whoever hosts the agent now, not whoever it
+ * named when it ended.
+ */
+const writeRoomRow = async ({
+  agentName, instanceId, podId, inherited, installedBy, label, paused, stampInstaller,
+}: {
+  agentName: string;
+  instanceId: string;
+  podId: unknown;
+  inherited: Record<string, unknown> | null;
+  installedBy: unknown;
+  label?: string;
+  paused: boolean;
+  stampInstaller?: boolean;
+}): Promise<void> => {
+  await AgentInstallation.install(agentName.toLowerCase(), podId as Types.ObjectId, {
+    version: '1.0.0',
+    config: {
+      ...(inherited || {}),
+      heartbeat: { enabled: false },
+      autoJoinSource: AGENT_ROOM_AUTO_JOIN_SOURCE,
+    } as unknown as Map<string, unknown>,
+    scopes: ['context:read', 'summaries:read', 'messages:write'],
+    installedBy: installedBy as Types.ObjectId,
+    instanceId,
+    displayName: label,
+    stampInstaller,
+  });
+  if (paused) {
+    await AgentInstallation.updateOne(
+      { agentName: agentName.toLowerCase(), podId, instanceId },
+      { $set: { status: 'paused' } },
+    );
+  }
+};
 
 class DMService {
   static agentDmPairKey(a: unknown, b: unknown): string {
@@ -305,7 +347,10 @@ class DMService {
       type: 'agent-room',
       members: { $all: [agentId, userId] },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (agentName) await DMService.restoreHostedRoomRow(existing._id, agentName, instanceId || 'default', userId);
+      return existing;
+    }
 
     // Resolve the agent's curated display label (botMetadata.displayName,
     // then instanceId if identity-bearing, then username). Avoids the
@@ -316,6 +361,33 @@ class DMService {
       .lean<{ username?: string; botMetadata?: { displayName?: string; instanceId?: string } } | null>();
     const fallback = (agentName && agentName !== 'agent') ? agentName : 'agent';
     const label = resolveAgentDisplayLabel(agentUser, fallback);
+
+    // The room install must carry the agent's RUNTIME, or the event router
+    // finds this pod-scoped row, sees no runtimeType, and parks the wake in the
+    // external queue where nothing consumes it. Every hosted Scout DM went
+    // silent this way (2026-08-28 .. 09-02: two strangers, one smoke). Copy
+    // runtime from the agent's existing active install; the room is a
+    // projection of the same agent. While the agent is paused the room starts
+    // paused too, and takes a paused row's runtime so resuming it doesn't leave
+    // it silent.
+    //
+    // The person in a DM with a hosted agent is a guest unless they own it.
+    // `installedBy` is what makes someone an owner, for the cap, for starting
+    // and stopping it and for the line its turns draw on, so the row names the
+    // agent's owner, and a stop reaches it with their others. This is settled
+    // before the pod exists: a refused person gets a reason and no room, rather
+    // than a room nothing can answer in.
+    let paused = false;
+    let inherited: Record<string, unknown> | null = null;
+    let hostedOwner: Awaited<ReturnType<typeof resolveHostedOwner>> = null;
+    let hosted = false;
+    if (agentName) {
+      paused = await identityIsPaused(agentName.toLowerCase(), instanceId || 'default');
+      inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default', paused ? 'paused' : 'active');
+      hosted = isHostedInstallation({ config: inherited });
+      if (hosted) hostedOwner = await resolveHostedOwner(agentName, instanceId || 'default', requestingUserId);
+      if (hostedOwner?.live && !hostedOwner.ownerId) throw new HostedRoomRefusedError();
+    }
 
     // Create a new agent-room pod. The agent is the conceptual "host" — listed
     // first in members and set as createdBy so the UI can display the agent's
@@ -357,39 +429,21 @@ class DMService {
     // (they fire on user message, not on a schedule).
     if (agentName) {
       try {
-        // The room install must carry the agent's RUNTIME, or the event
-        // router finds this pod-scoped row, sees no runtimeType, and parks
-        // the wake in the external queue where nothing consumes it. Every
-        // hosted Scout DM went silent this way (2026-08-28 .. 09-02: two
-        // strangers, one smoke). Copy runtime from the agent's existing
-        // active install; the room is a projection of the same agent.
-        const inherited = await resolveInstallInheritance(agentName.toLowerCase(), instanceId || 'default');
-        // The person in a DM with a hosted agent is a guest unless they own
-        // it. `installedBy` is what makes someone an owner, for the cap, for
-        // starting and stopping it and for the line its turns draw on, so this
-        // row names the agent's owner, and a stop reaches it with their others.
         // With no owner to name there is no row: the agent can't answer here.
-        const hosted = isHostedInstallation({ config: inherited });
-        const hostedOwner = hosted
-          ? await resolveHostedOwner(agentName, instanceId || 'default', requestingUserId)
-          : null;
         if (hosted && !hostedOwner?.live) {
           console.warn(`[dm-service] no owner for the hosted agent in agent-room pod=${roomPod._id}; no installation written`);
           return roomPod;
         }
-        await AgentInstallation.install(agentName.toLowerCase(), roomPod._id, {
-          version: '1.0.0',
-          config: {
-            ...(inherited || {}),
-            heartbeat: { enabled: false },
-            autoJoinSource: AGENT_ROOM_AUTO_JOIN_SOURCE,
-          } as unknown as Map<string, unknown>,
-          scopes: ['context:read', 'summaries:read', 'messages:write'],
-          installedBy: (hostedOwner?.ownerId || requestingUserId) as unknown as import('mongoose').Types.ObjectId,
+        await writeRoomRow({
+          agentName,
           instanceId: instanceId || 'default',
+          podId: roomPod._id,
+          inherited,
+          installedBy: hostedOwner?.ownerId || requestingUserId,
           // Curated label for the inspector / chat surfaces — same source as
           // the pod name above. NOT `${agentName} (${instanceId})`.
-          displayName: label,
+          label,
+          paused: paused || Boolean(hostedOwner?.paused),
         });
       } catch (installErr) {
         console.error(
@@ -405,6 +459,43 @@ class DMService {
     );
 
     return roomPod;
+  }
+
+  /**
+   * F270. A hosted agent's room rows end with it when its owner removes it
+   * (retireHostedRoomRows), and they aren't revived with the DM rows, because a
+   * row names who pays: the person who adds the agent back may not be who the row
+   * names. So a room is reopened by someone using it, against whoever hosts the
+   * agent now. Only a hosted room row that ended: nothing else is touched. Never
+   * throws, because the room is still theirs to open and read.
+   */
+  static async restoreHostedRoomRow(
+    podId: unknown, agentName: string, instanceId: string, requestingUserId: unknown,
+  ): Promise<boolean> {
+    const name = agentName.toLowerCase();
+    try {
+      const row = await AgentInstallation.rowInPod(name, podId as Types.ObjectId, instanceId);
+      if (row?.status !== 'uninstalled') return false;
+      const paused = await identityIsPaused(name, instanceId);
+      const inherited = await resolveInstallInheritance(name, instanceId, paused ? 'paused' : 'active');
+      // Null for an agent nobody hosts, and not live once its last row has gone.
+      const hostedOwner = await resolveHostedOwner(name, instanceId, requestingUserId);
+      if (!hostedOwner?.live || !hostedOwner.ownerId) return false;
+      await writeRoomRow({
+        agentName: name,
+        instanceId,
+        podId,
+        inherited,
+        installedBy: hostedOwner.ownerId,
+        label: row.displayName,
+        paused: paused || hostedOwner.paused,
+        stampInstaller: true,
+      });
+      return true;
+    } catch (error) {
+      console.warn('[dm-service] reopening a hosted room failed:', (error as Error).message);
+      return false;
+    }
   }
 
   /**

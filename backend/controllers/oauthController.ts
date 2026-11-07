@@ -12,6 +12,7 @@ const {
   createDefaultWorkspacePod,
 } = require('./authController');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
+const { normalizeScoutLocale } = require('../config/native-agents/scout');
 const { isFreeUsername } = require('../services/derivedUsername');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const { isInstanceAccessRestricted, isInstanceEmailAllowed } = require('../services/instanceAccessPolicy');
@@ -241,8 +242,8 @@ exports.getOAuthProviders = (_req: any, res: any) => {
   return res.json({ providers });
 };
 
-// GET /api/auth/oauth/:provider/start?next=/v2&invite=CODE
-// POST /api/auth/oauth/:provider/start (form body: next, invite, ref): the register
+// GET /api/auth/oauth/:provider/start?next=/v2&invite=CODE&locale=zh-CN
+// POST /api/auth/oauth/:provider/start (form body: next, invite, ref, locale): the register
 // page's form, which keeps an invite code out of the URL and so out of logs.
 exports.startOAuth = async (req: any, res: any) => {
   try {
@@ -263,6 +264,7 @@ exports.startOAuth = async (req: any, res: any) => {
       invitationCode: String(input.invite || '').trim(),
       next: safeNextPath(input.next),
       signupRef: cleanSignupRef(input.ref) || '',
+      locale: normalizeScoutLocale(input.locale),
       // Attribution arrives in a form body, stays in this server-side state,
       // and is never copied into a provider or completion URL.
       ...(req.method === 'POST' ? { signupSource: cleanSignupTouch(input.signupSource, input.ref) } : {}),
@@ -397,7 +399,7 @@ exports.oauthCallback = async (req: any, res: any) => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
       void require('../services/pgMirrorWrite').mirrorUser(user);
       createdNewUser = true;
-      await createDefaultWorkspacePod(user._id);
+      await createDefaultWorkspacePod(user._id, normalizeScoutLocale(stateRow.locale));
       joinCommunityPodBestEffort(user._id);
     }
 

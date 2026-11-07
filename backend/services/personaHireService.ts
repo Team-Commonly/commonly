@@ -117,6 +117,11 @@ export const hirePersona = async ({ agentName, userId, podId }: HireArgs): Promi
     await takeBackInstallation({ agentName: key, podId, instanceId }, previousRow);
     throw tokenHeldRefusal();
   }
+  // $setOnInsert names the installer only on a new row, and a row brought back
+  // from uninstalled is the hirer's too.
+  if (previousRow?.status === 'uninstalled') {
+    await AgentInstallation.updateOne({ _id: previousRow._id }, { $set: { installedBy: userId } });
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const AgentIdentityService = require('./agentIdentityService');

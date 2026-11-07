@@ -35,7 +35,7 @@ const V2BillingPanel: React.FC = () => {
 
   return (
     <div className="v2p-lrow">
-      <span className="lb"><Card />Plan</span>
+      <span className="lb"><Card />{t('billing.title')}</span>
       <span className="vl">
         <span className="v2-settings__plan">{t(isPro ? 'billing.tier.pro' : 'billing.tier.free')}</span>
       </span>

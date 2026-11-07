@@ -394,6 +394,7 @@ jobs:
       - run: npm run verify:readme-invariants
       - run: node --test scripts/__tests__/latchkey-route.test.mjs
       - run: node --test scripts/d14-pr-walk.test.mjs
+      - run: node --test scripts/ui-crawl-verdicts.test.mjs
       # These node:test files lived only in the retired all-in-one job.
       - name: Run agent service tests
         run: |

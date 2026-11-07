@@ -83,6 +83,21 @@
   font: 400 11px/16px var(--v2-font-mono);
 }
 
+.v2-system-action-line--notice {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.v2-system-action-line__notice {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-secondary);
+}
+
+.v2-system-action-line--notice time {
+  grid-column: 3;
+}
+
 /* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
    column: board glyph, up to four 20px faces, "N claims · first to last",
    the run's time, a chevron. The toggle is a control with its state on
@@ -486,6 +501,36 @@
   background: transparent;
   padding: 0;
   font-size: inherit;
+  box-shadow: none;
+}
+
+/* The copy key sits over the block's corner, and the right padding keeps it off
+   the end of a long line. On a phone it stays visible, and ::after widens the tap. */
+/* The wrapper takes the block's margin, so a block that opens or closes a message still loses it. */
+.v2-msg__code { position: relative; margin: 6px 0; }
+.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }
+.v2-root button.v2-msg__code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-tint);
+  /* Fills the gap to the block's border, so a scrolled line can't show past the key. */
+  box-shadow: 5px 0 0 var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+.v2-root button.v2-msg__code-copy:hover { color: var(--v2-text-primary); }
+.v2-root button.v2-msg__code-copy:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+@media (max-width: 600px) {
+  .v2-root button.v2-msg__code-copy::after { content: ''; position: absolute; inset: -8px; }
 }
 
 .v2-msg__content blockquote {

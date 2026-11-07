@@ -31,7 +31,17 @@ const V2UICard = lazy(() => import('../cards/V2UICard'));
 // Match @username — letters/digits start, then letters/digits/underscore/hyphen.
 // Used to wrap inline mentions in a styled pill. Capturing group keeps the
 // match in `split()` output so we can render text + pill segments in order.
-const MENTION_RE = /(@[a-zA-Z0-9][a-zA-Z0-9_-]*)/g;
+// An npm scope such as @commonlyai/mcp is a package, not a person.
+const SYSTEM_NOTICE_KEYS: Record<string, string> = {
+  'agent-stopped': 'agentStopped',
+  'agent-removed': 'agentRemoved',
+  'agent-offline': 'agentOffline',
+  'agent-paused': 'agentPaused',
+  'agent-not-connected': 'agentNotConnected',
+  'mention-unanswered': 'mentionUnanswered',
+};
+
+const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;
 
 // Walk a React children tree and replace bare `@name` text segments with a
 // styled `<span>` pill. Recurses into arrays + cloned elements so mentions
@@ -205,6 +215,19 @@ const REACTION_TOKEN_RE = /\[\[reactions:([^\]]+)\]\]/g;
 const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // Absolute image URLs and the instance-relative upload reference the legacy
 // image send posted as bare content (`/api/uploads/<key>.png`).
+// Code spans and fences are quoted grammar, not attachments or links: mask them
+// while directives and URLs are rewritten, then put them back verbatim. Inside
+// code a link's brackets show as text and break a command someone copies. As in
+// markdown, a fence opens on a line of its own (indented inside a list) and runs to
+// its closing line or the end of the message. Backticks anywhere else are a span
+// on one line, so a stray ``` mid-sentence can't pair with a real fence below it.
+const CODE_RE = /^[ \t]*(`{3,})[^`\n]*$[\s\S]*?(?:^[ \t]*\1`*[ \t]*$|(?![\s\S]))|```[^\n]*?```|``[^\n]*?``|`[^`\n]*`/gm;
+const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
+  const spans: string[] = [];
+  const masked = content.replace(/\u0000/g, '').replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
+  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
+};
+
 // Bare http(s) URLs become markdown links. The match runs to the end of the URL,
 // so `github.com/x` links whole. Trailing punctuation stays outside the link, and
 // so does a closing paren the URL does not open. Brackets are escaped in the link
@@ -214,43 +237,40 @@ const MARKDOWN_IMAGE_RE = /^!\[[^\]]*\]\(([^)]+)\)$/;
 // link, so the sentence keeps its words and punctuation ("Review: o/r#12.") and
 // the card below carries the detail. Removing the URL instead left stray
 // separators behind ("Review: ." and "see  for it").
-export const prUrlsToRefLinks = (text: string): string => text.replace(
-  // A URL already inside link syntax (`[label](url)`, `<url>`, `[url]`) is left alone.
-  /(?<![(<[])https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
-  (_match, owner: string, repo: string, num: string) => (
-    `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
-  ),
-);
+export const prUrlsToRefLinks = (text: string): string => {
+  const { masked, restore } = maskCode(text);
+  return restore(masked.replace(
+    // A URL already inside link syntax (`[label](url)`, `<url>`, `[url]`) is left alone.
+    /(?<![(<[])https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)(?=\b|$)/g,
+    (_match, owner: string, repo: string, num: string) => (
+      `[${owner}/${repo}#${num}](https://github.com/${owner}/${repo}/pull/${num})`
+    ),
+  ));
+};
 
 const LINK_DEST_ENCODE: Record<string, string> = { '(': '%28', ')': '%29', '[': '%5B', ']': '%5D', '\\': '%5C' };
-export const linkifyBareUrls = (text: string): string => text.replace(
-  /(?<![(<[])https?:\/\/[^\s<>"]+/g,
-  (raw) => {
-    let url = raw;
-    for (;;) {
-      const before = url;
-      url = url.replace(/[.,!?;:]+$/, '');
-      if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
-        url = url.slice(0, -1);
+export const linkifyBareUrls = (text: string): string => {
+  const { masked, restore } = maskCode(text);
+  return restore(masked.replace(
+    /(?<![(<[])https?:\/\/[^\s<>"\u0000]+/g,
+    (raw) => {
+      let url = raw;
+      for (;;) {
+        const before = url;
+        url = url.replace(/[.,!?;:]+$/, '');
+        if (url.endsWith(')') && (url.match(/\(/g) || []).length < (url.match(/\)/g) || []).length) {
+          url = url.slice(0, -1);
+        }
+        if (url === before) break;
       }
-      if (url === before) break;
-    }
-    const label = url.replace(/[\\[\]]/g, '\\$&');
-    const dest = url.replace(/[()[\]\\]/g, (c) => LINK_DEST_ENCODE[c]);
-    return `[${label}](${dest})${raw.slice(url.length)}`;
-  },
-);
+      const label = url.replace(/[\\[\]]/g, '\\$&');
+      const dest = url.replace(/[()[\]\\]/g, (c) => LINK_DEST_ENCODE[c]);
+      return `[${label}](${dest})${raw.slice(url.length)}`;
+    },
+  ));
+};
 
 const IMAGE_URL_RE = /^(?:https?:\/\/.+|\/api\/uploads\/[^\s]+)\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i;
-
-// Code spans and fences are quoted grammar, not attachments: mask them while
-// the directives are pulled out, then put them back verbatim.
-const CODE_RE = /```[\s\S]*?```|`[^`\n]*`/g;
-const maskCode = (content: string): { masked: string; restore: (s: string) => string } => {
-  const spans: string[] = [];
-  const masked = content.replace(CODE_RE, (span) => { spans.push(span); return `\u0000${spans.length - 1}\u0000`; });
-  return { masked, restore: (s) => s.replace(/\u0000(\d+)\u0000/g, (_m, i) => spans[Number(i)]) };
-};
 
 const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } => {
   const files: ParsedFile[] = [];
@@ -278,7 +298,8 @@ const parseFiles = (content: string): { stripped: string; files: ParsedFile[] } 
 
 const parseReactions = (content: string): { stripped: string; reactions: ParsedReaction[] } => {
   const reactions: ParsedReaction[] = [];
-  const stripped = content.replace(REACTION_TOKEN_RE, (_match, body) => {
+  const { masked, restore } = maskCode(content);
+  const stripped = masked.replace(REACTION_TOKEN_RE, (_match, body) => {
     String(body).split(',').forEach((entry: string) => {
       const trimmed = entry.trim();
       if (!trimmed) return;
@@ -293,7 +314,7 @@ const parseReactions = (content: string): { stripped: string; reactions: ParsedR
     });
     return '';
   }).trim();
-  return { stripped, reactions };
+  return { stripped: restore(stripped), reactions };
 };
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
@@ -351,6 +372,45 @@ const FileChip: React.FC<{
 
 // Code past six lines collapses in place; Show more expands it, Show less folds it.
 const COLLAPSE_AFTER_LINES = 6;
+
+// Copies the block's own text, so what lands in Terminal is what the agent wrote.
+const V2CodeCopy: React.FC<{ text: string }> = ({ text }) => {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timeout = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+  const copy = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = text;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        const accepted = document.execCommand('copy');
+        document.body.removeChild(input);
+        if (!accepted) throw new Error('Copy refused');
+      }
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+  const label = t(copied ? 'common.copied' : 'podChat.copyCode');
+  return (
+    <button type="button" className="v2-msg__code-copy" aria-label={label} title={label} onClick={() => { void copy(); }}>
+      <ShellGlyph name={copied ? 'check' : 'copy'} size={14} />
+    </button>
+  );
+};
+
 export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({ children, ...props }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -362,11 +422,19 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
     }
     return '';
   }).join('');
-  const lines = text.replace(/\n$/, '').split('\n').length;
-  if (lines <= COLLAPSE_AFTER_LINES) return <pre {...props}>{children}</pre>;
+  // Markdown ends every fence with a newline the agent didn't write.
+  const raw = text.replace(/\n$/, '');
+  const lines = raw.split('\n').length;
+  const block = (
+    <div className="v2-msg__code">
+      <pre {...props}>{children}</pre>
+      <V2CodeCopy text={raw} />
+    </div>
+  );
+  if (lines <= COLLAPSE_AFTER_LINES) return block;
   return (
     <div className={`v2-msg__collapse${open ? ' v2-msg__collapse--open' : ' v2-msg__collapse--closed'}`}>
-      <pre {...props}>{children}</pre>
+      {block}
       <button type="button" className="v2-msg__more" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         {open ? t('podChat.attachment.showLess') : t('podChat.attachment.showMore', { count: lines - COLLAPSE_AFTER_LINES })}
       </button>
@@ -584,6 +652,29 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           <span className="v2-system-action-line__verb">{t('podChat.systemActions.taskClaimedVerb')}</span>
           <span className="v2-system-action-line__object" title={message.payload.taskId || ''}>{message.payload.taskId || ''}</span>
         </span>
+        {time && <time dateTime={message.created_at}>{time}</time>}
+      </div>
+    );
+  }
+
+  // A line the kernel posts for an agent that can't answer. It reads from the
+  // action, so it follows the app language, and it wraps: a person has to read it.
+  const noticeKey = (message.message_type === 'system' || message.messageType === 'system')
+    && message.payload?.kind === 'system-action'
+    ? SYSTEM_NOTICE_KEYS[message.payload.action as string] : undefined;
+  if (noticeKey) {
+    const actorLabel = overriddenDisplay || message.payload?.actorName || author;
+    return (
+      <div id={`message-${message.id}`} className={`v2-system-action-line v2-system-action-line--notice${enterClass}`}>
+        <V2Avatar
+          name={actorLabel}
+          src={message.user?.profile_picture || undefined}
+          size="sm"
+          tone="flat"
+          kind="agent"
+          seed={message.user_id || undefined}
+        />
+        <span className="v2-system-action-line__notice">{t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}</span>
         {time && <time dateTime={message.created_at}>{time}</time>}
       </div>
     );

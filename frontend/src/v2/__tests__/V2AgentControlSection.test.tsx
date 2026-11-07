@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentControlSection, { AgentControlLoader } from '../components/V2AgentControlSection';
 import i18n, { i18nReady } from '../../i18n';
@@ -11,6 +11,74 @@ jest.mock('../../utils/axiosConfig', () => ({
 const api = jest.requireMock('../../utils/axiosConfig').default;
 
 beforeAll(async () => { await i18nReady; await i18n.changeLanguage('en'); });
+
+const showFix = (fixCommand?: string, state: 'never' | 'connected' = 'never', runtimeType = 'webhook') => render(
+  <MemoryRouter><V2AgentControlSection agentName="maple" instanceId="default" podId="pod-1" runtimeType={runtimeType} actionsOnly
+    connection={{ state, lastSeenAt: null }} fixCommand={fixCommand} /></MemoryRouter>,
+);
+
+describe('a never-connected agent on Settings', () => {
+  test('shows its owner the command, with a way to copy it', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    showFix('commonly agent run maple');
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(writeText).toHaveBeenCalledWith('commonly agent run maple');
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+  });
+
+  test('links to the page that hands out the key the command needs, keeping the agent\'s name', () => {
+    showFix('commonly agent run maple');
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href',
+      '/v2/agents/byo?pod=pod-1&name=maple&instanceId=default&reconnect=1');
+  });
+
+  test('a second instance keeps its command and gets no link: the page would install a sibling', () => {
+    render(<MemoryRouter><V2AgentControlSection agentName="maple" instanceId="nova" podId="pod-1" runtimeType="webhook"
+      connection={{ state: 'never', lastSeenAt: null }} fixCommand="commonly agent run maple" /></MemoryRouter>);
+    expect(screen.getByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
+  test('a wrapper gets no link, because that page would offer it Reconnect', () => {
+    showFix('commonly agent run maple', 'never', 'wrapper');
+    expect(screen.getByTestId('agent-connect-command')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
+  test('a webhook gets its sentence and nothing to copy', () => {
+    showFix('Run the program behind your webhook URL.');
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-control-section')).toHaveTextContent('Run the program behind your webhook URL.');
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
+  });
+
+  test('someone who did not install it gets no row', () => {
+    showFix(undefined);
+    expect(screen.queryByTestId('agent-control-section')).not.toBeInTheDocument();
+  });
+
+  test('a connected agent does not show the command', () => {
+    showFix('commonly agent run maple', 'connected');
+    expect(screen.queryByTestId('agent-connect-command')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
+  test('the loader passes the roster command through', async () => {
+    api.get.mockImplementation((url: string) => {
+      if (url.endsWith('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-9' } });
+      if (url === '/api/registry/pods/pod-9/agents') return Promise.resolve({ data: { agents: [{
+        name: 'maple', instanceId: 'default', runtime: { runtimeType: 'wrapper' },
+        connection: { state: 'never', lastSeenAt: null }, fixCommand: 'commonly agent run maple',
+      }] } });
+      return Promise.reject(new Error('Unexpected request'));
+    });
+    render(<MemoryRouter><AgentControlLoader agentName="maple" instanceId="default" actionsOnly /></MemoryRouter>);
+    expect(await screen.findByTestId('agent-connect-command')).toHaveTextContent('commonly agent run maple');
+  });
+});
 
 const show = (state: 'revoked' | 'stale' | 'never' | 'connected') => render(
   <MemoryRouter><V2AgentControlSection agentName="local" instanceId="default" podId="pod-1" runtimeType="wrapper"
@@ -129,14 +197,19 @@ it('uses unavailable only when the roster has no connection signal', async () =>
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
 });
 
-describe('hideWhenConnected (Settings reports a healthy connection in its header)', () => {
-  const showHidden = (state: 'revoked' | 'connected', runtimeType = 'webhook') => render(
+describe('actionsOnly (Settings reports the connection in its head)', () => {
+  const showHidden = (state: 'revoked' | 'connected' | 'available' | 'never', runtimeType = 'webhook') => render(
     <MemoryRouter><V2AgentControlSection agentName="local" instanceId="default" podId="pod-1" runtimeType={runtimeType}
-      hideWhenConnected connection={{ state, lastSeenAt: null }} /></MemoryRouter>,
+      actionsOnly connection={{ state, lastSeenAt: null }} /></MemoryRouter>,
   );
 
   it('renders nothing for a connected webhook agent', () => {
     showHidden('connected');
+    expect(screen.queryByTestId('agent-control-section')).toBeNull();
+  });
+
+  it.each(['available', 'never'] as const)('renders nothing for %s, which has no action', (state) => {
+    showHidden(state, 'internal');
     expect(screen.queryByTestId('agent-control-section')).toBeNull();
   });
 
@@ -146,18 +219,18 @@ describe('hideWhenConnected (Settings reports a healthy connection in its header
     expect(screen.getByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
   });
 
-  it('keeps a connected wrapper row, whose machine-key regeneration lives only there', () => {
+  it('keeps a connected wrapper row, whose machine-key regeneration lives there', () => {
     showHidden('connected', 'wrapper');
     expect(screen.getByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
   });
 
   it('shows nothing while the first read is in flight, and the unavailable alert after a failure', async () => {
     api.get.mockImplementation(() => new Promise(() => {}));
-    const view = render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    const view = render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" actionsOnly /></MemoryRouter>);
     expect(screen.queryByTestId('agent-control-section')).toBeNull();
     view.unmount();
     api.get.mockImplementation(() => Promise.reject(new Error('offline')));
-    render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" actionsOnly /></MemoryRouter>);
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
   });
 });

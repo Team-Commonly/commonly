@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentWakePods from '../agents/V2AgentWakePods';
 import i18n, { i18nReady } from '../../i18n';
@@ -164,14 +164,13 @@ describe('per-agent Wake and Pods settings', () => {
   });
 
   it('removes a pod installation and leaves the settings view open', async () => {
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();
     fireEvent.click(await screen.findByRole('button', { name: 'Remove from pod' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove from pod' }));
     await waitFor(() => expect(client.delete).toHaveBeenCalledWith(
       '/api/registry/agents/test-agent/pods/pod-1?instanceId=my-machine',
     ));
     expect(await screen.findByText('No pods to manage')).toBeInTheDocument();
-    confirm.mockRestore();
   });
 
   it('does not show or restore the previous agent’s pod after identity changes', async () => {
@@ -196,16 +195,16 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getByText('New pod')).toBeInTheDocument();
   });
 
-  it('previews heartbeat turns against the plan cap before saving', async () => {
+  it('previews heartbeats against the plan cap before saving', async () => {
     renderSettings();
-    expect(await screen.findByText('0 / 30 heartbeat turns a day')).toBeInTheDocument();
+    expect(await screen.findByText('0 heartbeats / 30 turns daily')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Heartbeat'), { target: { value: '30' } });
-    expect(screen.getByText('48 / 30 heartbeat turns a day')).toBeInTheDocument();
+    expect(screen.getByText('48 heartbeats / 30 turns daily')).toBeInTheDocument();
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
     expect(updatePod).not.toHaveBeenCalled();
   });
 
-  it('totals heartbeat turns across pods, counting an Off pod as zero', async () => {
+  it('totals heartbeats across pods, counting an Off pod as zero', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 2, podCount: 3, installations: [
       { podId: 'pod-a', podName: 'Alpha', status: 'active', wakeOnMessage: false, humanOnly: false,
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
@@ -215,7 +214,7 @@ describe('per-agent Wake and Pods settings', () => {
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 30 },
     ] } });
     renderSettings();
-    expect(await screen.findByText('72 / 30 heartbeat turns a day')).toBeInTheDocument();
+    expect(await screen.findByText('72 heartbeats / 30 turns daily')).toBeInTheDocument();
   });
 
   it('leaves a paused pod out of the scheduled total, since the scheduler does not wake it', async () => {
@@ -226,7 +225,7 @@ describe('per-agent Wake and Pods settings', () => {
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
     ] } });
     renderSettings();
-    expect(await screen.findByText('6 / 30 heartbeat turns a day')).toBeInTheDocument();
+    expect(await screen.findByText('6 heartbeats / 30 turns daily')).toBeInTheDocument();
   });
 
   it('states the daily turn count clearly when the cap is unavailable', async () => {
@@ -235,7 +234,40 @@ describe('per-agent Wake and Pods settings', () => {
         boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
       }] } });
     renderSettings();
-    expect(await screen.findByText('24 heartbeat turns a day · cap unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('24 heartbeats a day · cap unavailable')).toBeInTheDocument();
+  });
+
+  it('says one heartbeat in the singular when the cap is unknown', async () => {
+    client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 1440,
+      }] } });
+    renderSettings();
+    expect(await screen.findByText('1 heartbeat a day · cap unavailable')).toBeInTheDocument();
+  });
+
+  it('says one heartbeat in the singular against the cap', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 1440,
+      }] } });
+    renderSettings();
+    expect(await screen.findByText('1 heartbeat / 30 turns daily')).toBeInTheDocument();
+  });
+
+  it('zh-CN reads the same counts on both lines, with its one plural form', () => {
+    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 1, cap: 30 })).toBe('心跳1次/天 · 上限30轮/天');
+    expect(i18n.t('agentSettings.heartbeatTurns', { lng: 'zh-CN', count: 24, cap: 30 })).toBe('心跳24次/天 · 上限30轮/天');
+    expect(i18n.t('agentSettings.heartbeatTurnsNoCap', { lng: 'zh-CN', count: 24 })).toBe('心跳24次/天 · 上限不可用');
+  });
+
+  it('says zero heartbeats when the cap is unknown and the pod is off', async () => {
+    client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
+        podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 1440,
+      }] } });
+    renderSettings();
+    expect(await screen.findByText('0 heartbeats a day · cap unavailable')).toBeInTheDocument();
   });
 
   describe('an agent that runs on Commonly (hosted)', () => {
@@ -256,7 +288,7 @@ describe('per-agent Wake and Pods settings', () => {
       client.get.mockResolvedValue(hostedRows([{}, { hostedHeartbeat: null, heartbeatMinutes: 30 }]));
       renderSettings();
       // min(24 hosted, cap 6) + 48 from the row that isn't hosted.
-      expect(await screen.findByText('54 / 30 heartbeat turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('54 heartbeats / 30 turns daily')).toBeInTheDocument();
       const [hosted, other] = screen.getAllByLabelText('Heartbeat') as HTMLSelectElement[];
       expect(Array.from(hosted.options).map((option) => option.value)).not.toContain('15');
       expect(Array.from(other.options).map((option) => option.value)).toContain('15');
@@ -272,24 +304,36 @@ describe('per-agent Wake and Pods settings', () => {
     it('keeps a stored interval below the floor visible, and counts it as hourly', async () => {
       client.get.mockResolvedValue(hostedRows([{ heartbeatMinutes: 15 }], 30));
       renderSettings();
-      expect(await screen.findByText('24 / 30 heartbeat turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('24 heartbeats / 30 turns daily')).toBeInTheDocument();
       expect(optionValues()).toContain('15');
     });
 
     it('previews against the daily heartbeat cap and says why', async () => {
       client.get.mockResolvedValue(hostedRows([{}, {}]));
       renderSettings();
-      expect(await screen.findByText('6 / 30 heartbeat turns a day')).toBeInTheDocument();
+      expect(await screen.findByText('6 heartbeats / 30 turns daily')).toBeInTheDocument();
       expect(screen.queryByText(/This exceeds the daily cap/)).not.toBeInTheDocument();
-      expect(screen.getByText('Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.'))
-        .toBeInTheDocument();
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        'Mentions always wake this agent. Your agents that run on Commonly take a heartbeat at most once an hour, and 6 a day between them.',
+      );
+      // A tap has no hover or focus style, so it pins the note open, and leaving it closes the note.
+      const note = screen.getByRole('button', { name: /^Mentions always wake this agent\./ });
+      expect(note).not.toHaveClass('pin');
+      fireEvent.click(note);
+      expect(note).toHaveClass('pin');
+      fireEvent.blur(note);
+      expect(note).not.toHaveClass('pin');
+      fireEvent.keyDown(note, { key: 'Enter' });
+      expect(note).toHaveClass('pin');
+      expect(document.querySelector('.v2-agent-wake-pods__hint')).toBeNull();
+      expect(screen.getAllByRole('option', { name: '60 min' })).toHaveLength(2);
     });
 
     it('says heartbeats aren\'t available when the cap is zero, and previews none', async () => {
       client.get.mockResolvedValue(hostedRows([{}], 0));
       renderSettings();
-      expect(await screen.findByText('0 / 30 heartbeat turns a day')).toBeInTheDocument();
-      expect(screen.getByText('Heartbeats aren\'t available yet for your agents that run on Commonly.')).toBeInTheDocument();
+      expect(await screen.findByText('0 heartbeats / 30 turns daily')).toBeInTheDocument();
+      expect(screen.getByRole('tooltip')).toHaveTextContent('Heartbeats aren\'t available yet for your agents that run on Commonly.');
     });
 
     it('an agent that is not hosted keeps every interval and no hosted line', async () => {
@@ -307,11 +351,12 @@ describe('per-agent Wake and Pods settings', () => {
         { podId: 'pod-2', podName: 'Paused', status: 'paused', wakeOnMessage: false,
           humanOnly: false, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60 },
       ] } });
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(false);
     renderSettings();
     fireEvent.click((await screen.findAllByRole('button', { name: 'Remove from pod' }))[0]);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('No active installation will remain'));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('No active installation will remain');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(client.delete).not.toHaveBeenCalled();
-    confirm.mockRestore();
   });
 });

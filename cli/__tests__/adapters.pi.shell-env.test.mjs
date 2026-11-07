@@ -89,3 +89,13 @@ test('missing provider-key metadata refuses extension setup', () => {
   delete process.env.COMMONLY_PI_PROVIDER_KEY_ENV;
   expect(() => install({})).toThrow('missing provider key environment name');
 });
+
+// The name a seat with its own keyFile uses. Listed outright, so it is stripped
+// on a turn whose configured key has a different name too.
+test('the bring-your-own key variable is stripped whatever the configured name is', () => {
+  const hook = createBashTool.mock.calls[0][1].spawnHook;
+  const result = hook({
+    command: 'env', cwd: '/seat', env: { COMMONLY_PI_PROVIDER_KEY: 'fake-owner-key', SAFE_VALUE: 'keep' },
+  });
+  expect(result.env).toEqual({ SAFE_VALUE: 'keep' });
+});

@@ -75,6 +75,61 @@ describe('never-connected seat command (TASK-716)', () => {
     expect(agent.fixCommand).toBeUndefined();
   });
 
+  it("gives a guest no command on the room row that names them", async () => {
+    await agentFor(owner);
+    const roomId = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({
+      _id: roomId, name: 'Nova', type: 'agent-room', createdBy: other, members: [other],
+    });
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId: roomId, version: '1.0.0', installedBy: other,
+      status: 'active', config: { runtime: { runtimeType: 'wrapper', host: 'byo' } },
+    });
+    mockViewer = String(other);
+    const res = await request(app).get(`/api/registry/pods/${roomId}/agents`);
+    const agent = res.body.agents.find((a) => a.name === 'nova');
+    expect(agent.connection.state).toBe('never');
+    expect(agent.fixCommand).toBeUndefined();
+  });
+
+  it('reads a room the same for a guest as for any other member', async () => {
+    const url = 'https://example.com/hook';
+    const config = { runtime: { runtimeType: 'webhook', host: 'byo', webhookUrl: url } };
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId, version: '1.0.0', installedBy: owner, status: 'active', config,
+    });
+    const roomId = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({
+      _id: roomId, name: 'Nova', type: 'agent-room', createdBy: other, members: [other],
+    });
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId: roomId, version: '1.0.0', installedBy: other, status: 'active', config,
+    });
+    mockViewer = String(other);
+    const list = await request(app).get(`/api/registry/pods/${roomId}/agents`);
+    const one = await request(app).get(`/api/registry/pods/${roomId}/agents/nova`);
+    expect(list.body.agents.map((a) => a.name)).toContain('nova');
+    expect(one.body.agent.name).toBe('nova');
+    expect(JSON.stringify(list.body)).not.toContain(url);
+    expect(JSON.stringify(one.body)).not.toContain(url);
+
+    const standing = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({
+      _id: standing, name: 'Theirs', type: 'chat', createdBy: other, members: [other],
+    });
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId: standing, version: '1.0.0', installedBy: other, status: 'active',
+      config: { ...config, autoJoinSource: 'mention-resolution' },
+    });
+    const joined = await request(app).get(`/api/registry/pods/${standing}/agents/nova`);
+    expect(joined.body.agent.name).toBe('nova');
+    expect(JSON.stringify(joined.body)).not.toContain(url);
+
+    mockViewer = String(owner);
+    const own = await request(app).get(`/api/registry/pods/${podId}/agents/nova`);
+    expect(JSON.stringify(own.body)).toContain(url);
+  });
+
   it('drops the command once the seat has polled', async () => {
     const agent = await agentFor(owner, [{ tokenHash: 'h', lastUsedAt: new Date() }]);
     expect(agent.connection.state).not.toBe('never');

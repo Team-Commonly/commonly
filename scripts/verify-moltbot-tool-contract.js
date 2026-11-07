@@ -117,10 +117,12 @@ const MENTION_SERVICE = path.join(REPO_ROOT, 'backend', 'services', 'agentMentio
 const MENTION_CUES = [
   'formatPodContextFrame',
   'formatAuthorFrame',
+  'formatSelfFrame',
   'formatCollaborativePodCue',
   'formatConsultationCue',
   'formatMentionReplyCue',
   'formatHandoffCue',
+  'formatThreadAnswerCue',
 ];
 
 /**

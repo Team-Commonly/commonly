@@ -1,5 +1,6 @@
 import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
+import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
 
 // eslint-disable-next-line global-require
@@ -93,6 +94,10 @@ const { normalizeMessageContract } = require('./messageContract');
 const { normalizeReceipt } = require('./byoReceipt');
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
+// The wrapper's line for a turn killed after its event was settled
+// (cli/src/lib/turn-failure-notice.js, pinned by a test). An exact match, so
+// the exemption below can't carry anything else past the guard.
+const CUT_OFF_LINE = 'I got cut off before I could finish that, so please ask me again if anything is missing.';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
 // decision-only copy before total-match and leading-sentinel checks so one
 // invisible prefix cannot bypass both suppression paths. Do not rewrite the
@@ -223,6 +228,10 @@ interface PostMessageOptions {
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
+  // Server-set, never model-set: this post came over CAP, which names no event,
+  // so a plain post may be filed in the thread its turn answers
+  // (agentAnswerService.threadOfRunningTurn). The route clears it on mainChannel.
+  inferAnswerThread?: boolean;
   // Server-set, never model-set: only install intros and stalled-connect
   // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
@@ -274,6 +283,7 @@ interface PostTargetOptions {
   // The caller files this post in a thread itself, whatever the post answers:
   // a decision card goes where commonly_request_decision was told to put it.
   threadIsDeliberate?: boolean;
+  inferAnswerThread?: boolean;
   authorKind?: 'kernel' | null;
   // D245: already normalized; stored beside the content.
   contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
@@ -360,6 +370,13 @@ const THREAD_ROOT_DROPPED = {
   message: 'This answers a top-level message, so it was posted to the channel, not in a thread. '
     + 'Any quote was kept. To continue, thread under your own post.',
 };
+
+// F245: the same courtesy the other way round, and the way out of it.
+const threadRootFromWake = (root: number) => ({
+  code: 'thread_root_from_wake',
+  message: `This answers a message in thread ${root}, so it was posted in that thread, not the main channel. `
+    + `To continue it, use threadRootId ${root}. To post in the main channel, send mainChannel: true.`,
+});
 
 class AgentMessageService {
   static normalizeInstallationConfig(config: unknown): Record<string, unknown> {
@@ -923,6 +940,35 @@ class AgentMessageService {
   }
 
   /**
+   * Has a scheduled wake fired here since this agent last posted? That wake's
+   * post goes past the run cap, since one line a day is not a monologue. One
+   * post per wake: the post itself is what ends it.
+   */
+  static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
+    try {
+      const row = await AgentInstallation.findOne({
+        ...installationIdentityFilter(String(agentName).toLowerCase(), String(instanceId || 'default').toLowerCase()),
+        podId: { $eq: podId },
+        status: 'active',
+      }, null, { collation: IDENTITY_COLLATION })
+        // The unique index lets a legacy row sit beside a current one, and the
+        // wake is on whichever the schedule route wrote.
+        .sort({ 'config.schedule.lastFiredAt': -1 })
+        .select('config.schedule.lastFiredAt').lean();
+      const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
+      if (!firedAt) return false;
+      const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
+      const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
+      return firedAt > new Date(own[own.length - 1]?.createdAt || 0).valueOf();
+    } catch (error) {
+      // Toward posting (review-checklist rule 19): a refusal here is a job's
+      // result nobody sees, and the cost is one post past the cap.
+      console.warn('Could not read the agent\'s schedule:', (error as Error).message);
+      return true;
+    }
+  }
+
+  /**
    * Whether this agent's next post in the pod would be refused by the run cap.
    * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
    */
@@ -1196,6 +1242,7 @@ class AgentMessageService {
       personWaiting = false,
       approvalCard = false,
       threadIsDeliberate = false,
+      inferAnswerThread = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1695,10 +1742,14 @@ class AgentMessageService {
       // needs a client change, so it holds for MCP posts, wrapper posts and the
       // native runtime alike.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
+      // The wrapper's cut-off line is the same case, from a seat: fixed text, one
+      // per lost event, and no open ask left to let it through. A wrapper can't
+      // send `failureNotice`, because the HTTP routes don't forward it.
+      const isCutOffLine = sanitizedContent === CUT_OFF_LINE;
       // An approval card (F180) is exempt for a sharper reason: a second card
       // for the same tool repeats the first's text by construction, and a
       // dropped card fails the parked call.
-      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true)
+      const duplicate = (isOneToOne || failureNotice === true || personWaiting === true || approvalCard === true || isCutOffLine)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,
@@ -1765,11 +1816,13 @@ class AgentMessageService {
       // An approval card is not the seat holding the floor: it is the server
       // asking the owner to decide (F180), so the run cap does not apply.
       const failureForPerson = failureNotice === true && personWaiting === true;
-      const runCap = (isOneToOne || approvalCard === true || failureForPerson)
+      // A long answer reaches the cap on its own, and then the cut-off line is
+      // the one post the person still needs (F279).
+      const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
         ? 0 : AgentMessageService.resolveConsecutiveRunCap();
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
-        if (run >= runCap) {
+        if (run >= runCap && !(await AgentMessageService.owedScheduledPost(podId, agentName, instanceId, agentUser._id))) {
           AgentMessageService.logMessageLifecycle('skipped', {
             agentName,
             instanceId,
@@ -1822,6 +1875,7 @@ class AgentMessageService {
       noOutboundRelay,
       answeringMessageId,
       threadIsDeliberate,
+      inferAnswerThread,
       authorKind,
       contract: contract.summary || contract.kind || receipt
         ? { summary: contract.summary, kind: contract.kind, ...(receipt ? { receipt } : {}) }
@@ -1839,7 +1893,11 @@ class AgentMessageService {
       });
     }
 
-    const allWarnings = posted.threadRootDropped ? [...postWarnings, THREAD_ROOT_DROPPED] : postWarnings;
+    const allWarnings = [
+      ...postWarnings,
+      ...(posted.threadRootDropped ? [THREAD_ROOT_DROPPED] : []),
+      ...(posted.wakeThreadRoot ? [threadRootFromWake(posted.wakeThreadRoot)] : []),
+    ];
     return {
       success: true,
       message: posted.message,
@@ -1895,7 +1953,7 @@ class AgentMessageService {
   }
 
   static async _postToTarget(options: PostTargetOptions): Promise<{
-    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean;
+    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean; wakeThreadRoot?: number;
   }> {
     const {
       agentName,
@@ -1915,6 +1973,7 @@ class AgentMessageService {
       noOutboundRelay = false,
       answeringMessageId,
       threadIsDeliberate = false,
+      inferAnswerThread = false,
       authorKind = null,
       contract = null,
     } = options;
@@ -1971,6 +2030,17 @@ class AgentMessageService {
         resolvedThreadRootId = null;
         topLevelAnswer = Boolean(replyToMessageId);
       }
+    }
+
+    // F245: a plain CAP post that answers a thread goes in it. A post naming a
+    // target was judged above; the root found here is already validated.
+    let wakeThreadRoot: number | null = null;
+    const namesNoTarget = !replyToMessageId && (threadRootId == null || threadRootId === '');
+    if (inferAnswerThread && namesNoTarget && PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+      const { threadOfRunningTurn } = require('./agentAnswerService');
+      wakeThreadRoot = await threadOfRunningTurn({ podId, agentName, instanceId, kind: contract?.kind });
+      if (wakeThreadRoot) resolvedThreadRootId = wakeThreadRoot;
     }
 
     if (PGMessage && process.env.PG_HOST) {
@@ -2229,6 +2299,7 @@ class AgentMessageService {
       message: message as MessageNormalized,
       summary: persistedSummary,
       ...(threadRootDropped ? { threadRootDropped } : {}),
+      ...(wakeThreadRoot ? { wakeThreadRoot } : {}),
     };
   }
 
@@ -2635,8 +2706,8 @@ class AgentMessageService {
     messages: T[],
     podId: unknown,
     { mentionMap }: { mentionMap?: Map<string, { agentName: string; instanceId?: string }> } = {},
-  ): Promise<Array<T & { mention: string }>> {
-    const unaddressed = () => messages.map((m) => ({ ...m, mention: '' }));
+  ): Promise<Array<T & { mention: string; displayName: string }>> {
+    const unaddressed = () => messages.map((m) => ({ ...m, mention: '', displayName: '' }));
     const ids = Array.from(new Set(messages
       .map((m) => String(m?.userId?._id ?? ''))
       .filter((id) => /^[a-f0-9]{24}$/i.test(id))));
@@ -2646,16 +2717,22 @@ class AgentMessageService {
       // eslint-disable-next-line global-require
       const mentions = require('./agentMentionService');
       const [users, map] = await Promise.all([
-        User.find({ _id: { $in: ids } }).select('_id username isBot botMetadata').lean(),
+        User.find({ _id: { $in: ids } }).select('_id username displayName isBot botMetadata').lean(),
         mentionMap || mentions.loadPodMentionMap(podId),
       ]);
       const handleById = new Map<string, string>();
-      (users as Array<Record<string, unknown>>).forEach((user) => {
+      const nameById = new Map<string, string>();
+      (users as Array<Record<string, any>>).forEach((user) => {
         handleById.set(String(user._id), mentions.mentionHandleForUser(map, user));
+        nameById.set(
+          String(user._id),
+          (user.isBot ? AgentIdentityService.resolveAgentDisplayLabel(user, '') : user.displayName) || '',
+        );
       });
       return messages.map((m) => ({
         ...m,
         mention: handleById.get(String(m?.userId?._id ?? '')) || '',
+        displayName: nameById.get(String(m?.userId?._id ?? '')) || '',
       }));
     } catch (error) {
       console.warn('Message mention handles unavailable:', (error as Error).message);

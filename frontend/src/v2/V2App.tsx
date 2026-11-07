@@ -28,6 +28,7 @@ import './chat/chat-composer.css';
 import './chat/chat-inspector.css';
 import './chat/chat-states.css';
 import { applyV2Theme, getV2Theme } from './utils/theme';
+import i18n from '../i18n';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
 // in this chunk (V2Layout, the auth gate, the feature frame). Everything else
@@ -68,7 +69,7 @@ const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIn
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
 const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
 
-class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+export class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { error: null };
@@ -86,7 +87,7 @@ class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { e
     if (this.state.error) {
       return (
         <div className="v2-empty">
-          <div className="v2-empty__title">Something went wrong</div>
+          <div className="v2-empty__title">{i18n.t('common.somethingWrong')}</div>
           <div className="v2-empty__text">{this.state.error.message}</div>
         </div>
       );
@@ -100,7 +101,7 @@ class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { e
 // mark in frontend/design-system/assets/commonly-mark.svg: one C ring, then
 // dots at x=25/32/39 with r=2.4 in a 64px viewBox.
 const V2Boot: React.FC = () => (
-  <div className="v2-boot" role="status" aria-label="Loading Commonly">
+  <div className="v2-boot" role="status" aria-label={i18n.t('common.loadingApp')}>
     <svg className="v2-boot__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <path
         d="M 50 17.7 A 22 22 0 1 0 50 46.3"
@@ -316,7 +317,7 @@ const V2App: React.FC = () => {
                 <Route
                   path="pods/:podId/board"
                   element={feature(
-                    'Board',
+                    t('board.title'),
                     <V2PodBoard />,
                     false,
                     /* V2PodBoard owns its own header (pod name + back). */
@@ -329,7 +330,7 @@ const V2App: React.FC = () => {
                   element={(
                     <V2LegacyPodRoomRedirect
                       /* ChatRoom owns its own sticky AppBar, so the feature header is off. */
-                      ensembleRoom={(room) => feature('Pod Tools', room, false, false)}
+                      ensembleRoom={(room) => feature(t('common.pageTitle.podTools'), room, false, false)}
                     />
                   )}
                 />
@@ -340,7 +341,7 @@ const V2App: React.FC = () => {
                 <Route
                   path="agents"
                   element={feature(
-                    'Your Team',
+                    t('yourTeam.title'),
                     <V2YourTeamPage />,
                     false,
                     /* V2YourTeamPage owns its own header — suppress the
@@ -367,12 +368,12 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect"><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title={t('common.pageTitle.connect')} hint={t('connect.intro')}><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
                   element={feature(
-                    'Connectors',
+                    t('common.nav.connectors'),
                     <ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
@@ -398,7 +399,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', <V2SettingsPage />, false, false, 'v2-feature--settings')}
+                  element={feature(t('common.nav.settings'), <V2SettingsPage />, false, false, 'v2-feature--settings')}
                 />
                 <Route
                   path="settings/devices"

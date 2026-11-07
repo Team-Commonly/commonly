@@ -21,6 +21,11 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require
 const AgentDigestState = require('../models/AgentDigestState');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { isHostedInstallation, readRuntimeConfig } = require('./hostedRuntimeService') as {
+  isHostedInstallation: (installation: unknown) => boolean;
+  readRuntimeConfig: (installation: unknown) => Record<string, unknown>;
+};
 // eslint-disable-next-line global-require
 const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
 // eslint-disable-next-line global-require
@@ -28,6 +33,10 @@ const AgentEnsembleService = require('./agentEnsembleService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { buildHeartbeatContent } = require('./heartbeatCue') as {
   buildHeartbeatContent: (heartbeatPodId: unknown) => string;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { dispatchSchedules } = require('./agentScheduleService') as {
+  dispatchSchedules: (now?: Date) => Promise<number>;
 };
 // eslint-disable-next-line global-require
 const PodCurationService = require('./podCurationService');
@@ -67,6 +76,9 @@ interface InstallationDoc {
     };
     autonomy?: {
       enabled?: boolean;
+    };
+    runtime?: {
+      runtimeType?: string;
     };
     digestWake?: {
       afterMinutes?: number;
@@ -473,7 +485,7 @@ class SchedulerService {
           console.log(
             `[stalled-connect] pass candidates=${r.candidates} nudged=${r.nudged.length} `
             + `resolved=${r.resolved.length} tooRecent=${r.skippedTooRecent} `
-            + `notStalled=${r.skippedNotStalled}`,
+            + `notStalled=${r.skippedNotStalled} guests=${r.skippedGuest} sameToken=${r.skippedSameToken}`,
           );
         } catch (error) {
           console.error('[stalled-connect] Unhandled error:', error);
@@ -1248,9 +1260,15 @@ class SchedulerService {
       };
     }
 
+    // First and on its own: a daily wake that misses its hour is lost, where a
+    // heartbeat just comes round again.
+    const scheduledWakes = await dispatchSchedules(now).catch((error: Error) => {
+      console.error('Scheduled agent wakes failed:', error.message);
+      return 0;
+    });
     const result = await SchedulerService.dispatchAgentHeartbeats({ ...options, now });
     const unreadWakes = await SchedulerService.dispatchUnreadDigestHeartbeats(now);
-    return { ...result, enqueued: result.enqueued + unreadWakes, skippedByLease: false };
+    return { ...result, enqueued: result.enqueued + unreadWakes + scheduledWakes, skippedByLease: false };
   }
 
   /**
@@ -1263,6 +1281,28 @@ class SchedulerService {
     const raw = Number(installation?.config?.digestWake?.afterMinutes);
     if (!Number.isFinite(raw)) return DIGEST_WAKE_DEFAULT_MINUTES;
     return Math.max(DIGEST_WAKE_DEFAULT_MINUTES, Math.min(1440, Math.trunc(raw)));
+  }
+
+  /**
+   * Whether this install may take a digest wake (F194). A hosted install's
+   * turns are paid by its owner, so it takes one only when the owner turned
+   * its heartbeat on; its digest otherwise rides its next wake of any kind.
+   * Every other runtime (native first-party apps, BYO, webhook, fleet seats)
+   * keeps the hourly digest wake. A projection with no runtime of its own
+   * routes as its identity's newest configured row, as
+   * AgentEventService.resolveEffectiveInstallation does; the heartbeat is the
+   * projection's own, which withInheritedRuntime never inherits.
+   */
+  static async allowsDigestWake(installation: InstallationDoc): Promise<boolean> {
+    if (installation?.config?.heartbeat?.enabled === true) return true;
+    if (readRuntimeConfig(installation).runtimeType) return !isHostedInstallation(installation);
+    const sibling = await AgentInstallation.findOne({
+      agentName: String(installation.agentName || '').toLowerCase(),
+      instanceId: String(installation.instanceId || 'default'),
+      status: 'active',
+      'config.runtime.runtimeType': { $exists: true },
+    }).sort({ createdAt: -1 }).select('config.runtime').lean();
+    return !isHostedInstallation(sibling);
   }
 
   /** One slow wake for a pod with unread digest, never for an empty inbox. */
@@ -1301,8 +1341,16 @@ class SchedulerService {
       // eslint-disable-next-line no-await-in-loop
       const active: InstallationDoc | null = await AgentInstallation.findOne({
         ...scope, status: 'active', 'config.autonomy.enabled': { $ne: false },
-      }).select('config.digestWake').lean();
+      }).select('agentName instanceId config.digestWake config.heartbeat config.runtime').lean();
       if (!active) continue;
+      // A failed runtime lookup holds this wake for one tick rather than
+      // spend an owner's turn it may not owe; the digest stays unread.
+      // eslint-disable-next-line no-await-in-loop
+      const allowed = await SchedulerService.allowsDigestWake(active).catch((err: Error) => {
+        console.warn('[scheduler] digest wake runtime lookup failed:', err.message);
+        return false;
+      });
+      if (!allowed) continue;
       const waitMs = SchedulerService.resolveDigestWakeAfterMinutes(active) * 60 * 1000;
       if (now.getTime() - oldestAt.getTime() < waitMs) continue;
       const windowStart = new Date(now.getTime() - waitMs);

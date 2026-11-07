@@ -10,6 +10,7 @@ import V2ThemeSwitch from './V2ThemeSwitch';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useAuth } from '../../context/AuthContext';
+import { isDefaultWorkspaceName } from '../utils/defaultWorkspacePod';
 import {
   RECENT_LIMIT, podInitials, relativeTime,
 } from '../lib/podRecency';
@@ -360,7 +361,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const selected = pod._id === selectedPodId;
     const count = attentionCountByPod[pod._id] || 0;
     const direct = isDirectPod(pod);
-    const rowName = pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
+    const rowName = isDefaultWorkspaceName(pod.name) && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
       ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
       : pod.name;
     const peer = direct ? directMemberFor(pod, currentUser?._id) : undefined;

@@ -116,6 +116,8 @@ const httpDecide = (row, person, decision = 'approved') => request(app)
   // Identity fields in the body must not choose who decided.
   .send({
     decision,
+    // The client sends back the digest of the card it showed (F215).
+    argsDigest: row.toolCall?.argsDigest,
     resolvedBy: String(b._id),
     callerUserId: String(b._id),
     decidedBy: String(b._id),

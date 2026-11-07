@@ -28,6 +28,7 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
@@ -362,6 +363,7 @@ const V2PodBoard: React.FC = () => {
   const [focusConflictReviewed, setFocusConflictReviewed] = useState(false);
   const [focusBaseRevision, setFocusBaseRevision] = useState<number | null>(null);
   const focusDialogRef = useRef<HTMLDivElement | null>(null);
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const focusReturnRef = useRef<HTMLElement | null>(null);
   const focusTaskRowRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const focusMoveTargetRef = useRef<string | null>(null);
@@ -595,8 +597,14 @@ const V2PodBoard: React.FC = () => {
       || focusScope.trim() !== (current?.scope || '')
       || focusOwner !== initialOwner
       || focusTaskIds.join('\u0000') !== initialTasks.join('\u0000');
-    if (!dirty || window.confirm(t('board.focus.discard'))) setFocusEditorOpen(false);
-  }, [focusSaving, focusRead, podMembers, focusGoal, focusScope, focusOwner, focusTaskIds, t]);
+    if (!dirty) {
+      setFocusEditorOpen(false);
+      return;
+    }
+    void confirm({ message: t('board.focus.discard'), confirmLabel: t('board.focus.discardAction') }).then((confirmed) => {
+      if (confirmed) setFocusEditorOpen(false);
+    });
+  }, [focusSaving, focusRead, podMembers, focusGoal, focusScope, focusOwner, focusTaskIds, confirm, t]);
 
   closeFocusEditorRef.current = closeFocusEditor;
 
@@ -610,6 +618,9 @@ const V2PodBoard: React.FC = () => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        // App.tsx blurs the active element on any Escape that reaches the document, which would
+        // take focus back out of the confirm this can open.
+        event.stopPropagation();
         closeFocusEditorRef.current();
         return;
       }
@@ -1092,6 +1103,8 @@ const V2PodBoard: React.FC = () => {
           </div>
         </>
       )}
+
+      {confirmDialog}
 
       {drawerTask && (
         <div

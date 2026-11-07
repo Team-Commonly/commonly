@@ -171,6 +171,78 @@ describe('SchedulerService automatic heartbeat dispatch lease', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  describe('hosted digest wake follows the heartbeat setting (F194)', () => {
+    // Earned 2026-11-05: a hosted agent whose Heartbeat select read Off
+    // (config.heartbeat null) still took an hourly unaddressed turn its owner
+    // paid for. A hosted install's digest now rides its next wake unless the
+    // owner turned the heartbeat on; every other runtime keeps the hourly wake.
+    const old = () => new Date(NOW.getTime() - 61 * 60000);
+    const seed = async (config, { digestEvent = true } = {}) => {
+      const scope = { agentName: 'kai', instanceId: 'default', podId: new mongoose.Types.ObjectId() };
+      await AgentInstallation.collection.insertOne({ ...scope, status: 'active',
+        version: '1.0.0', installedBy: new mongoose.Types.ObjectId(), ...(config ? { config } : {}) });
+      if (digestEvent) {
+        await AgentEvent.collection.insertOne({ ...scope, type: 'message.posted', status: 'pending',
+          deliveryMode: 'digest', attempts: 0, createdAt: old() });
+      }
+      return scope;
+    };
+    const hosted = { runtime: { runtimeType: 'hosted' } };
+
+    it('gives a hosted install with heartbeat null no digest wake', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      await seed({ ...hosted, heartbeat: null });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('gives a hosted install with heartbeat disabled no digest wake', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      await seed({ ...hosted, heartbeat: { enabled: false, everyMinutes: 60 } });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('gives folded digest on a hosted install with heartbeat off no wake', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const scope = await seed(hosted, { digestEvent: false });
+      await AgentDigestState.collection.insertOne({ ...scope, unreadCount: 2, revision: 2,
+        lastEventIds: ['a', 'b'], unreadSince: old(), updatedAt: NOW });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('treats a runtime-less projection of a hosted identity as hosted', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      await AgentInstallation.collection.insertOne({ agentName: 'kai', instanceId: 'default',
+        podId: new mongoose.Types.ObjectId(), status: 'active', version: '1.0.0',
+        installedBy: new mongoose.Types.ObjectId(), config: hosted, createdAt: old() });
+      await seed({ heartbeat: null });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(0);
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('still wakes a hosted install whose heartbeat is on', async () => {
+      const enqueue = jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      const scope = await seed({ ...hosted, heartbeat: { enabled: true, everyMinutes: 60 } });
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+      expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        ...scope, type: 'heartbeat', payload: expect.objectContaining({ trigger: 'unread-digest' }),
+      }));
+    });
+
+    it.each([
+      ['native', { runtime: { runtimeType: 'native' }, heartbeat: null }],
+      ['webhook', { runtime: { runtimeType: 'webhook' } }],
+      ['claude-code (BYO)', { runtime: { runtimeType: 'claude-code' }, heartbeat: { enabled: false } }],
+      ['moltbot', { runtime: { runtimeType: 'moltbot' } }],
+    ])('still wakes a %s install with heartbeat off', async (_label, config) => {
+      jest.spyOn(AgentEventService, 'enqueue').mockResolvedValue({});
+      await seed(config);
+      expect(await SchedulerService.dispatchUnreadDigestHeartbeats(NOW)).toBe(1);
+    });
+  });
+
   describe('per-install digest wake wait (config.digestWake.afterMinutes)', () => {
     // Earned 2026-10-25: these wakes were 330 of 1,821 seat turns in 24h,
     // 311 of them empty; 15 seats got 0 posts from them. Those seats get a

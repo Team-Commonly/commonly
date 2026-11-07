@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Pod = require('../models/Pod');
+const { defaultWorkspacePodFor } = require('../config/defaultWorkspacePod');
 const { mirrorMemberAdded, mirrorUser } = require('../services/pgMirrorWrite');
 const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
@@ -367,8 +368,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string =
 const createDefaultWorkspacePod = async (userId: any, locale: string = 'en') => {
   try {
     const pod = await Pod.create({
-      name: 'My Workspace',
-      description: 'Your private workspace',
+      ...defaultWorkspacePodFor(locale),
       type: 'chat',
       joinPolicy: 'invite-only',
       createdBy: userId,

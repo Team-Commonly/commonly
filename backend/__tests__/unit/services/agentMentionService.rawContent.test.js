@@ -20,6 +20,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn(),
     findOne: jest.fn(),
+    rowInPod: jest.fn(),
     upsert: jest.fn(),
   },
 }));
@@ -63,6 +64,7 @@ jest.mock('../../../services/welcomeWakeService', () => ({
 // call time; nothing else in the service reads them.
 jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
   assertAgentRuntimeMayJoinPod: jest.fn(),
+  assertInstalledAgentMayJoinPod: jest.fn(),
 }));
 
 jest.mock('../../../services/dmService', () => ({
@@ -75,6 +77,10 @@ jest.mock('../../../services/agentMessageService', () => ({
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
+const AgentMessageService = require('../../../services/agentMessageService');
+const {
+  assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod,
+} = require('../../../services/outsiderGrantAgentJoinPolicy');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
@@ -200,12 +206,12 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     viaAlias.forEach((event) => expect(event.payload.senderIsHuman).toBe(false));
   });
 
-  test('senderIsHuman is false when the sender lookup finds nobody', async () => {
+  test('senderIsHuman is left off when the sender lookup finds nobody', async () => {
     setup();
     await send(`@seat-a ${TEXT}`, { userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', username: 'gone' });
     const [event] = calls('chat.mention');
     expect(event).toBeDefined();
-    expect(event.payload.senderIsHuman).toBe(false);
+    expect(event.payload).not.toHaveProperty('senderIsHuman');
   });
 
   test('reply (adjacency, replies-to-you frame): rawContent is exactly what was typed', async () => {
@@ -288,6 +294,82 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     expect(event.payload.rawContent).toBe(typed);
     expect(event.payload.content).toContain(POD_FRAME_MARK);
     expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
+  });
+
+  test('a contact mention in a DM does not pull a third agent in', async () => {
+    process.env.ENABLE_MENTION_AUTOJOIN = 'true';
+    setup({ podType: 'agent-room', contacts: { helper: { agentName: 'helper-bot', instanceId: 'default' } } });
+    jest.spyOn(AgentIdentityService, 'getOrCreateAgentUser').mockResolvedValue({ _id: '64ccccccccccccccccccccc1' });
+    await send(`@helper ${TEXT}`);
+    expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+    expect(calls('chat.mention').find((e) => e.agentName === 'helper-bot')).toBeUndefined();
+  });
+
+  describe('a contact mention for an agent with a row here', () => {
+    const HELPER_BOT = '64ccccccccccccccccccccc1';
+    const mention = async (status, members = [OWNER, HELPER_BOT], podType = 'chat') => {
+      process.env.ENABLE_MENTION_AUTOJOIN = 'true';
+      setup({ podType, members, contacts: { helper: { agentName: 'helper-bot', instanceId: 'default' } } });
+      jest.spyOn(AgentIdentityService, 'getOrCreateAgentUser').mockResolvedValue({ _id: HELPER_BOT });
+      AgentInstallation.rowInPod.mockResolvedValue({ status });
+      await send(`@helper ${TEXT}`);
+      return calls('chat.mention').find((e) => e.agentName === 'helper-bot');
+    };
+
+    afterEach(() => AgentInstallation.rowInPod.mockReset());
+
+    test.each([
+      ['paused', true], ['error', true], ['stale', true], ['paused', false], [null, true],
+    ])('a %s row stays as it is and gets no wake (member: %s)', async (status, member) => {
+      expect(await mention(status, member ? [OWNER, HELPER_BOT] : [OWNER])).toBeUndefined();
+      expect(AgentInstallation.rowInPod).toHaveBeenCalledWith('helper-bot', 'pod-1', 'default');
+      expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+      expect(Pod.updateOne).not.toHaveBeenCalled();
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    });
+
+    test('a row in a DM does not bring a non-member in', async () => {
+      expect(await mention('active', [OWNER], 'agent-room')).toBeUndefined();
+      expect(Pod.updateOne).not.toHaveBeenCalled();
+    });
+
+    test('an active member keeps its row and config, and nobody is told it was pulled in', async () => {
+      expect(await mention('active')).toBeDefined();
+      expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    });
+
+    test('an active row that lost its membership gets it back, keeping its config', async () => {
+      expect(await mention('active', [OWNER])).toBeDefined();
+      expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+      expect(Pod.updateOne).toHaveBeenCalledWith({ _id: 'pod-1' }, { $addToSet: { members: HELPER_BOT } });
+    });
+
+    test('a protected pod still refuses that membership', async () => {
+      assertInstalledAgentMayJoinPod.mockRejectedValueOnce(new Error('refused'));
+      expect(await mention('active', [OWNER])).toBeUndefined();
+      expect(assertInstalledAgentMayJoinPod).toHaveBeenCalledWith('pod-1', 'helper-bot', 'default');
+      expect(Pod.updateOne).not.toHaveBeenCalled();
+    });
+
+    test.each([['no', null], ['an uninstalled', 'uninstalled']])('a protected pod refuses a pull-in with %s row', async (_label, status) => {
+      assertAgentRuntimeMayJoinPod.mockRejectedValueOnce(new Error('refused'));
+      const row = status ? { status } : null;
+      process.env.ENABLE_MENTION_AUTOJOIN = 'true';
+      setup({ members: [OWNER], contacts: { helper: { agentName: 'helper-bot', instanceId: 'default' } } });
+      jest.spyOn(AgentIdentityService, 'getOrCreateAgentUser').mockResolvedValue({ _id: HELPER_BOT });
+      AgentInstallation.rowInPod.mockResolvedValue(row);
+      await send(`@helper ${TEXT}`);
+      expect(calls('chat.mention').find((e) => e.agentName === 'helper-bot')).toBeUndefined();
+      expect(AgentInstallation.upsert).not.toHaveBeenCalled();
+      expect(Pod.updateOne).not.toHaveBeenCalled();
+      expect(AgentMessageService.postMessage).not.toHaveBeenCalled();
+    });
+
+    test('an uninstalled row can be pulled back in', async () => {
+      expect(await mention('uninstalled', [OWNER])).toBeDefined();
+      expect(AgentInstallation.upsert).toHaveBeenCalled();
+    });
   });
 
   test('chat.mention via the alias fallback (@guide, two scout installs): rawContent is exactly what was typed', async () => {

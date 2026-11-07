@@ -447,6 +447,25 @@
   user-select: all;
 }
 
+/* The way to a key, for the agents Bring your own can connect. */
+.v2-root a.v2-chat__agent-room-connect {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-top: 2px;
+  color: var(--v2-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v2-root a.v2-chat__agent-room-connect:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 760px) {
+  .v2-root a.v2-chat__agent-room-connect { min-height: 44px; }
+}
+
 .v2-root button.v2-chat__agent-room-copy {
   all: unset;
   box-sizing: border-box;
@@ -937,13 +956,15 @@
   border: 1px solid var(--v2-border-soft);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
-  box-shadow: 0 0 0 2px var(--v2-accent);
   padding: 12px 16px;
   max-width: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+
+/* The cobalt ring asks for an answer, so an answered card drops it. */
+.v2-approval--open { box-shadow: 0 0 0 2px var(--v2-accent); }
 
 .v2-approval__head {
   display: flex;
@@ -1069,6 +1090,15 @@
   overflow-y: auto;
 }
 
+.v2-approval__arg-length {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--v2-text-muted);
+}
+
 .v2-approval__arg dd a {
   color: var(--v2-accent-text);
   text-decoration: none;
@@ -1169,7 +1199,7 @@
 }
 
 .v2-approval__state--approved {
-  color: #047857;
+  color: var(--v2-success-text);
   font-weight: 600;
 }
 
@@ -1179,7 +1209,7 @@
 }
 
 .v2-approval__state--attention {
-  color: #b45309;
+  color: var(--v2-warning-text);
   font-weight: 600;
 }
 
@@ -1201,7 +1231,7 @@
 
 .v2-approval__error {
   font-size: 12.5px;
-  color: #b91c1c;
+  color: var(--v2-danger-text);
 }
 
 /* Hosted-to-BYO handoff: the command is server-composed and the card copies

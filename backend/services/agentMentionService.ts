@@ -15,16 +15,31 @@ const ThreadUserState = require('../models/pg/ThreadUserState') as {
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
+const { assertAgentRuntimeMayJoinPod, assertInstalledAgentMayJoinPod } = require('./outsiderGrantAgentJoinPolicy');
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { noteNeverConnectedMention, isNeverConnectedAgent } = require('./neverConnectedMentionService') as {
+const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } = require('./neverConnectedMentionService') as {
   noteNeverConnectedMention: (args: {
     podId: string; agentName: string; instanceId: string; senderId: string;
     messageId: string | null; threadRootId?: string | number | null;
   }) => Promise<boolean>;
+  noteOfflineMention: (args: {
+    podId: string; agentName: string; instanceId: string; senderId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
+};
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMentionService') as {
+  noteStoppedMention: (args: {
+    podId: string; agentName: string; instanceId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
+  noteUnreachableAgentDm: (args: {
+    podId: string; agentName: string; instanceId: string;
+    messageId: string | null; threadRootId?: string | number | null;
+  }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
@@ -132,7 +147,8 @@ interface SummaryEnqueueOptions {
 
 interface SenderRow {
   isBot?: boolean;
-  botMetadata?: { agentName?: string; instanceId?: string };
+  displayName?: string;
+  botMetadata?: { agentName?: string; instanceId?: string; displayName?: string };
 }
 
 // #508 mutual bot<->bot @mention loop dampener.
@@ -433,11 +449,20 @@ const resolveContactAlias = async (
   return null;
 };
 
-// Pull a non-member agent into the pod via mention-driven autoJoin.
+// The wrapper reads this stamp when a snapshot can't name the author: always
+// for a post comment (F225), and for a message past the snapshot's window. A
+// lean row has no schema defaults, so a failed lookup or a row with no isBot
+// leaves it off, which reads as unknown rather than as an agent.
+const senderHumanStamp = (sender: { isBot?: boolean } | null | undefined): { senderIsHuman?: boolean } => (
+  typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {}
+);
+
+// Pull an agent into the pod via mention-driven autoJoin, or reach one with a
+// running row here. A row that isn't running stays as it is, with no wake.
 // Runs the §3.7 co-pod-member rule (with the §3.2 admin-binding carve-
 // out — i.e. if the resolution came from pod.contacts, that's the
 // authorization signal). Idempotent on (agentName, instanceId, podId).
-// Returns true on success, false on auth-refused.
+// Returns true on success, false when refused.
 const autoJoinAgentToPod = async (
   agentName: string,
   instanceId: string,
@@ -465,23 +490,47 @@ const autoJoinAgentToPod = async (
     }
   }
 
-  // This auto-join creates a row without a native runtime declaration. Refuse
-  // before either the installation or membership write in a protected pod.
-  await assertAgentRuntimeMayJoinPod(podId, undefined);
+  // A DM keeps its members (ADR-001 §3.10), and the writes below go past the
+  // guard ensureAgentInPod holds, so a contact binding can't add a third party.
+  const pod = await Pod.findById(podId).select('type members').lean() as { type?: string; members?: unknown[] } | null;
+  const alreadyMember = (pod?.members || []).some((member) => String(member) === String(targetUser._id));
+  if (!pod || (isPersonalPodType(pod.type) && !alreadyMember)) {
+    console.warn(`[mention-autojoin] refused — pod=${podId} keeps its members`);
+    return false;
+  }
 
-  // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
-  // in agents are reactive, not scheduled). Idempotent.
-  await AgentInstallation.upsert(agentName, podId, {
-    version: '1.0.0',
-    config: {
-      heartbeat: { enabled: false },
-      autoJoinSource: 'mention-resolution',
-    } as unknown as Map<string, unknown>,
-    scopes: ['context:read', 'summaries:read', 'messages:write'],
-    installedBy: senderUserId,
-    instanceId,
-    displayName: agentName,
-  });
+  // A row already here keeps its status and config: upsert would set it active
+  // and replace the config, so a mention could un-pause an agent.
+  const existing = await AgentInstallation.rowInPod(agentName, podId, instanceId) as { status?: string } | null;
+  const keepsRow = !!existing && existing.status !== 'uninstalled';
+  if (keepsRow && existing.status !== 'active') {
+    console.warn(`[mention-autojoin] refused — ${agentName}:${instanceId} is ${existing.status} in pod=${podId}`);
+    return false;
+  }
+  if (keepsRow && alreadyMember) return true;
+
+  if (keepsRow) {
+    // The row declares its runtime, so this asks about that one.
+    await assertInstalledAgentMayJoinPod(podId, agentName, instanceId);
+  } else {
+    // This auto-join creates a row without a native runtime declaration. Refuse
+    // before either the installation or membership write in a protected pod.
+    await assertAgentRuntimeMayJoinPod(podId, undefined);
+
+    // Upsert the AgentInstallation (heartbeat off — agent-dm and pulled-
+    // in agents are reactive, not scheduled). Idempotent.
+    await AgentInstallation.upsert(agentName, podId, {
+      version: '1.0.0',
+      config: {
+        heartbeat: { enabled: false },
+        autoJoinSource: 'mention-resolution',
+      } as unknown as Map<string, unknown>,
+      scopes: ['context:read', 'summaries:read', 'messages:write'],
+      installedBy: senderUserId,
+      instanceId,
+      displayName: agentName,
+    });
+  }
 
   // Add to pod.members if not already.
   try {
@@ -611,7 +660,7 @@ const formatPodContextFrame = (podId: string): string =>
   // structure in their reads (thread_root_id on every message,
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
-  `This pod has threads; three distinct verbs: a plain post broadcasts to the channel; ` +
+  `This pod has threads; three distinct verbs: a plain post defaults to the channel; ` +
   `replyToMessageId quotes a message and the post joins its thread; it wakes no one, so @mention ` +
   `whoever must see it; ` +
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
@@ -867,12 +916,83 @@ const resolveWriteStamp = (createdAt: unknown): string | null => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 };
 
+// A display name is free text up to 80 characters and a frame is the kernel's
+// own voice, on other people's messages too. So only what a name is made of gets
+// in, which keeps out invisible characters, lookalike brackets, a second list
+// entry, a tool name and a #PR. The cut stays under a full SHA's 40 characters.
+const FRAME_NAME_CHARS = 32;
+const frameName = (user: SenderRow | null | undefined): string => {
+  const label = user?.isBot ? resolveAgentDisplayLabel(user, '') : user?.displayName;
+  const kept = String(label ?? '').replace(/[^\p{L}\p{M}\p{N} .'’-]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!/[\p{L}\p{N}]/u.test(kept)) return '';
+  return Array.from(kept).slice(0, FRAME_NAME_CHARS).join('').trim();
+};
+
+// Past this a list is a cost on every wake, and part of one would read as all.
+const MEMBER_LIST_MAX = 12;
+
+/**
+ * A seat sees handles and people see names, so it wrote "growth-t002" for Priya,
+ * and a teammate named without an @ was never reached (F295).
+ */
+const formatMemberList = async (
+  memberIds: Set<string>,
+  mentionMap: Map<string, MentionTarget>,
+): Promise<string> => {
+  if (memberIds.size < 2 || memberIds.size > MEMBER_LIST_MAX) return '';
+  const rows = await User.find({ _id: { $in: Array.from(memberIds) } })
+    .select('username displayName isBot botMetadata')
+    .lean() as Array<SenderRow & { _id: unknown; username?: string }>;
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  const labels = Array.from(memberIds).flatMap((id) => {
+    const row = byId.get(id);
+    if (!row) return [];
+    const name = frameName(row);
+    const handle = mentionHandleForUser(mentionMap, row);
+    if (!handle) return name ? [name] : [];
+    return [name && name !== handle ? `${name} (@${handle})` : `@${handle}`];
+  });
+  if (labels.length < 2) return '';
+  return `[Who is here: ${labels.join(', ')}. Use a person's name when you write about them. `
+    + 'Names are self-chosen, so only the handle says who someone is, and only an @handle reaches them: '
+    + 'to ask a teammate named in a message, @ their handle.]';
+};
+
+/**
+ * Nothing else in a wake says which agent it reached. Given "@milo add a test,
+ * then ask @ada", a fresh seat can't tell which name is its own: Ada took the
+ * ask and wrote about @ada as someone else, and Milo wrote to @milo (F296).
+ */
+const formatSelfFrame = (
+  target: MentionTarget,
+  installations: Array<Record<string, unknown>>,
+  mentionMap: Map<string, MentionTarget>,
+): string => {
+  const installation = installations.find((row) => sameTarget(
+    { agentName: String(row.agentName), instanceId: String(row.instanceId || 'default') },
+    target,
+  ));
+  const name = frameName({ displayName: installation?.displayName as string | undefined });
+  const handle = routedMentionHandle(mentionMap, target);
+  if (!handle) return '';
+  const who = name && name !== handle ? `**${name}** (@${handle})` : `@${handle}`;
+  return `[You: you are ${who}. A message that says @${handle} means you.]`;
+};
+
 const formatAuthorFrame = (
   username: string | undefined,
   createdAt: unknown,
   messageId: string | undefined,
+  name?: string,
+  // The handle that routes here, '' when none does. Unset on a wake built
+  // before the pod's mention map is read, which falls back to the username
+  // with no @: nothing checked that it reaches them.
+  routedHandle?: string,
 ): string => {
-  const author = username || 'unknown';
+  const handle = routedHandle ?? username;
+  const at = routedHandle ? '@' : '';
+  const named = handle && handle !== name ? `${name}** (${at}${handle})` : `${name}**`;
+  const author = name ? named : `${username || 'unknown'}**`;
   const idPart = messageId ? ` (message ${messageId})` : '';
   const stamp = resolveWriteStamp(createdAt);
   const timing = stamp
@@ -886,7 +1006,7 @@ const formatAuthorFrame = (
       + `you whether it is new or a redelivery. Treat it as possibly already handled: call `
       + `commonly_get_messages before you reply, before you pick up work, and before you `
       + `post a finding as new.`;
-  return `[Trigger: this turn was raised by **${author}**${idPart}, ${timing}]`;
+  return `[Trigger: this turn was raised by **${author}${idPart}, ${timing}]`;
 };
 
 // Agents whose runtime IS a code specialist shouldn't be told to consult
@@ -1015,15 +1135,43 @@ const isCollaborativePod = (
 // unconditional and was missing from this table until the wake path was
 // routed through here — the table is the thing people read to decide
 // what a given event type carries, so it is kept exhaustive:
-//   chat.mention + non-specialist + collab → [Pod] [Author] [CollabPod] [Collab] [Reply] [Handoff?] body
+//   chat.mention + non-specialist + collab → [Pod] [Author] [You?] [Who?] [CollabPod] [Collab] [Reply] [Handoff?] body
 //   chat.mention + non-specialist + solo   → [Pod] [Author] [Collab] [Reply] [Handoff?] body
-//   chat.mention + specialist              → [Pod] [Author] [Reply] [Handoff?] body
-//   thread.mention + non-specialist        → [Pod] [Author] [Collab] [Handoff?] body
-//   thread.mention + specialist            → [Pod] [Author] [Handoff?] body
+//   chat.mention + specialist              → [Pod] [Author] [You?] [Who?] [Reply] [Handoff?] body
+//   thread.mention + non-specialist        → [Pod] [Author] [You?] [Who?] [Collab] [Handoff?] body
+//   thread.mention + specialist            → [Pod] [Author] [You?] [Who?] [Handoff?] body
 //   message.posted + non-specialist        → [Pod] [Author] [Collab] [Wake] body
 //   message.posted + specialist            → [Pod] [Author] [Wake] body
 // [Handoff?] is present only when an agent hands work to another agent for
 // the first time in a chain (formatHandoffCue); never on message.posted.
+// [You?] names the target (formatSelfFrame): pods with two or more agents, not
+// the reply wake or a contact alias's first wake, where the install isn't read.
+// [Who?] is the member list (formatMemberList): pods with two or more agents and
+// at most 12 members, and not on the reply wake built before the map is read.
+// Never on message.posted: that traffic is ambient and nobody asked this agent.
+//
+// F245: a wake inside a thread names the thread. The root rode only in
+// `payload.threadRootId`, which a wrapper never shows the model, so a seat could
+// not name it and a plain post left the conversation. The kernel files that
+// post (agentAnswerService.threadOfRunningTurn) when it can tell; this covers a
+// turn where it can't.
+const formatThreadAnswerCue = (threadRootId: number): string => (
+  `[This message is in thread ${threadRootId}, not the main channel. Your answer belongs in that thread: `
+  + `send threadRootId ${threadRootId} with your post if your post tool takes it. `
+  + 'Do not count on a plain post to land there: it does only when this thread is all your turn holds.]'
+);
+
+interface AuthorFrame {
+  username?: string;
+  createdAt?: unknown;
+  messageId?: string;
+  threadRootId?: number | null;
+  name?: string;
+  handle?: string;
+  memberList?: string;
+  self?: string;
+}
+
 const buildContentForTarget = (
   podId: string,
   rawContent: string,
@@ -1034,7 +1182,7 @@ const buildContentForTarget = (
   // fabricated-stamp path reachable by accident. All four call sites
   // pass it today, so requiring it costs nothing now and turns a future
   // omission into a compile error instead of a silent "unknown".
-  author: { username?: string; createdAt?: unknown; messageId?: string },
+  author: AuthorFrame,
   // The handle of the agent that handed this over, when this mention is the
   // first handoff in an agent-to-agent chain (see formatHandoffCue).
   handoffFrom?: string,
@@ -1043,7 +1191,11 @@ const buildContentForTarget = (
   // First after pod context, and unconditional: every event type and
   // every runtime needs to know who spoke and when. The four cues below
   // are all conditional on shape; this one never is.
-  frames.push(formatAuthorFrame(author.username, author.createdAt, author.messageId));
+  frames.push(formatAuthorFrame(
+    author.username, author.createdAt, author.messageId, author.name, author.handle,
+  ));
+  if (author.self) frames.push(author.self);
+  if (author.memberList && eventType !== 'message.posted') frames.push(author.memberList);
   if (
     eventType === 'chat.mention'
     && collaborativePod
@@ -1059,6 +1211,9 @@ const buildContentForTarget = (
   }
   if (handoffFrom && eventType !== 'message.posted') {
     frames.push(formatHandoffCue(handoffFrom));
+  }
+  if (author.threadRootId) {
+    frames.push(formatThreadAnswerCue(author.threadRootId));
   }
   // Last before the body on purpose: this is the frame that tells the
   // agent why it is awake at all, and proximity to the body is the one
@@ -1485,7 +1640,7 @@ const enqueueWakeOnMessage = async ({
   installations: Array<Record<string, unknown>>;
   sender: SenderRow | null;
   excludeKeys: Set<string> | null;
-  authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
+  authorFrame: AuthorFrame;
   resolvedBotUserIds?: Map<string, string>;
   replyToMessageId?: string | null;
   // A person @mentioned one or more agents in this message. Those agents got
@@ -1679,7 +1834,7 @@ const enqueueWakeOnMessage = async ({
           // Claim-decline handoff is deliberately human-only. This stamp is
           // the cross-layer proof the wrapper and kernel need; absent remains
           // non-human/unknown for old events rather than widening a bot loop.
-          senderIsHuman: sender?.isBot === false,
+          ...senderHumanStamp(sender),
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });
@@ -1715,10 +1870,11 @@ const enqueueMentions = async ({
   // rather than checked, and the frame would assert a fabricated write
   // time as ground truth. Absent stays absent; formatAuthorFrame says
   // so out loud.
-  const authorFrame = {
+  const authorFrame: AuthorFrame = {
     username,
     createdAt: message?.createdAt || message?.created_at,
     messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
+    threadRootId,
   };
   // Per-target content composition: see buildContentForTarget above for
   // the four-case matrix (chat-vs-thread × specialist-vs-not). Each
@@ -1750,19 +1906,15 @@ const enqueueMentions = async ({
   // triggers an infinite chat.mention → reply → chat.mention loop.
   let sender: SenderRow | null = null;
   try {
-    sender = await User.findById(userId).select('isBot botMetadata').lean() as SenderRow | null;
+    sender = await User.findById(userId).select('isBot displayName botMetadata').lean() as SenderRow | null;
+    authorFrame.name = frameName(sender);
   } catch (error) {
     // Non-fatal: missing sender just means we can't suppress self-mentions,
     // which is a strictly weaker invariant than the one we had before.
     console.warn('Agent mention sender lookup failed:', (error as Error).message);
   }
 
-  // A comment's author can't be read off the pod's messages, so a thread.mention
-  // has only this stamp to say who wrote it (F225). A lean row has no schema
-  // defaults, so a failed lookup or a row with no isBot leaves it off, which the
-  // wrapper reads as unknown rather than as an agent.
-  const commentSender = typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {};
-  const senderStamp = source === 'thread' ? commentSender : { senderIsHuman: sender?.isBot === false };
+  const senderStamp = senderHumanStamp(sender);
 
   let installations: Array<Record<string, unknown>> = [];
   let profiles: Array<Record<string, unknown>> = [];
@@ -1853,7 +2005,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
-              senderIsHuman: sender?.isBot === false,
+              ...senderStamp,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -1906,6 +2058,7 @@ const enqueueMentions = async ({
   // also records a reply-edge delivery, which is addressing but not an
   // explicit @mention and therefore must not create a follow.
   const deliveredAgentMentionTargets = new Map<string, MentionTarget>();
+  const addressedTargets = new Map<string, MentionTarget>();
   // Mentioned agents that have never connected. A person @mentioning one is
   // still waiting on an answer nobody can give yet, so that mention does not
   // count as addressing the message away from the room's opt-ins: Scout keeps
@@ -1921,6 +2074,7 @@ const enqueueMentions = async ({
   ): void => {
     enqueuedIdentityKeys.add(identityKey(target));
     enqueued.push(resultLabel);
+    addressedTargets.set(identityKey(target), target);
     if (isExplicitMention) deliveredAgentMentionTargets.set(identityKey(target), target);
   };
 
@@ -1976,6 +2130,18 @@ const enqueueMentions = async ({
     console.warn('[mention-context] pod lookup failed:', (error as Error).message);
   }
   const collaborativePod = isCollaborativePod(podType, installations);
+  if (sender) authorFrame.handle = mentionHandleForUser(mentionMap, { ...sender, username });
+  if (collaborativePod) {
+    try {
+      authorFrame.memberList = await formatMemberList(podMemberIds, mentionMap);
+    } catch (error) {
+      console.warn('[mention-context] member list failed:', (error as Error).message);
+    }
+  }
+  const authorFor = (target: MentionTarget): AuthorFrame => ({
+    ...authorFrame,
+    self: collaborativePod ? formatSelfFrame(target, installations, mentionMap) : '',
+  });
 
   const senderAgentName = sender?.isBot ? sender.botMetadata?.agentName?.toLowerCase() : null;
   const senderInstanceId = sender?.isBot ? (sender.botMetadata?.instanceId || 'default') : null;
@@ -2103,7 +2269,7 @@ const enqueueMentions = async ({
           }
           try {
             await noteNeverConnectedMention({
-              podId,
+              podId: String(podId),
               agentName: directMatch.agentName,
               instanceId: directMatch.instanceId,
               senderId: String(userId),
@@ -2143,7 +2309,7 @@ const enqueueMentions = async ({
                 ? String(message?._id || message?.id)
                 : undefined,
               content: buildContentForTarget(
-                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFrame, handoff,
+                podId, rawContent, eventType, directMatch.agentName, collaborativePod, authorFor(directMatch), handoff,
               ),
               ...handoffField(handoff),
               rawContent,
@@ -2276,7 +2442,8 @@ const enqueueMentions = async ({
                     ? String(message?._id || message?.id)
                     : undefined,
                   content: buildContentForTarget(
-                    podId, rawContent, eventType, agentType, collaborativePod, authorFrame, handoff,
+                    podId, rawContent, eventType, agentType, collaborativePod,
+                    authorFor({ agentName: agentType, instanceId: match.instanceId || 'default' }), handoff,
                   ),
                   ...handoffField(handoff),
                   rawContent,
@@ -2354,13 +2521,13 @@ const enqueueMentions = async ({
                 'chat.mention',
                 target.agentName,
                 collaborativePod,
-                authorFrame,
+                authorFor(target),
               ),
               rawContent,
               userId,
               username,
               mentions: rawMentions,
-              senderIsHuman: sender?.isBot === false,
+              ...senderStamp,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2411,6 +2578,28 @@ const enqueueMentions = async ({
     }
   }
 
+  // F297: a person addressing a stopped agent is told. Not awaited, and after
+  // every wake, so a slow or failed notice can't reach them or the sender.
+  if (sender?.isBot === false) {
+    addressedTargets.forEach((target) => {
+      noteStoppedMention({
+        podId: String(podId),
+        agentName: target.agentName,
+        instanceId: target.instanceId || 'default',
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId,
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+      noteOfflineMention({
+        podId: String(podId),
+        agentName: target.agentName,
+        instanceId: target.instanceId || 'default',
+        senderId: String(userId),
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId,
+      }).catch((error: Error) => console.warn('[agent-offline] notice failed:', error?.message));
+    });
+  }
+
   return {
     enqueued, implicit, skipped, woken,
   };
@@ -2435,8 +2624,8 @@ const enqueueDmEvent = async ({
   // conversational frame (ADR-012 §9). For human senders, botMetadata is
   // empty and the cue falls back to username + "(human)".
   const sender = await User.findById(userId)
-    .select('_id isBot username botMetadata')
-    .lean() as { _id: unknown; isBot?: boolean; username?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
+    .select('_id isBot username displayName botMetadata')
+    .lean() as { _id: unknown; isBot?: boolean; username?: string; displayName?: string; botMetadata?: { displayName?: string; instanceId?: string; agentName?: string } } | null;
   // Bot senders are allowed in agent-dm (the whole point) but still blocked
   // in agent-admin/agent-room — those are operator-driven personal surfaces;
   // a bot posting there shouldn't auto-route to itself.
@@ -2550,7 +2739,32 @@ const enqueueDmEvent = async ({
       .select('podId installedBy')
       .lean() as Array<{ podId: unknown; installedBy: unknown }>;
 
-    if (!Array.isArray(installations) || installations.length === 0) continue;
+    if (!Array.isArray(installations) || installations.length === 0) {
+      // F270: nothing reads this room any more. Not awaited, like the line below.
+      if (sender?.isBot === false) {
+        noteUnreachableAgentDm({
+          podId: String(podId),
+          agentName,
+          instanceId,
+          messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+          threadRootId: resolveThreadRootId(message),
+        }).catch((error: Error) => console.warn('[agent-unreachable] notice failed:', error?.message));
+      }
+      continue;
+    }
+
+    // F270: the agent is back but this room's row ended with it. A hosted room is
+    // reopened by the person using it, against whoever hosts the agent now.
+    if (pod.type === 'agent-room' && sender?.isBot === false
+      && !installations.some((entry) => String(entry?.podId || '') === String(podId))) {
+      try {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        await require('./dmService').restoreHostedRoomRow(podId, agentName, instanceId, userId);
+      } catch (error) {
+        // The message is already persisted; reopening the room must never drop it.
+        console.warn('[agent-dm] reopening the room failed:', (error as Error).message);
+      }
+    }
 
     const senderScopedPodIds = new Set<string>(
       installations
@@ -2625,7 +2839,8 @@ const enqueueDmEvent = async ({
     const senderInstanceLabel = (senderMeta.instanceId && senderMeta.instanceId !== 'default')
       ? senderMeta.instanceId
       : '';
-    const senderDisplay = resolveAgentDisplayLabel(sender, sender?.username || username || 'peer').trim();
+    const senderDisplay = (!sender?.isBot && frameName(sender))
+      || resolveAgentDisplayLabel(sender, sender?.username || username || 'peer').trim();
     // senderHandle filters 'default' the same way as senderDisplay above —
     // otherwise an agent on the literal 'default' instanceId would render as
     // "@default (DisplayName)", which is meaningless.
@@ -2663,6 +2878,23 @@ const enqueueDmEvent = async ({
       },
     });
     enqueued.push(agentName);
+    if (sender?.isBot === false) {
+      noteStoppedMention({
+        podId: String(podId),
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId: resolveThreadRootId(message),
+      }).catch((error: Error) => console.warn('[agent-stopped] notice failed:', error?.message));
+      noteOfflineMention({
+        podId: String(podId),
+        agentName: agentName.toLowerCase(),
+        instanceId,
+        senderId: String(userId),
+        messageId: message?._id || message?.id ? String(message?._id || message?.id) : null,
+        threadRootId: resolveThreadRootId(message),
+      }).catch((error: Error) => console.warn('[agent-offline] notice failed:', error?.message));
+    }
   }
 
   return { enqueued, skipped: [] };

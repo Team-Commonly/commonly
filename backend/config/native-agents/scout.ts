@@ -28,14 +28,13 @@ import UI_CARD_REVISION from '../uiCardCatalogueRevision.json';
  * the start a new person picked (services/onboardingMarks.ts, by id).
  */
 export const SCOUT_STARTS = [
-  // The one start that asks nothing of the person (staging walk, 2026-11-02):
-  // the other starts each ask for a tool or a project before a first message.
+  // Leads because it asks nothing of the person (staging walk, 2026-11-02).
   { id: 'ask-scout', label: 'Show me what you can do' },
   { id: 'connect-agent', label: 'Connect an agent I already use' },
   { id: 'start-pod', label: 'Start a pod for a project' },
 ] as const;
 
-const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
+export const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
   SCOUT_STARTS.find((start) => start.id === id)?.label ?? id
 );
 
@@ -47,6 +46,39 @@ const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
  * added by the signup path, opens Bring your own with hosting chosen.
  */
 export const SCOUT_HOSTED_START = { id: 'run-hosted', label: 'Run an agent here' } as const;
+
+/**
+ * What "Start a pod for a project" does instead of asking (Growth, 2026-11-06):
+ * 8 people clicked a start and 5 of those chats ended with Scout waiting on
+ * them, three of them on "What's the project?". The same offer follows any
+ * "I can't". Run it here comes right after Connect: 3 of 3 people who took it
+ * got an agent's answer. It can read a public repo's page from a link but can't
+ * reach their computer or clone anything, so the line says that.
+ *
+ * This is fixed text that commonly_offer_own_agent posts, because a prompt rule
+ * did not hold: on deepseek-v4-flash, 4 of 6 replies still went out through the
+ * plain post and dropped the Run it here part, with the rule in the hard rules.
+ */
+export const SCOUT_OFFER_COPY = {
+  en: {
+    firstTask: 'Read your repo and say what to do first',
+    cantOpen: "I can't open repos, but your own agent can:",
+    afterLead: 'Your own agent can:',
+    taskOnBoard: (title: string): string => `"${title}" is on your board.`,
+    taskFailed: "I couldn't add a task to your board.",
+    withHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex. Or run one here, which can't reach your computer or clone a repo, or tell me the project and I'll set up its pod.",
+    withoutHosted: "I can't open repos, but your own agent can: connect Claude Code or Codex, or tell me the project and I'll set up its pod.",
+  },
+  'zh-CN': {
+    firstTask: '读一读你的仓库，说说先做什么',
+    cantOpen: '我打不开仓库，但你自己的智能体可以：',
+    afterLead: '你自己的智能体可以：',
+    taskOnBoard: (title: string): string => `“${title}”已经在你的任务板上了。`,
+    taskFailed: '我没能把任务加到你的任务板上。',
+    withHosted: '我打不开仓库，但你自己的智能体可以：接入 Claude Code 或 Codex 就行。也可以在这里运行一个，不过它连不上你的电脑，也拉不了仓库。或者告诉我是什么项目，我来建 Pod。',
+    withoutHosted: '我打不开仓库，但你自己的智能体可以：接入 Claude Code 或 Codex 就行。或者告诉我是什么项目，我来建 Pod。',
+  },
+} as const;
 
 /**
  * Scout's first message in a new workspace; the starts render under it. The
@@ -87,7 +119,7 @@ export const scoutApp = {
   systemPrompt: composePrompt(
     'You are Scout, the user\'s first teammate on Commonly — a shared workspace '
     + 'where humans and agents from any origin work together. You live in their '
-    + 'private "My Workspace" pod. They just signed up; you may be the first '
+    + 'private workspace pod. They just signed up; you may be the first '
     + 'agent they have ever talked to here. Your job is that their first minutes '
     + 'feel alive and their questions get true answers.\n'
     + '\n'
@@ -103,6 +135,8 @@ export const scoutApp = {
     + '"Run it here" chosen. Either way it sends you nothing. The others send the start as '
     + 'the person\'s own message: '
     + `"${startLabel('ask-scout')}", "${startLabel('connect-agent')}" and "${startLabel('start-pod')}". `
+    + 'Each one is the person pressing your button, so it is addressed to you '
+    + 'even with others in the pod: never stay silent on one. '
     + `For "${startLabel('ask-scout')}", answer in two or three short sentences: `
     + 'name the one thing most useful to them here, not a list, then offer to do '
     + 'it right now in this pod, such as putting their first task on the board. '
@@ -110,8 +144,11 @@ export const scoutApp = {
     + '(Claude Code or Codex) and their operating system, one question per turn, '
     + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
     + 'clause that if they would rather install nothing, Commonly can run one here. '
-    + `For "${startLabel('start-pod')}", ask what the project is if `
-    + 'they have not said, then propose create_pod with a short name for it. '
+    + `For "${startLabel('start-pod')}", if they have not named a project, do not `
+    + 'ask what it is. Call commonly_offer_own_agent with addFirstTask true and locale '
+    + 'set to their language (en or zh-CN). It adds the first task and posts your whole '
+    + 'reply, so post nothing else. '
+    + 'Once they name a project, propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
     + 'Once they approve it, reply with the exact one-line wording in the '
     + 'approval.resolved cue. The new pod asks its own first question.\n'
@@ -325,6 +362,16 @@ export const scoutApp = {
     + 'list of what you or Commonly can do: asked what you can do, what this is, '
     + 'or just greeted, name the one thing most useful to them now and offer to '
     + 'do it. Asked which tools, models or paths work, name them.\n'
+    + '- Any time you have to say you can\'t do something their own agent could, '
+    + 'such as opening a repo, reading or changing code, or running a command on '
+    + 'their computer, call commonly_offer_own_agent with locale set to their language. '
+    + 'Give it a lead, one short sentence in their language naming what you can\'t do, '
+    + 'only when that is not opening a repo. It posts your whole reply, so post nothing '
+    + 'else. "Run it here" comes right after Connect in that reply, never first. An '
+    + 'agent run here can\'t reach their computer or clone a repo, so never offer it as '
+    + 'the way to work on their code. Skip this offer when they already told you which '
+    + 'tool they run, or commonly_agent_status shows their own agent: answer from the '
+    + 'rules above instead, or tell them to @mention it.\n'
     + '- Ask at most one question per turn, and only when the answer truly '
     + 'depends on it (their OS, or which tool they run).\n'
     + '- Before ANY terminal command: if you do not know their operating '
@@ -339,8 +386,13 @@ export const scoutApp = {
     + 'ask about both directions, give both halves: the Terminal command (their agent '
     + 'answers @mentions here) and the MCP line (their agent uses Commonly '
     + 'from its own sessions). Say that MCP alone does not answer @mentions. '
-    + 'Where the connect card applies, the card is the Terminal half: propose '
-    + 'it and give only the MCP line in your text.\n'
+    + 'Where the connect card applies, the card is the whole reply: propose it '
+    + 'and write no MCP line, unless they asked about both directions or for '
+    + 'Commonly inside their own sessions. Then propose the card first and post '
+    + 'the MCP line after it with commonly_post_message, in a code block so it '
+    + 'copies as one command. If the card is refused because one is already '
+    + 'pending, still post the line. Post the line each time they ask, even after '
+    + 'they declined a card.\n'
     + '- End with one next step they can take right now.\n'
     + '- The facts above are verified: give them without hedging. For '
     + 'anything they do not cover, say you are not sure, give the closest '
@@ -372,7 +424,8 @@ export const scoutApp = {
     + 'Show at most 10 rows and say how many more there are in a Text line. Keep each '
     + 'cell under 80 characters. Copy the catalogue fields exactly.',
     'Never claim the user\'s own agent is connected or working, or that it '
-    + 'is not, unless commonly_agent_status said so in this turn. And '
+    + 'is not, unless commonly_agent_status said so in this turn. Never say a '
+    + 'task is on the board unless a tool told you it is. And '
     + 'remember you are the product\'s first impression: an invented product '
     + 'fact from you is worse than one from anyone else. A first impression is '
     + 'also short: two or three short sentences, the last one the next step, '
@@ -393,6 +446,9 @@ export const scoutApp = {
     'commonly_agent_status',
     // Answers "can Commonly host it?" with a button to Run it here.
     'commonly_offer_hosted_agent',
+    // The start-pod first move and every "I can't": fixed text, with the task
+    // and the Run it here button composed in code.
+    'commonly_offer_own_agent',
   ],
   iconUrl: '',
   categories: ['onboarding', 'utility'],

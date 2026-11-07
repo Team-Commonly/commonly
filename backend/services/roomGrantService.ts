@@ -69,13 +69,19 @@ export class RoomGrantError extends Error {
   readonly code: string;
   readonly statusCode: number;
   readonly details?: Record<string, unknown>;
+  // For the restricted ToolCall trail. Every route serializes `details`, so this
+  // stays off it.
+  readonly credentialOwnerId?: string;
 
-  constructor(code: string, message: string, statusCode = 400, details?: Record<string, unknown>) {
+  constructor(
+    code: string, message: string, statusCode = 400, details?: Record<string, unknown>, credentialOwnerId?: string,
+  ) {
     super(message);
     this.name = 'RoomGrantError';
     this.code = code;
     this.statusCode = statusCode;
     this.details = details;
+    this.credentialOwnerId = credentialOwnerId;
   }
 }
 

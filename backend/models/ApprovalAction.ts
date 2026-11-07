@@ -234,7 +234,10 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
   },
-  { timestamps: true },
+  // `minimize: false`: mongoose otherwise strips empty objects from Mixed fields,
+  // so a call with `{}` anywhere in its arguments would lose that part of its
+  // envelope, leaving the card short of what was asked and its digest unmatched.
+  { timestamps: true, minimize: false },
 );
 
 ApprovalActionSchema.index({ podId: 1, status: 1 });

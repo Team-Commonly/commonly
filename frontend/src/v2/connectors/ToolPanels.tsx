@@ -332,9 +332,9 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
                   composed three pieces (`granted to` + pod + `by` + member), so zh could
                   only read 「授权给 Growth 授权者 sam」 (TASK-179). */}
               {granter ? (
-                <Trans i18nKey="tools.grantedToPodBy" values={{ pod: targetLabel, member: granter }} components={{ b: <b /> }} />
+                <Trans i18nKey="tools.grantedToPodBy" components={{ pod: <b>{targetLabel}</b>, member: <b>{granter}</b> }} />
               ) : (
-                <Trans i18nKey="tools.grantedToPod" values={{ pod: targetLabel }} components={{ b: <b /> }} />
+                <Trans i18nKey="tools.grantedToPod" components={{ pod: <b>{targetLabel}</b> }} />
               )}
             </strong>
             <span className="v2-connector-row__detail">
@@ -489,10 +489,10 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
           ? t('tools.operatorKey.noAgents')
           : t('tools.operatorKey.note');
       }
-      if (isHosted) return t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label });
+      if (isHosted) return t('tools.connectOwn', { defaultValue: 'Connect your own {{label}} account', label: entry.label });
       return entry.repositoryConnect
-        ? t('tools.repoConnect.note', { defaultValue: 'connect a repository first' })
-        : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' });
+        ? t('tools.repoConnect.note', { defaultValue: 'Connect a repository first' })
+        : t('tools.noConnection', { defaultValue: 'Install the GitHub App first · an admin does this once' });
     };
     return (
       <>

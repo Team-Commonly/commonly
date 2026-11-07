@@ -1,5 +1,6 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 import { declaredRuntimeIdentity } from '../utils/runtimeIdentity';
+import { IDENTITY_COLLATION, installationIdentityFilter } from '../services/agentInstallationIdentity';
 
 export type RegistryType = 'commonly-official' | 'commonly-community' | 'private';
 export type RegistryStatus = 'active' | 'deprecated' | 'unpublished' | 'pending-review';
@@ -213,6 +214,8 @@ export interface IAgentInstallationRegistry extends Document {
   staleSince?: Date;
   /** Moves only when this install's runtime identity is written or changes. */
   runtimeIdentityAt?: Date;
+  // A DM's row, ended because the agent left its last pod. Reinstalling brings it back.
+  retiredWithAgentAt?: Date;
   lastFoundWorkAt?: Date | null;
   installedBy: Types.ObjectId;
   skillLoad?: { at: Date; mounted: string[]; conflicted: string[]; status?: 'available' | 'unavailable' };
@@ -242,9 +245,11 @@ export interface IAgentInstallationRegistry extends Document {
 export interface IAgentInstallationRegistryModel extends Model<IAgentInstallationRegistry> {
   getInstalledAgents(podId: Types.ObjectId): mongoose.Query<IAgentInstallationRegistry[], IAgentInstallationRegistry>;
   isInstalled(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<boolean>;
-  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
+  rowInPod(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<IAgentInstallationRegistry | null>;
+  install(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string; stampInstaller?: boolean }): Promise<IAgentInstallationRegistry>;
   upsert(agentName: string, podId: Types.ObjectId, options: { version: string; config?: Map<string, unknown>; scopes?: string[]; githubIssueWrite?: boolean; installedBy: Types.ObjectId; instanceId?: string; displayName?: string }): Promise<IAgentInstallationRegistry>;
   uninstall(agentName: string, podId: Types.ObjectId, instanceId?: string): Promise<mongoose.UpdateWriteOpResult>;
+  reviveDmRows(agentName: string, instanceId: string, config?: unknown): Promise<void>;
 }
 
 const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
@@ -263,6 +268,7 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
     // every write, including the skill-load report, so it cannot say which
     // install was attached last; this one moves only with the identity.
     runtimeIdentityAt: { type: Date },
+    retiredWithAgentAt: { type: Date },
     // CAS throttle for the kernel's unclaimed-work nudge, per seat and pod.
     lastFoundWorkAt: { type: Date, default: null },
     installedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -333,11 +339,75 @@ AgentInstallationSchema.statics.getInstalledAgents = function (podId: Types.Obje
   return this.find({ podId, status: 'active' }).lean();
 };
 
+/**
+ * The row a write in this pod lands on. A legacy row can be mixed-case or have
+ * no instanceId, and the unique index wouldn't stop a second row beside it, so
+ * an active row decides, and otherwise the oldest. `_id` orders the read:
+ * without it the order is whichever index the planner took. Everything that
+ * picks a row asks here, so a rollback's snapshot is of the row install changes.
+ */
+AgentInstallationSchema.statics.rowInPod = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
+  const inPod = await this.find(
+    { ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId: { $eq: podId } },
+    null,
+    { collation: IDENTITY_COLLATION, sort: { _id: 1 } },
+  );
+  return inPod.find((row: { status?: string }) => row.status === 'active') || inPod[0] || null;
+};
+
 AgentInstallationSchema.statics.isInstalled = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
-  const installation = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId, status: 'active' });
+  const installation = await this.findOne({
+    ...installationIdentityFilter(agentName.toLowerCase(), instanceId), podId, status: 'active',
+  }, null, { collation: IDENTITY_COLLATION });
   return !!installation;
 };
 
+const DM_ROW_SOURCES = new Set(['agent-room-create', 'agent-dm-create']);
+
+// An agent that lands in a pod again answers in the DMs it left with: see
+// retireDmRowsWithAgent. A DM's own row never brings the others back.
+const reviveDmRows = async (
+  model: Model<any>, agentName: string, instanceId: string, config?: unknown,
+): Promise<void> => {
+  const source = config instanceof Map ? config.get('autoJoinSource')
+    : (config as { autoJoinSource?: string } | undefined)?.autoJoinSource;
+  if (DM_ROW_SOURCES.has(source)) return;
+  try {
+    await model.updateMany(
+      { ...installationIdentityFilter(agentName.toLowerCase(), instanceId), retiredWithAgentAt: { $exists: true } },
+      { $set: { status: 'active' }, $unset: { retiredWithAgentAt: 1 } },
+    ).collation({ locale: 'en', strength: 2 });
+  } catch (error) {
+    console.warn('[agent-dm] bringing back the DM rows of a reinstalled agent failed:', (error as Error).message);
+  }
+};
+
+AgentInstallationSchema.statics.reviveDmRows = function (agentName: string, instanceId: string, config?: unknown) {
+  return reviveDmRows(this, agentName, instanceId, config);
+};
+
+// A daily schedule belongs to the one row its owner set it on. Every path that
+// writes a row builds its config by copying another row's, so it's dropped here
+// rather than at each copy: one left in runs the owner's job in someone else's
+// room. The schedule route writes it after the row exists.
+const withoutSchedule = <T>(config: T): T => {
+  if (config instanceof Map) {
+    const copy = new Map(config);
+    copy.delete('schedule');
+    return copy as T;
+  }
+  if (!config || typeof config !== 'object') return config;
+  const { schedule: _schedule, ...rest } = config as Record<string, unknown>;
+  return rest as T;
+};
+
+/**
+ * `stampInstaller` is for a person installing on purpose: a row they bring back
+ * from uninstalled is theirs, as a new row would be. Most callers reactivate on
+ * someone's behalf (an auto-join, an agent's self-install, a DM) and pass a bot
+ * or a guest as `installedBy`, so the row keeps its name unless this is set. A
+ * paused, stale or errored row was never given up, and keeps it either way.
+ */
 AgentInstallationSchema.statics.install = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
   config?: Map<string, unknown>;
@@ -346,24 +416,32 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
   installedBy: Types.ObjectId;
   instanceId?: string;
   displayName?: string;
+  stampInstaller?: boolean;
 }) {
   const {
-    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+    version, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName, stampInstaller,
   } = options;
-  const existing = await this.findOne({ agentName: agentName.toLowerCase(), podId, instanceId });
+  const config = withoutSchedule(options.config);
+  const existing: any = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
   if (existing) {
     if (existing.status === 'active') throw new Error('Agent already installed');
+    if (stampInstaller && existing.status === 'uninstalled') existing.installedBy = installedBy;
     existing.status = 'active';
     existing.version = version;
     existing.config = config;
     existing.scopes = scopes;
     if (githubIssueWrite !== undefined) existing.githubIssueWrite = githubIssueWrite === true;
-    return existing.save();
+    existing.retiredWithAgentAt = undefined;
+    const saved = await existing.save();
+    await reviveDmRows(this, agentName, instanceId, config);
+    return saved;
   }
-  return this.create({
+  const created = await this.create({
     agentName: agentName.toLowerCase(), podId, instanceId, displayName, version, config, scopes, installedBy,
     githubIssueWrite: githubIssueWrite === true,
   });
+  await reviveDmRows(this, agentName, instanceId, config);
+  return created;
 };
 
 /**
@@ -376,7 +454,10 @@ AgentInstallationSchema.statics.install = async function (agentName: string, pod
  *
  * Atomically created via findOneAndUpdate with upsert+setOnInsert so
  * concurrent autoJoin attempts can't race a duplicate row past the
- * unique index on (agentName, podId, instanceId).
+ * unique index on (agentName, podId, instanceId). A row already here, legacy
+ * spelling included, is updated by id; with none, the upsert stays on the exact
+ * key, because the server retries a lost insert race only for a plain equality
+ * on the unique index's own fields.
  */
 AgentInstallationSchema.statics.upsert = async function (agentName: string, podId: Types.ObjectId, options: {
   version: string;
@@ -388,9 +469,11 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
   displayName?: string;
 }) {
   const {
-    version, config, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
+    version, scopes, githubIssueWrite, installedBy, instanceId = 'default', displayName,
   } = options;
-  const filter = { agentName: agentName.toLowerCase(), podId, instanceId };
+  const config = withoutSchedule(options.config);
+  const here = await (this as unknown as IAgentInstallationRegistryModel).rowInPod(agentName, podId, instanceId);
+  const filter = here ? { _id: { $eq: here._id } } : { agentName: agentName.toLowerCase(), podId, instanceId };
   const update = {
     $setOnInsert: { agentName: agentName.toLowerCase(), podId, instanceId, installedBy, version, displayName },
     $set: {
@@ -403,12 +486,18 @@ AgentInstallationSchema.statics.upsert = async function (agentName: string, podI
       ...(githubIssueWrite !== undefined ? { githubIssueWrite: githubIssueWrite === true } : {}),
       status: 'active',
     },
+    $unset: { retiredWithAgentAt: 1 },
   };
-  return this.findOneAndUpdate(filter, update, { new: true, upsert: true, setDefaultsOnInsert: true });
+  const row = await this.findOneAndUpdate(filter, update, { new: true, upsert: true, setDefaultsOnInsert: true });
+  await reviveDmRows(this, agentName, instanceId, config);
+  return row;
 };
 
 AgentInstallationSchema.statics.uninstall = async function (agentName: string, podId: Types.ObjectId, instanceId = 'default') {
-  return this.updateOne({ agentName: agentName.toLowerCase(), podId, instanceId }, { status: 'uninstalled' });
+  return this.updateOne(
+    { agentName: agentName.toLowerCase(), podId, instanceId },
+    { $set: { status: 'uninstalled' }, $unset: { retiredWithAgentAt: 1 } },
+  );
 };
 
 AgentInstallationSchema.methods.recordUsage = async function (tokens = 0) {

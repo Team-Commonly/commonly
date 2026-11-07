@@ -8,7 +8,7 @@
  */
 
 const {
-  planConfigRefresh, hasChanges, parseArgs, describeValue, stableStringify,
+  planConfigRefresh, hasChanges, parseArgs, describeValue, stableStringify, entersInProcess, writeRefreshedConfig,
 } = require('../../../scripts/refresh-native-agent-configs');
 const { MANIFEST_CONFIG_KEYS } = require('../../../scripts/seed-native-agents');
 
@@ -22,6 +22,59 @@ const projected = {
   wakeOnMessage: { enabled: true },
   recentMessages: 8,
 };
+
+describe('the one-runtime rule on a refresh', () => {
+  const external = { runtime: { runtimeType: 'wrapper' } };
+  const row = () => ({
+    config: external, toObject: () => ({ _id: 'row', config: external }), save: jest.fn(async () => undefined),
+  });
+
+  test('a row moving in process is entering; one already there is not', () => {
+    expect(entersInProcess(planConfigRefresh(external, projected), external, projected)).toBe(true);
+    const hosted = { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native' } };
+    expect(entersInProcess(planConfigRefresh(hosted, projected), hosted, projected)).toBe(false);
+    const sameRuntime = { ...projected, model: 'older' };
+    expect(entersInProcess(planConfigRefresh(sameRuntime, projected), sameRuntime, projected)).toBe(false);
+  });
+
+  test('a token held beforehand writes nothing', async () => {
+    const install = row();
+    const takeBack = jest.fn();
+    await expect(writeRefreshedConfig(install, projected, true, async () => true, takeBack)).resolves.toBe(false);
+    expect(install.save).not.toHaveBeenCalled();
+    expect(takeBack).not.toHaveBeenCalled();
+  });
+
+  test('a token minted during the write takes the row back', async () => {
+    const install = row();
+    const takeBack = jest.fn(async () => undefined);
+    const holds = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    await expect(writeRefreshedConfig(install, projected, true, holds, takeBack)).resolves.toBe(false);
+    expect(install.save).toHaveBeenCalledTimes(1);
+    expect(takeBack).toHaveBeenCalledWith({ _id: 'row', config: external });
+  });
+
+  test('a failed read after the write counts as held', async () => {
+    const takeBack = jest.fn(async () => undefined);
+    const holds = jest.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error('read failed'));
+    await expect(writeRefreshedConfig(row(), projected, true, holds, takeBack)).resolves.toBe(false);
+    expect(takeBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('with no token the row is written and stays', async () => {
+    const install = row();
+    const takeBack = jest.fn();
+    await expect(writeRefreshedConfig(install, projected, true, async () => false, takeBack)).resolves.toBe(true);
+    expect(install.config).toBe(projected);
+    expect(takeBack).not.toHaveBeenCalled();
+  });
+
+  test('a row not entering is written without asking', async () => {
+    const holds = jest.fn(async () => true);
+    await expect(writeRefreshedConfig(row(), projected, false, holds, jest.fn())).resolves.toBe(true);
+    expect(holds).not.toHaveBeenCalled();
+  });
+});
 
 describe('planConfigRefresh', () => {
   test('rewrites a changed manifest key and adds a missing one', () => {

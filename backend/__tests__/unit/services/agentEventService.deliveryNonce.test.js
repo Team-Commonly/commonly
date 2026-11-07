@@ -906,7 +906,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     expect(runAgent).not.toHaveBeenCalled();
     const closed = await AgentEvent.findById(event._id).lean();
     expect(closed.status).toBe('failed');
-    expect(closed.error).toMatch(/not run within 30 minutes/);
+    expect(closed.error).toMatch(/not run in time/);
   });
 
   // The batch cap used to apply before runnability, so 50
@@ -976,6 +976,44 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
       releaseDigest();
       digest.mockRestore();
     }
+  });
+
+  test('a start runs what waited for that agent at once, however new', async () => {
+    await install(AGENT, MIGRATED('done'));
+    const event = await seedEvent();
+
+    await expect(AgentEventService.rescuePendingForIdentity(AGENT.toUpperCase(), INSTANCE)).resolves
+      .toMatchObject({ rescued: 1 });
+    await waitForNativeCalls(runAgent, 1);
+    expect((await AgentEvent.findById(event._id).lean()).status).not.toBe('pending');
+  });
+
+  test('a start leaves another agent\'s waiting events to the sweep', async () => {
+    await install(AGENT, MIGRATED('done'));
+    await seedEvent();
+
+    await expect(AgentEventService.rescuePendingForIdentity('someone-else', INSTANCE)).resolves
+      .toEqual({ rescued: 0, closed: 0 });
+    await expect(AgentEventService.rescuePendingForIdentity(AGENT, 'another-instance')).resolves
+      .toEqual({ rescued: 0, closed: 0 });
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  test('a start keeps the attempt cap on a poison event', async () => {
+    await install(AGENT, MIGRATED('done'));
+    const event = await seedEvent();
+    await AgentEvent.collection.updateOne({ _id: event._id }, { $set: { attempts: 3 } });
+
+    await expect(AgentEventService.rescuePendingForIdentity(AGENT, INSTANCE)).resolves
+      .toEqual({ rescued: 0, closed: 0 });
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  test('the sweep still leaves a new event alone', async () => {
+    await install(AGENT, MIGRATED('done'));
+    await seedEvent();
+
+    expect((await AgentEventService.rescueStrandedPendingInProcess(new Date(), 3)).rescued).toBe(0);
   });
 
   test('two sweeps racing (two replicas) run it once', async () => {

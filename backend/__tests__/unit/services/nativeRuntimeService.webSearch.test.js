@@ -417,7 +417,9 @@ describe('native turn with commonly_web_search', () => {
         .mockResolvedValueOnce(toolCalls(call('c1', 'linear_list_issues', {})))
         .mockResolvedValueOnce({ status: 502, headers: {}, data: { error: 'upstream unavailable' } });
 
-      const result = await runAgent(hostedInstall, mention);
+      // The line goes to a person, so the trigger names one.
+      const asked = { ...mention, payload: { ...mention.payload, userId: '507f1f77bcf86cd799439055', messageId: 'msg-1' } };
+      const result = await runAgent(hostedInstall, asked);
 
       expect(result.status).toBe('failed');
       expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -428,6 +430,7 @@ describe('native turn with commonly_web_search', () => {
 
     test.each([
       ['commonly_offer_hosted_agent', { content: 'Run it here.' }],
+      ['commonly_offer_own_agent', { locale: 'en', addFirstTask: true }],
       ['commonly_propose_action', {
         actionType: 'create_pod', params: { name: 'Research' }, summary: 'Create a research pod',
       }],

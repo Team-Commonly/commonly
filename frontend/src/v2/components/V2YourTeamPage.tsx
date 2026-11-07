@@ -8,6 +8,8 @@ import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
+import { roomRefusal } from '../utils/roomRefusal';
+import { isDefaultInstance } from '../utils/agentKey';
 
 // The shared head bar's title and count classes, plus this page's own hook.
 const HEAD_TITLE_CLASS = 'v2-feature__title v2-team__title';
@@ -76,6 +78,7 @@ interface QueueItem {
   title: string;
   podId?: string;
   actorUserId?: string;
+  actorName?: string;
   messageId?: string;
 }
 
@@ -195,8 +198,8 @@ const V2YourTeamPage: React.FC = () => {
   const [opening, setOpening] = useState<string | null>(null);
   const [internalOpen, setInternalOpen] = useState(false);
 
-  // Invite gate for hosted agents (unchanged behaviour): the redeem line is
-  // the only path to Hire an agent while the account is not entitled.
+  // Invite gate for hosted agents: while the account is not entitled, Hire opens
+  // the redeem form, and the head's hint says why.
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -386,7 +389,7 @@ const V2YourTeamPage: React.FC = () => {
       navigate(`/v2/pods/${roomId}`);
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { message?: string } } })?.response;
-      setError(resp?.data?.message || t('yourTeam.errors.openRoomFailed'));
+      setError(roomRefusal(err, t) || resp?.data?.message || t('yourTeam.errors.openRoomFailed'));
       setOpening(null);
     }
   };
@@ -414,13 +417,21 @@ const V2YourTeamPage: React.FC = () => {
     const key = agentKey(a);
     const where = runsOn(a, user?._id ? String(user._id) : undefined);
     const ask = a.userId ? asksByActor.get(a.userId)?.[0] : undefined;
+    // The card already names who's asking, so "Mia mentioned you" reads "mentioned you".
+    // Other titles keep their name: "Mia is blocked" needs its subject.
+    const askTitle = ask?.kind === 'mention' && ask.actorName && ask.title?.startsWith(`${ask.actorName} `)
+      ? t('yourTeam.card.mentionedYou') : ask?.title;
     const task = claimedTaskFor(a);
     const needsReconnect = a.connection && ['revoked', 'stale'].includes(a.connection.state);
-    const visualState = a.connection && a.connection.state !== 'connected' ? 'idle' : state;
-    const statusText = a.connection && a.connection.state !== 'connected'
+    // An ask still waits on a seat that dropped off, so its card keeps the ring.
+    const visualState = state !== 'needsYou' && a.connection && a.connection.state !== 'connected' ? 'idle' : state;
+    const offline = Boolean(a.connection && a.connection.state !== 'connected');
+    // The ask stays the line's content, so the connection gets a quiet line of its own.
+    const askOffline = offline && state === 'needsYou';
+    const statusText = offline && !askOffline
       ? connectionLabel(a.connection!, t)
       : state === 'needsYou'
-      ? `${t('yourTeam.card.needsYou')} · ${ask?.title || ''}`.replace(/ · $/, '')
+      ? `${t('yourTeam.card.needsYou')} · ${askTitle || ''}`.replace(/ · $/, '')
       : state === 'working'
         ? `${t('yourTeam.card.working')} · ${task?.taskId || shortPodName(task?.podName || a.podName || '')}`.replace(/ · $/, '')
         : `${t('yourTeam.card.idle')} · ${formatRelative(lastSeenIso(a), t).toLowerCase()}`;
@@ -443,10 +454,11 @@ const V2YourTeamPage: React.FC = () => {
           <div className="v2-team-card__title">
             <div className="v2-team-card__name">{display}</div>
             <div className={`v2-team-card__status v2-team-card__status--${visualState}`}>
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
-              {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
+              {(!offline || askOffline) && state !== 'idle' && <span className="v2-team-card__dot" aria-hidden="true">{STATE_DOT}</span>}
+              {(!offline || askOffline) && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
+            {askOffline && <div className="v2-team-card__status" data-testid="team-card-offline">{connectionLabel(a.connection!, t)}</div>}
             {a.connection?.state === 'never' && a.fixCommand && (
               <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
             )}
@@ -488,14 +500,22 @@ const V2YourTeamPage: React.FC = () => {
           </div>
         )}
         <div className="v2-team-card__actions">
+          {state === 'needsYou' && (
+            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => handleAnswer(a)}>
+              {t('yourTeam.card.answer')}
+            </button>
+          )}
           {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
-            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
               {t('agentConnection.reconnect')}
             </button>
           ) : null}
-          {!needsReconnect && state === 'needsYou' && (
-            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => handleAnswer(a)}>
-              {t('yourTeam.card.answer')}
+          {/* The command needs a key on that machine, and this page hands one out. A wrapper
+              never bound to a computer would dead-end: its Reconnect refuses. A second instance
+              would get a sibling. */}
+          {a.connection?.state === 'never' && a.fixCommand?.startsWith('commonly agent run ') && a.runtime?.runtimeType !== 'wrapper' && isDefaultInstance(a.instanceId) && (
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" data-testid="team-card-connect" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1`)}>
+              {t('agentConnection.connect')}
             </button>
           )}
           {!needsReconnect && <button
@@ -520,6 +540,8 @@ const V2YourTeamPage: React.FC = () => {
         titleClassName={HEAD_TITLE_CLASS}
         title={t('yourTeam.title')}
         metaClassName={HEAD_META_CLASS}
+        hint={isEntitled ? undefined : t('yourTeam.redeem.gated')}
+        hintLabel={t('common.aboutPage', { title: t('yourTeam.title') })}
         meta={loading
           ? t('yourTeam.loading')
           : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
@@ -536,35 +558,25 @@ const V2YourTeamPage: React.FC = () => {
       />
       <div className="v2-feature__scroll v2-team__body">
 
-      {!isEntitled && (
+      {!isEntitled && redeemOpen && (
         <div className="v2-team__notice">
-          {redeemOpen ? (
-            <form className="v2-team__redeem" onSubmit={handleRedeem}>
-              <input
-                className="v2-team__redeem-input"
-                type="text"
-                placeholder={t('yourTeam.redeem.placeholder')}
-                value={redeemCode}
-                onChange={(e) => setRedeemCode(e.target.value)}
-                autoFocus
-              />
-              <button type="submit" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
-                {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
-              </button>
-              <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
-                {t('yourTeam.actions.cancel')}
-              </button>
-              {redeemError && <span className="v2-team__redeem-error" role="alert">{redeemError}</span>}
-            </form>
-          ) : (
-            <span>
-              {t('yourTeam.redeem.gated')}
-              {' '}
-              <button type="button" className="v2-team__link" onClick={() => setRedeemOpen(true)}>
-                {t('yourTeam.redeem.haveCode')}
-              </button>
-            </span>
-          )}
+          <form className="v2-team__redeem" onSubmit={handleRedeem}>
+            <input
+              className="v2-team__redeem-input"
+              type="text"
+              placeholder={t('yourTeam.redeem.placeholder')}
+              value={redeemCode}
+              onChange={(e) => setRedeemCode(e.target.value)}
+              autoFocus
+            />
+            <button type="submit" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
+              {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
+            </button>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
+              {t('yourTeam.actions.cancel')}
+            </button>
+            {redeemError && <span className="v2-team__redeem-error" role="alert">{redeemError}</span>}
+          </form>
         </div>
       )}
       {redeemed && <div className="v2-team__notice v2-team__notice--ok">{t('yourTeam.redeem.success')}</div>}

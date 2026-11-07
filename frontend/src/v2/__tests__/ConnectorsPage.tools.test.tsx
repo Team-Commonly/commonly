@@ -882,7 +882,7 @@ describe('Connectors page: tools', () => {
     await findTile('GitHub');
     expect(screen.getByRole('img', { name: 'An admin installs this once' })).toBeInTheDocument();
     const popover = await openToolPopover('GitHub');
-    expect(within(popover).getByText('install the GitHub App first · an admin does this once')).toBeInTheDocument();
+    expect(within(popover).getByText('Install the GitHub App first · an admin does this once')).toBeInTheDocument();
     expect(within(popover).queryByRole('button', { name: 'Add' })).toBeNull();
     expect(within(popover).queryByRole('button', { name: 'Install GitHub App' })).toBeNull();
   });
@@ -1073,7 +1073,7 @@ describe('Connectors page: tools', () => {
 
     const popover = await openToolPopover('Linear');
     expect(popover).toHaveTextContent('read');
-    expect(popover).not.toHaveTextContent('read, or read and write');
+    expect(popover).not.toHaveTextContent('Read, or read and write');
 
     fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
     const form = await screen.findByRole('complementary', { name: 'Add Linear' });
@@ -1588,7 +1588,7 @@ describe('Linear read note', () => {
 
 // F213: no form-made grant gives an agent a write today, so the form offers none
 // until F214 and F215 restore it. A grant already stored keeps its true mode.
-describe('the form offers read, and a stored write grant stays what it is', () => {
+describe('the form offers read, a hosted connection adds ask-first, and a stored write grant stays what it is', () => {
   const sentryEntry = {
     installableId: 'sentry', list: 'tools', label: 'Sentry', description: 'Issues in Sentry.', available: true,
     connectionType: 'hosted-mcp', entryId: 'sentry',
@@ -1601,24 +1601,55 @@ describe('the form offers read, and a stored write grant stays what it is', () =
   };
   const modeButtons = (form) => within(within(form).getByRole('group', { name: 'what it may do' })).getAllByRole('button');
 
-  it.each([
-    ['a GitHub App', githubEntry, 'GitHub', 'github.list_issues', 'github.comment_on_issue'],
-    ['a hosted connection', sentryEntry, 'Sentry', 'sentry.list_issues', 'sentry.update_issue'],
-  ])('%s with write tools offers only read, and mints read', async (_kind, entry, label, readTool, writeTool) => {
+  it('a GitHub App with write tools offers only read, and mints read', async () => {
     axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
-    mockTools({ entries: [entry], grants: [] });
+    mockTools({ entries: [githubEntry], grants: [] });
     renderPage();
-    const popover = await openToolPopover(label);
-    expect(within(popover).queryByText('read, or read and write')).toBeNull();
+    const popover = await openToolPopover('GitHub');
+    expect(within(popover).queryByText('Read, or read and write')).toBeNull();
     fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: `Add ${label}` });
+    const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
     expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read']);
-    expect(within(form).getByText(readTool)).toBeInTheDocument();
-    expect(within(form).queryByText(writeTool)).toBeNull();
+    expect(within(form).getByText('github.list_issues')).toBeInTheDocument();
+    expect(within(form).queryByText('github.comment_on_issue')).toBeNull();
     expect(within(form).getByText('nothing asks first')).toBeInTheDocument();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: [readTool] });
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+  });
+
+  it('a hosted connection starts on read and never offers an unattended write', async () => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockTools({ entries: [sentryEntry], grants: [] });
+    renderPage();
+    const popover = await openToolPopover('Sentry');
+    expect(within(popover).getByText('Read, or read and write')).toBeInTheDocument();
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    const form = await screen.findByRole('complementary', { name: 'Add Sentry' });
+    expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read', 'read and write, ask first']);
+    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(form).queryByText('sentry.update_issue')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: ['sentry.list_issues'] });
+  });
+
+  it('a hosted connection mints ask-first with its write tools when that is chosen', async () => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockTools({ entries: [sentryEntry], grants: [] });
+    renderPage();
+    const popover = await openToolPopover('Sentry');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    const form = await screen.findByRole('complementary', { name: 'Add Sentry' });
+    fireEvent.click(within(form).getByRole('button', { name: 'read and write, ask first' }));
+    expect(within(form).getByText('sentry.update_issue')).toBeInTheDocument();
+    expect(within(form).getByText('a write would ask first')).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({
+      writeMode: 'write-with-confirm',
+      tools: ['sentry.list_issues', 'sentry.update_issue'],
+    });
   });
 
   it.each([
@@ -2083,7 +2114,7 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     const box = within(form).getByRole('checkbox', { name: 'Claude' });
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
-    expect(within(form).getByText('Runs on native Windows, where no grant can be used.')).toBeInTheDocument();
+    expect(within(form).getByText('Ran without a sandbox Commonly can enforce, so no grant can be used.')).toBeInTheDocument();
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));

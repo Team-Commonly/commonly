@@ -250,13 +250,25 @@ describe('Scout onboarding knowledge', () => {
     );
     expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
     expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);
-    expect(prompt).toMatch(
-      /Where the connect card applies, the card is the Terminal half: propose it and give only the MCP line/,
-    );
+    expect(prompt).toMatch(/Where the connect card applies, the card is the whole reply: propose it and write no MCP line/);
   });
 
-  // A card gets only the MCP line in text, so Codex needs a line of its own:
-  // the Claude Code one does not configure Codex.
+  // Asked for the MCP line too is when Codex needs a line of its own: the Claude
+  // Code one does not configure Codex.
+  test('gives the MCP line only when they asked for it, after the card', () => {
+    expect(prompt).toMatch(/unless they asked about both directions or for Commonly inside their own sessions/);
+    expect(prompt).toMatch(/propose the card first and post the MCP line after it with commonly_post_message/);
+  });
+
+  // Growth's re-walks: outside a code block `@commonlyai` chipped. With the line
+  // first it said "the card below" twice, once under a pending card and once
+  // with none, so the card goes first and the line can't point down at it.
+  test('keeps the MCP line whole and posts it whatever became of the card', () => {
+    expect(prompt).toMatch(/in a code block so it copies as one command/);
+    expect(prompt).toMatch(/If the card is refused because one is already pending, still post the line/);
+    expect(prompt).toMatch(/Post the line each time they ask, even after they declined a card/);
+  });
+
   test('gives an MCP line for each tool the card connects', () => {
     expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
       + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');

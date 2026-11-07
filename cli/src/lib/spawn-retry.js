@@ -9,6 +9,7 @@
 
 import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
 import { PUBLIC_CODEX_VERSION_CODE } from './adapters/tested-version.js';
+import { modelUnavailableFailure } from './model-unavailable.js';
 
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
@@ -110,13 +111,22 @@ const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this cont
 // "thinking budget has been exceeded" stays out. Unmatched, the 422 is RUNTIME
 // and the seat respawns every few seconds against a key that stays refused.
 export const GATEWAY_BUDGET_RE = /Budget has been exceeded!|crossed budget/;
-const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
+// `credit_balance_exhausted` is OpenAI's code for a prepaid balance at zero, sent
+// as a 429. `credit balance` has a space, so it needs its own entry. OpenAI:
+// "Retrying billing, spend, or quota errors won't restore API access."
+// This reaches the code only while it's in the text, as a bare code or a body
+// kept whole. A body the keep-list reduces keeps its message and moves the code
+// to `error.providerCode`, which isn't read here because it can come from a
+// tool's JSON. That refusal stays RATE_LIMIT and probes in 60 seconds.
+const QUOTA_RE = /(?:quota|usage limit|session limit|weekly limit|credit balance|credit_balance_exhausted|out of credits|billing|insufficient[_ -]?quota|resource exhausted|spending limit)/i;
 const QUOTA_POSSESSIVE_RE = /you'?ve (?:hit|reached) your (?!rate[ -]?limit)(?:[^.\n]|\.(?=\d)){0,40}?limit/i;
 // The status code is not a throttle wording: "429: You've reached your Fable 5
 // limit" is an exhausted allowance that a provider reports as HTTP 429.
 const THROTTLE_WORDING_RE = /(?:rate[ -]?limit|too many requests|overloaded|capacity)/i;
 const RATE_LIMIT_RE = /(?:rate[ -]?limit|too many requests|\b429\b|overloaded|capacity)/i;
 const CONFIGURATION_RE = /(?:ENOENT|command not found|not on PATH|login required|not logged in|invalid api key|authentication failed|unauthori[sz]ed|forbidden|\b40[13]\b)/i;
+
+const CONNECTION_FAULT_RE = /(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|socket hang up|fetch failed)/;
 
 const errorText = (error) => [
   error?.message,
@@ -163,11 +173,17 @@ export const classifySpawnFailure = (error) => {
   if (error?.status === 429 || RATE_LIMIT_RE.test(text)) {
     return SPAWN_FAILURE_CLASS.RATE_LIMIT;
   }
+  // A model the provider won't run fails the same way until someone changes it.
+  // A 403 for that reads as configuration below; a 404 has no status of its own
+  // there, so without this it retried in seconds against the same answer. A
+  // turn's text can hold a tool's 404 from before a dropped connection killed
+  // the turn, so a connection fault keeps the quick retry.
   if (
     error?.code === 'ENOENT'
     || error?.status === 401
     || error?.status === 403
     || CONFIGURATION_RE.test(text)
+    || (modelUnavailableFailure(error) && !CONNECTION_FAULT_RE.test(text))
   ) {
     return SPAWN_FAILURE_CLASS.CONFIGURATION;
   }

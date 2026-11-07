@@ -50,7 +50,7 @@ export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_not_audience: 'Name an agent that this grant reaches.',
   byo_not_agent: 'Only an agent can be named on a grant.',
   byo_agent_not_owned: 'You can name only an agent you installed, and that no one else installed.',
-  byo_unconfined_host: 'This agent runs on native Windows, where no grant can be used.',
+  byo_unconfined_host: 'This agent ran without a sandbox Commonly can enforce, so no grant can be used from it.',
   byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
   byo_consent_required: 'Confirm that what this agent reads can leave through it.',
 }[reason]);

@@ -22,6 +22,7 @@ import { recordApprovalOutcome } from './brokerRecordService';
 import { nextFreeByoName } from './byoNameAllocator';
 import { prWriteApprovalSummary } from './prWriteScope';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
+import { PLACEHOLDER_AGENT_DESCRIPTION } from './agentInstallationIdentity';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -946,6 +947,12 @@ interface ResolveOptions {
   approvalId: string;
   callerUserId: string;
   decision: 'approved' | 'declined';
+  /**
+   * The `argsDigest` the owner's client was shown. The route always passes it,
+   * `null` when the client sent none, so a person's approval of a parked call
+   * is bound to the call they read. Only a server-side caller omits it.
+   */
+  reviewedArgsDigest?: string | null;
 }
 
 export interface ResolveResult {
@@ -1190,6 +1197,7 @@ const enqueueToolCallResolvedEvent = async (
     ...(receipt ? [`Receipt: ${JSON.stringify(receipt)}`] : []),
     ...(row.toolCallCode === APPROVAL_OUTCOME_UNKNOWN
       ? ['This call may have run. Check the result before asking again.'] : []),
+    'The room already shows this outcome. Reply only if there is a next step; otherwise return NO_REPLY.',
   ].join('\n');
   await AgentEventService.enqueue({
     agentName: String(row.agentName),
@@ -1313,6 +1321,14 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     if (expired.toolCall) expired.toolCall.canonicalArgs = undefined;
     await finishToolCallClosureOrLeaveForRetry(expired, 'expired');
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
+  }
+
+  // A parked call is approved from the card that shows its arguments, never
+  // from a surface that has only the tool's description (scope §5c). The card
+  // stays open, so the owner can read it and decide.
+  if (parkedCall && decision === 'approved' && options.reviewedArgsDigest !== undefined
+    && options.reviewedArgsDigest !== parkedCall.argsDigest) {
+    return { status: 409, body: { error: 'approval_needs_review', approval: buildCardPayload(row) } };
   }
 
   // ADR-017:201 — expired stays DECIDABLE. Refusing a late decision would
@@ -1978,7 +1994,7 @@ const executeConnectLocalAgent = async (row: IApprovalAction): Promise<unknown> 
     const synthManifest = {
       name: agentName,
       version: '1.0.0',
-      description: 'A connected agent.',
+      description: PLACEHOLDER_AGENT_DESCRIPTION,
       capabilities: [],
       context: { required: [], optional: [] },
       runtime: { type: 'standalone', connection: 'rest' },

@@ -14,6 +14,7 @@ import {
 } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
+import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import pi from '../src/lib/adapters/pi.js';
 import { detectSeatbelt } from '../src/lib/sandbox/seatbelt.js';
@@ -158,6 +159,91 @@ realSeatbeltTest('the jailed pi can delete its own per-spawn credential director
       before: 'cm_agent_smoke', removed: true, gone: true, dirGone: true,
     });
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// A seat that brings its own provider, on the real kernel. The stand-in pi does
+// what a turn steered by a stranger would try: read the key file directly, read
+// it from a shell, and look for the key in its environment and in models.json.
+// Then it calls the model the way pi does. Upstream sits on a port no profile
+// names, so the reply also proves the proxy reaches a baseURL the jail doesn't.
+realSeatbeltTest('a public turn with its own keyFile cannot read the key and still reaches the provider', async () => {
+  const root = await realpath(await mkdtemp(join(homedir(), '.pi-seatbelt-smoke-')));
+  const keyFile = join(root, 'owner.key');
+  const key = 'fake-owner-provider-key-0123456789';
+  const packageRoot = join(root, 'npm', 'lib', 'node_modules', '@earendil-works', 'pi-coding-agent');
+  const binDir = join(root, 'npm', 'bin');
+  const workspace = join(root, 'workspace');
+  const piHome = join(root, 'pi-home');
+  const upstreamSaw = [];
+  const upstream = createServer((req, res) => {
+    upstreamSaw.push({ url: req.url, authorization: req.headers.authorization });
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ model: 'smoke-model', choices: [] }));
+    });
+  });
+  await new Promise((resolve) => { upstream.listen(0, '127.0.0.1', resolve); });
+  try {
+    await Promise.all([
+      mkdir(join(packageRoot, 'dist'), { recursive: true }),
+      mkdir(binDir, { recursive: true }),
+      mkdir(workspace),
+    ]);
+    await writeFile(keyFile, `${key}\n`, { mode: 0o600 });
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent' }));
+    const cli = join(packageRoot, 'dist', 'cli.js');
+    await writeFile(cli, [
+      `#!${process.execPath}`,
+      'const fs = require("fs"); const cp = require("child_process"); const path = require("path");',
+      'if (process.argv.includes("--version")) { process.stdout.write("0.84.1\\n"); process.exit(0); }',
+      `const keyFile = ${JSON.stringify(keyFile)}; const key = ${JSON.stringify(key)};`,
+      'let direct; try { fs.readFileSync(keyFile); direct = "READ"; } catch (e) { direct = e.code; }',
+      'const shell = cp.spawnSync("/bin/sh", ["-c", `cat ${keyFile} >/dev/null 2>&1 && echo READ || echo DENIED`], { encoding: "utf8" }).stdout.trim();',
+      'const models = fs.readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), "utf8");',
+      'const provider = JSON.parse(models).providers.owner;',
+      'const body = JSON.stringify({ model: "smoke-model", messages: [] });',
+      'fetch(`${provider.baseUrl.replace(/\\/+$/, "")}/chat/completions`, { method: "POST", body,',
+      '  headers: { authorization: `Bearer ${process.env.COMMONLY_PI_PROVIDER_KEY}`, "content-type": "application/json" } })',
+      '  .then((r) => r.text().then((text) => ({ status: r.status, text })), (e) => ({ status: String(e.cause || e) }))',
+      '  .then((call) => {',
+      '    const report = { direct, shell, status: call.status, keyInEnv: JSON.stringify(process.env).includes(key),',
+      '      keyInModels: models.includes(key), keyInReply: String(call.text).includes(key), apiKey: provider.apiKey };',
+      '    process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant",',
+      '      content: [{ type: "text", text: JSON.stringify(report) }] } }) + "\\n");',
+      '  });',
+      '',
+    ].join('\n'));
+    await chmod(cli, 0o755);
+    await symlink(cli, join(binDir, 'pi'));
+
+    const result = await pi.spawn('hello', {
+      cwd: workspace,
+      agentName: 'pi-seatbelt-smoke',
+      instanceUrl: 'https://api.example',
+      env: { PATH: `${binDir}:${dirname(process.execPath)}:/usr/bin:/bin` },
+      environment: {
+        model: 'smoke-model',
+        sandbox: { trust: 'public' },
+        provider: { id: 'owner', baseURL: `http://127.0.0.1:${upstream.address().port}/v1`, keyFile },
+      },
+      _piHome: piHome,
+      timeoutMs: 20_000,
+    });
+    expect(JSON.parse(result.text)).toEqual({
+      direct: 'EPERM',
+      shell: 'DENIED',
+      status: 200,
+      keyInEnv: false,
+      keyInModels: false,
+      keyInReply: false,
+      apiKey: '$COMMONLY_PI_PROVIDER_KEY',
+    });
+    expect(upstreamSaw).toEqual([{ url: '/v1/chat/completions', authorization: `Bearer ${key}` }]);
+  } finally {
+    await new Promise((resolve) => { upstream.close(resolve); });
     await rm(root, { recursive: true, force: true });
   }
 });

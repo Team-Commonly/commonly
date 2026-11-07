@@ -39,14 +39,21 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const {
   getUserId,
   isGlobalAdminUser,
+  normalizeInstanceId,
   resolveInstallation,
   resolveRuntimeInstanceId,
   serializeRuntimeTokens,
 } = require('./helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
+const {
+  ownsIdentityCountingPaused,
+  ownsRuntimeIdentity,
+  runtimeCredentialRefusal,
+} = require('../../services/runtimeIdentityOwnership');
+const { onUnconfinedHost } = require('../../services/seatGrantConfinement');
 const {
   normalizeScopes,
+  revokeEveryIdentityToken,
   revokeRuntimeTokenEverywhere,
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
@@ -304,6 +311,50 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/runtime-tokens/:tokenId', to
 });
 
 /**
+ * DELETE /api/registry/pods/:podId/agents/:name/host-unconfined
+ * Lift the mark a seat left on itself by running with no sandbox, once its owner
+ * has moved it somewhere that confines it. The owner's word stands in for a
+ * check nobody can make: the seat's own token can't say this, so a bot is
+ * refused, and the next unsandboxed run marks it again. A machine that reports
+ * no sandbox still refuses the seat, and the reply says so.
+ */
+agentTokensRouter.delete('/pods/:podId/agents/:name/host-unconfined', tokenRouteLimit, auth, async (req: any, res: any) => {
+  try {
+    const { podId, name } = req.params;
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) return res.status(404).json({ error: 'Pod not found' });
+
+    const caller = await User.findById(userId).select('isBot').lean();
+    if (!caller || caller.isBot) return res.status(403).json({ error: 'Only a person can clear this' });
+    const isGlobalAdmin = await isGlobalAdminUser(userId);
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const isMember = pod.members?.some((member: any) => (member?.userId || member)?.toString?.() === userId.toString());
+    if (!isMember && !isCreator && !isGlobalAdmin) return res.status(403).json({ error: 'Access denied' });
+
+    const { installation, instanceId } = await resolveInstallation({ agentName: name, podId, instanceId: req.query.instanceId });
+    if (!installation || installation.status === 'uninstalled') {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+    if (!isGlobalAdmin) {
+      const check = await ownsIdentityCountingPaused(userId, installation.agentName, instanceId);
+      if (!check.owned) return res.status(403).json({ code: check.failure, error: runtimeCredentialRefusal[check.failure] });
+    }
+
+    const agentUsername = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(name), instanceId);
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('botMetadata.machineId').lean();
+    if (!agentUser) return res.status(404).json({ error: 'Agent not found' });
+    await User.updateOne({ _id: agentUser._id }, { $unset: { 'botMetadata.hostUnconfined': 1 } });
+    return res.json({ cleared: true, machineUnconfined: await onUnconfinedHost(agentUser.botMetadata?.machineId) });
+  } catch (error) {
+    console.error('Error clearing the unsandboxed mark:', error);
+    return res.status(500).json({ error: 'Failed to clear the mark' });
+  }
+});
+
+/**
  * GET /api/registry/pods/:podId/agents/:name/user-token
  * Get metadata for the agent's designated user token (no raw token returned)
  */
@@ -491,6 +542,77 @@ agentTokensRouter.delete('/pods/:podId/agents/:name/user-token', tokenRouteLimit
   } catch (error) {
     console.error('Error revoking agent user token:', error);
     return res.status(500).json({ error: 'Failed to revoke user token' });
+  }
+});
+
+/**
+ * DELETE /api/registry/pods/:podId/agents/:name/tokens
+ * Revoke every token the identity holds: runtime tokens on the bot user and on
+ * its installations, and the user token. It is what `runtime_token_held` points
+ * at from PATCH. The per-token routes need an active row and can list only the
+ * bot user's copies, so a stopped row can't reach what blocks it through them.
+ * Paused rows count towards the sole-installer rule here, because a revoke
+ * reaches every installation of the identity. The User, memory and
+ * installations stay.
+ */
+agentTokensRouter.delete('/pods/:podId/agents/:name/tokens', tokenRouteLimit, auth, async (req: any, res: any) => {
+  try {
+    const { podId, name } = req.params;
+    const { installation, instanceId } = await resolveInstallation({
+      agentName: name,
+      podId,
+      instanceId: req.query.instanceId,
+    });
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const pod = await Pod.findById(podId).lean();
+    if (!pod) {
+      return res.status(404).json({ error: 'Pod not found' });
+    }
+
+    const isGlobalAdmin = await isGlobalAdminUser(userId);
+    const isCreator = pod.createdBy?.toString() === userId.toString();
+    const membership = pod.members?.find((m: any) => {
+      if (!m) return false;
+      const memberId = m.userId?.toString?.() || m.toString?.();
+      return memberId && memberId === userId.toString();
+    });
+
+    if (!membership && !isCreator && !isGlobalAdmin) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // A revoke reaches the whole identity, so an instance the caller named is the
+    // one it acts on, never the pod's only row, which resolveInstallation falls to.
+    const namedInstance = req.query.instanceId !== undefined && normalizeInstanceId(req.query.instanceId) !== instanceId;
+    const missing = !installation || namedInstance;
+    if (missing || (installation.status === 'uninstalled' && !isGlobalAdmin)) {
+      return res.status(404).json({ error: 'Agent not installed in this pod' });
+    }
+
+    const { agentName } = installation;
+    if (!isGlobalAdmin) {
+      // The revoke clears every alias, so a row under any of them counts here.
+      const checks = await Promise.all(AgentIdentityService.identityNames(agentName).map(
+        (alias: string) => ownsIdentityCountingPaused(userId, alias, instanceId),
+      ));
+      const refused = checks.find((check: any) => !check.owned && check.failure !== 'owner_installation_missing')
+        || (checks.some((check: any) => check.owned) ? null : checks[0]);
+      if (refused) return res.status(403).json({ code: refused.failure, error: runtimeCredentialRefusal[refused.failure as string] });
+    }
+
+    const agentUsername = AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(name), instanceId);
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true });
+    if (agentUser) await recordLegacyKeys(agentUser, installation.installedBy || userId, agentName, instanceId);
+    await revokeEveryIdentityToken(agentName, instanceId);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error revoking agent tokens:', error);
+    return res.status(500).json({ error: 'Failed to revoke agent tokens' });
   }
 });
 

@@ -42,6 +42,9 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
 jest.mock('../../../services/runtimeIdentityOwnership', () => ({
   ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
   ownsRuntimeIdentity: jest.fn().mockResolvedValue({ owned: true }),
+  ownsIdentityCountingPaused: jest.fn().mockResolvedValue({ owned: true }),
+  relabelIdentityDmRows: jest.fn().mockResolvedValue([]),
+  setIdentityDmRowsStatus: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),
@@ -54,7 +57,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const AgentProfile = require('../../../models/AgentProfile');
 const User = require('../../../models/User');
 const AgentIdentityService = require('../../../services/agentIdentityService');
-const { ownsRuntimeIdentity } = require('../../../services/runtimeIdentityOwnership');
+const { ownsRuntimeIdentity, ownsIdentityCountingPaused } = require('../../../services/runtimeIdentityOwnership');
 const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
 const { readOpenClawIdentityFile, writeWorkspaceIdentityFile } = require('../../../services/agentProvisionerService');
 const registryRoutes = require('../../../routes/registry');
@@ -440,6 +443,7 @@ describe('agent config PATCH — installer gate', () => {
     setPod();
     AgentInstallation.findOne.mockResolvedValue(primary);
     AgentInstallation.find.mockResolvedValue([primary, peer]);
+    ownsIdentityCountingPaused.mockResolvedValueOnce({ owned: false, failure: 'another_installer' });
 
     const res = await request(app)
       .patch('/api/registry/pods/pod-1/agents/openclaw')
@@ -447,6 +451,7 @@ describe('agent config PATCH — installer gate', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('another_installer');
+    expect(ownsIdentityCountingPaused).toHaveBeenCalledWith(MEMBER, 'openclaw', 'curator');
     expect(primary.save).not.toHaveBeenCalled();
     expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
   });

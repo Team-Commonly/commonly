@@ -12,7 +12,7 @@ const expected = {
   stub: { sandbox: false, mcp: false, broker: false, provider: false },
   claude: { sandbox: true, mcp: true, broker: true, provider: false },
   codex: { sandbox: true, mcp: true, broker: true, provider: false },
-  pi: { sandbox: false, mcp: true, broker: true, provider: false },
+  pi: { sandbox: false, mcp: true, broker: true, provider: true },
   opencode: { sandbox: true, mcp: true, broker: true, provider: true },
   qwen: { sandbox: true, mcp: true, broker: true, provider: true },
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },

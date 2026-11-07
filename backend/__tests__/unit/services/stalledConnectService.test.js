@@ -42,13 +42,16 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 const mockAttentionResolve = jest.fn();
+const mockAttentionDismiss = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   resolveActioned: (...a) => mockAttentionResolve(...a),
+  resolve: (...a) => mockAttentionDismiss(...a),
 }));
 
 const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
+jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
 jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
   find: (...a) => mockEpFind(...a),
@@ -589,11 +592,12 @@ describe('stalledConnectService.scan', () => {
       }),
     }));
 
-    await scan({ now: NOW });
+    const result = await scan({ now: NOW });
 
     expect(mockUserFind.mock.calls[0][0].$or).toHaveLength(1);
-    // Both installs got the first row's token, so both are stalled episodes.
-    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user', 'user']);
+    // Both installs got the first row's token: one person, one line.
+    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user']);
+    expect(result.skippedSameToken).toBe(1);
   });
 
   it('only considers BYO seats — nothing else can derive never-connected', async () => {
@@ -945,6 +949,23 @@ describe('keeping the forward promise', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+  });
+
+  it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {
+    mockAttentionDismiss.mockClear();
+    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'nudge9' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ status: 'uninstalled' })),
+    });
+
+    const result = await scan({ now: NOW });
+
+    expect(result.resolved).toHaveLength(1);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEpUpdate.mock.calls[0][1].$set.status).toBe('resolved');
+    // Its "needs you" row goes too, and not as acted on.
+    expect(mockAttentionDismiss).toHaveBeenCalledWith('message', 'nudge9');
+    expect(mockAttentionResolve).not.toHaveBeenCalled();
   });
 });
 

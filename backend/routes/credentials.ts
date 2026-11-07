@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 import AgentCredential from '../models/AgentCredential';
 import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
-import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
+import { ownsRuntimeIdentity, standingInstaller } from '../services/runtimeIdentityOwnership';
 import { revokeRuntimeTokenEverywhere } from './registry/tokens';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -65,7 +65,10 @@ router.get('/', credentialRateLimit, auth, async (req: AuthReq, res: express.Res
       // same credential id and a later revoke remains visible in Settings.
       const installations = await AgentInstallation.find({ agentName, instanceId })
         .select('installedBy runtimeTokens').lean();
-      const ownerUserId = installations[0]?.installedBy || req.user?.id;
+      // Past the check above a caller who isn't an admin owns the identity. An
+      // admin has no row of their own, and a DM's row names who opened it.
+      const ownerUserId = caller?.role === 'admin'
+        ? await standingInstaller(agentName, instanceId) || req.user?.id : req.user?.id;
       type EmbeddedToken = { tokenHash?: string; label?: string; createdAt?: Date; lastUsedAt?: Date };
       const embedded: EmbeddedToken[] = [...(agent.agentRuntimeTokens || []),
         ...installations.flatMap((entry: { runtimeTokens?: EmbeddedToken[] }) => entry.runtimeTokens || [])];

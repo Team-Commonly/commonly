@@ -26,7 +26,11 @@
    @typescript-eslint/no-require-imports */
 
 import { Types } from 'mongoose';
+import { SCOUT_OFFER_COPY, normalizeScoutLocale, startLabel } from '../config/native-agents/scout';
+import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
+import { isRoomNotice } from './roomNoticeLines';
 import { validateAgentCardPayload, UI_CARD_CATALOGUE } from './uiCardValidation';
+import { emitTaskUpdated } from './taskEventService';
 import { describeSkippedPost, isHeldBackPost } from './skippedPostGuidance';
 import { isTaskPriority, TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 import axios, { AxiosError } from 'axios';
@@ -46,13 +50,13 @@ import { nativeCueFromKernel } from './nativeKernelCue';
 import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
-import { carriesOtherAuthors } from './mentionCoalesce';
+import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
-  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline,
+  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, HOSTED_NATIVE_EVENT_TYPES, hostedNativeDecline,
   HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES, hostedHeartbeatRunsPerDay, hostedNativeRunConfig, hostedRunsNative,
 } from './hostedEngine';
 import {
@@ -215,19 +219,58 @@ const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // the set-aside page again).
 const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn. Reply with commonly_post_message from '
   + 'what you have, and tell the person which page or search you could not use.';
-// What a hosted agent posts when a turn someone was waiting on ends on a guard
-// stop or an error with nothing posted. Fixed text, so it carries nothing the
-// turn read.
+// What an agent posts when a turn someone was waiting on ends on a guard stop or
+// an error with nothing posted: any hosted failure, and a failed ceiling count
+// on any agent. Fixed text, so it carries nothing the turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
 
-// What a hosted agent posts when a person addressed it and no turns are left.
+// What an agent posts when a person addressed it and no turns are left: a
+// hosted agent past its daily line, or any agent past the per-user ceiling.
 // Before F234 the turn just ended, and the person read that as a broken agent.
-// Fixed text. It names no owner: the per-user ceiling is the owner's, across all
-// their agents, so the agent may have used none of them and the asker may not
-// be the owner.
+// Fixed text. It names no owner and no count: the per-user ceiling is the
+// owner's, across all their agents, so the agent may have used none of them and
+// the asker may not be the owner. On a hosted agent the two stops read the same,
+// so the line can't say which was hit; an agent that isn't hosted has its own
+// line for its room count, below.
 export const HOSTED_TURNS_USED_LINE = 'There are no turns left today, so I can\'t answer this one. '
   + 'They reset at midnight UTC.';
+
+// The same stop for an agent that isn't hosted: its count is per room, so the
+// agent may still answer in another one (F255), and "today" alone would say
+// otherwise.
+export const ROOM_TURNS_USED_LINE = 'There are no turns left in this room today, so I can\'t answer this one. '
+  + 'They reset at midnight UTC.';
+
+// What an agent posts when a person addressed it and no turn can run at all:
+// no model is reachable, or hosted turns are switched off. The person can't fix
+// either, and this text doesn't say which it was.
+export const TURN_UNAVAILABLE_LINE = 'I can\'t answer right now, and it isn\'t anything you did. '
+  + 'Please try again later.';
+
+// A stop that lasts reads the same on every ask, so one person's burst in one
+// place gets one line, and a retry after the window gets another. Other people
+// and other threads get their own, because they haven't read this one. Kept in
+// this process: a restart or a second replica costs one extra line, and a line
+// is the safe way to be wrong. Fixed-text failures of one ask don't use this.
+const STOP_LINE_WINDOW_MS = 10 * 60 * 1000;
+const STOP_LINE_MEMORY = 5000;
+const stopLinesSaid = new Map<string, number>();
+
+/** Whether this line was said here recently; if not, records that it is being said. */
+export const stopLineAlreadySaid = (key: string, memory: number = STOP_LINE_MEMORY): boolean => {
+  const now = Date.now();
+  const saidAt = stopLinesSaid.get(key);
+  if (saidAt !== undefined && now - saidAt < STOP_LINE_WINDOW_MS) return true;
+  if (stopLinesSaid.size >= memory) {
+    stopLinesSaid.forEach((at, seen) => { if (now - at >= STOP_LINE_WINDOW_MS) stopLinesSaid.delete(seen); });
+    if (stopLinesSaid.size >= memory) stopLinesSaid.clear();
+  }
+  stopLinesSaid.set(key, now);
+  return false;
+};
+
+export const forgetStopLines = (): void => stopLinesSaid.clear();
 
 // --- helpers ---------------------------------------------------------------
 
@@ -550,6 +593,26 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_offer_own_agent',
+      description:
+        'Tell someone you cannot open their repo and offer the ways forward. Posts your whole '
+        + 'reply, in fixed words: connect Claude Code or Codex, run an agent here with a '
+        + `"${HOSTED_OFFER_LABEL}" button when this person can, or name the project for a pod. `
+        + 'Do not post another message about it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          locale: { type: 'string', enum: ['en', 'zh-CN'], description: 'The person\'s language.' },
+          addFirstTask: { type: 'boolean', description: 'Also add the first task to this pod\'s board. It is not added while one is open.' },
+          lead: { type: 'string', description: 'Optional. One short sentence, in their language, posted before the fixed words.' },
+        },
+        required: ['locale'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_offer_local_agent',
       description:
         'When someone asks you to inspect or change code, files, or a repository on their own computer, '
@@ -665,6 +728,7 @@ export const NATIVE_TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.fun
 // key, and reading a page (TASK-267b).
 const OPT_IN_TOOLS: ReadonlySet<string> = new Set([
   'commonly_propose_action', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent',
+  'commonly_offer_own_agent',
   'commonly_run_code', 'commonly_web_search',
   'commonly_fetch_url',
   'computer_navigate', 'computer_snapshot', 'computer_click', 'computer_type',
@@ -753,8 +817,10 @@ const WEB_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so
   + 'cannot post in it.';
 const BROKER_TAINTED_BRIDGED_REFUSAL = 'This pod is bridged to an external chat, so a turn that called a granted tool '
   + 'cannot post in it.';
+const OWN_AGENT_LEAD_MAX = 160;
 const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
   'commonly_post_message', 'commonly_offer_hosted_agent', 'commonly_offer_local_agent', 'commonly_propose_action',
+  'commonly_offer_own_agent',
 ]);
 
 export const toolsForConfig = (
@@ -812,6 +878,7 @@ interface DispatchContext {
    * pod yet. Cleared by the first post that lands.
    */
   personWaiting?: boolean;
+  ownAgentOfferPosted?: boolean;
   /**
    * The addresses written in text the turn was given, never by the model: the
    * prompt, the message it answers, other authors' pod messages, search
@@ -1049,6 +1116,13 @@ export async function dispatchTool(
         if (!content) {
           return { content: { ok: false, error: 'content is required' }, error: 'missing_content' };
         }
+        // The offer is the whole reply: a follow-up reads as a second answer.
+        if (ctx.ownAgentOfferPosted) {
+          return {
+            content: { ok: false, posted: false, reason: 'already_replied', guidance: 'Your reply is already posted. End this turn.' },
+            error: 'message_post_refused',
+          };
+        }
         const AgentMessageService = require('./agentMessageService');
         const messageType = args.messageType ?? 'text';
         if (messageType !== 'text' && messageType !== 'card') {
@@ -1130,6 +1204,90 @@ export async function dispatchTool(
         });
         fanOutAgentPost(ctx, result);
         return postToolResult(ctx, result);
+      }
+
+      case 'commonly_offer_own_agent': {
+        const copy = SCOUT_OFFER_COPY[normalizeScoutLocale(args.locale)];
+        const AgentMessageService = require('./agentMessageService');
+        // Free text beside fixed words, so it stays one short line, and a lead
+        // that is a sentinel can't silence the offer behind it.
+        const lead = AgentMessageService.sanitizeAgentContent(
+          toSingleLineTitle(String(args.lead || '')).slice(0, OWN_AGENT_LEAD_MAX),
+        );
+        let taskLine = '';
+        if (args.addFirstTask === true) {
+          const Task = require('../models/Task');
+          try {
+            // Either language's title counts, so a second click doesn't stack a
+            // row. A done row is closed, so the reply can't call it on the board.
+            const titles = Object.values(SCOUT_OFFER_COPY).map((entry) => entry.firstTask);
+            if (!await Task.exists({ podId: ctx.podId, title: { $in: titles }, status: { $ne: 'done' } })) {
+              const taskNum = (await Task.countDocuments({ podId: ctx.podId })) + 1;
+              const created = await Task.create({
+                podId: ctx.podId,
+                taskNum,
+                taskId: `N-${taskNum}-${ctx.agentName}-${Date.now().toString(36)}`,
+                title: copy.firstTask,
+                priority: 'P2',
+                assignee: null,
+                notes: null,
+                status: 'pending',
+                source: 'agent',
+                createdByUserId: (await resolveSeatUserId(ctx.podId, ctx.agentName, ctx.instanceId)) || null,
+              });
+              // The reply says it's on the board, so an open board has to show it.
+              emitTaskUpdated(ctx.podId, created, 'created');
+            }
+            taskLine = copy.taskOnBoard(copy.firstTask);
+          } catch (err) {
+            console.warn('[native-runtime] first task not added:', (err as Error).message);
+            taskLine = copy.taskFailed;
+          }
+        }
+        // A button that leads to the install route's 403 is worse than no button,
+        // and the words go with it. A failed count fails toward leaving it out.
+        let hosted = false;
+        if (hostedEngineAvailable() && ctx.installation?.installedBy) {
+          try {
+            const held = await withDeadline(
+              listHostedInstallationsForUser(ctx.installation.installedBy),
+              BYO_NAME_LOOKUP_TIMEOUT_MS,
+            );
+            hosted = held.length < hostedCaps().agentsPerUser;
+          } catch (err) {
+            console.warn('[native-runtime] hosted count failed, offering no button:', (err as Error).message);
+          }
+        }
+        const href = `/v2/agents/byo?pod=${encodeURIComponent(String(ctx.podId))}&mode=hosted`;
+        const offerLine = hosted ? copy.withHosted : copy.withoutHosted;
+        // A lead has already said what Scout can't do.
+        const body = lead ? offerLine.replace(copy.cantOpen, copy.afterLead) : offerLine;
+        const starts = [
+          { id: 'connect-agent', label: startLabel('connect-agent') },
+          ...(hosted ? [{ id: 'run-hosted', label: HOSTED_OFFER_LABEL, href }] : []),
+        ];
+        const result = await AgentMessageService.postMessage({
+          agentName: ctx.agentName,
+          instanceId: ctx.instanceId,
+          podId: ctx.podId,
+          content: [lead, taskLine, body].filter(Boolean).join(' '),
+          messageType: 'text',
+          displayName: ctx.displayName,
+          installationConfig: ctx.installationConfig,
+          metadata: { source: 'native-runtime' },
+          payload: { kind: 'starts', starts },
+          noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
+          answeringMessageId: ctx.answeringMessageId,
+          threadRootId: ctx.answeringThreadRootId ?? null,
+          runId: ctx.runId,
+          personWaiting: Boolean(ctx.personWaiting),
+          ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
+        });
+        fanOutAgentPost(ctx, result);
+        const posted = postToolResult(ctx, result);
+        // A skip returns no error and writes no row, so the reply isn't out yet.
+        if (!posted.error && result?.success && !result.skipped) ctx.ownAgentOfferPosted = true;
+        return posted;
       }
 
       case 'commonly_offer_local_agent': {
@@ -1272,7 +1430,7 @@ export async function dispatchTool(
             ok: true,
             proposed: true,
             approvalId: result.approvalId,
-            note: 'Approval card posted. The action runs only if the owner approves — do not post another message about it.',
+            note: 'Approval card posted. The action runs only if the owner approves. Do not post another message about the card; anything else they asked for still gets its own post.',
           },
         };
       }
@@ -1640,16 +1798,52 @@ export const isConnectIntent = (text: string): boolean => CONNECT_INTENT.test(te
 // F56: since this process started. AgentRun.emptyCompletion is the durable count.
 let emptyCompletionCount = 0;
 
+// Whether this sender is a person, as noteUnansweredMention reads it: a row with
+// no isBot field is one. triggerTextIsHumanWritten is stricter on purpose, since
+// it opens web addresses. A failed lookup reads as a person: a line an agent
+// didn't need costs less than a person left unanswered (review-checklist rule 19).
+const senderIsAPerson = async (userId: unknown): Promise<boolean> => {
+  const senderId = String(userId ?? '').trim();
+  if (!senderId) return false;
+  try {
+    const User = require('../models/User');
+    const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: unknown } | null;
+    return Boolean(sender) && sender?.isBot !== true;
+  } catch {
+    return true;
+  }
+};
+
+// Whether this row holds something a person is waiting on. asksThisAgent, plus
+// two it can't see. An adjacent message is the pod's one person carrying on with
+// the agent that just spoke to them: the wrapper keeps NO_REPLY open for it, but
+// silence is still what that person would get. And a row is more than its lead:
+// the same person's later @ can join a row that asked nothing, read the way
+// personAskStillOpen reads it. The sender check keeps out their own agent, which
+// can join their row too.
+const rowAsksThisAgent = (payload: Record<string, unknown>): boolean => {
+  if (asksThisAgent(payload) || payload.adjacentReply === true) return true;
+  const joined = (Array.isArray(payload.coalesced) ? payload.coalesced : []) as Array<Record<string, unknown>>;
+  return joined.some((entry) => !entry.notAnAsk && String(entry.userId) === String(payload.userId));
+};
+
 /**
- * F56 and F234: a person's own words addressed this turn, so someone is waiting
- * on it. Kernel wakes arrive as chat.mention too, and nobody is waiting on those.
+ * F56 and F234: a person's own words asked this agent something, so someone is
+ * waiting on this turn. Kernel wakes arrive as chat.mention too, and nobody is
+ * waiting on those, nor on a reply under the agent's message that @'d someone
+ * else (rowAsksThisAgent). A chat row names its message. A post comment names
+ * none on purpose, so it is known by `thread`, and one on a post with no pod has
+ * no room to be told in: its podId is just some pod of the commenter's.
  */
 const personAddressedThisTurn = async (trigger: NativeRunTrigger): Promise<boolean> => {
   if (!wasDirectlyAddressed(trigger)) return false;
   const payload = (trigger.payload || {}) as Record<string, unknown>;
   if (payload.triggerAuthor === 'kernel' || payload.assignedTaskWake === true
     || payload.boardWake === true || payload.welcomeWake === true) return false;
-  return triggerTextIsHumanWritten(trigger);
+  if (!rowAsksThisAgent(payload)) return false;
+  const comment = payload.thread as { postPodId?: unknown } | null | undefined;
+  if (comment ? !comment.postPodId : !payload.messageId) return false;
+  return senderIsAPerson(payload.userId);
 };
 
 // Any reply this run, not just a card, answers the connect request.
@@ -1701,6 +1895,23 @@ export const connectIntentFloor = async (input: {
   return Boolean(result.ok);
 };
 
+// A button press must not rest on the model choosing to answer: on prod, Haiku
+// stayed silent on the first of two presses in a pod with other participants.
+// The click sends the English label whatever the language, and no language is
+// stored for the person, so the floor's reply reads in English.
+export const startPodFloor = async (trigger: NativeRunTrigger, ctx: DispatchContext): Promise<boolean> => {
+  if (ctx.agentName !== 'scout') return false;
+  // payload.content carries the wake frames; rawContent is the person's words.
+  const pressed = (trigger.payload as { rawContent?: unknown } | null | undefined)?.rawContent;
+  if (String(pressed ?? '').trim() !== startLabel('start-pod')) return false;
+  if (!(await triggerTextIsHumanWritten(trigger))) return false;
+  // A press is addressed to Scout, so a repeat isn't dropped as a duplicate.
+  ctx.personWaiting = true;
+  const result = await dispatchTool('commonly_offer_own_agent', { addFirstTask: true, locale: 'en' }, ctx);
+  if (result.error) console.warn('[native-runtime] start-pod floor not posted:', result.error);
+  return Boolean(ctx.ownAgentOfferPosted);
+};
+
 export function buildUserMessage(
   trigger: NativeRunTrigger,
   podName: string,
@@ -1742,10 +1953,10 @@ export function buildUserMessage(
   const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
 
   // TASK-779: a heartbeat always ends with the native prompt, which names
-  // NO_REPLY. A hosted turn posts any final text that is not a silent
-  // sentinel, so "otherwise do nothing" was no instruction: Triage's
+  // NO_REPLY. A hosted turn posted any final text that was not a silent
+  // sentinel then, so "otherwise do nothing" was no instruction: Triage's
   // 22:28:01Z heartbeat called no post tool, and its prose posted ten seconds
-  // later. The scheduler's cue never reached that prompt anyway, because it
+  // later. F304 stopped a heartbeat's final text posting at all. The scheduler's cue never reached that prompt anyway, because it
   // rides in payload.content and won as the inline cue. Its seat lines
   // ("Read your HEARTBEAT.md", "HEARTBEAT_OK is a return value") are for
   // agents with that file, so they are cut; its cycle frame names a tool
@@ -1757,7 +1968,8 @@ export function buildUserMessage(
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
-      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+      + 'If nothing needs a post, reply with exactly NO_REPLY. Only commonly_post_message reaches the pod; '
+      + 'your final text never does.'
     );
     const kept = inlineCue.split('\n')
       .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
@@ -1852,6 +2064,9 @@ function servedModelOf(
   };
 }
 
+// The last line of a final text is nothing but the sentinel.
+const CLOSES_ON_BARE_SENTINEL = /(?:^|\n)[ \t]*NO_REPLY[ \t]*$/;
+
 function mapTriggerType(raw: string): NativeRunTrigger['type'] {
   if (raw === 'chat.mention' || raw === 'thread.mention' || raw === 'mention') return 'mention';
   if (raw === 'heartbeat') return 'heartbeat';
@@ -1929,6 +2144,34 @@ export const resolveSeatUserId = async (
   }
 };
 
+// A card's stored text says "[approval needed]" for good, and only its payload
+// moves on. Read as written, a declined card reads as still waiting (Growth's
+// walk, 2026-11-07: "still waiting above" under a Declined card). An approval
+// whose action failed mustn't read as done, so the action's ending comes first.
+const cardOutcome = (card: Record<string, unknown>): string | null => {
+  if (card.status === 'expired') return 'expired';
+  if (card.status === 'moot') return 'closed';
+  if (card.status !== 'resolved') return null;
+  if (card.decision === 'declined') return 'declined';
+  // It may have run, so calling it failed would invite a second write.
+  if (card.toolCallCode === APPROVAL_OUTCOME_UNKNOWN) return 'outcome unknown';
+  const result = card.executionResult as { isError?: unknown } | undefined;
+  const failed = Boolean(card.executionError) || result?.isError === true
+    || card.toolCallEnding === 'failed' || card.toolCallEnding === 'refused';
+  if (failed) return 'failed';
+  // Approved, and nothing recorded how it ended: not the same as done.
+  if (card.actionType === 'tool_call' && !card.toolCallEnding && result === undefined) return 'outcome unknown';
+  return 'approved';
+};
+
+const contentWithCardOutcome = (row: Record<string, unknown>): string => {
+  const content = String(row.content || '');
+  const card = row.payload as Record<string, unknown> | null | undefined;
+  if (card?.kind !== 'approval-card') return content;
+  const outcome = cardOutcome(card);
+  return outcome ? content.replace(/^\s*\[approval needed\]/, `[approval ${outcome}]`) : content;
+};
+
 /**
  * The pod's most recent messages, oldest first, from the one configured store — the
  * single read behind both `commonly_read_context` and the inline recent-messages
@@ -1943,7 +2186,7 @@ export async function fetchRecentPodMessages(
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { listPodMessages } = require('../repositories/messageRepository');
   const rows = await listPodMessages(String(podId), { limit }) as Array<Record<string, unknown>>;
-  return rows.map((row) => {
+  return rows.filter((row) => !isRoomNotice(row)).map((row) => {
     const user = (row.userId as Record<string, unknown> | undefined) || {};
     const authorId = user._id || row.user_id || row.user_db_id;
     // Only the raw `is_bot` is trusted: the PG mapper's `userId.isBot` reads
@@ -1955,7 +2198,7 @@ export async function fetchRecentPodMessages(
       author: (user.username as string) || (row.username as string) || 'unknown',
       authorId: authorId ? String(authorId) : null,
       authorIsBot,
-      content: String(row.content || ''),
+      content: contentWithCardOutcome(row),
       createdAt: row.createdAt || row.created_at || null,
     };
   });
@@ -2043,13 +2286,6 @@ export async function runAgent(
   trigger: NativeRunTrigger,
 ): Promise<NativeRunResult> {
   // Preconditions — never throw; callers fire-and-forget.
-  if (!isNativeRuntimeAvailable()) {
-    return failedResult(
-      '',
-      'config',
-      'LiteLLM is not configured (LITELLM_BASE_URL + LITELLM_MASTER_KEY/LITELLM_API_KEY required)',
-    );
-  }
   if (!installation || !installation.podId || !installation.agentName) {
     return failedResult('', 'config', 'installation missing podId or agentName');
   }
@@ -2071,19 +2307,6 @@ export async function runAgent(
       `runtimeType is '${runtimeType || 'unset'}', expected 'native'`,
     );
   }
-  if (hostedNative) {
-    const decline = hostedNativeDecline(String(trigger?.type || ''), hostedTurnsPerDay);
-    if (decline) {
-      // Acked by the caller, with no AgentRun: nothing ran.
-      return {
-        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
-      };
-    }
-  }
-  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
-    const heldHeartbeat = await hostedHeartbeatHold(installation);
-    if (heldHeartbeat) return heldHeartbeat;
-  }
   const cfg = hostedNative
     ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {
       searches: MAX_WEB_SEARCHES_PER_TURN, pages: MAX_WEB_FETCHES_PER_TURN,
@@ -2097,14 +2320,18 @@ export async function runAgent(
     installation.displayName || agentName,
   );
 
-  // F234: a hosted turn stopped before it ran still owes a waiting person a word.
+  // F234: a turn stopped before it ran still owes a waiting person a word.
   // Kernel wakes arrive as chat.mention too, and nobody is waiting on those; the
   // sweep would repeat the line all day. An agent's @ gets nothing, as it did
   // before: that is the loop the cap exists to end. No answeringMessageId: this
   // line isn't an answer, and that field would close the first-task card on it.
-  // A failed post doesn't change the stop.
-  const tellAddressedPerson = async (content: string): Promise<void> => {
-    if (!hostedNative || !await personAddressedThisTurn(trigger)) return;
+  // A failed post doesn't change the stop, and doesn't stand for the next ask.
+  const tellAddressedPerson = async (content: string, opts: { lasting?: boolean } = {}): Promise<void> => {
+    if (!await personAddressedThisTurn(trigger)) return;
+    const threadRootId = threadRootOfTrigger(trigger.payload) ?? null;
+    const asker = String((trigger.payload as { userId?: unknown } | null)?.userId || '');
+    const saidKey = [agentName, instanceId, podId, threadRootId ?? 'root', asker, content].join(':');
+    if (opts.lasting && stopLineAlreadySaid(saidKey)) return;
     try {
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const AgentMessageService = require('./agentMessageService');
@@ -2120,12 +2347,40 @@ export async function runAgent(
         failureNotice: true,
         personWaiting: true,
         kind: 'error',
-        threadRootId: threadRootOfTrigger(trigger.payload) ?? null,
+        threadRootId,
       });
     } catch (postErr) {
+      if (opts.lasting) stopLinesSaid.delete(saidKey);
       console.warn('[native-runtime] stopped-turn line not posted:', (postErr as Error).message);
     }
   };
+
+  if (hostedNative) {
+    const triggerType = String(trigger?.type || '');
+    if (hostedNativeDecline(triggerType, hostedTurnsPerDay)) {
+      // An event type hosted agents never take gets no line: it isn't an ask
+      // this agent could answer later. Only the switched-off case is a stop.
+      if (HOSTED_NATIVE_EVENT_TYPES.has(triggerType)) {
+        await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
+      }
+      // Acked by the caller, with no AgentRun: nothing ran.
+      return {
+        runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+      };
+    }
+  }
+  if (!isNativeRuntimeAvailable()) {
+    await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
+    return failedResult(
+      '',
+      'config',
+      'LiteLLM is not configured (LITELLM_BASE_URL + LITELLM_MASTER_KEY/LITELLM_API_KEY required)',
+    );
+  }
+  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
+    const heldHeartbeat = await hostedHeartbeatHold(installation);
+    if (heldHeartbeat) return heldHeartbeat;
+  }
 
   // A first-contact greeting is not one of the person's turns: it fires once
   // per person and agent (AgentFirstContact), before they have asked anything,
@@ -2172,7 +2427,7 @@ export async function runAgent(
           `[native-runtime] ${agentName}:${instanceId} daily run cap (${dailyRunCap}) reached `
           + `in pod ${podId} — declining until UTC midnight`,
         );
-        await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
+        await tellAddressedPerson(hostedNative ? HOSTED_TURNS_USED_LINE : ROOM_TURNS_USED_LINE, { lasting: true });
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };
@@ -2218,7 +2473,7 @@ export async function runAgent(
             `[native-runtime] user ${installedBy} hit the per-user daily ceiling `
             + `(${userCeiling}) — declining ${agentName}:${instanceId} until UTC midnight`,
           );
-          await tellAddressedPerson(HOSTED_TURNS_USED_LINE);
+          await tellAddressedPerson(HOSTED_TURNS_USED_LINE, { lasting: true });
           return failedResult('', 'user_ceiling', `per-user daily ceiling (${userCeiling}) reached`);
         }
       } catch (err) {
@@ -2432,7 +2687,7 @@ export async function runAgent(
     run.completedAt = new Date();
     await run.save();
     emitStop();
-    await tellAddressedPerson(HOSTED_RUN_FAILED_LINE);
+    await tellAddressedPerson(TURN_UNAVAILABLE_LINE, { lasting: true });
     return failedResult(runId, 'config', run.errorMessage);
   }
 
@@ -2651,7 +2906,7 @@ export async function runAgent(
             disable_fallbacks: true,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
-            // The manifest's allowlist, plus the grant broker's read tools for
+            // The manifest's allowlist, plus the grant broker's tools for
             // THIS run. The broker is deliberately not reachable through
             // `TOOLS`/`toolsForConfig`: it is not the agent's
             // declared capability, it is a live grant that can be revoked
@@ -2892,6 +3147,9 @@ export async function runAgent(
           if (toolName === 'commonly_offer_local_agent' && !result.error) {
             postedViaTool = true;
           }
+          if (toolName === 'commonly_offer_own_agent' && dispatchCtx.ownAgentOfferPosted) {
+            postedViaTool = true;
+          }
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -2965,6 +3223,14 @@ export async function runAgent(
       run.totalTokens += Number(usage.total_tokens || 0);
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
+      // F304: a heartbeat's final text is reasoning, however it ends. In 30 days
+      // 96 ended that way: 17 closed on NO_REPLY, which lost the sentinel as
+      // leakage and posted the rest, and a keyword read (not a hand check) puts
+      // the other 79 as narration too. A heartbeat posts through the tool. Any
+      // other wake with no person asking gets the closing sentinel read as the
+      // decline it is.
+      const declinedInText = !personAsked
+        && (trigger.type === 'heartbeat' || CLOSES_ON_BARE_SENTINEL.test(textOut));
       // The fallback post is a post like any other: after an external result,
       // re-read the bridge before letting it through. A silent reply (NO_REPLY)
       // is a decline, not a held-back answer: it would post nothing anyway.
@@ -2978,7 +3244,7 @@ export async function runAgent(
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
-      if (textOut && !postedViaTool && !fallbackBlocked) {
+      if (textOut && !postedViaTool && !fallbackBlocked && !declinedInText) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.
         try {
@@ -3013,6 +3279,19 @@ export async function runAgent(
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
         }
+      }
+      // A heartbeat that called the post tool and never got a post through
+      // meant to say something, so it did not decline: the run fails, and its
+      // digest is not settled as answered. A duplicate is the exception: those
+      // words are already in the pod, and the guidance tells it to drop them.
+      if (trigger.type === 'heartbeat' && !postedViaTool && run.status === 'running'
+        && run.turns.some((t: any) => (t.toolCalls || []).some(
+          (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed'
+            && !/^duplicate_/.test(String(c.result?.result?.reason)),
+        ))) {
+        run.status = 'failed';
+        run.errorKind = 'tool_error';
+        run.errorMessage = 'A heartbeat post failed, and a heartbeat\'s final text is not posted.';
       }
       // The extra recovery call was given because the model meant to answer,
       // so an empty one is a reply that never came, not a decline.
@@ -3064,7 +3343,7 @@ export async function runAgent(
     // A native agent's line carries the provider's reason, so a tainted turn
     // can't post it in a bridged pod. A hosted line is our own fixed text, and
     // noOutboundRelay keeps it in Commonly (F56).
-    if (wasDirectlyAddressed(trigger)
+    if (personAsked
       && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
@@ -3131,11 +3410,12 @@ export async function runAgent(
       const podBridged = mayLookUp || dispatchCtx.brokerCallSeen
         ? await podBridgedNow() : false;
       const postingRefused = podBridged && Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen);
-      const proposeOffered = !webSetAside && !postingRefused && toolsForConfig(cfg, inPodOnly, {
+      const floorTools = !webSetAside && !postingRefused ? toolsForConfig(cfg, inPodOnly, {
         webTainted: Boolean(dispatchCtx.webTainted),
         computerReadSeen: Boolean(dispatchCtx.computerReadSeen),
         podBridged,
-      }).some((tool) => tool.function.name === 'commonly_propose_action');
+      }).map((tool) => tool.function.name) : [];
+      const proposeOffered = floorTools.includes('commonly_propose_action');
       if (proposeOffered && await connectIntentFloor({
         trigger,
         podId,
@@ -3149,9 +3429,11 @@ export async function runAgent(
         // A card posted here is the turn's reply, so the claim is completed,
         // not released as declined.
         postedViaTool = true;
+      } else if (floorTools.includes('commonly_offer_own_agent') && await startPodFloor(trigger, dispatchCtx)) {
+        postedViaTool = true;
       }
     } catch (floorErr) {
-      console.warn('[native-runtime] connect-intent floor not posted:', (floorErr as Error).message);
+      console.warn('[native-runtime] floor not posted:', (floorErr as Error).message);
     }
   }
 

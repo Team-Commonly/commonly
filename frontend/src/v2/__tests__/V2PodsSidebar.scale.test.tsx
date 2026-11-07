@@ -224,6 +224,14 @@ describe('V2PodsSidebar — direction C', () => {
     expect(screen.getByRole('button', { name: 'Pin My Workspace' })).toBeInTheDocument();
   });
 
+  test('names the owner of a Chinese default workspace too', () => {
+    const shared = pod('shared', '我的工作空间', 'chat', [human('me'), human('alex'), human('third')], {
+      createdBy: { _id: 'alex', username: 'alex' },
+    });
+    renderSidebar([shared]);
+    expect(screen.getByRole('button', { name: /^我的工作空间 \(alex\)/ })).toBeInTheDocument();
+  });
+
   test('direct rows render the peer character for agents and Paper for unpicked people', () => {
     const agentDm = pod('agent-dm', 'Helper Agent', 'agent-dm', [
       human('me'), { ...agent('builder-id'), username: 'Builder' },

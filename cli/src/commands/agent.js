@@ -105,7 +105,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
-  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostUnconfinedForRun, runOptedInUnsandboxed,
+  CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostReportFailureMessage, hostUnconfinedForRun, runOptedInUnsandboxed,
   unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
@@ -135,7 +135,7 @@ import {
   refusedItemRef,
   sanitizeHandoffAgent,
 } from '../lib/content-refusal.js';
-import { CANT_ANSWER_NOTICE_WINDOW_MS, cantAnswerNotice } from '../lib/turn-failure-notice.js';
+import { CANT_ANSWER_NOTICE_WINDOW_MS, CUT_OFF_NOTICE, cantAnswerNotice } from '../lib/turn-failure-notice.js';
 import {
   ADDRESSED_EVENT_TYPES,
   isPersonMention,
@@ -225,6 +225,66 @@ export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
   && (record.environment === null || record.environment === undefined
     || (typeof record.environment === 'object' && !Array.isArray(record.environment)
       && withDefaultSandbox(record.environment) !== record.environment));
+
+/**
+ * A key reissued for an agent that already ran here reaches `run` in the
+ * environment, beside the saved token it replaced. The fresh one wins only when
+ * the saved one is rejected and the server says the fresh one is this agent's.
+ * The server keeps only a hash, so overwriting a saved token that works can't be
+ * undone: an export for a same-named agent on another instance would lose it.
+ */
+export const adoptEnvToken = async ({
+  record,
+  name,
+  env = process.env,
+  clientFactory = createClient,
+  log = () => {},
+}) => {
+  const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
+  if (!runtimeToken || runtimeToken === record.runtimeToken) return record;
+  const keepSaved = (why) => {
+    log(`COMMONLY_AGENT_TOKEN ${why}, so this run uses the saved token`);
+    return record;
+  };
+  if (!runtimeToken.startsWith('cm_agent_')) return keepSaved('is not a runtime token');
+
+  const whoIs = (instance, token) => clientFactory({ instance, token })
+    .get('/api/agents/runtime/installations');
+  try {
+    await whoIs(record.instanceUrl, record.runtimeToken);
+    return keepSaved('differs from the saved token, which still works');
+  } catch (err) {
+    // 401 alone, unlike the poller: every token refusal here is a 401, a 403
+    // comes from something in front of the app, and this one call overwrites.
+    if (err?.status !== 401) {
+      return keepSaved(`was not used, because the saved token could not be checked (${err.message})`);
+    }
+  }
+
+  const instanceUrl = (env.COMMONLY_API_URL || '').trim() || record.instanceUrl;
+  let identity;
+  try {
+    identity = await whoIs(instanceUrl, runtimeToken);
+  } catch (err) {
+    return keepSaved(`could not be checked against ${instanceUrl} (${err.message})`);
+  }
+  const lower = (value) => String(value).toLowerCase();
+  if (lower(identity?.agentName) !== lower(record.agentName || name)
+    || lower(identity?.instanceId || 'default') !== lower(record.instanceId || 'default')) {
+    return keepSaved(`belongs to another agent (${identity?.agentName}, instance ${identity?.instanceId || 'default'})`);
+  }
+
+  // A reinstall can move the agent, and the saved pod is then gone.
+  const active = (identity?.installations || []).filter((row) => row?.status === 'active');
+  const stillThere = active.some((row) => String(row.podId) === String(record.podId));
+  const podId = stillThere
+    ? record.podId
+    : (active.find((row) => row.type === 'installation') || active[0])?.podId || record.podId;
+  log('the saved token was rejected, so this run uses COMMONLY_AGENT_TOKEN and saves it');
+  return {
+    ...record, runtimeToken, instanceUrl, podId,
+  };
+};
 
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
@@ -766,6 +826,52 @@ const someoneIsWaiting = (event) => ADDRESSED_EVENT_TYPES.has(event.type)
   || event.payload?.repliesToYourMessage === true
   || event.payload?.someoneWaiting === true;
 
+// The last line of a reply is nothing but the sentinel. An unaddressed person's
+// `message.posted` counts as nobody waiting, on purpose: text closing on the
+// sentinel there is far likelier reasoning about an ambient message than an
+// answer, and the seat's prompt already sends ambient messages to NO_REPLY.
+const CLOSES_ON_BARE_SENTINEL = /(?:^|\n)[ \t]*NO_REPLY[ \t]*$/;
+
+// The first message in `messages` that this seat posted and `earlierIds` doesn't
+// hold. The server stamps each message with `self` when it knows who is asking.
+// Trust that over any local guess: the wrapper cannot derive its own bot username
+// reliably (the server applies LEGACY_AGENT_MAP and an owner-scoped instanceId),
+// and a wrong guess double-posts.
+const findOwnPost = (messages, earlierIds) => {
+  const serverKnowsSelf = messages.some((m) => typeof m.self === 'boolean');
+  for (const m of messages) {
+    // A new human-authored message must NEVER count: it is either a human
+    // typing mid-turn, or the agent misusing an operator CLI profile / human
+    // token (the 2026-07-22 as-operator attribution incident) — in both cases
+    // the wrapper still delivers the reply under the agent's own identity.
+    //
+    // With `self`, only THIS agent's own post counts. Without it (an older
+    // server), fall back to the legacy any-bot test — which drops this agent's
+    // reply whenever another agent answers first (#757).
+    if (!earlierIds.has(String(m._id || m.id)) && m.isBot && (serverKnowsSelf ? m.self === true : true)) {
+      return {
+        id: String(m._id || m.id),
+        author: m.username || 'unknown',
+        basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
+        threadRootId: m.thread_root_id ?? null,
+      };
+    }
+  }
+  return null;
+};
+
+// This seat's newest post in `tail` that came after the last row `knownIds` holds,
+// or null when that can't be shown. `knownIds` is a 10-message snapshot, so a row
+// missing from it may only be older, and just "not in the set" would count an old
+// post as new. With no known row in the tail, nothing marks where the turn began.
+// An older server has no `self`, so a peer's post can't be told from this seat's.
+const newestOwnPostSince = (tail, knownIds) => {
+  const lastKnown = tail.findLastIndex((m) => knownIds.has(String(m._id || m.id)));
+  if (lastKnown === -1) return null;
+  const ownPost = findOwnPost(tail.slice(lastKnown + 1).reverse(), knownIds);
+  return ownPost?.basis === 'self' ? ownPost : null;
+};
+
 // How long a fresh seat's greeting waits for a person before it runs alone.
 // One poll lost the race on the 0.1.257 walk (2026-11-05): the mention landed
 // just after the hold, the greeting took the next turn alone, and the answer
@@ -833,7 +939,7 @@ const HELD_RETRY_MAX_FAILURES = 3;
 const PAST_CAP_MAX_CARRIES = 5;
 
 // Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
-// the snapshot behind `trigger` holds 10 messages and a page holds up to 50, and
+// only a row the snapshot and the kernel's stamp both can't place reads so, and
 // a wrong guess costs an ambient item one turn. Within a rank the older row
 // wins, and carried rows lead the page, so new arrivals can't overtake them.
 const capRank = (entry) => {
@@ -1051,6 +1157,17 @@ export const setWakeOnMessage = async ({ client, record, enabled }) => {
     { instanceId, config: { wakeOnMessage: { enabled: Boolean(enabled) } } },
   );
   return { agentName: record.agentName, podId: record.podId, instanceId, enabled: Boolean(enabled) };
+};
+
+/** Lift the mark an unsandboxed run left on the seat. Only its owner's login can. */
+export const clearUnsandboxedMark = async ({ client, record }) => {
+  if (!record?.podId || !record?.agentName) {
+    throw new Error('token record is missing podId/agentName — re-attach the agent');
+  }
+  const instanceId = record.instanceId || 'default';
+  const path = `/api/registry/pods/${encodeURIComponent(record.podId)}/agents/${encodeURIComponent(record.agentName)}/host-unconfined`;
+  const result = await client.del(`${path}?instanceId=${encodeURIComponent(instanceId)}`);
+  return { agentName: record.agentName, machineUnconfined: result?.machineUnconfined === true };
 };
 
 /**
@@ -1709,7 +1826,7 @@ export const answersInChannel = (entry) => {
 // line offered silence on every turn. A turn that answers a person drops that
 // exit: NO_REPLY stays only as the way to end after a reply posted through a
 // tool, so the wrapper doesn't post a second one. It needs the sender known to
-// be human, so an agent's @ and a message off the snapshot keep the old line. A
+// be human, so an agent's @ and a message nobody can place keep the old line. A
 // seat whose peer holds the claim keeps it too: the peer is answering them. So
 // do two chat.mention wakes where nobody typed the seat's name: an adjacent
 // reply and a new member's welcome, whose kernel frames offer NO_REPLY.
@@ -2077,7 +2194,7 @@ export const performRun = ({
   let running = true;
   // Stop-after-N-auth-failures: without this, a revoked token leaves the
   // poller hammering 401s forever at 60s backoff — invisible to the user.
-  // Exiting tells them to run `commonly agent detach <name>`.
+  // Exiting names the two ways out: a reissued key, or detach.
   // 3 is deliberate — 1 would churn on a token-rotation race during
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
@@ -2475,11 +2592,13 @@ export const performRun = ({
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {
+    wrapperSpokeInTurn = false;
     const turn = turnRunner.begin({ eventType: args.event.type });
     try {
       return await runTurnBody({ ...args, turn });
     } catch (error) {
       turn.finish('reply_lost');
+      failedTurn = args;
       // codex and claude both keep a refused prompt in the thread, and send it
       // again on every resume (measured 2026-11-05 on codex 0.162.1 and claude
       // 2.1.318), so one refusal would refuse every later turn in this pod. The
@@ -2501,7 +2620,7 @@ export const performRun = ({
     const key = `model-unavailable:${failure.model || 'unknown'}`;
     try {
       if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
-      const delivery = await deliverChatReply({
+      const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
         text: modelUnavailableHint(failure.model),
@@ -2557,6 +2676,79 @@ export const performRun = ({
       } catch (noticeError) {
         log(`[inbox.batch] pod ${waitingPod} was not told why this agent can't answer: ${noticeError.message}`);
       }
+    }
+  };
+
+  // F256: a turn that threw after it posted, whose event the server no longer
+  // holds. The usual way there is a child that checkpointed after part one of an
+  // answer and was then killed, so nothing will retry it and the person holds a
+  // promise of more. Only `lostEvents` reach here, so a turn that ended cleanly
+  // never does, and neither does one whose event is retried or handed back.
+  // No window of its own: an event is lost once. The kernel lets this exact line
+  // past its duplicate guard, since a second cut-off has no open ask to carry it.
+  // A turn only agents woke gets no line: "ask me again" isn't for them, and in
+  // an agent-dm the line would wake the peer into a paid turn.
+  // F279: an event let go after three failures counts too, because the server's
+  // retry is 10 to 20 minutes off and the kernel skips its own line once the
+  // agent has posted. `part` is what one of its attempts posted. It may come back
+  // and fail again, so it hears this once.
+  const noteFailedTurnPart = async (failedEvents) => {
+    if (!failedTurn?.preSpawnIds || wrapperSpokeInTurn) return;
+    const tail = await failedTurn.snapshotMessages(50);
+    const ownPost = tail && newestOwnPostSince(tail, failedTurn.preSpawnIds);
+    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), ownPost));
+  };
+
+  const noticeCutOff = async (lostEvents, { released = [], part = null } = {}) => {
+    const turnArgs = failedTurn;
+    failedTurn = null;
+    const waiting = [...lostEvents, ...released].filter((event) => event.deliveryMode !== 'digest'
+      && !cutOffTold.has(String(event._id))
+      && (someoneIsWaiting(event) || PERSON_WAITING_EVENT_TYPES.has(event.type)));
+    if (!turnArgs || turnArgs.trigger === 'agent' || waiting.length === 0) return;
+    const { eventPodId } = turnArgs;
+    const target = commentTargetOf(waiting[0]);
+    try {
+      let delivery;
+      if (target) {
+        // The only comment read is capped and carries no `self` stamp, so it can't
+        // prove this seat replied, and this has no own-post check.
+        // It stands on the prompt instead: a person's direct @ isn't offered
+        // silence, so their item checkpoints only after a reply. That holds only
+        // for a known person, which an 'unknown' comment isn't, and for an item
+        // that checkpointed, which a released one didn't.
+        if (turnArgs.trigger !== 'human' || !lostEvents.includes(waiting[0])) return;
+        delivery = await deliverCommentReply({
+          client, ...target, text: CUT_OFF_NOTICE, onlyIfUnanswered: false,
+        });
+      } else {
+        const tail = turnArgs.preSpawnIds ? await turnArgs.snapshotMessages(50) : null;
+        // Nothing of this seat's in the pod means no half answer to explain: a
+        // deliberate silence checkpoints too, and a requeue takes a row as well.
+        const ownPost = (lostEvents.some((event) => waiting.includes(event))
+          && tail && newestOwnPostSince(tail, turnArgs.preSpawnIds)) || part;
+        if (!ownPost) return;
+        delivery = await deliverChatReply({
+          client,
+          podId: eventPodId,
+          text: CUT_OFF_NOTICE,
+          limit: chatCharLimit,
+          maxChunks: maxChatChunks,
+          threadRootId: ownPost.threadRootId === null ? null : String(ownPost.threadRootId),
+          log: (line) => log(`[inbox.batch] ${line}`),
+        });
+      }
+      if (delivery.skipped || delivery.refused) {
+        log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: `
+          + `${delivery.reason || 'the notice was not posted'}`);
+      } else {
+        waiting.forEach((event) => cutOffTold.add(String(event._id)));
+        // The line covers every part so far, so a sibling let go later has none.
+        heldRetryParts.clear();
+        log(`[inbox.batch] told pod ${eventPodId} this agent was cut off before it finished`);
+      }
+    } catch (noticeError) {
+      log(`[inbox.batch] pod ${eventPodId} was not told this agent was cut off: ${noticeError.message}`);
     }
   };
 
@@ -2695,7 +2887,7 @@ export const performRun = ({
       } catch (error) {
         if (error.code === 'seat_model_missing' && eventPodId && !missingModelNotices.has(eventPodId)) {
           try {
-            const delivery = await deliverChatReply({
+            const delivery = await deliverTurnNotice({
               client,
               podId: eventPodId,
               text: "This agent has no model set; add environment.model to its configuration.",
@@ -2891,8 +3083,10 @@ export const performRun = ({
     // output would double-post. Two independent signals suppress the echo:
     //   1. Detection — a new message appeared in the pod during the spawn (the
     //      agent posted via the tool). Automatic; no agent cooperation needed.
-    //   2. NO_REPLY — the agent explicitly asks us to stay silent. Honored only
-    //      when it's the ENTIRE reply; mixed content still posts verbatim.
+    //   2. NO_REPLY — the agent explicitly asks us to stay silent: the ENTIRE
+    //      reply, or (F192) its last line on a turn nobody is waiting on, where
+    //      the text above it is reasoning the server would otherwise post.
+    //      Other mixed content still posts verbatim.
     // Otherwise (a bare CLI with no posting tools, or an agent that chose to
     // reply via its output) the wrapper delivers the text as before.
     const replyText = (result.text || '').trim();
@@ -2901,37 +3095,15 @@ export const performRun = ({
     if (preSpawnIds) {
       const postSpawn = await snapshotMessages();
       if (postSpawn) {
-        // The server stamps each message with `self` when it knows who is
-        // asking. Trust that over any local guess: the wrapper cannot derive
-        // its own bot username reliably (the server applies LEGACY_AGENT_MAP
-        // and an owner-scoped instanceId), and a wrong guess double-posts.
-        const serverKnowsSelf = postSpawn.some((m) => typeof m.self === 'boolean');
-        for (const m of postSpawn) {
-          if (preSpawnIds.has(String(m._id || m.id))) continue;
-          // A new human-authored message must NEVER suppress the echo: it is
-          // either a human typing mid-turn, or the agent misusing an operator
-          // CLI profile / human token (the 2026-07-22 as-operator attribution
-          // incident) — in both cases the wrapper still delivers the reply
-          // under the agent's own identity.
-          if (!m.isBot) continue;
-          // With `self`, only THIS agent's own post suppresses. Without it (an
-          // older server), fall back to the legacy any-bot test — which drops
-          // this agent's reply whenever another agent answers first (#757).
-          if (serverKnowsSelf ? m.self === true : true) {
-            agentPostedItself = true;
-            suppressedBy = {
-              id: String(m._id || m.id),
-              author: m.username || 'unknown',
-              basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
-            };
-            break;
-          }
-        }
+        suppressedBy = findOwnPost(postSpawn, preSpawnIds);
+        agentPostedItself = Boolean(suppressedBy);
       }
     }
     const heartbeatControlReply = (event.type === 'heartbeat' || event.payload?.hasHeartbeat === true)
       && /^(HEARTBEAT_OK|HEARTBEAT_NOOP)$/i.test(replyText);
-    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply;
+    const declinedInText = event.type !== 'agent.ask' && !someoneIsWaiting(event)
+      && CLOSES_ON_BARE_SENTINEL.test(replyText);
+    const silentReply = !replyText || replyText === 'NO_REPLY' || heartbeatControlReply || declinedInText;
     // A refused model route is not a silent turn. pi reports the refusal on its
     // own JSON stream and exits 0 with no text, so before this the seat log read
     // `no wrapper-post (empty output)` and the cause — a 429 budget message — was
@@ -2976,7 +3148,8 @@ export const performRun = ({
         }
       }
     } else if (silentReply) {
-      const reason = heartbeatControlReply ? replyText : (replyText || 'empty output');
+      const reason = heartbeatControlReply ? replyText
+        : declinedInText ? 'NO_REPLY' : (replyText || 'empty output');
       // A turn that posted via tool and THEN ended with the sentinel is not the
       // same event as a turn that produced nothing — but this branch reported
       // both as `no wrapper-post (NO_REPLY)`, because it is evaluated before
@@ -3228,7 +3401,7 @@ export const performRun = ({
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
-        ? `\n[After ${answersAPerson(entry) ? 'your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
+        ? `\n[After ${answersAPerson(entry) ? 'all of your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
@@ -3250,7 +3423,8 @@ export const performRun = ({
       `After tool-side work is committed (including any reply posted through a tool)${answersPerson ? ',' : ', or an intentional NO_REPLY,'} checkpoint that item with its supplied IDs. `
         + 'Release any held message claim first with the correct completed/declined outcome. '
         + 'Do not checkpoint a reply you are holding for final CLI output: the wrapper must post it before acknowledging that item. '
-        + 'Never checkpoint unfinished work. Only a successful checkpoint prevents replay after timeout. '
+        + 'Never checkpoint unfinished work: an answer in several posts is finished only after its last post. '
+        + 'Only a successful checkpoint prevents replay after timeout. '
         + 'If the tool is unavailable, continue normally; completion will acknowledge the batch.',
       ...bodies,
       ...(heldBack > 0
@@ -3318,7 +3492,7 @@ export const performRun = ({
     });
     let posted = false;
     try {
-      const delivery = await deliverChatReply({
+      const delivery = await deliverTurnNotice({
         client,
         podId: eventPodId,
         text,
@@ -3377,11 +3551,25 @@ export const performRun = ({
   let tickUnsettled = [];
   // eventId → consecutive local failures, for HELD_RETRY_MAX_FAILURES.
   const heldRetryFailures = new Map();
+  // Event id to what a failed attempt on it posted, for noticeCutOff. Read as each
+  // attempt fails, because the attempt's own snapshot then leaves out the notices
+  // the wrapper posted after earlier ones: those aren't part of an answer. A notice
+  // inside the attempt can't be told from a post that way, so that attempt isn't
+  // read, which can only cost the line.
+  const heldRetryParts = new Map();
+  let wrapperSpokeInTurn = false;
+  const deliverTurnNotice = (notice) => {
+    wrapperSpokeInTurn = true;
+    return deliverChatReply(notice);
+  };
+  const cutOffTold = new Set();
   // eventId → turns passed over, for PAST_CAP_MAX_CARRIES.
   const pastCapCarries = new Map();
   // The current batch's items past the cap. Kept out here because the tick needs
   // them when the turn throws, and a throw returns no entries.
   let pastCapEvents = [];
+  // The arguments of the turn that just threw, for noticeCutOff.
+  let failedTurn = null;
   let heldRenewTimer = null;
   const clearHeldRenewal = () => {
     if (heldRenewTimer !== null) clearIntervalImpl(heldRenewTimer);
@@ -3429,6 +3617,7 @@ export const performRun = ({
   // tick adds to the carry, never replaces it.
   const holdForRetry = async (failedEvents, untriedEvents = [], pastCap = []) => {
     const released = [];
+    let part = null;
     const carry = [];
     const seen = new Set();
     for (const event of failedEvents) {
@@ -3438,8 +3627,10 @@ export const performRun = ({
         const failures = (heldRetryFailures.get(id) || 0) + 1;
         // A stop wins over the local limit: the sweep would make this event
         // wait 10–20 minutes, and the server's ceiling bounds a hand-back.
-        if (running && failures >= HELD_RETRY_MAX_FAILURES) released.push(event);
-        else {
+        if (running && failures >= HELD_RETRY_MAX_FAILURES) {
+          released.push(event);
+          part = part || heldRetryParts.get(id) || null;
+        } else {
           heldRetryFailures.set(id, failures);
           carry.push(event);
         }
@@ -3472,15 +3663,20 @@ export const performRun = ({
         + 'to the server\'s requeue (redelivered in ~10–20 min)',
       );
     }
-    // A stopping run carries nothing and renews nothing: extending the lease
-    // of a process on its way out only delays the replacement's redelivery.
-    // Its carry is handed back to the server when the tick ends instead
-    // (F189), so the next run answers it on its first poll.
+    // A stopping run carries nothing, because its carry is handed back to the
+    // server when the tick ends (F189), so the next run answers it on its first
+    // poll. It renews only the failed turn's own events, to learn which of them
+    // it still holds: that hand-back follows at once, so the replacement doesn't
+    // wait on the longer lease.
     if (!running) {
       heldRetry = [...heldRetry, ...carry];
       heldRetryFailures.clear();
+      heldRetryParts.clear();
       pastCapCarries.clear();
-      return { held: [], released, handedBack: carry };
+      const confirmed = await renewHeldDeliveries(failedEvents);
+      return {
+        held: [], released, handedBack: carry, lost: failedEvents.filter((event) => !stillHeld(event, confirmed)),
+      };
     }
     const confirmed = carry.length ? await renewHeldDeliveries(carry) : null;
     // The stop landed during that renewal, after the limits were applied.
@@ -3489,7 +3685,7 @@ export const performRun = ({
     const dropped = carry.filter((event) => !stillHeld(event, confirmed));
     heldRetry = [...heldRetry, ...held];
     const heldIds = new Set(heldRetry.map((event) => String(event._id)));
-    for (const counts of [heldRetryFailures, pastCapCarries]) {
+    for (const counts of [heldRetryFailures, heldRetryParts, pastCapCarries]) {
       for (const id of [...counts.keys()]) {
         if (!heldIds.has(id)) counts.delete(id);
       }
@@ -3500,7 +3696,9 @@ export const performRun = ({
         + '(checkpointed, requeued or retired) — not retried',
       );
     }
-    return { held, released, handedBack: [] };
+    return {
+      held, released, part, handedBack: [], lost: dropped.filter((event) => failedEvents.includes(event)),
+    };
   };
 
   // F189/F182: hand claimed events this run will never run back to the
@@ -3557,6 +3755,7 @@ export const performRun = ({
     heldGreeting = [];
     tickUnsettled = [];
     heldRetryFailures.clear();
+    heldRetryParts.clear();
     clearHeldRenewal();
     return carry.length ? handBackDeliveries(carry, 'stop') : Promise.resolve([]);
   };
@@ -3609,6 +3808,7 @@ export const performRun = ({
 
   const handleEventBatch = async (events, inboxCount = events.length) => {
     pastCapEvents = [];
+    failedTurn = null;
     const eventPodId = events[0]?.podId || podId;
     if (!eventPodId || events.some((event) => (event.podId || podId) !== eventPodId)) {
       throw new Error('Inbox batch crossed pod boundaries; refusing to mix private pod context');
@@ -3660,10 +3860,10 @@ export const performRun = ({
     // Null until the server says: a failed read or an older server is unknown,
     // not "alone" and not "with peers".
     let podAttendance = null;
-    const snapshotMessages = async () => {
+    const snapshotMessages = async (limit = 10) => {
       try {
         const { messages = [], otherAgentsInPod, peopleInPod } = await client.get(
-          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit: 10 },
+          `/api/agents/runtime/pods/${eventPodId}/messages`, { limit },
         );
         podAttendance = typeof otherAgentsInPod === 'boolean' ? { otherAgentsInPod, peopleInPod } : null;
         return messages;
@@ -3725,14 +3925,11 @@ export const performRun = ({
       );
       if (!admission.allowed) {
         // An agent row refuses the page, and that shouldn't cost a row nobody
-        // can place: a person's message that scrolled off the snapshot reads
-        // `unknown`. It is carried, past-cap bound included, and alone in its
-        // next page it can't be refused, because only 'agent' ever is. A row
-        // stamped as an agent's is placed, so it stays refused, or it would walk
-        // past this brake. A legacy row has no stamp, and still carries.
+        // can place: one past the snapshot with no stamp reads `unknown`. It is
+        // carried, past-cap bound included, and alone in its next page it can't
+        // be refused, because only 'agent' ever is.
         for (const entry of wakingEntries) {
-          if (entry.trigger === 'unknown' && entry.event.payload?.messageId
-            && entry.event.payload?.senderIsHuman !== false) entry.pastCap = true;
+          if (entry.trigger === 'unknown' && entry.event.payload?.messageId) entry.pastCap = true;
           else entry.result = batchAdmissionResult(entry.event, admission);
         }
         carryPastCap();
@@ -4214,8 +4411,10 @@ export const performRun = ({
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
             tickUnsettled.push(...claimedAfter(groupIndex));
+            const attempted = failedEvents.filter((event) => !pastCapEvents.includes(event));
+            await noteFailedTurnPart(attempted);
             const hold = await holdForRetry(
-              failedEvents.filter((event) => !pastCapEvents.includes(event)),
+              attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
             );
@@ -4248,6 +4447,7 @@ export const performRun = ({
             });
             if (onError) onError(wrapped);
             else log(`[inbox.batch] ${wrapped.message}`);
+            await noticeCutOff(hold.lost, { released: hold.released, part: hold.part });
             await noticeCantAnswer(err, [...failedEvents, ...untriedAfter(groupIndex)]);
           };
           let batch;
@@ -4432,7 +4632,8 @@ export const performRun = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
-            + `Run: commonly agent detach ${agentName}`,
+            + `If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. `
+            + `To remove the agent from its pod: commonly agent detach ${agentName}`,
           ));
           running = false;
           return;
@@ -5102,7 +5303,14 @@ Docs:
       }
       let record = loadAgentToken(name);
       let bootstrapped = false;
-      if (!record) {
+      const saved = record;
+      if (record) {
+        record = await adoptEnvToken({
+          record,
+          name,
+          log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        });
+      } else {
         // First run on this machine: the BYO connect page hands out env vars,
         // not a token file — bootstrap the record from them (#913).
         try {
@@ -5170,7 +5378,7 @@ Docs:
           try {
             await seatClient.post('/api/agents/runtime/host-unconfined', {});
           } catch (err) {
-            console.error(`${stamp()} [${name}] could not tell the server this agent has no sandbox, so it did not start: ${err.message}`);
+            console.error(`${stamp()} [${name}] ${hostReportFailureMessage(err)}`);
             process.exit(1);
           }
         }
@@ -5194,6 +5402,7 @@ Docs:
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
       }
+      if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
         saveAgentToken(record.agentName, record);
         console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
@@ -5618,6 +5827,31 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
         console.log(result.enabled
           ? '  The agent now sees every message in the pod; its runtime decides whether to answer (NO_REPLY otherwise). No restart needed.'
           : '  The agent now wakes only on @mentions, replies to it, and heartbeats. No restart needed.');
+      } catch (err) {
+        console.error(`Failed: ${err.message}`);
+        process.exit(1);
+      }
+    });
+
+  // ── clear-unsandboxed ─────────────────────────────────────────────────────
+  agent
+    .command('clear-unsandboxed <name>')
+    .description('After moving an agent to a sandboxed host, let it use grants again (needs your login, not its token)')
+    .option('--instance <url>', 'Target Commonly instance')
+    .action(async (name, opts) => {
+      const record = loadAgentToken(name);
+      if (!record) {
+        console.error(`No token file for '${name}' — is it attached on this machine? (commonly agent list --local)`);
+        process.exit(1);
+      }
+      const instanceUrl = resolveInstanceUrl(opts.instance || record.instanceUrl);
+      const token = getToken(opts.instance || record.instanceUrl);
+      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
+      const client = createClient({ instance: instanceUrl, token });
+      try {
+        const result = await clearUnsandboxedMark({ client, record });
+        console.log(`✓ Cleared for ${result.agentName}. Running it with --unsandboxed marks it again.`);
+        if (result.machineUnconfined) console.log('  Its machine reports no sandbox, so grants stay refused while it runs there.');
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);

@@ -176,6 +176,7 @@ const {
 const AgentAskService = require('../services/agentAskService');
 const DecisionRequestService = require('../services/decisionRequestService');
 const DMService = require('../services/dmService');
+const { isHostedRoomRefusal } = require('../services/hostedRoomRefusal');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
 
@@ -544,7 +545,8 @@ router.post('/observation', phase4RateLimit, daemonAuth('agents:adopt'), async (
 // A foreground run on a host with no sandbox says so here, because no daemon is
 // reporting for it, and an unconfined agent can read this run's token and call
 // the grant broker itself. Set-only on purpose: that same token must never be
-// able to lift the refusal, so nothing on this route clears it. It only ever
+// able to lift the refusal, so nothing on this route clears it. Its owner can,
+// through the registry (DELETE .../agents/:name/host-unconfined). This only ever
 // adds a refusal, so a seat can set it on itself alone and nothing else.
 router.post('/host-unconfined', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
@@ -988,7 +990,9 @@ router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
  * Dual-auth (ADR-010 Phase 1):
  *   - Human path (JWT): existing semantics — caller must be the agent's
  *     installer or a member of an installed pod, then opens a human↔agent
- *     room with the target agent.
+ *     room with the target agent. A hosted agent's new room also needs an
+ *     owner who shares a pod with the caller; an admin's bypass doesn't reach
+ *     that, and both paths refuse with `hosted_no_shared_owner`.
  *   - Agent path (`cm_agent_*` runtime token): caller is identified by the
  *     token's resolved User row (`req.agentUser`). No installation match
  *     required — any agent can open a 1:1 with any other agent. The 1:1
@@ -1190,6 +1194,9 @@ router.post('/room', phase4RateLimit, dualAuth, async (req: any, res: any) => {
 
     return res.json({ room });
   } catch (error: any) {
+    if (isHostedRoomRefusal(error)) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
     console.error('Error creating/fetching agent room:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent room' });
   }
@@ -2152,7 +2159,8 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     }
 
     // `mention`: the @handle routing resolves for the author, so a reply can
-    // address them without guessing from the display name in `username`.
+    // address them without guessing from `username`, which is a label for an
+    // agent and a handle for a person. `displayName`: what people see, or ''.
     const withMention = await AgentMessageService.withMentionHandles(page, req.params.podId);
     const attendance = beforeMs === undefined && rawThreadRootId === undefined
       ? await podAttendance(podId, installation)
@@ -2509,6 +2517,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.
       threadRootId: threadRootId || null,
+      // F245: a plain post from a turn answering one thread lands in it, unless
+      // the agent says it belongs in the main channel.
+      inferAnswerThread: req.body?.mainChannel !== true,
       installationConfig: installation.config || null,
     });
 

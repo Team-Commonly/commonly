@@ -58,6 +58,20 @@ interface ManageSettingsResponse {
   installations: Array<{ podId: string; podName: string; status: string }>;
 }
 
+// Markers the page turns into translated text, so neither is shown as it stands.
+// Nothing manageable means no rows at all: not this person's agent, or an agent
+// with no pod left. Refused means rows exist, but no pod could be read, as when
+// the installer left the pod.
+export const NOTHING_MANAGEABLE = 'agent-settings:nothing-manageable';
+export const PODS_REFUSED = 'agent-settings:pods-refused';
+
+/** The text for a failed read or save; a marker falls back, since a person can't read one. */
+export const agentSettingsErrorText = (error: unknown, fallback: string): string => (
+  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+  || (error instanceof Error && ![NOTHING_MANAGEABLE, PODS_REFUSED].includes(error.message) && error.message)
+  || fallback
+);
+
 /** The generic PATCH writes across this identity's accessible installations. */
 export const useAgentSettings = (agentName: string, instanceId: string) => {
   const [access, setAccess] = useState<AgentAccess | null>(null);
@@ -122,7 +136,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    throw new Error('No accessible installation');
+    throw new Error(rows.length ? PODS_REFUSED : NOTHING_MANAGEABLE);
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {
@@ -172,7 +186,7 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
   }, [agentName, instanceId, podId]);
 
   const update = useCallback(async (patch: AgentSettingsPatch) => {
-    if (!podId) throw new Error('No accessible installation');
+    if (!podId) throw new Error(PODS_REFUSED);
     const response = await axios.patch(installationUrl(podId), { ...patch, instanceId });
     await refresh();
     return response.data;

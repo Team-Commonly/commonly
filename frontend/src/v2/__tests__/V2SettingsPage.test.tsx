@@ -2,9 +2,10 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import i18n, { i18nReady, LANGUAGE_REGISTRY } from '../../i18n';
 import axios from '../../utils/axiosConfig';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import V2SettingsPage from '../components/V2SettingsPage';
+import { FIRST_RUN_REOPEN_EVENT, FIRST_RUN_STARTED_KEY } from '../firstRunGuide';
 
 jest.mock('../../utils/axiosConfig', () => {
   const mock = {
@@ -78,6 +79,38 @@ const renderSettings = (currentUser = auth.currentUser) => render(
 afterEach(() => jest.clearAllMocks());
 
 describe('V2SettingsPage', () => {
+  describe('Guide', () => {
+    const Where = () => <span data-testid="where">{useLocation().pathname}</span>;
+    const renderAtSettings = () => render(
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter initialEntries={['/v2/settings']}><V2SettingsPage /><Where /></MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    const guide = () => screen.getByRole('button', { name: 'Guide', hidden: true });
+
+    beforeEach(async () => {
+      await i18nReady;
+      localStorage.removeItem(FIRST_RUN_STARTED_KEY);
+      (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    });
+
+    test('opens a guide that is already mounted, and stays on the page', () => {
+      const reopen = (event: Event) => { (event as CustomEvent).detail.handled = true; };
+      window.addEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+      renderAtSettings();
+      fireEvent.click(guide());
+      window.removeEventListener(FIRST_RUN_REOPEN_EVENT, reopen);
+      expect(screen.getByTestId('where')).toHaveTextContent('/v2/settings');
+    });
+
+    test('with no guide mounted, carries the request to the shell', () => {
+      renderAtSettings();
+      fireEvent.click(guide());
+      expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
+      expect(screen.getByTestId('where').textContent).toBe('/v2');
+    });
+  });
+
   test('names the language choices in the active language', async () => {
     await i18nReady;
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
@@ -130,7 +163,7 @@ describe('V2SettingsPage', () => {
     await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
     expect(i18n.resolvedLanguage).toBe('zh-CN');
     // The labels follow the new language, and the segment shows the choice.
-    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    const zhLanguage = within(screen.getByRole('region', { name: '外观' })).getByRole('radiogroup', { name: '语言' });
     expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
 
     await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
@@ -291,13 +324,12 @@ describe('V2SettingsPage', () => {
   test('signs out every browser session after confirmation', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     (axios.post as jest.Mock).mockResolvedValue({ data: { message: 'Signed out everywhere' } });
-    const confirm = jest.spyOn(window, 'confirm').mockReturnValue(true);
     renderSettings();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign out everywhere' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Sign out everywhere' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/sessions/revoke'));
     expect(auth.logout).toHaveBeenCalledTimes(1);
-    confirm.mockRestore();
   });
 
   test('renames the username through the dedicated route and explains historical mentions', async () => {
@@ -352,7 +384,7 @@ describe('V2SettingsPage', () => {
 
     expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
     expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'team-member' } });
     fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
 
@@ -528,5 +560,56 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Users/ })).toHaveAttribute('href', '/v2/admin/users');
     expect(screen.getByRole('link', { name: /^Usage analytics/ })).toHaveAttribute('href', '/v2/admin/analytics');
+  });
+});
+
+// A test that switches language must not leave the next one reading the page in it.
+afterEach(async () => {
+  await act(async () => { await i18n.changeLanguage('en'); });
+});
+
+describe('Settings in Chinese', () => {
+  beforeEach(() => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+  });
+
+  test('the page, its folds and the API token read in Chinese', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: new Date(2026, 10, 3, 12).toISOString() } });
+    renderSettings();
+
+    expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeInTheDocument();
+    for (const title of ['账号', '访问权限', '外观']) expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    expect(screen.getByText('账号操作')).toBeInTheDocument();
+    expect(screen.getByText('管理已连接的服务')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑资料' })).toBeInTheDocument();
+    expect(screen.queryByText(/^(Settings|Account|Access|Look|Email|Name|Username)$/)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: '生成' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('新的 API 令牌已生成');
+    expect(screen.getByText('有效 · 尾号 1234')).toBeInTheDocument();
+    expect(screen.getByText('创建时间：2026年11月3日')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '隐藏' })).toBeInTheDocument();
+  });
+
+  test('a notice on screen follows a language switch', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: new Date(2026, 10, 3, 12).toISOString() } });
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole('button', { name: '生成' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('新的 API 令牌已生成');
+    await act(async () => { await i18n.changeLanguage('en'); });
+    expect(screen.getByRole('status')).toHaveTextContent(i18n.t('settings.apiToken.generated'));
+  });
+
+  test('a language switch leaves a name being typed alone on an account with no name yet', async () => {
+    renderSettings({ ...auth.currentUser, username: '' });
+
+    expect(screen.getByText('Your account')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily' } });
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(screen.getByLabelText('名称')).toHaveValue('Lily');
   });
 });

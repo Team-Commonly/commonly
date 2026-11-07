@@ -9,6 +9,9 @@ import { characterAvatarFor } from '../utils/avatars';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
+import { roomRefusal } from '../utils/roomRefusal';
+import { useV2Confirm } from '../hooks/useV2Confirm';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 // The agent PROFILE — the "meet the agent" page, distinct from the owner-only
 // Settings panel — drawn as d215 section s-agent-profile
@@ -72,20 +75,6 @@ interface MemoryIndex {
   pods?: PodEntry[];
 }
 
-const timeAgo = (iso?: string | null): string => {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(1, Math.floor((Date.now() - then) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-};
-
 // V2Avatar's agent face (a prop value, not copy).
 const AVATAR_KIND = 'agent' as const;
 
@@ -129,6 +118,9 @@ interface V2AgentProfileProps {
 
 const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   const { t } = useTranslation();
+  const timeAgo = (iso?: string | null): string => (
+    localizeRelativeTime(iso, t, { includeFuture: false, rounding: 'floor', missing: '' })
+  );
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<AgentProfile | null>(null);
@@ -188,12 +180,18 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   // (ADR-001 identity continuity) — it just leaves the pod. Owner-only; the
   // remove control renders only when the private memory index loaded.
   const [removing, setRemoving] = useState<string | null>(null);
+  const [removeFailed, setRemoveFailed] = useState(false);
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const handleRemoveFromPod = useCallback(async (podId: string, podName: string) => {
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
     if (!token || !agentName) return;
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(t('agentProfile.pods.removeConfirm', { agentName, podName }))) return;
+    const confirmed = await confirm({
+      message: t('agentProfile.pods.removeConfirm', { agentName, podName }),
+      confirmLabel: t('agentProfile.pods.remove'),
+    });
+    if (!confirmed) return;
     setRemoving(podId);
+    setRemoveFailed(false);
     try {
       await getClient().delete(
         `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${encodeURIComponent(podId)}?instanceId=${encodeURIComponent(instanceId || 'default')}`,
@@ -201,12 +199,11 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
       );
       await Promise.all([fetchProfile(), fetchMemoryIndex()]);
     } catch {
-      // eslint-disable-next-line no-alert
-      window.alert(t('agentProfile.pods.removeError'));
+      setRemoveFailed(true);
     } finally {
       setRemoving(null);
     }
-  }, [t, agentName, fetchProfile, fetchMemoryIndex]);
+  }, [t, agentName, confirm, fetchProfile, fetchMemoryIndex]);
 
   useEffect(() => {
     setShowAllPods(false);
@@ -302,11 +299,12 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
       const roomId = room.data?.room?._id;
       if (!roomId) throw new Error('Agent room not returned');
       navigate(`/v2/pods/${roomId}`);
-    } catch {
+    } catch (error) {
       // The profile is a human-facing entry point. Server diagnostics (for
       // example, installation-selection detail) belong in observability, not
-      // as raw red copy on the profile page.
-      setRoomError(t('agentProfile.hero.openRoomFailed'));
+      // as raw red copy on the profile page. A refusal the person can act on
+      // still says so.
+      setRoomError(roomRefusal(error, t) || t('agentProfile.hero.openRoomFailed'));
       setOpeningRoom(false);
     }
   }, [data, navigate, t]);
@@ -498,6 +496,7 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
             <span className="v2-aprofile__count">{podList.length}</span>
             {ownerPods && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.everyPod')}</span>}
           </h2>
+          {removeFailed && <p className="v2-aprofile__pod-error" role="alert">{t('agentProfile.pods.removeError')}</p>}
           <ul className="v2-aprofile__list" ref={podListRef}>
             {shownPods.map((p) => (
               <li key={p.id} className="v2-aprofile__row v2-aprofile__pod">
@@ -571,10 +570,9 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
               values={{
                 notes: memIndex.totalEntries,
                 count: memIndex.sections.length,
-                section: memIndex.lastAgentWrite ? memorySectionLabel(memIndex.lastAgentWrite.section) : '',
                 time: memIndex.lastAgentWrite ? timeAgo(memIndex.lastAgentWrite.updatedAt) : '',
               }}
-              components={{ b: <b /> }}
+              components={{ b: <b />, section: <>{memIndex.lastAgentWrite ? memorySectionLabel(memIndex.lastAgentWrite.section) : ''}</> }}
             />
             {' '}
             {memIndex.viewerRole === 'admin' ? t('agentProfile.memory.privateAdmin') : t('agentProfile.memory.privateOwner')}
@@ -615,7 +613,12 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
     </main>
   );
 
-  return shell ? <>{shell(<div className="v2-aprofile">{main}</div>)}</> : publicPage(main);
+  return (
+    <>
+      {shell ? shell(<div className="v2-aprofile">{main}</div>) : publicPage(main)}
+      {confirmDialog}
+    </>
+  );
 };
 
 export default V2AgentProfile;

@@ -923,7 +923,7 @@ describe('AgentMentionService', () => {
       // the build while a claim reversal does.
       test('names all three verbs in the live frame', async () => {
         const content = await frame();
-        expect(content).toContain('a plain post broadcasts to the channel');
+        expect(content).toContain('a plain post defaults to the channel;');
         expect(content).toContain('replyToMessageId quotes a message');
         // F212: a reply edge files the post in a thread on its own, so the
         // verbs are not independent and the frame must not say they are.
@@ -956,7 +956,7 @@ describe('AgentMentionService', () => {
       });
 
       test('control: the mechanics half alone does not satisfy the assertions above', () => {
-        const mechanicsOnly = 'a plain post broadcasts to the channel; replyToMessageId quotes '
+        const mechanicsOnly = 'a plain post defaults to the channel; replyToMessageId quotes '
           + 'and ADDRESSES a message — its author is pinged; threadRootId continues a thread '
           + 'WITHOUT pinging anyone — followers see it, the channel stays uncluttered.';
         expect(mechanicsOnly).not.toContain('if your message answers one person, reply');

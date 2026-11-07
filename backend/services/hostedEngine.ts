@@ -129,6 +129,25 @@ export const nativeHostedConfigForInstall = (about?: string): Record<string, unk
 });
 
 /**
+ * True once an owner has stopped a hosted install and not started it again.
+ * A row that was never provisioned has no stop to report.
+ */
+export const hostedIsStopped = (installation: any): boolean => {
+  const { deprovisionedAt, provisionedAt } = readHostedConfig(installation);
+  return isHostedInstallation(installation) && Boolean(deprovisionedAt) && !provisionedAt;
+};
+
+/**
+ * When the owner stopped this install, or null while it isn't stopped. A stop
+ * whose time can't be read is still a stop, and reads as long ago.
+ */
+export const hostedStoppedAt = (installation: any): Date | null => {
+  if (!hostedIsStopped(installation)) return null;
+  const stoppedAt = new Date(readHostedConfig(installation).deprovisionedAt as string | Date);
+  return Number.isNaN(stoppedAt.getTime()) ? new Date(0) : stoppedAt;
+};
+
+/**
  * True for a provisioned hosted install whose turns run on the native
  * runtime. A deprovisioned one routes nowhere, as a stopped Durable Object
  * answered nothing.
@@ -142,11 +161,14 @@ export const hostedRunsNative = (installation: any): boolean => (
 /**
  * The event types a hosted agent answers: the two the Durable Object handled
  * (workers/agent-runtime agent-do.ts), plus `heartbeat` (D244 dogfood: a
- * self-serve user could not have a scheduled agent). Any other event a hosted
- * install receives is acked without a model call, as the Durable Object did,
- * so it never waits in a queue nothing polls.
+ * self-serve user could not have a scheduled agent), plus `approval.resolved`
+ * (F215: a parked write tells the agent that event is coming). Any other event
+ * a hosted install receives is acked without a model call, as the Durable Object
+ * did, so it never waits in a queue nothing polls.
  */
-export const HOSTED_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(['chat.mention', 'first_contact', 'heartbeat']);
+export const HOSTED_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'chat.mention', 'first_contact', 'heartbeat', 'approval.resolved',
+]);
 
 /**
  * A hosted heartbeat's own bounds, on top of the plan line and the per-user

@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V2AgentPolicy from '../agents/V2AgentPolicy';
+import { PODS_REFUSED } from '../agents/useAgentSettings';
 
 jest.mock('axios', () => {
   const mock = {
@@ -69,6 +70,16 @@ it('writes only the chosen trust mode and edits memory with its revision', async
     '/api/agent-memory/maya-claude/machine-1/editable/long_term',
     { content: 'Changed', expectedUpdatedAt: '2026-10-01T00:00:00.000Z' },
   ));
+});
+
+it('a save whose refresh loses access shows the save error, not the hook\'s marker', async () => {
+  update.mockRejectedValueOnce(new Error(PODS_REFUSED));
+  renderPolicy();
+  await screen.findByDisplayValue('Original');
+  fireEvent.click(screen.getByRole('radio', { name: 'Allow repository edits' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save trust mode' }));
+  expect(await screen.findByText('Could not save changes.')).toBeInTheDocument();
+  expect(screen.queryByText(PODS_REFUSED)).not.toBeInTheDocument();
 });
 
 it('shows server quota for hosted agents without editable trust controls', async () => {

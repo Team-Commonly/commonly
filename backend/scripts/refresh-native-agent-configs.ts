@@ -109,6 +109,38 @@ export interface RefreshArgs {
   apply: boolean;
 }
 
+/**
+ * The one-runtime rule (#2224): whether this refresh moves a row in process.
+ * A row already there isn't entering, so it keeps refreshing, as the seed's does.
+ */
+export const entersInProcess = (plan: RefreshPlan, current: Config, projected: Config): boolean => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { configRunsInProcess } = require('../services/hostedEngine');
+  return [...plan.changed, ...plan.added].includes('runtime')
+    && configRunsInProcess(projected) && !configRunsInProcess(current);
+};
+
+/**
+ * Write a refreshed config, asking the rule before and after as the install
+ * routes do, so a token minted between the two takes the row back. A failed
+ * read counts as held. False means nothing stayed written.
+ */
+export const writeRefreshedConfig = async (
+  install: { toObject: () => Record<string, unknown>; config: unknown; save: () => Promise<unknown> },
+  next: Config,
+  entering: boolean,
+  holdsToken: () => Promise<boolean>,
+  takeBack: (previous: Record<string, unknown>) => Promise<unknown>,
+): Promise<boolean> => {
+  if (entering && await holdsToken()) return false;
+  const previous = install.toObject();
+  install.config = next;
+  await install.save();
+  if (!entering || !await holdsToken().catch(() => true)) return true;
+  await takeBack(previous);
+  return false;
+};
+
 export function parseArgs(argv: string[]): RefreshArgs {
   const apps: string[] = [];
   const skipPods = new Set<string>();
@@ -147,6 +179,8 @@ async function main(): Promise<void> {
   const { buildInstallationConfig } = require('./seed-native-agents');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { FIRST_PARTY_APPS } = require('../config/native-agents/apps');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { identityHoldsRuntimeToken, takeBackInstallation } = require('../services/runtimeIdentityOwnership');
 
   const known = FIRST_PARTY_APPS.map((a: { agentName: string }) => a.agentName);
   if (args.apps !== 'all') {
@@ -191,11 +225,21 @@ async function main(): Promise<void> {
         `  kept as found: ${plan.kept.join(', ') || '(none)'}`,
       ];
       console.log(`[config-refresh] ${where}:\n${lines.join('\n')}`);
-      if (args.apply) {
-        install.config = plan.next;
+      const instanceId = install.instanceId || 'default';
+      const holds = () => identityHoldsRuntimeToken(app.agentName, instanceId);
+      const entering = entersInProcess(plan, current, projected);
+      const key = { agentName: install.agentName, podId: install.podId, instanceId: install.instanceId };
+      if (!args.apply) {
         // eslint-disable-next-line no-await-in-loop
-        await install.save();
+        if (entering && await holds()) console.log(`[config-refresh] ${where}: would skip (identity holds a runtime token)`);
+        continue; // eslint-disable-line no-continue
+      }
+      // eslint-disable-next-line no-await-in-loop
+      if (await writeRefreshedConfig(install, plan.next, entering, holds, (previous) => takeBackInstallation(key, previous))) {
         totals.written += 1;
+      } else {
+        totals.skipped += 1;
+        console.log(`[config-refresh] ${where}: skipped (identity holds a runtime token)`);
       }
     }
   }

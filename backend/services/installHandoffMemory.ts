@@ -2,7 +2,7 @@
 const User = require('../models/User');
 const AgentIdentityService = require('./agentIdentityService');
 const AgentMemory = require('../models/AgentMemory');
-const { AgentInstallation } = require('../models/AgentRegistry');
+const { keptOwnershipInstallations, ownsIdentityCountingPaused } = require('./runtimeIdentityOwnership');
 const { stampSectionsForWrite, decorateSectionsWithProvenance } = require('./agentMemoryService');
 
 class HandoffRefusal extends Error {
@@ -29,15 +29,12 @@ export async function copyInstallHandoffMemory({
   const sourceIdentity = {
     agentName: source.agentName.trim().toLowerCase(), instanceId: source.instanceId.trim(),
   };
-  const sourceInstalls = await AgentInstallation.find({
-    ...sourceIdentity, status: { $ne: 'uninstalled' },
-  }).select('installedBy').lean();
-  const targetInstalls = await AgentInstallation.find({ agentName, instanceId })
-    .select('installedBy').lean();
-  // A new target has no installation yet. Its registry owner authorizes that
-  // first copy; retained installations must all belong to the same person.
-  if (!sourceInstalls.length
-    || sourceInstalls.some((row: any) => String(row.installedBy) !== String(userId))
+  const sourceOwnership = await ownsIdentityCountingPaused(userId, sourceIdentity.agentName, sourceIdentity.instanceId);
+  const targetInstalls = await keptOwnershipInstallations(userId, agentName, instanceId);
+  // A target nobody stands on has no installation yet, or only other people's
+  // DMs. Its registry owner authorizes that first copy; retained installations
+  // must all belong to the same person.
+  if (!sourceOwnership.owned
     || targetInstalls.some((row: any) => String(row.installedBy) !== String(userId))
     || (!targetInstalls.length && String(registryOwner) !== String(userId))) {
     throw new HandoffRefusal(403, 'Memory handoff requires ownership of the source and target');

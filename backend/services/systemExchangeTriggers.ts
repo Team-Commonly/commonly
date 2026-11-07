@@ -112,7 +112,7 @@ interface RecordAgentDmConclusionArgs {
 //
 // Filters at the SQL level by user_id so a noisy DM with frequent cross-talk
 // doesn't push the sender's prior substantive turn outside the scan window.
-async function findPreviousNonSilentMessage(podId: string, senderUserId: string): Promise<string | null> {
+export async function findPreviousNonSilentMessage(podId: string, senderUserId: string): Promise<string | null> {
   try {
     // Lazy require to avoid pulling pg config at module-load time in unit tests.
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -128,7 +128,7 @@ async function findPreviousNonSilentMessage(podId: string, senderUserId: string)
     // empty after stripping, so we keep iterating in JS.
     const result = await pool.query(
       `SELECT content FROM messages
-       WHERE pod_id = $1 AND user_id = $2
+       WHERE pod_id = $1 AND user_id = $2 AND message_type <> 'system'
        ORDER BY created_at DESC
        LIMIT 20`,
       [podId, senderUserId],

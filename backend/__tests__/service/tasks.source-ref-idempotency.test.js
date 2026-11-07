@@ -292,11 +292,9 @@ describe('POST /api/v1/tasks/:podId sourceRef idempotency', () => {
     // nextTaskId read to miss the existing TASK-001 so Mongo raises E11000
     // from the *taskId* index while the request still carries a sourceRef.
     findOneSpy.mockImplementationOnce(() => Promise.resolve(null));
-    findOneSpy.mockImplementationOnce(() => ({
-      sort: () => ({
-        select: () => ({
-          lean: () => Promise.resolve(null),
-        }),
+    jest.spyOn(Task, 'find').mockImplementationOnce(() => ({
+      select: () => ({
+        lean: () => Promise.resolve([]),
       }),
     }));
     jest.spyOn(console, 'error').mockImplementation(() => {});

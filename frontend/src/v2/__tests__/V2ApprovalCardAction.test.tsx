@@ -169,6 +169,35 @@ describe('the approval card consents to the action, not the prose', () => {
   });
 });
 
+describe('the "Approval needed" badge', () => {
+  const card = { kind: 'approval-card', approvalId: 'badge', ownerUserId: 'viewer-1', actionType: 'create_pod', params: { name: 'x', type: 'chat' } };
+
+  test('shows while the card can still be answered', () => {
+    renderCard({ ...card, status: 'flagged' });
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).toHaveClass('v2-approval--open');
+  });
+
+  test.each([
+    ['declined', { status: 'resolved', decision: 'declined' }, en.approvalCard.declined],
+    ['expired', { status: 'expired' }, en.approvalCard.expired],
+    ['a tool call that aged out', { status: 'flagged', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+      expiresAt: new Date(Date.now() - 1000).toISOString() }, en.approvalCard.toolCall.expiredPending],
+  ])('is gone once the card is %s', (_name, state, line) => {
+    renderCard({ ...card, ...state });
+    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-approval')).not.toHaveClass('v2-approval--open');
+  });
+
+  test('stays on an aged proposal, which can still be decided', () => {
+    renderCard({ ...card, status: 'flagged', expiresAt: new Date(Date.now() - 1000).toISOString() });
+    expect(screen.getByText(en.approvalCard.aged)).toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeEnabled();
+    expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
+  });
+});
+
 describe('both locales carry the action phrasings', () => {
   describe.each([['en', en as any], ['zh-CN', zhCN as any]])('%s', (_locale, bundle) => {
     const action = bundle.approvalCard?.action;
@@ -214,8 +243,10 @@ describe('tool-call approval details stay owner-scoped', () => {
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       });
       expect(screen.queryByText(en.approvalCard.toolCall.expiredPending)).not.toBeInTheDocument();
+      expect(screen.getByText(en.approvalCard.badge)).toBeInTheDocument();
       act(() => { jest.advanceTimersByTime(60_001); });
       expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+      expect(screen.queryByText(en.approvalCard.badge)).not.toBeInTheDocument();
       expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
       expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
     } finally {
@@ -320,6 +351,75 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/approvals/pending?podId=pod-1');
   });
 
+  describe('approving what was shown (F215)', () => {
+    const toolCard = {
+      kind: 'approval-card', approvalId: 'tool-9', status: 'flagged', ownerUserId: 'viewer-1',
+      actionType: 'tool_call', summary: 'Update an issue',
+    };
+    const pending = (toolCall: Record<string, unknown>) => mockGet.mockResolvedValue({
+      approvals: [{ approvalId: 'tool-9', messageId: 'm1', toolCall }],
+    });
+
+    test('approving sends back the digest of the arguments on the card', async () => {
+      pending({ tool: 'sentry.update_issue', canonicalArgs: { status: 'resolved' }, argsDigest: 'digest-1' });
+      mockPost.mockResolvedValue({ approval: {} });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByText(en.approvalCard.approve)).toBeEnabled());
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+        '/api/approvals/tool-9/resolve', { decision: 'approved', argsDigest: 'digest-1' },
+      ));
+    });
+
+    test('a PR write shows its server summary and can be approved on the card', async () => {
+      pending({
+        tool: 'github.create_pull_request', argsDigest: 'digest-2',
+        summary: { repo: 'o/r', head: 'seat/1/x', base: 'main', title: 'Fix it' },
+      });
+      mockPost.mockResolvedValue({ approval: {} });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-arg-title')).toHaveTextContent('Fix it'));
+      expect(screen.getByTestId('approval-arg-head')).toHaveTextContent('seat/1/x');
+      // The summary is not the envelope, so nothing is labelled as the exact arguments.
+      expect(screen.queryByTestId('approval-tool-call')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+        '/api/approvals/tool-9/resolve', { decision: 'approved', argsDigest: 'digest-2' },
+      ));
+    });
+
+    test('a card with neither arguments nor a summary stays unapprovable', async () => {
+      pending({ tool: 'sentry.update_issue', argsDigest: 'digest-3' });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-tool-call-state'))
+        .toHaveTextContent(en.approvalCard.toolCall.unavailable));
+      expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+    });
+
+    test('a value past its box says so, and the exact arguments show what a row shows', async () => {
+      pending({
+        tool: 'sentry.update_issue', argsDigest: 'digest-4',
+        canonicalArgs: { reason: `${'x'.repeat(5000)}‮tail` },
+      });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByTestId('approval-arg-reason')).toBeInTheDocument());
+      expect(screen.getByTestId('approval-arg-reason')).toHaveTextContent(
+        en.approvalCard.toolCall.longValue.replace('{{length}}', '5005'),
+      );
+      expect(screen.getByTestId('approval-tool-call')).toHaveTextContent('\\u{202E}tail');
+      expect(screen.getByTestId('approval-tool-call').textContent).not.toContain('‮');
+    });
+
+    test('a server that will not take the review says so', async () => {
+      pending({ tool: 'sentry.update_issue', canonicalArgs: { status: 'resolved' }, argsDigest: 'digest-5' });
+      mockPost.mockRejectedValue({ response: { status: 409, data: { error: 'approval_needs_review' } } });
+      renderCard(toolCard);
+      await waitFor(() => expect(screen.getByText(en.approvalCard.approve)).toBeEnabled());
+      fireEvent.click(screen.getByText(en.approvalCard.approve));
+      expect(await screen.findByText(en.approvalCard.errors.needsReview)).toBeInTheDocument();
+    });
+  });
+
   test('the owner reads the call as a verb and rows, with the exact arguments one click away', async () => {
     const headSha = 'abc1234def5678abc1234def5678abc1234def56';
     mockGet.mockResolvedValue({
@@ -378,6 +478,35 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(mockGet).not.toHaveBeenCalled();
     expect(screen.queryByTestId('approval-tool-call')).not.toBeInTheDocument();
     expect(screen.getByTestId('approval-action')).toHaveTextContent('github.create_issue');
+    expect(screen.getByTestId('approval-tool-call-owner-only')).toHaveTextContent(en.approvalCard.toolCall.ownerOnly);
+  });
+
+  test('a decided card does not tell its own owner the arguments are for the owner', () => {
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-3',
+      status: 'approved',
+      ownerUserId: 'viewer-1',
+      actionType: 'tool_call',
+      toolCall: { tool: 'linear.save_comment' },
+      summary: 'Comment on the issue',
+    });
+
+    expect(screen.getByTestId('approval-action')).toHaveTextContent('linear.save_comment');
+    expect(screen.queryByTestId('approval-tool-call-owner-only')).not.toBeInTheDocument();
+  });
+
+  test('a decided card still tells anyone else the arguments are the owner\'s', () => {
+    renderCard({
+      kind: 'approval-card',
+      approvalId: 'tool-4',
+      status: 'approved',
+      ownerUserId: 'another-user',
+      actionType: 'tool_call',
+      toolCall: { tool: 'linear.save_comment' },
+      summary: 'Comment on the issue',
+    });
+
     expect(screen.getByTestId('approval-tool-call-owner-only')).toHaveTextContent(en.approvalCard.toolCall.ownerOnly);
   });
 

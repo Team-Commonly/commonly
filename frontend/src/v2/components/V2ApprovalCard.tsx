@@ -14,7 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import type { V2Message } from '../hooks/useV2PodDetail';
-import { canShowToolCall, prWriteView, toolCallView } from './toolCallView';
+import { canShowToolCall, prWriteView, showInvisibles, toolCallView } from './toolCallView';
 
 interface V2ApprovalCardProps {
   message: V2Message;
@@ -117,6 +117,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     return () => window.clearTimeout(timer);
   }, [expiresMs, expiryTick]);
   const aged = Number.isFinite(expiresMs) && expiresMs < Date.now();
+  // The ring and the badge ask for an answer, so they last only while one can be given. Past
+  // that, the state line says what happened. An aged proposal stays decidable; an aged tool call doesn't.
+  const decidable = status === 'flagged' && !(isToolCall && aged);
   const needsToolCall = isOwner && status === 'flagged' && isToolCall && !aged;
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
   const [toolCallLoading, setToolCallLoading] = useState(false);
@@ -213,7 +216,12 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     setError(null);
     try {
       const response = await api.post<ResolveApprovalResponse>(
-        `/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`, { decision },
+        `/api/approvals/${encodeURIComponent(payload.approvalId)}/resolve`,
+        // The digest says which arguments this approval is for; the server
+        // refuses a parked call's approval that doesn't name the ones it holds.
+        decision === 'approved' && pendingToolCall?.argsDigest
+          ? { decision, argsDigest: pendingToolCall.argsDigest }
+          : { decision },
       );
       // The card's own state lands via messageCardUpdated. The attention counts
       // (nav rail, pod inspector) refresh only on this event or window focus; a
@@ -230,8 +238,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         && path?.startsWith('/v2/agents/byo?')
       ) navigate(path);
     } catch (err) {
-      const status409 = (err as { response?: { status?: number } })?.response?.status;
-      setError(status409 === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));
+      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      if (response?.data?.error === 'approval_needs_review') setError(t('approvalCard.errors.needsReview'));
+      else setError(response?.status === 410 ? t('approvalCard.errors.expired') : t('approvalCard.errors.failed'));
     } finally {
       setDeciding(false);
     }
@@ -239,9 +248,9 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
 
   return (
     <div className="v2-msg v2-msg--system v2-msg--card" data-testid="approval-card">
-      <div className="v2-approval">
+      <div className={`v2-approval${decidable ? ' v2-approval--open' : ''}`}>
         <div className="v2-approval__head">
-          <span className="v2-approval__badge">{t('approvalCard.badge')}</span>
+          {decidable && <span className="v2-approval__badge">{t('approvalCard.badge')}</span>}
           <span className="v2-approval__agent">{authorLabel}</span>
           {time && <span className="v2-approval__time">{time}</span>}
         </div>
@@ -260,7 +269,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               <dl className="v2-approval__args" data-testid="approval-args">
                 {readable.rows.map((row) => (
                   <div className="v2-approval__arg" key={JSON.stringify(row.keys)} data-testid={`approval-arg-${row.keys.join('-')}`}>
-                    <dt>{row.labelKey ? t(row.labelKey) : row.label}</dt>
+                    <dt>
+                      {row.labelKey ? t(row.labelKey) : row.label}
+                      {row.fullLength !== undefined && (
+                        <span className="v2-approval__arg-length">
+                          {t('approvalCard.toolCall.longValue', { length: row.fullLength })}
+                        </span>
+                      )}
+                    </dt>
                     <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
                       {row.href
                         ? <a href={row.href} target="_blank" rel="noopener noreferrer">{row.value}</a>
@@ -283,7 +299,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               <details className="v2-approval__exact">
                 <summary>{t('approvalCard.toolCall.exactArgs')}</summary>
                 <pre className="v2-approval__tool-call" data-testid="approval-tool-call">
-                  {JSON.stringify(pendingToolCall.canonicalArgs, null, 2)}
+                  {showInvisibles(JSON.stringify(pendingToolCall.canonicalArgs, null, 2))}
                 </pre>
               </details>
             )}
@@ -301,7 +317,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                     ? t('approvalCard.toolCall.unavailable')
                     : t('approvalCard.toolCall.loading')}
               </div>
-            ) : (
+            ) : isOwner ? null : (
               <div className="v2-approval__pitch" data-testid="approval-tool-call-owner-only">
                 {t('approvalCard.toolCall.ownerOnly')}
               </div>

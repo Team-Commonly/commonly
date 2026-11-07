@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
 import { ShellGlyph } from '../icons/glyphs';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import './V2CliAuthorize.css';
@@ -26,21 +28,13 @@ const errorScreen = (error: unknown): Screen => {
   return status === 410 ? 'expired' : 'error';
 };
 
-const requestAge = (createdAt: string): string => {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-};
-
 const currentInstance = () => {
   const baseUrl = String(axios.defaults.baseURL || window.location.origin);
   try { return new URL(baseUrl, window.location.origin).host; } catch { return baseUrl; }
 };
 
 const V2CliAuthorize: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -127,24 +121,24 @@ const V2CliAuthorize: React.FC = () => {
   );
 
   if (loading) {
-    return card(<p className="v2-login__subtitle" role="status">Checking your session…</p>);
+    return card(<p className="v2-login__subtitle" role="status">{t('cliAuthorize.checkingSession')}</p>);
   }
 
   if (!isAuthenticated) {
     return card(
       <>
-        <h1 className="v2-login__title">Authorize Commonly CLI</h1>
-        <p className="v2-login__subtitle">Sign in to approve this device. The code stays tied to this browser tab.</p>
+        <h1 className="v2-login__title">{t('cliAuthorize.title')}</h1>
+        <p className="v2-login__subtitle">{t('cliAuthorize.signInLead')}</p>
         <label className="v2-login__field">
-          <span className="v2-login__label">Device code</span>
-          <input className="v2-login__input v2-cli-authorize__code" value={code} disabled aria-label="Device code" />
+          <span className="v2-login__label">{t('cliAuthorize.deviceCode')}</span>
+          <input className="v2-login__input v2-cli-authorize__code" value={code} disabled aria-label={t('cliAuthorize.deviceCode')} />
         </label>
         <button
           className="v2-login__submit"
           type="button"
           onClick={() => navigate(`/v2/login?next=${encodeURIComponent(next)}`)}
         >
-          Sign in to continue
+          {t('cliAuthorize.signInContinue')}
         </button>
       </>,
     );
@@ -153,22 +147,22 @@ const V2CliAuthorize: React.FC = () => {
   if (screen === 'code') {
     return card(
       <form onSubmit={lookup}>
-        <h1 className="v2-login__title">Authorize Commonly CLI</h1>
-        <p className="v2-login__subtitle">Enter the code shown in your terminal.</p>
+        <h1 className="v2-login__title">{t('cliAuthorize.title')}</h1>
+        <p className="v2-login__subtitle">{t('cliAuthorize.enterCode')}</p>
         <label className="v2-login__field">
-          <span className="v2-login__label">Device code</span>
+          <span className="v2-login__label">{t('cliAuthorize.deviceCode')}</span>
           <input
             className="v2-login__input v2-cli-authorize__code"
             value={code}
             onChange={(event) => setCode(normalizeCode(event.target.value))}
             placeholder="ABCD-EFGH"
             autoComplete="one-time-code"
-            aria-label="Device code"
+            aria-label={t('cliAuthorize.deviceCode')}
             required
           />
         </label>
         <button className="v2-login__submit" type="submit" disabled={submitting || code.replace('-', '').length !== 8}>
-          {submitting ? 'Checking…' : 'Continue'}
+          {t(submitting ? 'cliAuthorize.checking' : 'cliAuthorize.continue')}
         </button>
       </form>,
     );
@@ -178,40 +172,47 @@ const V2CliAuthorize: React.FC = () => {
     return card(
       <>
         <h1 className="v2-login__title">
-          Authorize <span className="v2-cli-authorize__host">{request.hostname}</span> as @{user?.username || 'you'}?
+          {/* Both names stay out of the string: Trans would parse them as markup and as a template. */}
+          <Trans
+            i18nKey="cliAuthorize.confirmTitle"
+            components={{
+              host: <span className="v2-cli-authorize__host">{request.hostname}</span>,
+              user: <>{user?.username || t('cliAuthorize.fallbackUser')}</>,
+            }}
+          />
         </h1>
-        <p className="v2-login__subtitle">This device is asking to use your Commonly account.</p>
+        <p className="v2-login__subtitle">{t('cliAuthorize.confirmLead')}</p>
         <dl className="v2-cli-authorize__facts">
-          <div><dt>Client</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
-          <div><dt>Instance</dt><dd>{currentInstance()}</dd></div>
-          <div><dt>Requested</dt><dd>{requestAge(request.createdAt)}</dd></div>
+          <div><dt>{t('cliAuthorize.client')}</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
+          <div><dt>{t('cliAuthorize.instance')}</dt><dd>{currentInstance()}</dd></div>
+          <div><dt>{t('cliAuthorize.requested')}</dt><dd>{localizeRelativeTime(request.createdAt, t, { includeFuture: false, rounding: 'floor' })}</dd></div>
         </dl>
         <div className="v2-login__notice" role="note">
           <ShellGlyph name="info" />
-          <span>Only approve a code you requested from your own terminal.</span>
+          <span>{t('cliAuthorize.approveWarning')}</span>
         </div>
         <div className="v2-cli-authorize__keys">
           <button className="v2-login__submit v2-login__submit--ghost" type="button" onClick={() => decide('deny')} disabled={submitting}>
-            Deny
+            {t('cliAuthorize.deny')}
           </button>
           <button className="v2-login__submit" type="button" onClick={() => decide('authorize')} disabled={submitting}>
-            {submitting ? 'Authorizing…' : 'Authorize'}
+            {t(submitting ? 'cliAuthorize.authorizing' : 'cliAuthorize.authorize')}
           </button>
         </div>
       </>,
     );
   }
 
-  if (screen === 'done') return outcome('Device authorized', 'You can return to your terminal.');
-  if (screen === 'denied') return outcome('Authorization denied', 'No token was issued for this device.');
+  if (screen === 'done') return outcome(t('cliAuthorize.doneTitle'), t('cliAuthorize.doneBody'));
+  if (screen === 'denied') return outcome(t('cliAuthorize.deniedTitle'), t('cliAuthorize.deniedBody'));
   if (screen === 'expired') {
-    return outcome('Code expired', <>Return to your terminal and run <code>commonly login</code> again.</>);
+    return outcome(t('cliAuthorize.expiredTitle'), <Trans i18nKey="cliAuthorize.expiredBody" components={{ code: <code /> }} />);
   }
   if (screen === 'used') {
-    return outcome('Code already used', 'This code was already approved or completed. Return to your terminal.');
+    return outcome(t('cliAuthorize.usedTitle'), t('cliAuthorize.usedBody'));
   }
   if (screen === 'error') {
-    return outcome('Couldn’t authorize this device', 'Check the code and try again from your terminal.', 'alert');
+    return outcome(t('cliAuthorize.errorTitle'), t('cliAuthorize.errorBody'), 'alert');
   }
   return card(null);
 };

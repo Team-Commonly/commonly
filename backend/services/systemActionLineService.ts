@@ -58,8 +58,11 @@ async function insertSystemLine(
       [line.podId, line.actorUserId, content, JSON.stringify(payload)],
     )
     : await pool.query(
-      `INSERT INTO messages (pod_id, user_id, content, message_type, payload, thread_root_id, reply_to_message_id)
-       VALUES ($1, $2, $3, 'system', $4::jsonb, $5, $6)
+      // A line beside a top-level message has an edge and no root on purpose, so
+      // it carries the same mark as a top-level answer (F212) and the retention
+      // repair leaves it where it is.
+      `INSERT INTO messages (pod_id, user_id, content, message_type, payload, thread_root_id, reply_to_message_id, top_level_answer)
+       VALUES ($1, $2, $3, 'system', $4::jsonb, $5::int, $6, CASE WHEN $5::int IS NULL THEN TRUE END)
        RETURNING id, created_at`,
       [line.podId, line.actorUserId, content, JSON.stringify(payload), threadRootId, replyToMessageId],
     );
@@ -154,6 +157,111 @@ export async function emitNotConnectedLine(line: NotConnectedLine): Promise<void
     agentKey: line.agentKey,
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
+
+/**
+ * F297. A person addressed an agent its owner stopped. Without this line the
+ * mention waits and the room says nothing, which to anyone but the owner reads
+ * as being ignored. It promises no reply: a wake can age out before a Start.
+ * Callers dedupe with `hasStoppedLineSince`.
+ */
+export interface StoppedLine extends SystemLineActor {
+  agentLabel: string;
+  agentKey: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitStoppedLine(line: StoppedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} is stopped, so it can't answer until its owner starts it.`, {
+    kind: 'system-action',
+    action: 'agent-stopped',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * F270. A person wrote in a DM with an agent that no longer has an active install
+ * anywhere. The room stays open, and the message would get a 200 and nothing else.
+ * Callers dedupe with `hasRemovedLineSince`.
+ */
+export type RemovedLine = StoppedLine;
+
+export async function emitRemovedLine(line: RemovedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} was removed, so it can't answer here.`, {
+    kind: 'system-action',
+    action: 'agent-removed',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * F300. A person addressed a Bring your own agent whose listener has stopped
+ * checking in. Its wake stays pending, so nothing else would ever speak up. It
+ * promises nothing: the agent may never come back. Callers dedupe with
+ * `hasOfflineLineSince`.
+ */
+export type OfflineLine = StoppedLine;
+
+export async function emitOfflineLine(line: OfflineLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} looks offline, so it may not answer for now.`, {
+    kind: 'system-action',
+    action: 'agent-offline',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * F270. A DM to an agent whose rows are all paused. It promises nothing: a paused
+ * agent queues nothing, its owner may have gone, and a resume may land in a pod
+ * this person isn't in. Callers dedupe with `hasPausedLineSince`.
+ */
+export async function emitPausedLine(line: RemovedLine): Promise<void> {
+  await insertSystemLine(line, `${line.agentLabel} is paused, so it won't answer this.`, {
+    kind: 'system-action',
+    action: 'agent-paused',
+    actorName: line.agentLabel,
+    agentKey: line.agentKey,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const { pool } = require('../config/db-pg') as {
+    pool: { query: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }> } | null;
+  };
+  if (!pool) return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM messages
+     WHERE pod_id = $1 AND message_type = 'system' AND created_at >= $2
+       AND payload->>'action' = $4 AND payload->>'agentKey' = $3
+     LIMIT 1`,
+    [podId, since, agentKey, action],
+  );
+  return rows.length > 0;
+};
+
+/** Whether a stopped line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasStoppedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-stopped', podId, agentKey, since)
+);
+
+/** Whether an offline line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasOfflineLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-offline', podId, agentKey, since)
+);
+
+/** Whether a removed line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasRemovedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-removed', podId, agentKey, since)
+);
+
+/** Whether a paused line for this agent sits in the pod since `since`; no pool reads as yes. */
+export const hasPausedLineSince = (podId: string, agentKey: string, since: Date): Promise<boolean> => (
+  hasAgentLineSince('agent-paused', podId, agentKey, since)
+);
 
 /**
  * Whether a not-connected line for this agent already sits in the pod since

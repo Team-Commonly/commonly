@@ -616,7 +616,7 @@ Examples:
         // unaffected, and refusing to start would turn one missing key into a
         // whole-machine outage.
         for (const name of missingProviderKeys({ names: providerKeyEnvNames() })) {
-          stampLog(`WARNING: ${name} is not set in this environment — a seat whose adapter needs it will fail to start. Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+          stampLog(`WARNING: ${name} is not set in this environment — a seat that relies on it will fail to start (one with its own provider.keyFile won't). Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
         }
         // TASK-660: the daemon outlives many publishes, so say once at start-up
         // when it is stale. Not awaited: supervision never waits on the registry.
