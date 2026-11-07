@@ -36,6 +36,15 @@ the setting is missing or the card can't be delivered, the alert fails with a
 `console.error` naming the reason, at most once an hour while it lasts. It's
 never silently dropped. `tool_unavailable` never files a card.
 
+Set it through the `SystemSetting` model, or use the collection name
+`system_settings`. Mongoose's default plural isn't that name, so a raw write to
+`systemsettings` succeeds and the alert still reads as `unconfigured`. The row
+holds `value: { recipientUserId, podId }`, and both must be 24-character hex
+ObjectId strings; an email address or a top-level pair also reads as
+`unconfigured`. The recipient must be a member of that pod, or the card can't be
+filed. A readback through the model only proves the row, so before calling the
+alert live, also see one drift card in the recipient's Needs-you queue.
+
 ## Census: how far a drift reaches
 
 Use what the broker has already assessed. **Never take a list with someone

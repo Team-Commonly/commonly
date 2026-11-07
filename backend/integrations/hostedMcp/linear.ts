@@ -15,6 +15,14 @@
  * Schemas and both security annotations are pinned unchanged from the capture.
  * Descriptions are local copy. No outputSchema was captured.
  *
+ * Seven writers are re-pinned from the 2026-11-07 capture (70 tools), which
+ * drifted them: save_comment, save_document, save_project, save_diff_comment,
+ * submit_diff_review and update_diff for reworded field descriptions, and
+ * save_project_label for the new optional groupType. Those field descriptions
+ * name prepare_file_upload, which stays excluded with the rest of the upload
+ * flow; a write pin must match the live schema exactly, so the words stay. The
+ * two tools new since 10-19, prepare_file_upload and whoami, are not pinned.
+ *
  * CIMD remains the registration mode. openid binds providerSubject during
  * reconnect. The revoke page is the signed-in Authorized applications page
  * verified in the 2026-10-15 walk, not the workspace security settings page.
@@ -228,7 +236,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           statusUpdateType: {
-            description: "Type of status update named by `statusUpdateId`, as returned by `get_status_updates`. Only valid together with `statusUpdateId`; omit to check both project and initiative status updates.",
+            description: "Set only together with `statusUpdateId`; omit for issue, project, initiative, document, and milestone comments. Type of status update named by `statusUpdateId`, as returned by `get_status_updates`. Omit to check both project and initiative status updates.",
             type: "string",
             enum: [
               "project",
@@ -241,7 +249,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           },
           body: {
             type: "string",
-            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe). To embed an image or file, upload it with prepare_file_upload and insert the returned markdown",
           },
         },
         required: [
@@ -503,7 +511,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           content: {
-            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe). To embed an image or file, upload it with prepare_file_upload and insert the returned markdown",
             type: "string",
           },
           patch: {
@@ -1776,7 +1784,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           description: {
-            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe)",
+            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To mention a user, use @displayName (e.g., @johndoe). To embed an image or file, upload it with prepare_file_upload and insert the returned markdown",
             type: "string",
           },
           patch: {
@@ -2223,6 +2231,14 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           isGroup: {
             description: "Whether the label is a group",
             type: "boolean",
+          },
+          groupType: {
+            description: "Selection mode for label groups. Defaults to singleSelect when creating; omit to keep it unchanged when updating",
+            type: "string",
+            enum: [
+              "singleSelect",
+              "multiSelect",
+            ],
           },
         },
         $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -3490,7 +3506,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
           body: {
             type: "string",
             minLength: 1,
-            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences",
+            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To embed an image or file, upload it with prepare_file_upload and insert the returned markdown",
           },
           anchor: {
             description: "Optional comment anchor copied from a diff thread or built for a file or diff hunk",
@@ -3599,7 +3615,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
             description: "Review decision: approved, changesRequested, or commented",
           },
           body: {
-            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. Required when requesting changes or commenting",
+            description: "Content as Markdown. Do not escape the string — use literal newlines and special characters, not escape sequences. To embed an image or file, upload it with prepare_file_upload and insert the returned markdown. Required when requesting changes or commenting",
             type: "string",
             minLength: 1,
           },
@@ -3636,7 +3652,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
             minLength: 1,
           },
           description: {
-            description: "New description as Markdown; an empty string clears it",
+            description: "New description as Markdown; an empty string clears it. To embed an image or file, upload it with prepare_file_upload and insert the returned markdown",
             type: "string",
           },
           addedReviewRequests: {
