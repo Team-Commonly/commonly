@@ -385,6 +385,11 @@ describe('a model the provider will not run waits like a 403 does', () => {
   test.each([
     ['a bare 404', Object.assign(new Error('not found'), { status: 404 })],
     ['a wrong route', new Error('HTTP 404: no route for /v1/messages')],
+    ['a 404 with a model on a later line', Object.assign(
+      new Error('HTTP 404 Not Found: POST /v1/messages\nloaded config\nmodel: sonnet'),
+      { status: 404 },
+    )],
+    ['the model code on a server error', Object.assign(new Error('bad gateway'), { status: 503, providerCode: 'model_not_found' })],
     ['the model code in a public tool failure', publicToolFailure()],
   ])('%s stays a runtime failure', (_label, error) => {
     expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
