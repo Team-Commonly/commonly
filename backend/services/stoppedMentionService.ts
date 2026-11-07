@@ -1,0 +1,88 @@
+import { emitStoppedLine, hasStoppedLineSince } from './systemActionLineService';
+import { hostedStoppedAt } from './hostedEngine';
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const User = require('../models/User');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const AgentIdentityService = require('./agentIdentityService');
+
+/**
+ * When this install was stopped, or null while it can run. Hosted is the only
+ * runtime that stops today; another one that can adds itself here, and the line
+ * below reaches it with no other change.
+ */
+const stoppedSince = (installation: Record<string, unknown>): Date | null => hostedStoppedAt(installation);
+
+const inFlight = new Set<string>();
+
+/**
+ * F297. A person addressed an agent its owner stopped. This tells the room once,
+ * as a reply to the message, and promises nothing: the wake stays queued, and
+ * Start runs it only while it's recent. Silent when the agent is running, when a
+ * daemon seat shares the identity (that seat is still up), when a line is already
+ * there, or for a comment on a post, which has no chat message to answer. The
+ * caller checks the sender is a person: agents don't get told.
+ *
+ * Once since midnight UTC or the stop, whichever is later, so a mention days
+ * after the last line isn't met with silence, and neither is a second stop.
+ */
+export async function noteStoppedMention({
+  podId, agentName: rawAgentName, instanceId, messageId, threadRootId, now = new Date(),
+}: {
+  podId: string;
+  agentName: string;
+  instanceId: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+  now?: Date;
+}): Promise<boolean> {
+  if (messageId === null) return false;
+  const agentName = rawAgentName.toLowerCase();
+  // As routing sees it: a projection with no runtime of its own never gets the
+  // stop written on it, and reads as stopped through the row it inherits from.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const AgentEventService = require('./agentEventService') as {
+    resolveEffectiveInstallation: (
+      agentName: string, instanceId: string, podId: string,
+    ) => Promise<Record<string, unknown> | null>;
+  };
+  const install = await AgentEventService.resolveEffectiveInstallation(agentName, instanceId, podId);
+  const stoppedAt = install ? stoppedSince(install) : null;
+  if (!stoppedAt) return false;
+
+  const agent = await User.findOne({
+    isBot: true,
+    'botMetadata.agentName': { $eq: agentName },
+    'botMetadata.instanceId': { $eq: instanceId },
+  }).select('username profilePicture botMetadata').lean() as {
+    _id: unknown; username?: string; profilePicture?: string | null;
+    botMetadata?: { displayName?: string; instanceId?: string; machineId?: unknown };
+  } | null;
+  if (!agent || agent.botMetadata?.machineId) return false;
+
+  const agentKey = `${agentName}:${instanceId}`;
+  // The check is read-then-insert, so `@nova @nova` could pass it twice. Across
+  // replicas the worst case stays one extra line, never a dropped mention.
+  const flightKey = `${podId}:${agentKey}`;
+  if (inFlight.has(flightKey)) return false;
+  inFlight.add(flightKey);
+  try {
+    const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const since = stoppedAt > midnight ? stoppedAt : midnight;
+    if (await hasStoppedLineSince(podId, agentKey, since)) return false;
+    await emitStoppedLine({
+      podId,
+      actorUserId: String(agent._id),
+      actorUsername: agent.username || agentName,
+      actorAvatarUrl: agent.profilePicture || null,
+      actorIsBot: true,
+      agentLabel: AgentIdentityService.resolveAgentDisplayLabel(agent, agentName),
+      agentKey,
+      messageId,
+      threadRootId: threadRootId ?? null,
+    });
+    return true;
+  } finally {
+    inFlight.delete(flightKey);
+  }
+}

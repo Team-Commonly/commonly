@@ -137,6 +137,13 @@ export const hostedIsStopped = (installation: any): boolean => {
   return isHostedInstallation(installation) && Boolean(deprovisionedAt) && !provisionedAt;
 };
 
+/** When the owner stopped this install, or null while it isn't stopped. */
+export const hostedStoppedAt = (installation: any): Date | null => {
+  if (!hostedIsStopped(installation)) return null;
+  const stoppedAt = new Date(readHostedConfig(installation).deprovisionedAt as string | Date);
+  return Number.isNaN(stoppedAt.getTime()) ? null : stoppedAt;
+};
+
 /**
  * True for a provisioned hosted install whose turns run on the native
  * runtime. A deprovisioned one routes nowhere, as a stopped Durable Object
