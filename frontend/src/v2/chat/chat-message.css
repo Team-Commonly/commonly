@@ -501,6 +501,7 @@
   background: transparent;
   padding: 0;
   font-size: inherit;
+  box-shadow: none;
 }
 
 /* The copy key sits over the block's corner, and the right padding keeps it off
