@@ -111,6 +111,19 @@ describe('never-connected seat command (TASK-716)', () => {
     expect(JSON.stringify(list.body)).not.toContain(url);
     expect(JSON.stringify(one.body)).not.toContain(url);
 
+    const standing = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({
+      _id: standing, name: 'Theirs', type: 'chat', createdBy: other, members: [other],
+    });
+    await AgentInstallation.create({
+      agentName: 'Nova', instanceId: 'default', podId: standing, version: '1.0.0', installedBy: other, status: 'active',
+      config: { ...config, autoJoinSource: 'mention-resolution' },
+    });
+    const joined = await request(app).get(`/api/registry/pods/${standing}/agents/nova`);
+    expect(JSON.stringify(joined.body)).not.toContain(url);
+    const room = await request(app).get(`/api/registry/pods/${roomId}/agents/nova`);
+    expect(JSON.stringify(room.body)).not.toContain(url);
+
     mockViewer = String(owner);
     const own = await request(app).get(`/api/registry/pods/${podId}/agents/nova`);
     expect(JSON.stringify(own.body)).toContain(url);

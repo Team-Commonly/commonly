@@ -170,6 +170,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
   }
 });
 
+// A room's row or an auto-join's is a copy of the agent's config, whoever it
+// names, and the person who set the URL reads it on their own row.
+const isProjectionRow = (pod: any, installation: any): boolean => (
+  pod?.type === 'agent-room' || Boolean(normalizeConfigMap(installation.config)?.autoJoinSource)
+);
+
 /**
  * GET /api/registry/pods/:podId/agents
  * List agents installed in a pod
@@ -418,9 +424,8 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
 
     // A room's row names whoever opened it, who isn't always who runs the agent.
     const isGuestRow = (i: any) => read(() => isGuestOfIdentity(viewerId, i.agentName, i.instanceId || 'default'));
-    const roomRows = (pod.type === 'agent-room' ? installations as any[] : []).filter((i: any) => (
-      installedByViewer(i) && (runInstructionFor(i) || normalizeConfigMap(i.config)?.runtime?.webhookUrl)
-    ));
+    const roomRows = (pod.type === 'agent-room' ? installations as any[] : [])
+      .filter((i: any) => installedByViewer(i) && runInstructionFor(i));
     const guestRows = new Set<unknown>((await Promise.all(
       roomRows.map(async (i: any) => (await isGuestRow(i) ? i : null)),
     )).filter(Boolean));
@@ -443,7 +448,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastActiveAt,
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
-          revealWebhookUrl: viewerIsAdmin || (installedByViewer(i) && !guestRows.has(i)),
+          revealWebhookUrl: !isProjectionRow(pod, i) && (viewerIsAdmin || installedByViewer(i)),
           runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
         // Every return path below carries the narrowing state: a boolean per
@@ -597,11 +602,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
         profile,
         runtimeIdentity,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
-        revealWebhookUrl: (installedBy === String(userId)
-            && !(pod.type === 'agent-room'
-              && await isGuestOfIdentity(userId, installation.agentName, installation.instanceId || 'default')))
+        revealWebhookUrl: !isProjectionRow(pod, installation) && (installedBy === String(userId)
           || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)
-            && await isGlobalAdminUser(userId)),
+            && await isGlobalAdminUser(userId))),
       }),
     });
   } catch (error) {
