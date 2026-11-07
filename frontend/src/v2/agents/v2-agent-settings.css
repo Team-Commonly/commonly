@@ -11,6 +11,9 @@
 }
 
 .v2-agent-settings__state { padding: 32px; color: var(--v2-text-secondary); }
+.v2-root a.v2-agent-settings__state-link { display: flex; align-items: center; width: fit-content; min-height: 32px; margin-top: 4px; color: var(--v2-accent); font-weight: 600; text-decoration: none; }
+.v2-root a.v2-agent-settings__state-link:hover { text-decoration: underline; }
+@media (max-width: 760px) { .v2-root a.v2-agent-settings__state-link { min-height: 44px; } }
 
 /* Header: avatar, name and the Profile / Memory / Settings tabs on one row. */
 .v2-agent-settings__head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 28px; min-height: 76px; border-bottom: 1px solid var(--v2-border-soft); box-sizing: border-box; }

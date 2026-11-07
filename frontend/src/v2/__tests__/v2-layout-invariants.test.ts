@@ -2469,6 +2469,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     test("the agent room's Connect beats `.v2-root a`, so it reads as a link", () => {
       const states = read('../chat/chat-states.css');
       expect(ruleBody(states, '.v2-root a.v2-chat__agent-room-connect')).toContain('color: var(--v2-accent)');
+    test("Settings' way back beats `.v2-root a`, so it reads as a link", () => {
+      const settings = read('../agents/v2-agent-settings.css');
+      expect(ruleBody(settings, '.v2-root a.v2-agent-settings__state-link')).toContain('color: var(--v2-accent)');
     });
 
     test('an approval card wears the ring only while it can be answered', () => {

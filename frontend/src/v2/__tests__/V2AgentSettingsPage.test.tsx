@@ -51,6 +51,17 @@ beforeEach(() => {
   });
 });
 
+test('someone who cannot manage the agent is told so, in the app language, with a way back to their team', async () => {
+  axios.get.mockImplementation((url) => (url.includes('/manage-settings')
+    ? Promise.resolve({ data: { writablePodId: null, installations: [] } })
+    : Promise.reject({ response: { status: 404 } })));
+  renderPage();
+  expect(await screen.findByRole('alert')).toHaveTextContent('Only the person who installed this agent can change its settings.');
+  expect(screen.queryByText('No accessible installation')).toBeNull();
+  // Not the profile: a private agent's reads "Agent not found", another dead end.
+  expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+});
+
 test('Identity shows the listing state and links to the public profile without publishing', async () => {
   renderPage();
   expect(await screen.findByText('Published')).toBeInTheDocument();
