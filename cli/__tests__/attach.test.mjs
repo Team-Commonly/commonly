@@ -33,6 +33,7 @@ const {
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
+  adoptEnvToken,
   bootstrapAgentRecordFromEnv,
   parseAllowGrants,
   checkRunAllowRequest,
@@ -1036,6 +1037,89 @@ describe('saveAgentToken / loadAgentToken', () => {
 });
 
 // ── #913: bootstrap the token record from env vars on first `agent run` ─────
+describe('adoptEnvToken', () => {
+  const saved = {
+    agentName: 'smoke-agent',
+    instanceId: 'default',
+    podId: 'pod-main',
+    instanceUrl: 'https://saved.example',
+    runtimeToken: 'cm_agent_old',
+    adapter: 'claude',
+  };
+  const identity = {
+    agentName: 'smoke-agent',
+    instanceId: 'default',
+    installations: [{
+      podId: 'pod-main', instanceId: 'default', status: 'active', type: 'installation',
+    }],
+  };
+  const adopt = async (env, response = identity) => {
+    const get = jest.fn(async () => {
+      if (response instanceof Error) throw response;
+      return response;
+    });
+    const clientFactory = jest.fn(() => ({ get }));
+    const lines = [];
+    const record = await adoptEnvToken({
+      record: saved, name: 'smoke-agent', env, clientFactory, log: (line) => lines.push(line),
+    });
+    return { record, lines, clientFactory };
+  };
+
+  test('with no env token, or the same one, nothing is asked and the record stands', async () => {
+    const none = await adopt({});
+    const same = await adopt({ COMMONLY_AGENT_TOKEN: ' cm_agent_old ' });
+    expect(none.record).toBe(saved);
+    expect(same.record).toBe(saved);
+    expect(none.clientFactory).not.toHaveBeenCalled();
+    expect(same.clientFactory).not.toHaveBeenCalled();
+  });
+
+  test('a fresh token for this agent replaces the saved one, checked with that token', async () => {
+    const { record, clientFactory, lines } = await adopt({ COMMONLY_AGENT_TOKEN: 'cm_agent_new' });
+    expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://saved.example', token: 'cm_agent_new' });
+    expect(record).toEqual({ ...saved, runtimeToken: 'cm_agent_new' });
+    expect(lines.join()).toContain('replaces the saved token');
+    expect(lines.join()).not.toContain('cm_agent_new');
+  });
+
+  test('the env URL travels with the env token', async () => {
+    const { record, clientFactory } = await adopt({
+      COMMONLY_AGENT_TOKEN: 'cm_agent_new', COMMONLY_API_URL: 'https://new.example',
+    });
+    expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://new.example', token: 'cm_agent_new' });
+    expect(record.instanceUrl).toBe('https://new.example');
+  });
+
+  test('a reinstall into another pod moves the record there', async () => {
+    const { record } = await adopt({ COMMONLY_AGENT_TOKEN: 'cm_agent_new' }, {
+      ...identity,
+      installations: [
+        { podId: 'pod-dm', status: 'active', type: 'dm' },
+        { podId: 'pod-new', status: 'active', type: 'installation' },
+      ],
+    });
+    expect(record.podId).toBe('pod-new');
+  });
+
+  test.each([
+    ['a rejected token', new Error('401'), 'could not be checked'],
+    ['another agent\'s token', { ...identity, agentName: 'other-agent' }, "belongs to 'other-agent'"],
+    ['another instance\'s token', { ...identity, instanceId: 'evening' }, 'belongs to'],
+  ])('%s leaves the saved token in place and says so', async (_label, response, line) => {
+    const { record, lines } = await adopt({ COMMONLY_AGENT_TOKEN: 'cm_agent_new' }, response);
+    expect(record).toBe(saved);
+    expect(lines.join()).toContain(line);
+    expect(lines.join()).toContain('uses the saved token');
+  });
+
+  test('a value that is no runtime token is never sent anywhere', async () => {
+    const { record, clientFactory } = await adopt({ COMMONLY_AGENT_TOKEN: 'cm_user_abc' });
+    expect(record).toBe(saved);
+    expect(clientFactory).not.toHaveBeenCalled();
+  });
+});
+
 describe('bootstrapAgentRecordFromEnv', () => {
   const identityResponse = {
     agentName: 'smoke-agent',

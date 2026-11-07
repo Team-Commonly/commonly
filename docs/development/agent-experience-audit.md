@@ -4549,3 +4549,13 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 **Lesson:** when a change makes a step optional, reread the names that assumed the step.
 
+
+## 116. `commonly agent run` said "Token revoked" with a live token in its environment (2026-11-07, F315)
+
+*Origin: Growth restarted a seat in a HOME it had run from before, with a fresh `COMMONLY_AGENT_TOKEN`. The new key returned 200 on the runtime API, and the run stopped after three rejections.*
+
+`run` read the environment only when no token file existed, so the saved token won and the fresh one was ignored without a word. The stop line then pointed at `commonly agent detach`, which also uninstalls the agent. Someone who reinstalls an agent on the same machine and pastes the new listener command hits the same thing.
+
+**Repair:** `adoptEnvToken` replaces the saved token when the server confirms the env token is this agent's, and says so. A rejected token, or one that's another agent's, leaves the saved token in place, with a line naming why. The stop line now names the reissue path first.
+
+**Lesson:** when a command reads the same credential from two places, the log must name the one it used. An error about a key the person didn't supply reads as a fault in the key they did.

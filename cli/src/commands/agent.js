@@ -226,6 +226,53 @@ export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
     || (typeof record.environment === 'object' && !Array.isArray(record.environment)
       && withDefaultSandbox(record.environment) !== record.environment));
 
+/**
+ * A key reissued for an agent that already ran here reaches `run` in the
+ * environment, beside the saved token it replaces. The fresh one wins, but only
+ * once the server says it's this agent's: a stale export, or a token from
+ * another seat's shell, must not displace a saved token that works.
+ */
+export const adoptEnvToken = async ({
+  record,
+  name,
+  env = process.env,
+  clientFactory = createClient,
+  log = () => {},
+}) => {
+  const runtimeToken = (env.COMMONLY_AGENT_TOKEN || '').trim();
+  if (!runtimeToken || runtimeToken === record.runtimeToken) return record;
+  const instanceUrl = (env.COMMONLY_API_URL || '').trim() || record.instanceUrl;
+  const keepSaved = (why) => {
+    log(`COMMONLY_AGENT_TOKEN ${why}, so this run uses the saved token`);
+    return record;
+  };
+  if (!runtimeToken.startsWith('cm_agent_')) return keepSaved('is not a runtime token');
+
+  let identity;
+  try {
+    identity = await clientFactory({ instance: instanceUrl, token: runtimeToken })
+      .get('/api/agents/runtime/installations');
+  } catch (err) {
+    return keepSaved(`could not be checked against ${instanceUrl} (${err.message})`);
+  }
+  const owner = String(identity?.agentName || '').toLowerCase();
+  if (owner !== String(record.agentName || name).toLowerCase()
+    || String(identity?.instanceId || 'default') !== String(record.instanceId || 'default')) {
+    return keepSaved(`belongs to '${identity?.agentName}', not this agent`);
+  }
+
+  // A reinstall can move the agent, and the saved pod is then gone.
+  const active = (identity?.installations || []).filter((row) => row?.status === 'active');
+  const stillThere = active.some((row) => String(row.podId) === String(record.podId));
+  const podId = stillThere
+    ? record.podId
+    : (active.find((row) => row.type === 'installation') || active[0])?.podId || record.podId;
+  log('using COMMONLY_AGENT_TOKEN, which replaces the saved token');
+  return {
+    ...record, runtimeToken, instanceUrl, podId,
+  };
+};
+
 /** Return the adapter binding resolved for this exact installation by the server. */
 export const runtimeAdapterForInstallation = ({ installations, podId, instanceId } = {}) => {
   if (!Array.isArray(installations) || !podId) return null;
@@ -4572,7 +4619,8 @@ export const performRun = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping. `
-            + `Run: commonly agent detach ${agentName}`,
+            + `If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. `
+            + `To remove the agent from its pod: commonly agent detach ${agentName}`,
           ));
           running = false;
           return;
@@ -5242,7 +5290,14 @@ Docs:
       }
       let record = loadAgentToken(name);
       let bootstrapped = false;
-      if (!record) {
+      const saved = record;
+      if (record) {
+        record = await adoptEnvToken({
+          record,
+          name,
+          log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+        });
+      } else {
         // First run on this machine: the BYO connect page hands out env vars,
         // not a token file — bootstrap the record from them (#913).
         try {
@@ -5334,6 +5389,7 @@ Docs:
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
       }
+      if (saved && record !== saved) saveAgentToken(record.agentName, record);
       if (bootstrapped) {
         saveAgentToken(record.agentName, record);
         console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
