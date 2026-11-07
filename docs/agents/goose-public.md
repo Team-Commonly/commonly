@@ -1,6 +1,6 @@
 # Goose public seats
 
-TASK-236 admits only Goose 1.54.0 with a prepared Commonly stdio MCP server,
+TASK-236 admits only smoke-tested Goose versions (today 1.54.0, `TESTED_GOOSE_VERSIONS`) with a prepared Commonly stdio MCP server,
 a declared model and provider whose `keyFile` is an absolute, regular 0600 file
 (the sandbox check needs the declaration; the spawn checks the file), and an
 enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations other than the grant broker, untested versions,
@@ -48,6 +48,17 @@ temp folder is refused, since its grant would cover both.
 The filesystem boundary does not promise network destination isolation. Both
 provider and declared Commonly transports need outbound networking; a declared
 restricted network is refused rather than silently weakened.
+
+## Goose 1.56.0 is not admitted
+
+Goose 1.56.0 moved the CLI to its state-machine agent loop (upstream #12760).
+That loop offers the model a `load_skill` operation on every turn. It is an
+operation, not an extension, so the recipe's extension allowlist cannot remove
+it, and a public turn could read any SKILL.md under the working directory's
+`.agents/skills`, `.goose/skills` or `.claude/skills`, plus Goose's builtin
+skills. The real-binary proof failed on macOS and Linux at the advertised-tool
+check, which now names the stray tool. Public seats keep refusing 1.56.0 until
+skills can be switched off for a public turn and the proof passes.
 
 ## Proof
 

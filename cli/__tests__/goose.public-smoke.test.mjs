@@ -115,7 +115,8 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     expect(attacked).toBe(true);
     expect(advertised.length).toBeGreaterThan(0);
     const allowed = new Set(PUBLIC_GOOSE_TOOLS.map((name) => `commonly__${name}`));
-    expect(advertised.every((tools) => tools.every((name) => allowed.has(name)))).toBe(true);
+    // Name the strays, so a Goose release that advertises a new tool says which.
+    expect([...new Set(advertised.flat().filter((name) => !allowed.has(name)))]).toEqual([]);
     expect(advertised.every((tools) => !tools.includes('commonly__commonly_attach_file'))).toBe(true);
     expect(apiHits).toBe(1);
     expect(checkIns).toBe(1);
