@@ -69,6 +69,7 @@ const {
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const {
   previewInstallNarrowing, installNarrowingMessage, NARROWING_CONFIRM_CODE,
@@ -355,7 +356,12 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       if (requestedRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller) {
         const held = await HostedRuntime.findHeldHostedInstallation(userId, safeAgentName, normalizedInstanceId);
         const refusal = await hostedCapRefusal(userId, Boolean(held));
-        if (refusal) return res.status(403).json(refusal);
+        if (refusal) {
+          logInstallRefusal('registry.install', 'hosted_cap_reached', {
+            userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId, used: refusal.used, cap: refusal.cap,
+          });
+          return res.status(403).json(refusal);
+        }
         hostedCapChecked = true;
       }
       // ADR-006 §invariant 7 — self-serve is pod-scope only. The route
@@ -671,6 +677,9 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     })) {
       const isEntitled = installerUser?.entitlements?.cloudAgents === true;
       if (!isAdminInstaller && !isEntitled) {
+        logInstallRefusal('registry.install', 'cloud_agents_not_entitled', {
+          userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId,
+        });
         return res.status(403).json({
           code: 'cloud_agents_not_entitled',
           message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
@@ -685,7 +694,12 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
     // the cap the same way they bypass the entitlement.
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
       const refusal = await hostedCapRefusal(userId, Boolean(heldHostedRow));
-      if (refusal) return res.status(403).json(refusal);
+      if (refusal) {
+        logInstallRefusal('registry.install', 'hosted_cap_reached', {
+          userId, agentName: safeAgentName, instanceId: normalizedInstanceId, podId, used: refusal.used, cap: refusal.cap,
+        });
+        return res.status(403).json(refusal);
+      }
     }
 
     // One runtime per agent identity (services/runtimeIdentityOwnership). Asked

@@ -158,9 +158,11 @@ describe('registry install — hosted runtime cap gate', () => {
       { agentName: 'existing-agent', instanceId: 'default', podId: 'pod-2' },
     ]);
     const res = makeRes();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await installHandler(makeReq('hosted'), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"hosted_cap_reached"/));
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       code: 'hosted_cap_reached',
       used: 1,
@@ -187,8 +189,10 @@ describe('registry install — hosted runtime cap gate', () => {
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
     const res = makeRes();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await installHandler(makeReq('hosted'), res);
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"hosted_cap_reached"/));
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'hosted_cap_reached' }));
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
