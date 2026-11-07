@@ -24,5 +24,5 @@ export const agentKeyFor = (
  * there makes a sibling with its own key and leaves this one unconnected.
  */
 export const isDefaultInstance = (instanceId?: string): boolean => (
-  (instanceId || 'default').toLowerCase() === 'default'
+  String(instanceId || 'default').toLowerCase() === 'default'
 );

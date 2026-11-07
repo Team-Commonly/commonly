@@ -32,4 +32,8 @@ describe('isDefaultInstance', () => {
   test('a named instance does not', () => {
     expect(isDefaultInstance('nova')).toBe(false);
   });
+
+  test('a numeric instance id reads as another instance and does not throw', () => {
+    expect(isDefaultInstance(7 as unknown as string)).toBe(false);
+  });
 });
