@@ -906,7 +906,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     expect(runAgent).not.toHaveBeenCalled();
     const closed = await AgentEvent.findById(event._id).lean();
     expect(closed.status).toBe('failed');
-    expect(closed.error).toMatch(/not run within 30 minutes/);
+    expect(closed.error).toMatch(/not run in time/);
   });
 
   // The batch cap used to apply before runnability, so 50

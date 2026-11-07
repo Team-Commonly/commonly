@@ -108,6 +108,10 @@ const STRANDED_PENDING_MIN_AGE_MS = 60 * 1000;
 // garbageCollect, so the two bounds move together.
 const releaseCeiling = (): number => 2 * Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
 const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
+// F298: a Start answers what waited for it. The room was told the agent can't
+// answer until its owner starts it, so the half hour above would close the very
+// mention that line was about. Past a day it's closed, and the person is told.
+const START_PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -1361,17 +1365,36 @@ class AgentEventService {
     ));
     if (!targets.length) return { rescued: 0, closed: 0 };
     const targetFilter = { $or: targets };
-    const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
-    const closedResult = await AgentEvent.updateMany(
-      { status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter },
-      {
-        $set: {
-          status: 'failed',
-          error: 'stranded: this agent runs in-process and the event was not run within 30 minutes of being '
-            + 'enqueued; closed so it does not sit pending unanswered',
-        },
+    const ceiling = new Date(now.getTime() - (only ? START_PENDING_MAX_AGE_MS : STRANDED_PENDING_MAX_AGE_MS));
+    const overdue = {
+      status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter,
+    };
+    const closing = {
+      $set: {
+        status: 'failed',
+        error: 'stranded: this agent runs in-process and the event was not run in time; '
+          + 'closed so it does not sit pending unanswered',
       },
-    ) as { modifiedCount?: number };
+    };
+    // A person's mention closes on its own, so whoever closed it tells them once.
+    const mentions = await AgentEvent.find({ ...overdue, type: { $in: PERSON_WAITING_EVENT_TYPES } })
+      .sort({ createdAt: -1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let closed = 0;
+    for (const mention of mentions) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const retired = await AgentEvent.findOneAndUpdate(
+        { _id: mention._id, status: 'pending' }, closing, { new: true },
+      ).lean() as EventDoc | null;
+      if (retired) {
+        closed += 1;
+        // eslint-disable-next-line no-await-in-loop
+        await noteUnansweredMention(retired).catch((lineErr: Error) => {
+          console.warn('[agent-event] unanswered-mention line not posted:', lineErr?.message);
+        });
+      }
+    }
+    const closedResult = await AgentEvent.updateMany(overdue, closing) as { modifiedCount?: number };
+    closed += closedResult?.modifiedCount || 0;
     const stranded = await AgentEvent.find({
       status: 'pending',
       deliveryMode: { $ne: 'digest' },
@@ -1405,7 +1428,7 @@ class AgentEventService {
       this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || event.type || ''));
       rescued += 1;
     }
-    return { rescued, closed: closedResult?.modifiedCount || 0 };
+    return { rescued, closed };
   }
 
   /**
