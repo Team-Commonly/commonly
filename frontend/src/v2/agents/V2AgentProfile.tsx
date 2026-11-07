@@ -11,6 +11,7 @@ import '../v2.css';
 import './v2-agent-profile.css';
 import { roomRefusal } from '../utils/roomRefusal';
 import { useV2Confirm } from '../hooks/useV2Confirm';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 
 // The agent PROFILE — the "meet the agent" page, distinct from the owner-only
 // Settings panel — drawn as d215 section s-agent-profile
@@ -74,20 +75,6 @@ interface MemoryIndex {
   pods?: PodEntry[];
 }
 
-const timeAgo = (iso?: string | null): string => {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(1, Math.floor((Date.now() - then) / 1000));
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d}d ago`;
-};
-
 // V2Avatar's agent face (a prop value, not copy).
 const AVATAR_KIND = 'agent' as const;
 
@@ -131,6 +118,9 @@ interface V2AgentProfileProps {
 
 const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   const { t } = useTranslation();
+  const timeAgo = (iso?: string | null): string => (
+    localizeRelativeTime(iso, t, { includeFuture: false, rounding: 'floor', missing: '' })
+  );
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<AgentProfile | null>(null);

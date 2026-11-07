@@ -148,6 +148,18 @@ describe('V2AgentProfile (d215 s-agent-profile)', () => {
     expect(activity[0].querySelector('.v2-aprofile__run-dot--err')).toBeNull();
   });
 
+  it('pod ages read in the app language', async () => {
+    await i18n.changeLanguage('zh-CN');
+    mockApi({ owner: false });
+    renderProfile(false);
+    const pods = await waitFor(() => lane(/^公开 Pod/));
+    expect(within(pods).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'Design reviews活跃于 2小时前',
+      'Launch room活跃于 1天前',
+    ]);
+    await i18n.changeLanguage('en');
+  });
+
   it('owner: tabs, the Settings key, every pod with Remove, the private memory line', async () => {
     window.localStorage.setItem('token', 'owner-token');
     mockApi({ owner: true });

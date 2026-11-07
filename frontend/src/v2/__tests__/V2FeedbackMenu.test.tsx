@@ -29,7 +29,7 @@ describe('V2FeedbackMenu', () => {
       </MemoryRouter>,
     );
 
-    const nav = screen.getByRole('navigation', { name: 'v2 navigation' });
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' });
     const items = Array.from(nav.querySelectorAll('.v2-rail__item'));
     expect(items).toHaveLength(6);
     items.forEach((item) => {

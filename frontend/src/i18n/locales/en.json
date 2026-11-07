@@ -123,6 +123,11 @@
     "you": "you",
     "close": "Close",
     "cancel": "Cancel",
+    "account": {
+      "label": "Account",
+      "open": "Open account menu",
+      "signOut": "Sign out"
+    },
     "copy": "Copy",
     "copied": "Copied!",
     "aboutPage": "About {{title}}",
@@ -130,6 +135,7 @@
       "label": "Language"
     },
     "nav": {
+      "label": "Main navigation",
       "pods": "Pods",
       "agents": "Agents",
       "activity": "Activity",
@@ -141,6 +147,8 @@
       "artifacts": "Artifacts"
     },
     "pageTitle": {
+      "connect": "Connect",
+      "podTools": "Pod tools",
       "agentSettings": "Agent settings",
       "agentMemory": "Agent memory",
       "profile": "Profile",
@@ -188,6 +196,60 @@
     "removeError": "Couldn’t remove this skill."
   },
   "settings": {
+    "sections": {
+      "account": "Account",
+      "access": "Access",
+      "look": "Look",
+      "admin": "Administration"
+    },
+    "accountActions": "Account actions",
+    "connectorsDetail": "Manage connected services",
+    "developerApps": "Developer apps",
+    "account": {
+      "fallbackName": "Your account",
+      "noChanges": "No account changes to save.",
+      "saved": "Account saved.",
+      "saveFailed": "Couldn’t save your account. Try again.",
+      "changePhoto": "Change photo",
+      "avatarOf": "{{name}} avatar",
+      "roleAdmin": "administrator",
+      "roleMember": "member",
+      "editName": "Edit name and username",
+      "editProfile": "Edit profile",
+      "email": "Email",
+      "changeEmail": "Change email",
+      "editEmail": "Edit email",
+      "name": "Name",
+      "username": "Username",
+      "change": "Change",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "apiToken": {
+      "title": "API token",
+      "active": "Active",
+      "activeEnding": "Active · ends in {{last4}}",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "regenerate": "Regenerate",
+      "regenerating": "Regenerating…",
+      "revoking": "Revoking…",
+      "show": "Show",
+      "hide": "Hide",
+      "generated": "New API token generated. Copy it now; treat it like a password.",
+      "generateFailed": "Couldn’t generate an API token. Try again.",
+      "revoked": "API token revoked.",
+      "revokeFailed": "Couldn’t revoke the API token. Try again.",
+      "copied": "API token copied.",
+      "copyFailed": "Couldn’t copy the API token. Select and copy it manually.",
+      "created": "Created {{date}}"
+    },
+    "admin": {
+      "users": "Users",
+      "usersDetail": "Registered users, bans, invitation codes",
+      "analytics": "Usage analytics",
+      "analyticsDetail": "Signups, messages, active users, activation funnel"
+    },
     "devices": {
       "title": "Devices",
       "lead": "CLI device tokens are long-lived until you revoke them.",
@@ -226,6 +288,9 @@
       "failed": "Could not sign out everywhere. Try again."
     },
     "username": {
+      "noChanges": "No username changes to save.",
+      "saved": "Username saved.",
+      "saveFailed": "Couldn’t save your username. Try again.",
       "save": "Save username",
       "saving": "Saving…",
       "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you."
@@ -2467,6 +2532,7 @@
       "category": "{{label}} ({{count}})"
     },
     "card": {
+      "mentionedYou": "mentioned you",
       "inProject": "in",
       "lastSaid": "“{{snippet}}”",
       "roleTitle": "Role: {{role}}",

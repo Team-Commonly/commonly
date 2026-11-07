@@ -163,7 +163,7 @@ describe('V2SettingsPage', () => {
     await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
     expect(i18n.resolvedLanguage).toBe('zh-CN');
     // The labels follow the new language, and the segment shows the choice.
-    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    const zhLanguage = within(screen.getByRole('region', { name: '外观' })).getByRole('radiogroup', { name: '语言' });
     expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
 
     await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
@@ -384,7 +384,7 @@ describe('V2SettingsPage', () => {
 
     expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
     expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'team-member' } });
     fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
 
@@ -560,5 +560,35 @@ describe('V2SettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Users/ })).toHaveAttribute('href', '/v2/admin/users');
     expect(screen.getByRole('link', { name: /^Usage analytics/ })).toHaveAttribute('href', '/v2/admin/analytics');
+  });
+});
+
+// A test that switches language must not leave the next one reading the page in it.
+afterEach(async () => {
+  await act(async () => { await i18n.changeLanguage('en'); });
+});
+
+describe('Settings in Chinese', () => {
+  beforeEach(() => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+  });
+
+  test('the page, its folds and the API token read in Chinese', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_abcd1234', createdAt: '2026-11-03T10:00:00.000Z' } });
+    renderSettings();
+
+    expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeInTheDocument();
+    for (const title of ['账号', '访问权限', '外观']) expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    expect(screen.getByText('账号操作')).toBeInTheDocument();
+    expect(screen.getByText('管理已连接的服务')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '编辑资料' })).toBeInTheDocument();
+    expect(screen.queryByText(/^(Settings|Account|Access|Look|Email|Name|Username)$/)).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: '生成' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('新的 API 令牌已生成');
+    expect(screen.getByText('有效 · 尾号 1234')).toBeInTheDocument();
+    expect(screen.getByText('创建时间：2026年11月3日')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '隐藏' })).toBeInTheDocument();
   });
 });

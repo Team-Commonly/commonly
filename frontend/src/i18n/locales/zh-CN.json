@@ -122,6 +122,11 @@
     "you": "你",
     "close": "关闭",
     "cancel": "取消",
+    "account": {
+      "label": "账号",
+      "open": "打开账号菜单",
+      "signOut": "退出登录"
+    },
     "copy": "复制",
     "copied": "已复制",
     "aboutPage": "关于 {{title}}",
@@ -129,6 +134,7 @@
       "label": "语言"
     },
     "nav": {
+      "label": "主导航",
       "pods": "Pod",
       "agents": "智能体",
       "activity": "动态",
@@ -140,6 +146,8 @@
       "artifacts": "产物"
     },
     "pageTitle": {
+      "connect": "接入",
+      "podTools": "Pod 工具",
       "agentSettings": "智能体设置",
       "agentMemory": "智能体记忆",
       "profile": "资料页",
@@ -187,6 +195,60 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "sections": {
+      "account": "账号",
+      "access": "访问权限",
+      "look": "外观",
+      "admin": "管理"
+    },
+    "accountActions": "账号操作",
+    "connectorsDetail": "管理已连接的服务",
+    "developerApps": "开发者应用",
+    "account": {
+      "fallbackName": "你的账号",
+      "noChanges": "账号没有更改。",
+      "saved": "账号已保存。",
+      "saveFailed": "无法保存账号信息，请重试。",
+      "changePhoto": "更换头像",
+      "avatarOf": "{{name}} 的头像",
+      "roleAdmin": "管理员",
+      "roleMember": "成员",
+      "editName": "编辑名称和用户名",
+      "editProfile": "编辑资料",
+      "email": "邮箱",
+      "changeEmail": "更改邮箱",
+      "editEmail": "编辑邮箱",
+      "name": "名称",
+      "username": "用户名",
+      "change": "更改",
+      "save": "保存",
+      "saving": "保存中…"
+    },
+    "apiToken": {
+      "title": "API 令牌",
+      "active": "有效",
+      "activeEnding": "有效 · 尾号 {{last4}}",
+      "generate": "生成",
+      "generating": "生成中…",
+      "regenerate": "重新生成",
+      "regenerating": "重新生成中…",
+      "revoking": "撤销中…",
+      "show": "显示",
+      "hide": "隐藏",
+      "generated": "新的 API 令牌已生成。请立即复制，并像密码一样妥善保管。",
+      "generateFailed": "无法生成 API 令牌，请重试。",
+      "revoked": "API 令牌已撤销。",
+      "revokeFailed": "无法撤销 API 令牌，请重试。",
+      "copied": "API 令牌已复制。",
+      "copyFailed": "无法复制 API 令牌，请手动选中并复制。",
+      "created": "创建时间：{{date}}"
+    },
+    "admin": {
+      "users": "用户",
+      "usersDetail": "已注册用户、封禁和邀请码",
+      "analytics": "使用分析",
+      "analyticsDetail": "注册、消息、活跃用户和激活漏斗"
+    },
     "devices": {
       "title": "设备",
       "lead": "CLI 设备令牌长期有效，撤销后才失效。",
@@ -224,6 +286,9 @@
       "failed": "无法退出所有浏览器会话，请重试。"
     },
     "username": {
+      "noChanges": "用户名没有更改。",
+      "saved": "用户名已保存。",
+      "saveFailed": "无法保存你的用户名，请重试。",
       "save": "保存用户名",
       "saving": "保存中…",
       "help": "2–40个小写字母、数字或连字符。你的旧用户名会继续保留，但旧提及不会通知你。"
@@ -2454,6 +2519,7 @@
       "category": "{{label}}（{{count}}）"
     },
     "card": {
+      "mentionedYou": "提到了你",
       "inProject": "属于",
       "lastSaid": "“{{snippet}}”",
       "roleTitle": "角色：{{role}}",
@@ -2745,6 +2811,7 @@
     "yourSlackUser": "你的 Slack 账号",
     "catalogDescriptions": {
       "github": "这个实例自己的 GitHub 仓库里的 Issue 和 PR。",
+      "github-mcp": "读取你安装了 GitHub App 的仓库中的文件、Issue 和 PR。",
       "telegram": "把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。",
       "slack": "把你的 Slack 私信接入 Commonly，你开启的每个 Pod 都能在你平时聊天的地方发声。",
       "atlassian": "你的 Atlassian 站点中的 Jira 工单和 Confluence 内容。",
