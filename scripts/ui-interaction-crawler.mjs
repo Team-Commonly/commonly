@@ -250,7 +250,7 @@ async function openPage(browser, viewport, scheme, record) {
     for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop += 1) {
       if (!readAllowed(url)) {
         record.blockedReads += 1;
-        record.blockedPaths.push(new URL(r.request().url()).pathname);
+        record.blockedPaths.push(new URL(url).pathname);
         return r.abort();
       }
       let res;
@@ -259,7 +259,7 @@ async function openPage(browser, viewport, scheme, record) {
       } catch {
         // A failed fetch must still settle the route, or the page hangs on it.
         record.blockedReads += 1;
-        record.blockedPaths.push(new URL(r.request().url()).pathname);
+        record.blockedPaths.push(new URL(url).pathname);
         return r.abort().catch(() => {});
       }
       const location = res.headers().location;
@@ -269,7 +269,7 @@ async function openPage(browser, viewport, scheme, record) {
         } catch {
           // A malformed Location cannot be checked, so it is refused rather than followed.
           record.blockedReads += 1;
-        record.blockedPaths.push(new URL(r.request().url()).pathname);
+          record.blockedPaths.push(new URL(url).pathname);
           return r.abort().catch(() => {});
         }
         continue;
@@ -277,7 +277,7 @@ async function openPage(browser, viewport, scheme, record) {
       return r.fulfill({ response: res });
     }
     record.blockedReads += 1;
-        record.blockedPaths.push(new URL(r.request().url()).pathname);
+    record.blockedPaths.push(new URL(url).pathname);
     return r.abort();
   });
   // Without connectToServer the page's socket never reaches the server; the page just sees it closed.
