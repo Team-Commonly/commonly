@@ -7,7 +7,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // From a card (?from=card) the page is the act and where it lands. The key is
 // still minted by the click, never on load.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act as act_ } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act as act_ } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -106,7 +106,7 @@ describe('BYO from an approved connect card', () => {
     expect(axios.post.mock.calls.some(([url]) => /pods\/bbb222\/agents\/sam-claude\/runtime-tokens/.test(url))).toBe(true);
   });
 
-  test('the click lands on the result heading, so the command is on screen with its Copy', async () => {
+  test('the click lands on the result heading, then brings Copy in if a short phone left it below', async () => {
     const scrolled = [];
     const original = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function scrollIntoView(options) { scrolled.push([this, options]); };
@@ -117,7 +117,11 @@ describe('BYO from an approved connect card', () => {
       expect(scrolled).toEqual([]);
       fireEvent.click(act);
       const result = await screen.findByTestId('byo-issued-result');
-      await waitFor(() => expect(scrolled).toEqual([[result, { block: 'start' }]]));
+      const copyButton = within(screen.getByTestId('byo-listen')).getByRole('button', { name: /^copy$/i });
+      await waitFor(() => expect(scrolled).toEqual([
+        [result, { block: 'start' }],
+        [copyButton, { block: 'nearest' }],
+      ]));
     } finally {
       Element.prototype.scrollIntoView = original;
     }
