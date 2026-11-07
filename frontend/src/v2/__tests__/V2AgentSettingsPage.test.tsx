@@ -1032,6 +1032,53 @@ describe('one Identity & access list (d215 frame)', () => {
     });
     afterEach(() => { window.matchMedia = realMatchMedia; });
 
+    test('empty Connectors and Skills read as one label, as the frame draws them', async () => {
+      axios.get.mockImplementation(fleet());
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText(/^Connectors · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(await screen.findByText(/^Skills · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(screen.queryByText('None')).not.toBeInTheDocument();
+      for (const label of [/^Connectors · none$/, /^Skills · none$/]) {
+        expect(screen.getByText(label, { selector: '.lb' }).closest('.lrow').querySelector('.vl')).toBeEmptyDOMElement();
+      }
+    });
+
+    const renderSettings = () => render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+          <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    test('a skill count keeps the plain Skills label', async () => {
+      const base = fleet();
+      axios.get.mockImplementation((url, ...rest) => (url.startsWith('/api/skills/pods/')
+        ? Promise.resolve({ data: { items: [{ id: 'skill-1', name: 'Review' }], canEdit: true, skillLoad: null } }) : base(url, ...rest)));
+      renderSettings();
+      expect(await screen.findByText('1 skill')).toBeInTheDocument();
+      expect(screen.getByText(/^Skills$/, { selector: '.lb' })).toBeInTheDocument();
+    });
+
+    test.each([
+      ['a read still out', () => new Promise(() => {}), /Loading grants/],
+      ['a read the viewer may not see', () => Promise.reject({ response: { status: 403 } }), /Owner and admins only/],
+      ['a failed read', () => Promise.reject({ response: { status: 500 } }), null],
+    ])('Connectors keeps its plain label during %s', async (_label, read, value) => {
+      const base = fleet();
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/grants') ? read() : base(url, ...rest)));
+      renderSettings();
+      expect(await screen.findByText(/^Connectors$/, { selector: '.lb' })).toBeInTheDocument();
+      if (value) expect(await screen.findByText(value, { selector: '.vl .mu' })).toBeInTheDocument();
+      expect(screen.queryByText(/^Connectors · none$/, { selector: '.lb' })).not.toBeInTheDocument();
+    });
+
     test('a 52px bar with back to Your team, the tabs as their own row, and every row still reachable', async () => {
       axios.get.mockImplementation(fleet());
       render(
@@ -1052,7 +1099,7 @@ describe('one Identity & access list (d215 frame)', () => {
       expect(tabs.closest('.mtop')).toBeNull();
       expect(tabs).toHaveClass('seg--full');
       for (const label of ['Name', 'Runtime key', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
-        expect(screen.getByText(label, { selector: '.lb' })).toBeInTheDocument();
+        expect(screen.getByText(new RegExp(`^${label}( · none)?$`), { selector: '.lb' })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Your team' }));
       expect(await screen.findByText('your team')).toBeInTheDocument();
