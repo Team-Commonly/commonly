@@ -153,6 +153,14 @@ describe('GET /api/pods/:podId/agent-states in an agent room', () => {
     expect((await rowIn(room, 'twice')).connectPodId).toBe(String(older._id));
   });
 
+  it('finds a home install from before instance ids were stored', async () => {
+    const room = await makePod('Room', 'agent-room');
+    const legacy = await install('legacy', home._id);
+    await install('legacy', room._id);
+    await AgentInstallation.collection.updateOne({ _id: legacy._id }, { $unset: { instanceId: '' } });
+    expect((await rowIn(room, 'legacy')).connectPodId).toBe(String(home._id));
+  });
+
   it('gives an agent that went dark none: it already connected once', async () => {
     const room = await makePod('Room', 'agent-room');
     await install('dark', home._id);

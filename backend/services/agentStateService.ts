@@ -123,7 +123,7 @@ export function offersConnect(installation: InstallationRow, machineId?: unknown
   const runtimeType = String(installation.config?.runtime?.runtimeType || '').toLowerCase();
   return classifyRuntime(installation).isByo
     && runtimeType !== 'wrapper'
-    && String(installation.instanceId || 'default') === 'default'
+    && String(installation.instanceId || 'default').toLowerCase() === 'default'
     && !machineId;
 }
 

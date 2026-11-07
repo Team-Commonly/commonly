@@ -1,4 +1,5 @@
 import Pod from '../models/Pod';
+import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -23,12 +24,14 @@ export async function connectPodFor(
 ): Promise<string | null> {
   try {
     const homes = await AgentInstallation.find({
-      agentName: installation.agentName,
-      instanceId: installation.instanceId,
+      ...installationIdentityFilter(
+        String(installation.agentName || '').toLowerCase(),
+        String(installation.instanceId || 'default').toLowerCase(),
+      ),
       installedBy: callerId,
       status: 'active',
       podId: { $ne: roomPodId },
-    }).select('podId').sort({ createdAt: 1 }).lean();
+    }).select('podId').sort({ createdAt: 1 }).collation(IDENTITY_COLLATION).lean();
     const installable = await Pod.find({
       _id: { $in: homes.map((home: { podId: unknown }) => home.podId) },
       members: callerId,
