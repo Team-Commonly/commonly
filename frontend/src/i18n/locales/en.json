@@ -2009,7 +2009,8 @@
       "statAgents": "hosted agent",
       "heldNotice": "You already have a hosted agent (beta allows {{cap}}).",
       "openHeld": "Open {{holder}}",
-      "heldLink": "Your hosted agent: {{holder}}"
+      "heldLink": "Your hosted agent: {{holder}}",
+      "heldOff": "You already have a hosted agent, and the beta allows {{cap}}, so {{mode}} is off."
     },
     "preview": {
       "title": "your agent",

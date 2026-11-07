@@ -44,7 +44,7 @@ const HELD = { agentName: 'maya-agent', instanceId: 'default', podId: 'p9', disp
 
 const heldAnswer = (held) => (typeof held === 'function' ? held() : held);
 
-const mockGet = ({ held = HELD, machines = [], full = false } = {}) => {
+const mockGet = ({ held = HELD, machines = [], full = false, agentsPerUser = 1 } = {}) => {
   axios.get.mockImplementation((url) => {
     // The allocator as it answers for a name the person's own agent has taken.
     if (url.startsWith('/api/registry/agents/next-free-name?')) {
@@ -52,7 +52,7 @@ const mockGet = ({ held = HELD, machines = [], full = false } = {}) => {
       return Promise.resolve({ data: { name: base === 'maya-agent' ? 'maya-agent-2' : base } });
     }
     if (url.startsWith('/api/hosted/availability')) {
-      return Promise.resolve({ data: { configured: true, caps: { agentsPerUser: 1, turnsPerDay: 200 }, held: heldAnswer(held), full } });
+      return Promise.resolve({ data: { configured: true, caps: { agentsPerUser, turnsPerDay: 200 }, held: heldAnswer(held), full } });
     }
     if (url === '/api/pods') return Promise.resolve({ data: pods });
     if (url === '/api/machines') return Promise.resolve({ data: { machines } });
@@ -83,7 +83,7 @@ const actButton = () => screen.queryAllByRole('button', { name: /^run it here$/i
   .find((b) => !b.hasAttribute('aria-pressed')) ?? null;
 
 const NOTICE = /^You already have a hosted agent \(beta allows 1\)\. Open Maya$/;
-const REASON = 'You already have a hosted agent (beta allows 1).';
+const REASON = 'You already have a hosted agent, and the beta allows 1, so Run it here is off.';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -109,6 +109,13 @@ describe('V2AgentBYO — the hosted slot is held', () => {
     expect(screen.getByTestId('byo-mode-byo')).toBeInTheDocument();
     expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('{{');
+  });
+
+  test('the reason behind the (i) gives the cap the server sent', async () => {
+    mockGet({ agentsPerUser: 3 });
+    renderAt('/v2/agents/byo');
+    const line = await screen.findByTestId('byo-hosted-held');
+    expect(within(line).getByRole('button', { name: 'More about Run it here' })).toHaveAccessibleDescription(REASON.replace('allows 1', 'allows 3'));
   });
 
   test('with no other place to run, bringing your own is simply the mode', async () => {

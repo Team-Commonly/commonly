@@ -26,7 +26,7 @@
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
 .v2-feature--byo .v2-byo__link { all: unset; align-self: flex-start; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
 .v2-feature--byo .v2-byo__held { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.v2-feature--byo .v2-byo__held .v2-byo__link { align-self: center; }
+.v2-feature--byo .v2-byo__held .v2-byo__link { align-self: center; min-width: 0; overflow-wrap: anywhere; }
 .v2-feature--byo .v2-byo__more { margin-top: 8px; border-radius: 12px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-feature--byo .v2-byo__more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 8px 18px 8px 16px; font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
 .v2-feature--byo .v2-byo__more > summary::-webkit-details-marker { display: none; }
@@ -107,6 +107,12 @@
 .v2-feature--byo textarea.v2-byo__memory-text { height: auto; padding: 10px 12px; line-height: 20px; }
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
+  /* A phone hint opens in the flow, so on the held line it takes its own row under the link. */
+  /* A grid, not a wrapping row: the (i) keeps its column when the hint opens, so a hover can't move it out from under the pointer. */
+  .v2-feature--byo .v2-byo__held { display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; }
+  .v2-feature--byo .v2-byo__held .v2-hint--open { display: contents; }
+  /* Zero width with a full minimum: the hint fills its row without widening the columns above it. */
+  .v2-feature--byo .v2-byo__held .v2-hint__content { grid-column: 1 / -1; width: 0; min-width: 100%; }
   /* Every "i" hint on the page (the head's and each start's) is the frame's info--lg:
      a 44 box with no border holding the 15px i-info glyph in the placeholder tone. V2Hint
      draws the letter "i", so the letter is hidden and the glyph is masked in its place. */

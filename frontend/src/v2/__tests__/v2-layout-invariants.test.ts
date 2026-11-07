@@ -6614,3 +6614,18 @@ test('a Team card keeps a long description to two lines', () => {
   expect(desc).toContain('-webkit-line-clamp: 2');
   expect(desc).toContain('overflow: hidden');
 });
+
+test('a phone hint on the held line opens on its own row, so it cannot squeeze the link', () => {
+  const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__held .v2-hint--open');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held { display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint--open { display: contents; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint__content { grid-column: 1 / -1; width: 0; min-width: 100%; }');
+  // Wrapping the row on open moved the (i) from under a hovering mouse, which closed the hint and moved it back.
+  expect(phone).not.toContain('flex-wrap');
+});
+
+test('a long held name wraps inside the link, so it cannot push the (i) off the line', () => {
+  const link = ruleBody(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__held .v2-byo__link');
+  expect(link).toContain('min-width: 0');
+  expect(link).toContain('overflow-wrap: anywhere');
+});
