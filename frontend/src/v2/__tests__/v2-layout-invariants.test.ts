@@ -1471,6 +1471,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-first-run')).toContain('overflow-y: auto');
   });
 
+  test('the first-run lede sets text-wrap: pretty, so its last line is not a lone character', () => {
+    expect(ruleBody(readV2Css(), '.v2-first-run__lede')).toContain('text-wrap: pretty');
+  });
+
   test('the first-run setup CTA beats the global inherited anchor color with its own', () => {
     // `.v2-root a { color: inherit }` outranks a bare class selector. The
     // first browser pass rendered inherited text on the filled CTA until this
@@ -6584,9 +6588,5 @@ describe('the landing stylesheet parses as written', () => {
       lowest = Math.min(lowest, depth);
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
-  });
-
-  test('the first-run lede keeps a last line longer than one character', () => {
-    expect(ruleBody(readV2Css(), '.v2-first-run__lede')).toContain('text-wrap: pretty');
   });
 });
