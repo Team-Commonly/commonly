@@ -10,8 +10,8 @@ jest.mock('../../../config/socket', () => ({
 }));
 
 const {
-  emitOfflineLine, emitRemovedLine, emitStoppedLine, emitSystemActionLine,
-  hasOfflineLineSince, hasRemovedLineSince, hasStoppedLineSince,
+  emitOfflineLine, emitPausedLine, emitRemovedLine, emitStoppedLine, emitSystemActionLine,
+  hasOfflineLineSince, hasPausedLineSince, hasRemovedLineSince, hasStoppedLineSince,
 } = require('../../../services/systemActionLineService');
 
 beforeEach(() => {
@@ -128,5 +128,20 @@ describe('the stopped line', () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
     await hasRemovedLineSince('pod-1', 'nova:default', since);
     expect(mockQuery.mock.calls[1][1]).toEqual(['pod-1', since, 'nova:default', 'agent-removed']);
+  });
+
+  it("says a paused agent won't answer this message, and looks for its own action", async () => {
+    await emitPausedLine(line);
+    const [, params] = mockQuery.mock.calls[0];
+    expect(params[2]).toBe("Nova is paused, so it won't answer this. Try again once its owner resumes it.");
+    expect(JSON.parse(params[3])).toMatchObject({
+      kind: 'system-action', action: 'agent-paused', agentKey: 'nova:default',
+    });
+    expect(params.slice(4)).toEqual([77, 555]);
+
+    const since = new Date('2026-11-06T00:00:00.000Z');
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    await hasPausedLineSince('pod-1', 'nova:default', since);
+    expect(mockQuery.mock.calls[1][1]).toEqual(['pod-1', since, 'nova:default', 'agent-paused']);
   });
 });

@@ -11,7 +11,7 @@ const mockHasRemovedSince = jest.fn();
 
 jest.mock('../../../models/User', () => ({ findOne: (...args) => mockFindBot(...args) }));
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { exists: () => ({ collation: async () => null }) },
+  AgentInstallation: { distinct: () => ({ collation: async () => [] }) },
 }));
 jest.mock('../../../services/agentEventService', () => ({
   resolveEffectiveInstallation: (...args) => mockEffectiveInstall(...args),
@@ -23,7 +23,7 @@ jest.mock('../../../services/systemActionLineService', () => ({
   hasRemovedLineSince: (...args) => mockHasRemovedSince(...args),
 }));
 
-const { noteStoppedMention, noteRemovedAgentDm } = require('../../../services/stoppedMentionService');
+const { noteStoppedMention, noteUnreachableAgentDm } = require('../../../services/stoppedMentionService');
 
 const NOW = new Date('2026-11-06T20:00:00.000Z');
 const STOPPED_AT = new Date('2026-11-06T19:00:00.000Z');
@@ -145,7 +145,7 @@ it('a comment on a post has no message to answer, so nothing is asked', async ()
 
 describe('a DM to an agent nobody has installed any more (F270)', () => {
   it('posts one line, as a reply to the message, naming the agent', async () => {
-    expect(await noteRemovedAgentDm({ ...args, threadRootId: '77' })).toBe(true);
+    expect(await noteUnreachableAgentDm({ ...args, threadRootId: '77' })).toBe(true);
     expect(mockEmitRemoved.mock.calls).toHaveLength(1);
     expect(mockEmitRemoved.mock.calls[0][0]).toMatchObject({
       podId: 'pod-1',
@@ -159,24 +159,24 @@ describe('a DM to an agent nobody has installed any more (F270)', () => {
 
   it('says it once a UTC day, so a person who keeps typing hears it once', async () => {
     mockHasRemovedSince.mockResolvedValue(true);
-    expect(await noteRemovedAgentDm(args)).toBe(false);
+    expect(await noteUnreachableAgentDm(args)).toBe(false);
     expect(mockEmitRemoved).not.toHaveBeenCalled();
     expect(mockHasRemovedSince).toHaveBeenCalledWith('pod-1', 'nova:default', new Date('2026-11-06T00:00:00.000Z'));
   });
 
   it('stays quiet with no message to reply to', async () => {
-    expect(await noteRemovedAgentDm({ ...args, messageId: null })).toBe(false);
+    expect(await noteUnreachableAgentDm({ ...args, messageId: null })).toBe(false);
     expect(mockEmitRemoved).not.toHaveBeenCalled();
   });
 
   it('stays quiet when the agent has no user row to speak as', async () => {
     mockFindBot.mockReturnValue({ select: () => ({ lean: async () => null }) });
-    expect(await noteRemovedAgentDm(args)).toBe(false);
+    expect(await noteUnreachableAgentDm(args)).toBe(false);
     expect(mockEmitRemoved).not.toHaveBeenCalled();
   });
 
   it('says it once when two messages race', async () => {
-    const [first, second] = await Promise.all([noteRemovedAgentDm(args), noteRemovedAgentDm(args)]);
+    const [first, second] = await Promise.all([noteUnreachableAgentDm(args), noteUnreachableAgentDm(args)]);
     expect([first, second].filter(Boolean)).toHaveLength(1);
     expect(mockEmitRemoved).toHaveBeenCalledTimes(1);
   });
