@@ -2526,6 +2526,7 @@ export const performRun = ({
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {
+    wrapperSpokeInTurn = false;
     const turn = turnRunner.begin({ eventType: args.event.type });
     try {
       return await runTurnBody({ ...args, turn });
@@ -2553,7 +2554,7 @@ export const performRun = ({
     const key = `model-unavailable:${failure.model || 'unknown'}`;
     try {
       if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
-      const delivery = await deliverChatReply({
+      const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
         text: modelUnavailableHint(failure.model),
@@ -2626,7 +2627,7 @@ export const performRun = ({
   // agent has posted. `part` is what one of its attempts posted. It may come back
   // and fail again, so it hears this once.
   const noteFailedTurnPart = async (failedEvents) => {
-    if (!failedTurn?.preSpawnIds) return;
+    if (!failedTurn?.preSpawnIds || wrapperSpokeInTurn) return;
     const tail = await failedTurn.snapshotMessages(50);
     const ownPost = tail && newestOwnPostSince(tail, failedTurn.preSpawnIds);
     if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), ownPost));
@@ -2820,7 +2821,7 @@ export const performRun = ({
       } catch (error) {
         if (error.code === 'seat_model_missing' && eventPodId && !missingModelNotices.has(eventPodId)) {
           try {
-            const delivery = await deliverChatReply({
+            const delivery = await deliverTurnNotice({
               client,
               podId: eventPodId,
               text: "This agent has no model set; add environment.model to its configuration.",
@@ -3420,7 +3421,7 @@ export const performRun = ({
     });
     let posted = false;
     try {
-      const delivery = await deliverChatReply({
+      const delivery = await deliverTurnNotice({
         client,
         podId: eventPodId,
         text,
@@ -3481,8 +3482,15 @@ export const performRun = ({
   const heldRetryFailures = new Map();
   // Event id to what a failed attempt on it posted, for noticeCutOff. Read as each
   // attempt fails, because the attempt's own snapshot then leaves out the notices
-  // the wrapper posted after earlier ones: those aren't part of an answer.
+  // the wrapper posted after earlier ones: those aren't part of an answer. A notice
+  // inside the attempt can't be told from a post that way, so that attempt isn't
+  // read, which can only cost the line.
   const heldRetryParts = new Map();
+  let wrapperSpokeInTurn = false;
+  const deliverTurnNotice = (notice) => {
+    wrapperSpokeInTurn = true;
+    return deliverChatReply(notice);
+  };
   const cutOffTold = new Set();
   // eventId → turns passed over, for PAST_CAP_MAX_CARRIES.
   const pastCapCarries = new Map();
@@ -4332,10 +4340,10 @@ export const performRun = ({
             nextPollDelayMs = retry.delayMs;
             retryScheduled = true;
             tickUnsettled.push(...claimedAfter(groupIndex));
-            // That failure posts its own hint inside the turn, so it can't be read here.
-            if (!modelUnavailableFailure(err)) await noteFailedTurnPart(failedEvents);
+            const attempted = failedEvents.filter((event) => !pastCapEvents.includes(event));
+            await noteFailedTurnPart(attempted);
             const hold = await holdForRetry(
-              failedEvents.filter((event) => !pastCapEvents.includes(event)),
+              attempted,
               untriedAfter(groupIndex),
               pastCapEvents,
             );

@@ -159,6 +159,7 @@ const startRun = ({ spawn, ...options }) => {
 };
 
 const killed = () => new Error('pi exited 143: ');
+const REFUSAL_TEXT = 'codex turn failed: This content was flagged for possible cybersecurity risk.';
 const noticesIn = (server) => server.wrapperPosts.filter((body) => body.content === CUT_OFF_NOTICE);
 const toldOrNot = (logs) => logs.filter((line) => /(told pod|was not told)/.test(line));
 const commentEvent = (id, payload = {}) => makeEvent(id, {
@@ -246,6 +247,39 @@ describe('a third failure on an answer already started', () => {
       await drainMicrotasks();
       await fireRetries(run, 2);
       expect(spawn).toHaveBeenCalledTimes(3);
+      expect(server.wrapperPosts.length).toBeGreaterThan(0);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes the missing-model notice for no part of an answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-unset')]] });
+    const spawn = jest.fn();
+    const run = startRun({
+      spawn,
+      adapter: { name: 'stub', detect: stubAdapter.detect, spawn, requiresModel: true },
+    });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).not.toHaveBeenCalled();
+      expect(server.wrapperPosts).toHaveLength(1);
+      expect(noticesIn(server)).toEqual([]);
+    } finally { run.handle.stop(); }
+  });
+
+  test('takes a refusal notice for no part of the next item\'s answer', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-refused'), makeEvent('evt-next')]] });
+    const refused = () => new Error(REFUSAL_TEXT);
+    const spawn = jest.fn(async () => {
+      if (spawn.mock.calls.length <= 2) throw refused();
+      throw killed();
+    });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await fireRetries(run, 2);
+      expect(spawn).toHaveBeenCalledTimes(5);
       expect(server.wrapperPosts.length).toBeGreaterThan(0);
       expect(noticesIn(server)).toEqual([]);
     } finally { run.handle.stop(); }
