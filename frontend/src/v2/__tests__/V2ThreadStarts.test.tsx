@@ -7,7 +7,7 @@
 // can take the offer away before it is seen.
 import React, { useEffect, useState } from 'react';
 import {
-  cleanup,
+  act, cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -605,6 +605,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
       ],
     },
   };
+  const NOTE = 'Nothing to install. It answers you here.';
   const PLAN = { podId: 'pod-1', existing: null, agentName: 'maya-agent' };
   const HELD = { podId: 'pod-1', existing: { agentName: 'maya-agent', instanceId: 'default', podId: 'pod-1' }, agentName: null };
   const calls = (url) => axios.post.mock.calls.filter(([called]) => called === url);
@@ -631,7 +632,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
 
   test('the welcome says what the hosted start gives back, under that start only', () => {
     renderThread([welcomeRunsHere]);
-    const note = screen.getByText('Nothing to install. It answers you here.');
+    const note = screen.getByText(NOTE);
     const button = screen.getByRole('button', { name: HOSTED });
     expect(button.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(note.previousElementSibling).toBe(button);
@@ -643,16 +644,17 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
       payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED, href: HREF }] },
     }]);
     expect(screen.getByRole('button', { name: HOSTED })).toBeInTheDocument();
-    expect(screen.queryByText('Nothing to install. It answers you here.')).not.toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
   });
 
   test('the note leaves once the click is under way', async () => {
     let finish;
     axios.post.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     renderThread([welcomeRunsHere]);
+    expect(screen.getByText(NOTE)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: HOSTED }));
-    await waitFor(() => expect(screen.queryByText('Nothing to install. It answers you here.')).not.toBeInTheDocument());
-    finish({ data: {} });
+    await waitFor(() => expect(screen.queryByText(NOTE)).not.toBeInTheDocument());
+    await act(async () => { finish({ data: PLAN }); });
   });
 
   test('a held agent answers the click with its running line, even when the start carries no limits', async () => {
@@ -736,6 +738,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     await waitFor(() => expect(screen.queryByRole('button', { name: /Run an agent here|Starting/ })).not.toBeInTheDocument());
     expect(calls('/api/registry/install')).toHaveLength(1);
     expect(calls('/api/hosted/provision').map(([, body]) => body)).toEqual([{ agentName: 'maya-agent', instanceId: 'default' }]);
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -744,6 +747,12 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     fireEvent.click(screen.getByRole('button', { name: HOSTED }));
     expect(screen.getByTestId('location')).toHaveTextContent(HREF);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('a person who did not create the pod gets no note: their click leaves for the page', () => {
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u2' } } });
+    expect(screen.getByRole('button', { name: HOSTED })).toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
   });
 
   test('the owner is recognised from a populated creator too', async () => {
@@ -781,6 +790,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     fireEvent.click(screen.getByRole('button', { name: HOSTED }));
     expect(await screen.findByRole('alert')).toHaveTextContent("Hosting isn't available on this instance yet.");
     expect(screen.getByRole('button', { name: HOSTED })).toBeEnabled();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
     expect(calls('/api/hosted/provision')).toHaveLength(0);
   });
 });

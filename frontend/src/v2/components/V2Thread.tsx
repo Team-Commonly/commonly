@@ -2131,6 +2131,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             }}
             startsDisabled={sending}
             hostedStart={hostedStart.state}
+            viewerOwnsPod={viewerOwnsPod}
             onQuoteNavigate={onQuoteNavigate}
             onDecisionRuled={handleDecisionRuled}
             onAimAtThread={aimAtThread}
