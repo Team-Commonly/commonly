@@ -217,7 +217,7 @@ const V2AgentMemory: React.FC = () => {
         <V2Avatar name={agentLabel} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
         <div className="v2m-ahead">
           <h1>{agentLabel}</h1>
-          {head && <p className="st">{t('agentProfile.hero.activeInPods', { count: head.pods })}</p>}
+          {head && <p className="st">{t('agentProfile.memory.inPods', { count: head.pods })}</p>}
         </div>
         <span className="sp" />
         {!phone && tabs}
@@ -293,9 +293,11 @@ const V2AgentMemory: React.FC = () => {
                     : t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' })}
                 </p>
               )}
-              {groups.filter((g) => g.sections.length > 0).map((group) => {
+              {groups.filter((g) => g.sections.length > 0).map((group, index, shown) => {
                 // One time per group: the newest section update in it. Never per note.
-                const updated = group.sections.map((s) => s.updatedAt).filter(Boolean).sort().pop() ?? null;
+                const newest = (g: typeof group) => g.sections.map((s) => s.updatedAt).filter(Boolean).sort().pop() ?? null;
+                // Rules and How I work come from one document, so one stamp speaks for both.
+                const updated = shown.slice(0, index).some((g) => newest(g) === newest(group)) ? null : newest(group);
                 return (
                   <details key={group.id} id={`memory-group-${group.id}`} className="v2m-grp" open={!phone || group.id === firstShown}>
                     <summary className="v2m-gtitle">
@@ -309,7 +311,7 @@ const V2AgentMemory: React.FC = () => {
                       )}
                       {updated && (
                         <span className="v2m-saved">
-                          {t('agentProfile.memory.sectionUpdated', { defaultValue: 'Section updated {{when}}', when: localizeRelativeTime(updated, t) })}
+                          {t('agentProfile.memory.sectionUpdated', { defaultValue: 'Saved {{when}}', when: localizeRelativeTime(updated, t) })}
                         </span>
                       )}
                       {group.id === firstShown && (
