@@ -79,6 +79,13 @@ it('says paused for a row under the name this agent used to have', async () => {
   expect(mockEmitPaused).toHaveBeenCalledTimes(1);
 });
 
+it('says paused for a row whose stored name differs in case', async () => {
+  await row({ agentName: 'Nova', status: 'paused' });
+  expect(await noteUnreachableAgentDm(args)).toBe(true);
+  expect(mockEmitPaused).toHaveBeenCalledTimes(1);
+  expect(mockEmitRemoved).not.toHaveBeenCalled();
+});
+
 it('says paused once a day', async () => {
   await row({ status: 'paused' });
   mockHasPaused.mockResolvedValue(true);
