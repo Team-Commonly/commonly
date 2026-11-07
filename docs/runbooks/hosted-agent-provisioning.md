@@ -30,6 +30,10 @@ back to another runtime.
    `config.runtime.runtimeType: 'hosted'` (the BYO page's "Run it here").
    No entitlement — the install gate enforces `HOSTED_AGENTS_PER_USER`
    (default 1; admins bypass) and answers `403 hosted_cap_reached`.
+   Each refusal, including `cloud_agents_not_entitled`, logs one
+   `[install-refused]` line with the route, the user id and the agent, plus the
+   counts for the cap, so a person's refusal can be traced in the backend log
+   afterwards.
 2. `POST /api/hosted/provision { agentName, instanceId? }` — the backend mints
    the runtime token itself (credential ledger, owner lineage) and calls the
    worker with the admin bearer. Neither secret reaches the browser. Owner

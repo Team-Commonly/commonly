@@ -362,8 +362,10 @@ describe('an agent-room row and who owns the agent', () => {
         expect((await setStatus(owner, home._id, 'paused')).status).toBe(200);
         await fillCap();
 
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
         const res = await setStatus(owner, home._id, 'active');
         expect(res.status).toBe(403);
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"route":"registry.resume"/));
         expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 1, cap: 1 });
         expect(res.body.holders).toHaveLength(1);
         expect(await statusIn(home._id)).toBe('paused');

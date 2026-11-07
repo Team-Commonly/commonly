@@ -139,12 +139,14 @@ describe('registry install — cloud-agent entitlement gate', () => {
       userId: 'user-1',
     };
     const res = makeRes();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     await installHandler(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
       code: 'cloud_agents_not_entitled',
     }));
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"cloud_agents_not_entitled"/));
     expect(AgentInstallation.install).not.toHaveBeenCalled();
   });
 

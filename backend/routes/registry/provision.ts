@@ -40,6 +40,7 @@ const {
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter on this DB-touching handler. The previous version
@@ -181,6 +182,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
         const provisionerUser = await User.findById(userId).select('entitlements').lean();
         const isEntitled = provisionerUser?.entitlements?.cloudAgents === true;
         if (!isEntitled) {
+          logInstallRefusal('registry.provision', 'cloud_agents_not_entitled', {
+            userId, agentName: name, instanceId: normalizedInstanceId, podId,
+          });
           return res.status(403).json({
             code: 'cloud_agents_not_entitled',
             message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',

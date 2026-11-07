@@ -23,6 +23,8 @@ const User = require('../models/User');
 const Pod = require('../models/Pod');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hirePersona } = require('../services/personaHireService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { logInstallRefusal } = require('../services/installRefusalLog');
 
 const router: ReturnType<typeof express.Router> = express.Router();
 
@@ -51,6 +53,9 @@ router.post('/:agentName/hire', auth, async (req: any, res: any) => {
     // Same gate + refusal code as registry install, so the UI's existing
     // BYO-redirect handling works here unchanged.
     if (!isAdmin && caller?.entitlements?.cloudAgents !== true) {
+      logInstallRefusal('personas.hire', 'cloud_agents_not_entitled', {
+        userId, agentName: req.params.agentName, podId,
+      });
       return res.status(403).json({
         code: 'cloud_agents_not_entitled',
         message: 'Hosted colleagues need a seat — you can connect your own local agent instead.',

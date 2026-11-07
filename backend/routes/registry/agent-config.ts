@@ -42,6 +42,7 @@ const { configWriteRefusal, runtimeKeepingType } = require('../../services/confi
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
 const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { isHostedInstallation, resumeCapRefusal } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
@@ -481,7 +482,12 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       for (const installer of installers) {
         // eslint-disable-next-line no-await-in-loop
         const refusal = await resumeCapRefusal(installer, name.toLowerCase(), normalizedInstanceId);
-        if (refusal) return res.status(403).json(refusal);
+        if (refusal) {
+          logInstallRefusal('registry.resume', 'hosted_cap_reached', {
+            userId: installer, agentName: name.toLowerCase(), instanceId: normalizedInstanceId, used: refusal.used, cap: refusal.cap,
+          });
+          return res.status(403).json(refusal);
+        }
       }
     }
     const rowsToRestore = rowsEntering.map((entry: any) => ({

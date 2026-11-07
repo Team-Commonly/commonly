@@ -34,6 +34,7 @@ const {
 } = require('../services/hostedEngine');
 const { markByoOpened, markWelcomeHostedStart } = require('../services/onboardingMarks');
 const { resolveWelcomeHostedStart } = require('../services/welcomeHostedStart');
+const { logInstallRefusal } = require('../services/installRefusalLog');
 const {
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
@@ -293,6 +294,9 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         // omit holder metadata rather than turning a useful 403 into a 500.
         console.warn('[hosted] cap holder lookup failed:', error?.message || error);
       }
+      logInstallRefusal('hosted.provision', 'hosted_cap_reached', {
+        userId, agentName, instanceId, used: owned, cap: agentsPerUser,
+      });
       return res.status(403).json({
         code: 'hosted_cap_reached',
         message: `Hosted agents are capped at ${agentsPerUser} per user in beta`,

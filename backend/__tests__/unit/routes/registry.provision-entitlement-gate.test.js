@@ -77,12 +77,14 @@ describe('registry provision — cloud-agent entitlement gate', () => {
       entitlements: { cloudAgents: false },
     }));
 
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const res = await request(app)
       .post('/api/registry/pods/pod-1/agents/openclaw/provision')
       .send({});
 
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('cloud_agents_not_entitled');
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"cloud_agents_not_entitled"/));
   });
 
   it('gates a Commonly-run runtime whatever host its stored install names', async () => {

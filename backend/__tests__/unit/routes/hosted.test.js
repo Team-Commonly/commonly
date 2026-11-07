@@ -348,8 +348,10 @@ describe('/api/hosted', () => {
     mockHosted.listHostedInstallationsForUser.mockResolvedValue([
       { agentName: 'scout', instanceId: 'default', podId: 'pod-1' },
     ]);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(403);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"hosted_cap_reached"/));
     expect(res.body).toMatchObject({
       code: 'hosted_cap_reached',
       used: 2,
