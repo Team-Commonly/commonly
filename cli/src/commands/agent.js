@@ -873,7 +873,7 @@ const HELD_RETRY_MAX_FAILURES = 3;
 const PAST_CAP_MAX_CARRIES = 5;
 
 // Who gets a slot when a batch is past the cap. 'unknown' counts as a person:
-// the snapshot behind `trigger` holds 10 messages and a page holds up to 50, and
+// only a row the snapshot and the kernel's stamp both can't place reads so, and
 // a wrong guess costs an ambient item one turn. Within a rank the older row
 // wins, and carried rows lead the page, so new arrivals can't overtake them.
 const capRank = (entry) => {
@@ -1760,7 +1760,7 @@ export const answersInChannel = (entry) => {
 // line offered silence on every turn. A turn that answers a person drops that
 // exit: NO_REPLY stays only as the way to end after a reply posted through a
 // tool, so the wrapper doesn't post a second one. It needs the sender known to
-// be human, so an agent's @ and a message off the snapshot keep the old line. A
+// be human, so an agent's @ and a message nobody can place keep the old line. A
 // seat whose peer holds the claim keeps it too: the peer is answering them. So
 // do two chat.mention wakes where nobody typed the seat's name: an adjacent
 // reply and a new member's welcome, whose kernel frames offer NO_REPLY.
@@ -3817,14 +3817,11 @@ export const performRun = ({
       );
       if (!admission.allowed) {
         // An agent row refuses the page, and that shouldn't cost a row nobody
-        // can place: a person's message that scrolled off the snapshot reads
-        // `unknown`. It is carried, past-cap bound included, and alone in its
-        // next page it can't be refused, because only 'agent' ever is. A row
-        // stamped as an agent's is placed, so it stays refused, or it would walk
-        // past this brake. A legacy row has no stamp, and still carries.
+        // can place: one past the snapshot with no stamp reads `unknown`. It is
+        // carried, past-cap bound included, and alone in its next page it can't
+        // be refused, because only 'agent' ever is.
         for (const entry of wakingEntries) {
-          if (entry.trigger === 'unknown' && entry.event.payload?.messageId
-            && entry.event.payload?.senderIsHuman !== false) entry.pastCap = true;
+          if (entry.trigger === 'unknown' && entry.event.payload?.messageId) entry.pastCap = true;
           else entry.result = batchAdmissionResult(entry.event, admission);
         }
         carryPastCap();

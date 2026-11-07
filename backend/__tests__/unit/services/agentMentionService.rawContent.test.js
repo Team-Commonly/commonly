@@ -206,12 +206,12 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     viaAlias.forEach((event) => expect(event.payload.senderIsHuman).toBe(false));
   });
 
-  test('senderIsHuman is false when the sender lookup finds nobody', async () => {
+  test('senderIsHuman is left off when the sender lookup finds nobody', async () => {
     setup();
     await send(`@seat-a ${TEXT}`, { userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', username: 'gone' });
     const [event] = calls('chat.mention');
     expect(event).toBeDefined();
-    expect(event.payload.senderIsHuman).toBe(false);
+    expect(event.payload).not.toHaveProperty('senderIsHuman');
   });
 
   test('reply (adjacency, replies-to-you frame): rawContent is exactly what was typed', async () => {

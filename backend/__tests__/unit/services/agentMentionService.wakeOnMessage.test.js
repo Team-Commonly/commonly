@@ -386,6 +386,24 @@ describe('wake-on-message (ADR-018 D8)', () => {
     expect(wakeCalls()[0].payload.senderIsHuman).toBe(false);
   });
 
+  test.each([
+    ['a failed lookup', null],
+    ['a row with no isBot', { _id: 'user-1' }],
+  ])('a person the kernel can\'t place stays unstamped on the wake: %s', async (_label, row) => {
+    User.findById.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue(row) });
+    mockInstallations([install('seat-a', { optIn: true })]);
+
+    await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: { content: 'an ordinary message', id: 'msg-10' },
+      userId: 'user-1',
+      username: 'sam',
+    });
+
+    expect(wakeCalls()).toHaveLength(1);
+    expect(wakeCalls()[0].payload).not.toHaveProperty('senderIsHuman');
+  });
+
   test('bot-authored wake storms are dampened on the message.posted count', async () => {
     mockBotSender('seat-a');
     mockInstallations([install('seat-b', { optIn: true })]);

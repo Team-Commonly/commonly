@@ -441,6 +441,14 @@ const resolveContactAlias = async (
   return null;
 };
 
+// The wrapper reads this stamp when a snapshot can't name the author: always
+// for a post comment (F225), and for a message past the snapshot's window. A
+// lean row has no schema defaults, so a failed lookup or a row with no isBot
+// leaves it off, which reads as unknown rather than as an agent.
+const senderHumanStamp = (sender: { isBot?: boolean } | null | undefined): { senderIsHuman?: boolean } => (
+  typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {}
+);
+
 // Pull an agent into the pod via mention-driven autoJoin, or reach one with a
 // running row here. A row that isn't running stays as it is, with no wake.
 // Runs the §3.7 co-pod-member rule (with the §3.2 admin-binding carve-
@@ -1818,7 +1826,7 @@ const enqueueWakeOnMessage = async ({
           // Claim-decline handoff is deliberately human-only. This stamp is
           // the cross-layer proof the wrapper and kernel need; absent remains
           // non-human/unknown for old events rather than widening a bot loop.
-          senderIsHuman: sender?.isBot === false,
+          ...senderHumanStamp(sender),
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
         },
       });
@@ -1898,12 +1906,7 @@ const enqueueMentions = async ({
     console.warn('Agent mention sender lookup failed:', (error as Error).message);
   }
 
-  // A comment's author can't be read off the pod's messages, so a thread.mention
-  // has only this stamp to say who wrote it (F225). A lean row has no schema
-  // defaults, so a failed lookup or a row with no isBot leaves it off, which the
-  // wrapper reads as unknown rather than as an agent.
-  const commentSender = typeof sender?.isBot === 'boolean' ? { senderIsHuman: !sender.isBot } : {};
-  const senderStamp = source === 'thread' ? commentSender : { senderIsHuman: sender?.isBot === false };
+  const senderStamp = senderHumanStamp(sender);
 
   let installations: Array<Record<string, unknown>> = [];
   let profiles: Array<Record<string, unknown>> = [];
@@ -1994,7 +1997,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
-              senderIsHuman: sender?.isBot === false,
+              ...senderStamp,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
@@ -2516,7 +2519,7 @@ const enqueueMentions = async ({
               userId,
               username,
               mentions: rawMentions,
-              senderIsHuman: sender?.isBot === false,
+              ...senderStamp,
               source,
               messageType: message?.messageType || message?.message_type || 'text',
               createdAt: message?.createdAt || message?.created_at || new Date(),
