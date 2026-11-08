@@ -201,7 +201,9 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeNarrowing,
       hostedHeartbeat,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
-      writablePodId: writable && !othersRooms.has(String(writable.podId)) ? String(writable.podId) : null,
+      // The caller's own pod when they have one. With none, another person's
+      // room is the only way to load and manage the agent; a bare id names no one.
+      writablePodId: writable ? String(writable.podId) : null,
       runtimeSourcePodId: hosted ? null
         : source ? String(source.podId)
           : (!seat?.sourcePodId && writable ? String(writable.podId) : null),

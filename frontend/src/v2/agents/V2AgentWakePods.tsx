@@ -23,8 +23,9 @@ interface InstallationSettings {
 }
 
 // An agent's private pods all carry its name, so the row says which one it is.
+// The caller's own 1:1 room reads "Your direct room" instead (see podLabel);
+// other people's rooms never reach this list, only their count.
 const PERSONAL_POD_KINDS: Record<string, 'direct' | 'admin'> = {
-  'agent-room': 'direct',
   'agent-dm': 'direct',
   'agent-admin': 'admin',
 };
@@ -72,6 +73,8 @@ const V2AgentWakePods: React.FC<{
   // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
+  // Other people's 1:1 rooms with this agent: a count, with no names or links.
+  const [otherDirectRooms, setOtherDirectRooms] = useState(0);
   // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
   const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
   // Bumped after an add, so the table re-reads the row the server made.
@@ -102,6 +105,7 @@ const V2AgentWakePods: React.FC<{
       setLoading(true);
       setInstallations([]);
       setRuntimeNarrowing(null);
+      setOtherDirectRooms(0);
       setHostedHeartbeat(null);
       setBusyPod(null);
       setDraftMinutes({});
@@ -115,6 +119,7 @@ const V2AgentWakePods: React.FC<{
         const settingsResult = await axios.get<{
           installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
           runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
+          otherDirectRoomCount?: number;
         }>(`${base}?${query}`);
         if (!active) return;
         readIdentity.current = identity;
@@ -126,6 +131,8 @@ const V2AgentWakePods: React.FC<{
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
         setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
+        const others = Number(settingsResult.data.otherDirectRoomCount);
+        setOtherDirectRooms(Number.isInteger(others) && others > 0 ? others : 0);
         setHostedHeartbeat(settingsResult.data.hostedHeartbeat ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
@@ -200,7 +207,7 @@ const V2AgentWakePods: React.FC<{
     const confirmKey = podCount === 1 ? 'agentSettings.removeLastConfirm'
       : willRevokeKeys ? 'agentSettings.removeDisconnectConfirm' : 'agentSettings.removeConfirm';
     const confirmed = await confirm({
-      message: t(confirmKey, { podName: entry.podName }),
+      message: t(confirmKey, { podName: entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoomInSentence') : entry.podName }),
       confirmLabel: t('agentSettings.remove'),
     });
     if (!confirmed) return;
@@ -254,6 +261,9 @@ const V2AgentWakePods: React.FC<{
     const kind = PERSONAL_POD_KINDS[entry.podType || ''];
     return kind ? t(`podsSidebar.workspace.${kind}`) : null;
   };
+  const podLabel = (entry: InstallationSettings): string => (
+    entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoom') : entry.podName
+  );
 
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
@@ -285,7 +295,7 @@ const V2AgentWakePods: React.FC<{
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
       {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
-        {installations.length ? (
+        {installations.length || otherDirectRooms ? (
           <table className="wt">
             <thead>
               <tr>
@@ -299,12 +309,12 @@ const V2AgentWakePods: React.FC<{
             <tbody>
               {installations.map((entry) => (
                 <tr className="v2-agent-wake-pods__pod" key={entry.podId} data-open={openPods[entry.podId] ? 'true' : undefined}>
-                  <td data-personal={podKindLabel(entry) ? 'true' : undefined}>
-                    <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
+                  <td data-personal={podKindLabel(entry) || entry.podType === 'agent-room' ? 'true' : undefined}>
+                    <Link to={`/v2/pods/${entry.podId}`}>{podLabel(entry)}</Link>
                     {podKindLabel(entry) && <span className="v2-agent-wake-pods__kind">{podKindLabel(entry)}</span>}
                     <span className="v2-agent-wake-pods__mode">{t(`agentSettings.messageWakeShort_${messageWakeChoice(entry)}`)}</span>
                     <button type="button" className="v2-agent-wake-pods__fold" aria-expanded={!!openPods[entry.podId]}
-                      aria-label={[entry.podName, podKindLabel(entry)].filter(Boolean).join(', ')}
+                      aria-label={[podLabel(entry), podKindLabel(entry)].filter(Boolean).join(', ')}
                       onClick={() => setOpenPods((current) => ({ ...current, [entry.podId]: !current[entry.podId] }))}>
                       <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
                     </button>
@@ -371,6 +381,11 @@ const V2AgentWakePods: React.FC<{
                   </td>
                 </tr>
               ))}
+              {otherDirectRooms > 0 && (
+                <tr className="v2-agent-wake-pods__others">
+                  <td colSpan={5}>{t('agentSettings.otherDirectRooms', { count: otherDirectRooms })}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         ) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}

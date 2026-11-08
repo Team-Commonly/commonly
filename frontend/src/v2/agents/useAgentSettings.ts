@@ -105,8 +105,11 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     // source for discovering this viewer's settings.
     const rows = settingsResponse.data.installations || [];
     const preferredPodId = settingsResponse.data.writablePodId;
-    const candidates = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
+    const candidates: Array<{ podId: string }> = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
       - Number(left.podId === preferredPodId));
+    // Other people's direct rooms come back as a count, not rows. When the
+    // agent lives only there, the writable pod is still how the page loads it.
+    if (preferredPodId && !rows.some((row) => row.podId === preferredPodId)) candidates.push({ podId: preferredPodId });
     for (const pod of candidates) {
       try {
         const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(pod.podId), {

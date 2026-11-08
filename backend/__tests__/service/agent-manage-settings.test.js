@@ -445,8 +445,11 @@ describe('per-installation agent settings', () => {
         .set('Authorization', `Bearer ${token(owner)}`);
       expect(noneOwn.body.installations).toEqual([]);
       expect(noneOwn.body.otherDirectRoomCount).toBe(2);
-      expect(noneOwn.body.writablePodId).toBeNull();
-      for (const id of [theirs._id, thirds._id]) expect(withoutSource(noneOwn.body)).not.toContain(String(id));
+      // The page still has to load the agent to manage it, so one id comes
+      // back as the writable pod. No row, name or member does.
+      expect([String(theirs._id), String(thirds._id)]).toContain(noneOwn.body.writablePodId);
+      const loadable = JSON.stringify({ ...noneOwn.body, runtimeSourcePodId: undefined, writablePodId: undefined });
+      for (const id of [theirs._id, thirds._id, other._id, third._id]) expect(loadable).not.toContain(String(id));
     } finally {
       await AgentInstallation.deleteMany({ agentName: 'settings-room-agent' });
       await Pod.deleteMany({ _id: { $in: [mine._id, theirs._id, thirds._id] } });
