@@ -105,11 +105,53 @@ event is sent, Commonly removes the top-level user object and all request
 headers and cookies. Performance traces are sampled at zero, and the frontend
 does not enable Session Replay.
 
-Error messages, stack traces, release/environment values, request URL and
-method, and default browser breadcrumbs can still be reported. Do not put
-tokens, message bodies, email addresses, or other sensitive user content in
+What a frontend event carries is listed under *Frontend events* below. Do not
+put tokens, message bodies, email addresses, or other sensitive user content in
 exception messages. Review the first real events in both projects before
 expanding access or retention.
+
+## Frontend events
+
+A frontend event says where an error happened, not what it said. The rules live
+in `beforeSend` and `beforeBreadcrumb` in `frontend/src/sentry.ts`, and
+`frontend/src/sentry.envelope.test.ts` runs the real SDK to check the envelope
+that would leave the browser.
+
+**Sources.** Uncaught errors and unhandled rejections arrive through the SDK's
+global handlers. Crashes caught by `AppErrorBoundary` and `V2ErrorBoundary`
+arrive through `reportBoundaryError` (`frontend/src/sentryReport.ts`), tagged
+`boundary: app` or `boundary: v2`. That helper loads the Sentry chunk on first
+use, does nothing without a DSN, never throws, and sends a given message at
+most once per boundary per browser session and at most five reports per page
+load. The boundary's on-screen fallback still shows the message locally.
+
+**An event keeps:**
+
+- the exception type when it is a built-in (`Error`, `TypeError`,
+  `RangeError`, `ReferenceError`, `SyntaxError`, `URIError`, `EvalError`,
+  `AggregateError`), otherwise `Error`; one entry per error in a `cause` or
+  `AggregateError` chain;
+- a fixed exception value, `Error text is not sent`;
+- stack frames, reduced to file, function, module, line, column and `in_app`;
+- mechanism fields that describe how the error was caught (type, handled,
+  synthetic, source, and the chain ids);
+- the `boundary` tag, release, environment, the React component stack, the
+  trace ids and the browser's locale and time zone;
+- breadcrumbs, reduced to type, category, level, timestamp, and for request
+  and navigation breadcrumbs method, status code and URL; and
+- the page URL and request method.
+
+**Every URL** in an event (the page, breadcrumbs, frame files) is reduced to
+origin and path, with no userinfo, query string or fragment. The path segment
+after `/invite/`, `/invites/`, `/users/`, `/profile/` and `/uploads/`, and the
+token segment of the email unsubscribe and open links, is replaced with
+`[masked]`. `data:` and `blob:` URLs keep only their scheme.
+
+**An event drops:** the event message, `logentry`, `extra` (including a thrown
+object's serialized copy), `transaction`, `fingerprint`, `user`, other tags and
+contexts, request headers, cookies, body and query string, breadcrumb messages
+(console text and clicked-element selectors), console arguments, and frame
+variables and source context lines.
 
 ## Self-hosted behavior and rollback
 
