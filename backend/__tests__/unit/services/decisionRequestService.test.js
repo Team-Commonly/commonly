@@ -334,6 +334,12 @@ describe('DecisionRequestService', () => {
       await expect(requestDecision({ ...source(), deciderUserIds: value }))
         .rejects.toMatchObject({ status: 400, code: 'invalid_deciderUserIds' });
       expect(mockPostMessage).not.toHaveBeenCalled();
+      expect(mockDecision.create).not.toHaveBeenCalled();
+    });
+
+    test('six copies of one id name one decider', async () => {
+      const result = await requestDecision({ ...source(), deciderUserIds: Array(6).fill(LILY) });
+      expect(result.deciders).toEqual([{ userId: LILY, username: 'lily' }]);
     });
 
     test('a member who is not a decider cannot rule, and no lock is taken', async () => {

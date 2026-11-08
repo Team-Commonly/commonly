@@ -145,13 +145,17 @@ type Decider = { userId: string; username: string };
  */
 const resolveDeciders = async (podId: string, raw: unknown): Promise<Decider[] | null> => {
   if (raw === undefined || raw === null) return null;
-  if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_DECIDERS
+  const malformed = () => new DecisionRequestError(
+    `deciderUserIds must be 1 to ${MAX_DECIDERS} user ids`, 400, 'invalid_deciderUserIds',
+  );
+  // The limit counts distinct people, so a repeated id is one decider. The raw
+  // list still has a ceiling, so a request can't carry an unbounded array.
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_DECIDERS * 4
     || raw.some((id) => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) {
-    throw new DecisionRequestError(
-      `deciderUserIds must be 1 to ${MAX_DECIDERS} user ids`, 400, 'invalid_deciderUserIds',
-    );
+    throw malformed();
   }
   const ids = Array.from(new Set(raw.map((id) => String(id).toLowerCase())));
+  if (ids.length > MAX_DECIDERS) throw malformed();
   const pod = await Pod.findById(podId).select('members').lean();
   if (!pod) throw new DecisionRequestError('Pod not found', 404, 'pod_not_found');
   const users = await User.find({ _id: { $in: ids } }).select('_id username isBot').lean() as Array<{
