@@ -60,7 +60,7 @@
 </head>
 <body>
 <h1>F303: closing a direct message</h1>
-<p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state is drawn twice, once at 1440 (shown at half scale) and once at 390, one in light and the other in dark. Names are samples.</p>
+<p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state is drawn twice, once at 1440 (a schematic: the chat column and inspector at 720 wide, type at full size, so measure screenshots against the 390 frames and the rules below, not its proportions) and once at 390, one in light and the other in dark. Names are samples.</p>
 
 <h2>1. The agent is gone: the pod says so and offers the close</h2>
 <p class="why">This is the case F303 was filed on. The agent was uninstalled, so nothing will answer, and today the pod sits in the list with no way out. The notice sits at the foot of the thread, above the composer, so it is the last thing read. "Close" is the primary action here because it's the only useful one. The composer stays: writing still works, and it would reopen the pod for the person.</p>
@@ -127,7 +127,7 @@
   <dt>Reopen</dt><dd>The pod reopens when the person writes in it, when <code>getOrCreateAgentRoom</code> runs (Talk to), and when the agent posts.</dd>
   <dt>Lists</dt><dd>A closed pod leaves <code>GET /api/pods</code> and the recap's pods, as F307 lists. Its URL still opens it.</dd>
   <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已移除，这里不会再有回复。关闭后它会从你的列表里消失，消息都会保留。"</dd>
-  <dt>Agent gone</dt><dd>State 1 shows when the pod's agent has no install row in this pod whose status isn't <code>uninstalled</code>. That's the same test <code>dropUninstalledAgentRooms</code> uses, read for one pod, so an install that is <code>paused</code>, <code>error</code> or <code>stale</code> still counts as present.</dd>
+  <dt>Agent gone</dt><dd>State 1 shows when the pod has install rows and every one is <code>uninstalled</code>. That's the test <code>dropUninstalledAgentRooms</code> applies, read for one pod. A pod with no rows at all is not evidence of removal and shows no notice, and an install that is <code>paused</code>, <code>error</code> or <code>stale</code> still counts as present. The filter counts every row in the pod, which in an agent-room is that one agent's.</dd>
 </dl>
 </body>
 </html>
