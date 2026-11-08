@@ -58,6 +58,13 @@ export interface IPod extends Document {
   // own CommunityListingPod already declared the field optional. The two
   // declarations of one field disagreed; this is the one that was wrong.
   joinPolicy?: PodJoinPolicy;
+  /**
+   * The pod's own consecutive-run cap for agents, set by its creator for a
+   * progress pod where builders post land lines with nobody speaking. Absent
+   * means the instance default. 3..50: never off, since the cap is also what
+   * stops two agents looping on each other.
+   */
+  agentRunCap?: number | null;
   parentPod?: Types.ObjectId | null;
   agentEnsemble: {
     enabled: boolean;
@@ -134,6 +141,7 @@ const PodSchema = new Schema<IPod>(
       enum: ['open', 'invite-only'],
       default: 'open',
     },
+    agentRunCap: { type: Number, min: 3, max: 50, default: undefined },
     parentPod: { type: Schema.Types.ObjectId, ref: 'Pod', default: null },
     agentEnsemble: {
       enabled: { type: Boolean, default: false },
