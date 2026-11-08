@@ -134,11 +134,11 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
 const CLI_AGENT_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 /**
- * The one line posted in the pod. A seat the daemon runs takes its model from
- * Settings. For a seat started with `commonly agent run`, `cliAgentName` names
- * the command that changes it on that computer, which works whether or not the
- * seat's Settings control applies (F354: a walk found it read only, and it
- * doesn't apply to a record with no saved environment).
+ * The one line posted in the pod. The model is set in the agent's Settings,
+ * under the "How it runs" section, which starts collapsed (F354: a walk missed
+ * it). `cliAgentName` is for a `commonly agent run` seat whose record has no
+ * saved environment: Settings doesn't reach that seat until `agent config`
+ * writes one, so the line names that command instead.
  */
 export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
   const what = model
@@ -147,5 +147,5 @@ export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
   const name = typeof cliAgentName === 'string' && CLI_AGENT_NAME_RE.test(cliAgentName) ? cliAgentName : null;
   return name
     ? `${what} To change it, run commonly agent config ${name} --model <model> on the computer it runs on, then restart commonly agent run ${name}.`
-    : `${what} To change it, open the agent's Settings, then Model.`;
+    : `${what} To change it, open the agent's Settings, then How it runs, then Model.`;
 };

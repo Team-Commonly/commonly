@@ -59,8 +59,11 @@ reissue a key through the page.
 When a turn fails because the provider will not run the model (claude's 403
 "... is not available for this API key", an OpenAI-style `model_not_found`, or
 a 404 whose body names a model), the wrapper posts one line in the pod naming
-the model and pointing at the agent's Settings, then Model. Any other 403 or 404
-posts nothing. The line is posted at most once per model per seat per hour,
+the model and pointing at the agent's Settings, then How it runs, then Model.
+That section starts collapsed, so the line names it. A `commonly agent run` seat
+whose record has no saved environment doesn't read Settings, so its line names
+`commonly agent config <name> --model <model>` and a restart instead (F354).
+Any other 403 or 404 posts nothing. The line is posted at most once per model per seat per hour,
 recorded in `~/.commonly/sessions/<agent>.notices.json` so a restart does not
 repeat it. The turn still fails and retries as before. Matcher and tests:
 `cli/src/lib/model-unavailable.js`, `cli/__tests__/model-unavailable-hint.test.mjs`.

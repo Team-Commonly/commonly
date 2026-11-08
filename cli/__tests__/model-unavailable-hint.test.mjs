@@ -134,11 +134,11 @@ describe('modelUnavailableFailure', () => {
 
   test('never echoes a name outside the model-id charset', () => {
     expect(modelUnavailableFailure(CLAUDE_403_UNNAMED, { fallbackModel: 'bad model <b>' })).toEqual({ model: null });
-    expect(modelUnavailableHint(null)).toMatch(/this agent's model isn't available.*Settings, then Model\.$/);
+    expect(modelUnavailableHint(null)).toMatch(/this agent's model isn't available.*Settings, then How it runs, then Model\.$/);
   });
 
   test('a CLI agent name outside the handle charset falls back to Settings rather than echo it', () => {
-    expect(modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' })).toMatch(/Settings, then Model\.$/);
+    expect(modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' })).toMatch(/Settings, then How it runs, then Model\.$/);
     expect(modelUnavailableHint('m-1', { cliAgentName: 'gw-codex' })).toMatch(/commonly agent config gw-codex --model <model>/);
     expect(modelUnavailableHint('m-1', { cliAgentName: 'my_agent.v2' })).toMatch(/commonly agent config my_agent\.v2 --model/);
     expect(modelUnavailableHint(null, { cliAgentName: 'gw-codex' })).toBe("The model provider says this agent's model isn't available. "
@@ -153,7 +153,7 @@ const makeEvent = (id) => ({
 const drain = async () => { for (let i = 0; i < 24; i += 1) await new Promise((r) => setImmediate(r)); };
 const podPosts = (post) => post.mock.calls.filter(([route]) => String(route).endsWith('/pods/pod-abc/messages'));
 
-const runOnce = async (error, { model = 'seat-model', readSavedControls = false } = {}) => {
+const runOnce = async (error, { model = 'seat-model', readSavedControls = false, environment = { model } } = {}) => {
   const post = jest.fn().mockResolvedValue({});
   const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] }
     : route === '/api/agents/runtime/events' ? { events: [makeEvent(`evt-${Math.random()}`)] } : {}));
@@ -161,7 +161,7 @@ const runOnce = async (error, { model = 'seat-model', readSavedControls = false 
   const spawn = jest.fn().mockRejectedValue(error);
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'hint-seat',
-    environment: { model }, adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
+    environment, adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
     setTimeoutImpl: () => 0, onError: () => {}, log: () => {}, readSavedControls,
   });
   await drain();
@@ -183,15 +183,20 @@ describe('performRun posts the model hint', () => {
   ])('posts one line on %s and still leaves the event unacked', async (_label, error, model) => {
     const post = await runOnce(error);
     expect(podPosts(post)).toEqual([['/api/agents/runtime/pods/pod-abc/messages', {
-      content: `The model provider says ${model} isn't available for this agent. To change it, open the agent's Settings, then Model.`,
+      content: `The model provider says ${model} isn't available for this agent. To change it, open the agent's Settings, then How it runs, then Model.`,
     }]]);
     expect(post.mock.calls.filter(([route]) => String(route).includes('/ack'))).toHaveLength(0);
   });
 
-  // F354 (Growth re-walk, 11-08): a seat started with `agent run` shows Settings'
-  // model control read only, so its notice names the command instead.
-  test('a seat run from the CLI is told the command that changes its model, not Settings', async () => {
-    const post = await runOnce(CLAUDE_403, { readSavedControls: true });
+  // F354 (Growth re-walk, 11-08): Settings reaches a listener seat only once its
+  // record has a saved environment. Without one, the notice names the command.
+  test('a CLI seat with a saved environment is sent to Settings, How it runs', async () => {
+    const [[, body]] = podPosts(await runOnce(CLAUDE_403, { readSavedControls: true }));
+    expect(body.content).toMatch(/open the agent's Settings, then How it runs, then Model\.$/);
+  });
+
+  test('a CLI seat with no saved environment is told the command that changes its model, not Settings', async () => {
+    const post = await runOnce(CLAUDE_403, { readSavedControls: true, environment: null });
     const [[, body]] = podPosts(post);
     expect(body.content).toBe("The model provider says claude-opus-5-5 isn't available for this agent. "
       + 'To change it, run commonly agent config hint-seat --model <model> on the computer it runs on, then restart commonly agent run hint-seat.');
