@@ -148,8 +148,8 @@ const fetchRepoStats = async (
 };
 
 /**
- * Refresh the local skills catalog from the upstream GitHub JSON and
- * overlay fresh star counts on every unique repo. Safe to call repeatedly;
+ * Refresh the local skills catalog, from an upstream index when one is
+ * configured, and overlay fresh star counts on every unique repo. Safe to call repeatedly;
  * failures preserve the existing local file.
  */
 export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
@@ -256,8 +256,8 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
 
   if (stopDueToAuth) {
     // Without valid auth we can't trust the stats we got (may be empty).
-    // Still write the upstream index though — that's a net improvement.
-    console.warn('[skills-refresh] GitHub auth failed; writing upstream index without fresh stats.');
+    // Still write the catalog though — that's a net improvement.
+    console.warn('[skills-refresh] GitHub auth failed; writing the catalog without fresh stats.');
   }
   if (stopDueToRateLimit) {
     console.warn('[skills-refresh] Hit GitHub rate limit mid-run; partial stats will be applied.');
