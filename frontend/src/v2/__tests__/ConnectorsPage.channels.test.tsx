@@ -7,6 +7,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom';
 import { PlatformGlyph } from '../icons/platforms';
 import { INSTALL_LOCK_TTL_MS, installableLifecyclePath } from '../connectors/channelModel';
+import { useChannelConnectors } from '../connectors/useChannelConnectors';
 import en from '../../i18n/locales/en.json';
 import i18n, { i18nReady } from '../../i18n';
 import {
@@ -53,7 +54,7 @@ const hostedLinearCatalogEntry = (connectionId = 'i-linear') => ({
   installableId: 'linear',
   list: 'tools',
   label: 'Linear',
-  description: 'Read Linear issues and projects.',
+  description: 'Issues, projects, cycles and releases in your own Linear workspace.',
   connectionType: 'hosted-mcp',
   entryId: 'linear',
   available: true,
@@ -1609,6 +1610,46 @@ describe('Connectors page: channels', () => {
       } finally {
         await act(async () => { await i18n.changeLanguage('en'); });
       }
+    });
+
+    // 刚刚 is already a time, so 刚刚前 is not Chinese. 45 seconds is where a floor and a
+    // round disagree: this line rounds it to a minute, so it must not read as now.
+    describe('an age under a minute', () => {
+      const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      const VERBS = ['added', 'started', 'since', 'paused', 'slackAnswered'];
+      const ago = (ms) => new Date(Date.now() - ms).toISOString();
+      const Lines = ({ at }) => {
+        const { ageLine } = useChannelConnectors();
+        return <p data-testid="lines">{VERBS.map((verb) => ageLine(verb, at)).join(' | ')}</p>;
+      };
+      const linesAt = async (at, language) => {
+        mockCatalog([]);
+        await i18nReady;
+        await act(async () => { await i18n.changeLanguage(language); });
+        try {
+          const { unmount } = renderWithRoutes(<Lines at={at} />);
+          await settle();
+          const lines = screen.getByTestId('lines').textContent;
+          unmount();
+          return lines;
+        } finally {
+          await act(async () => { await i18n.changeLanguage('en'); });
+        }
+      };
+
+      it('reads as one phrase in Chinese', async () => {
+        expect(await linesAt(ago(5_000), 'zh-CN')).toBe('刚刚添加 | 刚刚开始 | 从刚刚起 | 刚刚暂停 | Slack 刚刚回应');
+      });
+
+      it('never reads 刚刚前 at 45 seconds, or for a missing time', async () => {
+        expect(await linesAt(ago(45_000), 'zh-CN')).not.toContain('刚刚前');
+        expect(await linesAt(null, 'zh-CN')).not.toContain('刚刚前');
+      });
+
+      it('keeps its age past a minute, and its words in English', async () => {
+        expect(await linesAt(ago(5 * 60_000), 'zh-CN')).toContain('5分钟前添加');
+        expect(await linesAt(ago(5_000), 'en')).toBe('added just now | started just now | since just now | paused just now | Slack answered just now');
+      });
     });
 
     it('lists every pod with its gate, marks the active pod, and writes the whole gates map on a switch', async () => {

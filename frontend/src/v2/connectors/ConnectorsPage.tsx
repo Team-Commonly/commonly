@@ -167,10 +167,19 @@ const ConnectorsPage: React.FC = () => {
   useEffect(() => {
     if (grantNotice) freshRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [grantNotice, freshRowShown]);
-  // The form that held focus is gone. Once per grant, so the row arriving later
-  // can't pull focus back; a focused status is read out even though it mounts full.
+  // A revoke or expiry takes the confirmation back: it would otherwise read as live.
+  const liveNotice = grantNotice && !(freshGrant && isDead(freshGrant, m.now)) ? grantNotice : null;
+  const noticeText = liveNotice ? t(liveNotice.changed ? 'tools.grantChangedConfirm' : 'tools.grantedConfirm', {
+    tool: liveNotice.tool, agents: liveNotice.agents, pod: liveNotice.pod,
+  }) : '';
+  // The form that held focus is gone, so focus lands here. Once per grant, so the
+  // row arriving later can't pull it back. Someone who moved elsewhere during the
+  // mint stays there. Focus on the drawer itself was never a choice: a click that
+  // doesn't focus its button (Safari, Firefox on a Mac) leaves it there.
   useEffect(() => {
-    if (grantNotice) confirmRef.current?.focus({ preventScroll: true });
+    const active = document.activeElement;
+    const nowhere = !active || active === document.body || active.classList.contains('v2-cx-drawer');
+    if (grantNotice && nowhere) confirmRef.current?.focus({ preventScroll: true });
   }, [grantNotice]);
 
   // Opening the phone search puts the cursor in the box.
@@ -517,9 +526,7 @@ const ConnectorsPage: React.FC = () => {
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
     const grantedKeyForm = toolGranted(toolEntry) ? tp.renderKeyForm(toolEntry) : null;
-    // A revoke or expiry takes the confirmation back: it would otherwise read as live.
-    const confirmed = grantNotice && grantNotice.installableId === toolEntry.installableId && !(freshGrant && isDead(freshGrant, m.now))
-      ? grantNotice : null;
+    const confirmed = liveNotice && liveNotice.installableId === toolEntry.installableId ? liveNotice : null;
     const freshRow = confirmed ? liveGrants.find((grant) => grant.grantId === confirmed.grantId) || null : null;
     // The mint went through but no read has shown it yet, and if GET /api/grants
     // keeps failing none will. Until one does, the old grants are out of date, so
@@ -527,7 +534,7 @@ const ConnectorsPage: React.FC = () => {
     const awaitingRead = Boolean(confirmed && !freshRow);
     const foldInactive = liveGrants.length > 0 || awaitingRead;
     return (
-      <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
+      <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools} holdFocus={Boolean(confirmed)}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
         {toolGranted(toolEntry) && !awaitingRead && tp.renderAccessNote(toolEntry)}
         {/* A granted operator-key entry still takes a key for an agent that has none. */}
@@ -550,11 +557,7 @@ const ConnectorsPage: React.FC = () => {
         <div className="v2-cx-list">
           {confirmed && (
             <div className="v2-cx-fresh" ref={freshRef}>
-              <p className="v2-cx-confirm" role="status" tabIndex={-1} ref={confirmRef}>
-                {t(confirmed.changed ? 'tools.grantChangedConfirm' : 'tools.grantedConfirm', {
-                  tool: confirmed.tool, agents: confirmed.agents, pod: confirmed.pod,
-                })}
-              </p>
+              <p className="v2-cx-confirm" tabIndex={-1} ref={confirmRef}>{noticeText}</p>
               {freshRow && tp.renderRow(freshRow)}
             </div>
           )}
@@ -734,6 +737,8 @@ const ConnectorsPage: React.FC = () => {
 
   return (
     <div className="v2-cx">
+      {/* Mounted from the start, because a region announces a change, not its first text. */}
+      <p className="v2-cx-live" role="status">{noticeText}</p>
       <header className="v2-cx-head">
         <h1>{t('connectors.title', { defaultValue: 'Connectors' })}</h1>
         {!phone && !c.loading && <span className="v2-cx-head__meta" title={meta}>{meta}</span>}
