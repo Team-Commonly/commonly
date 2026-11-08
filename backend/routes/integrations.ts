@@ -7,6 +7,8 @@ const { resolveDiscordBotToken } = require('../utils/discordBotToken');
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+// eslint-disable-next-line global-require
 const adminAuth = require('../middleware/adminAuth');
 // eslint-disable-next-line global-require
 const hostedMcpConnectRoutes = require('./hostedMcpConnect');
@@ -673,7 +675,9 @@ router.delete('/:id/ingest-tokens/:tokenId', writeIntegrationsRateLimit, auth, a
 // Same read bucket as /user/all: token-hash/IP keyed, ahead of auth, so the
 // membership lookup below cannot be driven unmetered (CodeQL
 // js/missing-rate-limiting on the gated route).
-router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
+// A non-ObjectId here is a guessed path ("connections", "tools",
+// "hosted-mcp" in the 11-07 log), not a pod: 400 before the cast (F330).
+router.get('/:podId', listIntegrationsRateLimit, auth, requireObjectIdParam('podId', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // Pod-scoped content: canViewPod decides (members, admins, the agent-dm

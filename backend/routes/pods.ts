@@ -12,6 +12,8 @@ const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+// eslint-disable-next-line global-require
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -386,7 +388,7 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/focus', podFocusReadRateLimit, auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   try {
@@ -401,7 +403,7 @@ router.get('/:id/focus', podFocusReadRateLimit, auth, async (req: AuthReq, res: 
   }
 });
 
-router.patch('/:id/focus', podFocusRateLimit, auth, async (req: AuthReq, res: Res) => {
+router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   const body = req.body || {};
