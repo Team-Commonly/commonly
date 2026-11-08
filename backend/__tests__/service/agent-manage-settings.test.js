@@ -145,6 +145,22 @@ describe('per-installation agent settings', () => {
     await Pod.updateOne({ _id: podA._id }, { $pull: { members: admin._id } });
   });
 
+  it('an admin echoing the stored runtime type merges like anyone else', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'webhook', adapter: 'claude', webhookUrl: 'https://hooks.example.test/kept' } },
+    });
+    await Pod.updateOne({ _id: podA._id }, { $addToSet: { members: admin._id } });
+    const saved = await request(app)
+      .patch(`/api/registry/pods/${podA._id}/agents/settings-agent`)
+      .set('Authorization', `Bearer ${token(admin)}`)
+      .send({ instanceId: 'same', config: { runtime: { runtimeType: 'webhook', adapter: 'codex' } } });
+    expect(saved.status).toBe(200);
+    const row = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' }).lean();
+    const runtime = (row.config instanceof Map ? Object.fromEntries(row.config) : row.config).runtime;
+    expect(runtime).toEqual(expect.objectContaining({ runtimeType: 'webhook', adapter: 'codex', webhookUrl: 'https://hooks.example.test/kept' }));
+    await Pod.updateOne({ _id: podA._id }, { $pull: { members: admin._id } });
+  });
+
   it('reports the process from the agent listener, not the computer heartbeat', async () => {
     await Machine.create({ ownerUserId: owner._id, machineId: 'machine-a', name: 'Test computer', lastSeenAt: null });
     await User.create({

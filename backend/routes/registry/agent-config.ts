@@ -44,12 +44,15 @@ const { configWriteRefusal, runtimeKeepingType } = require('../../services/confi
 // block. Rebuilding runtime from the request alone let Settings' harness switch
 // (`{ runtime: { adapter } }`) erase the seat's webhookUrl, authProfiles,
 // skillEnv and reportedCli. The stored block is the base; `null` still deletes
-// authProfiles and skillEnv below. An admin's explicit runtimeType change stays
-// a replacement, so a seat moved to another runtime keeps nothing of the old.
+// authProfiles and skillEnv below. An admin moving the seat to another
+// runtimeType replaces the block, so it keeps nothing of the old runtime; an
+// admin echoing the stored type merges like anyone else.
+const typeName = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const requestedRuntimeOver = (requested: any, existingConfig: any, isInstanceAdmin: boolean) => {
   const stored = existingConfig?.runtime;
   if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return requested;
-  if (isInstanceAdmin && 'runtimeType' in requested) return requested;
+  if (isInstanceAdmin && 'runtimeType' in requested
+    && typeName(requested.runtimeType) !== typeName(stored.runtimeType)) return requested;
   return { ...stored, ...requested };
 };
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
