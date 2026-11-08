@@ -243,6 +243,17 @@ const sanitizeAgentName = (raw: string): string => raw
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
+type SeatRuntime = { runtimeType?: string; adapter?: string; reportedCli?: string };
+
+// The harness an existing seat runs, as `agent run --adapter` names it, or null
+// when the roster doesn't say. The install payload labels Claude Code
+// `claude-code`; the adapter flag calls it `claude`.
+export const seatHarness = (runtime?: SeatRuntime): string | null => {
+  const raw = runtime?.adapter || runtime?.reportedCli || runtime?.runtimeType || '';
+  const id = raw === 'claude-code' ? 'claude' : raw;
+  return KNOWN_HARNESS_IDS.includes(id) ? id : null;
+};
+
 const V2AgentBYO: React.FC = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
@@ -303,7 +314,7 @@ const V2AgentBYO: React.FC = () => {
   // name, pod and mode it was shown for.
   const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
-    connection: AgentConnection; runtimeType: string; installedBy?: string;
+    connection: AgentConnection; runtimeType: string; installedBy?: string; harness?: string | null; seat: string;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -480,9 +491,14 @@ const V2AgentBYO: React.FC = () => {
       setExistingConnection(null);
       return undefined;
     }
+    // A different seat's connection is dropped now, not when this lookup lands,
+    // so its Reconnect (and the harness it implies) never shows under another
+    // name or pod. A refresh of the same seat keeps it, without a flicker.
+    const seatKey = `${podId}:${sanitizeAgentName(name)}:${prefill.instanceId}`;
+    setExistingConnection((current) => (current?.seat === seatKey ? current : null));
     let cancelled = false;
     const timer = setTimeout(() => {
-      api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
+      api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: SeatRuntime; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
         .then((result) => {
           if (cancelled) return;
           const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name)
@@ -491,12 +507,28 @@ const V2AgentBYO: React.FC = () => {
             connection: match.connection,
             runtimeType: match.runtime?.runtimeType || '',
             installedBy: match.installedBy,
+            harness: seatHarness(match.runtime),
+            seat: seatKey,
           } : null);
         })
         .catch(() => { if (!cancelled) setExistingConnection(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
+  // F353: a name that resolves to an existing seat opens on the harness that seat
+  // runs, from a reconnect link or a typed name alike. Defaulting to Claude Code
+  // printed `--adapter claude` for a Codex agent. It follows the seat when the
+  // name moves to another one, but never overrides a tab the person picked, even
+  // before the roster arrived; a link's own ?adapter= wins.
+  const harnessAppliedFor = useRef<string | null>(null);
+  const listenAdapterPicked = useRef(false);
+  useEffect(() => {
+    if (prefill.adapter || listenAdapterPicked.current) return;
+    const harness = existingConnection?.harness;
+    if (!harness || harnessAppliedFor.current === existingConnection.seat) return;
+    harnessAppliedFor.current = existingConnection.seat;
+    setListenAdapter(harness);
+  }, [existingConnection, prefill.adapter]);
   // Re-default while the person hasn't typed a name: when the user resolves
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
@@ -1461,7 +1493,7 @@ const V2AgentBYO: React.FC = () => {
           data-testid={`byo-runner-${runner}`}
           disabled={submitting}
           // The name follows the runner, so a key prompt for the old name is stale.
-          onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+          onClick={() => { setPendingReplacement(null); listenAdapterPicked.current = true; setListenAdapter(runner); }}
         >
           {harnessLabel(harnessCatalog, runner)}
         </button>
