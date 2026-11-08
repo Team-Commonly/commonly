@@ -23,7 +23,7 @@ interface InstallationSettings {
 }
 
 // An agent's private pods all carry its name, so the row says which one it is.
-// The caller's own 1:1 room reads "Your direct room" instead (see podLabel);
+// The caller's own 1:1 room reads "Your direct message" instead (see podLabel);
 // other people's rooms never reach this list, only their count.
 const PERSONAL_POD_KINDS: Record<string, 'direct' | 'admin'> = {
   'agent-dm': 'direct',
@@ -74,7 +74,7 @@ const V2AgentWakePods: React.FC<{
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
   // Other people's 1:1 rooms with this agent: a count, with no names or links.
-  const [otherDirectRooms, setOtherDirectRooms] = useState(0);
+  const [otherDirectMessages, setOtherDirectMessages] = useState(0);
   // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
   const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
   // Bumped after an add, so the table re-reads the row the server made.
@@ -105,7 +105,7 @@ const V2AgentWakePods: React.FC<{
       setLoading(true);
       setInstallations([]);
       setRuntimeNarrowing(null);
-      setOtherDirectRooms(0);
+      setOtherDirectMessages(0);
       setHostedHeartbeat(null);
       setBusyPod(null);
       setDraftMinutes({});
@@ -132,7 +132,7 @@ const V2AgentWakePods: React.FC<{
         setTurnCap(settingsResult.data.turnCap ?? null);
         setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
         const others = Number(settingsResult.data.otherDirectRoomCount);
-        setOtherDirectRooms(Number.isInteger(others) && others > 0 ? others : 0);
+        setOtherDirectMessages(Number.isInteger(others) && others > 0 ? others : 0);
         setHostedHeartbeat(settingsResult.data.hostedHeartbeat ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
@@ -207,7 +207,7 @@ const V2AgentWakePods: React.FC<{
     const confirmKey = podCount === 1 ? 'agentSettings.removeLastConfirm'
       : willRevokeKeys ? 'agentSettings.removeDisconnectConfirm' : 'agentSettings.removeConfirm';
     const confirmed = await confirm({
-      message: t(confirmKey, { podName: entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoomInSentence') : entry.podName }),
+      message: t(confirmKey, { podName: entry.podType === 'agent-room' ? t('agentSettings.yourDirectMessageInSentence') : entry.podName }),
       confirmLabel: t('agentSettings.remove'),
     });
     if (!confirmed) return;
@@ -262,7 +262,7 @@ const V2AgentWakePods: React.FC<{
     return kind ? t(`podsSidebar.workspace.${kind}`) : null;
   };
   const podLabel = (entry: InstallationSettings): string => (
-    entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoom') : entry.podName
+    entry.podType === 'agent-room' ? t('agentSettings.yourDirectMessage') : entry.podName
   );
 
   if (loading || loadedIdentity !== identity) {
@@ -295,7 +295,7 @@ const V2AgentWakePods: React.FC<{
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
       {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
-        {installations.length || otherDirectRooms ? (
+        {installations.length || otherDirectMessages ? (
           <table className="wt">
             <thead>
               <tr>
@@ -381,9 +381,9 @@ const V2AgentWakePods: React.FC<{
                   </td>
                 </tr>
               ))}
-              {otherDirectRooms > 0 && (
+              {otherDirectMessages > 0 && (
                 <tr className="v2-agent-wake-pods__others">
-                  <td colSpan={5}>{t('agentSettings.otherDirectRooms', { count: otherDirectRooms })}</td>
+                  <td colSpan={5}>{t('agentSettings.otherDirectMessages', { count: otherDirectMessages })}</td>
                 </tr>
               )}
             </tbody>
