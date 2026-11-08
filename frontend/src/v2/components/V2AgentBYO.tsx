@@ -1030,20 +1030,29 @@ const V2AgentBYO: React.FC = () => {
         if (!/already installed/i.test(msg)) throw installErr;
         // F354: an existing seat ignores the install body, so the model and
         // effort picked here were dropped. Save them where Settings does: the
-        // installation the agent reads its controls from.
+        // installation the agent reads its controls from. The runner tab's
+        // harness goes with them, as Settings' harness switch sends it, so the
+        // model is checked against the harness the printed command runs.
         const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
         if (Object.keys(controls).length) {
+          let settings: { runtimeSourcePodId?: string | null; runtimeEditable?: boolean } | undefined;
           try {
-            const settings = await api.get<{ runtimeSourcePodId?: string | null; runtimeEditable?: boolean }>(
+            settings = await api.get<{ runtimeSourcePodId?: string | null; runtimeEditable?: boolean }>(
               `/api/registry/agents/${encodeURIComponent(cleanName)}/manage-settings`, { params: { instanceId: prefill.instanceId } },
             );
-            if (!settings?.runtimeEditable || !settings.runtimeSourcePodId) throw new Error('not editable');
+          } catch { settings = undefined; }
+          if (!settings?.runtimeEditable || !settings.runtimeSourcePodId) {
+            setError(t('agentByo.errors.controlsNotEditable', { name: cleanName }));
+            return;
+          }
+          try {
             await api.patch(
               `/api/registry/pods/${encodeURIComponent(settings.runtimeSourcePodId)}/agents/${encodeURIComponent(cleanName)}`,
-              { config: { environment: controls }, instanceId: prefill.instanceId },
+              { config: { environment: controls, runtime: { adapter: listenAdapter } }, instanceId: prefill.instanceId },
             );
-          } catch {
-            setError(t('agentByo.errors.controlsNotSaved', { name: cleanName }));
+          } catch (saveErr) {
+            const reason = (saveErr as { response?: { data?: { error?: string } } })?.response?.data?.error;
+            setError(`${t('agentByo.errors.controlsNotSaved', { name: cleanName })}${reason ? ` (${reason})` : ''}`);
             return;
           }
         }
