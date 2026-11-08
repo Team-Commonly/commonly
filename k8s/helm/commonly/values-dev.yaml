@@ -89,7 +89,7 @@ backend:
     # D244 pilot 2 (Walker): the agent computer. Only an installation whose
     # config.tools lists the computer_* tools can reach it (agentComputer.ts),
     # and only Walker's will. It stays inert until the waker token exists AND
-    # agentComputer.users (private overlay) names Walker's owner; see
+    # agentComputer.users (the DEV_HELM_AGENT_COMPUTER overlay) names Walker's owner; see
     # docs/runbooks/agent-computer-steel.md.
     agentComputerEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-dev.svc.cluster.local:3000"
