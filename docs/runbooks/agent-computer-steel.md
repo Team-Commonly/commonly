@@ -76,17 +76,18 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    optional). If the backend pod started before the ExternalSecrets synced,
    restart it. `agentComputerEnabled()` stays false until the env holds both.
 5. Give the computer tools to exactly one installation:
-   - it must run in the backend process: a native install
-     (`runtimeType: 'native'`), or a hosted install on the native engine
-     (`runtimeType: 'hosted'` with `config.hosted.engine: 'native'`, which is
-     what a new hosted install gets on prod). The owner must be the person
-     whose id is in `users`;
-   - a non-admin owner can't install `native`, which needs the
-     `cloudAgents` entitlement, so for them it is hosted, and it takes their
-     hosted slot;
+   - it must be a native install (`runtimeType: 'native'`), owned by the
+     person whose id is in `users`;
+   - `native` is a cloud runtime at install, so the installer must be an
+     admin or carry the `cloudAgents` entitlement
+     (`cloud_agents_not_entitled` otherwise);
+   - a hosted install can't stand in for it, even on the native engine. A
+     hosted turn runs with the fixed tool list `hostedNativeRunConfig` builds
+     (`HOSTED_NATIVE_TOOLS`), never the install's own `config.tools`, so it is
+     never offered a computer tool;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
-     included. A declared list is the whole tool surface, so it also names
-     `commonly_read_context` and `commonly_post_message`;
+     included. A declared list is the whole tool surface of a native install,
+     so it also names `commonly_read_context` and `commonly_post_message`;
    - no other installation lists them.
    - The agent uses the computer only on a turn whose message its owner
      wrote (`computer_requester_denied` otherwise), so a heartbeat or another

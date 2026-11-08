@@ -4589,15 +4589,3 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **Fix:** the adapter uses OpenCode's own character set, so the allow and the withheld-tool denies both match. A real-binary test reads the `tools` array the binary sends to the model route.
 
 **Lesson:** a test that compares config to the adapter's own idea of a name proves only that the two agree. A rule meant for another program needs that program to read it.
-
-## 120. The takeover bridge accepted only `runtimeType: 'native'`, and a non-admin can't install that (2026-11-08)
-
-*Origin: setting up Walker under a non-admin operator account for its first prod walk.*
-
-**Surface:** `backend/routes/agentComputer.ts`, which refused a takeover unless the install's `runtimeType` was `'native'`, and step 5 of `docs/runbooks/agent-computer-steel.md`, which said the same.
-
-**False model:** a computer agent is a `native` install. `native` is a cloud runtime at install (`isCloudRuntime`), so an owner without admin or the `cloudAgents` entitlement gets `cloud_agents_not_entitled`. The shape they can install is hosted on the native engine, which runs the same in-process turn and gets the computer tools, because the tool dispatch checks only the owner and the requester. So the agent could browse, but its owner's one-time sign-in was refused with `computer_not_granted`.
-
-**Fix:** the route accepts what `configRunsInProcess` accepts (native, or hosted on the native engine), and nothing else. A test covers hosted on native, hosted on the other engine, and webhook. The runbook names both shapes, the entitlement, and the rule that only the owner's own message starts a computer turn.
-
-**Lesson:** when two gates guard one capability, they need the same predicate. Here the tool path and the takeover route each wrote their own, and only one was ever walked by a non-admin.

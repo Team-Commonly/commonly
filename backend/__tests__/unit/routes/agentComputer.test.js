@@ -8,28 +8,20 @@ let mockViewer = mockOwner;
 let mockInstalledBy = mockOwner;
 let mockDeclared = true;
 let mockEnabled = true;
-let mockRuntime = { runtimeType: 'native' };
-let mockHosted;
 
 jest.mock('express-rate-limit', () => ({ __esModule: true, default: () => (_req, _res, next) => next() }));
 jest.mock('../../../middleware/auth', () => (req, _res, next) => { req.userId = mockViewer; next(); });
 jest.mock('../../../models/User', () => ({
   findById: () => ({ select: () => ({ lean: async () => ({ isBot: false }) }) }),
 }));
-const mockInstallationRow = () => ({
-  _id: mockInstallation,
-  config: {
-    runtime: mockRuntime,
-    ...(mockHosted ? { hosted: mockHosted } : {}),
-    tools: mockDeclared ? ['computer_request_takeover'] : [],
-  },
-});
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     findOne: (query) => ({
-      select: () => ({
-        lean: async () => (String(query.installedBy) === mockInstalledBy ? mockInstallationRow() : null),
-      }),
+      select: () => ({ lean: async () => (String(query.installedBy) === mockInstalledBy
+        ? { _id: mockInstallation, config: {
+          runtime: { runtimeType: 'native' },
+          tools: mockDeclared ? ['computer_request_takeover'] : [],
+        } } : null) }),
     }),
   },
 }));
@@ -57,8 +49,6 @@ beforeEach(() => {
   mockInstalledBy = mockOwner;
   mockDeclared = true;
   mockEnabled = true;
-  mockRuntime = { runtimeType: 'native' };
-  mockHosted = undefined;
   Object.values(mockBroker).forEach((value) => value.mockClear());
 });
 
@@ -74,28 +64,6 @@ describe('owner-only agent computer takeover route', () => {
     mockViewer = mockOwner;
     mockDeclared = false;
     expect((await request(app).get(`/api/agent-computer/${mockInstallation}/frame`)).status).toBe(403);
-  });
-
-  // A non-admin owner can only run a computer agent as a hosted install on the native engine
-  // ('native' itself is entitlement-gated at install). Those turns run in this process and get the
-  // computer tools, so the takeover bridge must accept the same set, and only that set.
-  test('a hosted install on the native engine gets the takeover; other engines and runtimes do not', async () => {
-    mockRuntime = { runtimeType: 'hosted' };
-    mockHosted = { engine: 'native' };
-    expect((await request(app).get(`/api/agent-computer/${mockInstallation}/status`)).status).toBe(200);
-    // Marked native by the migration but not recorded done: its Durable Object may still run.
-    mockHosted = { engine: 'native', migratedFrom: 'durable-object', migration: { state: 'pending' } };
-    expect((await request(app).get(`/api/agent-computer/${mockInstallation}/status`)).status).toBe(403);
-    mockHosted = { engine: 'durable-object' };
-    const otherEngine = await request(app).get(`/api/agent-computer/${mockInstallation}/status`);
-    expect(otherEngine.status).toBe(403);
-    expect(otherEngine.body.code).toBe('computer_not_granted');
-    mockHosted = undefined;
-    expect((await request(app).get(`/api/agent-computer/${mockInstallation}/status`)).status).toBe(403);
-    mockRuntime = { runtimeType: 'webhook' };
-    mockHosted = { engine: 'native' };
-    expect((await request(app).get(`/api/agent-computer/${mockInstallation}/status`)).status).toBe(403);
-    expect(mockBroker.takeoverStatus).toHaveBeenCalledTimes(1);
   });
 
   test('human input is forwarded without echoing credential text', async () => {
