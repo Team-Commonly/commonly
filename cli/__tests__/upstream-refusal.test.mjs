@@ -148,6 +148,17 @@ describe('readUpstreamRefusal', () => {
     expect(readUpstreamRefusal(asLines(messageEndError, recovered, fetchFailed))).toBeNull();
   });
 
+  // The #3745 review: a compaction that continues the turn is a recovery too,
+  // so the turn's later stop names its own cause. An aborted one, or one that
+  // doesn't continue the turn, leaves the refusal standing.
+  test('a refusal before a compaction that continues the turn is not kept', () => {
+    const continued = '{"type":"compaction_end","reason":"overflow","result":{"summary":"s"},"aborted":false,"willRetry":true}';
+    const filtered = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"Provider finish_reason: content_filter"}}';
+    expect(readUpstreamRefusal(asLines(budget429, continued, filtered))).toBeNull();
+    const aborted = '{"type":"compaction_end","reason":"overflow","aborted":true,"willRetry":false}';
+    expect(readUpstreamRefusal(asLines(budget429, aborted))?.status).toBe(429);
+  });
+
   test('a refusal after a recovery is read', () => {
     const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
     expect(readUpstreamRefusal(asLines(messageEndError, recovered, budget429))).toEqual({

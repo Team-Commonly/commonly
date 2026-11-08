@@ -164,7 +164,11 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
       continue;
     }
 
-    if (event?.type === 'auto_retry_end' && event.success === true) {
+    // A compaction that continues the turn is pi recovering from an overflow,
+    // so a refusal before it is one pi recovered from too. The turn's own cause
+    // comes after (agent-session.js `compaction_end`, pi 0.84.1).
+    if ((event?.type === 'auto_retry_end' && event.success === true)
+      || (event?.type === 'compaction_end' && event.aborted === false && event.willRetry === true)) {
       status = null;
       raw = null;
       continue;
