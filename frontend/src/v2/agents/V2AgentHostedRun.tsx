@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { hostedCapNotice } from '../components/hostedCapNotice';
+import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 
 interface HostedStatus {
   runtime?: { engine?: string; ready?: boolean; provisionedAt?: unknown; lastPollAt?: number | null };
@@ -107,14 +108,17 @@ const V2AgentHostedRun: React.FC<Props> = ({ agentName, displayName, instanceId,
   };
 
   if (state === 'unknown') return null;
+  // One row of the Identity & access list. While a stop is being confirmed, its
+  // line takes the full width under the row, so it reads at phone width too.
   return (
-    <div className="v2-agent-hosted-run" data-testid="agent-hosted-run">
-      <p className="v2-agent-hosted-run__state" role="status">
+    <div className={`lrow v2-agent-hosted-run${confirming ? ' v2-agent-hosted-run--confirming' : ''}`} data-testid="agent-hosted-run">
+      <span className="lb"><V2AgentSettingsIcon name="play" />{t('agentSettings.hostedRun.label')}</span>
+      <span className="vl v2-agent-hosted-run__state" role="status">
         {confirming
           ? t(`agentSettings.hostedRun.${native ? 'confirm' : 'confirmClears'}`, { name: displayName })
           : t(`agentSettings.hostedRun.${state}`)}
-      </p>
-      <div className="v2-agent-hosted-run__actions">
+      </span>
+      <span className="ac">
         {state === 'running' && !confirming && (
           <button type="button" className="b b-g b-sm" onClick={() => setConfirming(true)}>{t('agentSettings.hostedRun.stop')}</button>
         )}
@@ -125,7 +129,7 @@ const V2AgentHostedRun: React.FC<Props> = ({ agentName, displayName, instanceId,
         {(state === 'stopped' || state === 'slow') && (
           <button type="button" className="b b-p b-sm" disabled={busy} onClick={() => { void start(); }}>{t('agentSettings.hostedRun.start')}</button>
         )}
-      </div>
+      </span>
       {error && <p className="v2-agent-hosted-run__error" role="alert">{error}</p>}
     </div>
   );

@@ -317,6 +317,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(hint).toContain('text-align: left');
     expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
   });
+  test('a hosted stop confirm drops under its row and reads left to right, over the phone right-align (F357)', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    // Two more classes than the phone's .lrow .vl rule, so it wins inside the media block too.
+    const confirm = ruleBody(surface, '.v2-agent-settings-page .lrow.v2-agent-hosted-run--confirming .vl.v2-agent-hosted-run__state');
+    expect(confirm).toContain('grid-column: 1 / -1');
+    expect(confirm).toContain('text-align: left');
+    expect(confirm).toContain('justify-content: flex-start');
+    expect(read('../agents/V2AgentHostedRun.tsx')).toContain('`lrow v2-agent-hosted-run${confirming');
+  });
   test('the BYO adapter choice wraps on a phone, so no adapter sits off screen', () => {
     const phone = mediaBlockContaining(read('../components/V2AgentBYO.css').replace(/\/\*[\s\S]*?\*\//g, ''), '.v2-feature--byo .v2-byo__os {');
     expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters { flex-wrap: wrap; }');

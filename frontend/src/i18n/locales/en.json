@@ -3363,7 +3363,8 @@
     "saveInterval": "Save interval",
     "minutesShort": "{{minutes}} min",
     "hostedRun": {
-      "running": "Running.",
+      "label": "Status",
+      "running": "Running",
       "stopped": "Stopped. It won't answer until you start it.",
       "starting": "Starting…",
       "slow": "Still starting. If it stays this way, try Start again.",

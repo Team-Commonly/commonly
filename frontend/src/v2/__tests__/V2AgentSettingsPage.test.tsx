@@ -864,6 +864,20 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(container.querySelector('.st .dot--off')).toBeNull();
   });
 
+  // F357: an owner looking for Stop finds it without opening How it runs.
+  test('a hosted agent shows its running state and Stop with How it runs closed', async () => {
+    const base = fleet({ runtimeType: 'hosted', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url.startsWith('/api/hosted/status')
+      ? Promise.resolve({ data: { runtime: { engine: 'native', ready: true } } }) : base(url, options)));
+    renderPage();
+    const run = await screen.findByTestId('agent-hosted-run');
+    const runs = screen.getByTestId('agent-how-it-runs');
+    expect(runs).not.toHaveAttribute('open');
+    expect(runs).not.toContainElement(run);
+    expect(within(run).getByRole('status')).toHaveTextContent('Running');
+    expect(within(run).getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+  });
+
   test('a key list that fails to load costs the key row, not the page', async () => {
     const base = fleet({ state: 'never' });
     let keysUp = false;
