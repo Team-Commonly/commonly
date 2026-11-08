@@ -5,7 +5,9 @@
  * (via the same _fetchImpl seam in client.js) and assert the wire shape.
  */
 
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { jest } from '@jest/globals';
 import { buildTools } from '../src/tools.js';
 import { HttpError } from '../src/client.js';
@@ -890,10 +892,244 @@ describe('per-event inbox checkpoint', () => {
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+  const held = () => ({ ok: false, status: 409,
+    text: async () => JSON.stringify({ code: 'unseen_messages', message: 'Your send did not go through', unseenCount: 1 }) });
+  const acks = (fetchSpy) => fetchSpy.mock.calls.filter(([url]) => String(url).includes('/ack'));
+  const post = (tools) => tools.commonly_post_message.call({ podId: 'pod-1', content: 'my answer' });
+  const checkpoint = (tools) => tools.commonly_checkpoint_event.call({ eventId: 'event', deliveryId: 'nonce' });
+  const freshTools = () => Object.fromEntries(buildTools(cfg).map((tool) => [tool.name, tool]));
+
+  test('a checkpoint in the same step as a held post is turned back, not sent', async () => {
+    let answer;
+    const fetchSpy = installFetch((url) => (String(url).includes('/messages')
+      ? new Promise((resolve) => { answer = resolve; })
+      : Promise.resolve(okResponse({ success: true }))));
+    const tools = freshTools();
+    const posting = post(tools);
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setImmediate(resolve); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+
+    answer(held());
+    await posting;
+    const result = await checkpointing;
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('never reached the pod');
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('each event of a batch is turned back, not just the first', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    const results = await Promise.all(['one', 'two'].map((eventId) => tools.commonly_checkpoint_event.call({ eventId, deliveryId: 'nonce' })));
+    expect(results.map((result) => result.isError)).toEqual([true, true]);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test.each([
+    ['a server error', async () => ({ ok: false, status: 500, text: async () => '{}' })],
+    ['another conflict', async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ code: 'other' }) })],
+  ])('%s on a post is no hold', async (_label, reply) => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a repost in another pod, or one the server skipped, leaves the hold', async () => {
+    let reply = held;
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    reply = () => okResponse({ id: 'm1' });
+    await tools.commonly_post_message.call({ podId: 'pod-2', content: 'elsewhere' });
+    reply = () => okResponse({ skipped: true });
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a file whose card was held turns the checkpoint back too', async () => {
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).endsWith('/uploads') || String(url).includes('/upload')) return okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 });
+      if (String(url).includes('/messages')) return held();
+      return okResponse({ success: true });
+    });
+    const tools = freshTools();
+    const dir = mkdtempSync(join(tmpdir(), 'held-attach-'));
+    const filePath = join(dir, 'f.txt');
+    writeFileSync(filePath, 'x');
+    const attached = await tools.commonly_attach_file.call({ podId: 'pod-1', filePath });
+    expect(attached.isError).toBe(true);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  const attachFile = (tools) => {
+    const filePath = join(mkdtempSync(join(tmpdir(), 'held-attach-')), 'f.txt');
+    writeFileSync(filePath, 'x');
+    return tools.commonly_attach_file.call({ podId: 'pod-1', filePath });
+  };
+
+  test('a file held at its first check turns the checkpoint back too', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('send-freshness') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    expect((await attachFile(tools)).isError).toBe(true);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a checkpoint waits for a file still uploading', async () => {
+    let finish;
+    const fetchSpy = installFetch((url) => {
+      if (String(url).includes('/uploads')) return new Promise((resolve) => { finish = resolve; });
+      return Promise.resolve(String(url).includes('/messages') ? held() : okResponse({ success: true }));
+    });
+    const tools = freshTools();
+    const attaching = attachFile(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    finish(okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 }));
+    await attaching;
+    expect((await checkpointing).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a file whose card landed clears the hold, and one the server skipped does not', async () => {
+    let card = held;
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).includes('/uploads')) return okResponse({ fileName: 'f.txt', originalName: 'f.txt', size: 1 });
+      return String(url).includes('/messages') ? card() : okResponse({ success: true });
+    });
+    const tools = freshTools();
+    await post(tools);
+    card = () => okResponse({ skipped: true });
+    await attachFile(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    card = () => okResponse({ id: 'm1' });
+    const attached = await attachFile(tools);
+    expect(JSON.parse(attached.content[0].text).fileName).toBe('f.txt');
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'other', deliveryId: 'nonce' })).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a repost held again beside the second checkpoint turns it back again', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    await checkpoint(tools);
+    const [, again] = await Promise.all([post(tools), checkpoint(tools)]);
+    expect(again.isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a repost the server refused leaves the hold', async () => {
+    let reply = held;
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    reply = () => okResponse({ refused: true });
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a post started while the checkpoint waits is waited for too', async () => {
+    const answers = [];
+    const fetchSpy = installFetch((url) => (String(url).includes('/messages')
+      ? new Promise((resolve) => { answers.push(resolve); })
+      : Promise.resolve(okResponse({ success: true }))));
+    const tools = freshTools();
+    const first = post(tools);
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    const second = post(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    answers[0](okResponse({ id: 'm1' }));
+    await first;
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    answers[1](held());
+    await second;
+    expect((await checkpointing).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(0);
+  });
+
+  test('a checkpoint waits for a decision card still posting', async () => {
+    let answer;
+    const fetchSpy = installFetch((url) => (String(url).includes('/decisions')
+      ? new Promise((resolve) => { answer = resolve; })
+      : Promise.resolve(okResponse({ success: true }))));
+    const tools = freshTools();
+    const deciding = tools.commonly_request_decision.call({
+      podId: 'pod-1', decisionClass: 'strategy', title: 't', question: 'q', options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+    });
+    const checkpointing = checkpoint(tools);
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(acks(fetchSpy)).toHaveLength(0);
+    answer(okResponse({ id: 'd1' }));
+    await deciding;
+    await checkpointing;
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a let-go whose ack fails keeps the hold', async () => {
+    let ack = () => ({ ok: false, status: 409, text: async () => JSON.stringify({ code: 'stale_delivery' }) });
+    const fetchSpy = installFetch(async (url) => {
+      if (String(url).includes('/ack')) return ack();
+      return held();
+    });
+    const tools = freshTools();
+    await post(tools);
+    await checkpoint(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(1);
+    ack = () => okResponse({ success: true });
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'later', deliveryId: 'nonce' })).isError).toBe(true);
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a hold the seat let go of does not turn back a later event', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    await tools.commonly_checkpoint_event.call({ eventId: 'one', deliveryId: 'nonce' });
+    await tools.commonly_checkpoint_event.call({ eventId: 'one', deliveryId: 'nonce' });
+    expect((await tools.commonly_checkpoint_event.call({ eventId: 'two', deliveryId: 'nonce' })).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(2);
+  });
+
+  test('a seat that chooses silence after the hold can still checkpoint', async () => {
+    const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBe(true);
+    expect((await checkpoint(tools)).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
+  test('a repost that lands clears the hold, and the checkpoint goes straight through', async () => {
+    let sends = 0;
+    const fetchSpy = installFetch(async (url) => {
+      if (!String(url).includes('/messages')) return okResponse({ success: true });
+      sends += 1;
+      return sends === 1 ? held() : okResponse({ id: 'm1' });
+    });
+    const tools = freshTools();
+    await post(tools);
+    await post(tools);
+    expect((await checkpoint(tools)).isError).toBeFalsy();
+    expect(acks(fetchSpy)).toHaveLength(1);
+  });
+
   test('a stale nonce refusal stays an error and is never retried', async () => {
     const fetchSpy = installFetch(async () => ({ ok: false, status: 409,
       text: async () => JSON.stringify({ code: 'stale_delivery', message: 'This delivery was superseded' }) }));
-    const result = await byName.commonly_checkpoint_event.call({ eventId: 'event', deliveryId: 'stale-nonce' });
+    const result = await freshTools().commonly_checkpoint_event.call({ eventId: 'event', deliveryId: 'stale-nonce' });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).toContain('stale_delivery');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
