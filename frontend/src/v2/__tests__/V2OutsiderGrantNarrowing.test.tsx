@@ -66,6 +66,15 @@ describe('install narrowing notice', () => {
     expect(screen.queryByText("It couldn't write in this pod either.")).toBeNull();
   });
 
+  test('is one card, not a card per line', () => {
+    render(<V2InstallNarrowingNotice agentName="lead" narrowing={{ ...narrowing, targetWritable: false }} busy={false} onConfirm={jest.fn()} onCancel={jest.fn()} />);
+    const notice = screen.getByTestId('byo-narrowing-confirmation');
+    // F170: each line used to carry the BYO error card, so one warning drew as three.
+    expect(notice).toHaveClass('v2-narrowing');
+    expect(notice.querySelector('.v2-byo__error')).toBeNull();
+    expect(notice.querySelector('.v2-narrowing__actions')?.querySelectorAll('button')).toHaveLength(2);
+  });
+
   test('says when the target pod would refuse writes too, in zh-CN as well', async () => {
     const blocked = { ...narrowing, hiddenLosesWritesCount: 0, targetWritable: false };
     const { rerender } = render(<V2InstallNarrowingNotice agentName="lead" narrowing={blocked} busy={false} onConfirm={jest.fn()} onCancel={jest.fn()} />);
@@ -128,6 +137,9 @@ describe('runtime narrowing notice', () => {
     const notice = screen.getByTestId('agent-runtime-narrowing');
     expect(notice).toHaveTextContent('lead can only write in Sentry Triage, because an outside-writable grant reaches it.');
     expect(notice).toHaveTextContent('outsider_grant_runtime_narrowed');
+    // F170: refused writes read as body text in their own box, not as a mono hint.
+    expect(notice).toHaveClass('v2-narrowing-status');
+    expect(notice).not.toHaveClass('v2-agent-wake-pods__hint');
   });
 
   test('never names a pod the owner cannot see', () => {
