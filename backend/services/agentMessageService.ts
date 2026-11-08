@@ -940,26 +940,61 @@ class AgentMessageService {
   }
 
   /**
-   * Has a scheduled wake fired here since this agent last posted? That wake's
-   * post goes past the run cap, since one line a day is not a monologue. One
-   * post per wake: the post itself is what ends it.
+   * Has a wake fired here since this agent last posted? That wake's post goes
+   * past the run cap: one line per wake in a quiet pod is not a monologue. One
+   * post per wake, since the post itself is what ends it.
+   *
+   * Two wakes count. A scheduled one is `config.schedule.lastFiredAt`, which
+   * agentScheduleService writes. A heartbeat is the newest delivered or acked
+   * `heartbeat` AgentEvent for this agent in this pod; every heartbeat, hosted
+   * ones included, is such a row (a native turn runs from the row enqueue
+   * creates). The `unread-digest` heartbeat counts too: it fires only on
+   * others' unread activity, which has already broken the run, and the floor
+   * below bounds it. A pending heartbeat hasn't woken anyone, so it doesn't.
+   *
+   * A heartbeat earns the pass only when the agent's last own post here is at
+   * least HEARTBEAT_OWED_POST_FLOOR_MS old, so a 10-minute heartbeat still
+   * can't post six lines an hour into an empty room. A fixed floor rather than
+   * the install's interval: the interval would grant a short heartbeat exactly
+   * the drip the cap exists to stop. The schedule wake has no floor; it fires
+   * once a day.
    */
+  static readonly HEARTBEAT_OWED_POST_FLOOR_MS = 60 * 60 * 1000;
+
   static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
     try {
+      const name = String(agentName).toLowerCase();
+      const instance = String(instanceId || 'default').toLowerCase();
       const row = await AgentInstallation.findOne({
-        ...installationIdentityFilter(String(agentName).toLowerCase(), String(instanceId || 'default').toLowerCase()),
+        ...installationIdentityFilter(name, instance),
         podId: { $eq: podId },
         status: 'active',
       }, null, { collation: IDENTITY_COLLATION })
         // The unique index lets a legacy row sit beside a current one, and the
         // wake is on whichever the schedule route wrote.
         .sort({ 'config.schedule.lastFiredAt': -1 })
-        .select('config.schedule.lastFiredAt').lean();
+        .select('instanceId config.schedule.lastFiredAt').lean();
       const firedAt = new Date(row?.config?.schedule?.lastFiredAt || 0).valueOf();
-      if (!firedAt) return false;
+      // enqueue lowercases agentName and stores instanceId as the install has
+      // it (a legacy row's missing id is 'default'), so match the stored and
+      // the normalized id. No collation: it would keep the query off the
+      // partial heartbeat_newest_per_install index.
+      const instanceIds = Array.from(new Set([instance, String(row?.instanceId || 'default')]));
+      const heartbeat = await AgentEvent.findOne({
+        agentName: name,
+        instanceId: { $in: instanceIds },
+        status: { $in: ['delivered', 'acked'] },
+        type: 'heartbeat',
+        podId: { $eq: podId },
+      }).sort({ createdAt: -1 }).select('createdAt').lean();
+      const beatAt = new Date(heartbeat?.createdAt || 0).valueOf();
+      if (!firedAt && !beatAt) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
       const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
-      return firedAt > new Date(own[own.length - 1]?.createdAt || 0).valueOf();
+      const lastOwnAt = new Date(own[own.length - 1]?.createdAt || 0).valueOf();
+      if (firedAt > lastOwnAt) return true;
+      return beatAt > lastOwnAt
+        && Date.now() - lastOwnAt >= AgentMessageService.HEARTBEAT_OWED_POST_FLOOR_MS;
     } catch (error) {
       // Toward posting (review-checklist rule 19): a refusal here is a job's
       // result nobody sees, and the cost is one post past the cap.
