@@ -689,6 +689,69 @@ describe('serverErrorReport', () => {
     });
   });
 
+  // F326: a thrown error keeps its frames and now says where it happened: the
+  // route pattern, built as a 5xx report's is, never the URL that held a token.
+  describe('the route of a thrown error', () => {
+    // The block above closed its client, and instrument.ts inits only on its
+    // first load, so this one starts its own with the same `beforeSend`.
+    beforeAll(() => {
+      process.env.SENTRY_DSN = 'https://public@sentry.invalid/1';
+      Sentry.init({ dsn: process.env.SENTRY_DSN, beforeSend: require('../../../instrument').beforeSend });
+    });
+    afterAll(async () => {
+      delete process.env.SENTRY_DSN;
+      await Sentry.close(100);
+    });
+    beforeEach(() => { report.resetReportStateForTest(); });
+
+    const thrownApp = () => appWith((app) => {
+      const router = express.Router();
+      router.get('/:id/throws', () => { throw new Error(`upstream said ${TOKEN}`); });
+      router.get('/:id/async', async () => { throw new Error(`upstream said ${TOKEN}`); });
+      router.get('/:id/next', (_req, _res, next) => { next(new Error(`upstream said ${TOKEN}`)); });
+      app.use('/api/pods', router);
+      const keyed = express.Router({ mergeParams: true });
+      keyed.get('/use', () => { throw new Error('boom'); });
+      app.use('/api/keys/:key', keyed);
+      app.use('/api/early', () => { throw new Error(`no route ${TOKEN}`); });
+    });
+
+    it.each(['throws', 'async', 'next'])('names the endpoint of a %s error, and never its URL', async (how) => {
+      await request(thrownApp()).get(`/api/pods/${TOKEN}/${how}?code=${TOKEN}`).expect(500);
+      await settle();
+      const events = eventsSent();
+      expect(events).toHaveLength(1);
+      expect(events[0].tags).toEqual({ source: 'unhandled', method: 'GET', route: `/api/pods/:id/${how}` });
+      expect(events[0].transaction).toBe(`GET /api/pods/:id/${how}`);
+      expect(events[0].exception.values[0].stacktrace.frames.length).toBeGreaterThan(0);
+      expect(JSON.stringify(mockEnvelopes)).not.toContain(TOKEN);
+    });
+
+    it('a word-shaped value in a mount is `:value`, not the value', async () => {
+      await request(thrownApp()).get('/api/keys/sk_live_abc/use').expect(500);
+      await settle();
+      const [event] = eventsSent();
+      expect(event.tags.route).toBe('/api/keys/:value/use');
+      expect(JSON.stringify(mockEnvelopes)).not.toContain('sk_live_abc');
+    });
+
+    it('an error before any route matched is `unmatched`', async () => {
+      await request(thrownApp()).get(`/api/early/${TOKEN}`).expect(500);
+      await settle();
+      const [event] = eventsSent();
+      expect(event.tags).toEqual({ source: 'unhandled', method: 'GET', route: 'unmatched' });
+      expect(JSON.stringify(mockEnvelopes)).not.toContain(TOKEN);
+    });
+
+    it('an error object nobody routed names nothing, whatever it carries', () => {
+      const beforeSend = require('../../../instrument').beforeSend;
+      const stray = Object.assign(new Error('x'), { method: 'GET', route: `/api/${TOKEN}` });
+      const sent = beforeSend({ exception: { values: [{ type: 'Error', value: 'x' }] } }, { originalException: stray });
+      expect(sent).not.toHaveProperty('tags');
+      expect(sent).not.toHaveProperty('transaction');
+    });
+  });
+
   describe('where it is mounted', () => {
     const server = fs.readFileSync(path.join(__dirname, '../../../server.ts'), 'utf8');
 
