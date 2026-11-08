@@ -619,4 +619,22 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
       outcome: 'ok', callerConfinement: 'named_unconfined',
     }));
   });
+  // F356 review: naming lifts sandbox_absent, but never a host that hasn't
+  // reported its sandbox; only hostUnconfined stops naming, so pin it.
+  test('a grant that names it cannot lift a host that has not reported its sandbox', async () => {
+    await bindSeat({ reported: false });
+    await User.updateOne({ _id: SEAT }, { $set: { isBot: true, botType: 'agent' } });
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    mockPod.findById.mockImplementation(() => ({
+      select: () => ({ lean: async () => ({
+        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+      }) }),
+    }));
+    await RoomGrant.create(namedPodGrant());
+    await expect(call()).rejects.toMatchObject({
+      code: 'grant_broker_unconfined', statusCode: 403,
+      details: expect.objectContaining({ reason: 'sandbox_not_reported' }),
+    });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+  });
 });
