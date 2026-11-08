@@ -70,6 +70,7 @@ import {
   type ByoHandoffAdapter,
 } from './byoHandoffService';
 import { appendLongTermMemory } from './agentMemoryService';
+import { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } from './cloudRuntimeOwnership';
 
 // --- public surface --------------------------------------------------------
 
@@ -2306,6 +2307,14 @@ export async function runAgent(
       'config',
       `runtimeType is '${runtimeType || 'unset'}', expected 'native'`,
     );
+  }
+  // A native agent runs on Commonly's model account, so it runs only while
+  // the account that installed it may (cloudRuntimeOwnership). A hosted agent
+  // is metered per owner instead, and never gated here.
+  if (!hostedNative && !(await cloudRuntimeMayRun(installation.agentName, installation.instanceId || 'default'))) {
+    return {
+      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0, noActionReason: CLOUD_RUN_REFUSED_REASON,
+    };
   }
   const cfg = hostedNative
     ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {

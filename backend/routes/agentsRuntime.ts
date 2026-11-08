@@ -30,6 +30,7 @@ const auth = require('../middleware/auth');
 const daemonAuth = require('../middleware/daemonAuth');
 const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
+const { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } = require('../services/cloudRuntimeOwnership');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentSendFreshness = require('../services/agentSendFreshness');
@@ -776,6 +777,13 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       }
     }
 
+    // A cloud runtime runs only while the account that installed it may; the
+    // feed goes empty otherwise, like the hosted meter above, and its events
+    // wait (cloudRuntimeOwnership).
+    if (!(await cloudRuntimeMayRun(agentName, instanceId))) {
+      return res.json({ events: [], refused: CLOUD_RUN_REFUSED_REASON });
+    }
+
     const { events, inboxCount } = await AgentEventService.listInboxPage({
       agentName,
       instanceId,
@@ -840,6 +848,10 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
           .map((id) => id.toString()),
       ),
     );
+
+    if (!(await cloudRuntimeMayRun(resolvedAgentName, instanceId))) {
+      return res.json({ events: [], refused: CLOUD_RUN_REFUSED_REASON });
+    }
 
     // List events across all installed pods
     const events = await AgentEventService.list({
