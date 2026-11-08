@@ -2062,6 +2062,7 @@
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first.",
       "controlsNotSaved": "Couldn’t save the model and effort for {{name}}, so nothing was reconnected. Try again, or clear them to reconnect now and change them later in Settings, then How it runs.",
+      "controlsInSettings": "The model and effort for {{name}} can’t be saved from this page, so nothing was reconnected. Clear them to reconnect, then change them in Settings, then How it runs.",
       "controlsOtherHarness": "{{name}} runs {{harness}}, so a model for another runner can’t be saved here, and nothing was reconnected. Pick {{harness}} as the runner, or change the runner in Settings, then How it runs.",
       "controlsNotEditable": "Only the person who installed {{name}}, or an admin, can change its model and effort, so nothing was reconnected. Clear them to reconnect."
     },

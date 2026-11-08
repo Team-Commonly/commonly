@@ -98,7 +98,7 @@ describe('every harness on the add page', () => {
     await pickCodexModelOnExistingSeat();
     const base = axios.get.getMockImplementation();
     axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
-      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0' } }) : base(url, config)));
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0', runtimeControls: { runtimeType: 'webhook', adapter: 'codex' } } }) : base(url, config)));
     axios.patch.mockResolvedValue({ data: {} });
     fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
     await screen.findByText(/your connect command for/i);
@@ -132,6 +132,43 @@ describe('every harness on the add page', () => {
     expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
   });
 
+  test('a seat whose harness isn’t on record is changed in Settings, not here', async () => {
+    await pickCodexModelOnExistingSeat();
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0', runtimeControls: { runtimeType: 'wrapper' } } })
+      : base(url, config)));
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    expect(await screen.findByText(/The model and effort for sam-codex can’t be saved from this page/)).toBeInTheDocument();
+    expect(axios.patch).not.toHaveBeenCalled();
+    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
+  });
+
+  test('a link naming another instance never reaches that seat\'s settings', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat' }] });
+      if (url.startsWith('/api/hosted/availability')) return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 3, turnsPerDay: 20 } } });
+      if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
+      if (url === '/api/registry/harness-catalog') return Promise.resolve({ data: { harnesses: CATALOG } });
+      return Promise.resolve({ data: {} });
+    });
+    // The page reads its prefill from window.location, not the router.
+    window.history.pushState({}, '', '/v2/agents/byo?pod=p1&instanceId=foo');
+    render(<AuthContext.Provider value={authValue}><MemoryRouter><V2AgentBYO /></MemoryRouter></AuthContext.Provider>);
+    await waitFor(() => expect(screen.getByTestId('byo-runner-codex')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByRole('button', { name: INSTALL_BUTTON })).toBeEnabled());
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6.1-sol' } });
+    axios.post.mockImplementation((url) => (url === '/api/registry/install'
+      ? Promise.reject({ response: { data: { error: 'Agent already installed in this pod' } } })
+      : Promise.resolve({ data: { token: 'cm_agent_test_token' } })));
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    expect(await screen.findByText(/can’t be saved from this page/)).toBeInTheDocument();
+    expect(axios.get.mock.calls.some(([url]) => /manage-settings/.test(url))).toBe(false);
+    expect(axios.patch).not.toHaveBeenCalled();
+    window.history.pushState({}, '', '/');
+  });
+
   test('a legacy seat stored only as runtimeType codex counts as Codex', async () => {
     await pickCodexModelOnExistingSeat();
     const base = axios.get.getMockImplementation();
@@ -161,7 +198,7 @@ describe('every harness on the add page', () => {
     axios.patch.mockRejectedValue({ response: { status: 422, data: { error: 'The requested model is not reported by this harness' } } });
     const base = axios.get.getMockImplementation();
     axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
-      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0' } }) : base(url, config)));
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0', runtimeControls: { runtimeType: 'webhook', adapter: 'codex' } } }) : base(url, config)));
     fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
     expect(await screen.findByText(/Couldn’t save the model and effort for sam-codex.*\(The requested model is not reported by this harness\)/)).toBeInTheDocument();
     expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);

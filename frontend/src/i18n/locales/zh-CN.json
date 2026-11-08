@@ -2118,6 +2118,7 @@
       "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",
       "machineRequired": "请先选择一台电脑。",
       "controlsNotSaved": "无法保存 {{name}} 的模型和推理强度，本次没有重新连接。请重试，或先清空它们完成连接，之后在设置的「运行方式」里再改。",
+      "controlsInSettings": "无法在此页保存 {{name}} 的模型和推理强度，本次没有重新连接。请先清空它们完成连接，之后在设置的「运行方式」里再改。",
       "controlsOtherHarness": "{{name}} 的运行器是 {{harness}}，这里不能保存其他运行器的模型，本次没有重新连接。请改选 {{harness}}，或在设置的「运行方式」里更换运行器。",
       "controlsNotEditable": "只有 {{name}} 的安装者或管理员能更改它的模型和推理强度，本次没有重新连接。清空它们即可重新连接。"
     },

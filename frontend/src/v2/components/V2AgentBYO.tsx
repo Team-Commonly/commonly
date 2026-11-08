@@ -1035,6 +1035,13 @@ const V2AgentBYO: React.FC = () => {
         // that carries it, which would drop the seat's webhook and auth. So a
         // model for a different harness than the seat runs isn't saved here.
         const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
+        // The install names no instance, so the server derives it from the
+        // display name: 'default' unless a persona names the seat. Only then is
+        // the seat that answered "already installed" the one these calls reach.
+        if (Object.keys(controls).length && (personaCard || prefill.instanceId !== 'default')) {
+          setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
+          return;
+        }
         if (Object.keys(controls).length) {
           type ReconnectSettings = { runtimeSourcePodId?: string | null; runtimeEditable?: boolean; runtimeControls?: SeatRuntime };
           let settings: ReconnectSettings;
@@ -1051,7 +1058,13 @@ const V2AgentBYO: React.FC = () => {
             return;
           }
           const storedHarness = seatHarness(settings.runtimeControls);
-          if (storedHarness && storedHarness !== listenAdapter) {
+          // A seat whose harness isn't on record can't be checked against the
+          // model, so it's changed in Settings, where the harness is shown.
+          if (!storedHarness) {
+            setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
+            return;
+          }
+          if (storedHarness !== listenAdapter) {
             setError(t('agentByo.errors.controlsOtherHarness', { name: cleanName, harness: harnessLabel(harnessCatalog, storedHarness) }));
             return;
           }
