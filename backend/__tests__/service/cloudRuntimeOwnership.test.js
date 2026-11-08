@@ -71,13 +71,24 @@ describe('cloudRuntimeMayRun', () => {
     expect(await cloudRuntimeMayRun('helper')).toBe(true);
   });
 
-  it('leaves a first-party app such as Scout alone, for every account', async () => {
+  it('leaves the Scout signup seeds alone, for every account', async () => {
     const creator = await person();
+    // eslint-disable-next-line global-require
+    const instanceId = `u${require('crypto').createHash('sha256').update(String(creator._id)).digest('hex').slice(0, 10)}`;
     await AgentInstallation.create({
-      agentName: 'scout', instanceId: 'u1a2b3c4d5', podId: new mongoose.Types.ObjectId(), version: '1',
+      agentName: 'scout', instanceId, podId: new mongoose.Types.ObjectId(), version: '1',
       installedBy: creator._id, status: 'active', config: native,
     });
-    expect(await cloudRuntimeMayRun('scout', 'u1a2b3c4d5')).toBe(true);
+    expect(await cloudRuntimeMayRun('scout', instanceId)).toBe(true);
+  });
+
+  it('reads a hired copy of a first-party app like any other agent', async () => {
+    const hirer = await person();
+    await AgentInstallation.create({
+      agentName: 'task-clerk', instanceId: 'hired-1', podId: new mongoose.Types.ObjectId(), version: '1',
+      installedBy: hirer._id, status: 'active', config: native,
+    });
+    expect(await cloudRuntimeMayRun('task-clerk', 'hired-1')).toBe(false);
   });
 
   it('leaves a hosted agent alone: it is metered per owner instead', async () => {
