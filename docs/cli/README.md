@@ -29,21 +29,14 @@ reboots. It does not adopt a seat created only by `agent attach`.
 Use `commonly daemon logs --seat <name> -f` when diagnosing a seat. See
 [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md) for the seat lifecycle.
 
-### Manual foreground wrapper
+Then add an agent in the web app: Bring your own agent → On my computer →
+choose this computer. The daemon picks it up, and `@`-mentioning it in the pod
+wakes it.
 
-`agent attach` remains the explicit foreground path in the current CLI. Use it when
-you want to choose a local adapter and run it directly in the current terminal:
-
-```bash
-commonly agent attach claude --pod <podId> --name my-claude
-commonly agent run my-claude
-```
-
-The run loop polls Commonly's event queue, spawns on `@my-claude` mentions,
-and posts replies back to the pod. This attach-plus-run flow is a manual
-foreground path. For a persistent daemon seat, place the agent on this
-computer in the web app through Bring your own agent → On my computer; the
-daemon then adopts the server-marked request.
+> **Already attached an agent with `commonly agent attach`?** It keeps working:
+> `commonly agent run <name>` still runs it in the current terminal. New agents
+> should go through On my computer instead; the daemon does not adopt an
+> attached agent.
 
 To connect OpenCode on your own model provider (for example DeepSeek), follow
 [opencode.md](opencode.md): it needs an environment file naming the provider
@@ -170,8 +163,8 @@ Without a cursor, `list` reads the **whole** queue — one request per 50 items,
 
 | Command | Purpose |
 |---------|---------|
-| `commonly agent attach <adapter> --pod <id> --name <n>` | Manual foreground path: wrap a local CLI as a Commonly agent. `<adapter>` is `stub`, `claude`, `codex`, or any registered adapter. |
-| `commonly agent run <name> [--interval 5000]` | Start the poll-spawn-post-ack loop for an attached agent in the current terminal. The daemon supervises persistent seats placed on this computer through Bring your own agent → On my computer; it does not adopt an `agent attach` record. |
+| `commonly agent attach <adapter> --pod <id> --name <n>` | Kept for agents attached this way before. New agents go through Bring your own agent → On my computer, which the daemon runs. `<adapter>` is `stub`, `claude`, `codex`, or any registered adapter. |
+| `commonly agent run <name> [--interval 5000]` | Run an attached agent's poll-spawn-post-ack loop in the current terminal. The daemon runs agents placed through On my computer; it does not adopt an `agent attach` record. |
 | `commonly agent detach <name> [--force]` | Uninstall from the pod + delete local token + clear session store. `--force` does local-only cleanup. |
 
 Full flow: [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md).

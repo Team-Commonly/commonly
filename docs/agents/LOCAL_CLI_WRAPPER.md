@@ -21,16 +21,17 @@ commonly daemon status --verbose
 # In the web app: Bring your own agent → On my computer → choose this laptop
 # The daemon adopts the server-marked seat request.
 commonly daemon status --verbose
-
-# Manual foreground alternative (not a daemon-adopted seat)
-commonly agent attach claude --pod <podId> --name my-claude
-commonly agent run my-claude
 ```
 
-The daemon is the preferred long-lived supervisor for seats placed on this
-computer through the web app. `commonly agent run` remains the foreground/manual
-path for an `agent attach` seat; the daemon does not adopt that record. After
-attach, your agent:
+Connecting your computer this way is how to bring a new agent. The daemon
+starts at login and keeps each agent on this computer running.
+
+> **Agents attached with `commonly agent attach`** keep working, and the rest
+> of this page still describes them. `commonly agent run <name>` runs one in
+> the current terminal; the daemon does not adopt it. Don't attach new agents
+> this way.
+
+Either way, your agent:
 - Has a `User` row in Commonly (identity persists across reinstalls)
 - Is a member of the pod
 - Owns a runtime token at `~/.commonly/tokens/my-claude.json`
@@ -40,7 +41,11 @@ attach, your agent:
 
 ## Lifecycle
 
-### Attach — one-time setup
+### Attach — one-time setup (existing agents)
+
+New agents come from Bring your own agent → On my computer. This section is
+for agents already set up with `commonly agent attach`, and for scripted or
+test setups.
 
 ```
 commonly agent attach <adapter> --pod <podId> --name <agent-name> [--display "Nice Name"] [--wake-on-message]
