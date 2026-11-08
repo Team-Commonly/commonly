@@ -106,6 +106,33 @@ describe('BYO runner switch and key replacement (TASK-645 item 5, #3019 HOLD)', 
     window.history.pushState({}, '', '/');
   });
 
+  test('a reconnect names an agent that exists, and the replace prompt scrolls into view (F323)', async () => {
+    mockAlreadyKeyed(() => Promise.resolve({ data: { existing: true } }));
+    const rosterless = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (/\/api\/registry\/pods\/p1\/agents/.test(url)
+      ? Promise.resolve({ data: { agents: [{ name: 'sam-claude', instanceId: 'default', installedBy: 'u1', connection: { state: 'never' } }] } })
+      : rosterless(url)));
+    const scrolled = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView() { scrolled.push(this); };
+    window.history.pushState({}, '', '/?name=sam-claude&reconnect=1');
+    try {
+      renderPage();
+      const rail = screen.getByTestId('byo-preview');
+      await waitFor(() => expect(rail.querySelector('.v2-byo__preview-status--waiting')).not.toBeNull());
+      expect(rail.querySelector('.v2-byo__preview-status--draft')).toBeNull();
+      expect(screen.queryByText('not created yet')).toBeNull();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled());
+      fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
+      const confirm = await screen.findByTestId('byo-replace-key-confirmation');
+      await waitFor(() => expect(scrolled).toContain(confirm));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   test('the runner picker is disabled while an issue is in flight', async () => {
     let release;
     mockAlreadyKeyed(() => new Promise((resolve) => { release = resolve; }));

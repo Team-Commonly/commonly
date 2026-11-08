@@ -770,8 +770,11 @@ const V2AgentBYO: React.FC = () => {
     // A token has been issued and the agent has not checked in yet. That is not
     // 'draft' — the install succeeded, and the page says so beside this rail.
     // A timeout reads the same way: still waiting, not un-created.
-    if (!issued) return 'draft';
-    return listenState === 'listening' ? 'live' : 'waiting';
+    if (issued) return listenState === 'listening' ? 'live' : 'waiting';
+    // An agent the roster already holds (a reconnect) exists. It isn't a draft,
+    // whatever state its connection is in (F323).
+    if (existingConnection) return existingConnection.connection.state === 'connected' ? 'live' : 'waiting';
+    return 'draft';
   })();
   const previewDisplayName = hosted?.agentName || placed?.agentName || issued?.agentName || previewName;
 
@@ -1182,6 +1185,13 @@ const V2AgentBYO: React.FC = () => {
     resultRef.current?.scrollIntoView?.({ block: 'start' });
     listenCopyRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [resultKind, issued]);
+  // The replace prompt opens below the form. At 390 that is under the fold,
+  // so a press of Reconnect looked like nothing happened (F323).
+  const replaceRef = useRef<HTMLDivElement | null>(null);
+  const replaceOpen = Boolean(pendingReplacement && !issued);
+  useEffect(() => {
+    if (replaceOpen) replaceRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [replaceOpen]);
 
   // "Run it here" is on screen from first paint whenever the instance hosts
   // (the chooser, or the compact hosted form), so its exposure is counted
@@ -1868,7 +1878,7 @@ const V2AgentBYO: React.FC = () => {
       )}
 
       {pendingReplacement && !issued && (
-        <div className="v2-byo__form" data-testid="byo-replace-key-confirmation">
+        <div className="v2-byo__form" data-testid="byo-replace-key-confirmation" ref={replaceRef}>
           <p className="v2-byo__error">
             {t(neverConnected ? 'agentByo.rekey.warningNever' : 'agentByo.rekey.warning', { name: pendingReplacement.agentName })}
           </p>
