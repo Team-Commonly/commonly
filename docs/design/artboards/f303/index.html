@@ -63,24 +63,24 @@
 <p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state is drawn twice, once at 1440 (a schematic: the chat column and inspector at 720 wide, type at full size, so measure screenshots against the 390 frames and the rules below, not its proportions) and once at 390, one in light and the other in dark. Names are samples.</p>
 
 <h2>1. The agent is gone: the pod says so and offers the close</h2>
-<p class="why">This is the case F303 was filed on. The agent was uninstalled, so nothing will answer, and today the pod sits in the list with no way out. The notice sits at the foot of the thread, above the composer, so it is the last thing read. "Close" is the primary action here because it's the only useful one. The composer stays: writing still works, and it would reopen the pod for the person.</p>
+<p class="why">This is the case F303 was filed on. The agent was uninstalled, so nothing will answer. The uninstall filter already keeps the pod off the pods list, but a link, a notification or the recap still opens it, and there it offers prompts to nobody with no way out. The notice sits at the foot of the thread, above the composer, so it is the last thing read. "Close" is the primary action here because it's the only useful one. The composer stays: writing still works, and it would reopen the pod for the person.</p>
 <div class="row">
   <div><p class="cap">1440 · light</p>
   <div class="frame w1440"><div class="split">
     <div class="chat">
       <div class="head">otter <span class="chip">Direct message</span></div>
       <div class="msg"><div class="av"></div><div><span class="who">otter</span><span class="when">Nov 7</span><div>Done. The summary is pinned in the pod.</div></div></div>
-      <div class="notice" data-state="agent-gone"><p>otter was removed, so nothing will answer here. Close this direct message to take it off your list. Its messages stay.</p>
+      <div class="notice" data-state="agent-gone"><p>otter was removed, so nothing will answer here. Its messages stay. Close this direct message if you’re done with it.</p>
         <div class="actions"><button class="btn btn--fill">Close direct message</button></div></div>
       <div class="composer">Message otter</div>
     </div>
-    <div class="insp"><div class="group"><h3>Close</h3><p>Takes this off your list. Writing here again brings it back.</p><button class="link">Close direct message</button></div></div>
+    <div class="insp"><div class="group"><p>The inspector’s Close card steps aside in this state: the notice carries the close.</p></div></div>
   </div></div></div>
   <div><p class="cap">390 · dark</p>
   <div class="frame w390 dark"><div class="m390">
     <div class="head">otter <span class="chip">Direct message</span></div>
     <div class="msg"><div class="av"></div><div><span class="who">otter</span><span class="when">Nov 7</span><div>Done. The summary is pinned in the pod.</div></div></div>
-    <div class="notice"><p>otter was removed, so nothing will answer here. Close this direct message to take it off your list. Its messages stay.</p>
+    <div class="notice"><p>otter was removed, so nothing will answer here. Its messages stay. Close this direct message if you’re done with it.</p>
       <div class="actions"><button class="btn btn--fill">Close direct message</button></div></div>
     <div class="composer">Message otter</div>
   </div></div></div>
@@ -126,8 +126,8 @@
   <dt>Who</dt><dd>Only the human member. The control doesn't render for anyone else, and the endpoint refuses them.</dd>
   <dt>Reopen</dt><dd>The pod reopens when the person writes in it, when <code>getOrCreateAgentRoom</code> runs (Talk to), and when the agent posts.</dd>
   <dt>Lists</dt><dd>A closed pod leaves <code>GET /api/pods</code> and the recap's pods, as F307 lists. Its URL still opens it.</dd>
-  <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已移除，这里不会再有回复。关闭后它会从你的列表里消失，消息都会保留。"</dd>
-  <dt>Agent gone</dt><dd>State 1 shows when the pod has install rows and every one is <code>uninstalled</code>. That's the test <code>dropUninstalledAgentRooms</code> applies, read for one pod. A pod with no rows at all is not evidence of removal and shows no notice, and an install that is <code>paused</code>, <code>error</code> or <code>stale</code> still counts as present. The filter counts every row in the pod, which in an agent-room is that one agent's.</dd>
+  <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已移除，这里不会再有回复，消息都会保留。用不到了就关闭私信吧。"</dd>
+  <dt>Agent gone</dt><dd>State 1 shows when the pod has install rows and every one is <code>uninstalled</code>. That's the test <code>dropUninstalledAgentRooms</code> applies, read for one pod. A pod with no rows at all is not evidence of removal and shows no notice, and an install that is <code>paused</code>, <code>error</code> or <code>stale</code> still counts as present. The filter counts every row in the pod, which in an agent-room is that one agent's. Such a pod is already off <code>GET /api/pods</code> through that filter, so the notice doesn't say closing hides it, and the inspector's Close card, whose "or the agent writing to you" can't come true, steps aside.</dd>
 </dl>
 </body>
 </html>
