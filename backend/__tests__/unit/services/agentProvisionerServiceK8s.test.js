@@ -104,7 +104,7 @@ const mock = {
 const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey, issueLiteLLMOpenRouterKey,
-  readOpenClawIdentityFile, getAgentRuntimeLogs,
+  readOpenClawIdentityFile, getAgentRuntimeLogs, getAgentSessionSizes,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -1001,5 +1001,35 @@ describe('F103 review: an old LiteLLM key is retired only after its replacement 
     expect(logged.filter((line) => /Retired the key replaced/.test(line))).toEqual([]);
     expect(warned.filter((line) => /could not retire the key replaced for theo: LiteLLM 503/.test(line))).toHaveLength(1);
     for (const key of [OLD, 'sk-freshly-issued', 'sk-master-for-test']) expect(warned.join('\n')).not.toContain(key);
+  });
+});
+
+// F329: the gateway is retired (ADR-021 Part B), and the size check ran every
+// 10 minutes, waited 60 s for a gateway pod and logged an ERROR each time.
+describe('session sizes with no gateway', () => {
+  it('reads as no sessions, at once, when the gateway Deployment does not exist', async () => {
+    k8s.__mock.readNamespacedDeployment.mockRejectedValueOnce(
+      Object.assign(new Error('deployments.apps "clawdbot-gateway" not found'), { response: { statusCode: 404 } }),
+    );
+    const before = k8s.__mock.execCommands.length;
+    const started = Date.now();
+    await expect(getAgentSessionSizes()).resolves.toEqual([]);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(k8s.__mock.readNamespacedDeployment).toHaveBeenCalledTimes(1);
+    expect(k8s.__mock.execCommands.length).toBe(before);
+  });
+
+  it('still fails on any other error reading the Deployment', async () => {
+    k8s.__mock.readNamespacedDeployment.mockRejectedValue(
+      Object.assign(new Error('forbidden'), { response: { statusCode: 403 } }),
+    );
+    try {
+      await expect(getAgentSessionSizes({ timeoutMs: 10, pollMs: 1 })).rejects.toThrow('forbidden');
+    } finally {
+      k8s.__mock.readNamespacedDeployment.mockReset();
+      k8s.__mock.readNamespacedDeployment.mockImplementation(async () => ({
+        body: { spec: { selector: { matchLabels: { app: 'clawdbot-gateway' } }, template: { metadata: {} } } },
+      }));
+    }
   });
 });
