@@ -28,6 +28,8 @@ const read = (rel: string): string =>
 // The task board's own sheet (S4, lifted from the d215 frame). Its rules left
 // v2.css in the same change, so every board guard reads this file.
 const boardCss = read('../components/V2PodBoard.css');
+// The F164 narrowing notices own their sheet (F170), since two pages render them.
+const narrowingCss = read('../components/V2OutsiderGrantNarrowing.css');
 // Settings keeps its own sheet, lifted from the d215 frame (TASK-688).
 const ss = read('../components/V2SettingsPage.css');
 
@@ -6716,3 +6718,28 @@ test("the owner's Connect link in a not-connected notice wears the accent", () =
   expect(body).toContain('color: var(--v2-accent-text)');
   expect(body).toContain('font-weight: 600');
 });
+
+describe('F164 narrowing notices (F170 browser check)', () => {
+  it('draws the install notice as one card with its lines unboxed, and Cancel centred beside the confirm', () => {
+    const card = topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing');
+    expect(card).toContain('border: 1px solid var(--v2-border)');
+    expect(card).toContain('background: var(--v2-surface)');
+    expect(topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing p')).toContain('margin: 0');
+    expect(topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing__pods')).toContain('margin: 0');
+    // V2AgentBYO.css gives its link button align-self: flex-start.
+    const action = topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing__actions > button');
+    expect(action).toContain('align-self: center');
+    // V2AgentBYO.css gives its submit margin-top: 6px, which drops it below Cancel.
+    expect(action).toContain('margin-top: 0');
+    expect(narrowingCss).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-root \.v2-narrowing__actions > button \{[^}]*min-height: 44px/);
+  });
+
+  it('sets the runtime notice as body text, not an 11.5px hint', () => {
+    const status = topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing-status');
+    expect(status).toContain('font: 400 13px/20px var(--v2-font)');
+    expect(status).toContain('color: var(--v2-text-primary)');
+    // v2.css has no --v2-radius-md; an undefined token squares the box.
+    expect(status).toContain('border-radius: var(--v2-radius)');
+  });
+});
+

@@ -5,6 +5,7 @@
 // any other pod is a count.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import './V2OutsiderGrantNarrowing.css';
 
 export const NARROWING_CONFIRM_CODE = 'outsider_grant_narrowing_confirm_required';
 export const RUNTIME_NARROWED_CODE = 'outsider_grant_runtime_narrowed';
@@ -53,24 +54,26 @@ export const V2InstallNarrowingNotice: React.FC<{
   const losesAny = Boolean(preview && (preview.losesWrites.length > 0 || preview.hiddenLosesWritesCount > 0));
   const lead = t(preview ? 'outsiderNarrowing.install.lead' : 'outsiderNarrowing.install.unavailable', { name: agentName });
   return (
-    <div className="v2-byo__form" data-testid="byo-narrowing-confirmation" role="alert">
-      <p className="v2-byo__error">{lead}</p>
-      {preview && losesAny && <p className="v2-byo__error">{t('outsiderNarrowing.install.losesWrites')}</p>}
+    <div className="v2-narrowing" data-testid="byo-narrowing-confirmation" role="alert">
+      <p>{lead}</p>
+      {preview && losesAny && <p>{t('outsiderNarrowing.install.losesWrites')}</p>}
       {preview && losesAny && (
-        <ul data-testid="byo-narrowing-pods">
+        <ul className="v2-narrowing__pods" data-testid="byo-narrowing-pods">
           {preview.losesWrites.map((pod) => <li key={pod.podId}>{pod.name}</li>)}
           {preview.hiddenLosesWritesCount > 0 && (
             <li>{t('outsiderNarrowing.hiddenPods', { count: preview.hiddenLosesWritesCount })}</li>
           )}
         </ul>
       )}
-      {preview && !preview.targetWritable && <p className="v2-byo__error">{t('outsiderNarrowing.install.targetBlocked')}</p>}
-      <button type="button" className={confirmClassName} disabled={busy} onClick={onConfirm}>
-        {confirmLabel || t('outsiderNarrowing.install.confirm')}
-      </button>
-      <button type="button" className={cancelClassName} onClick={onCancel}>
-        {t('outsiderNarrowing.install.cancel')}
-      </button>
+      {preview && !preview.targetWritable && <p>{t('outsiderNarrowing.install.targetBlocked')}</p>}
+      <div className="v2-narrowing__actions">
+        <button type="button" className={confirmClassName} disabled={busy} onClick={onConfirm}>
+          {confirmLabel || t('outsiderNarrowing.install.confirm')}
+        </button>
+        <button type="button" className={cancelClassName} onClick={onCancel}>
+          {t('outsiderNarrowing.install.cancel')}
+        </button>
+      </div>
     </div>
   );
 };
@@ -91,7 +94,7 @@ export const V2RuntimeNarrowingNotice: React.FC<{
     text = t('outsiderNarrowing.runtime.noPod', { name: agentName, count: status.narrowedPodCount });
   }
   return (
-    <p className="v2-agent-wake-pods__hint" role="status" data-testid="agent-runtime-narrowing">
+    <p className="v2-narrowing-status" role="status" data-testid="agent-runtime-narrowing">
       {text}
       {' '}
       <code>{RUNTIME_NARROWED_CODE}</code>
