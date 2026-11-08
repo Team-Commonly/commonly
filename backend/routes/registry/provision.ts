@@ -15,6 +15,7 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const DMService = require('../../services/dmService');
 const {
+  composeGatewayRetired,
   provisionAgentRuntime,
   startAgentRuntime,
   restartAgentRuntime,
@@ -201,6 +202,18 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       if (!ownership.owned) {
         return res.status(403).json({ code: ownership.failure, error: runtimeCredentialRefusal[ownership.failure] });
       }
+    }
+
+    // Refused before any token is minted or rotated. Without this the start
+    // fails and the install is still recorded as provisioned.
+    if (composeGatewayRetired(runtimeType)) {
+      logInstallRefusal('registry.provision', 'local_gateway_retired', {
+        userId, agentName: name, instanceId: normalizedInstanceId, podId,
+      });
+      return res.status(410).json({
+        code: 'local_gateway_retired',
+        message: 'The local OpenClaw gateway was retired. Use a native agent, or attach a local CLI.',
+      });
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {

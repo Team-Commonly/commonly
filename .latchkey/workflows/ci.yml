@@ -14,7 +14,7 @@
 #
 # NOT ported (stay on GitHub Actions) and why:
 #   - service-test            — service `options:` (the mongo nofile ulimit) are refused by Latchkey CI
-#   - tool-tests (full)       — needs `submodules: recursive` + `fetch-depth: 0` for the tool-contract guard
+#   - tool-tests (full)       — not ported; it needs neither submodules nor full history now
 #   - chart-lint              — downloads helm / kubeconform / yq binaries
 #   - latchkey-probe/route/backstop, test-gate — GitHub-specific runner-route plumbing
 #   - deploy-dev, deploy-staging, cve-scan, npm-publish, smoke-test, playwright,

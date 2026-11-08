@@ -5,10 +5,9 @@
 **Last Updated**: March 26, 2026
 
 **Deployment boundary (2026-09-19):** the `clawdbot-gateway` probes in this
-runbook are for the optional legacy gateway profile only. The current hosted
-dev values disable `agents.clawdbot`; absence of that deployment is expected.
-Use the runtime-specific logs and status surfaces for the active adapter when
-the legacy profile is not enabled.
+runbook are history. The chart no longer ships a gateway (ADR-021 Part B), so
+absence of that deployment is expected. Use the runtime-specific logs and
+status surfaces for the active adapter.
 
 ---
 

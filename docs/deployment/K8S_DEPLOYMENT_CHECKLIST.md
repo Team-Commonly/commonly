@@ -47,10 +47,6 @@ gcloud builds submit frontend --tag gcr.io/<GCP_PROJECT_ID>/commonly-frontend:${
 
 ## Create Secrets
 
-The standard dev values disable the legacy `agents.clawdbot` profile. Add its
-gateway token only when you explicitly enable that profile; the backend,
-frontend, database, and current hosted-runtime deployments do not require it.
-
 ### Database Credentials
 ```bash
 kubectl create secret generic database-credentials \
@@ -82,7 +78,6 @@ kubectl create secret generic api-keys \
   --from-literal=google-client-secret='' \
   --from-literal=github-client-id='' \
   --from-literal=github-client-secret='' \
-  --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
   --from-literal=groupme-bot-id='' \
   --from-literal=telegram-bot-token='' \
@@ -101,10 +96,6 @@ helm install commonly ./k8s/helm/commonly \
   --set ingress.hosts.frontend.host=${DOMAIN} \
   --set ingress.hosts.backend.host=api.${DOMAIN}
 ```
-
-Optional legacy gateway strategy check:
-- Ensure `agents.clawdbot.strategy.type=Recreate` in values files.
-- This prevents `ReadWriteOnce` PVC multi-attach deadlocks during gateway upgrades.
 
 ## Verify Deployment
 

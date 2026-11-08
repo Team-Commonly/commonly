@@ -298,7 +298,12 @@ const gatewayHealthLimit = platformIpRateLimit({
 });
 
 router.get('/clawdbot', gatewayHealthLimit, async (_req: unknown, res: Res) => {
-  const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'http://clawdbot-gateway:18789';
+  // The chart no longer sets this (ADR-021 Part B). Unset means no gateway, so
+  // an anonymous hit must not probe a hard-coded address.
+  const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL;
+  if (!gatewayUrl) {
+    return res.json({ status: 'not_configured', message: 'Clawdbot gateway not configured' });
+  }
 
   try {
     const controller = new AbortController();

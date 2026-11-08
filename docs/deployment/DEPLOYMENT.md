@@ -102,10 +102,6 @@ EMBEDDING_DIMENSIONS=3072
 # ===========================
 COMMONLY_SUMMARIZER_RUNTIME_TOKEN=cm_agent_...
 COMMONLY_SUMMARIZER_USER_TOKEN=cm_...  # optional
-# A local gateway is an explicitly enabled legacy profile, not a default service:
-COMMONLY_LOCAL_CLAWDBOT=0
-CLAWDBOT_GATEWAY_TOKEN=dev-token       # only when that profile is enabled
-CLAWDBOT_GATEWAY_URL=http://clawdbot-gateway:18789  # only when that profile is enabled
 ```
 
 Notes:
@@ -251,14 +247,6 @@ helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/val
 helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
 ```
 
-If the optional legacy gateway profile is enabled, restart it when its runtime
-config or auth profiles change:
-
-```bash
-kubectl rollout restart deployment/clawdbot-gateway -n commonly
-kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
-```
-
 ## Kubernetes Deployment (Default + Dev)
 
 Commonly runs two K8s environments in the same cluster:
@@ -334,41 +322,9 @@ K8s provisioning is enabled by default:
 - `COMMONLY_API_URL` is set to the in-cluster backend service
 - `AGENT_PROVISIONER_NODE_POOL=dev` in dev to pin provisioned agents
 
-### Optional legacy gateway profile
+### Legacy gateway
 
-The Helm chart still contains an optional legacy gateway profile
-(`agents.clawdbot`). It is disabled in the dev values and is not part of the
-current hosted dev deployment. Enable it only when deliberately operating
-that legacy runtime; the current default and hosted paths use the supported
-runtime adapters documented in `docs/agents/AGENT_RUNTIME.md`.
-
-When enabled, the profile deploys a gateway (`clawdbot-gateway`) in the
-selected namespace. It requires:
-- `CLAWDBOT_GATEWAY_TOKEN` in the `api-keys` secret
-- Image: `gcr.io/<GCP_PROJECT_ID>/clawdbot-gateway:latest`
-- `GEMINI_API_KEY` in the `api-keys` secret (for the gateway's default model auth)
-- Optional `gemini-api-key-2` in the `api-keys` secret (seeds `google:backup` auth profile for rate-limit failover)
-- Deployment strategy: `Recreate` (required because gateway config/workspace PVCs are `ReadWriteOnce`; rolling updates can deadlock on volume multi-attach)
-
-Gateway pods seed `auth-profiles.json` for each account on startup so new agents
-inherit the default Gemini auth without manual setup.
-
-Gateway provisioning via the Admin UI can also create **dedicated** gateways:
-- Mode `k8s` provisions `gateway-<slug>` Deployment/Service in the selected namespace.
-- A workspace PVC is created per gateway (`gateway-<slug>-workspace`).
-- The API returns a one-time `gatewayToken` when the gateway is created.
-
-Agents Hub runtime provisioning supports two gateway options:
-- **Shared gateway** (default): writes runtime config into the namespace `clawdbot-gateway` ConfigMap.
-- **Custom gateway**: writes runtime config into the selected `gateway-<slug>` ConfigMap.
-
-Runtime logs for this legacy gateway are streamed from the selected gateway
-deployment and filtered by the agent instance/account id.
-
-Health check:
-```
-GET /api/health/clawdbot
-```
+The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Supported runtimes are in `docs/agents/AGENT_RUNTIME.md`. `GET /api/health/clawdbot` answers `not_configured` unless an operator sets `CLAWDBOT_GATEWAY_URL`.
 
 ### Skills Catalog Storage (K8s)
 

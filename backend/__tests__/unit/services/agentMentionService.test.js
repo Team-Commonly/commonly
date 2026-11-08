@@ -1641,10 +1641,9 @@ describe('AgentMentionService', () => {
     // they are absent from the doc above. Deliberately NOT annotated with a
     // commit — every previous attempt to pin these to a sha ("live since
     // 11878b43c") named a ref on a lineage the gitlink was not tracking, and
-    // was false or true depending on the week. Whether a given pin declares
-    // these is asserted by `npm run verify:moltbot-tools` against the actual
-    // submodule; this list only records that the names are openclaw's, which
-    // is a fact about namespaces and does not move.
+    // was false or true depending on the week. This list only records that
+    // the names are openclaw's, which is a fact about namespaces and does not
+    // move.
     const OPENCLAW_ONLY = ['commonly_open_dm', 'commonly_read_attachment'];
     const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
 

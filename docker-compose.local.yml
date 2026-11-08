@@ -106,7 +106,6 @@ services:
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
 
       # Agent runtime — set a shared secret for CAP connections
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN:-}
       - OPENCLAW_RUNTIME_TOKEN=${OPENCLAW_RUNTIME_TOKEN:-}
     networks:
       - commonly

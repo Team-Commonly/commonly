@@ -600,9 +600,8 @@ const autoJoinAgentToPod = async (
 //     agent that holds neither to say so and ask for a paste.
 // The skip clause is what makes it pin-independent. Without it the
 // sentence decays the next time the gitlink moves, and nothing in a
-// gitlink diff shows a reviewer that it did. Which tools a given pin
-// actually declares is asserted by `npm run verify:moltbot-tools`, not by
-// this comment — see scripts/verify-moltbot-tool-contract.js.
+// gitlink diff shows a reviewer that it did. The CI check that compared this
+// to the pin retired with the submodule (ADR-021 Part B).
 //
 // The skip clause covers a SECOND failure that declaration cannot see, and
 // this is why it says "or the call fails" rather than only "if you have
@@ -819,10 +818,9 @@ const mentionsHandle = (content: string, handle: string): boolean => new RegExp(
 // running gateway for the 88 days ending 2026-08-05. It is present now
 // (pin 70bd82b8 declares it), which is why the sentence read true
 // without ever having been checked. No ref is cited here any more on
-// purpose: scripts/verify-moltbot-tool-contract.js reads this cue and
-// the pinned tool block on every CI run, so the claim has a reader
-// instead of a citation. If that check is ever removed, this line goes
-// back to being a guess.
+// purpose. The CI check that read this cue against the pinned tool block
+// retired with the submodule (ADR-021 Part B), so for openclaw this line
+// is now a guess.
 // Since this frame ships to every agent unconditionally,
 // naming one namespace tells the other half of the fleet to call
 // something they do not have — the ADR-005 wrapper and cloud-codex seats

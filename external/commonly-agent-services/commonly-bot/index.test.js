@@ -222,7 +222,6 @@ test('chart and dynamic gateways no longer consume a direct Anthropic key or rou
   for (const file of [
     'templates/core/backend-deployment.yaml',
     'templates/ops/ops-runner-deployment.yaml',
-    'templates/agents/clawdbot-deployment.yaml',
     'templates/agents/commonly-bot-deployment.yaml',
     'templates/secrets/local-secrets.yaml',
     'values-local.yaml',
