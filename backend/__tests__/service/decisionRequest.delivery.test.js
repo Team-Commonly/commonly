@@ -37,6 +37,8 @@ describeTier1('decision ruling delivery — real Mongo + PostgreSQL', () => {
 
     owner = await User.create({
       username: 'decision-owner', email: 'decision-owner@test.com', password: 'password123',
+      // The seats run on a cloud runtime, which their owner must be entitled to.
+      entitlements: { cloudAgents: true },
     });
     ownerToken = jwt.sign({ id: String(owner._id) }, process.env.JWT_SECRET);
     const agents = [];

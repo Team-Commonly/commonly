@@ -47,7 +47,11 @@ tier1('commonly verify wave 1 — production HTTP routes', () => {
     const openListeners = mongoose.connection.listenerCount('open');
     app = createApp();
     expect(mongoose.connection.listenerCount('open')).toBe(openListeners);
-    owner = await User.create({ username: 'verify-owner', email: 'verify-owner@test.com', password: 'password123' });
+    // The seat runs natively off the hosted lane, which its owner must be entitled to.
+    owner = await User.create({
+      username: 'verify-owner', email: 'verify-owner@test.com', password: 'password123',
+      entitlements: { cloudAgents: true },
+    });
     other = await User.create({ username: 'verify-other', email: 'verify-other@test.com', password: 'password123' });
     ownerToken = jwt.sign({ id: String(owner._id) }, process.env.JWT_SECRET);
     otherToken = jwt.sign({ id: String(other._id) }, process.env.JWT_SECRET);
