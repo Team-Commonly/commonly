@@ -184,17 +184,25 @@ const watchParams = (req: Request): Set<string> => {
   } catch {
     // Without the watch, a word-shaped mount value is judged by its shape alone.
   }
+  // A pattern in `req.route` is trusted as code: nothing in this backend
+  // assigns it but Express (a stale one names the last matched route; F325
+  // reads it the same way).
   // Express sets `req.route` as a route matches, with `baseUrl` still the full
   // mount, and never restores it as an error unwinds (it does restore
   // `baseUrl`, then `params`), so this is the moment to keep the mount.
-  let route = (req as Request & { route?: unknown }).route;
+  // Another middleware may watch `req.route` too (accessLog does, mounted
+  // first): chain to its accessor, never replace it, or it stops seeing routes.
   try {
+    const found = Object.getOwnPropertyDescriptor(req, 'route');
+    const prior = found?.get && found?.set ? found : null;
+    let route = prior ? undefined : found?.value;
     Object.defineProperty(req, 'route', {
       configurable: true,
       enumerable: true,
-      get: () => route,
+      get: () => (prior ? prior.get!.call(req) : route),
       set: (value) => {
-        route = value;
+        if (prior) prior.set!.call(req, value);
+        else route = value;
         routing.baseUrl = String(req.baseUrl || '');
       },
     });

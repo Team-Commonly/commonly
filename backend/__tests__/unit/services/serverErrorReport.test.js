@@ -743,6 +743,29 @@ describe('serverErrorReport', () => {
       expect(JSON.stringify(mockEnvelopes)).not.toContain(TOKEN);
     });
 
+    // accessLog watches `req.route` too and is mounted first (server.ts). The
+    // route watch here chains to it: replacing it logged every line `<unmatched>`.
+    it('the access log mounted before it still logs every route, and the error still names its own', async () => {
+      const { createAccessLog } = require('../../../middleware/accessLog');
+      const lines = [];
+      const { attachSentryErrorHandler } = require('../../../instrument');
+      const app = express();
+      app.use(createAccessLog({ enabled: true, secret: 's', log: (line) => lines.push(JSON.parse(line)) }));
+      app.use(report.serverErrorReport);
+      const router = express.Router();
+      router.get('/:id/ok', (_req, res) => { res.json({}); });
+      router.get('/:id/throws', () => { throw new Error('boom'); });
+      app.use('/api/pods', router);
+      attachSentryErrorHandler(app);
+      app.use(require('../../../middleware/finalErrorHandler').finalErrorHandler);
+
+      await request(app).get('/api/pods/abc/ok').expect(200);
+      await request(app).get('/api/pods/abc/throws').expect(500);
+      await settle();
+      expect(lines.map((line) => line.route)).toEqual(['/api/pods/:id/ok', '/api/pods/:id/throws']);
+      expect(eventsSent()[0].tags.route).toBe('/api/pods/:id/throws');
+    });
+
     it('an error object nobody routed names nothing, whatever it carries', () => {
       const beforeSend = require('../../../instrument').beforeSend;
       const stray = Object.assign(new Error('x'), { method: 'GET', route: `/api/${TOKEN}` });
