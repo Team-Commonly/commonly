@@ -2,7 +2,7 @@ import type { Express } from 'express';
 
 const Sentry = require('@sentry/node') as typeof import('@sentry/node');
 // A leaf module: this file loads first, so it may import nothing from the app.
-const { keepScrubbedItems, scrubSentryEvent } = require('./services/serverErrorReport');
+const { keepScrubbedItems, noteErrorRoute, scrubSentryEvent } = require('./services/serverErrorReport');
 
 const sentryDsn = process.env.SENTRY_DSN;
 
@@ -21,6 +21,8 @@ if (sentryDsn) {
 
 const attachSentryErrorHandler = (app: Express): void => {
   if (sentryDsn) {
+    // F326: names the route of a thrown error, so its Sentry event says where.
+    app.use(noteErrorRoute);
     Sentry.setupExpressErrorHandler(app);
   }
 };

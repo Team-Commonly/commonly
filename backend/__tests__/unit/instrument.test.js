@@ -91,9 +91,12 @@ describe('Sentry backend instrumentation', () => {
     expect(scrubbed.request.data).toBeUndefined();
     expect(scrubbed.request.query_string).toBeUndefined();
 
-    const app = {};
+    const app = { use: jest.fn() };
     attachSentryErrorHandler(app);
+    // F326: the route of a thrown error is noted just before Sentry's handler.
+    expect(app.use).toHaveBeenCalledWith(require('../../services/serverErrorReport').noteErrorRoute);
     expect(mockSetupExpressErrorHandler).toHaveBeenCalledWith(app);
+    expect(app.use.mock.invocationCallOrder[0]).toBeLessThan(mockSetupExpressErrorHandler.mock.invocationCallOrder[0]);
   });
 
   it('loads instrumentation first and attaches the error handler after routes', () => {

@@ -66,6 +66,18 @@ interface Report {
 }
 
 const issued = new WeakSet<object>();
+// F326: what the routing saw for each request, and the route of each error that
+// reached the error middleware. Keyed on objects this process made, so nothing
+// an error carries can add an entry.
+const routingByRequest = new WeakMap<object, Routing>();
+const thrownAt = new WeakMap<object, Readonly<{ method: string; route: string }>>();
+
+interface Routing {
+  params: Set<string>;
+  // The mount path when the route matched. Once an error unwinds a router,
+  // `req.baseUrl` is reset, so the error middleware can't read it then.
+  baseUrl: string;
+}
 const lastSentAt = new Map<string, { at: number; count: number }>();
 let day = '';
 let sentToday = 0;
@@ -147,6 +159,8 @@ const fingerprintOf = ({ method, route, status }: Report): string[] => ['5xx', m
 // from `req.params` while still in `baseUrl`. Keep every value assigned.
 const watchParams = (req: Request): Set<string> => {
   const seen = new Set<string>();
+  const routing: Routing = { params: seen, baseUrl: String(req.baseUrl || '') };
+  routingByRequest.set(req, routing);
   const note = (params: unknown): void => {
     if (!params || typeof params !== 'object') return;
     Object.values(params).forEach((value) => {
@@ -169,6 +183,31 @@ const watchParams = (req: Request): Set<string> => {
     });
   } catch {
     // Without the watch, a word-shaped mount value is judged by its shape alone.
+  }
+  // A pattern in `req.route` is trusted as code: nothing in this backend
+  // assigns it but Express (a stale one names the last matched route; F325
+  // reads it the same way).
+  // Express sets `req.route` as a route matches, with `baseUrl` still the full
+  // mount, and never restores it as an error unwinds (it does restore
+  // `baseUrl`, then `params`), so this is the moment to keep the mount.
+  // Another middleware may watch `req.route` too (accessLog does, mounted
+  // first): chain to its accessor, never replace it, or it stops seeing routes.
+  try {
+    const found = Object.getOwnPropertyDescriptor(req, 'route');
+    const prior = found?.get && found?.set ? found : null;
+    let route = prior ? undefined : found?.value;
+    Object.defineProperty(req, 'route', {
+      configurable: true,
+      enumerable: true,
+      get: () => (prior ? prior.get!.call(req) : route),
+      set: (value) => {
+        if (prior) prior.set!.call(req, value);
+        else route = value;
+        routing.baseUrl = String(req.baseUrl || '');
+      },
+    });
+  } catch {
+    // Without it, a thrown error's route is named from its pattern alone.
   }
   return seen;
 };
@@ -198,6 +237,33 @@ export const serverErrorReport = (req: Request, res: Response, next: NextFunctio
     }
   });
   next();
+};
+
+/**
+ * F326: an error middleware, mounted just before Sentry's handler. A thrown
+ * error reaches Sentry with its frames but, since the URL can carry a token,
+ * with no URL at all. This records the request's route the way a 5xx report
+ * builds it, one allowed segment at a time, keyed on the error object, so
+ * `beforeSend` can name the endpoint. Nothing is read from the error.
+ */
+export const noteErrorRoute = (err: unknown, req: Request, _res: Response, next: NextFunction): void => {
+  try {
+    if (err && typeof err === 'object' && !thrownAt.has(err)) {
+      const routing = routingByRequest.get(req);
+      thrownAt.set(err, Object.freeze({
+        method: METHODS.has(req.method) ? req.method : 'OTHER',
+        route: routeOf({ baseUrl: routing?.baseUrl ?? '', route: req.route }, routing?.params),
+      }));
+    }
+  } catch {
+    // Naming the route is a nicety; the error goes on to Sentry either way.
+  }
+  next(err);
+};
+
+const thrownRoute = (hint: unknown): Readonly<{ method: string; route: string }> | null => {
+  const original = (hint as { originalException?: unknown } | undefined)?.originalException;
+  return original && typeof original === 'object' ? thrownAt.get(original) ?? null : null;
 };
 
 const plainFunction = (name: unknown): string | undefined => {
@@ -278,6 +344,11 @@ export const scrubSentryEvent = (event: any, hint?: unknown): any => {
     scrubbed.exception = { values: (values.length > 0 ? values : [{}]).map(plainException) };
   }
   if (METHODS.has(event.request?.method)) scrubbed.request = { method: event.request.method };
+  const thrown = thrownRoute(hint);
+  if (thrown) {
+    scrubbed.transaction = `${thrown.method} ${thrown.route}`;
+    scrubbed.tags = { source: 'unhandled', method: thrown.method, route: thrown.route };
+  }
   return scrubbed;
 };
 
@@ -312,6 +383,7 @@ module.exports = {
   DAILY_CAP,
   keepScrubbedItems,
   MAX_ROUTE_LENGTH,
+  noteErrorRoute,
   reportStateForTest,
   ROUTE_DAILY_CAP,
   resetReportStateForTest,
