@@ -388,6 +388,30 @@ describe('GET /api/grants/byo-candidates', () => {
     expect(res.body.agents).toEqual([expect.objectContaining({ userId: BYO, nameable: false, reason: 'unconfined_host' })]);
   });
 
+  // F179: placed on a machine whose daemon hasn't adopted it yet, the seat's
+  // sandbox can't be read from that machine. The form waits for it.
+  test('a seat placed on a machine that has not adopted it yet is marked awaiting', async () => {
+    agentRows[0].botMetadata.requestedMachineId = 'machine-a';
+    const res = await candidates();
+    expect(res.body.agents).toEqual([expect.objectContaining({ userId: BYO, nameable: true, awaitingMachine: true })]);
+  });
+
+  test('once adopted, or never placed on a machine, nothing is awaited', async () => {
+    agentRows[0].botMetadata.machineId = 'machine-a';
+    agentRows[0].botMetadata.requestedMachineId = null;
+    expect((await candidates()).body.agents[0]).not.toHaveProperty('awaitingMachine');
+    agentRows[0].botMetadata = { agentName: 'lily-claude', instanceId: 'default' };
+    expect((await candidates()).body.agents[0]).not.toHaveProperty('awaitingMachine');
+  });
+
+  test('a seat its machine refuses is not nameable and never awaited, even with a request pending', async () => {
+    agentRows[0].botMetadata.requestedMachineId = 'machine-a';
+    mockJudge.mockResolvedValue({ refusal: { reason: 'sandbox_mode_unenforceable' }, scope: 'seat', hostUnconfined: true });
+    const [agent] = (await candidates()).body.agents;
+    expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'unconfined_host' }));
+    expect(agent).not.toHaveProperty('awaitingMachine');
+  });
+
   test('an agent someone else also installed is left out', async () => {
     mockOwns.mockResolvedValue({ owned: false, failure: 'another_installer' });
     expect((await candidates()).body.agents).toEqual([]);

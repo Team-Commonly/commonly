@@ -42,6 +42,9 @@ import type { KeyAgent, OperatorKeyResult } from './OperatorKeyForm';
 
 // Seats matching `narrowed` across every pod roster, named by display name,
 // once each, never by the pods their grants reach.
+/** F179: how often the grant form re-reads an agent waiting on its computer. */
+export const BYO_AWAIT_POLL_MS = 5000;
+
 const seatNamesWhere = (
   seats: Record<string, PodSeat[]>,
   narrowed: (seat: PodSeat) => boolean | undefined,
@@ -210,6 +213,7 @@ export const useToolConnectors = (
   // form opens on it. A failed read leaves none known, and the mint still
   // refuses a pod holding one that is not named.
   const draftPodId = draft?.podId || '';
+  const [byoReadCount, setByoReadCount] = useState(0);
   useEffect(() => {
     if (!draftPodId) return undefined;
     let cancelled = false;
@@ -217,7 +221,16 @@ export const useToolConnectors = (
       .then((res) => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: Array.isArray(res?.agents) ? res.agents : [] })); })
       .catch(() => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: [] })); });
     return () => { cancelled = true; };
-  }, [api, draftPodId]);
+  }, [api, draftPodId, byoReadCount]);
+  // F179: an agent whose computer hasn't picked it up yet can't be named, and
+  // the form reads again until it has, so its real sandbox state appears
+  // without a reload. It stops once nothing is waiting or the form closes.
+  const draftByoAwaiting = Boolean(draftPodId) && (byoCandidates[draftPodId] || []).some((agent) => agent.awaitingMachine);
+  useEffect(() => {
+    if (!draftByoAwaiting) return undefined;
+    const timer = setTimeout(() => setByoReadCount((count) => count + 1), BYO_AWAIT_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [draftByoAwaiting, byoCandidates]);
 
   // The entry a grant belongs to is the one whose namespaced tools it carries.
   // If the catalogue no longer has that entry, the name comes from the server's
@@ -564,7 +577,7 @@ export const useToolConnectors = (
   // On a key connection only its own agent can be submitted, whatever the
   // audience holds; the server refuses anyone else (operatorKeyAudienceRefusal).
   const draftByoCandidates = draft ? byoCandidates[draft.podId] || [] : [];
-  const unnameableIds = new Set(draftByoCandidates.filter((agent) => !agent.nameable).map((agent) => agent.userId));
+  const unnameableIds = new Set(draftByoCandidates.filter((agent) => !agent.nameable || agent.awaitingMachine).map((agent) => agent.userId));
   // An agent of the viewer's that runs outside Commonly is offered even when
   // the roster hides it as internal: a pod holding one can only be granted by
   // naming it. One no grant can name is never submitted.
@@ -578,7 +591,7 @@ export const useToolConnectors = (
     .filter((id) => !unnameableIds.has(id));
   // The checked agents the grant would name, and whether the person has
   // consented for exactly these.
-  const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && selectedAgentIds.includes(agent.userId));
+  const draftByoNamed = draftByoCandidates.filter((agent) => agent.nameable && !agent.awaitingMachine && selectedAgentIds.includes(agent.userId));
   // Pull-request access changes what the person consents to, so it is part of the key.
   // So is the repository it names.
   const draftByoKey = `${draftByoNamed.map((agent) => agent.userId).sort().join(',')}${draftPrWrite ? `:pr:${draft?.connectionId}` : ''}`;

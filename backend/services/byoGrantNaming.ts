@@ -227,6 +227,13 @@ export interface ByoCandidate {
   nameable: boolean;
   reason?: 'unconfined_host' | 'adapter_unsupported';
   sandbox: IRoomGrantByoConsent['agents'][number]['sandbox'];
+  /**
+   * F179: the seat was placed on a machine whose daemon hasn't adopted it yet.
+   * Until it does, the server has no machine to read the sandbox from, so
+   * `sandbox` describes the unbound seat, not where it will run. Display only:
+   * nothing that enforces a grant reads it, and the mint judges again.
+   */
+  awaitingMachine?: true;
 }
 
 /**
@@ -246,8 +253,10 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
   const pod = await Pod.findById(podId).select('members').lean();
   if (!pod) return [];
   const users = await User.find({ _id: { $in: (pod.members || []).map(String) }, botType: 'agent' })
-    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId').lean() as Array<{
-      _id: unknown; botMetadata?: { agentName?: string; instanceId?: string; machineId?: string };
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId')
+    .lean() as Array<{
+      _id: unknown;
+      botMetadata?: { agentName?: string; instanceId?: string; machineId?: string; requestedMachineId?: string | null };
     }>;
   const out: ByoCandidate[] = [];
   for (const user of users) {
@@ -268,12 +277,14 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
     } else if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) {
       out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' });
     } else {
+      const awaitingMachine = Boolean(user.botMetadata?.requestedMachineId) && !user.botMetadata?.machineId;
       out.push({
         ...base,
         nameable: true,
         sandbox: sandboxStateFor(judgement, {
           machineId: user.botMetadata?.machineId, runtimeType: installation.config?.runtime?.runtimeType,
         }),
+        ...(awaitingMachine ? { awaitingMachine: true as const } : {}),
       });
     }
   }
