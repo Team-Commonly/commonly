@@ -3259,11 +3259,23 @@ const getAgentRuntimeLogs = async (
 };
 
 /**
- * Returns session directory sizes in bytes for all agents on the gateway.
+ * Returns session directory sizes in bytes for all agents on the gateway, or
+ * none when the gateway Deployment doesn't exist.
  * @returns {Promise<Array<{accountId: string, bytes: number}>>}
  */
 const getAgentSessionSizes = async (options = {}) => {
-  const podName = await resolveGatewayPodNameWithRetry((options as any).gateway);
+  // The gateway is retired (ADR-021 Part B). With no Deployment there are no
+  // sessions to measure, so the 10-minute check reads none, rather than waiting
+  // 60 s for a pod that cannot appear and logging an ERROR each time (F329).
+  // Any other read error still fails, at once.
+  const gateway = (options as any).gateway;
+  try {
+    await k8sAppsApi.readNamespacedDeployment(resolveGatewayDeploymentName(gateway), NAMESPACE);
+  } catch (error: any) {
+    if (error?.response?.statusCode === 404) return [];
+    throw error;
+  }
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
   const script = [
     'set -eu',
     'for dir in /state/agents/*/sessions; do',
