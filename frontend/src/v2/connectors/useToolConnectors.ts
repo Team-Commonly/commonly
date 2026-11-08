@@ -371,6 +371,7 @@ export const useToolConnectors = (
       byo_not_agent: t('tools.byo.errors.notAgent'),
       byo_agent_not_owned: t('tools.byo.errors.notOwned'),
       byo_unconfined_host: t('tools.byo.errors.unconfinedHost'),
+      byo_unreported_host: t('tools.byo.errors.unreportedHost'),
       byo_adapter_unsupported: t('tools.byo.errors.adapterUnsupported', { harnesses: grantHarnessNames(t) }),
     };
     return code && Object.prototype.hasOwnProperty.call(labels, code) ? labels[code] : null;

@@ -50,6 +50,7 @@ const User = require('../../../models/User');
 const Machine = require('../../../models/Machine');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const { judgeSeatConfinement } = require('../../../services/seatGrantConfinement');
+const { recordMachineHeartbeat } = require('../../../services/machineService');
 const { callTool, listToolsForGrant } = require('../../../services/toolBrokerService');
 
 const POD = 'aaaaaaaaaaaaaaaaaaaaaa01';
@@ -106,7 +107,7 @@ beforeEach(async () => {
 
 /** The seat's own User row and the machine binding that makes an owner. */
 const bindSeat = async ({
-  owner = OWNER, machineId = MACHINE, agentName = AGENT, instanceId = INSTANCE,
+  owner = OWNER, machineId = MACHINE, agentName = AGENT, instanceId = INSTANCE, reported = true,
 } = {}) => {
   await User.create({
     _id: SEAT,
@@ -119,6 +120,7 @@ const bindSeat = async ({
   });
   await Machine.create({
     ownerUserId: owner, machineId, name: 'laptop', status: 'online',
+    ...(reported ? { hostSandboxReportedAt: new Date() } : {}),
   });
 };
 
@@ -153,6 +155,46 @@ const seatGrant = (over = {}) => ({
 });
 
 const podGrant = (over = {}) => seatGrant({ target: { kind: 'pod', id: POD }, audience: [OWNER, SEAT], ...over });
+
+// F356: the daemon adopts seats in tick() before its first heartbeat reports
+// the host's sandbox, and an old daemon never reports it. Until a report lands
+// the host is "not reported": refused like an unconfined one, never confined.
+describe('judgeSeatConfinement — a computer that has not reported its sandbox (F356)', () => {
+  test('a seat adopted before the first heartbeat is refused as not reported, and admitted once it reports', async () => {
+    await bindSeat({ reported: false });
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ code: 'grant_broker_unconfined', reason: 'sandbox_not_reported', decidedBy: 'server' }),
+      scope: 'seat',
+      hostUnconfined: true,
+      hostUnreported: true,
+    });
+
+    const machine = await Machine.findOne({ machineId: MACHINE });
+    await recordMachineHeartbeat(machine, undefined, undefined, 'default');
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('a first report of native-windows refuses as unconfined, not as not reported', async () => {
+    await bindSeat({ reported: false });
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    const machine = await Machine.findOne({ machineId: MACHINE });
+    await recordMachineHeartbeat(machine, undefined, undefined, 'native-windows');
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ reason: 'sandbox_mode_unenforceable' }),
+      scope: 'seat',
+      hostUnconfined: true,
+    });
+  });
+
+  test('a heartbeat with no sandbox field leaves the host not reported', async () => {
+    await bindSeat({ reported: false });
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    const machine = await Machine.findOne({ machineId: MACHINE });
+    await recordMachineHeartbeat(machine, [], undefined, undefined);
+    expect((await judge()).refusal).toEqual(expect.objectContaining({ reason: 'sandbox_not_reported' }));
+  });
+});
 
 describe('judgeSeatConfinement — a seat on a computer that runs agents without a sandbox (D245)', () => {
   test('is refused whatever its declaration says, and admitted again once the daemon reports default', async () => {
@@ -576,5 +618,23 @@ describe('judgeSeatConfinement — a seat with no daemon and no sandbox block (F
     expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'ok', callerConfinement: 'named_unconfined',
     }));
+  });
+  // F356 review: naming lifts sandbox_absent, but never a host that hasn't
+  // reported its sandbox; only hostUnconfined stops naming, so pin it.
+  test('a grant that names it cannot lift a host that has not reported its sandbox', async () => {
+    await bindSeat({ reported: false });
+    await User.updateOne({ _id: SEAT }, { $set: { isBot: true, botType: 'agent' } });
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    mockPod.findById.mockImplementation(() => ({
+      select: () => ({ lean: async () => ({
+        _id: POD, type: 'team', members: [SEAT], publicRead: false, joinPolicy: 'invite-only',
+      }) }),
+    }));
+    await RoomGrant.create(namedPodGrant());
+    await expect(call()).rejects.toMatchObject({
+      code: 'grant_broker_unconfined', statusCode: 403,
+      details: expect.objectContaining({ reason: 'sandbox_not_reported' }),
+    });
+    expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
   });
 });

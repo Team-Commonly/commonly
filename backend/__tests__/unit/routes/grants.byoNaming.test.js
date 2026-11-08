@@ -248,6 +248,16 @@ describe('POST /api/grants naming a BYO agent', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
+  test('an agent whose computer has not reported its sandbox is not named yet (F356)', async () => {
+    mockJudge.mockResolvedValue({
+      refusal: { reason: 'sandbox_not_reported' }, scope: 'seat', hostUnconfined: true, hostUnreported: true,
+    });
+    const res = await withCatalog([ENTRY], () => mint());
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('byo_unreported_host');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test('an adapter not approved for the broker cannot be named', async () => {
     mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_cannot_confine' }, scope: 'seat' });
     const res = await withCatalog([ENTRY], () => mint());
@@ -432,6 +442,16 @@ describe('GET /api/grants/byo-candidates', () => {
     const [agent] = (await candidates()).body.agents;
     expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'unconfined_host' }));
     expect(agent).not.toHaveProperty('awaitingMachine');
+  });
+
+  test('an agent whose computer has not reported its sandbox is listed as not reported, not confined (F356)', async () => {
+    mockJudge.mockResolvedValue({
+      refusal: { reason: 'sandbox_not_reported' }, scope: 'seat', hostUnconfined: true, hostUnreported: true,
+    });
+    const res = await candidates();
+    expect(res.body.agents).toEqual([expect.objectContaining({
+      userId: BYO, nameable: false, reason: 'unreported_host', sandbox: 'unknown',
+    })]);
   });
 
   test('an agent someone else also installed is left out', async () => {

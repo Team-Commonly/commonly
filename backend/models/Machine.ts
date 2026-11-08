@@ -34,6 +34,10 @@ export interface IMachine extends Document {
   // sandbox (native Windows, `commonly daemon install --unsandboxed`). Grants
   // are refused for every seat bound to this machine while it is true.
   hostUnconfined: boolean;
+  // F356: when a heartbeat last reported the host's sandbox at all. Null until
+  // the first report (the daemon adopts seats before its first heartbeat, and a
+  // daemon older than #3388 never reports), and a null host is never confined.
+  hostSandboxReportedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +57,7 @@ const MachineSchema = new Schema<IMachine>(
     runtimeInventory: { type: Schema.Types.Mixed, default: [] },
     inventoryAt: { type: Date, default: null },
     hostUnconfined: { type: Boolean, default: false },
+    hostSandboxReportedAt: { type: Date, default: null },
     agentStates: {
       type: [{
         _id: false,

@@ -40,7 +40,7 @@ export const grantHarnessNames = (): string => {
 };
 
 export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
-  | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_adapter_unsupported'
+  | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_unreported_host' | 'byo_adapter_unsupported'
   | 'byo_consent_required';
 
 export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
@@ -51,6 +51,8 @@ export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_not_agent: 'Only an agent can be named on a grant.',
   byo_agent_not_owned: 'You can name only an agent you installed, and that no one else installed.',
   byo_unconfined_host: 'This agent ran without a sandbox Commonly can enforce, so no grant can be used from it.',
+  byo_unreported_host: "This agent's computer hasn't reported its sandbox yet, so no grant can be used from it. "
+    + 'Try again in a minute, or update the Commonly CLI on that computer.',
   byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
   byo_consent_required: 'Confirm that what this agent reads can leave through it.',
 }[reason]);
@@ -199,6 +201,7 @@ export const checkByoNaming = async (input: {
     if (!ownership.owned) return { refusal: 'byo_agent_not_owned' };
     // eslint-disable-next-line no-await-in-loop
     const judgement = await judgeSeatConfinement({ agentUserId: String(user._id), agentName, instanceId });
+    if (judgement.hostUnreported) return { refusal: 'byo_unreported_host' };
     if (judgement.hostUnconfined) return { refusal: 'byo_unconfined_host' };
     if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) return { refusal: 'byo_adapter_unsupported' };
     // eslint-disable-next-line no-await-in-loop
@@ -225,7 +228,7 @@ export interface ByoCandidate {
   instanceId: string;
   /** Can this grant name it at all; when not, `reason` says why. */
   nameable: boolean;
-  reason?: 'unconfined_host' | 'adapter_unsupported';
+  reason?: 'unconfined_host' | 'unreported_host' | 'adapter_unsupported';
   sandbox: IRoomGrantByoConsent['agents'][number]['sandbox'];
   /**
    * F179: the seat was placed on a machine whose daemon hasn't adopted it yet.
@@ -275,7 +278,11 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
     // Placed on a machine its daemon hasn't adopted yet: judged unbound for now.
     const awaitingMachine = Boolean(user.botMetadata?.requestedMachineId) && !user.botMetadata?.machineId;
     const awaiting = awaitingMachine ? { awaitingMachine: true as const } : {};
-    if (judgement.hostUnconfined) {
+    if (judgement.hostUnreported) {
+      // F356: not reported is unknown, never confined, and not "ran without one" either.
+      // It is the machine's own state, like unconfined_host, so it is never awaited.
+      out.push({ ...base, nameable: false, reason: 'unreported_host', sandbox: 'unknown' });
+    } else if (judgement.hostUnconfined) {
       out.push({ ...base, nameable: false, reason: 'unconfined_host', sandbox: 'unconfined' });
     } else if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) {
       out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown', ...awaiting });

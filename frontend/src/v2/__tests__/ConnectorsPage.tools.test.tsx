@@ -2151,6 +2151,14 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
   });
 
+  // F356: a computer that hasn't reported its sandbox is not "ran without one".
+  it('an agent whose computer has not reported its sandbox is offered disabled, saying so', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'unreported_host', sandbox: 'unknown' })]);
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText("Its computer hasn't reported its sandbox yet, so no grant can be used.")).toBeInTheDocument();
+    expect(within(form).queryByText('Ran without a sandbox Commonly can enforce, so no grant can be used.')).toBeNull();
+  });
+
   // F175a: a harness that can't hold a grant names the ones that can.
   // F179: placed on a machine that hasn't picked it up, the agent's sandbox
   // isn't known yet. It can't be named until it is, and the form reads again
