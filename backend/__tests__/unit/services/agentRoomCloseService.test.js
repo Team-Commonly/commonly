@@ -89,6 +89,17 @@ describe('reopenIfClosed', () => {
     await expect(svc.reopenIfClosed('not-an-id')).resolves.toBeUndefined();
     await expect(svc.reopenIfClosed(null)).resolves.toBeUndefined();
   });
+
+  test('an object in place of an id is a no-op, never a query operator', async () => {
+    const { human, room } = await make();
+    await svc.closeAgentRoom(String(room._id), String(human._id));
+    await svc.reopenIfClosed({ $gt: '' });
+    await svc.reopenIfClosed({ $ne: null });
+    expect((await Pod.findById(room._id).lean()).closedAt).toBeInstanceOf(Date);
+    expect((await svc.closeAgentRoom({ $ne: null }, String(human._id))).refusal).toBe('pod_not_found');
+    expect((await svc.reopenAgentRoom({ $ne: null }, String(human._id))).refusal).toBe('pod_not_found');
+    expect((await Pod.findById(room._id).lean()).closedAt).toBeInstanceOf(Date);
+  });
 });
 
 describe('dropClosedAgentRooms', () => {

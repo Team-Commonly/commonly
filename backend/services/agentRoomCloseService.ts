@@ -4,6 +4,7 @@
 // back the moment either side writes in it or the person opens Talk to again.
 // One Pod.closedAt is enough, because an agent-room has exactly one human
 // member (ADR-001 §3.10). Design frame: docs/design/artboards/f303.
+import mongoose from 'mongoose';
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const Pod = require('../models/Pod');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -16,8 +17,20 @@ type RoomDoc = { _id: unknown; type?: string; members?: unknown[]; closedAt?: Da
 const isMember = (pod: RoomDoc, userId: string): boolean => (pod.members || [])
   .some((m) => String((m as { _id?: unknown })?._id || m) === userId);
 
+/**
+ * A pod id reaches a query only as a plain id string. An object such as
+ * { $gt: '' } would otherwise act as a query operator and match any pod.
+ */
+const podIdOrNull = (podId: unknown): string | null => (
+  (typeof podId === 'string' || podId instanceof mongoose.Types.ObjectId) && mongoose.isValidObjectId(podId)
+    ? String(podId)
+    : null
+);
+
 const resolveRoom = async (podId: string, userId: string): Promise<{ pod?: RoomDoc; refusal?: CloseRefusal }> => {
-  const pod = await Pod.findById(podId).select('type members closedAt').lean() as RoomDoc | null;
+  const id = podIdOrNull(podId);
+  if (!id) return { refusal: 'pod_not_found' };
+  const pod = await Pod.findById(id).select('type members closedAt').lean() as RoomDoc | null;
   // A non-member learns nothing about the pod, not even its type: same
   // answer as a missing one, as getPodById gives.
   if (!pod || !isMember(pod, userId)) return { refusal: 'pod_not_found' };
@@ -49,10 +62,11 @@ export const reopenAgentRoom = async (podId: string, userId: string): Promise<{ 
  * failed reopen must not refuse the message that triggered it.
  */
 export const reopenIfClosed = async (podId: unknown): Promise<void> => {
-  if (!podId) return;
+  const id = podIdOrNull(podId);
+  if (!id) return;
   try {
     await Pod.updateOne(
-      { _id: podId, type: 'agent-room', closedAt: { $ne: null } },
+      { _id: { $eq: id }, type: 'agent-room', closedAt: { $ne: null } },
       { $unset: { closedAt: 1 } },
     );
   } catch (err) {
