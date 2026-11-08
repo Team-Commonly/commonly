@@ -16,6 +16,7 @@ const { markByoConnectionAttempt } = require('./onboardingMarks');
 const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { recordListenerCheckIn } = require('./agentListenerCheckIn');
+const { cloudRuntimeMayRun } = require('./cloudRuntimeOwnership');
 
 interface AgentSocket {
   agentName: string;
@@ -152,6 +153,9 @@ class AgentWebSocketService {
           return next(new Error('Invalid agent token'));
         }
 
+        if (!await cloudRuntimeMayRun(agentInfo.agentName, agentInfo.instanceId || 'default')) {
+          return next(new Error('This agent is not running.'));
+        }
         socket.agentName = agentInfo.agentName;
         socket.instanceId = agentInfo.instanceId || 'default';
         socket.agentUserId = agentInfo.agentUserId || null;
@@ -285,6 +289,8 @@ class AgentWebSocketService {
   }
 
   async replayPendingEvents(socket: AgentSocket, limit = 50): Promise<void> {
+    // A socket that connected before its owner lost access gets no more events.
+    if (!await cloudRuntimeMayRun(socket.agentName, socket.instanceId || 'default')) return;
     try {
       const installations = await AgentInstallation.find({
         agentName: socket.agentName.toLowerCase(),

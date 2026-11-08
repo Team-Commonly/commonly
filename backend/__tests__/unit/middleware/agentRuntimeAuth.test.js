@@ -79,6 +79,12 @@ jest.mock('../../../models/Pod', () => ({
   find: () => ({ select: () => ({ lean: async () => [] }) }),
 }));
 
+const mockCloudMayRun = jest.fn();
+jest.mock('../../../services/cloudRuntimeOwnership', () => ({
+  cloudRuntimeMayRun: (...args) => mockCloudMayRun(...args),
+  CLOUD_RUN_REFUSED_REASON: 'cloud_agents_not_entitled',
+}));
+
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
 const { touchLastActive } = require('../../../middleware/auth');
 const { agentAuthRefusalCounts, resetAgentAuthRefusalsForTest } = require('../../../services/agentAuthRefusals');
@@ -98,6 +104,7 @@ const buildRes = () => {
 };
 
 beforeEach(() => {
+  mockCloudMayRun.mockReset().mockResolvedValue(true);
   mockNarrowedPods.mockReset().mockResolvedValue(new Set());
   mockEnsembleFindById.mockReset();
   mockMessageFindById.mockReset();
@@ -870,5 +877,49 @@ describe('agentRuntimeAuth refusals are logged and counted (TASK-712)', () => {
     ), Promise.resolve());
     expect(refusalLines()).toHaveLength(1);
     expect(agentAuthRefusalCounts().counts.invalid_token).toBe(5);
+  });
+});
+
+describe('an agent whose owner may not run it', () => {
+  test('is refused on the legacy installation-token path, before any use is recorded', async () => {
+    mockUserFindOne.mockResolvedValue(null);
+    const installation = {
+      _id: 'install-a', agentName: 'openclaw', instanceId: 'kit', installedBy: 'human-a',
+      podId: { toString: () => 'pod-a' }, runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }],
+    };
+    mockInstallationFindOne.mockResolvedValue(installation);
+    mockInstallationFind.mockResolvedValue([installation]);
+    mockCloudMayRun.mockResolvedValue(false);
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'GET', baseUrl: '/api/agents/runtime', route: { path: '/events' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(mockCloudMayRun).toHaveBeenCalledWith('openclaw', 'kit');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'cloud_agents_not_entitled' }));
+    expect(next).not.toHaveBeenCalled();
+    expect(mockInstallationUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('is refused on the bot User-row token path', async () => {
+    mockUserFindOne.mockResolvedValue({
+      _id: 'bot-a', isBot: true,
+      botMetadata: { agentName: 'openclaw', instanceId: 'kit' },
+      agentRuntimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }],
+    });
+    mockInstallationFind.mockReturnValue({ lean: async () => [{
+      podId: { toString: () => 'pod-a' }, installedBy: 'human-a', status: 'active',
+    }] });
+    mockCloudMayRun.mockResolvedValue(false);
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'GET', baseUrl: '/api/agents/runtime', route: { path: '/events' }, params: {} });
+    const res = buildRes();
+    const next = jest.fn();
+    await agentRuntimeAuth(req, res, next);
+    expect(mockCloudMayRun).toHaveBeenCalledWith('openclaw', 'kit');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+    expect(mockUserUpdateOne).not.toHaveBeenCalled();
   });
 });

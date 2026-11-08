@@ -110,6 +110,8 @@ d('TASK-002 credit when the addressed agent lost the claim (real PG + Mongo)', (
     seq += 1;
     owner = await User.create({
       username: `owner${seq}x`, email: `owner${seq}x@example.test`, password: 'not-a-real-password-1', isBot: false,
+      // The agent runs natively off the hosted lane, which its owner must be entitled to.
+      entitlements: { cloudAgents: true },
     });
     pod = await Pod.create({
       name: `Join ${seq}`, type: 'chat', createdBy: owner._id, members: [owner._id], 
@@ -191,4 +193,11 @@ d('TASK-002 credit when the addressed agent lost the claim (real PG + Mongo)', (
     const task = await settled(firstTask, (t) => t?.status === 'done', 2000);
     expect(task.status).toBe('pending');
   });
+});
+
+// The runtime ownership read caches per identity for a minute. Clear it per
+// test, so one test's answer can't stand in for another's fixture.
+beforeEach(() => {
+  // eslint-disable-next-line global-require
+  require('../../services/cloudRuntimeOwnership').clearCloudRuntimeCache();
 });

@@ -30,6 +30,7 @@ const auth = require('../middleware/auth');
 const daemonAuth = require('../middleware/daemonAuth');
 const AgentEventService = require('../services/agentEventService');
 const HostedRuntimeMeter = require('../services/hostedRuntimeService');
+const { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } = require('../services/cloudRuntimeOwnership');
 const AgentIdentityService = require('../services/agentIdentityService');
 const AgentMessageService = require('../services/agentMessageService');
 const AgentSendFreshness = require('../services/agentSendFreshness');
@@ -840,6 +841,10 @@ router.get('/bot/events', longPollIpLimit, auth, requireApiTokenScopes(['agent:e
           .map((id) => id.toString()),
       ),
     );
+
+    if (!(await cloudRuntimeMayRun(resolvedAgentName, instanceId))) {
+      return res.json({ events: [], refused: CLOUD_RUN_REFUSED_REASON });
+    }
 
     // List events across all installed pods
     const events = await AgentEventService.list({

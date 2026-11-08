@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const adminAuth = require('../../middleware/adminAuth');
 const User = require('../../models/User');
+const { clearCloudRuntimeCache } = require('../../services/cloudRuntimeOwnership');
 const InvitationCode = require('../../models/InvitationCode');
 const WaitlistRequest = require('../../models/WaitlistRequest');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
@@ -173,6 +174,8 @@ router.patch('/:userId/role', adminWriteLimiter, auth, adminAuth, async (req: an
       if (!updated) {
         return mutationResponse(409, { error: 'This account is being deleted; its role cannot change.' });
       }
+      // A role decides whether this person's agents run (cloudRuntimeOwnership).
+      clearCloudRuntimeCache();
       return mutationResponse(200, {
         message: 'User role updated successfully',
         user: sanitizeUser(updated),
@@ -231,6 +234,8 @@ router.patch('/:userId/entitlements', adminWriteLimiter, auth, adminAuth, async 
     // key it did not name — revoking Pro must not also revoke cloud agents.
     target.entitlements = { ...(target.entitlements || {}), ...patch };
     await target.save();
+    // The entitlement decides whether this person's agents run (cloudRuntimeOwnership).
+    clearCloudRuntimeCache();
 
     return res.json({
       message: 'User entitlements updated successfully',

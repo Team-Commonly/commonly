@@ -37,6 +37,8 @@ describeTier1('decision ruling delivery — real Mongo + PostgreSQL', () => {
 
     owner = await User.create({
       username: 'decision-owner', email: 'decision-owner@test.com', password: 'password123',
+      // The seats run on a cloud runtime, which their owner must be entitled to.
+      entitlements: { cloudAgents: true },
     });
     ownerToken = jwt.sign({ id: String(owner._id) }, process.env.JWT_SECRET);
     const agents = [];
@@ -123,4 +125,11 @@ describeTier1('decision ruling delivery — real Mongo + PostgreSQL', () => {
     expect(await AgentEvent.countDocuments({ type: 'decision.ruled', 'payload.decisionId': decisionId }))
       .toBe(1);
   });
+});
+
+// The runtime ownership read caches per identity for a minute. Clear it per
+// test, so one test's answer can't stand in for another's fixture.
+beforeEach(() => {
+  // eslint-disable-next-line global-require
+  require('../../services/cloudRuntimeOwnership').clearCloudRuntimeCache();
 });
