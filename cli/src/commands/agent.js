@@ -857,6 +857,7 @@ const findOwnPost = (messages, earlierIds) => {
         author: m.username || 'unknown',
         basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
         threadRootId: m.thread_root_id ?? null,
+        content: typeof m.content === 'string' ? m.content : '',
       };
     }
   }
@@ -1839,6 +1840,21 @@ const PERSON_ADDRESSED = '[A person addressed this to you directly: answer them 
 const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
   + FAILURE_IN_PLAIN_WORDS;
+
+// F335: a turn that posted through a tool and then failed is retried with the
+// same prompt, often in a fresh session, so nothing tells the retry its answer
+// is already up. It names that post, so the retry adds what's missing or stays
+// silent instead of answering the person a second time.
+const EARLIER_ATTEMPT_EXCERPT = 300;
+export const earlierAttemptPosted = (part) => {
+  const text = String(part?.content || '').replace(/\s+/g, ' ').trim();
+  const excerpt = text.length > EARLIER_ATTEMPT_EXCERPT
+    ? `${text.slice(0, EARLIER_ATTEMPT_EXCERPT)}…`
+    : text;
+  return `[An earlier attempt at this item failed after it posted in this pod (message ${part.id})`
+    + `${excerpt ? `, beginning ${JSON.stringify(excerpt)}` : ''}. That post is already there: don't post it again. `
+    + 'Add only what it still lacks, then checkpoint. If it already answers this item, checkpoint it and end with NO_REPLY.]';
+};
 
 export const answersAPerson = (entry) => (
   entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame
@@ -3417,13 +3433,15 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
+      const earlierPart = heldRetryParts.get(String(entry.event._id));
+      const earlierLine = earlierPart ? `\n${earlierAttemptPosted(earlierPart)}` : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
         ? `\n[After ${answersAPerson(entry) ? 'all of your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
-      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${checkpoint}`;
+      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${earlierLine}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestEvents = digestEntries.map((entry) => entry.event);
