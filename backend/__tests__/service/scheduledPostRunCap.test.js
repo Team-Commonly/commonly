@@ -137,12 +137,16 @@ describe('a heartbeat post and the run cap', () => {
   };
   const beat = async ({
     agoMs = 0, agentName = 'sweeper', instanceId = 'default', podId, status = 'acked', trigger = 'interval',
+    deliveredAgoMs,
   } = {}) => {
     const event = await AgentEvent.create({
       agentName, instanceId, podId: podId || pod._id, type: 'heartbeat', status, payload: { trigger },
     });
     await AgentEvent.collection.updateOne(
-      { _id: event._id }, { $set: { createdAt: new Date(Date.now() - agoMs) } },
+      { _id: event._id }, { $set: {
+        createdAt: new Date(Date.now() - agoMs),
+        ...(deliveredAgoMs === undefined ? {} : { deliveredAt: new Date(Date.now() - deliveredAgoMs) }),
+      } },
     );
   };
 
@@ -192,6 +196,35 @@ describe('a heartbeat post and the run cap', () => {
       expect((await post(`Finding ${n}.`)).success).toBe(true);
     }
     expect((await post('A flood.')).reason).toBe('consecutive_run_cap');
+  });
+
+  it('holds a short heartbeat to one turn an hour, however full that turn was', async () => {
+    await beat({ agoMs: MINUTE });
+    for (let n = 1; n <= AgentMessageService.OWED_POSTS_PER_WAKE; n += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await post(`Finding ${n}.`)).success).toBe(true);
+    }
+    // Ten minutes later the next heartbeat fires; the turn's own lines are
+    // the last posts before it, inside the floor.
+    await ageMessages(10 * MINUTE);
+    await beat();
+    expect((await post('Ten minutes on.')).reason).toBe('consecutive_run_cap');
+    await ageMessages(60 * MINUTE);
+    await beat();
+    expect((await post('An hour on.')).success).toBe(true);
+  });
+
+  it('keeps a turn open when the next heartbeat lands in the middle of it', async () => {
+    await beat({ agoMs: 2 * MINUTE });
+    expect((await post('Swept: 1 new.')).success).toBe(true);
+    await beat();
+    expect((await post('The finding.')).success).toBe(true);
+  });
+
+  it('times the turn from delivery, so a seat that polls late keeps its detail', async () => {
+    await beat({ agoMs: 40 * MINUTE, deliveredAgoMs: MINUTE });
+    expect((await post('Swept: 1 new.')).success).toBe(true);
+    expect((await post('The finding.')).success).toBe(true);
   });
 
   it('closes the turn after its window, until the next heartbeat', async () => {
