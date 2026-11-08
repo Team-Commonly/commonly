@@ -19,12 +19,15 @@ const jsonResponse = (body) => ({
 describe('skillsRefreshService GitHub auth', () => {
   let tmpDir;
   let savedPath;
+  let savedUpstream;
   let fetchMock;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-refresh-'));
     savedPath = process.env.SKILLS_CATALOG_PATH;
     process.env.SKILLS_CATALOG_PATH = path.join(tmpDir, 'index.json');
+    savedUpstream = process.env.SKILLS_UPSTREAM_INDEX_URL;
+    process.env.SKILLS_UPSTREAM_INDEX_URL = 'https://upstream.test/index.json';
     fetchMock = jest.fn(async (url) => {
       if (String(url).startsWith('https://api.github.com/repos/')) {
         return jsonResponse({ stargazers_count: 7, forks_count: 1 });
@@ -39,6 +42,8 @@ describe('skillsRefreshService GitHub auth', () => {
   afterEach(() => {
     if (savedPath === undefined) delete process.env.SKILLS_CATALOG_PATH;
     else process.env.SKILLS_CATALOG_PATH = savedPath;
+    if (savedUpstream === undefined) delete process.env.SKILLS_UPSTREAM_INDEX_URL;
+    else process.env.SKILLS_UPSTREAM_INDEX_URL = savedUpstream;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete global.fetch;
     jest.restoreAllMocks();
@@ -87,5 +92,54 @@ describe('skillsRefreshService GitHub auth', () => {
     repoCalls().forEach(([, init]) => {
       expect(init.headers.Authorization).toBeUndefined();
     });
+  });
+});
+
+// F332: the default upstream is gone (404 on every run), so there is no default.
+describe('skillsRefreshService upstream index', () => {
+  let tmpDir;
+  let saved;
+  let fetchMock;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skills-upstream-'));
+    saved = { catalog: process.env.SKILLS_CATALOG_PATH, upstream: process.env.SKILLS_UPSTREAM_INDEX_URL };
+    process.env.SKILLS_CATALOG_PATH = path.join(tmpDir, 'index.json');
+    fs.writeFileSync(process.env.SKILLS_CATALOG_PATH, JSON.stringify({ items: [{ repo: 'a/one' }] }));
+    delete process.env.SKILLS_UPSTREAM_INDEX_URL;
+    fetchMock = jest.fn(async () => jsonResponse({ stargazers_count: 3, forks_count: 0 }));
+    global.fetch = fetchMock;
+    jest.spyOn(GitHubAppService, 'isConfigured').mockReturnValue(false);
+    jest.spyOn(GitHubAppService, 'isPatConfigured').mockReturnValue(false);
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    if (saved.catalog === undefined) delete process.env.SKILLS_CATALOG_PATH;
+    else process.env.SKILLS_CATALOG_PATH = saved.catalog;
+    if (saved.upstream === undefined) delete process.env.SKILLS_UPSTREAM_INDEX_URL;
+    else process.env.SKILLS_UPSTREAM_INDEX_URL = saved.upstream;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete global.fetch;
+    jest.restoreAllMocks();
+  });
+
+  it('with no upstream set, reads the local catalog without fetching an index or warning', async () => {
+    const result = await refreshSkillsIndex();
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(['https://api.github.com/repos/a/one']);
+    expect(result.errors).toEqual([]);
+    expect(result.catalogItems).toBe(1);
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('with an upstream set, fetches it, and a failed fetch still falls back to the local catalog', async () => {
+    process.env.SKILLS_UPSTREAM_INDEX_URL = 'https://upstream.test/index.json';
+    fetchMock.mockImplementationOnce(async () => ({ ok: false, status: 404, statusText: 'Not Found' }));
+    const result = await refreshSkillsIndex();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://upstream.test/index.json');
+    expect(result.errors).toHaveLength(1);
+    expect(result.catalogItems).toBe(1);
   });
 });

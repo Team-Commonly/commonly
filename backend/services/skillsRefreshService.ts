@@ -7,9 +7,9 @@ import { resolveSkillsCatalogPath } from './skillsCatalogPath';
  * skillsRefreshService
  *
  * Keeps the local awesome-agent-skills-index.json catalog fresh by:
- *   1. Attempting to fetch the upstream index JSON (configurable URL).
- *      On failure, falls back to reading the existing LOCAL catalog file so we
- *      still do step 2 even when the upstream mirror is unreachable/moved.
+ *   1. Fetching an upstream index JSON when SKILLS_UPSTREAM_INDEX_URL names
+ *      one, and otherwise reading the existing LOCAL catalog file. A failed
+ *      upstream fetch falls back to the local file too, so step 2 still runs.
  *   2. For every unique `repo` in the catalog, fetching live star counts via the
  *      GitHub REST API and overwriting the `stars` field on all matching items.
  *   3. Writing the result back to the SAME local path the read-side catalog
@@ -20,8 +20,10 @@ import { resolveSkillsCatalogPath } from './skillsCatalogPath';
  * gone, which is the common dev case (upstream URL changes or goes to GCS).
  */
 
-const UPSTREAM_INDEX_URL = process.env.SKILLS_UPSTREAM_INDEX_URL
-  || 'https://raw.githubusercontent.com/openclaw/skills/main/docs/skills/awesome-agent-skills-index.json';
+// No default upstream (F332): the one this used to default to is gone, and every
+// refresh logged its 404 before reading the local catalog it then used anyway.
+// Read at call time, so a test or an operator can set it.
+const upstreamIndexUrl = (): string => String(process.env.SKILLS_UPSTREAM_INDEX_URL || '').trim();
 
 const GITHUB_API_BASE = 'https://api.github.com';
 const REPO_CALL_DELAY_MS = 100; // Respect secondary rate limits; 100ms => 10 req/s.
@@ -68,8 +70,8 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, ms);
 });
 
-const fetchUpstreamIndex = async (): Promise<CatalogFile> => {
-  const response = await fetch(UPSTREAM_INDEX_URL, {
+const fetchUpstreamIndex = async (url: string): Promise<CatalogFile> => {
+  const response = await fetch(url, {
     headers: {
       'User-Agent': 'commonly-skills-refresh',
       Accept: 'application/json',
@@ -163,21 +165,25 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
     wroteFile: false,
   };
 
-  let catalog: CatalogFile;
+  let catalog: CatalogFile | null = null;
   let upstreamSucceeded = false;
-  try {
-    catalog = await fetchUpstreamIndex();
-    upstreamSucceeded = true;
-  } catch (error) {
-    const err = error as Error;
-    console.warn(
-      '[skills-refresh] Upstream index fetch failed; falling back to local catalog:',
-      err.message,
-    );
-    errors.push(err);
-    // Fall back: read the local file and still run the star-count refresh on
-    // its entries. This is the common dev case when the upstream URL is wrong
-    // or the mirror has moved.
+  const upstreamUrl = upstreamIndexUrl();
+  if (upstreamUrl) {
+    try {
+      catalog = await fetchUpstreamIndex(upstreamUrl);
+      upstreamSucceeded = true;
+    } catch (error) {
+      const err = error as Error;
+      console.warn(
+        '[skills-refresh] Upstream index fetch failed; falling back to local catalog:',
+        err.message,
+      );
+      errors.push(err);
+    }
+  }
+  if (!catalog) {
+    // Read the local file and still run the star-count refresh on its entries:
+    // the default with no upstream set, and the fallback when one fails.
     const localPath = resolveSkillsCatalogPath();
     const localCatalog = readLocalCatalog(localPath);
     if (!localCatalog) {
