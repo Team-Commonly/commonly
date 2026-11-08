@@ -23,9 +23,9 @@
   gap: 8px 12px;
   margin-top: 4px;
 }
-/* The BYO page's link button carries align-self: flex-start (V2AgentBYO.css),
-   which would hang Cancel at the top of the row beside Install anyway. */
-.v2-root .v2-narrowing__actions > button { align-self: center; }
+/* The BYO page's link button carries align-self: flex-start and its submit a
+   6px margin-top (V2AgentBYO.css), which would hang the two out of line. */
+.v2-root .v2-narrowing__actions > button { align-self: center; margin-top: 0; }
 @media (max-width: 760px) {
   .v2-root .v2-narrowing__actions > button {
     display: inline-flex;
@@ -41,7 +41,7 @@
   margin: 8px 0 0;
   padding: 10px 12px;
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-md);
+  border-radius: var(--v2-radius);
   background: var(--v2-surface-tint);
   color: var(--v2-text-primary);
   font: 400 13px/20px var(--v2-font);

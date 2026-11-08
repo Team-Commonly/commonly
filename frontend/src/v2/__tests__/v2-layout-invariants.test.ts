@@ -6719,7 +6719,10 @@ describe('F164 narrowing notices (F170 browser check)', () => {
     expect(topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing p')).toContain('margin: 0');
     expect(topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing__pods')).toContain('margin: 0');
     // V2AgentBYO.css gives its link button align-self: flex-start.
-    expect(topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing__actions > button')).toContain('align-self: center');
+    const action = topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing__actions > button');
+    expect(action).toContain('align-self: center');
+    // V2AgentBYO.css gives its submit margin-top: 6px, which drops it below Cancel.
+    expect(action).toContain('margin-top: 0');
     expect(narrowingCss).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-root \.v2-narrowing__actions > button \{[^}]*min-height: 44px/);
   });
 
@@ -6727,6 +6730,8 @@ describe('F164 narrowing notices (F170 browser check)', () => {
     const status = topLevelRuleBody(narrowingCss, '.v2-root .v2-narrowing-status');
     expect(status).toContain('font: 400 13px/20px var(--v2-font)');
     expect(status).toContain('color: var(--v2-text-primary)');
+    // v2.css has no --v2-radius-md; an undefined token squares the box.
+    expect(status).toContain('border-radius: var(--v2-radius)');
   });
 });
 
