@@ -28,7 +28,7 @@ const Sentry = require('@sentry/node') as typeof import('@sentry/node');
 
 const FIXED_TEXT = 'Unhandled request error';
 const WINDOW_MS = 15 * 60 * 1000;
-// One process. Sentry's free tier is 5,000 errors a month; 60 a day is 1,800.
+// One process. Sentry's free tier is 5,000 errors a month; 60 a day is 1,860 in a 31-day month.
 const DAILY_CAP = 60;
 // One fingerprint, one day. The window alone allows 96, so a route failing all
 // day would spend DAILY_CAP by mid-afternoon and silence every other route.
@@ -101,8 +101,10 @@ const routeOf = (
   if (!req.route) return UNMATCHED;
   const { path } = req.route;
   const baseSegment = (segment: string): string => {
-    const shaped = urlSegment(segment);
-    return shaped === segment && (paramValues.has(segment) || paramValues.has(decoded(segment))) ? ':value' : shaped;
+    // One placeholder for every value the routing assigned, whatever its shape:
+    // a hex id and a word under the same mount are one endpoint, one fingerprint.
+    if (paramValues.has(segment) || paramValues.has(decoded(segment))) return ':value';
+    return urlSegment(segment);
   };
   const segments = [
     ...String(req.baseUrl || '').split('/').filter(Boolean).map(baseSegment),

@@ -214,8 +214,8 @@ describe('serverErrorReport', () => {
           a.use('/api/grants/:grantId', router);
         });
         const cases = [
-          ['65f0a1b2c3d4e5f6a7b8c9d0', '/api/grants/:id/items'],
-          ['0f8fad5b-d9cb-469f-a165-70867728950e', '/api/grants/:id/items'],
+          ['65f0a1b2c3d4e5f6a7b8c9d0', '/api/grants/:value/items'],
+          ['0f8fad5b-d9cb-469f-a165-70867728950e', '/api/grants/:value/items'],
           [TOKEN, '/api/grants/:value/items'],
           ['xk_live_supersecret', '/api/grants/:value/items'],
           [`:${'k'.repeat(12)}`, '/api/grants/:value/items'],
@@ -233,6 +233,24 @@ describe('serverErrorReport', () => {
           expect(events[0].tags.route).toBe(route);
           expect(JSON.stringify(mockEnvelopes)).not.toContain(value);
         }
+      });
+
+      it('hex-shaped and word-shaped values under one param mount are one report', async () => {
+        const app = appWith((a) => {
+          const router = express.Router({ mergeParams: true });
+          router.get('/items', (_req, res) => { res.status(500).json({}); });
+          a.use('/api/grants/:grantId', router);
+        });
+        report.resetReportStateForTest();
+        mockEnvelopes.length = 0;
+        await request(app).get('/api/grants/65f0a1b2c3d4e5f6a7b8c9d0/items').expect(500);
+        await request(app).get('/api/grants/xk_live_supersecret/items').expect(500);
+        await settle();
+
+        const events = eventsSent();
+        expect(events).toHaveLength(1);
+        expect(events[0].tags.route).toBe('/api/grants/:value/items');
+        expect(events[0].fingerprint).toEqual(['5xx', 'GET', '/api/grants/:value/items', '500']);
       });
 
       it.each([true, false])('a word value under nested param mounts is `:value` (mergeParams %s)', async (merge) => {
@@ -653,9 +671,16 @@ describe('serverErrorReport', () => {
         expect(frames.length).toBeGreaterThan(0);
         // This frame's filename is the checkout path. `looksGenerated` drops a
         // filename with a segment that looks generated (16+ chars, 5+ digits, as
-        // a UUID-named temp or scratch dir is), so run this suite from a checkout
-        // path without such segments or the assertion below fails.
-        expect(frames.some((frame) => frame.filename?.endsWith('serverErrorReport.test.js') && frame.in_app)).toBe(true);
+        // a UUID-named temp or scratch dir is), so the filename is asserted only
+        // from a checkout path without such a segment; the frame's position
+        // survives either way.
+        const generatedSegment = __filename.split('/').some((segment) => (
+          segment.length > 64 || (segment.length >= 16 && segment.replace(/\D/g, '').length >= 5)
+        ));
+        expect(frames.some((frame) => Number.isInteger(frame.lineno))).toBe(true);
+        if (!generatedSegment) {
+          expect(frames.some((frame) => frame.filename?.endsWith('serverErrorReport.test.js') && frame.in_app)).toBe(true);
+        }
         for (const frame of frames) {
           expect(Object.keys(frame).every((key) => ['filename', 'function', 'lineno', 'colno', 'in_app', 'abs_path'].includes(key))).toBe(true);
         }

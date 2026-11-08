@@ -141,8 +141,9 @@ string, header, body, user id, breadcrumb, tag, context or source line leaves.
 - **Route:** the matched pattern plus `req.baseUrl`. `baseUrl` is URL text, so
   each of its segments must be a plain lowercase word; otherwise it reads `:id`
   (a number, hex id or uuid) or `:value`. A segment equal to any param value
-  the routing assigned reads `:value` as well, so `sk_live_x` under a
-  `/:grantId` mount does not pass as a word. A request no route matched reads
+  the routing assigned reads `:value`, whatever its shape, so `sk_live_x` under
+  a `/:grantId` mount does not pass as a word and a hex id under the same mount
+  is the same fingerprint. A request no route matched reads
   `unmatched`, never its URL. A failure in a `router.use` middleware reads
   `unmatched` too, because no route had matched yet.
 - **Frames:** only `filename`, `function`, `lineno`, `colno`, `in_app`, and
@@ -161,8 +162,9 @@ module. It never reads a title, tag or fingerprint from an event, so an event
 that looks like a report is stripped like any other. Don't add a second way in.
 
 **Caps.** One report per fingerprint per 15 minutes, 8 per fingerprint per UTC
-day, and 60 per process per UTC day, counted before send (at most 1,800 a month
-from one backend pod, against the free tier's 5,000). The per-fingerprint cap is
+day, and 60 per process per UTC day, counted before send (at most 1,860 in a
+31-day month from one backend pod without a restart, against the free tier's
+5,000). The per-fingerprint cap is
 what keeps one route failing all day from spending the 60 by mid-afternoon and
 silencing every other route's first report. A 15-minute window open at UTC
 midnight stays open into the new day. State is in memory, so a restart starts
