@@ -39,6 +39,19 @@ const {
 } = require('../../services/runtimeIdentityOwnership');
 const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { configWriteRefusal, runtimeKeepingType } = require('../../services/configWriteGuard');
+
+// F355: a request's `config.runtime` names the fields it changes, not the whole
+// block. Rebuilding runtime from the request alone let Settings' harness switch
+// (`{ runtime: { adapter } }`) erase the seat's webhookUrl, authProfiles,
+// skillEnv and reportedCli. The stored block is the base; `null` still deletes
+// authProfiles and skillEnv below. An admin's explicit runtimeType change stays
+// a replacement, so a seat moved to another runtime keeps nothing of the old.
+const requestedRuntimeOver = (requested: any, existingConfig: any, isInstanceAdmin: boolean) => {
+  const stored = existingConfig?.runtime;
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return requested;
+  if (isInstanceAdmin && 'runtimeType' in requested) return requested;
+  return { ...stored, ...requested };
+};
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
 const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
@@ -254,7 +267,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
             } } : {}) };
         }
         if (config.runtime && typeof config.runtime === 'object') {
-          nextConfig.runtime = runtimeKeepingType(config.runtime, existingConfig, { mayChangeType: isInstanceAdmin });
+          nextConfig.runtime = runtimeKeepingType(requestedRuntimeOver(config.runtime, existingConfig, isInstanceAdmin),
+            existingConfig, { mayChangeType: isInstanceAdmin });
         }
         if (nextConfig.runtime && typeof nextConfig.runtime === 'object') {
           const runtimeConfig = { ...nextConfig.runtime };
@@ -457,7 +471,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       const stored = normalizeConfigMap(entry.config) || {};
       const requested = config?.runtime;
       const runtime = requested && typeof requested === 'object'
-        ? runtimeKeepingType(requested, stored, { mayChangeType: isInstanceAdmin })
+        ? runtimeKeepingType(requestedRuntimeOver(requested, stored, isInstanceAdmin), stored,
+          { mayChangeType: isInstanceAdmin })
         : (requested === undefined ? stored.runtime : requested);
       if (!configRunsInProcess({ ...stored, runtime })) return false;
       return !configRunsInProcess(stored) || (status === 'active' && entry.status !== 'active');
