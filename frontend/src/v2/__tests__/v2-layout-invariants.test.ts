@@ -263,8 +263,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   // The old page's layout (column, head, sections) is gone with the page; nothing renders it.
   test('the old agent Settings layout rules stay deleted', () => {
+    const selectorFor = (cls: string) => new RegExp(`\\.v2-agent-settings__${cls}(?![\\w-])`);
+    // Positive control: the same pattern finds a class the stylesheet keeps, so a
+    // broken pattern can't pass the absence checks below by matching nothing.
+    expect(agentSettings).toMatch(selectorFor('actions'));
     for (const cls of ['column', 'head', 'ident', 'seg', 'section', 'section-head', 'empty']) {
-      expect(agentSettings).not.toMatch(new RegExp(`\\.v2-agent-settings__${cls}(?![\\w-])`));
+      expect(agentSettings).not.toMatch(selectorFor(cls));
     }
   });
 
@@ -332,7 +336,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
-    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child')).toContain('background: var(--v2-ink)');
+    // The confirming action repeats the generic rule's :not() chain, so it outranks
+    // that rule and its ink shows; with fewer classes the generic colours won.
+    const notChain = ':not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)';
+    const primary = `.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child${notChain}`;
+    expect(ruleBody(agentSettings, primary)).toContain('background: var(--v2-ink)');
+    expect(ruleBody(agentSettings, `${primary}:hover`)).toContain('background: var(--v2-ink-hover)');
   });
 
   test('agent Settings controls reach 44px at phone width', () => {

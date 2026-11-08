@@ -46,8 +46,10 @@
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):hover { background: var(--v2-surface-hover); }
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):disabled { opacity: .55; cursor: default; }
-.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
-.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
+/* The confirming action is ink. It repeats the generic rule's :not() chain so it
+   outranks that rule; without it the generic colours won on both buttons. */
+.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold) { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):hover { background: var(--v2-ink-hover); }
 .v2-root .v2-agent-settings a.v2-agent-settings__action {
   display: inline-flex;
   align-items: center;
