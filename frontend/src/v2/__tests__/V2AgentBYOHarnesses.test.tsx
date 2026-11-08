@@ -53,7 +53,7 @@ const renderPage = async () => {
   await waitFor(() => expect(screen.getByTestId('byo-runner-dsh')).toBeInTheDocument());
 };
 
-afterEach(() => { jest.clearAllMocks(); axios.get.mockReset(); axios.post.mockReset(); axios.patch.mockReset(); });
+afterEach(() => { jest.clearAllMocks(); axios.get.mockReset(); axios.post.mockReset(); axios.patch.mockReset(); window.history.pushState({}, '', '/'); });
 
 describe('every harness on the add page', () => {
   test('the runner choice lists every harness, Claude Code and Codex first, with no tested marks', async () => {
@@ -166,7 +166,6 @@ describe('every harness on the add page', () => {
     expect(await screen.findByText(/can’t be saved from this page/)).toBeInTheDocument();
     expect(axios.get.mock.calls.some(([url]) => /manage-settings/.test(url))).toBe(false);
     expect(axios.patch).not.toHaveBeenCalled();
-    window.history.pushState({}, '', '/');
   });
 
   test('a legacy seat stored only as runtimeType codex counts as Codex', async () => {
