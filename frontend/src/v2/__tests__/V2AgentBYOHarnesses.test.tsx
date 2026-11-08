@@ -82,6 +82,41 @@ describe('every harness on the add page', () => {
     expect(document.body.textContent).toContain('commonly agent run sam-codex --adapter codex');
   });
 
+  // F354: an existing seat ignores the install body, so a reconnect saves the
+  // picked model where Settings does, on the agent's runtime source pod.
+  const pickCodexModelOnExistingSeat = async () => {
+    await renderPage();
+    fireEvent.click(screen.getByTestId('byo-runner-codex'));
+    await waitFor(() => expect(screen.getByRole('button', { name: INSTALL_BUTTON })).toBeEnabled());
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'gpt-6.1-sol' } });
+    axios.post.mockImplementation((url) => (url === '/api/registry/install'
+      ? Promise.reject({ response: { data: { error: 'Agent already installed in this pod' } } })
+      : Promise.resolve({ data: { token: 'cm_agent_test_token' } })));
+  };
+
+  test('reconnecting an existing seat saves the picked model on its runtime source pod', async () => {
+    await pickCodexModelOnExistingSeat();
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0' } }) : base(url, config)));
+    axios.patch.mockResolvedValue({ data: {} });
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    await screen.findByText(/your connect command for/i);
+    expect(axios.patch).toHaveBeenCalledWith('/api/registry/pods/p0/agents/sam-codex',
+      { config: { environment: { model: 'gpt-6.1-sol' } }, instanceId: 'default' }, expect.anything());
+  });
+
+  test('a reconnect whose model can’t be saved stops with an error and issues no key', async () => {
+    await pickCodexModelOnExistingSeat();
+    axios.patch.mockRejectedValue({ response: { status: 422 } });
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0' } }) : base(url, config)));
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    expect(await screen.findByText(/Couldn’t save the model for sam-codex/)).toBeInTheDocument();
+    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
+  });
+
   test('OpenCode on a Mac shows its own lines, pinned, and creates nothing from the page', async () => {
     await renderPage();
     fireEvent.click(screen.getByTestId('byo-runner-opencode'));

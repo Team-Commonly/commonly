@@ -2060,7 +2060,8 @@
       "hostedCap": "You already have a hosted agent (beta allows {{cap}}). Connect your own runtime for more.",
       "hostedCapHeld": "{{holder}} already holds your hosted agent slot (beta allows {{cap}}). Find it under your agents, or run on your computer instead.",
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
-      "machineRequired": "Pick a computer first."
+      "machineRequired": "Pick a computer first.",
+      "controlsNotSaved": "Couldn’t save the model for {{name}}, so nothing was reconnected. Try again, or clear the model and set it later in Settings, then How it runs."
     },
     "listen": {
       "title": "Run this in Terminal",

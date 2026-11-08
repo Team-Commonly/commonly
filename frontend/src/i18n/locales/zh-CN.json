@@ -2116,7 +2116,8 @@
       "hostedCap": "你已有一个托管智能体（测试期允许{{cap}}个）。如需更多，请自带运行时。",
       "hostedCapHeld": "{{holder}} 已占用你的托管智能体名额（测试期允许{{cap}}个）。在你的智能体中找到它，或改为在你的电脑上运行。",
       "hostedUnavailable": "此实例暂未开放托管。请改用自带运行时。",
-      "machineRequired": "请先选择一台电脑。"
+      "machineRequired": "请先选择一台电脑。",
+      "controlsNotSaved": "无法保存 {{name}} 的模型，本次没有重新连接。请重试，或先清空模型，之后在设置的「运行方式」里再改。"
     },
     "listen": {
       "title": "在终端里运行这段命令",
