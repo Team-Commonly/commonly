@@ -1727,13 +1727,9 @@ class AgentMessageService {
       return { success: true, skipped: true, reason: 'heartbeat_diagnostic_suppressed' };
     }
 
-    // The pod id reaches the query only as an ObjectId or a plain string, so
-    // no operator object can stand in for it.
-    const podKey = podId instanceof mongoose.Types.ObjectId ? podId : String(podId ?? '');
-    const readPod = async () => await Pod.findById(podKey).select('type agentRunCap').lean() as {
-      type?: string; agentRunCap?: number;
-    } | null;
-    const sourcePod = (routesErrorsToOwnerDM && isErrorContent) ? await readPod() : null;
+    const sourcePod = (routesErrorsToOwnerDM && isErrorContent)
+      ? await Pod.findById(podId).select('type').lean() as { type?: string } | null
+      : null;
     if (routesErrorsToOwnerDM && isErrorContent && sourcePod?.type !== 'agent-admin') {
       try {
         const shouldPostSourceNotice = normalizedAgentName !== 'openclaw';
@@ -1758,7 +1754,7 @@ class AgentMessageService {
       }
     }
 
-    const dedupePod = sourcePod || await readPod();
+    const dedupePod = sourcePod || (await Pod.findById(podId).select('type').lean() as { type?: string } | null);
     const isAgentAdminPod = dedupePod?.type === 'agent-admin';
     if (!isAgentAdminPod) {
       // Duplicate suppression is for shared rooms: an agent re-posting the same
@@ -1870,7 +1866,7 @@ class AgentMessageService {
       // A long answer reaches the cap on its own, and then the cut-off line is
       // the one post the person still needs (F279).
       const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
-        ? 0 : AgentMessageService.resolveConsecutiveRunCap(dedupePod?.agentRunCap);
+        ? 0 : AgentMessageService.resolveConsecutiveRunCap((pod as { agentRunCap?: unknown } | null)?.agentRunCap);
       if (runCap > 0) {
         const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id, runCap);
         if (run >= runCap && !(await AgentMessageService.owedScheduledPost(podId, agentName, instanceId, agentUser._id))) {
