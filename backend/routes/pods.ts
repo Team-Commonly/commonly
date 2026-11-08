@@ -944,6 +944,64 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
   }
 });
 
+/**
+ * A pod's own agent run cap (Pod.agentRunCap): how many posts in a row an agent
+ * may make with nobody else speaking. For a progress pod whose builders post a
+ * line per land. 3..50, or null for the instance default; never off. The pod
+ * creator or a global admin may set it.
+ */
+router.patch('/:id/agent-run-cap', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    const raw: unknown = req.body?.agentRunCap;
+    const clearing = raw === null;
+    const cap = typeof raw === 'number' && Number.isInteger(raw) && raw >= 3 && raw <= 50 ? raw : undefined;
+    if (!clearing && cap === undefined) {
+      return res.status(400).json({ error: 'invalid_agent_run_cap', message: 'agentRunCap must be a whole number from 3 to 50, or null.' });
+    }
+    const pod = await Pod.findById(req.params?.id) as {
+      _id: { toString: () => string };
+      type?: string;
+      createdBy?: { toString: () => string };
+      agentRunCap?: number | null;
+      save: () => Promise<unknown>;
+    } | null;
+    if (!pod) return res.status(404).json({ error: 'pod_not_found' });
+    const userId = req.userId || req.user?.id;
+    const actor = userId
+      ? await User.findById(userId).select('role').lean() as { role?: string } | null
+      : null;
+    const isCreator = pod.createdBy && userId && pod.createdBy.toString() === String(userId);
+    if (!isCreator && actor?.role !== 'admin') {
+      return res.status(403).json({ error: 'not_pod_owner', message: 'Only the pod creator or a global admin may change this.' });
+    }
+    if (NON_LISTABLE_POD_TYPES.includes(String(pod.type))) {
+      return res.status(400).json({ error: 'pod_type_not_configurable' });
+    }
+    const previous = pod.agentRunCap ?? null;
+    pod.agentRunCap = clearing ? undefined : cap;
+    await pod.save();
+    const next = clearing ? null : cap;
+    if (previous !== next) {
+      try {
+        await AuditLog.create({
+          action: 'pod.agent_run_cap_changed',
+          target: pod._id.toString(),
+          detail: `agentRunCap=${next ?? 'default'} previous=${previous ?? 'default'}`,
+          userId,
+          ip: req.ip,
+          userAgent: req.headers?.['user-agent'],
+        });
+      } catch (auditErr) {
+        console.warn('[pods] agent-run-cap audit log write failed (non-fatal):', (auditErr as Error).message);
+      }
+    }
+    return res.json({ id: pod._id.toString(), agentRunCap: next });
+  } catch (err) {
+    console.error('[pods] agent-run-cap change error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+
 /** Pod rename (TASK-419): the name only. The pod creator or a global admin may rename. */
 router.patch('/:id/name', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {

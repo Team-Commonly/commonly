@@ -891,11 +891,19 @@ class AgentMessageService {
     return type === 'agent-room' || type === 'agent-dm';
   }
 
-  static resolveConsecutiveRunCap(): number {
+  static resolveConsecutiveRunCap(podRunCap?: unknown): number {
+    // A pod's own cap (Pod.agentRunCap, set by its creator) wins inside its range.
+    if (Number.isInteger(podRunCap)
+      && (podRunCap as number) >= AgentMessageService.POD_RUN_CAP_MIN
+      && (podRunCap as number) <= AgentMessageService.POD_RUN_CAP_MAX) return podRunCap as number;
     const parsed = Number.parseInt(process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP || '', 10);
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
     return 3;
   }
+
+  static readonly POD_RUN_CAP_MIN = 3;
+
+  static readonly POD_RUN_CAP_MAX = 50;
 
   static resolveDedupeWindowMinutes(metadata: MetadataDoc = {}): number {
     const sourceEventType = String(
@@ -918,10 +926,11 @@ class AgentMessageService {
    * Reuses `getRecentMessages` rather than adding a query — the dedupe check
    * immediately below already pays for that fetch.
    */
-  static async countConsecutiveRun(podId: unknown, userId: unknown): Promise<number> {
+  static async countConsecutiveRun(podId: unknown, userId: unknown, cap = 0): Promise<number> {
     const userIdString = String(userId || '');
     if (!userIdString) return 0;
-    const recent = await AgentMessageService.getRecentMessages(podId, 20);
+    // Read past the cap, so a pod with a cap above 20 can still reach it.
+    const recent = await AgentMessageService.getRecentMessages(podId, Math.max(20, cap + 1));
     type MessageEntry = MessageNormalized & { user_id?: string };
     let run = 0;
     for (const message of (recent as MessageEntry[]).slice().reverse()) {
@@ -1008,11 +1017,11 @@ class AgentMessageService {
    * Whether this agent's next post in the pod would be refused by the run cap.
    * The same pieces postMessage reads: no cap in a 1:1 or an agent-admin pod.
    */
-  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown): Promise<boolean> {
+  static async holdsFloor(podId: unknown, userId: unknown, podType: unknown, podRunCap?: unknown): Promise<boolean> {
     if (podType === 'agent-admin' || AgentMessageService.isOneToOnePod(podType)) return false;
-    const cap = AgentMessageService.resolveConsecutiveRunCap();
+    const cap = AgentMessageService.resolveConsecutiveRunCap(podRunCap);
     if (cap <= 0) return false;
-    return (await AgentMessageService.countConsecutiveRun(podId, userId)) >= cap;
+    return (await AgentMessageService.countConsecutiveRun(podId, userId, cap)) >= cap;
   }
 
   /**
@@ -1717,7 +1726,7 @@ class AgentMessageService {
     }
 
     const sourcePod = (routesErrorsToOwnerDM && isErrorContent)
-      ? await Pod.findById(podId).select('type').lean() as { type?: string } | null
+      ? await Pod.findById(podId).select('type agentRunCap').lean() as { type?: string; agentRunCap?: number } | null
       : null;
     if (routesErrorsToOwnerDM && isErrorContent && sourcePod?.type !== 'agent-admin') {
       try {
@@ -1743,7 +1752,8 @@ class AgentMessageService {
       }
     }
 
-    const dedupePod = sourcePod || (await Pod.findById(podId).select('type').lean() as { type?: string } | null);
+    const dedupePod = sourcePod
+      || (await Pod.findById(podId).select('type agentRunCap').lean() as { type?: string; agentRunCap?: number } | null);
     const isAgentAdminPod = dedupePod?.type === 'agent-admin';
     if (!isAgentAdminPod) {
       // Duplicate suppression is for shared rooms: an agent re-posting the same
@@ -1855,9 +1865,9 @@ class AgentMessageService {
       // A long answer reaches the cap on its own, and then the cut-off line is
       // the one post the person still needs (F279).
       const runCap = (isOneToOne || approvalCard === true || failureForPerson || isCutOffLine)
-        ? 0 : AgentMessageService.resolveConsecutiveRunCap();
+        ? 0 : AgentMessageService.resolveConsecutiveRunCap(dedupePod?.agentRunCap);
       if (runCap > 0) {
-        const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id);
+        const run = await AgentMessageService.countConsecutiveRun(podId, agentUser._id, runCap);
         if (run >= runCap && !(await AgentMessageService.owedScheduledPost(podId, agentName, instanceId, agentUser._id))) {
           AgentMessageService.logMessageLifecycle('skipped', {
             agentName,

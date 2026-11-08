@@ -282,8 +282,8 @@ async function wakeableRows(
 async function holdsFloor(install: Installation, principalId: string): Promise<boolean> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentMessageService = require('./agentMessageService');
-  const pod = await Pod.findById(install.podId).select('type').lean() as { type?: string } | null;
-  return AgentMessageService.holdsFloor(install.podId, principalId, pod?.type);
+  const pod = await Pod.findById(install.podId).select('type agentRunCap').lean() as { type?: string; agentRunCap?: number } | null;
+  return AgentMessageService.holdsFloor(install.podId, principalId, pod?.type, pod?.agentRunCap);
 }
 
 function owns(row: Row, install: Installation, principalId: string | null): boolean {
