@@ -952,6 +952,10 @@ router.patch('/:id/join-policy', podAdminRateLimit, auth, async (req: AuthReq, r
  */
 router.patch('/:id/agent-run-cap', podAdminRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
+    // The cap throttles agents, so an agent never sets it, even on a pod it created.
+    if ((req as { botCaller?: unknown }).botCaller) {
+      return res.status(403).json({ error: 'agent_caller_refused', message: 'An agent cannot change its own run cap.' });
+    }
     const raw: unknown = req.body?.agentRunCap;
     const clearing = raw === null;
     const cap = typeof raw === 'number' && Number.isInteger(raw) && raw >= 3 && raw <= 50 ? raw : undefined;

@@ -78,6 +78,15 @@ describe('a pod\'s own run cap', () => {
     expect(AgentMessageService.resolveConsecutiveRunCap(20)).toBe(20);
   });
 
+  it('clears to the default in the stored document', async () => {
+    const progress = await makePod('Progress', 20);
+    const doc = await Pod.findById(progress._id);
+    doc.agentRunCap = undefined;
+    await doc.save();
+    const raw = await Pod.collection.findOne({ _id: progress._id });
+    expect(Object.prototype.hasOwnProperty.call(raw, 'agentRunCap')).toBe(false);
+  });
+
   it('refuses a stored cap outside 3..50 at the model', async () => {
     await expect(Pod.create({ name: 'Off', type: 'chat', createdBy: owner._id, agentRunCap: 0 })).rejects.toThrow();
   });

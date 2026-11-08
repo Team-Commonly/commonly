@@ -15,6 +15,7 @@ jest.mock('express-rate-limit', () => {
 
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.userId = req.headers['x-test-user'] || 'owner-1';
+  if (req.headers['x-test-bot']) req.botCaller = { username: 'builder-bot', botMetadata: {} };
   next();
 });
 
@@ -99,6 +100,17 @@ describe('PATCH /api/pods/:id/agent-run-cap', () => {
     const res = await setCap(20, 'member-2');
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('not_pod_owner');
+    expect(podSave).not.toHaveBeenCalled();
+  });
+
+  test('an agent is refused even on a pod it created', async () => {
+    const res = await request(app)
+      .patch('/api/pods/pod-1/agent-run-cap')
+      .set('x-test-user', 'owner-1')
+      .set('x-test-bot', '1')
+      .send({ agentRunCap: 50 });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('agent_caller_refused');
     expect(podSave).not.toHaveBeenCalled();
   });
 

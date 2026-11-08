@@ -275,3 +275,21 @@ it('skips an install whose floor read fails and still wakes the next one (TASK-5
     floor.mockRestore();
   }
 });
+
+it('reads the floor at the pod\'s own run cap', async () => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('../../services/agentMessageService');
+  // eslint-disable-next-line global-require
+  const Pod = require('../../models/Pod');
+  await Pod.create({
+    _id: podId, name: 'Progress', type: 'chat', createdBy: new mongoose.Types.ObjectId(), agentRunCap: 20,
+  });
+  await completed();
+  const floor = jest.spyOn(AgentMessageService, 'holdsFloor').mockResolvedValue(false);
+  try {
+    await dispatchAssignedTaskWakes(NOW);
+    expect(floor).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'chat', 20);
+  } finally {
+    floor.mockRestore();
+  }
+});
