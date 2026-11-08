@@ -3820,16 +3820,7 @@ body.modern-ui.v2-canvas {
    selector here carries makes order-fragile fixes easy to write by accident. */
 .v2-root button.v2-connector-row__action:hover:not(:disabled):not(.v2-connector-row__action--secondary),
 .v2-root a.v2-connector-row__action:hover:not(.v2-connector-row__action--secondary) { background: var(--v2-ink-hover); }
-/* F152: faded ink still read as the enabled Grant button in light mode. A
-   disabled primary action drops to the quiet surface look, so "not yet" can't be
-   mistaken for "ready". The secondary keeps its fade. */
-.v2-root button.v2-connector-row__action:disabled:not(.v2-connector-row__action--secondary) {
-  border-color: var(--v2-border);
-  background: var(--v2-surface-tint);
-  color: var(--v2-text-tertiary);
-  cursor: not-allowed;
-}
-.v2-root button.v2-connector-row__action--secondary:disabled { cursor: not-allowed; opacity: 0.65; }
+.v2-root button.v2-connector-row__action:disabled { cursor: progress; opacity: 0.65; }
 .v2-root button.v2-connector-row__action--secondary,
 .v2-root a.v2-connector-row__action--secondary { border-color: var(--v2-border); background: var(--v2-surface); color: var(--v2-ink); }
 .v2-root button.v2-connector-row__action--secondary:hover,
@@ -3861,6 +3852,18 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-connector-aside__primary:hover:not(:disabled) { background: var(--v2-ink-hover); }
 .v2-root button.v2-connectors__create:disabled,
 .v2-root button.v2-connector-aside__primary:disabled { cursor: progress; opacity: 0.65; }
+/* F152: faded ink still read as an enabled Grant button in light mode. A primary
+   action that waits on input (data-unready: nothing picked yet) takes the quiet
+   surface look, so "not yet" can't pass for "ready". One that is disabled while
+   it saves keeps the fade above and the progress cursor, so a save never flashes. */
+.v2-root button.v2-connector-row__action:disabled[data-unready],
+.v2-root button.v2-connector-aside__primary:disabled[data-unready] {
+  border-color: var(--v2-border);
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-tertiary);
+  opacity: 1;
+  cursor: not-allowed;
+}
 .v2-connectors__new-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px; margin-top: 16px; }
 .v2-connectors__new-row--aside { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-connectors__new-row--aside .v2-connectors__select { grid-column: 1 / -1; }

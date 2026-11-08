@@ -624,7 +624,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
           {truncated && <p className="v2-tools__hint">{t('tools.repoConnect.truncated', { defaultValue: 'This list may be incomplete.' })}</p>}
           <div className="v2-connector-aside__actions">
             {status === 'ready' && repositories.length > 0 && (
-              <button type="button" className="v2-connector-aside__primary" disabled={busy || !selected} onClick={() => { void submitRepositoryConnect(); }}>
+              <button type="button" className="v2-connector-aside__primary" disabled={busy || !selected} data-unready={(!busy && !selected) || undefined} onClick={() => { void submitRepositoryConnect(); }}>
                 {busy ? t('tools.repoConnect.connecting', { defaultValue: 'Connecting…' }) : t('tools.connect', { defaultValue: 'Connect' })}
               </button>
             )}
@@ -680,6 +680,8 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
     const tools = draftTools(draftEntry, draft.writeMode, draftPrWrite, draft.prTools);
     const irreversible = irreversibleTools(draftEntry, tools);
     const writes = writeToolCount(draftEntry, tools);
+    // Waiting on a choice, not on a save: the Grant button shows it isn't ready yet (F152).
+    const draftUnready = !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0 || (naming && !draftByoConsented);
     const asks = draftPrWrite
       ? t('tools.asksPrWrite', { defaultValue: 'every commit, push and pull request asks you first' })
       : draft.writeMode === 'read' ? t('tools.asksNothing', { defaultValue: 'nothing asks first' })
@@ -819,7 +821,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
             )}
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0 || (naming && !draftByoConsented)} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || draftUnready} data-unready={(!busy && draftUnready) || undefined} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>

@@ -95,7 +95,7 @@ const OperatorKeyForm: React.FC<Props> = ({ entry, agents, submit }) => {
       </label>
       {failure && <p className="v2-cx-error" role="alert">{failure}</p>}
       <div className="v2-cx-pop__acts">
-        <button type="submit" className="v2-connector-row__action" disabled={busy || !agentId}>
+        <button type="submit" className="v2-connector-row__action" disabled={busy || !agentId} data-unready={(!busy && !agentId) || undefined}>
           {busy ? t('tools.operatorKey.checking') : t('tools.operatorKey.submit')}
         </button>
       </div>
