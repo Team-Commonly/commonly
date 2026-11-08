@@ -1377,17 +1377,17 @@ describe('one Identity & access list (d215 frame)', () => {
         : base(url, ...rest)));
       renderPage();
       // The caller's own 1:1 room reads as theirs, not as the agent's name.
-      const own = await screen.findByRole('link', { name: 'Your direct room' });
+      const own = await screen.findByRole('link', { name: 'Your direct message' });
       expect(own).toHaveAttribute('href', '/v2/pods/pod-1');
       expect(own.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
-      expect(screen.getByRole('button', { name: 'Your direct room' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Your direct message' })).toBeInTheDocument();
       const admin = screen.getByRole('link', { name: 'Maya' });
       expect(admin.closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
       expect(screen.getByRole('button', { name: 'Maya, admin' })).toBeInTheDocument();
       const team = screen.getByRole('link', { name: 'Workspace' });
       expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
       // Other people's rooms are one count line: no link, no controls.
-      const others = screen.getByText('Direct rooms with others: 2');
+      const others = screen.getByText('Direct messages with others: 2');
       const row = others.closest('tr');
       expect(row).toHaveClass('v2-agent-wake-pods__others');
       expect(row.querySelector('a, button, input, select')).toBeNull();
@@ -1399,7 +1399,7 @@ describe('one Identity & access list (d215 frame)', () => {
         ? Promise.resolve({ data: { writablePodId: 'pod-9', otherDirectRoomCount: 1, installations: [] } })
         : base(url, ...rest)));
       renderPage();
-      expect(await screen.findByText('Direct rooms with others: 1')).toBeInTheDocument();
+      expect(await screen.findByText('Direct messages with others: 1')).toBeInTheDocument();
       expect(screen.queryByText('No pods to manage')).toBeNull();
     });
 
