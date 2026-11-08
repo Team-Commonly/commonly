@@ -82,9 +82,29 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
 5. Give the computer tools to exactly one installation:
    - it must be a native install (`runtimeType: 'native'`), owned by the
      person whose id is in `users`;
+   - `native` is a cloud runtime at install, so the installer must be an
+     admin or carry the `cloudAgents` entitlement
+     (`cloud_agents_not_entitled` otherwise);
+   - a hosted install can't stand in for it, on either engine. Neither reads
+     the install's own `config.tools`. A hosted turn on the native engine runs
+     the fixed list `hostedNativeRunConfig` builds (`HOSTED_NATIVE_TOOLS`), and
+     one on the Durable Object runs the worker's `buildCapTools`. Neither list
+     has a computer tool;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
-     included;
+     included. A declared list is the whole set of the runtime's own tools
+     for a native install: an install with no list gets every one that isn't
+     opt-in, and declaring one drops the rest. So it also names every other
+     tool the agent should keep, such as `commonly_read_context` and
+     `commonly_post_message`, and the memory tools if it uses them;
+   - connector tools are not in that list. A live grant on the pod or the seat
+     adds its tools on top of `config.tools`, and only revoking the grant
+     removes them. Check that no live grant reaches the agent's pod or seat
+     (`GET /api/pods/:podId/grants` returns none) before giving it the
+     computer, and after every reinstall;
    - no other installation lists them.
+   - The agent uses the computer only on a turn whose message its owner
+     wrote (`computer_requester_denied` otherwise), so a heartbeat or another
+     member's message can't start a walk.
 6. Do the one-time sign-in through `computer_request_takeover`. The owner signs
    in by hand in the takeover UI, and the agent never types a password. The
    profile disk keeps that session across restarts.
