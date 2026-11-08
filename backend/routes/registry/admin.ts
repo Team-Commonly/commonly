@@ -187,7 +187,10 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           skipRuntimeRestart: true,
         });
         // Track which shared runtimes need a single deferred restart
-        if (result.runtimeType === 'moltbot' && !result.skipped) sharedRuntimesNeedingRestart.add('moltbot');
+        // A removed account also needs the restart, or the gateway keeps running it.
+        if (result.runtimeType === 'moltbot' && (!result.skipped || result.removedFromRuntime)) {
+          sharedRuntimesNeedingRestart.add('moltbot');
+        }
         if (result.skipped) {
           items.push({ ...result, success: true });
           continue;

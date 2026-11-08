@@ -8,6 +8,7 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const {
   provisionAgentRuntime,
+  removeOpenClawAccount,
   runtimeReceivesToken,
   startAgentRuntime,
   restartAgentRuntime,
@@ -31,6 +32,7 @@ const {
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
+const { cloudRuntimeMayRun } = require('../../services/cloudRuntimeOwnership');
 
 // A token issued here reaches a seat only through the provisioner. A seat outside
 // it has no way to learn the new one, so revoking its token takes it offline.
@@ -82,6 +84,27 @@ const reprovisionInstallation = async ({
   }).collation({ locale: 'en', strength: 2 }).select('config').lean();
   if (sameIdentity.some((row: any) => keepsItsOwnToken(row, runtimeType))) {
     return skipped('shares_identity_with_external_seat');
+  }
+
+  // An identity the kernel refuses to run gets no tokens and no gateway entry.
+  // Its runtime calls are already refused; leaving it in moltbot.json would
+  // keep the gateway's own heartbeat calling the model for nothing. Removing
+  // it is undone by the next reprovision once the owner is entitled again.
+  if (runtimeType === 'moltbot' && !(await cloudRuntimeMayRun(name, normalizedInstanceId))) {
+    const configuredGatewayIdEarly = normalizeConfigMap(installation.config)?.runtime?.gatewayId || null;
+    const gatewayEarly = configuredGatewayIdEarly
+      ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayIdEarly })
+      : null;
+    const { removed } = await removeOpenClawAccount({
+      agentName: name, instanceId: normalizedInstanceId, gateway: gatewayEarly,
+    });
+    // A bulk run restarts the gateway once at the end; a single one restarts here.
+    if (removed.length && !skipRuntimeRestart) {
+      await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway: gatewayEarly }).catch((error: Error) => {
+        console.warn('[reprovision] gateway restart after removal failed:', error.message);
+      });
+    }
+    return { ...skipped('cloud_agents_not_entitled'), removedFromRuntime: removed.length > 0 };
   }
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {

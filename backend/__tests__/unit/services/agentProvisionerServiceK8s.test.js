@@ -105,6 +105,7 @@ const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey, issueLiteLLMOpenRouterKey,
   readOpenClawIdentityFile, getAgentRuntimeLogs, getAgentSessionSizes,
+  removeIdentityFromOpenClawConfig, removeOpenClawAccount,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -1031,5 +1032,62 @@ describe('session sizes with no gateway', () => {
         body: { spec: { selector: { matchLabels: { app: 'clawdbot-gateway' } }, template: { metadata: {} } } },
       }));
     }
+  });
+});
+
+describe('removing a refused identity from the gateway config (F361)', () => {
+  const configWith = () => ({
+    channels: {
+      commonly: {
+        accounts: {
+          scout: { agentName: 'openclaw', instanceId: 'scout', runtimeToken: 'cm_agent_a' },
+          'scout-old': { agentName: 'OpenClaw', instanceId: 'Scout', runtimeToken: 'cm_agent_b' },
+          cuz: { agentName: 'openclaw', instanceId: 'cuz', runtimeToken: 'cm_agent_c' },
+        },
+      },
+    },
+    agents: { list: [{ id: 'scout' }, { id: 'scout-old' }, { id: 'cuz' }] },
+    bindings: [
+      { agentId: 'scout', match: { channel: 'commonly', accountId: 'scout' } },
+      { agentId: 'cuz', match: { channel: 'commonly', accountId: 'cuz' } },
+    ],
+  });
+
+  test('takes out every account of that identity, its agent entry and its binding, and nothing else', () => {
+    const config = configWith();
+    const removed = removeIdentityFromOpenClawConfig(config, 'openclaw', 'scout');
+    expect(removed.sort()).toEqual(['scout', 'scout-old']);
+    expect(Object.keys(config.channels.commonly.accounts)).toEqual(['cuz']);
+    expect(config.agents.list).toEqual([{ id: 'cuz' }]);
+    expect(config.bindings.map((binding) => binding.match.accountId)).toEqual(['cuz']);
+  });
+
+  test('an identity with no account changes nothing', () => {
+    const config = configWith();
+    expect(removeIdentityFromOpenClawConfig(config, 'openclaw', 'nova')).toEqual([]);
+    expect(config).toEqual(configWith());
+    expect(removeIdentityFromOpenClawConfig({}, 'openclaw', 'scout')).toEqual([]);
+  });
+
+  test('writes the ConfigMap and edits the state copy only when it removed something', async () => {
+    k8s.__mock.replaceNamespacedConfigMap.mockClear();
+    k8s.__mock.execCommands.length = 0;
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+    });
+    const result = await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'cuz' });
+    expect(result.removed).toEqual(['cuz']);
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    const written = JSON.parse(calls[calls.length - 1][2].data['moltbot.json']);
+    expect(written.channels.commonly.accounts.cuz).toBeUndefined();
+    expect(written.channels.commonly.accounts.scout).toBeDefined();
+    expect(k8s.__mock.execCommands.join('\n')).toContain('removed accounts');
+
+    k8s.__mock.replaceNamespacedConfigMap.mockClear();
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+    });
+    expect((await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' })).removed).toEqual([]);
+    expect(k8s.__mock.replaceNamespacedConfigMap).not.toHaveBeenCalled();
   });
 });

@@ -2311,6 +2311,72 @@ const applyOpenClawModelDefaults = async (config: any) => {
 /**
  * Provision OpenClaw (moltbot) account in Kubernetes
  */
+/**
+ * Take one identity's account out of an OpenClaw config: its
+ * channels.commonly account, its agents.list entry and its binding. Pure, so it
+ * can be tested on a plain object. Returns the account ids it removed.
+ */
+const removeIdentityFromOpenClawConfig = (config: any, agentName: string, instanceId: string): string[] => {
+  const norm = (value: unknown, fallback: string) => String(value ?? fallback).trim().toLowerCase() || fallback;
+  const targetAgent = norm(agentName, '');
+  const targetInstance = norm(instanceId, 'default');
+  const accounts = config?.channels?.commonly?.accounts;
+  if (!targetAgent || !accounts || typeof accounts !== 'object') return [];
+  const removed = Object.entries(accounts)
+    .filter(([, entry]: [string, any]) => entry
+      && norm(entry.agentName, '') === targetAgent && norm(entry.instanceId, 'default') === targetInstance)
+    .map(([key]) => key);
+  removed.forEach((key) => { delete accounts[key]; });
+  if (removed.length && Array.isArray(config.agents?.list)) {
+    config.agents.list = config.agents.list.filter((agent: any) => !removed.includes(agent?.id));
+  }
+  if (removed.length && Array.isArray(config.bindings)) {
+    config.bindings = config.bindings.filter((binding: any) => !removed.includes(binding?.match?.accountId));
+  }
+  return removed;
+};
+
+/**
+ * Remove an identity from the gateway's config, so the gateway stops running
+ * it (its heartbeat included) after the next restart. The ConfigMap is the
+ * source; the gateway's own state copy is edited too, best effort, the way
+ * syncAccountToStateMoltbot writes it.
+ */
+const removeOpenClawAccount = async ({
+  agentName, instanceId, configMapName = 'clawdbot-config', gateway,
+}: any): Promise<{ removed: string[] }> => {
+  const configKey = 'moltbot.json';
+  const config = await readConfigMap(configMapName, configKey);
+  const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
+  if (!removed.length) return { removed };
+  await writeConfigMap(configMapName, configKey, config);
+  try {
+    const podName = await resolveGatewayPodNameWithRetry(gateway);
+    const ids = JSON.stringify(JSON.stringify(removed));
+    const script = [
+      'set -eu',
+      'STATE=/state/moltbot.json',
+      'if [ ! -f "$STATE" ]; then exit 0; fi',
+      `python3 - <<'PYEOF'`,
+      'import json',
+      'with open("/state/moltbot.json") as f: d = json.load(f)',
+      `ids = set(json.loads(${ids}))`,
+      'accts = d.get("channels", {}).get("commonly", {}).get("accounts", {})',
+      'for i in ids: accts.pop(i, None)',
+      'if isinstance(d.get("agents", {}).get("list"), list): d["agents"]["list"] = [a for a in d["agents"]["list"] if a.get("id") not in ids]',
+      'if isinstance(d.get("bindings"), list): d["bindings"] = [b for b in d["bindings"] if b.get("match", {}).get("accountId") not in ids]',
+      'with open("/state/moltbot.json", "w") as f: json.dump(d, f, indent=2)',
+      'print("[state-sync] removed accounts:", ",".join(sorted(ids)))',
+      'PYEOF',
+    ].join('\n');
+    await execInPod({ podName, containerName: 'clawdbot-gateway', command: ['sh', '-lc', script] });
+  } catch (error) {
+    // The ConfigMap write stands; the gateway re-seeds state from it on restart.
+    console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
+  }
+  return { removed };
+};
+
 const provisionOpenClawAccount = async ({
   accountId,
   runtimeToken,
@@ -3601,6 +3667,8 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
 
 module.exports = {
   buildPvcVirtualKeyReadScript,
+  removeIdentityFromOpenClawConfig,
+  removeOpenClawAccount,
   // Test seams: the dev and community issuers, so a test can assert what each sends to LiteLLM.
   issueLiteLLMVirtualKey,
   issueLiteLLMOpenRouterKey,

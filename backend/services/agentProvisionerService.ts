@@ -1520,6 +1520,19 @@ const getDockerRuntimeLogs = async (runtimeType: any, lines = 200) => {
 // Kubernetes mode detection
 const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
 
+/**
+ * Remove an identity's account from the shared OpenClaw gateway config. K8s
+ * only: elsewhere there is no shared gateway config to edit, so it removes
+ * nothing.
+ */
+const removeOpenClawAccount = async ({ agentName, instanceId, gateway }: any = {}) => {
+  if (!isK8sMode()) return { removed: [] };
+  // eslint-disable-next-line global-require
+  const k8sProvisioner = require('./agentProvisionerServiceK8s');
+  return k8sProvisioner.removeOpenClawAccount({ agentName, instanceId, gateway });
+};
+
+
 // Docker mode starts moltbot from a compose service that retired with the
 // gateway (ADR-021 Part B), so the start can only fail. A k8s gateway, or a
 // gateway an operator runs with docker provisioning off, is not affected.
@@ -1745,6 +1758,7 @@ const installOpenClawPlugin = async ({ spec, link = false, ...options }: any = {
 module.exports = {
   // Core provisioning (works in both modes)
   provisionAgentRuntime,
+  removeOpenClawAccount,
   composeGatewayRetired,
   runtimeReceivesToken,
   getOpenClawConfigPath,
