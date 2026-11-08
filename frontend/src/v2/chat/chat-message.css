@@ -98,6 +98,18 @@
   grid-column: 3;
 }
 
+/* F339 walk: the owner's Connect sat in the sentence's own grey with no
+   underline, so it read as a stray word. Inline, because it ends a sentence. */
+.v2-root a.v2-system-action-line__link {
+  color: var(--v2-accent-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v2-root a.v2-system-action-line__link:hover {
+  text-decoration: underline;
+}
+
 /* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
    column: board glyph, up to four 20px faces, "N claims · first to last",
    the run's time, a chevron. The toggle is a control with its state on

@@ -353,6 +353,7 @@ describe('V2MessageRow', () => {
     const line = screen.getByText(/You haven't connected Forge yet, so it won't see this until it runs\./).closest('.v2-system-action-line');
     expect(line).toHaveClass('v2-system-action-line--notice');
     expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', connectLink);
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveClass('v2-system-action-line__link');
     expect(screen.queryByText(/Its owner can connect it/)).not.toBeInTheDocument();
   });
 
