@@ -131,13 +131,14 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   return { model: safeModelName(fallbackModel) };
 };
 
-const CLI_AGENT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const CLI_AGENT_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
 
 /**
  * The one line posted in the pod. A seat the daemon runs takes its model from
- * Settings. A seat started with `commonly agent run` shows that control read
- * only, so `cliAgentName` names the command that does change it (F354: the
- * notice sent those owners to a control they couldn't use).
+ * Settings. For a seat started with `commonly agent run`, `cliAgentName` names
+ * the command that changes it on that computer, which works whether or not the
+ * seat's Settings control applies (F354: a walk found it read only, and it
+ * doesn't apply to a record with no saved environment).
  */
 export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
   const what = model

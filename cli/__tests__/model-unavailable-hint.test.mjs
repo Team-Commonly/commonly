@@ -140,6 +140,9 @@ describe('modelUnavailableFailure', () => {
   test('a CLI agent name outside the handle charset falls back to Settings rather than echo it', () => {
     expect(modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' })).toMatch(/Settings, then Model\.$/);
     expect(modelUnavailableHint('m-1', { cliAgentName: 'gw-codex' })).toMatch(/commonly agent config gw-codex --model <model>/);
+    expect(modelUnavailableHint('m-1', { cliAgentName: 'my_agent.v2' })).toMatch(/commonly agent config my_agent\.v2 --model/);
+    expect(modelUnavailableHint(null, { cliAgentName: 'gw-codex' })).toBe("The model provider says this agent's model isn't available. "
+      + 'To change it, run commonly agent config gw-codex --model <model> on the computer it runs on, then restart commonly agent run gw-codex.');
   });
 });
 
