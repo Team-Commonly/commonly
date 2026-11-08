@@ -1,3 +1,5 @@
+import { reopenIfClosed } from './agentRoomCloseService';
+
 // eslint-disable-next-line global-require
 const AgentMentionService = require('./agentMentionService');
 // eslint-disable-next-line global-require
@@ -82,6 +84,8 @@ export const deliverMessageToAgents = async <T extends MessageForAgentDelivery>(
   onlyExplicitMentions = false,
 }: DeliveryOptions<T>): Promise<DeliveredMessage<T>> => {
   const username = authorUsername(message, requestUser);
+  // F307: the person writing reopens a direct message they closed.
+  if (podType === 'agent-room') await reopenIfClosed(podId);
   const mentionNotices = await senderNotices(podId, message, userId ? String(userId) : undefined);
 
   if (AgentMentionService.isAutoRoutedDmPod(podType)) {

@@ -91,6 +91,9 @@ export interface IPod extends Document {
   // Optional because legacy pods predate the key and are claimed lazily by
   // DMService rather than being rewritten by a schema migration at startup.
   agentDmPairKey?: string;
+  // F307: set when the agent-room's one human member closes it. The room
+  // leaves their lists until either side writes again. Deletes nothing.
+  closedAt?: Date | null;
   messages: Types.ObjectId[];
   announcements: Types.ObjectId[];
   externalLinks: Types.ObjectId[];
@@ -172,6 +175,7 @@ const PodSchema = new Schema<IPod>(
     },
     members: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     agentDmPairKey: { type: String, trim: true },
+    closedAt: { type: Date, default: undefined },
     messages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
     announcements: [{ type: Schema.Types.ObjectId, ref: 'Announcement' }],
     externalLinks: [{ type: Schema.Types.ObjectId, ref: 'ExternalLink' }],

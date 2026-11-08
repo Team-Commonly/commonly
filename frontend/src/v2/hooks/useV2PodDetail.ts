@@ -200,6 +200,8 @@ export interface UseV2PodDetailResult {
   members: V2PodMember[];
   messages: V2Message[];
   agents: V2Agent[];
+  /** True once this pod's agent list was read. A failed read stays false (F307). */
+  agentsLoaded?: boolean;
   loading: boolean;
   /** True after the current pod's initial pod/message read has settled. */
   initialLoadComplete?: boolean;
@@ -315,6 +317,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
   const [pod, setPod] = useState<V2Pod | null>(null);
   const [messages, setMessages] = useState<V2Message[]>([]);
   const [agents, setAgents] = useState<V2Agent[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   // `loading: false` is also the first-render default. Keep that transient
   // state distinct from a settled empty page so landing cannot declare a
@@ -360,6 +363,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     setPod(null);
     setMessages([]);
     setAgents([]);
+    setAgentsLoaded(false);
     setError(null);
     setSendError(null);
     setInitialLoadComplete(false);
@@ -596,9 +600,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
         ...a,
         agentName: a.agentName || a.name || '',
       }));
-      if (activePodIdRef.current === id) setAgents(normalized);
+      if (activePodIdRef.current === id) { setAgents(normalized); setAgentsLoaded(true); }
     } catch {
-      if (activePodIdRef.current === id) setAgents([]);
+      if (activePodIdRef.current === id) { setAgents([]); setAgentsLoaded(false); }
     }
   }, [api]);
 
@@ -623,6 +627,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       setPod(null);
       setMessages([]);
       setAgents([]);
+      setAgentsLoaded(false);
       setSendError(null);
       setInitialLoadComplete(true);
       return;
@@ -826,6 +831,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
     members,
     messages,
     agents,
+    agentsLoaded,
     loading,
     initialLoadComplete,
     initialMessagesLoaded,

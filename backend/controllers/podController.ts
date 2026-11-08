@@ -156,6 +156,9 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
   }
 };
 
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { dropClosedAgentRooms } = require('../services/agentRoomCloseService');
+
 // Get all pods or filter by type
 // An agent-room outlives its agent's uninstall on purpose: the pod keeps the
 // agent's memory and history, so a reinstall returns the owner to the same
@@ -165,9 +168,8 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 // room with no row (a failed install, or a legacy membership-only room) is
 // not evidence its agent was removed, so it stays listed. One aggregate over
 // the rooms in the result, not one query per room.
-const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
-  const roomIds = pods.filter((p: any) => p.type === 'agent-room').map((p: any) => p._id);
-  if (roomIds.length === 0) return pods;
+const goneAgentRoomIds = async (roomIds: unknown[]): Promise<Set<string>> => {
+  if (roomIds.length === 0) return new Set();
   const rows: Array<{ _id: unknown; liveRows: number }> = await AgentInstallation.aggregate([
     { $match: { podId: { $in: roomIds } } },
     {
@@ -177,7 +179,13 @@ const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
       },
     },
   ]);
-  const goneRoomIds = new Set(rows.filter((r) => r.liveRows === 0).map((r) => String(r._id)));
+  return new Set(rows.filter((r) => r.liveRows === 0).map((r) => String(r._id)));
+};
+
+const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
+  const roomIds = pods.filter((p: any) => p.type === 'agent-room').map((p: any) => p._id);
+  if (roomIds.length === 0) return pods;
+  const goneRoomIds = await goneAgentRoomIds(roomIds);
   return pods.filter((p: any) => p.type !== 'agent-room' || !goneRoomIds.has(String(p._id)));
 };
 
@@ -291,6 +299,8 @@ exports.getAllPods = async (req: any, res: any) => {
     // Admin `scope=all` is cross-instance moderation: it keeps every room.
     if (!isCommunityScope && !isDiscoverScope && scope !== 'all') {
       pods = await dropUninstalledAgentRooms(pods);
+      // F307: a room its person closed leaves their list; its URL still opens.
+      pods = dropClosedAgentRooms(pods);
     }
 
     // Attach last-message preview per pod for the sidebar snippet. Single
@@ -422,6 +432,14 @@ exports.getPodById = async (req: any, res: any) => {
         .json({ error: 'Pod not found or is not of specified type' });
     }
 
+    // F307: the room's agent is gone by the same rule the list uses (rows
+    // exist, every one uninstalled), so the page can offer to close it.
+    // A paused or errored install still counts as present.
+    if (pod.type === 'agent-room') {
+      const agentGone = (await goneAgentRoomIds([pod._id])).has(String(pod._id));
+      const plain = typeof pod.toObject === 'function' ? pod.toObject() : pod;
+      return res.json({ ...plain, agentGone });
+    }
     return res.json(pod);
   } catch (err: any) {
     console.error('Error in getPodById:', err.message);

@@ -1,0 +1,66 @@
+/* F307 / F303 frame (docs/design/artboards/f303): closing a direct message.
+   The agent-gone notice is one white card with a border, ink text and no icon
+   (Signal §3). Close is the primary action there because it's the only useful one. */
+.v2-root .v2-close-dm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 13px/20px var(--v2-font);
+}
+.v2-root .v2-close-dm p { margin: 0; }
+.v2-root .v2-close-dm__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.v2-root .v2-close-dm__close {
+  font: 500 13px/20px var(--v2-font);
+  padding: 4px 12px;
+  border-radius: var(--v2-radius);
+  border: 1px solid var(--v2-fill-edge);
+  color: var(--v2-on-fill);
+  background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b));
+  cursor: pointer;
+}
+.v2-root .v2-close-dm__close:disabled { cursor: progress; opacity: 0.65; }
+
+/* The inspector's quiet Close group: one sentence and a link-weight action. */
+.v2-root .v2-close-dm-group p { margin: 0 0 6px; color: var(--v2-text-secondary); font: 400 12.5px/18px var(--v2-font); }
+.v2-root .v2-close-dm-link {
+  font: 500 13px/20px var(--v2-font);
+  color: var(--v2-accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.v2-root .v2-close-dm-link:disabled { cursor: progress; opacity: 0.65; }
+
+/* After the close: one status line in the pods list with Undo. It stays until
+   the person opens a pod; it isn't a toast that times out. */
+.v2-root .v2-closed-dm-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 8px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 13px/20px var(--v2-font);
+}
+
+@media (max-width: 760px) {
+  .v2-root .v2-close-dm__close,
+  .v2-root .v2-close-dm-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

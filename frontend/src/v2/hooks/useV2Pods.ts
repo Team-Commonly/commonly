@@ -31,6 +31,9 @@ export interface V2Pod {
   createdAt?: string;
   updatedAt?: string;
   lastMessage?: V2PodLastMessage | null;
+  // F307: on an agent-room read, whether its agent is gone (every install
+  // row uninstalled). Absent on other pod types and on list rows.
+  agentGone?: boolean;
 }
 
 export interface UseV2PodsResult {

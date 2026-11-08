@@ -10,6 +10,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
 jest.mock('../../../services/mentionNonMemberNoticeService', () => ({
   findNonMemberMentionNotices: jest.fn().mockResolvedValue([]),
 }));
+jest.mock('../../../services/agentRoomCloseService', () => ({ reopenIfClosed: jest.fn().mockResolvedValue(undefined) }));
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const { findNonMemberMentionNotices } = require('../../../services/mentionNonMemberNoticeService');
@@ -38,6 +39,17 @@ describe('messageAgentDeliveryService', () => {
     ['legacy Mongo author', { user: { username: 'legacy' } }, undefined, 'legacy'],
   ])('uses the %s in the sender frame', (_case, message, requestUser, expected) => {
     expect(authorUsername(message, requestUser)).toBe(expected);
+  });
+
+  it('a person writing in a direct message they closed reopens it, and no other pod type is touched (F307)', async () => {
+    const { reopenIfClosed } = require('../../../services/agentRoomCloseService');
+    AgentMentionService.isAutoRoutedDmPod.mockReturnValue(true);
+    await deliverMessageToAgents({ podId: 'room-1', podType: 'agent-room', message: { content: 'hi' }, userId: 'u1' });
+    expect(reopenIfClosed).toHaveBeenCalledWith('room-1');
+    reopenIfClosed.mockClear();
+    AgentMentionService.isAutoRoutedDmPod.mockReturnValue(false);
+    await deliverMessageToAgents({ podId: 'p1', podType: 'chat', message: { content: 'hi' }, userId: 'u1' });
+    expect(reopenIfClosed).not.toHaveBeenCalled();
   });
 
   it('enriches explicit-mention delivery and preserves an explicit root-post null', async () => {

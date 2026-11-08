@@ -348,6 +348,11 @@ class DMService {
       members: { $all: [agentId, userId] },
     });
     if (existing) {
+      // F307: Talk to on a room the person closed opens it again.
+      if (existing.closedAt) {
+        await Pod.updateOne({ _id: existing._id }, { $unset: { closedAt: 1 } });
+        existing.closedAt = undefined;
+      }
       if (agentName) await DMService.restoreHostedRoomRow(existing._id, agentName, instanceId || 'default', userId);
       return existing;
     }
