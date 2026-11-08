@@ -4602,3 +4602,15 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 **Lesson:** the same as the quick rule on `commonly_*` names. A tool's schema describes one runtime's surface, and the route is the authority on what's allowed.
 
+## 121. An install's display name doubled the agent's name into its username (2026-11-08, F359)
+
+*Origin: setting up a pod's agents through `POST /api/registry/install`, with `agentName: 'jellymoon-cto'`, `displayName: 'CTO'` and no `instanceId`.*
+
+**Surface:** the install route's instance derivation, now `backend/services/installInstanceId.ts`. Also a comment in `V2AgentBYO.tsx` that said the instance is "'default' unless a persona names the seat".
+
+**False model:** a display name is only a label. With no `instanceId`, the route took the instance from the display name: "CTO" made the instance `cto` and the username `jellymoon-cto-cto`. The page's comment covered only the persona path, so an API caller had no warning.
+
+**Fix:** a display name that only repeats the last segment of the agent's name now takes `default`. The exception is when something already holds the slug identity: an installation row in any status, or its bot user. Then the slug stays, so a re-install or a reattach finds the agent and memory it made. Other display names derive an instance as before ("Cuz" for `openclaw` stays `cuz`). To choose the instance yourself, pass `instanceId`.
+
+**Lesson:** a field that reads like a label but feeds an identity needs that said where callers look, not only in one page's comment. A rule that changes which identity an install lands on also has to be checked against the agent's own earlier installs. The first draft of this fix kept the slug whenever `default` was held, which split an agent from its own default on every second install.
+
