@@ -690,13 +690,17 @@ const runPi = ({
     // A refused turn exits 0 too, so here the stream is what says the text was
     // interim. Posting it would answer with half a turn (F258). The last stop
     // decides, not `reply.upstream`, which outlives a refusal pi recovered from.
-    // With no text the turn fails too when no status names it (F336): a tool-only
-    // message, then "fetch failed", is a fault to retry, not a silent turn. A
-    // refusal pi kept still resolves, so the run loop names it (TASK-096).
+    // With no text it is a failure too when no status names it (F336): a tool-only
+    // message, then "fetch failed", is a fault to retry, not a silent turn. But
+    // that tool may have posted, which only the run loop can see, so the failure
+    // rides on the reply and the run loop throws it only when nothing was posted.
+    // A refusal pi kept still resolves plainly, so the run loop names it (TASK-096).
     if (code === 0 && !reply.finished && reply.lastStop === 'error' && (reply.sawAssistant || !reply.upstream)) {
-      return reject(stoppedTurnFailure(reply, {
+      const failure = stoppedTurnFailure(reply, {
         code, signal, stderr, credentials,
-      }));
+      });
+      if (reply.sawAssistant) return reject(failure);
+      reply.failure = failure;
     }
     return resolve(reply);
   });
@@ -964,7 +968,12 @@ export default {
       // Empty text with a clean exit is a silent turn; the run loop treats it
       // as NO_REPLY-shaped and re-delivers on its own rules. Empty text that
       // came with a refusal is named instead — see upstream-refusal.js.
-      return { text: reply.text, newSessionId: sessionId, upstream: reply.upstream ?? null };
+      return {
+        text: reply.text,
+        newSessionId: sessionId,
+        upstream: reply.upstream ?? null,
+        ...(reply.failure ? { failure: reply.failure } : {}),
+      };
     } finally {
       // Best effort: the bridge has already read what it needs by the time the
       // turn ends, and a token file that outlives its turn is a token file that

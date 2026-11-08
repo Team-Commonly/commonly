@@ -443,22 +443,39 @@ describe('spawn', () => {
     // F336: a 429 answered by a tool-call-only message (pi's retry succeeded, so the
     // refusal is let go), then a connection fault. Before, no text meant silent.
     const toolOnly = event({ type: 'message_end', message: { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'toolCall', name: 'commonly_post_message' }] } });
-    const recovered = event({ type: 'auto_retry_start', attempt: 1, errorMessage: '429: rate limited' })
+    // pi writes the refused message_end before its retry starts.
+    const recovered = stopped('error', '429: {"message":"rate limited"}')
+      + event({ type: 'auto_retry_start', attempt: 1, errorMessage: '429: rate limited' })
       + event({ type: 'auto_retry_end', success: true, attempt: 1 });
-    test('a tool-only recovery then a statusless failure fails the turn, so it is retried', async () => {
+    test('a tool-only recovery then a statusless failure hands the run loop a failure, not a silent turn', async () => {
       const { impl } = makeSpawnImpl({
         stdout: recovered + toolOnly + stopped('error', 'fetch failed') + ended, stderr: startupWarning, code: 0,
       });
-      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
-      expect(err).toBeInstanceOf(Error);
-      expect(err.message).toMatch(/^pi exited with code 0: fetch failed$/);
-      expect(err.status).toBeUndefined();
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.text).toBe('');
+      // The 429 was recovered from, so it names nothing.
+      expect(result.upstream).toBeNull();
+      expect(result.failure).toBeInstanceOf(Error);
+      expect(result.failure.message).toMatch(/^pi exited with code 0: fetch failed$/);
+      expect(result.failure.status).toBeUndefined();
+    });
+    test('without the recovery, the kept 429 still names the turn', async () => {
+      const { impl } = makeSpawnImpl({ stdout: stopped('error', '429: {"message":"rate limited"}') + toolOnly + ended, code: 0 });
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.upstream).toMatchObject({ status: 429 });
+      expect(result.failure).toBeUndefined();
+    });
+    test('a textless error stop with no cause still carries a failure', async () => {
+      const { impl } = makeSpawnImpl({ stdout: toolOnly + stopped('error') + ended, code: 0 });
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.failure.message).toMatch(/the turn stopped before it finished/);
     });
     test('a textless error stop pi kept a refusal for still resolves, so the run loop names it', async () => {
       const { impl } = makeSpawnImpl({ stdout: toolOnly + stopped('error', 'upstream refused') + ended + refused429, code: 0 });
       const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
       expect(result.text).toBe('');
       expect(result.upstream).toMatchObject({ status: 429 });
+      expect(result.failure).toBeUndefined();
     });
     test('a tool-only turn that ends on a normal stop stays silent', async () => {
       const { impl } = makeSpawnImpl({ stdout: toolOnly + final('') + ended, code: 0 });
