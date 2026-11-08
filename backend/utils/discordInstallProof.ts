@@ -24,7 +24,7 @@ import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { isDiscordSnowflake } from './discordBinding';
 
 const PURPOSE = 'discord-install';
-export const DISCORD_INSTALL_PROOF_TTL_SECONDS = 30 * 60;
+const DISCORD_INSTALL_PROOF_TTL_SECONDS = 30 * 60;
 
 interface DiscordInstallProofPayload extends JwtPayload {
   pur: typeof PURPOSE;
@@ -91,7 +91,7 @@ export const readDiscordInstallProof = (token: unknown): {
 // obtained from install-link by someone allowed to install into that pod, and the
 // proof it leads to can be spent only by that same person.
 const STATE_PURPOSE = 'discord-install-state';
-export const DISCORD_INSTALL_STATE_TTL_SECONDS = 15 * 60;
+const DISCORD_INSTALL_STATE_TTL_SECONDS = 15 * 60;
 
 interface DiscordInstallStatePayload extends JwtPayload {
   pur: typeof STATE_PURPOSE;

@@ -878,8 +878,4 @@ export const parsePluginManifest = (
   };
 };
 
-// Names used by callers that describe the input as a root rather than a file.
-export const parsePluginRoot = parsePluginManifest;
-export const parsePluginInstallable = parsePluginManifest;
-
 export default parsePluginManifest;

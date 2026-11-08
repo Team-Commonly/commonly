@@ -148,5 +148,3 @@ export const buildThreadView = (
   }
   return groupClaimRuns(out);
 };
-
-export default buildThreadView;

@@ -1495,7 +1495,7 @@ const executeApprovedToolCall = async (
  */
 export const EXPIRY_RETRY_GRACE_MS = 60 * 1000;
 /** F202: the longest wait between two retries of one row. */
-export const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
+const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
 /**
  * How long an approved call with no ending may take before the sweep treats its
  * process as dead. Every provider request on the broker path has its own bound
@@ -1887,7 +1887,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
  * treats it as a crash between create and post (F184). proposeAction posts the
  * card right after the create, so minutes is far past any live post.
  */
-export const CARDLESS_TOOL_CALL_GRACE_MS = 5 * 60 * 1000;
+const CARDLESS_TOOL_CALL_GRACE_MS = 5 * 60 * 1000;
 
 /**
  * F184: an open broker approval with no card is one whose process died between

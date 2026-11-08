@@ -14,7 +14,7 @@ import i18n from '../../i18n';
  * helpers, and the components that render them already re-render on a
  * language change through their own useTranslation().
  */
-export type CompactUnit = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+type CompactUnit = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
 
 export const compactNow = (): string => i18n.t('time.compact.now', { defaultValue: 'now' });
 

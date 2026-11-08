@@ -2,7 +2,7 @@ import AgentEvent from '../models/AgentEvent';
 import AgentDigestState from '../models/AgentDigestState';
 
 const FOLD_BATCH_SIZE = 100;
-export const FOLD_TIME_BUDGET_MS = 10_000;
+const FOLD_TIME_BUDGET_MS = 10_000;
 const LAST_IDS_LIMIT = 8;
 const CONVERSATION_LIMIT = 8;
 

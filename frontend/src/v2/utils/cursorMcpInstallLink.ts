@@ -1,6 +1,6 @@
 // Cursor's install deeplink contains its MCP configuration in the URL. Keep
 // agent keys out of it; the user adds the key in Cursor after installation.
-export const CURSOR_TOKEN_PLACEHOLDER = 'PASTE_AGENT_TOKEN_HERE';
+const CURSOR_TOKEN_PLACEHOLDER = 'PASTE_AGENT_TOKEN_HERE';
 
 const cursorMcpInstallLink = (apiUrl: string): string => {
   const config = {

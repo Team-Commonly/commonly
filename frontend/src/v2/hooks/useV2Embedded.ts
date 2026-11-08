@@ -39,5 +39,3 @@ export const useV2Embedded = (): boolean => {
   }, []);
   return fromContext || fromPath;
 };
-
-export default useV2Embedded;

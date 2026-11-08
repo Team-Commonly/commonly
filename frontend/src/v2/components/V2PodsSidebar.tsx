@@ -61,7 +61,7 @@ export const ROOM_POD_TYPE_LABELS: Record<string, Exclude<PodKind, 'community' |
 // did not read as a switch.
 export type PodListView = 'recent' | 'all' | 'pinned';
 const POD_LIST_VIEWS: PodListView[] = ['recent', 'all', 'pinned'];
-export const POD_LIST_VIEW_KEY = 'v2:pods.view';
+const POD_LIST_VIEW_KEY = 'v2:pods.view';
 const KIND_OPEN_KEY = 'v2:pods.kindsOpen';
 const NO_PINS = new Set<string>();
 

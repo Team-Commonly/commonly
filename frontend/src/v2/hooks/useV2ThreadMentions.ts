@@ -227,5 +227,3 @@ export const useV2ThreadMentions = ({
     selectMention,
   };
 };
-
-export default useV2ThreadMentions;

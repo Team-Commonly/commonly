@@ -50,5 +50,3 @@ export const shortTimeSince = (
   if (days < 7) return compactAge('day', days);
   return compactAge('week', Math.floor(days / 7));
 };
-
-export default shortTimeSince;
