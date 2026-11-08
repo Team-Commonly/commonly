@@ -160,6 +160,26 @@ describe('attentionItemService', () => {
     expect(mockSendNeedsYouEmail).toHaveBeenCalledWith(expect.objectContaining({ recipientUserId: 'sam' }));
   });
 
+  it('queues a decision only for the deciders it names', async () => {
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
+    mockUserFind.mockReturnValue(chain([
+      { _id: 'sam', username: 'Sam', isBot: false },
+      { _id: 'lee', username: 'Lee', isBot: false },
+    ]));
+    mockUserFindById.mockReturnValue(chain(null));
+    mockInstallationFindOne.mockReturnValue(chain(null));
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-lee' });
+
+    await AttentionItemService.recordDecision({
+      _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', title: 'Which release?',
+      options: [{ label: 'Now' }, { label: 'Later' }], deciders: [{ userId: 'lee', username: 'Lee' }],
+    });
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).toContain('lee');
+    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toContain('"sam"');
+  });
+
   it('uses the installation in this pod before a global bot owner', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
     mockUserFind.mockReturnValue(chain([

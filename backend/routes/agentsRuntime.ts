@@ -4349,7 +4349,7 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
     // decision surface. Privileged work must go through `propose-action`,
     // whose owner/CAS gate is deliberately stronger.
     const DECISION_REQUEST_FIELDS = new Set([
-      'podId', 'decisionClass', 'title', 'question', 'options', 'threadRootId', 'context',
+      'podId', 'decisionClass', 'title', 'question', 'options', 'threadRootId', 'context', 'deciderUserIds',
     ]);
     const unsupportedFields = Object.keys(req.body || {})
       .filter((field) => !DECISION_REQUEST_FIELDS.has(field));
@@ -4361,7 +4361,7 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
       });
     }
     const {
-      podId, decisionClass, title, question, options, threadRootId, context,
+      podId, decisionClass, title, question, options, threadRootId, context, deciderUserIds,
     } = req.body || {};
     if (typeof podId !== 'string' || !podId.trim()) {
       return res.status(400).json({ message: 'podId is required', code: 'podId_required' });
@@ -4397,6 +4397,7 @@ router.post('/decisions', phase4RateLimit, agentRuntimeAuth, async (req: any, re
       options,
       threadRootId,
       context,
+      deciderUserIds,
     });
     return res.status(201).json(result);
   } catch (error: any) {

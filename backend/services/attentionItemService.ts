@@ -521,7 +521,12 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
     const podId = decision?.podId;
     const id = decision?._id || decision?.id;
     if (!podId || !id) return;
-    const recipients = await currentHumanMembers(podId);
+    const members = await currentHumanMembers(podId);
+    // A card that names its deciders waits only on them.
+    const deciderIds = new Set((decision.deciders || []).map((decider: any) => String(decider.userId)));
+    const recipients = deciderIds.size
+      ? members.filter((member: unknown) => deciderIds.has(String((member as { _id?: unknown })?._id ?? member)))
+      : members;
     const pod = await Pod.findById(podId).select('name').lean();
     const emailRecipientId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
     const choiceOptions = (decision.options || []).filter((option: any) => option?.label).map((option: any) => ({

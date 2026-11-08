@@ -58,6 +58,8 @@ interface RequestDecisionOptions {
   options: DecisionOptionInput[];
   threadRootId?: string | null;
   context?: string;
+  /** 1 to MAX_DECIDERS human members of the pod; only they may rule. */
+  deciderUserIds?: unknown;
 }
 
 interface ChooseDecisionOptions {
@@ -133,18 +135,55 @@ export const normalizeOptions = (value: unknown): DecisionOptionInput[] => {
   });
 };
 
+export const MAX_DECIDERS = 5;
+
+type Decider = { userId: string; username: string };
+
+/**
+ * The people an asker named to rule: 1 to MAX_DECIDERS distinct human members
+ * of the pod, by user id. An agent that knows a username resolves it first.
+ */
+const resolveDeciders = async (podId: string, raw: unknown): Promise<Decider[] | null> => {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > MAX_DECIDERS
+    || raw.some((id) => typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id))) {
+    throw new DecisionRequestError(
+      `deciderUserIds must be 1 to ${MAX_DECIDERS} user ids`, 400, 'invalid_deciderUserIds',
+    );
+  }
+  const ids = Array.from(new Set(raw.map((id) => String(id).toLowerCase())));
+  const pod = await Pod.findById(podId).select('members').lean();
+  if (!pod) throw new DecisionRequestError('Pod not found', 404, 'pod_not_found');
+  const users = await User.find({ _id: { $in: ids } }).select('_id username isBot').lean() as Array<{
+    _id: unknown; username?: string; isBot?: boolean;
+  }>;
+  const byId = new Map(users.map((user) => [String(user._id).toLowerCase(), user]));
+  const refused = ids.filter((id) => {
+    const user = byId.get(id);
+    return !user || user.isBot || !user.username || !isListedPodMember(pod, id);
+  });
+  if (refused.length) {
+    throw new DecisionRequestError(
+      'Every decider must be a person in this pod', 400, 'decider_not_member',
+    );
+  }
+  return ids.map((id) => ({ userId: id, username: String(byId.get(id)?.username) }));
+};
+
 const formatDecisionMessage = (
   title: string,
   question: string,
   options: DecisionOptionInput[],
   context?: string,
+  deciders?: Decider[] | null,
 ): string => {
   const optionsText = options.map((option) => {
     const recommendation = option.recommended ? ' (recommended)' : '';
     const description = option.description ? ` — ${option.description}` : '';
     return `- ${option.label}${recommendation}${description}`;
   }).join('\n');
-  return [title, question, context, `Options:\n${optionsText}`].filter(Boolean).join('\n\n');
+  const forLine = deciders?.length ? `For ${deciders.map((decider) => `@${decider.username}`).join(', ')}` : '';
+  return [title, forLine, question, context, `Options:\n${optionsText}`].filter(Boolean).join('\n\n');
 };
 
 const requirePgReply = async (podId: string, userId: string): Promise<void> => {
@@ -173,6 +212,8 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
   const threadRootId = input.threadRootId === undefined || input.threadRootId === null
     ? null
     : cleanText(input.threadRootId, 'threadRootId', 32);
+
+  const deciders = await resolveDeciders(podId, input.deciderUserIds);
 
   // Thread replies require PostgreSQL. Check before posting the source: a
   // Mongo-only source could never receive the implicit reply that wakes the
@@ -203,7 +244,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     instanceId,
     displayName: input.displayName,
     podId,
-    content: formatDecisionMessage(title, question, options, context),
+    content: formatDecisionMessage(title, question, options, context, deciders),
     metadata: { source: 'decision-request' },
     relayCard,
     threadRootId,
@@ -231,6 +272,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     status: 'pending',
     messageId,
     ...(threadRootId ? { threadRootId } : {}),
+    ...(deciders ? { deciders } : {}),
   });
   // eslint-disable-next-line global-require
   const { recordDecision } = require('./attentionItemService');
@@ -240,6 +282,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     messageId,
     threadRootId: threadRootId || messageId,
     status: row.status,
+    ...(deciders ? { deciders } : {}),
   };
 };
 
@@ -249,6 +292,9 @@ const decisionPayload = (row: any): Record<string, unknown> => ({
   title: row.title,
   question: row.question,
   options: row.options,
+  ...(row.deciders?.length ? {
+    deciders: row.deciders.map((decider: any) => ({ userId: String(decider.userId), username: decider.username })),
+  } : {}),
   ruling: row.ruling ? {
     value: row.ruling.value,
     by: row.ruling.byUsername,
@@ -373,6 +419,14 @@ export const chooseDecision = async (
   if (!pod) return { status: 404, body: { error: 'Pod not found' } };
   if (!isListedPodMember(pod, callerUserId)) {
     return { status: 403, body: { error: 'Only human pod members can rule on this decision' } };
+  }
+  // A card that names its deciders is theirs to rule; anyone else can read it.
+  if (row.deciders?.length
+    && !row.deciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
+    return {
+      status: 403,
+      body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: decisionPayload(row) },
+    };
   }
 
   const now = new Date();

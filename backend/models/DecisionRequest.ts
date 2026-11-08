@@ -28,6 +28,12 @@ export interface DecisionRuling {
   messageId: string;
 }
 
+/** A person the asker named to rule; their name as it was when the card was asked. */
+export interface DecisionDecider {
+  userId: Types.ObjectId;
+  username: string;
+}
+
 export interface IDecisionRequest extends Document {
   podId: Types.ObjectId;
   agentUserId: Types.ObjectId;
@@ -42,6 +48,8 @@ export interface IDecisionRequest extends Document {
   messageId?: string;
   threadRootId?: string;
   ruling?: DecisionRuling;
+  /** Absent: any human member may rule. Present: only these people may. */
+  deciders?: DecisionDecider[];
   rulingLock?: { token: string; expiresAt: Date };
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +93,13 @@ const DecisionRequestSchema = new Schema<IDecisionRequest>(
       byUsername: { type: String, trim: true },
       at: { type: Date },
       messageId: { type: String, trim: true },
+    },
+    deciders: {
+      type: [new Schema<DecisionDecider>({
+        userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        username: { type: String, trim: true, required: true },
+      }, { _id: false })],
+      default: undefined,
     },
     // A short write lease prevents two browser tabs from posting conflicting
     // replies before the compare-and-set can record the winning ruling.
