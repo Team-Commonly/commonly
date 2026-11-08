@@ -104,7 +104,9 @@ import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
-import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import {
+  UNSANDBOXED_FLAG, bwrapRefusedMessage, hostSandboxRefusal, windowsSandboxMessage,
+} from '../lib/sandbox/host-check.js';
 import {
   CODEX_UNSANDBOXED_NOTICE, UNSANDBOXED_NOTICE, codexUnconfinedForRun, hostReportFailureMessage, hostUnconfinedForRun, runOptedInUnsandboxed,
   unsandboxedFlagRefusal,
@@ -1444,7 +1446,7 @@ export const performAttach = async ({
       // that don't offer the flag. A seat with no sandbox block still needs the
       // person's opt-in at `agent run`.
       const codexRefusal = hostSandboxRefusal({
-        environment, adapterName, platform, hostUnconfined: true, optedIn: true,
+        environment, adapterName, platform, hostUnconfined: true, optedIn: true, detectBwrap: probeBwrap,
       });
       if (codexRefusal) throw new Error(codexRefusal);
     }
@@ -1478,6 +1480,7 @@ export const performAttach = async ({
       const bwrap = probeBwrap();
       if (!bwrap.available) {
         if (platform === 'win32') throw windowsRefusal();
+        if (bwrap.namespaceRefused === true) throw new Error(bwrapRefusedMessage(adapterName, bwrap));
         throw new Error(`sandbox.mode=bwrap requested but unavailable: ${bwrap.error}`);
       }
       if (environment.sandbox?.network?.policy === 'restricted') {

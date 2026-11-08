@@ -125,6 +125,84 @@ describe('hostSandboxRefusal', () => {
       .toMatch(/not available here\. bwrap detection failed/);
   });
 
+  // Ubuntu 24.04 as it comes: bubblewrap installed, the namespace refused.
+  describe('a host that refuses bubblewrap a sandbox', () => {
+    const refused = (apparmorRestricted, ubuntuRelease = '24.04') => () => ({
+      available: false,
+      namespaceRefused: true,
+      reason: 'bwrap: setting up uid map: Permission denied',
+      apparmorRestricted,
+      ubuntuRelease,
+      error: 'bubblewrap is installed but cannot start a sandbox on this machine',
+    });
+    const seat = (adapterName, detectBwrap) => hostSandboxRefusal({
+      environment: { sandbox: { trust: 'public' } }, adapterName, platform: 'linux', detectBwrap, detectSeatbelt: never,
+    });
+    const ROUTE = 'choose "Run it here"';
+    const PROFILE = 'sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict';
+
+    test('Claude Code and Codex both stop at start, in plain words', () => {
+      for (const [adapter, label] of [['claude', 'Claude Code'], ['codex', 'Codex']]) {
+        const message = seat(adapter, refused(true));
+        expect(message).toMatch(new RegExp(`^A connected ${label} runs inside a bubblewrap sandbox`));
+        expect(message).toContain('uid map: Permission denied');
+        expect(message).not.toMatch(/\bseat\b/i);
+      }
+    });
+
+    test('the routes that change nothing here come first, and the profile is last and optional', () => {
+      for (const adapter of ['claude', 'codex']) {
+        const message = seat(adapter, refused(true));
+        expect(message.indexOf(ROUTE)).toBeGreaterThan(-1);
+        expect(message.indexOf(ROUTE)).toBeLessThan(message.indexOf('Optional,'));
+        expect(message.indexOf('Optional,')).toBeLessThan(message.indexOf(PROFILE));
+        expect(message.replace(/\s+/g, ' ')).toMatch(/fresh Ubuntu 24\.04 server image, not on every machine/);
+        // The package would enforce 21 more profiles; the lines take one file.
+        expect(message).not.toMatch(/apt(-get)? install/);
+        // A first run on a private pod binds to the folder the person is in.
+        expect(message).not.toMatch(/^\s*cd /m);
+        expect(message).toContain('sudo apt-get update');
+        expect(message).toMatch(/lets any program here use bubblewrap to create user namespaces/);
+        expect(message).toContain('sudo rm /etc/apparmor.d/bwrap-userns-restrict');
+        expect(message).toMatch(/needs sudo/);
+        expect(message).toMatch(/Commonly never runs it for you/);
+      }
+      expect(seat('claude', refused(true)).indexOf('claude mcp add')).toBeLessThan(seat('claude', refused(true)).indexOf('Optional,'));
+      expect(seat('codex', refused(true))).not.toContain('claude mcp add');
+    });
+
+    test('never the sysctl, and no profile but Ubuntu\'s', () => {
+      for (const adapter of ['claude', 'codex', 'opencode']) {
+        const message = seat(adapter, refused(true));
+        expect(message).not.toMatch(/sysctl|apparmor_restrict_unprivileged_userns|aa-disable|userns,/);
+      }
+    });
+
+    test('the profile is offered only where the AppArmor restriction is on, and only to adapters walked under it', () => {
+      expect(seat('claude', refused(false))).not.toContain(PROFILE);
+      expect(seat('claude', refused(true, '25.10'))).not.toContain(PROFILE);
+      expect(seat('claude', refused(true, null))).not.toContain(PROFILE);
+      expect(seat('claude', refused(false))).not.toContain('AppArmor');
+      expect(seat('codex', refused(false))).toContain(ROUTE);
+      expect(seat('opencode', refused(true))).not.toContain(PROFILE);
+    });
+
+    test('a Codex seat is checked only when public, and a missing bubblewrap stays Codex\'s to report', () => {
+      expect(seat('codex', available)).toBeNull();
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'internal' } }, adapterName: 'codex', platform: 'linux', detectBwrap: refused(false),
+      })).toMatch(/^A connected Codex runs inside a bubblewrap sandbox/);
+      expect(seat('codex', () => ({ available: false, namespaceRefused: false, error: 'spawnSync bwrap ETIMEDOUT' }))).toBeNull();
+      expect(seat('codex', missing('bwrap not found on PATH.'))).toBeNull();
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName: 'codex', platform: 'linux', detectBwrap: never,
+      })).toBeNull();
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'public' } }, adapterName: 'codex', platform: 'darwin', detectBwrap: never,
+      })).toBeNull();
+    });
+  });
+
   test('a legacy internal trust reads as public', () => {
     expect(hostSandboxRefusal({
       environment: { sandbox: { trust: 'internal' } }, adapterName: 'claude', platform: 'win32',
@@ -202,10 +280,10 @@ describe('hostSandboxRefusal', () => {
     }
   });
 
-  test('Codex on a Mac or Linux is left alone', () => {
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin' })).toBeNull();
-    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux' })).toBeNull();
-    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux' })).toBeNull();
+  test('Codex on a Mac, or on a Linux host that starts a sandbox, is left alone', () => {
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin', detectBwrap: never })).toBeNull();
+    expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux', detectBwrap: available })).toBeNull();
+    expect(hostSandboxRefusal({ environment: null, adapterName: 'codex', platform: 'linux', detectBwrap: never })).toBeNull();
   });
 
   test('adapters these mechanisms do not confine, and seats with no enforced mode, are left alone', () => {
