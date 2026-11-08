@@ -58,7 +58,8 @@ const seed = async ({
   seatEnvironment = null,
   runtime = { runtimeType: 'webhook' },
 } = {}) => {
-  const owner = await makeUser();
+  // Some cases run the seat on a cloud runtime, which its owner must be entitled to.
+  const owner = await makeUser({ entitlements: { cloudAgents: true } });
   const seat = await makeBot('quill', SEAT_TOKEN);
   const other = await makeBot('wren', OTHER_TOKEN);
   const pod = await Pod.create({
@@ -401,4 +402,11 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
     const res = await request(app).get('/api/agents/runtime/grant-brokers').query({ adapter: 'claude' });
     expect(res.status).toBe(401);
   });
+});
+
+// The runtime ownership read caches per identity for a minute. Clear it per
+// test, so one test's answer can't stand in for another's fixture.
+beforeEach(() => {
+  // eslint-disable-next-line global-require
+  require('../../services/cloudRuntimeOwnership').clearCloudRuntimeCache();
 });

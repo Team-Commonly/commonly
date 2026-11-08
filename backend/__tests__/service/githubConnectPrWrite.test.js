@@ -696,3 +696,10 @@ describe('F174 item 2: the old owner\'s retire never touches a taken-over row', 
     expect((await RoomGrant.findOne({ grantId: takersGrant.grantId }).lean()).revokedAt).toBeFalsy();
   });
 });
+
+// The runtime ownership read caches per identity for a minute. Clear it per
+// test, so one test's answer can't stand in for another's fixture.
+beforeEach(() => {
+  // eslint-disable-next-line global-require
+  require('../../services/cloudRuntimeOwnership').clearCloudRuntimeCache();
+});

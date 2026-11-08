@@ -218,3 +218,10 @@ tier1('commonly verify wave 1 — production HTTP routes', () => {
     expect(untouched.status).toBe('delivered');
   });
 });
+
+// The runtime ownership read caches per identity for a minute. Clear it per
+// test, so one test's answer can't stand in for another's fixture.
+beforeEach(() => {
+  // eslint-disable-next-line global-require
+  require('../../services/cloudRuntimeOwnership').clearCloudRuntimeCache();
+});
