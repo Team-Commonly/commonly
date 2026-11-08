@@ -26,7 +26,9 @@ const AgentEventService = require('./agentEventService');
  *
  * `lastFiredAt` also lets the wake's post through the run cap
  * (AgentMessageService.owedScheduledPost): a daily post in a quiet pod is not
- * a monologue, and would stop on the fourth day.
+ * a monologue, and would stop on the fourth day. A plain heartbeat gets the
+ * same one post per fire, read from its AgentEvent row and held to a 60-minute
+ * floor since the agent's last post; see owedScheduledPost.
  */
 
 export const SCHEDULE_PROMPT_MAX_CHARS = 1000;
