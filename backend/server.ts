@@ -41,7 +41,6 @@ const tasksApiRoutes = require('./routes/tasksApi');
 const registryRoutes = require('./routes/registry');
 const agentsRuntimeRoutes = require('./routes/agentsRuntime');
 const federationRoutes = require('./routes/federation');
-const moltbotProviderRoutes = require('./routes/providers/moltbot');
 const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
@@ -290,7 +289,6 @@ app.use('/api/agents/runtime/spawn-credentials', require('./routes/spawnCredenti
 app.use('/api/agents/seat-activity', require('./routes/agentSeatActivity')); // Member-gated seat logs for `agent logs`
 app.use('/api/agents/runtime', agentsRuntimeRoutes); // Runtime endpoints for external agents
 app.use('/api/federation', federationRoutes); // Cross-pod federation
-app.use('/api/providers/moltbot', moltbotProviderRoutes); // Moltbot provider integration
 app.use('/api/activity', activityRoutes); // Activity feed
 app.use('/api/marketplace', marketplaceRoutes); // Official marketplace manifest
 app.use('/api/marketplace', marketplaceApiRoutes); // Publish, fork, browse APIs
