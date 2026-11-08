@@ -4,6 +4,7 @@
 const express = require('express');
 const request = require('supertest');
 const User = require('../../models/User');
+const AgentMessageService = require('../../services/agentMessageService');
 const { sendEmail } = require('../../services/emailService');
 const { issueEmailVerificationToken } = require('../../services/emailVerificationTokenService');
 const {
@@ -12,6 +13,19 @@ const {
 
 jest.mock('../../services/emailService', () => ({ sendEmail: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../services/communityPodService', () => ({ ensureUserInCommunityPod: jest.fn().mockResolvedValue(null) }));
+// Count the handler's calls to the mark. The call is synchronous, before the
+// response, so "never called" is settled once the request returns, with no
+// sleep. A plain function, not jest.fn, so restoreMocks leaves it working.
+jest.mock('../../services/onboardingMarks', () => {
+  const actual = jest.requireActual('../../services/onboardingMarks');
+  const calls = [];
+  return {
+    ...actual,
+    markEmailVerified: (id) => { calls.push(String(id)); actual.markEmailVerified(id); },
+    markEmailVerifiedCalls: calls,
+  };
+});
+const { markEmailVerifiedCalls } = require('../../services/onboardingMarks');
 
 const app = express();
 app.use(express.json());
@@ -20,8 +34,13 @@ app.use('/api/auth', require('../../routes/auth'));
 const email = 'first-signup@example.com';
 const password = 'Password123!';
 
+// Workspace onboarding runs on after the 201 and ends with the guide's
+// welcome. Wait for it, so none of its writes outlives clearMongoDb or teardown.
+let welcome;
 const register = async () => {
   await request(app).post('/api/auth/register').send({ email, password }).expect(201);
+  await waitFor(() => welcome.mock.results.length > 0);
+  await welcome.mock.results[0].value.catch(() => undefined);
   return User.findOne({ email });
 };
 
@@ -49,12 +68,14 @@ describe('register through verify', () => {
   });
   afterAll(closeMongoDb);
   beforeEach(() => {
+    welcome = jest.spyOn(AgentMessageService, 'postMessage');
     Object.assign(process.env, MAIL_ENV);
     process.env.REGISTRATION_INVITE_ONLY = 'false';
   });
   afterEach(async () => {
     await clearMongoDb();
     jest.clearAllMocks();
+    markEmailVerifiedCalls.length = 0;
     Object.keys(MAIL_ENV).forEach((key) => {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
@@ -78,7 +99,7 @@ describe('register through verify', () => {
     expect(first.getTime()).toBeGreaterThanOrEqual(before);
 
     await click(link).expect(200);
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(markEmailVerifiedCalls).toEqual([String(user._id)]);
     expect((await mark(user._id)).getTime()).toBe(first.getTime());
   });
 
@@ -91,6 +112,7 @@ describe('register through verify', () => {
   test('a bad link changes nothing', async () => {
     const user = await register();
     await request(app).get('/api/auth/verify-email?token=not-a-token').expect(400);
+    expect(markEmailVerifiedCalls).toEqual([]);
     expect((await User.findById(user._id)).verified).toBe(false);
     expect(await mark(user._id)).toBeUndefined();
   });
@@ -108,7 +130,7 @@ describe('register through verify', () => {
     expect((await User.findById(user._id)).verified).toBe(true);
 
     await click(link).expect(200);
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(markEmailVerifiedCalls).toEqual([]);
     expect(await mark(user._id)).toBeUndefined();
   });
 
@@ -119,7 +141,7 @@ describe('register through verify', () => {
     expect(sendEmail).not.toHaveBeenCalled();
 
     await request(app).get(`/api/auth/verify-email?token=${issueEmailVerificationToken(user._id)}`).expect(200);
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    expect(markEmailVerifiedCalls).toEqual([]);
     expect(await mark(user._id)).toBeUndefined();
   });
 });

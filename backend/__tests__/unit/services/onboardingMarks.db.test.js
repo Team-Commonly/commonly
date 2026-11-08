@@ -45,8 +45,10 @@ const makeUser = (extra = {}) => User.create({
 });
 
 describe('markEmailVerified on the real User schema', () => {
+  // The controller marks only after the link has set `verified`, so the
+  // fixtures start verified, as the helper's callers would leave them.
   test('writes verifiedAt once and never overwrites it', async () => {
-    const user = await makeUser();
+    const user = await makeUser({ verified: true });
     markEmailVerified(user._id);
     const { verifiedAt } = await waitForField(user._id, 'verifiedAt');
     markEmailVerified(user._id);
@@ -55,7 +57,7 @@ describe('markEmailVerified on the real User schema', () => {
   });
 
   test('never marks a bot', async () => {
-    const bot = await makeUser({ isBot: true });
+    const bot = await makeUser({ isBot: true, verified: true });
     markEmailVerified(bot._id);
     await settle();
     expect((await readOnboarding(bot._id)).verifiedAt).toBeUndefined();
