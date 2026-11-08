@@ -138,6 +138,7 @@
 .v2-agent-settings-page .v2-agent-wake-pods__interval select { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; }
 /* The hosted Stop/Start row is an .lrow outside How it runs; a stop's confirm line drops under it, full width. */
 .v2-agent-settings-page .lrow.v2-agent-hosted-run--confirming .vl.v2-agent-hosted-run__state { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; text-align: left; }
+.v2-agent-settings-page .lrow.v2-agent-hosted-run--confirming .ac { grid-column: 3; grid-row: 1; flex-wrap: wrap; }
 .v2-agent-settings-page .v2-agent-hosted-run__error { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--ink); }
 .v2-agent-settings-page .v2-agent-wake-pods__add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--d); font-size: 12.5px; }
 .v2-agent-settings-page .v2-agent-wake-pods__add .sel, .v2-agent-settings-page .v2-agent-wake-pods__add select { max-width: 100%; }
