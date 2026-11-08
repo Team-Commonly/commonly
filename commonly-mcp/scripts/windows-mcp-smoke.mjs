@@ -33,7 +33,20 @@ import { fileURLToPath } from 'url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_mcp_smoke';
-const CLAUDE_CODE = '@anthropic-ai/claude-code@2.1.318';
+// The pinned Claude Code release, unless the workflow's @latest leg names
+// another (F107): a Claude Code parser change that stops reading the page's
+// line shows up there before a person meets it.
+const CLAUDE_CODE_PINNED = '2.1.318';
+const claudeCodeVersion = process.env.COMMONLY_SMOKE_CLAUDE_CODE || CLAUDE_CODE_PINNED;
+if (!/^(latest|\d+\.\d+\.\d+)$/.test(claudeCodeVersion)) {
+  console.error(`windows-mcp-smoke: COMMONLY_SMOKE_CLAUDE_CODE must be latest or x.y.z, not ${JSON.stringify(claudeCodeVersion)}`);
+  process.exit(2);
+}
+const CLAUDE_CODE = `@anthropic-ai/claude-code@${claudeCodeVersion}`;
+// How long a PowerShell line may hold its pipes open after it exits. A child it
+// started (a server Claude Code left running) can keep stdout open, and
+// waiting on 'close' then hung the job to its 15-minute timeout (F107).
+const PIPE_GRACE_MS = 5_000;
 
 // The page's Windows snippet, from the component that renders it. The source
 // holds `\n` escapes inside a template literal, so the lines split on those.
@@ -179,13 +192,25 @@ const powershell = (line, cwd) => new Promise((done) => {
   });
   let stdout = '';
   let stderr = '';
+  let settled = false;
+  let grace = null;
   child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
   child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
   const timer = setTimeout(() => {
     stderr += '\n(timed out after 120 s)';
     spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)]);
   }, 120_000);
-  child.on('close', (status) => { clearTimeout(timer); done({ status, stdout, stderr }); });
+  const settle = (status) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    clearTimeout(grace);
+    done({ status, stdout, stderr });
+  };
+  // 'close' waits for every holder of the pipes, so settle on 'exit' once the
+  // output has had PIPE_GRACE_MS to drain.
+  child.on('exit', (status) => { grace = setTimeout(() => settle(status), PIPE_GRACE_MS); });
+  child.on('close', (status) => settle(status));
 });
 
 // Claude Code itself starts the server from the page's line (the npm .cmd shim
@@ -216,6 +241,8 @@ const claudeCode = async (label) => {
 try {
   log(`Claude Code: npm i -g ${CLAUDE_CODE}`);
   npm(`i -g ${CLAUDE_CODE}`);
+  const installed = await powershell('claude --version', tmpdir());
+  log(`Claude Code: ${(installed.stdout || installed.stderr || '').trim() || '(no version printed)'}`);
 
   log(`published: ${installLine}`);
   npm(installLine.replace(/^npm /, ''));

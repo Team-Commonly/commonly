@@ -14,6 +14,10 @@ on:
       - 'frontend/src/v2/components/V2AgentBYO.tsx'
       - '.github/workflows/mcp-windows.yml'
   workflow_dispatch:
+  # Daily, so the @latest leg sees a new Claude Code release within a day even
+  # when nothing here changes (F107).
+  schedule:
+    - cron: '17 9 * * *'
 
 permissions:
   contents: read
@@ -22,6 +26,14 @@ jobs:
   mcp:
     runs-on: windows-latest
     timeout-minutes: 15
+    # The pinned leg is the gate. The @latest leg is an early warning: it never
+    # blocks a PR, and a red one means a Claude Code release broke the page's
+    # line, so bump the pin only once the page works with it (F107).
+    continue-on-error: ${{ matrix.claude_code == 'latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        claude_code: ['pinned', 'latest']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,4 +42,6 @@ jobs:
         with:
           node-version: '22'
       - name: The page's Windows MCP path answers
+        env:
+          COMMONLY_SMOKE_CLAUDE_CODE: ${{ matrix.claude_code == 'latest' && 'latest' || '' }}
         run: node commonly-mcp/scripts/windows-mcp-smoke.mjs
