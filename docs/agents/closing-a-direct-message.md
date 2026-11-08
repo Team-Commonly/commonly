@@ -22,7 +22,7 @@ A person can close the direct message pod (`Pod.type: 'agent-room'`) they hold w
 ## What reopens it
 
 - **Talk to** (`DMService.getOrCreateAgentRoom`).
-- **The person writing in it**: any human write through `messageAgentDeliveryService.deliverMessageToAgents`. The v1 socket `sendMessage` path doesn't go through it, so it doesn't reopen.
+- **The person writing in it**: the REST write through `messageAgentDeliveryService.deliverMessageToAgents`, and the legacy socket `sendMessage` handler in `server.ts`, which calls `reopenIfClosed` itself after storing the message.
 - **The agent posting in it** (`agentMessageService`, on both the PostgreSQL and Mongo-only paths). A kernel line, such as a failure notice, is not the agent writing and doesn't reopen.
 
 `reopenIfClosed` matches only `closedAt: { $ne: null }`, which in MongoDB doesn't match an absent field. A room that was never closed costs one indexed no-op update, and the call never throws.
