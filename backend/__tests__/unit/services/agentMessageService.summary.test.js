@@ -43,6 +43,21 @@ jest.mock('../../../models/AgentRegistry', () => ({
     })),
   },
 }));
+// owedScheduledPost reads the newest heartbeat; without a mock the unconnected
+// model throws and the read fails open, letting a capped post through.
+jest.mock('../../../models/AgentEvent', () => ({
+  findOne: jest.fn(() => ({
+    sort: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(null),
+  })),
+  find: jest.fn(() => ({
+    sort: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
+}));
 jest.mock('../../../models/User', () => ({
   find: jest.fn(() => ({
     select: jest.fn().mockReturnThis(),
