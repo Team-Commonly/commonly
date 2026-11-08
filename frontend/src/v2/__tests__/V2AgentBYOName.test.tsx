@@ -127,6 +127,30 @@ describe('BYO default agent name follows where it runs', () => {
     expect(document.body.textContent).not.toMatch(/--adapter claude/);
   });
 
+  // CodeRabbit r4507271127: a revoked seat reached by typing its name, without
+  // reconnect=1, offers Reconnect too, so it must open on its harness as well.
+  test('typing a revoked Codex seat\'s name without a reconnect link opens on codex', async () => {
+    mockGet([{ name: 'gw-codex', installedBy: 'u1', runtime: { runtimeType: 'codex' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=gw-codex');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('byo-runner-codex')).toHaveAttribute('aria-pressed', 'true'));
+  });
+
+  // CodeRabbit r4507311218: moving the name from a Codex seat to a Claude seat
+  // moves the default with it.
+  test('the default follows the seat when the name moves to another one', async () => {
+    mockGet([
+      { name: 'gw-codex', installedBy: 'u1', runtime: { runtimeType: 'codex' }, connection: { state: 'revoked', lastSeenAt: null } },
+      { name: 'gw-claude', installedBy: 'u1', runtime: { runtimeType: 'claude-code' }, connection: { state: 'revoked', lastSeenAt: null } },
+    ]);
+    renderAt('/v2/agents/byo?pod=p1&name=gw-codex&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-runner-codex')).toHaveAttribute('aria-pressed', 'true'), { timeout: 5000 });
+    fireEvent.change(nameInput(), { target: { value: 'gw-claude' } });
+    await waitFor(() => expect(screen.getByTestId('byo-runner-claude')).toHaveAttribute('aria-pressed', 'true'), { timeout: 5000 });
+  });
+
   test('a runner picked before the roster arrives is not replaced by the agent\'s harness', async () => {
     let releaseRoster;
     const rosterReady = new Promise((resolve) => { releaseRoster = resolve; });

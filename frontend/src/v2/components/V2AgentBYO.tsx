@@ -314,7 +314,7 @@ const V2AgentBYO: React.FC = () => {
   // name, pod and mode it was shown for.
   const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
-    connection: AgentConnection; runtimeType: string; installedBy?: string; harness?: string | null;
+    connection: AgentConnection; runtimeType: string; installedBy?: string; harness?: string | null; seat: string;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -503,25 +503,27 @@ const V2AgentBYO: React.FC = () => {
             runtimeType: match.runtime?.runtimeType || '',
             installedBy: match.installedBy,
             harness: seatHarness(match.runtime),
+            seat: `${match.name}:${match.instanceId}`,
           } : null);
         })
         .catch(() => { if (!cancelled) setExistingConnection(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
-  // F353: a reconnect opens on the harness the agent runs. Defaulting to Claude
-  // Code printed `--adapter claude` for a Codex agent. Applied once, and never
-  // over a tab the person picked, even before the roster arrived; a link's own
-  // ?adapter= wins.
-  const reconnectHarnessApplied = useRef(false);
+  // F353: a name that resolves to an existing seat opens on the harness that seat
+  // runs, from a reconnect link or a typed name alike. Defaulting to Claude Code
+  // printed `--adapter claude` for a Codex agent. It follows the seat when the
+  // name moves to another one, but never overrides a tab the person picked, even
+  // before the roster arrived; a link's own ?adapter= wins.
+  const harnessAppliedFor = useRef<string | null>(null);
   const listenAdapterPicked = useRef(false);
   useEffect(() => {
-    if (!prefill.reconnect || prefill.adapter || reconnectHarnessApplied.current || listenAdapterPicked.current) return;
+    if (prefill.adapter || listenAdapterPicked.current) return;
     const harness = existingConnection?.harness;
-    if (!harness) return;
-    reconnectHarnessApplied.current = true;
+    if (!harness || harnessAppliedFor.current === existingConnection.seat) return;
+    harnessAppliedFor.current = existingConnection.seat;
     setListenAdapter(harness);
-  }, [existingConnection, prefill.adapter, prefill.reconnect]);
+  }, [existingConnection, prefill.adapter]);
   // Re-default while the person hasn't typed a name: when the user resolves
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);
