@@ -927,6 +927,25 @@ describe('per-event inbox checkpoint', () => {
     expect(acks(fetchSpy)).toHaveLength(0);
   });
 
+  // The 11-08 lx-otter walk: a reply and a greeting in one turn, one of them
+  // held. The turn-back came back with no status, so a public seat's CLI took
+  // it for a broken tool and withheld the whole turn.
+  test('a turn-back is a 409 a public seat may answer, after a reply and a greeting post', async () => {
+    const { isAnswerableToolError } = await import('../../cli/src/lib/public-tool-error.js');
+    let reply = () => okResponse({ id: 'm1' });
+    installFetch(async (url) => (String(url).includes('/messages') ? reply() : okResponse({ success: true })));
+    const tools = freshTools();
+    await post(tools);
+    reply = held;
+    await tools.commonly_post_message.call({ podId: 'pod-1', content: 'Hi, glad to be here' });
+    const result = await checkpoint(tools);
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse(result.content[0].text);
+    expect(payload.status).toBe(409);
+    expect(payload.body.code).toBe('checkpoint_turned_back');
+    expect(isAnswerableToolError(result.content[0].text)).toBe(true);
+  });
+
   test('each event of a batch is turned back, not just the first', async () => {
     const fetchSpy = installFetch(async (url) => (String(url).includes('/messages') ? held() : okResponse({ success: true })));
     const tools = freshTools();

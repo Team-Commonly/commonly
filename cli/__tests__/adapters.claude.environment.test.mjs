@@ -2391,6 +2391,33 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     await expect(turn(stdout)).rejects.toMatchObject({ code: 'public_tool_failed' });
   });
 
+  // The 11-08 lx-otter walk: the turn had already posted through its tools when
+  // a checkpoint failed, so the withheld line must not say nothing was posted.
+  test('a withheld turn says the CLI posted no reply, not that nothing was posted', async () => {
+    const stdout = stream(
+      init('connected'),
+      call('t1', 'mcp__commonly__commonly_post_message'), succeeded('t1', '{"id":"m1"}'),
+      call('t2', 'mcp__commonly__commonly_checkpoint_event'), failed('t2', '{"message":"fetch failed"}'),
+      result(''),
+    );
+    const outcome = turn(stdout);
+    await expect(outcome).rejects.toMatchObject({ code: 'public_tool_failed' });
+    await expect(outcome).rejects.toThrow(/the CLI posted no reply for it \(posts the agent made through its tools stay\)/);
+    await expect(turn(stdout)).rejects.toThrow(/^(?!.*nothing was posted)/);
+  });
+
+  // The MCP's checkpoint turn-back is a 409 (commonly-mcp/src/tools.js), so a
+  // public seat lets the model answer it instead of withholding the turn.
+  test('posts after a checkpoint turned back with a 409', async () => {
+    const turnedBack = JSON.stringify({ status: 409, body: { code: 'checkpoint_turned_back' }, message: 'Not checkpointed' });
+    const stdout = stream(
+      init('connected'),
+      call('t1', 'mcp__commonly__commonly_checkpoint_event'), failed('t1', turnedBack),
+      result('Done.'),
+    );
+    await expect(turn(stdout)).resolves.toMatchObject({ text: 'Done.' });
+  });
+
   // `pending` at init is not a failure: the server may finish starting during
   // the turn. Only a Commonly call that returned shows it working, so that is
   // the evidence a pending server needs.

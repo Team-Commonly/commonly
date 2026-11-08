@@ -816,7 +816,7 @@ const publicToolFailedError = ({ tool, error }) => {
   const reason = String(error).replace(/\s+/g, ' ').slice(0, 160) || '(empty error)';
   const failure = new Error(
     `public seat withheld this turn's reply: Commonly tool ${tool} failed in a way the model must not narrate `
-    + `(${reason}), so nothing was posted and the event stays unacked for retry`,
+    + `(${reason}), so the CLI posted no reply for it (posts the agent made through its tools stay) and the CLI does not ack the event (one the agent already checkpointed stays acked)`,
   );
   failure.code = PUBLIC_TOOL_FAILED_CODE;
   return failure;
