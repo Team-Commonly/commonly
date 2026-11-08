@@ -692,8 +692,9 @@ describe('V2Composer send button', () => {
       </AuthContext.Provider>,
     );
     // Pod-change cleanup bumps the effect version, but without a recorded
-    // sent id it must not be mistaken for a successful local send.
-    expect(scrollIntoView).not.toHaveBeenCalled();
+    // sent id it must not be mistaken for a successful local send. The one
+    // follow here is the new pod's own arrival.
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
     const scroller = scrollUp(view);
     scrollIntoView.mockClear();
     scroller.scrollTop = 0;

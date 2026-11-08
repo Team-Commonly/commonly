@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
+import { reportBoundaryError } from '../sentryReport';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
@@ -79,8 +80,13 @@ export class V2ErrorBoundary extends React.Component<{ children: React.ReactNode
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('V2 runtime error:', error);
+    try {
+      void reportBoundaryError(error, { boundary: 'v2', componentStack: info.componentStack });
+    } catch {
+      // A throw here would unmount the fallback this boundary just rendered.
+    }
   }
 
   render() {

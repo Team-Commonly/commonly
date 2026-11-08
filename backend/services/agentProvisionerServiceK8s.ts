@@ -837,10 +837,9 @@ const normalizeWorkspaceDocs = async (accountId: any, { gateway } : any = {}) =>
 // Idempotently `git init` the agent's `/workspace/<accountId>/` directory
 // and stamp a workspace-local user.name / user.email so any agent that
 // wants to `git commit && git push` against a real GitHub repo can do so
-// without a manual bootstrap step. Credential helper is wired globally
-// in the clawdbot postStart hook (see k8s/helm/.../clawdbot-deployment.yaml),
-// so `git push` against `https://github.com/...` already auths via
-// `/state/.git-credentials`. Cloud-codex pods get the equivalent treatment
+// without a manual bootstrap step. The credential helper came from the gateway
+// chart's postStart hook, which retired under ADR-021 Part B, so nothing wires
+// `/state/.git-credentials` from this repo now. Cloud-codex pods get the equivalent treatment
 // from their boot script — this brings moltbot to parity.
 const ensureWorkspaceGitRepo = async (accountId: any, { gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);

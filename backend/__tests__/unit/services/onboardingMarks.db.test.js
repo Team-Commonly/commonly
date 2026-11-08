@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 
 let mongod;
 let User;
+let markEmailVerified;
 let markSurface;
 let resetOnboardingMarksForTest;
 
@@ -25,7 +26,7 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
   User = require('../../../models/User');
-  ({ markSurface, resetOnboardingMarksForTest } = require('../../../services/onboardingMarks'));
+  ({ markEmailVerified, markSurface, resetOnboardingMarksForTest } = require('../../../services/onboardingMarks'));
 });
 afterEach(async () => {
   resetOnboardingMarksForTest();
@@ -41,6 +42,26 @@ const makeUser = (extra = {}) => User.create({
   email: `maya${Math.floor(Math.random() * 1e9)}@example.test`,
   password: 'not-a-real-password-hash',
   ...extra,
+});
+
+describe('markEmailVerified on the real User schema', () => {
+  // The controller marks only after the link has set `verified`, so the
+  // fixtures start verified, as the helper's callers would leave them.
+  test('writes verifiedAt once and never overwrites it', async () => {
+    const user = await makeUser({ verified: true });
+    markEmailVerified(user._id);
+    const { verifiedAt } = await waitForField(user._id, 'verifiedAt');
+    markEmailVerified(user._id);
+    await settle();
+    expect((await readOnboarding(user._id)).verifiedAt.getTime()).toBe(verifiedAt.getTime());
+  });
+
+  test('never marks a bot', async () => {
+    const bot = await makeUser({ isBot: true, verified: true });
+    markEmailVerified(bot._id);
+    await settle();
+    expect((await readOnboarding(bot._id)).verifiedAt).toBeUndefined();
+  });
 });
 
 describe('markSurface on the real User schema', () => {

@@ -59,7 +59,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
-import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const ISOLATED_PROXY_PORT = 8765;
@@ -511,7 +511,12 @@ const substitutePublicPlaceholders = (value, ctx) => {
 const isSafeMcpName = (name) => typeof name === 'string'
   && /^[A-Za-z0-9_-]+$/.test(name);
 
-const permissionMcpName = (name) => name.replace(/[^A-Za-z0-9_]/g, '_');
+// How OpenCode spells an MCP server in a tool name, and so in a permission rule
+// (1.19.4: `<server>_<tool>`, each part through `/[^a-zA-Z0-9_-]/g` to `_`). The
+// hyphen stays. Rewriting it left a rule that matched nothing, and the `'*'`
+// deny then took `commonly-grant-broker`'s tools off the model's list, with no
+// log line, though the server had connected and listed them.
+const permissionMcpName = (name) => name.replace(/[^A-Za-z0-9_-]/g, '_');
 
 const buildMcpConfig = (servers, ctx = {}) => {
   const mcp = {};
@@ -621,7 +626,7 @@ const buildMcpConfig = (servers, ctx = {}) => {
   return mcp;
 };
 
-const publicPermissions = (mode, mcpNames) => {
+const publicPermissions = (mode, mcpNames, ctx = {}) => {
   const read = { '*': 'allow' };
   const edit = { '*': mode === 'read-only' ? 'deny' : 'allow' };
   for (const pattern of PUBLIC_READ_DENIES) {
@@ -653,7 +658,7 @@ const publicPermissions = (mode, mcpNames) => {
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
     // After the wildcard allow, since the last matching rule wins
     // (public-withheld-tools.js; self-install and memory writes, F118).
-    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_SEAT_WITHHELD_TOOLS
+    ...Object.fromEntries(mcpNames.flatMap((name) => publicSeatWithheldTools(ctx)
       .map((tool) => [`${permissionMcpName(name)}_${tool}`, 'deny']))),
   };
 };
@@ -816,7 +821,7 @@ const publicToolFailedError = ({ tool, error }) => {
   const reason = String(error).replace(/\s+/g, ' ').slice(0, 160) || '(empty error)';
   const failure = new Error(
     `public seat withheld this turn's reply: Commonly tool ${tool} failed in a way the model must not narrate `
-    + `(${reason}), so nothing was posted and the event stays unacked for retry`,
+    + `(${reason}), so the CLI posted no reply for it (posts the agent made through its tools stay) and the CLI does not ack the event (one the agent already checkpointed stays acked)`,
   );
   failure.code = PUBLIC_TOOL_FAILED_CODE;
   return failure;
@@ -1184,7 +1189,7 @@ export default {
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
       // F118: a public seat reads its memory but is not offered a write.
-      memoryReadOnly: isPublic,
+      memoryReadOnly: isPublic && ctx.ownerWoken !== true,
     });
     const tempDir = await mkdtemp(join(ctx._tempRoot || tmpdir(), 'commonly-opencode-'));
     await chmod(tempDir, 0o700);
@@ -1267,7 +1272,7 @@ export default {
       const carriesGrant = bearerFileServers.length > 0;
       const config = {
         permission: isPublic
-          ? publicPermissions(sandboxMode, Object.keys(mcp))
+          ? publicPermissions(sandboxMode, Object.keys(mcp), ctx)
           : 'allow',
         share: 'disabled',
         autoupdate: false,

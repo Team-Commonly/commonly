@@ -26,6 +26,8 @@ const NUMERAL_PLACEHOLDERS = [
   'count', 'formattedCount', 'uses', 'maxUses', 'complete', 'total', 'attempt', 'length',
   'revision', 'position', 'cap', 'used', 'turns', 'notes', 'days', 'signups', 'active',
   'working', 'needsYou', 'minutes', 'calls', 'number', 'tokens', 'bytes', 'shown',
+  // the Connectors drawer and header (F321): how many tools write, how many are connected.
+  'writes', 'connected',
   // landing.actions.starCountAria: a compact GitHub star count (Intl.NumberFormat).
   'stars',
   // harness.answeredIn: a reply's measured duration in seconds (D247).
@@ -79,6 +81,8 @@ const NUMERAL_BY_KEY: Array<[string, string]> = [
   ['yourTeam.head.meta_other', 'agents'],
   ['connectors.meta', 'on'],
   ['connectors.meta', 'available'],
+  ['connectors.metaConnected', 'on'],
+  ['connectors.metaConnected', 'available'],
   ['connectors.offCount', 'n'],
 ];
 

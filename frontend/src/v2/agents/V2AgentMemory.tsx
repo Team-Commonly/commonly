@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
 import { usePhone } from '../connectors/usePhone';
+import { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import { useTalkToAgent } from './useTalkToAgent';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { AgentConnection, connectionLabel, fetchOwnedConnection } from '../utils/agentConnection';
 import '../primitives/primitives.css';
 import './V2AgentMemory.css';
 
@@ -73,7 +75,8 @@ export const groupSections = (sections: MemorySection[]) => {
 };
 
 // Frame icons (docs/design/artboards/d215, #s-memory): stroke-only, 1.8 weight.
-const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'id' | 'share' | 'search' | 'info' | 'chev' | 'chat' | 'back', React.ReactNode> = {
+const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'id' | 'share' | 'search' | 'info' | 'chev' | 'chat' | 'back' | 'edit', React.ReactNode> = {
+  edit: <path d="M4 20h4l10-10-4-4L4 16v4zM13 7l4 4" />,
   chev: <path d="m6 9 6 6 6-6" />,
   back: <path d="M19 12H5M12 19l-7-7 7-7" />,
   chat: <path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" />,
@@ -186,6 +189,18 @@ const V2AgentMemory: React.FC = () => {
     return () => { cancelled = true; };
   }, [agentName, instanceId]);
 
+  // The head's status dot (d215 frame: "connected · 4 pods"). Only an owner or
+  // admin reads Memory, and the same roster read the profile uses gives the state.
+  const [connection, setConnection] = useState<AgentConnection | null>(null);
+  useEffect(() => {
+    if (state !== 'ready' || !agentName) { setConnection(null); return undefined; }
+    let cancelled = false;
+    fetchOwnedConnection((url) => axios.get(url), agentName, instanceId || 'default')
+      .then((result) => { if (!cancelled) setConnection(result?.connection || null); })
+      .catch(() => { if (!cancelled) setConnection(null); });
+    return () => { cancelled = true; };
+  }, [state, agentName, instanceId]);
+
   const profileHref = `/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const memoryLabel = t('agentSettings.memory', { defaultValue: 'Memory' });
@@ -217,11 +232,33 @@ const V2AgentMemory: React.FC = () => {
         <V2Avatar name={agentLabel} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
         <div className="v2m-ahead">
           <h1>{agentLabel}</h1>
-          {head && <p className="st">{t('agentProfile.memory.inPods', { count: head.pods })}</p>}
+          {head && (
+            <p className="st">
+              {connection ? (
+                <>
+                  <span className={`v2m-dot v2m-dot--${connection.state}`} aria-hidden="true" />
+                  <span data-testid="agent-memory-connection">{connectionLabel(connection, t)}</span>
+                  {' · '}
+                  {t('agentProfile.memory.podCount', { count: head.pods })}
+                </>
+              ) : t('agentProfile.memory.inPods', { count: head.pods })}
+            </p>
+          )}
         </div>
         <span className="sp" />
         {!phone && tabs}
         <span className="sp" />
+        {state === 'ready' && (
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2p-ib"
+            title={t('agentProfile.memory.edit')}
+            aria-label={t('agentProfile.memory.edit')}
+            onClick={() => navigate(`${settingsHref}#${AGENT_MEMORY_EDITOR_ID}`)}
+          >
+            <MemIcon name="edit" size={17} />
+          </button>
+        )}
         <button
           type="button"
           className="v2p-b v2p-b-s v2p-ib"

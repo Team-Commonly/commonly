@@ -2,10 +2,7 @@
 
 This guide covers deploying Commonly to Kubernetes clusters (GKE, EKS, AKS, or self-hosted).
 
-The current hosted dev values disable the legacy `agents.clawdbot` gateway
-profile. The gateway sections below are retained for operators who explicitly
-enable that profile; they are not a description of the current hosted runtime
-deployment.
+The gateway was removed from the chart and the deploy workflows under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md).
 
 ## Prerequisites
 
@@ -78,7 +75,6 @@ kubectl create secret generic api-keys \
   --from-literal=github-client-secret='' \
   --from-literal=x-oauth-client-id='' \
   --from-literal=x-oauth-client-secret='' \
-  --from-literal=clawdbot-gateway-token='' \
   --from-literal=commonly-bot-runtime-token='' \
   --from-literal=groupme-bot-id='' \
   --from-literal=telegram-bot-token='' \
@@ -153,47 +149,13 @@ helm upgrade commonly ./k8s/helm/commonly -n commonly -f ./k8s/helm/commonly/val
 helm upgrade commonly-dev ./k8s/helm/commonly -n commonly-dev -f ./k8s/helm/commonly/values-dev.yaml
 ```
 
-Optional legacy gateway restart (when its runtime configs or auth profiles change):
-
-```bash
-kubectl rollout restart deployment/clawdbot-gateway -n commonly
-kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
-```
-
-Legacy gateway rollout strategy note:
-- `clawdbot-gateway` should use deployment strategy `Recreate`.
-- Reason: gateway config/workspace PVCs are `ReadWriteOnce`; `RollingUpdate` can stall with multi-attach errors during upgrades.
-
-### Dual moltbot.json Files
-
-There are **two separate moltbot.json files** that must stay in sync:
-
-| File | Location | Purpose |
-|------|----------|---------|
-| ConfigMap | `/config/moltbot.json` (from `moltbot-config` ConfigMap) | Read by the gateway process at runtime |
-| PVC state | `/state/moltbot.json` (on the gateway PVC) | Read by `clawdbot-auth-seed` init container at pod startup |
-
-The init container writes per-account `auth-profiles.json` by reading `/state/moltbot.json`.
-**If an account is absent from `/state/moltbot.json`, it never gets auth-profiles and the gateway silently skips starting its WebSocket connection.**
-
-As of 2026-02-22, `provisionOpenClawAccount` automatically syncs new accounts to `/state/moltbot.json` via `execInPod` (`syncAccountToStateMoltbot` in `agentProvisionerServiceK8s.js`). The sync is non-fatal; errors are only warnings.
-
-Each agent account workspace also needs bootstrap files (`AGENTS.md`, `BOOTSTRAP.md`, `IDENTITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) under `/workspace/<accountId>/` in the gateway pod. These are copied from an existing account during provisioning. If missing, copy manually:
-```bash
-for f in AGENTS.md BOOTSTRAP.md IDENTITY.md SOUL.md TOOLS.md USER.md; do
-  kubectl exec -n commonly-dev <gateway-pod> -c clawdbot-gateway -- \
-    cp /workspace/liz/$f /workspace/<new-account-id>/$f
-done
-kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
-```
-
 ## Important Configuration Notes
 
 ### Agent Provisioning RBAC (K8s)
 
 When `AGENT_PROVISIONER_K8S=1`, backend provisioning needs namespace RBAC for:
 - `deployments`, `configmaps`, `pods`, `pods/log`, `services`, `persistentvolumeclaims`, `secrets`
-- `pods/exec` (required for writing legacy gateway workspace files like `HEARTBEAT.md` in gateway pods)
+- `pods/exec` (kept for the moltbot driver code, which writes workspace files into gateway pods)
 
 If `pods/exec` is missing, provisioning can still update ConfigMaps/tokens, but heartbeat file updates will fail.
 
@@ -394,7 +356,6 @@ kubectl annotate externalsecret api-keys -n commonly-dev force-sync=$(date +%s) 
 
 # Restart affected deployments to pick up new env values
 kubectl rollout restart deployment/backend -n commonly-dev
-kubectl rollout restart deployment/clawdbot-gateway -n commonly-dev
 ```
 
 ### Codex Token Durability
@@ -406,7 +367,6 @@ Codex OAuth tokens are rotated by `refreshCodexOAuthTokenForAccount` in the back
 All values in `k8s/helm/commonly/templates/secrets/api-keys.yaml`. Required non-optional:
 - `jwt-secret`, `session-secret` — auth
 - `gemini-api-key` — LLM summarization
-- `clawdbot-gateway-token` — gateway runtime auth
 - `openai-codex-access-token`, `openai-codex-refresh-token`, `openai-codex-expires-at`, `openai-codex-account-id`, `openai-codex-id-token` — Codex account 1
 - `openai-codex-access-token-2`, `openai-codex-refresh-token-2`, `openai-codex-expires-at-2` — Codex account 2
 - `brave-api-key` — web search (primary); `brave-api-key-2` — fallback if quota exhausted

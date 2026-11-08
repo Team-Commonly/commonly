@@ -59,6 +59,38 @@ test('Identity shows the listing state and links to the public profile without p
   expect(axios.post).not.toHaveBeenCalled();
 });
 
+test('the Memory tab\'s Edit link opens How it runs and lands on the editor', async () => {
+  const scrollIntoView = jest.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const base = axios.get.getMockImplementation();
+  const doc = { content: '', updatedAt: null, visibility: 'private' };
+  axios.get.mockImplementation((url, options) => (url.endsWith('/editable')
+    ? Promise.resolve({ data: { sections: { long_term: doc, soul: doc, shared: doc } } })
+    : base(url, options)));
+  renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
+  await waitFor(() => expect(screen.getByTestId('agent-how-it-runs')).toHaveAttribute('open'));
+  await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
+  expect(document.activeElement).toHaveTextContent('Memory');
+  delete Element.prototype.scrollIntoView;
+});
+
+test('a memory load failure is what the Edit link lands on, so Try again is in view', async () => {
+  const scrollIntoView = jest.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const base = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (url.endsWith('/editable')
+    ? Promise.reject(new Error('down'))
+    : base(url, options)));
+  renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
+  await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
+  delete Element.prototype.scrollIntoView;
+});
+
+test('without that link, How it runs stays closed', async () => {
+  renderPage();
+  expect(await screen.findByTestId('agent-how-it-runs')).not.toHaveAttribute('open');
+});
+
 test('an ephemeral registry row is not presented as a marketplace listing', async () => {
   const defaultGet = axios.get.getMockImplementation();
   axios.get.mockImplementation((url, options) => (

@@ -9,6 +9,7 @@ const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
+const { markEmailVerified } = require('../services/onboardingMarks');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
@@ -820,13 +821,11 @@ exports.verifyEmail = async (req: any, res: any) => {
     // They cannot be distinguished safely, so the user must request a new link.
     const userId = verifyEmailVerificationToken(String(token || ''));
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { verified: true },
-      { new: true },
-    );
+    // The document as it was: only the click that changed it gets the mark.
+    const user = await User.findByIdAndUpdate(userId, { verified: true });
     if (!user) return res.status(400).json({ error: 'Invalid token' });
 
+    if (!user.verified) markEmailVerified(user._id);
     joinCommunityPodBestEffort(user._id);
 
     res.json({ message: 'Email verified successfully' });

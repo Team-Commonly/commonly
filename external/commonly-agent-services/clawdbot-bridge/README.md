@@ -37,8 +37,4 @@ CLAWDBOT_MODEL=moltbot:main
 
 ## Run (docker-compose)
 
-This service is included in `docker-compose.dev.yml` under the `clawdbot` profile.
-
-```bash
-docker-compose -f docker-compose.dev.yml --profile clawdbot up -d
-```
+Retired: the `clawdbot` compose profile left `docker-compose.dev.yml` under ADR-021 Part B.

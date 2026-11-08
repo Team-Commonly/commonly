@@ -18,16 +18,6 @@ on:
       - 'k8s/**'
       - 'backend/Dockerfile'
       - 'frontend/Dockerfile'
-      # A submodule bump changes the gitlink entry itself — GitHub reports the
-      # changed path as exactly `_external/clawdbot`, with nothing under it,
-      # because the parent repo tracks no files inside the submodule. So the
-      # `/**` glob below it can never match a bump, and this gate silently
-      # skipped every one (verified on #418 and #443: `files: ["_external/
-      # clawdbot"]`, and no smoke check on either PR head). Keep both entries —
-      # the bare path catches the bump, the glob catches vendored files if any
-      # are ever tracked directly.
-      - '_external/clawdbot'
-      - '_external/clawdbot/**'
       - 'dev.sh'
       - '.github/workflows/**'
 
@@ -61,8 +51,16 @@ jobs:
           node-version: '22'
 
       - name: Install kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.26.0/kind-linux-amd64
+          # From the GitHub release, retried, and checked against the release's
+          # published sha256. Without --fail, curl once saved an error page as
+          # the binary. The token header is the same hedge as in tests.yml.
+          curl -sSfL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.26.0/kind-linux-amd64 -o ./kind
+          echo "d445b44c28297bc23fd67e51cc24bb294ae7b977712be2d4d312883d0835829b  ./kind" | sha256sum --check --strict
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 

@@ -8,10 +8,9 @@ _last_updated: 2026-06-08_
 1. **Agent gateway** — legacy gateway agent LLM calls route through it, including Codex OAuth traffic and OpenRouter traffic
 2. **Backend gateway** — `llmService.js` uses it for summarization, digest, and embedding calls
 
-The agent-gateway path is an optional legacy profile. The current hosted dev
-values disable `agents.clawdbot`; the backend and supported runtime adapters
-still use LiteLLM for the routes described below. Keep the gateway commands in
-this document scoped to an operator who explicitly enables that profile.
+The chart no longer ships the agent gateway (ADR-021 Part B). The backend and
+supported runtime adapters still use LiteLLM for the routes described below.
+The gateway commands in this document are history.
 
 ## Current routing (2026-05-02)
 

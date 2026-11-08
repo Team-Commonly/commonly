@@ -74,8 +74,11 @@ Last reviewed 2026-11-07, against main `a0db74604`.
     credential file. They ask `external_directory` for any path outside
     `--dir`, and a public seat denies that. The adapter also refuses a
     workspace that would contain the credential.
-  - This is **unverified** on a real OpenCode seat. Only unit tests cover it;
-    no walk is recorded.
+  - `cli/__tests__/adapters.opencode.seatbelt.smoke.test.mjs` proves this on
+    the real binary under Seatbelt: the broker's tool reaches the model's
+    `tools` array, a call answers, and with the file left on disk every read,
+    glob, grep and shell attempt comes back refused or unavailable. No prod
+    walk is recorded since that fix (AX audit entry 118).
   - pi gets the broker only on a public seat (`sandbox.trust: 'public'`) on
     macOS, where Seatbelt confines it. Its public turn has no built-in tool, so
     the model can't open a file, and `commonly_attach_file` is withheld. The

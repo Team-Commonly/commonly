@@ -9,6 +9,7 @@ import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod } from '../hooks/useV2Pods';
 import type { MarkName } from '../icons/glyphs';
 import { hostedMcpErrorNotice } from '../components/hostedMcpErrorNotice';
+import { isJustNow, shortAge } from './toolModel';
 import type { HostedMcpManualRevokeNotice } from './toolModel';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
 import { safeProviderRevokePage } from '../utils/safeProviderRevokePage';
@@ -681,26 +682,19 @@ export const useChannelConnectors = () => {
     }
   };
 
-  // The age as a unit-suffixed number from the timestamp ("23d", "5m", "just now"),
-  // and a verb line built from a key — the kicker's source of truth.
-  const shortAge = (date?: string | null): string => {
-    const timestamp = date ? new Date(date).getTime() : NaN;
-    if (!Number.isFinite(timestamp)) return t('time.age.justNow', { defaultValue: 'just now' });
-    const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
-    if (minutes < 1) return t('time.age.justNow', { defaultValue: 'just now' });
-    if (minutes < 60) return t('time.age.minutes', { defaultValue: '{{n}}m', n: minutes });
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return t('time.age.hours', { defaultValue: '{{n}}h', n: hours });
-    return t('time.age.days', { defaultValue: '{{n}}d', n: Math.floor(hours / 24) });
-  };
+  // A verb line built from a key, the kicker's source of truth. Under a minute it
+  // has its own phrase, because zh can't put 刚刚 before 前.
   const ageLine = (verb: 'added' | 'started' | 'since' | 'paused' | 'slackAnswered', date?: string | null): string => {
-    const age = shortAge(date);
+    const age = shortAge(date, now, t);
+    const line = (key: string, defaultValue: string) => (
+      t(isJustNow(date, now) ? `${key}JustNow` : key, { defaultValue, age })
+    );
     switch (verb) {
-      case 'added': return t('connectors.age.added', { defaultValue: 'added {{age}}', age });
-      case 'started': return t('connectors.age.started', { defaultValue: 'started {{age}}', age });
-      case 'since': return t('connectors.age.since', { defaultValue: 'since {{age}}', age });
-      case 'paused': return t('connectors.age.paused', { defaultValue: 'paused {{age}}', age });
-      default: return t('connectors.age.slackAnswered', { defaultValue: 'Slack answered {{age}}', age });
+      case 'added': return line('connectors.age.added', 'added {{age}}');
+      case 'started': return line('connectors.age.started', 'started {{age}}');
+      case 'since': return line('connectors.age.since', 'since {{age}}');
+      case 'paused': return line('connectors.age.paused', 'paused {{age}}');
+      default: return line('connectors.age.slackAnswered', 'Slack answered {{age}}');
     }
   };
 
@@ -1175,7 +1169,6 @@ export const useChannelConnectors = () => {
     remove,
     retry,
     copyCommand,
-    shortAge,
     ageLine,
     rowFor,
     rowForEntry,

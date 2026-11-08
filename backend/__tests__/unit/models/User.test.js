@@ -12,10 +12,7 @@ describe('User Model Tests', () => {
   beforeAll(async () => {
     await setupMongoDb();
     // These duplicate-write assertions require the indexes to exist first.
-    // Use explicit indexes: User.syncIndexes() conflicts with the model's
-    // separate collation index on username.
-    await User.collection.createIndex({ username: 1 }, { unique: true });
-    await User.collection.createIndex({ email: 1 }, { unique: true });
+    await User.init();
   });
 
   afterAll(async () => {

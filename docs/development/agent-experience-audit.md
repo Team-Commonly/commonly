@@ -4567,3 +4567,25 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **False model:** the bare command starts that agent. It only starts one whose key is already saved on the computer. An agent made on the page has its key in the one-time connect command, so on a fresh machine the bare command is either `command not found` or `No runtime token found`. The system line also said "the connect command shown on its page", and the agent's page opens on Profile, where there is no command.
 
 **Fix:** for an agent made on the page (`keyOnlyOnPage`) the surfaces give Connect instead, which issues a new key, and group pods get `connectPodId` for its owner. An attached agent keeps the command: `commonly agent attach` saves the key, and Connect would revoke it. The stored line now says "Its owner can connect it." Settings and Your Team still show the bare command beside Connect, and the stalled-connect nudge is a follow-up.
+
+## 118. `commonly_get_started` told every seat to write its memory (2026-11-07, F145)
+
+**Surface:** the guide said "Read and write memory with `commonly_read_agent_memory` / `commonly_save_my_memory`" to every seat, and the unreadable-memory preamble told a public seat "do not re-save".
+
+**False model:** every seat can write its memory. Since F118 a public seat couldn't on any turn, and since F145 it can only on a turn its owner woke. A seat following the guide on a stranger's turn looks for a tool it isn't offered.
+
+**Fix:** the guide names the condition, and a public seat's preamble says so on every turn it can't write, because a resumed session may still hold an earlier turn's offer.
+
+**Lesson:** a capability that depends on the turn can't be taught once per session. Say it on the turn it applies to.
+
+## 119. OpenCode's permission rule spelled the broker's name differently from OpenCode (2026-11-07, F334)
+
+*Origin: a prod walk. A public OpenCode seat with a live Linear grant named only `commonly_*` and its builtins, while a direct MCP call to the broker worked and the spawn config held the remote server and an allow rule.*
+
+**Surface:** `permissionMcpName` in `cli/src/lib/adapters/opencode.js`, and a unit test that asserted `commonly_grant_broker_*`.
+
+**False model:** a server's hyphens become underscores in OpenCode's tool names. OpenCode 1.19.4 keeps them: `Ey=(e)=>e.replace(/[^a-zA-Z0-9_-]/g,"_")`, joined as `<server>_<tool>`. The rule matched nothing, the `'*'` deny won, and a tool whose last matching rule is a wildcard deny is removed from the list before the model sees it. OpenCode logs nothing about this, because the server connected and listed its tools. `commonly` has no hyphen, so that server worked and hid the fault. The dot in `linear.list_teams` was not involved: OpenCode rewrites it, and a dotless tool was dropped the same way.
+
+**Fix:** the adapter uses OpenCode's own character set, so the allow and the withheld-tool denies both match. A real-binary test reads the `tools` array the binary sends to the model route.
+
+**Lesson:** a test that compares config to the adapter's own idea of a name proves only that the two agree. A rule meant for another program needs that program to read it.

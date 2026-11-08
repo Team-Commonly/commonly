@@ -257,16 +257,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
-    expect(ruleBody(agentSettings, '.v2-agent-settings__column')).toContain('width: min(100%, 960px)');
     expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
   });
 
-  test('agent Settings section headers stack at phone width so the key hint stays visible', () => {
-    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__section-head');
-    const header = selectorRuleBody(phone, '.v2-agent-settings__section-head');
-    expect(header).toContain('flex-direction: column');
-    expect(header).toContain('align-items: flex-start');
+  // The old page's layout (column, head, sections) is gone with the page; nothing renders it.
+  test('the old agent Settings layout rules stay deleted', () => {
+    const selectorFor = (cls: string) => new RegExp(`\\.v2-agent-settings__${cls}(?![\\w-])`);
+    // Positive control: the same pattern finds a class the stylesheet keeps, so a
+    // broken pattern can't pass the absence checks below by matching nothing.
+    expect(agentSettings).toMatch(selectorFor('actions'));
+    for (const cls of ['column', 'head', 'ident', 'seg', 'section', 'section-head', 'empty']) {
+      expect(agentSettings).not.toMatch(selectorFor(cls));
+    }
   });
 
   test('Agent settings: the wake select fits its value and its chevron passes clicks through', () => {
@@ -333,7 +336,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
-    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
+    // The confirming action repeats the generic rule's :not() chain, so it outranks
+    // that rule and its ink shows; with fewer classes the generic colours won.
+    const notChain = ':not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)';
+    const primary = `.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child${notChain}`;
+    expect(ruleBody(agentSettings, primary)).toContain('background: var(--v2-ink)');
+    expect(ruleBody(agentSettings, `${primary}:hover`)).toContain('background: var(--v2-ink-hover)');
   });
 
   test('agent Settings controls reach 44px at phone width', () => {
@@ -641,14 +649,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('pointer-events: none');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('visibility: hidden');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    // A tap applies :hover before its click, so hover arms the pin only where hover is real.
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__pin { opacity: 1; pointer-events: auto; }\n}');
+    expect(v2).not.toMatch(/^\.v2-pods__rowwrap:hover \.v2-pods__pin/m);
     // Touch has no hover: the 390 frame still draws the time at rest, and a press and
     // hold (--reveal) is the row's hover state there, or a phone cannot pin.
     expect(v2).not.toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}/);
     expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }\n}');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
@@ -5513,6 +5525,15 @@ test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on pho
 });
 
 
+test('the drawer priority chip is a select that keeps the P0 fill', () => {
+  // A transparent fill on every chip outranked the P0 rule (0,2,1 over 0,2,0) and
+  // left P0's light text on nothing. Only the outlined chips drop the field fill.
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select')).not.toContain('background');
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select:not(.v2-board__priority--p0)'))
+    .toContain('background-color: transparent');
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p0')).toContain('background: var(--v2-prio-p0-bg)');
+});
+
 test('TASK-443 lease typography outranks the ownership cell font size', () => {
   expect(ruleBody(boardCss, '.v2-board__ownership .v2-board__lease-value'))
     .toContain('font: 500 12px/16px var(--v2-font-mono)');
@@ -6578,8 +6599,16 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
   });
 
+  test('a wrapped phone message head grows instead of overlapping the message', () => {
+    const css = read('../chat/chat-message.css');
+    expect(css).toContain('@media (max-width: 640px) {\n  .v2-thread .v2-msg__head { height: auto; min-height: 20px; }\n}');
+    expect(css.indexOf('height: auto; min-height: 20px')).toBeGreaterThan(css.indexOf('.v2-thread .v2-msg__head { height: 20px; gap: 8px; }'));
+  });
+
   test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
     const settings = read('../components/V2SettingsPage.css');
+    // The identity takes the row's width; a long name used to clip in the 180px label column.
+    expect(settings).toContain('.v2-settings .v2-settings__account-row { grid-template-columns: minmax(0, 1fr) auto; }');
     // Desktop reaches the guide from the rail, so the row is for phones only.
     expect(settings).toContain('.v2-settings__guide { display: none; }');
     const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));

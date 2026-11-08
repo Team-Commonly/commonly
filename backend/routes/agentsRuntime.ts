@@ -3,6 +3,7 @@ import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
+import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -2803,6 +2804,16 @@ export interface CyclesAppendPayload {
 // Instance IDs are intentionally NOT lowercased — platform writers keep them raw
 // (e.g. read straight off `botMetadata.instanceId`), so lowercasing here would
 // itself introduce a mismatch. Preserve the fallback chain; only add normalization.
+// F145: on a public seat, only a turn its owner woke may write memory. Runs
+// before the body is read, so a refused caller learns nothing else about it.
+const ownerOnlyMemoryWrite = (req: any, res: any, next: any) => {
+  if (!memoryWriteOwnerOnly(req.agentCredential)) return next();
+  return res.status(403).json({
+    code: 'memory_write_owner_only',
+    message: "Memory wasn't saved. This agent's memory can only be changed on a turn its owner started.",
+  });
+};
+
 function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
   const agentInstallation = req.agentInstallation;
   const rawAgentName =
@@ -3025,7 +3036,7 @@ router.get('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
  * - `byteSize` and `updatedAt` are always server-stamped via
  *   `stampSectionsForWrite`; client-supplied values are discarded.
  */
-router.put('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.put('/memory', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWrite, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -3155,7 +3166,7 @@ router.put('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
  * `byteSize` and `updatedAt` are server-stamped. `schemaVersion` auto-set to 2.
  * v1 `content` is mirrored from `long_term.content` (same rule as PUT).
  */
-router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWrite, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {

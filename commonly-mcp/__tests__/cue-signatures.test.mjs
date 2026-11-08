@@ -3,14 +3,12 @@
  * text and the tool schema until this file.
  *
  * WHAT WAS ALREADY COVERED, verified at `ccacf0235`:
- *   - `moltbotToolContract.test.js` requires every `commonly_*` NAME a cue
- *     mentions to be declared by the pinned openclaw extension.
  *   - `agentMentionService.wakeOnMessage.test.js:315` pins the attach_file cue
  *     as far as `commonly_attach_file({ podId: "pod-1"`.
  *   - `agentMentionService.test.js:1310` already pins ONE signature to full
  *     arity — `commonly_read_file({ podId: "pod-1", fileName })`.
  *
- * Both existing guards answer "does this name exist". Neither answers "does
+ * Those guards answer "does this name exist". Neither answers "does
  * this call still typecheck against the tool", and the two questions come
  * apart on a parameter rename: rename `filePath` to `path` in `src/tools.js`
  * and the name still exists, the prefix assertion still matches, and every
@@ -19,10 +17,9 @@
  * THE PARAMETER SIDE IS NOT A CROSS-REPO PROBLEM, which is why this is worth
  * building. `@commonlyai/mcp` is `commonly-mcp/` in THIS repo, so cue and
  * schema are two files one `fs.readFileSync` apart — a rename lands in a diff
- * a single suite can read. (The openclaw half genuinely is cross-repo and
- * arrives as one line of submodule hex; that is what the contract script is
- * for, and it is why the openclaw-only names below are skipped here rather
- * than checked twice.)
+ * a single suite can read. (The openclaw half had its own check, which retired
+ * with the submodule under ADR-021 Part B. Its names stay skipped here because
+ * this package does not declare them.)
  *
  * The arity half is NOT hypothetical. The comment block above the cue records
  * this exact failure already firing: the frame taught
@@ -86,7 +83,7 @@ const collectCueSignatures = () => {
 /**
  * Named on purpose for openclaw seats, beside the MCP name for the same
  * capability — the cue ships to every driver class unconditionally. The MCP
- * package neither has nor owes these. Same exemption shape as the contract
+ * package neither has nor owes these. Same exemption shape as the old contract
  * script's `namedForOtherDrivers`, including the check that the list cannot
  * outlive the line justifying it.
  */
@@ -102,7 +99,7 @@ describe('inline mention cues teach signatures the MCP tools accept', () => {
 
   it('finds signatures to check at all', () => {
     // A parser that silently matched nothing would pass every assertion below
-    // by having nothing to look at — the same empty-parse hole the contract
+    // by having nothing to look at — the same empty-parse hole the old contract
     // script guards with its own control.
     expect(signatures.length).toBeGreaterThanOrEqual(4);
     expect(signatures.map((s) => s.tool)).toContain('commonly_attach_file');

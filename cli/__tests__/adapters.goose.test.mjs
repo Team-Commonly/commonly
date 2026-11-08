@@ -504,6 +504,28 @@ describe('F175d: the grant broker reaches a public Goose seat through the stdio 
     expect(() => extensionArgs([broker()], publicCtx())).toThrow(/only the Commonly MCP extension/);
   });
 
+  describe('F145: memory writes on a turn the owner woke', () => {
+    const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+    const toolsOf = async (keyFile, over = {}) => {
+      const { seen } = await publicSpawn({ keyFile, servers: [commonlyMcpServer()], memoryLongTerm: '', ...over });
+      const recipe = JSON.parse(seen.recipeText);
+      return { tools: recipe.extensions[0].available_tools, prompt: recipe.prompt };
+    };
+
+    test('an owner-woken turn lists the three memory tools and nothing else new', withPreparedMcp(async ({ keyFile }) => {
+      const { tools, prompt } = await toolsOf(keyFile, { ownerWoken: true });
+      expect([...tools].sort()).toEqual([...PUBLIC_GOOSE_TOOLS, ...MEMORY].sort());
+      expect(prompt).toContain('commonly_save_my_memory');
+    }));
+
+    test('the next turn does not', withPreparedMcp(async ({ keyFile }) => {
+      await toolsOf(keyFile, { ownerWoken: true });
+      const { tools, prompt } = await toolsOf(keyFile);
+      expect(tools).toEqual(PUBLIC_GOOSE_TOOLS);
+      expect(prompt).not.toContain('commonly_save_my_memory');
+    }));
+  });
+
   test('a private seat never gets the bridge: the guard withholds it, and this is the second layer', () => {
     const { publicSeat, publicExtensions, mcpReadDirectories, ...ctx } = publicCtx();
     expect(() => extensionArgs([broker()], ctx)).toThrow(/cannot deliver without exposing credentials/);

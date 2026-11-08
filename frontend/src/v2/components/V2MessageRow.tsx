@@ -446,11 +446,29 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
 // Only the fold is measured, so a short reply renders exactly as before. The measure only
 // decides WHETHER it folds; the open and close motion is CSS sizing to auto, never a JS height.
 const PROSE_COLLAPSE_PX = 132;
+const ENDS_IN_QUESTION = /[?？]["'”’」』)）]*$/;
+// Lowercase after a stop, or a known abbreviation before it, isn't a new sentence.
+const SENTENCE_BREAK = /(?<=[.!?])(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms)\.)\s+(?=[^a-z])|(?<=[。！？])(?!["'”’」』）)])\s*/;
+// A question this long keeps its end, which is the part the fold was hiding.
+const CLOSING_MAX_CHARS = 240;
+// The message's last sentence when it's a question, since that's often what the reader has to
+// answer. Null when anything else comes after it, a code block for one.
+export const closingQuestion = (el: HTMLElement): string | null => {
+  const blocks = el.querySelectorAll('p, li, h1, h2, h3, h4, h5, h6');
+  const last = blocks[blocks.length - 1]?.textContent?.trim();
+  if (!last || !ENDS_IN_QUESTION.test(last) || !el.textContent?.trim().endsWith(last)) return null;
+  const sentence = last.split(SENTENCE_BREAK).filter(Boolean).pop() ?? last;
+  return sentence.length > CLOSING_MAX_CHARS ? `…${sentence.slice(-CLOSING_MAX_CHARS).trimStart()}` : sentence;
+};
 export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.ReactNode }> = ({ collapsible, children }) => {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [overflows, setOverflows] = useState(false);
+  const [closing, setClosing] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (collapsible && ref.current) setClosing(closingQuestion(ref.current));
+  }, [collapsible, children]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!collapsible || !el) return undefined;
@@ -479,6 +497,8 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
       >
         {children}
       </div>
+      {/* The full text stays in the fold above, so this copy is hidden from screen readers. */}
+      {folded && closing && <p className="v2-msg__closing" aria-hidden="true">{closing}</p>}
       {overflows && (
         <button type="button" className="v2-msg__showmore" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

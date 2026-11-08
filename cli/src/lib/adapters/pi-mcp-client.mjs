@@ -552,8 +552,8 @@ export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 
 
 /**
  * The tools the bridge may register for one server: all of them, minus the
- * entry's `withheldTools`. pi.js sets that list on a public seat
- * (PUBLIC_SEAT_WITHHELD_TOOLS), so a withheld Commonly tool is never registered with
+ * entry's `withheldTools`. pi.js sets that list per turn on a public seat
+ * (publicSeatWithheldTools), so a withheld Commonly tool is never registered with
  * pi at all; pi's own `--exclude-tools` removes the same names as a second
  * layer.
  */

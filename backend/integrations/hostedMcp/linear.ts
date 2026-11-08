@@ -32,7 +32,7 @@ import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 export const LINEAR_ENTRY: HostedMcpEntry = {
   id: "linear",
   title: "Linear",
-  description: "Read Linear issues and projects; changes require your approval.",
+  description: "Issues, projects, cycles and releases in your own Linear workspace.",
   resource: "https://mcp.linear.app/mcp",
   issuer: "https://mcp.linear.app",
   client: "cimd",

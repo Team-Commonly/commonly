@@ -393,6 +393,10 @@ const composeInstallIntro = ({
 // first match, so a harness swap made in one pod shows in all of them.
 // The four keys move as a group: an older install's adapter must not outlive
 // a newer install's runtimeType, which would bring back the stale chip.
+// When that newest install names no adapter, its poller's report (reportedCli,
+// display only) rides along. Without it the overlay drops a pod's own adapter
+// and the chip falls back to the bare runtimeType: a seat declared claude-code
+// that runs opencode read "claude" in exactly the pods that named its adapter.
 const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
 
 const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<string, Record<string, unknown>>> => {
@@ -419,7 +423,10 @@ const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<s
     const key = runtimeIdentityKey(row.agentName, row.instanceId);
     if (resolved.has(key)) continue;
     const identity = declaredRuntimeIdentity(row.config);
-    if (identity) resolved.set(key, identity);
+    if (!identity) continue;
+    const reportedCli = row.config?.runtime?.reportedCli;
+    if (reportedCli && !identity.adapter && !identity.wrappedCli) identity.reportedCli = reportedCli;
+    resolved.set(key, identity);
   }
   return resolved;
 };

@@ -9,11 +9,9 @@
 // Free means: no other account holds the name in any case ("Sam" holds "sam"),
 // and it isn't reserved for an agent install (TASK-133 b), the check register
 // runs on a typed name. The case-insensitive match is done by the query's
-// collation, not by an index: the unique index on username is case-sensitive,
-// and the User model's collation index on the same key has never built beside
-// it (same auto-generated name; production has only the unique one, checked
-// 2026-10-17). The Google path names its own accounts (oauthController
-// generateUsername) and is not changed here.
+// collation, which the unique index on username can't serve, so it runs on the
+// model's collated index, username_label. The Google path names its own accounts
+// (oauthController generateUsername) and is not changed here.
 const crypto = require('crypto');
 const User = require('../models/User');
 const AgentIdentityService = require('./agentIdentityService');

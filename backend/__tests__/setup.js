@@ -2,6 +2,13 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret';
 
+// Redact secret env values from this worker's stdout/stderr. globalSetup.js
+// installs the same guard in the main process; this covers --runInBand (where
+// the worker IS the main process) and any direct in-worker stream write. See
+// __tests__/utils/redactEnv.js (earned 2026-11-07).
+// eslint-disable-next-line global-require
+require('./utils/redactEnv').installStreamEnvRedaction();
+
 // Suppress console logs during tests unless needed
 if (process.env.TEST_VERBOSE !== 'true') {
   const originalConsole = console;

@@ -34,7 +34,7 @@ describe('DemoWorkspace', () => {
     const chip = container.querySelector('.v2-pod-header__board') as HTMLElement;
     fireEvent.click(chip);
     expect(stage).toHaveClass('v2-demo__stage--board-open');
-    fireEvent.click(screen.getByRole('radio', { name: /threads/i }));
+    fireEvent.click(screen.getByRole('radio', { name: /^thread$/i }));
     fireEvent.click(chip);
     expect(screen.getByText('TASK-31 Retry gap')).toBeInTheDocument();
     expect(stage).toHaveClass('v2-demo__stage--board-open');

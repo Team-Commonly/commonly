@@ -63,6 +63,36 @@ beforeEach(async () => {
 });
 afterEach(clearMongoDb);
 
+describe('a seat whose newest install names no adapter', () => {
+  // The seat declares claude-code but runs opencode, which only its poller reports.
+  // A pod that named the adapter itself must not fall back to "claude-code".
+  beforeEach(async () => {
+    await clearMongoDb();
+    await Pod.collection.insertMany([podA, podB].map((_id) => ({
+      _id, name: 'p', type: 'chat', createdBy: viewer, members: [viewer],
+    })));
+    await install(podA, { host: 'byo', adapter: 'opencode' }, '2026-10-15T00:00:00Z');
+    await install(podB, { runtimeType: 'claude-code', host: 'byo', reportedCli: 'opencode' }, '2026-11-04T00:00:00Z');
+  });
+
+  it('carries the newest install\'s report to every pod', async () => {
+    const res = await request(app).get(`/api/registry/pods/${podA}/agents`);
+    expect(res.status).toBe(200);
+    const agent = res.body.agents.find((a) => a.name === 'sprint-review' || a.agentName === 'sprint-review');
+    expect(agent.runtime).toMatchObject({ runtimeType: 'claude-code', host: 'byo', reportedCli: 'opencode' });
+  });
+
+  it('lets a newest install that names its adapter speak for itself', async () => {
+    const podC = new mongoose.Types.ObjectId();
+    await Pod.collection.insertOne({ _id: podC, name: 'p', type: 'chat', createdBy: viewer, members: [viewer] });
+    await install(podC, { runtimeType: 'webhook', host: 'byo', adapter: 'claude', reportedCli: 'opencode' }, '2026-11-05T00:00:00Z');
+    const res = await request(app).get(`/api/registry/pods/${podA}/agents/sprint-review`);
+    expect(res.status).toBe(200);
+    expect(res.body.agent.runtime.adapter).toBe('claude');
+    expect(res.body.agent.runtime.reportedCli).toBeUndefined();
+  });
+});
+
 describe('pod-agent routes read the seat\'s newest runtime identity', () => {
   it('GET /pods/:podId/agents', async () => {
     const res = await request(app).get(`/api/registry/pods/${podA}/agents`);

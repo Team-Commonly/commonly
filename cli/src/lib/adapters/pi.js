@@ -32,7 +32,7 @@
  *
  * A public seat (F113b) runs the same pi as
  *   sandbox-exec -p <profile> <abs pi> … --no-builtin-tools
- *      --exclude-tools <pi built-ins + PUBLIC_SEAT_WITHHELD_TOOLS> --no-approve …
+ *      --exclude-tools <pi built-ins + this turn's withheld tools> --no-approve …
  * with a scrubbed environment and the provider behind a loopback proxy. pi's
  * MCP servers start inside the jailed pi (the bridge is in-process), so they
  * inherit the profile. Confinement is an explicit `sandbox.trust: 'public'`,
@@ -56,6 +56,7 @@ import {
 import { fileURLToPath } from 'url';
 import {
   adapterFailure,
+  describeUpstreamRefusal,
   readUpstreamRefusal,
   spawnCredentials,
 } from '../upstream-refusal.js';
@@ -70,7 +71,7 @@ import { removeCredentialFile, writeCredentialFile } from '../credential-file.js
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
-import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = (() => {
   const fallback = 15 * 60 * 1000;
@@ -130,7 +131,6 @@ const PI_PACKAGE = '@earendil-works/pi-coding-agent';
 // adapter denies its shell; Qwen denies its read tools for this same reason,
 // and Goose loads no built-in at all.
 export const PI_BUILTIN_TOOLS = Object.freeze(['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls']);
-export const PUBLIC_EXCLUDED_TOOLS = Object.freeze([...PI_BUILTIN_TOOLS, ...PUBLIC_SEAT_WITHHELD_TOOLS]);
 
 // What a public pi inherits from the launcher's environment. Everything else
 // (operator variables, the real provider key, the seat token) stays out.
@@ -267,7 +267,7 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
         name: server.name,
         url,
         headers: Object.fromEntries(Object.entries(server.headers || {}).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-        ...(ctx.publicSeat ? { withheldTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
+        ...(ctx.publicSeat ? { withheldTools: [...publicSeatWithheldTools(ctx)] } : {}),
         ...(grantBroker ? { confined: true } : {}),
         ...(grantBroker && ctx.credentialDir ? { credentialDir: ctx.credentialDir } : {}),
       });
@@ -310,7 +310,7 @@ export const resolveMcpServers = (mcpServers, ctx = {}) => {
             label: 'pi',
           }).env,
         ).map(([k, v]) => [k, substitutePlaceholders(v, ctx)])),
-        ...(ctx.publicSeat ? { withheldTools: [...PUBLIC_SEAT_WITHHELD_TOOLS] } : {}),
+        ...(ctx.publicSeat ? { withheldTools: [...publicSeatWithheldTools(ctx)] } : {}),
       });
       continue;
     }
@@ -502,7 +502,7 @@ export const piPackageRoot = (binary) => {
 const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
 
 export const buildArgs = ({
-  prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false,
+  prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false, ownerWoken = false,
 }) => [
   '-p',
   '--mode', 'json',
@@ -513,7 +513,11 @@ export const buildArgs = ({
   // A public seat: no built-in tool (no shell, no file access), the withheld
   // Commonly tools removed from the registry, and no project-local pi files
   // from the workspace trusted for this run.
-  ...(publicSeat ? ['--no-builtin-tools', '--exclude-tools', PUBLIC_EXCLUDED_TOOLS.join(','), '--no-approve'] : []),
+  ...(publicSeat ? [
+    '--no-builtin-tools',
+    '--exclude-tools', [...PI_BUILTIN_TOOLS, ...publicSeatWithheldTools({ ownerWoken })].join(','),
+    '--no-approve',
+  ] : []),
   '--provider', provider,
   '--model', model,
   ...(thinking ? ['--thinking', thinking] : []),
@@ -549,22 +553,27 @@ export const extractReply = (stdout) => {
     if (event?.type === 'agent_end') finished = event.willRetry !== true && lastStop === 'stop';
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
-  return { text, sawAssistant, finished, errors };
+  return { text, sawAssistant, finished, lastStop, errors };
 };
 
 // A turn that printed an interim message and then ended without finishing. A
 // crash keeps its cause, so a quota line in stderr or a refusal on the stream
 // still classifies. A signal (143, 129, or a null code) has neither: stderr then
 // holds pi's startup warnings, and a refusal on the stream may be one pi was
-// recovering from, like an overflow's 400.
+// recovering from, like an overflow's 400. A clean exit that ended on an error
+// has only the stream: its stderr is those warnings too, and the refusal stands.
 const stoppedTurnFailure = (reply, {
   code, signal, stderr, credentials,
 }) => {
   const killed = Boolean(signal) || code === 143 || code === 129;
+  const cleanExit = code === 0;
   const upstream = killed ? null : reply.upstream;
   const failure = adapterFailure(
     'pi',
-    reply.errors.join(' | ') || (killed ? '' : stderr.trim().slice(-600)) || upstream?.detail
+    reply.errors.join(' | ')
+      || (cleanExit ? describeUpstreamRefusal(upstream) : '')
+      || (killed || cleanExit ? '' : stderr.trim().slice(-600))
+      || upstream?.detail
       || 'the turn stopped before it finished',
     { credentials, exitCode: code, limit: 600 },
   );
@@ -664,6 +673,14 @@ const runPi = ({
       }
       const tail = (reply.errors.join(' | ') || stderr).trim().slice(-600);
       return reject(new Error(`pi exited ${code}: ${tail}`));
+    }
+    // A refused turn exits 0 too, so here the stream is what says the text was
+    // interim. Posting it would answer with half a turn (F258). The last stop
+    // decides, not `reply.upstream`, which outlives a refusal pi recovered from.
+    if (code === 0 && reply.sawAssistant && !reply.finished && reply.lastStop === 'error') {
+      return reject(stoppedTurnFailure(reply, {
+        code, signal, stderr, credentials,
+      }));
     }
     return resolve(reply);
   });
@@ -783,10 +800,10 @@ export default {
     // the switch, a wiped home) starts fresh under a new id.
     const isResume = await sessionExists(sessionDir, ctx.sessionId);
     const sessionId = isResume ? ctx.sessionId : randomUUID();
-    // F118: a public seat reads its memory but is not offered the save tool,
-    // so its preamble names none.
+    // F118, F145: a public seat reads its memory and is offered the save tool
+    // only on a turn its owner woke, so otherwise its preamble names none.
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
-      freshSession: !isResume, memoryReadOnly: isPublic,
+      freshSession: !isResume, memoryReadOnly: isPublic && ctx.ownerWoken !== true,
     });
 
     // One credential file per spawn, inside this seat's own 0700 home: the
@@ -866,6 +883,7 @@ export default {
         prompt: fullPrompt, provider: provider.name, model, thinking, sessionId, isResume, sessionDir,
         bridge: servers.length ? (ctx._bridgePath || BRIDGE_PATH) : null,
         publicSeat: isPublic,
+        ownerWoken: ctx.ownerWoken,
       });
       // Shell isolation must not depend on whether this turn declares MCP. A
       // public turn has no shell at all, so it loads no shell extension (that

@@ -9,7 +9,8 @@
  * not a rewrite of every HEARTBEAT.md.
  *
  * Invariant #1: this module is a transport. No state, no business logic that
- * isn't a 1:1 wrap of one CAP / dual-auth route.
+ * isn't a 1:1 wrap of one CAP / dual-auth route. The one exception is the
+ * in-memory sequencing of a checkpoint after its posts (ADR-010, invariant 1).
  *
  * Invariant #2: every route here accepts `cm_agent_*` runtime tokens. CAP
  * routes (`/api/agents/runtime/*`), the dual-auth tasks surface
@@ -148,9 +149,10 @@ messages a minute, and attach a file instead of pasting a document.
   \`commonly_post_message\`. Their ruling is stored as a threaded reply and
   delivered as a typed \`decision.ruled\` event; this is not permission for a
   privileged action, and unrelated work need not stop while it is pending.
-- Read and write memory with \`commonly_read_agent_memory\` /
+- Read memory with \`commonly_read_agent_memory\` and write it with
   \`commonly_save_my_memory\`. Write what a teammate would need next week, not a
-  transcript.
+  transcript. On a public seat a memory write works when the agent's owner woke
+  the turn, and is refused on any other turn.
 
 ## Do not
 
@@ -178,6 +180,31 @@ export const buildTools = (config) => {
       return ok(result);
     } catch (e) {
       return err(e);
+    }
+  };
+
+  // A checkpoint sent beside a post used to land even when the post came back
+  // held, and a model could stop there with its answer unsent. So it waits for
+  // those posts, and a held one turns the event back until its second try: the
+  // model may have read the hold and chosen to say nothing, and that can't be a
+  // trap. A newer hold turns it back again, since that one hasn't been read.
+  const postsInFlight = new Set();
+  const heldPods = new Set();
+  const turnedBack = new Set();
+  const trackPost = async (podId, posting) => {
+    postsInFlight.add(posting);
+    try {
+      const posted = await posting;
+      if (!posted?.skipped && !posted?.refused) heldPods.delete(podId);
+      return posted;
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 409 && error.body?.code === 'unseen_messages') {
+        heldPods.add(podId);
+        turnedBack.clear();
+      }
+      throw error;
+    } finally {
+      postsInFlight.delete(posting);
     }
   };
 
@@ -231,11 +258,11 @@ export const buildTools = (config) => {
         messageType: { type: 'string', enum: ['text', 'card'] },
         payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400. For the grammar and worked examples, call commonly_get_ui_card_catalogue.', additionalProperties: true },
       }, ['podId', 'content']),
-      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => request(config, {
+      call: wrap(async ({ podId, content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind }) => trackPost(podId, request(config, {
         method: 'POST',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
         body: { content, replyToMessageId, threadRootId, mainChannel, metadata, continueAnyway, messageType, payload, summary, kind },
-      })),
+      }))),
     },
     {
       name: 'commonly_claim_message',
@@ -263,18 +290,34 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_checkpoint_event',
-      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. A reply in several posts is finished only after the last one, and a post is committed only once its result comes back, so never send this in the same step as a post. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending. This posts no chat message and does not complete a task.',
+      description: 'Checkpoint ONE inbox event only after tool-side work is committed (including a reply posted through a tool), or a deliberate NO_REPLY. Never checkpoint an answer held for final CLI output: the wrapper must post that reply before acknowledging the item. A reply in several posts is finished only after the last one, and a post is committed only once its result comes back, so never send this in the same step as a post. This durably acknowledges that event now, so a later turn timeout does not replay it. Use only the eventId and deliveryId supplied together in the current inbox item. Never checkpoint unseen or unfinished work. Release any message claim with its correct completed/declined outcome first. A failed call is not a checkpoint; leave the item pending, unless the error says a held post no longer needs saying. This posts no chat message and does not complete a task.',
       inputSchema: reqWith({ eventId: { type: 'string', minLength: 1 }, deliveryId: { type: 'string', minLength: 1 } }, ['eventId', 'deliveryId']),
       call: wrap(async ({ eventId, deliveryId }) => {
         if (typeof eventId !== 'string' || !eventId.trim()
           || typeof deliveryId !== 'string' || !deliveryId.trim()) {
           throw new Error('eventId and deliveryId from the current inbox item are required');
         }
-        return request(config, {
+        while (postsInFlight.size) await Promise.allSettled([...postsInFlight]);
+        let lettingGo = [];
+        if (heldPods.size) {
+          if (!turnedBack.has(eventId)) {
+            turnedBack.add(eventId);
+            // A 409 like the hold itself, so a public seat's CLI reads it as an
+            // answer the model acts on, not a broken tool that withholds the turn.
+            // This MCP makes the status up: no backend call answered 409, and
+            // body.code tells the two apart.
+            const message = 'Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.';
+            throw new HttpError(409, { code: 'checkpoint_turned_back', message }, message);
+          }
+          lettingGo = [...heldPods];
+        }
+        const acked = await request(config, {
           method: 'POST',
           path: `/api/agents/runtime/events/${encodeURIComponent(eventId)}/ack`,
           body: { deliveryId, result: { outcome: 'acknowledged', reason: 'handled-checkpoint' } },
         });
+        lettingGo.forEach((podId) => heldPods.delete(podId));
+        return acked;
       }),
     },
     {
@@ -354,7 +397,7 @@ export const buildTools = (config) => {
       name: 'commonly_attach_file',
       description: 'Attach a file from THIS machine into a pod so humans and other agents can see and read it — a report you wrote, a diff, a generated CSV/deck, etc. Pass `filePath` (a path on the local filesystem). It uploads the file and posts it into the pod as a file card; add `message` for a line of context alongside it. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true. If the card is held after upload, the error returns the existing fileName so you can post its directive after reading without reuploading. Returns the uploaded file metadata (its `fileName` is what commonly_read_file takes).',
       inputSchema: reqWith({ podId: STRING, filePath: STRING, message: STRING, continueAnyway: { type: 'boolean' } }, ['podId', 'filePath']),
-      call: wrap(async ({ podId, filePath, message, continueAnyway }) => {
+      call: wrap(async ({ podId, filePath, message, continueAnyway }) => (await trackPost(podId, (async () => {
         const podPath = `/api/agents/runtime/pods/${encodeURIComponent(podId)}`;
         if (continueAnyway !== true) {
           await request(config, { method: 'GET', path: `${podPath}/send-freshness` });
@@ -376,11 +419,12 @@ export const buildTools = (config) => {
         const directive = `[[upload:${u.fileName || name}|${u.originalName || name}|${u.size || buffer.length}|${u.kind || 'document'}]]`;
         const content = message ? `${message} ${directive}` : directive;
         try {
-          await request(config, {
+          const card = await request(config, {
             method: 'POST',
             path: `${podPath}/messages`,
             body: { content, continueAnyway },
           });
+          return { ...card, uploaded };
         } catch (postError) {
           // The upload is a separate pod artifact. A 409 means this card was
           // held, but another post may already reference the same file. Keep
@@ -393,8 +437,7 @@ export const buildTools = (config) => {
           }
           throw postError;
         }
-        return uploaded;
-      }),
+      })())).uploaded),
     },
     {
       name: 'commonly_get_posts',
@@ -672,13 +715,13 @@ export const buildTools = (config) => {
       }, ['podId', 'decisionClass', 'title', 'question', 'options']),
       call: wrap(async ({
         podId, decisionClass, title, question, options, threadRootId, context,
-      }) => request(config, {
+      }) => trackPost(podId, request(config, {
         method: 'POST',
         path: '/api/agents/runtime/decisions',
         body: {
           podId, decisionClass, title, question, options, threadRootId, context,
         },
-      })),
+      }))),
     },
     {
       name: 'commonly_respond_to_ask',

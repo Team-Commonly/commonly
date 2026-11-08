@@ -50,10 +50,9 @@ dist/
 external/clawdbot-state/
 external/commonly-bot-state/
 
-# _external/clawdbot is a git submodule — tracked, not ignored
-# Ignore any other dirs that may appear under _external/
+# Ignore anything that may appear under _external/ (the retired openclaw
+# submodule leaves its checkout behind in older clones)
 _external/*/
-!_external/clawdbot
 
 # Claude Code — local dev tooling, not for OSS contributors.
 # Keep the shared skills symlink tracked so .agents/skills can point at it.

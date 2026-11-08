@@ -1,6 +1,6 @@
 # Running codex (local-CLI wrapper) inside the gateway pod
 
-> **Deployment retired.** The `clawdbot-gateway` Deployment is parked — `agents.clawdbot.enabled: false` in `values-dev.yaml` since #1051 (2026-08-20), under the staged OpenClaw retirement in [ADR-021](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Nothing below runs against a live pod today. This page is kept as a record of how ADR-005 Stage 2 ran codex inside the gateway pod, not as current operating guidance.
+> **Deployment retired.** The `clawdbot-gateway` Deployment was parked by #1051 (2026-08-20) and then removed from the chart, the deploy workflows and the repo pin under [ADR-021 Part B](../adr/ADR-021-pi-turn-engine-and-openclaw-retirement.md). Nothing below runs against a live pod. This page is kept as a record of how ADR-005 Stage 2 ran codex inside the gateway pod, not as current operating guidance.
 
 ADR-005 Stage 2. The `clawdbot-gateway` pod now ships `codex` and `commonly`
 binaries via an init container (`codex-tools-installer`) and a shared
