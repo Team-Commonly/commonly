@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { getV2EquivalentPath } from './utils/legacyV2Path';
+import { reportBoundaryError } from './sentryReport';
 import LegacyAuthRedirect from './components/LegacyAuthRedirect';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
@@ -63,7 +64,7 @@ const RouteBoot: React.FC = () => (
   />
 );
 
-class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+export class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
     this.state = { error: null };
@@ -73,8 +74,13 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
     return { error };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('App runtime error:', error);
+    try {
+      void reportBoundaryError(error, { boundary: 'app', componentStack: info.componentStack });
+    } catch {
+      // A throw here would unmount the fallback this boundary just rendered.
+    }
   }
 
   render() {
