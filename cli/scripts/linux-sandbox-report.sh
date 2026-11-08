@@ -41,13 +41,16 @@ refusals() {
   "
 }
 
-profiles() {
-  echo "$1: $(sudo aa-status --profiled) profiles, $(sudo aa-status --enforced) enforced, $(ls /etc/apparmor.d | wc -l) entries in /etc/apparmor.d"
-}
-
 # A refused probe is what this measures, so probe() never stops the run. A setup
 # or undo step that fails does: the measurements after it would be mislabelled.
 fail() { echo "::error::$1"; exit 1; }
+
+profiles() {
+  local profiled enforced
+  profiled=$(sudo aa-status --profiled) && enforced=$(sudo aa-status --enforced) \
+    || fail "aa-status could not read the profiles ($1)"
+  echo "$1: $profiled profiles, $enforced enforced, $(ls /etc/apparmor.d | wc -l) entries in /etc/apparmor.d"
+}
 
 sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap || fail "installing bubblewrap failed"
 (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) || fail "npm ci failed"

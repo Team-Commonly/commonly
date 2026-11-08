@@ -41,7 +41,7 @@ Last reviewed 2026-11-07, against main `a0db74604`.
 | **Claude Code** | stopped at start, clear cause, no next step (run 42397343530) | answered an @mention in 13 s (run 42398237284) |
 | **Codex** | started polling, then every turn failed and the pod heard nothing (run 42398478814) | ran `pwd` in the sandbox and answered in 14 s (run 42398763392) |
 
-Since the next CLI release, both stop at start with one message, routes that change nothing on the machine first and Ubuntu's profile last and optional. The profile is offered only on Ubuntu 24.04, where the walks ran; on later releases the message lists the other routes alone. `hostSandboxRefusal` prints the commands and nothing runs them. The ruling behind the message: never the sysctl, and never a looser grant.
+Since the next CLI release, both stop at start with one message, routes that change nothing on the machine first and Ubuntu's profile last and optional. The profile is offered only on Ubuntu 24.04, where the walks ran; on later releases the message lists the other routes alone. `hostSandboxRefusal` returns the message, commands included, for its caller to print, and nothing runs them. The ruling behind the message: never the sysctl, and never a looser grant.
 
 The profile lets any local program use bubblewrap to create user namespaces, with no capabilities for what it starts. **The lines take one file out of `apparmor-profiles` and don't install the package.** Installing it enforces 21 more profiles at once, among them ping, dnsmasq and smbd: 28 enforced before, 49 after (run 42400201955). The one file adds 2 profiles, survives an AppArmor reload, and undoes cleanly (run 42400323320).
 

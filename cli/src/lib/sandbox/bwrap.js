@@ -65,10 +65,12 @@ const APPARMOR_USERNS_SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_
 
 // Inside a container the sysctl reports the host, and what blocks bwrap is the
 // container's own policy, so the host's AppArmor is not the person's way out.
-// Docker leaves /.dockerenv, Podman /run/.containerenv. The filesystem is
-// injectable for the tests.
+// Docker leaves /.dockerenv, Podman /run/.containerenv, and systemd writes
+// /run/systemd/container inside a container (nspawn, LXC), never on a host.
+// The filesystem is injectable for the tests.
+const CONTAINER_MARKERS = ['/.dockerenv', '/run/.containerenv', '/run/systemd/container'];
 export const readApparmorRestriction = ({ read = readFileSync, exists = existsSync } = {}) => {
-  if (exists('/.dockerenv') || exists('/run/.containerenv')) return false;
+  if (CONTAINER_MARKERS.some((marker) => exists(marker))) return false;
   try {
     return read(APPARMOR_USERNS_SYSCTL, 'utf8').trim() === '1';
   } catch {
@@ -77,9 +79,18 @@ export const readApparmorRestriction = ({ read = readFileSync, exists = existsSy
 };
 
 // os-release values may be quoted, so `ID="ubuntu"` reads the same as `ID=ubuntu`.
+// /etc/os-release wins; /usr/lib/os-release is the file it normally links to,
+// read only when the first is missing.
+const readOsRelease = (read) => {
+  try {
+    return read('/etc/os-release', 'utf8');
+  } catch {
+    return read('/usr/lib/os-release', 'utf8');
+  }
+};
 export const readUbuntuRelease = ({ read = readFileSync } = {}) => {
   try {
-    const release = read('/etc/os-release', 'utf8');
+    const release = readOsRelease(read);
     if (!/^ID=(["']?)ubuntu\1$/m.test(release)) return null;
     return /^VERSION_ID=(["']?)([\d.]+)\1$/m.exec(release)?.[2] ?? null;
   } catch {

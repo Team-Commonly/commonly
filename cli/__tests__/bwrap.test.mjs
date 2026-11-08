@@ -88,6 +88,7 @@ describe('detectBwrap namespace probe', () => {
       expect(readApparmorRestriction(fs({}))).toBe(false);
       expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n', '/.dockerenv': '' }))).toBe(false);
       expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n', '/run/.containerenv': '' }))).toBe(false);
+      expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n', '/run/systemd/container': 'lxc\n' }))).toBe(false);
     });
 
     test('the Ubuntu release: plain and quoted values, another distro, no file', () => {
@@ -97,6 +98,11 @@ describe('detectBwrap namespace probe', () => {
       expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID=debian\nID_LIKE=ubuntu\nVERSION_ID="12"\n' }))).toBeNull();
       expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID="ubuntu\nVERSION_ID="24.04"\n' }))).toBeNull();
       expect(readUbuntuRelease(fs({}))).toBeNull();
+      expect(readUbuntuRelease(fs({ '/usr/lib/os-release': 'ID=ubuntu\nVERSION_ID="24.04"\n' }))).toBe('24.04');
+      expect(readUbuntuRelease(fs({
+        '/etc/os-release': 'ID=debian\nVERSION_ID="12"\n',
+        '/usr/lib/os-release': 'ID=ubuntu\nVERSION_ID="24.04"\n',
+      }))).toBeNull();
     });
   });
 
