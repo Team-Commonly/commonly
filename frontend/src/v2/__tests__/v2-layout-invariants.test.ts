@@ -749,11 +749,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // .v2-pods__new sets flex: 0 0 32px; without this the New pod key stays 32px wide.
     expect(topLevelRuleBody(v2, '.v2-root .v2-pods-aside--page .v2-pods__bar button.v2-pods__new')).toContain('flex-basis: 44px');
     const theme = topLevelRuleBody(v2, '.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button');
-    expect(theme).toContain('position: relative');
+    // The buttons themselves are 44 tall, not a 40 with a stretched hit area.
     expect(theme).toContain('width: 44px');
-    expect(theme).toContain('height: 40px');
-    // The 2px the seg's padding takes back comes from ::after, inside the button's own column.
-    expect(topLevelRuleBody(v2, '.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button::after')).toContain('inset: -2px 0');
+    expect(theme).toContain('height: 44px');
+    // The seg's 2px track makes the pill 48 tall, so the bar must stay taller than that.
+    expect(topLevelRuleBody(v2, '.v2-pods__bar')).toContain('height: 52px');
   });
 
   // Cofounder ruling 11-04: the d215 pick wins on look, but 44px is a floor. The

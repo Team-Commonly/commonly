@@ -4296,8 +4296,8 @@ body.modern-ui.v2-canvas {
 }
 
 /* The 390 bar's controls are 44px touch targets. The frame draws them at 34px,
-   so they go to 44px at this width. The theme buttons keep their pill and reach
-   44px tall through ::after, which stays inside each button's own column. */
+   so they go to 44px at this width. The theme buttons are 44px each way too;
+   with the seg's 2px track the pill is 48px tall, inside the 52px bar. */
 .v2-pods-aside--page .v2-pods__bar .v2p-ib {
   width: 44px;
   height: 44px;
@@ -4309,15 +4309,8 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button {
-  position: relative;
   width: 44px;
-  height: 40px;
-}
-
-.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button::after {
-  content: '';
-  position: absolute;
-  inset: -2px 0;
+  height: 44px;
 }
 
 .v2-pods-aside--page .v2-pods__body {
