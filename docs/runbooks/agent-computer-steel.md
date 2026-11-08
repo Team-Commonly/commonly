@@ -76,11 +76,21 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    optional). If the backend pod started before the ExternalSecrets synced,
    restart it. `agentComputerEnabled()` stays false until the env holds both.
 5. Give the computer tools to exactly one installation:
-   - it must be a native install (`runtimeType: 'native'`), owned by the
-     person whose id is in `users`;
+   - it must run in the backend process: a native install
+     (`runtimeType: 'native'`), or a hosted install on the native engine
+     (`runtimeType: 'hosted'` with `config.hosted.engine: 'native'`, which is
+     what a new hosted install gets on prod). The owner must be the person
+     whose id is in `users`;
+   - a non-admin owner can't install `native`, which needs the
+     `cloudAgents` entitlement, so for them it is hosted, and it takes their
+     hosted slot;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
-     included;
+     included. A declared list is the whole tool surface, so it also names
+     `commonly_read_context` and `commonly_post_message`;
    - no other installation lists them.
+   - The agent uses the computer only on a turn whose message its owner
+     wrote (`computer_requester_denied` otherwise), so a heartbeat or another
+     member's message can't start a walk.
 6. Do the one-time sign-in through `computer_request_takeover`. The owner signs
    in by hand in the takeover UI, and the agent never types a password. The
    profile disk keeps that session across restarts.

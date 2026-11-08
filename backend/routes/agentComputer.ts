@@ -3,6 +3,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { agentComputerBroker, agentComputerEnabled } from '../services/agentComputerBroker';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
+import { runsInNarrowedProcess } from '../services/hostedEngine';
 
 const auth = require('../middleware/auth');
 const { AgentInstallation } = require('../models/AgentRegistry');
@@ -30,8 +31,11 @@ router.use('/:installationId', async (req: any, res: express.Response, next: exp
       return res.status(403).json({ code: 'not_owner', error: 'Installation is not yours.' });
     }
     const config = installation.config instanceof Map ? Object.fromEntries(installation.config) : installation.config;
-    const runtime = config?.runtime instanceof Map ? Object.fromEntries(config.runtime) : config?.runtime;
-    if (runtime?.runtimeType !== 'native' || !Array.isArray(config?.tools)
+    // The computer tools run only in this process, which is where a 'native' install and a hosted install on the
+    // native engine (once any migration onto it has finished) both run. Hosted on native is the one shape a
+    // non-admin owner can install ('native' needs the cloud-agents entitlement), so the takeover accepts both,
+    // through the same engine-in-effect boundary grants and agent joins use, and nothing else.
+    if (!runsInNarrowedProcess(installation) || !Array.isArray(config?.tools)
       || !config.tools.includes('computer_request_takeover')) {
       return res.status(403).json({ code: 'computer_not_granted', error: 'This installation has no computer access.' });
     }
