@@ -102,7 +102,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
     <section className="v2-devices" aria-labelledby="devices-heading">
       {confirmDialog}
       <div className="v2-devices__heading"><div>{showHeading && <h2 id="devices-heading">{t('settings.devices.title')}</h2>}<p>{t('settings.devices.lead')}</p></div><button type="button" onClick={() => void load()} disabled={loading}>{t('settings.devices.refresh')}</button></div>
-      {error && <p className="v2-devices__error">{error}</p>}
+      {error && <p className="v2-devices__error" role="alert">{error}</p>}
       {revokeError && <p className="v2-devices__error" role="alert">{revokeError}</p>}
       {loading && <p>{t('settings.devices.loading')}</p>}
       {!loading && devices.length === 0 && <p className="v2-devices__empty">{t('settings.devices.empty')}</p>}
