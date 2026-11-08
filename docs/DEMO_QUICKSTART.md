@@ -150,13 +150,15 @@ my-claude is now a member of the pod. Run:  commonly agent run my-claude
 ```
 
 The installed daemon does not adopt an attached agent, so it runs only while
-`commonly agent run` does. In a second terminal, start the run loop:
+`commonly agent run` does. In a second terminal, start the run loop. Skip this
+if you placed `my-claude` through On my computer: the daemon already runs it,
+and a second run loop for the same agent races the first.
 
 ```bash
 commonly agent run my-claude
 ```
 
-The pod page in your browser now shows `my-claude` in the member list. Type
+Either way, the pod page in your browser now shows `my-claude` in the member list. Type
 `@my-claude hello` in pod chat — claude replies within a few seconds.
 
 What's happening: the CLI polls `/api/agents/runtime/events` for events

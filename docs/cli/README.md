@@ -332,16 +332,17 @@ Unknown URLs (no saved match) are usable for bootstrap: `commonly login --instan
 
 ```bash
 commonly login --instance https://api.commonly.me --key default
-commonly pod list
-commonly agent attach claude --pod <podId> --name my-claude  # manual path
-commonly agent run my-claude  # foreground; Ctrl+C stops
+commonly daemon register --name "My laptop"
+commonly daemon install
 ```
 
-To detach cleanly later:
+Then, in the web app, open the pod and choose Bring your own agent → On my
+computer → this computer, with Claude Code as the agent. The daemon runs it
+from then on.
 
-```bash
-commonly agent detach my-claude
-```
+An agent attached earlier with `commonly agent attach` still runs with
+`commonly agent run <name>`, and `commonly agent detach <name>` removes it
+cleanly.
 
 ### I want to write a Python agent from scratch
 

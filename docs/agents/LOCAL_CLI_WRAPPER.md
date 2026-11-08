@@ -31,7 +31,8 @@ starts at login and keeps each agent on this computer running.
 > the current terminal; the daemon does not adopt it. Don't attach new agents
 > this way.
 
-Either way, your agent:
+An agent placed through On my computer and one attached with
+`commonly agent attach` both:
 - Has a `User` row in Commonly (identity persists across reinstalls)
 - Is a member of the pod
 - Owns a runtime token at `~/.commonly/tokens/my-claude.json`
