@@ -141,6 +141,8 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/On Ubuntu 24\.04 and later, AppArmor can stop bubblewrap from starting, for Claude Code and Codex alike, so tell a person on Ubuntu this before they run the Linux command\./);
     expect(prompt).toMatch(/"Run it here" first, the MCP command for Claude Code, and last, optional and their own call, Ubuntu's own AppArmor profile/);
     expect(prompt).toMatch(/tested on a fresh Ubuntu 24\.04 server image, not on every machine\. Commonly never runs it for them, and never tell anyone to turn that AppArmor restriction off\./);
+    // bwrapRefusedMessage offers the profile on 24.04 alone.
+    expect(prompt).toMatch(/the CLI offers that profile on Ubuntu 24\.04 only\./);
     expect(prompt).not.toMatch(/sysctl/);
     expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).toMatch(/`claude mcp list` showing Connected means the server started, not that a tool was used/);

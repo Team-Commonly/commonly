@@ -45,8 +45,12 @@ profiles() {
   echo "$1: $(sudo aa-status --profiled) profiles, $(sudo aa-status --enforced) enforced, $(ls /etc/apparmor.d | wc -l) entries in /etc/apparmor.d"
 }
 
-sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap
-(cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+# A refused probe is what this measures, so probe() never stops the run. A setup
+# or undo step that fails does: the measurements after it would be mislabelled.
+fail() { echo "::error::$1"; exit 1; }
+
+sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap || fail "installing bubblewrap failed"
+(cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null) || fail "npm ci failed"
 
 echo "=== host"
 . /etc/os-release && echo "$PRETTY_NAME, kernel $(uname -r)"
@@ -67,20 +71,22 @@ printed() {
 }
 
 echo "=== the lines the CLI prints"
-cmds=$(printed UBUNTU_BWRAP_PROFILE_COMMANDS) && test -n "$cmds" && bash -ec "$cmds"
+cmds=$(printed UBUNTU_BWRAP_PROFILE_COMMANDS) && test -n "$cmds" && bash -ec "$cmds" \
+  || fail "the printed profile lines failed"
 probe "with the printed lines run"
 profiles "with one profile"
-sudo systemctl reload apparmor
+sudo systemctl reload apparmor || fail "reloading AppArmor failed"
 profiles "after an AppArmor reload"
 probe "after an AppArmor reload"
-undo=$(printed UBUNTU_BWRAP_PROFILE_UNDO) && test -n "$undo" && bash -ec "$undo"
+undo=$(printed UBUNTU_BWRAP_PROFILE_UNDO) && test -n "$undo" && bash -ec "$undo" \
+  || fail "the printed undo lines failed"
 probe "after the printed undo"
 
 echo "=== what the package would add"
 before=$(ls /etc/apparmor.d)
-sudo apt-get install -y -qq apparmor-profiles
+sudo apt-get install -y -qq apparmor-profiles || fail "installing apparmor-profiles failed"
 comm -13 <(echo "$before" | sort) <(ls /etc/apparmor.d | sort) | tr '\n' ' '; echo
 profiles "with the package, not reloaded"
-sudo systemctl reload apparmor
+sudo systemctl reload apparmor || fail "reloading AppArmor failed"
 profiles "with the package, after an AppArmor reload"
 exit 0

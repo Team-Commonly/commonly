@@ -8,6 +8,8 @@
 
 import {
   detectBwrap,
+  readApparmorRestriction,
+  readUbuntuRelease,
   wrapArgvWithBwrap,
   BWRAP_MACOS_MESSAGE,
 } from '../src/lib/sandbox/bwrap.js';
@@ -66,6 +68,36 @@ describe('detectBwrap namespace probe', () => {
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => true }).apparmorRestricted).toBe(true);
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRestriction: () => false }).apparmorRestricted).toBe(false);
     expect(detectBwrap({ spawn: refused(), platform: 'linux', readRelease: () => '24.04' }).ubuntuRelease).toBe('24.04');
+  });
+
+  // The real readers, against a fake filesystem: a reader stuck at false or
+  // null would pass the injected tests above and drop the profile lines.
+  describe('the readers behind the profile lines', () => {
+    const SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
+    const fs = (files) => ({
+      read: (path) => {
+        if (!(path in files)) throw Object.assign(new Error(`ENOENT: ${path}`), { code: 'ENOENT' });
+        return files[path];
+      },
+      exists: (path) => path in files,
+    });
+
+    test('the AppArmor restriction: on, off, missing, and inside a container', () => {
+      expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n' }))).toBe(true);
+      expect(readApparmorRestriction(fs({ [SYSCTL]: '0\n' }))).toBe(false);
+      expect(readApparmorRestriction(fs({}))).toBe(false);
+      expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n', '/.dockerenv': '' }))).toBe(false);
+      expect(readApparmorRestriction(fs({ [SYSCTL]: '1\n', '/run/.containerenv': '' }))).toBe(false);
+    });
+
+    test('the Ubuntu release: plain and quoted values, another distro, no file', () => {
+      expect(readUbuntuRelease(fs({ '/etc/os-release': 'NAME="Ubuntu"\nID=ubuntu\nVERSION_ID="24.04"\n' }))).toBe('24.04');
+      expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID="ubuntu"\nVERSION_ID="24.04"\n' }))).toBe('24.04');
+      expect(readUbuntuRelease(fs({ '/etc/os-release': "ID='ubuntu'\nVERSION_ID=24.04\n" }))).toBe('24.04');
+      expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID=debian\nID_LIKE=ubuntu\nVERSION_ID="12"\n' }))).toBeNull();
+      expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID="ubuntu\nVERSION_ID="24.04"\n' }))).toBeNull();
+      expect(readUbuntuRelease(fs({}))).toBeNull();
+    });
   });
 
   test('a probe that timed out reads as unavailable, not as a refused namespace', () => {
