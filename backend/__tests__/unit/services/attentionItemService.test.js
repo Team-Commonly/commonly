@@ -186,10 +186,10 @@ describe('attentionItemService', () => {
       { _id: 'lee', username: 'Lee', isBot: false },
       { _id: 'kai', username: 'Kai', isBot: false },
     ];
-    const run = async (deciders) => {
+    const run = async (deciders, memberIds = ['sam', 'lee', 'kai']) => {
       jest.clearAllMocks();
-      mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee', 'kai'] }));
-      mockUserFind.mockReturnValue(chain(people));
+      mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: memberIds }));
+      mockUserFind.mockReturnValue(chain(people.filter((person) => memberIds.includes(person._id))));
       mockUserFindById.mockReturnValue(chain(null));
       mockInstallationFindOne.mockReturnValue(chain({ installedBy: 'sam' }));
       mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
@@ -204,6 +204,9 @@ describe('attentionItemService', () => {
     expect(await run([{ userId: 'kai', username: 'Kai' }, { userId: 'lee', username: 'Lee' }])).toEqual(['kai']);
     // A decider who has left is skipped.
     expect(await run([{ userId: 'gone', username: 'Gone' }, { userId: 'lee', username: 'Lee' }])).toEqual(['lee']);
+    // The installer was named but has left: the email goes to a decider who remains.
+    expect(await run([{ userId: 'sam', username: 'Sam' }, { userId: 'lee', username: 'Lee' }], ['lee', 'kai']))
+      .toEqual(['lee']);
     // Every decider has left: it waits on the whole pod and emails the installer.
     expect(await run([{ userId: 'gone', username: 'Gone' }])).toEqual(['sam']);
     expect(mockUpdateOne).toHaveBeenCalledTimes(3);

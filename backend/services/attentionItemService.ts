@@ -532,13 +532,14 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
     const pod = await Pod.findById(podId).select('name').lean();
     const installerId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
     // With named deciders the email goes to one of them: the installer if
-    // they were named, otherwise the first named decider still in the pod.
+    // they were named and are still in the pod, otherwise the first named
+    // decider still in the pod.
     const recipientIds = recipients.map((member: unknown) => String((member as { _id?: unknown })?._id ?? member));
     const firstDecider = (decision.deciders || [])
       .map((decider: any) => String(decider.userId))
       .find((deciderId: string) => recipientIds.includes(deciderId));
     let emailRecipientId = installerId;
-    if (deciderIds.size && !(installerId && deciderIds.has(String(installerId)))) {
+    if (deciderIds.size && !(installerId && recipientIds.includes(String(installerId)))) {
       emailRecipientId = firstDecider || null;
     }
     const choiceOptions = (decision.options || []).filter((option: any) => option?.label).map((option: any) => ({
