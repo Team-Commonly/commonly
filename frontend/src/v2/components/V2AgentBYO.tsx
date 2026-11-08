@@ -1028,6 +1028,57 @@ const V2AgentBYO: React.FC = () => {
         const msg = (installErr as { response?: { data?: { error?: string } } })
           ?.response?.data?.error || '';
         if (!/already installed/i.test(msg)) throw installErr;
+        // F354: an existing seat ignores the install body, so the model and
+        // effort picked here were dropped. Save them where Settings does: the
+        // installation the agent reads its controls from. Only model and
+        // effort are sent: the route rebuilds `config.runtime` from a request
+        // that carries it, which would drop the seat's webhook and auth. So a
+        // model for a different harness than the seat runs isn't saved here.
+        const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
+        // The install names no instance, so the server derives it from the
+        // display name: 'default' unless a persona names the seat. Only then is
+        // the seat that answered "already installed" the one these calls reach.
+        if (Object.keys(controls).length && (personaCard || prefill.instanceId !== 'default')) {
+          setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
+          return;
+        }
+        if (Object.keys(controls).length) {
+          type ReconnectSettings = { runtimeSourcePodId?: string | null; runtimeEditable?: boolean; runtimeControls?: SeatRuntime };
+          let settings: ReconnectSettings;
+          try {
+            settings = await api.get<ReconnectSettings>(
+              `/api/registry/agents/${encodeURIComponent(cleanName)}/manage-settings`, { params: { instanceId: prefill.instanceId } },
+            );
+          } catch {
+            setError(t('agentByo.errors.controlsNotSaved', { name: cleanName }));
+            return;
+          }
+          if (!settings?.runtimeEditable || !settings.runtimeSourcePodId) {
+            setError(t('agentByo.errors.controlsNotEditable', { name: cleanName }));
+            return;
+          }
+          const storedHarness = seatHarness(settings.runtimeControls);
+          // A seat whose harness isn't on record can't be checked against the
+          // model, so it's changed in Settings, where the harness is shown.
+          if (!storedHarness) {
+            setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
+            return;
+          }
+          if (storedHarness !== listenAdapter) {
+            setError(t('agentByo.errors.controlsOtherHarness', { name: cleanName, harness: harnessLabel(harnessCatalog, storedHarness) }));
+            return;
+          }
+          try {
+            await api.patch(
+              `/api/registry/pods/${encodeURIComponent(settings.runtimeSourcePodId)}/agents/${encodeURIComponent(cleanName)}`,
+              { config: { environment: controls }, instanceId: prefill.instanceId },
+            );
+          } catch (saveErr) {
+            const reason = (saveErr as { response?: { data?: { error?: string } } })?.response?.data?.error;
+            setError(`${t('agentByo.errors.controlsNotSaved', { name: cleanName })}${reason ? ` (${reason})` : ''}`);
+            return;
+          }
+        }
       }
       // An agent can have a token from another pod. A nonrotating issue
       // returns existing:true in that case, so no key is revoked here.
