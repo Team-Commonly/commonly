@@ -37,7 +37,7 @@ describe('F330: a non-ObjectId pod id answers 400, not 500', () => {
   beforeEach(() => { errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {}); });
   afterEach(() => errorSpy.mockRestore());
 
-  test.each([':podId', 'me', '6ad18344'])('GET /api/pods/%s/focus', async (id) => {
+  test.each([':podId', 'me', '6a0000aa'])('GET /api/pods/%s/focus', async (id) => {
     const res = await request(app).get(`/api/pods/${id}/focus`);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('invalid_pod_id');

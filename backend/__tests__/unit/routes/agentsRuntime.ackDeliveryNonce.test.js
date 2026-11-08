@@ -56,7 +56,7 @@ const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime', require('../../../routes/agentsRuntime'));
 
-const EVT = '6aed6a78540aa4ce228cd2ca';
+const EVT = '6a00000000000000000e0a01';
 const ACK = `/api/agents/runtime/events/${EVT}/ack`;
 const BOT_ACK = `/api/agents/runtime/bot/events/${EVT}/ack`;
 
@@ -161,8 +161,8 @@ describe('POST /events/:id/ack — delivery nonce', () => {
   // CastError out of the service. An id that cannot be an event is the
   // caller's mistake, and the caller should hear so.
   test.each([
-    ['runtime', '/api/agents/runtime/events/6aed6a78540aa4ce228cd2cae/ack'],
-    ['bot', '/api/agents/runtime/bot/events/6aed6a78540aa4ce228cd2cae/ack'],
+    ['runtime', '/api/agents/runtime/events/6a00000000000000000e0a01e/ack'],
+    ['bot', '/api/agents/runtime/bot/events/6a00000000000000000e0a01e/ack'],
     ['runtime', '/api/agents/runtime/events/:id/ack'],
   ])('a %s ack on a malformed event id is 400, and the service is never asked', async (_kind, path) => {
     mockUserFindById.mockReturnValue({
