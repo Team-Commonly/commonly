@@ -103,9 +103,32 @@ describe('every harness on the add page', () => {
     fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
     await screen.findByText(/your connect command for/i);
     expect(axios.patch).toHaveBeenCalledWith('/api/registry/pods/p0/agents/sam-codex',
-      { config: { environment: { model: 'gpt-6.1-sol' }, runtime: { adapter: 'codex' } }, instanceId: 'default' }, expect.anything());
+      { config: { environment: { model: 'gpt-6.1-sol' } }, instanceId: 'default' }, expect.anything());
     expect(axios.get).toHaveBeenCalledWith('/api/registry/agents/sam-codex/manage-settings',
       expect.objectContaining({ params: { instanceId: 'default' } }));
+  });
+
+  test('a reconnect on another runner than the seat runs saves nothing and says which one it runs', async () => {
+    await pickCodexModelOnExistingSeat();
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0', runtimeControls: { runtimeType: 'webhook', adapter: 'claude' } } })
+      : base(url, config)));
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    expect(await screen.findByText(/sam-codex runs Claude Code, so a model for another runner/)).toBeInTheDocument();
+    expect(axios.patch).not.toHaveBeenCalled();
+    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
+  });
+
+  test('a settings lookup that fails reads as a failed save, not as a permission problem', async () => {
+    await pickCodexModelOnExistingSeat();
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.reject({ response: { status: 500 } }) : base(url, config)));
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    expect(await screen.findByText(/Couldn’t save the model and effort for sam-codex/)).toBeInTheDocument();
+    expect(screen.queryByText(/Only the person who installed/)).toBeNull();
+    expect(axios.patch).not.toHaveBeenCalled();
   });
 
   test('a reconnect of a seat this person can’t edit says so and issues no key', async () => {

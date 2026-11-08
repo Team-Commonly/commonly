@@ -1030,25 +1030,35 @@ const V2AgentBYO: React.FC = () => {
         if (!/already installed/i.test(msg)) throw installErr;
         // F354: an existing seat ignores the install body, so the model and
         // effort picked here were dropped. Save them where Settings does: the
-        // installation the agent reads its controls from. The runner tab's
-        // harness goes with them, as Settings' harness switch sends it, so the
-        // model is checked against the harness the printed command runs.
+        // installation the agent reads its controls from. Only model and
+        // effort are sent: the route rebuilds `config.runtime` from a request
+        // that carries it, which would drop the seat's webhook and auth. So a
+        // model for a different harness than the seat runs isn't saved here.
         const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
         if (Object.keys(controls).length) {
-          let settings: { runtimeSourcePodId?: string | null; runtimeEditable?: boolean } | undefined;
+          type ReconnectSettings = { runtimeSourcePodId?: string | null; runtimeEditable?: boolean; runtimeControls?: SeatRuntime };
+          let settings: ReconnectSettings;
           try {
-            settings = await api.get<{ runtimeSourcePodId?: string | null; runtimeEditable?: boolean }>(
+            settings = await api.get<ReconnectSettings>(
               `/api/registry/agents/${encodeURIComponent(cleanName)}/manage-settings`, { params: { instanceId: prefill.instanceId } },
             );
-          } catch { settings = undefined; }
+          } catch {
+            setError(t('agentByo.errors.controlsNotSaved', { name: cleanName }));
+            return;
+          }
           if (!settings?.runtimeEditable || !settings.runtimeSourcePodId) {
             setError(t('agentByo.errors.controlsNotEditable', { name: cleanName }));
+            return;
+          }
+          const storedHarness = seatHarness(settings.runtimeControls);
+          if (storedHarness && storedHarness !== listenAdapter) {
+            setError(t('agentByo.errors.controlsOtherHarness', { name: cleanName, harness: harnessLabel(harnessCatalog, storedHarness) }));
             return;
           }
           try {
             await api.patch(
               `/api/registry/pods/${encodeURIComponent(settings.runtimeSourcePodId)}/agents/${encodeURIComponent(cleanName)}`,
-              { config: { environment: controls, runtime: { adapter: listenAdapter } }, instanceId: prefill.instanceId },
+              { config: { environment: controls }, instanceId: prefill.instanceId },
             );
           } catch (saveErr) {
             const reason = (saveErr as { response?: { data?: { error?: string } } })?.response?.data?.error;
