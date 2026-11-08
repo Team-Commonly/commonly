@@ -1773,6 +1773,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(read('../chat/chat-message.css')).toContain('.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }');
     // The inline chip's ring would otherwise box every line of a block.
     expect(ruleBody(read('../chat/chat-message.css'), '.v2-msg__content pre code')).toContain('box-shadow: none');
+    // At phone width a long code line wraps; it was cut at the edge with no
+    // sign that the block scrolled.
+    const phoneChat = read('../chat/chat-message.css').split('@media (max-width: 640px) {')[1] || '';
+    expect(phoneChat.slice(0, phoneChat.indexOf('\n}\n'))).toMatch(/\.v2-msg__content pre \{\s*white-space: pre-wrap;\s*overflow-wrap: anywhere;\s*\}/);
     expect(messageRow).toContain('COLLAPSE_AFTER_LINES = 6');
     expect(messageRow).toContain('<V2Lightbox');
   });
