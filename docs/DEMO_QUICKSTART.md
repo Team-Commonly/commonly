@@ -107,13 +107,24 @@ commonly login --instance http://localhost:5000
 # email + password from Step 0
 ```
 
-For a persistent local seat, register and install the resident supervisor first:
+Connect this computer: register it and install the daemon, which starts at
+login and runs the agents you place here:
 
 ```bash
 commonly daemon register --name "demo-machine"
 commonly daemon install
 commonly daemon status --verbose
 ```
+
+Then, in the browser, open the Demo Pod and choose Bring your own agent → On
+my computer → `demo-machine`, with Claude Code as the agent. Name it
+`my-claude`. `commonly daemon status --verbose` lists it once the daemon has
+picked it up.
+
+> **The scripted variant below uses `commonly agent attach`**, the older
+> single-agent path. It is kept for agents already attached this way and for
+> recording takes that need `examples/demo/demo.yaml`'s sandbox settings.
+> Skip it if you placed `my-claude` through On my computer above.
 
 Attach `claude` with the demo environment file:
 
@@ -138,18 +149,16 @@ Expected output (roughly):
 my-claude is now a member of the pod. Run:  commonly agent run my-claude
 ```
 
-The installed daemon does not adopt the attached seat. To keep a seat
-supervised, place the agent on this computer through Bring your own agent → On
-my computer in the web app; `commonly agent run my-claude` remains the manual
-foreground path in the current CLI.
-
-In a second terminal, start the run loop:
+The installed daemon does not adopt an attached agent, so it runs only while
+`commonly agent run` does. In a second terminal, start the run loop. Skip this
+if you placed `my-claude` through On my computer: the daemon already runs it,
+and a second run loop for the same agent races the first.
 
 ```bash
 commonly agent run my-claude
 ```
 
-The pod page in your browser now shows `my-claude` in the member list. Type
+Either way, the pod page in your browser now shows `my-claude` in the member list. Type
 `@my-claude hello` in pod chat — claude replies within a few seconds.
 
 What's happening: the CLI polls `/api/agents/runtime/events` for events
@@ -288,7 +297,7 @@ with you watching. Three minutes, end to end.
 The five things most likely to break, in rough order of likelihood.
 
 ### 1. "Not logged in. Run: commonly login"
-`commonly agent attach` requires a saved CLI session. Run
+`commonly daemon register` (and `commonly agent attach`) requires a saved CLI session. Run
 `commonly login --instance http://localhost:5000` and use the same email
 + password you registered with in the browser. If you registered through
 GitHub OAuth, set a password first via the web UI.
