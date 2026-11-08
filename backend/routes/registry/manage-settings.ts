@@ -109,11 +109,21 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     }).sort({ createdAt: 1, _id: 1 }).lean();
     const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
     const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
-      .select('name type').lean();
+      .select('name type members').lean();
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const types = new Map<string, string | undefined>(pods.map((pod: any) => [String(pod._id), pod.type]));
+    // Someone else's 1:1 room with this agent (ADR-001 §3.10). Its installer
+    // manages the agent there, but isn't a member and doesn't learn who is: the
+    // room reaches the response only as a count, never as a row, id or name.
+    const othersRooms = new Set<string>(pods
+      .filter((pod: any) => pod.type === 'agent-room'
+        && !(pod.members || []).some((member: unknown) => String(member) === String(userId)))
+      .map((pod: any) => String(pod._id)));
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
-    const fallback = visible.find((entry: any) => entry.status === 'active') || visible[0];
+    const listed = visible.filter((entry: any) => !othersRooms.has(String(entry.podId)));
+    const otherDirectRoomCount = visible.length - listed.length;
+    const fallback = listed.find((entry: any) => entry.status === 'active') || listed[0]
+      || visible.find((entry: any) => entry.status === 'active') || visible[0];
     const quotaOwner = fallback?.installedBy || userId;
     // The daemon runs the oldest active declaration, not whichever pod this
     // page happened to load first. Use its projection for both the displayed
@@ -191,7 +201,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeNarrowing,
       hostedHeartbeat,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
-      writablePodId: writable ? String(writable.podId) : null,
+      writablePodId: writable && !othersRooms.has(String(writable.podId)) ? String(writable.podId) : null,
       runtimeSourcePodId: hosted ? null
         : source ? String(source.podId)
           : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
@@ -207,7 +217,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeManaged,
       runtimeEditable: !hosted && Boolean(writable) && (!seat?.sourcePodId || Boolean(source)),
       harnessCatalog: HARNESS_CATALOG,
-      installations: visible
+      otherDirectRoomCount,
+      installations: listed
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)))) });
   } catch (error) {
     console.error('Error loading agent settings:', error);
