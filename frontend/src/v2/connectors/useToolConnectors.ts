@@ -219,7 +219,11 @@ export const useToolConnectors = (
     let cancelled = false;
     api.get<{ agents?: ByoCandidate[] }>('/api/grants/byo-candidates', { params: { podId: draftPodId } })
       .then((res) => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: Array.isArray(res?.agents) ? res.agents : [] })); })
-      .catch(() => { if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: [] })); });
+      // A failed re-read keeps what the form last knew, as a fresh copy so a
+      // waiting agent stays unnameable and the next read is still scheduled.
+      .catch(() => {
+        if (!cancelled) setByoCandidates((current) => ({ ...current, [draftPodId]: [...(current[draftPodId] || [])] }));
+      });
     return () => { cancelled = true; };
   }, [api, draftPodId, byoReadCount]);
   // F179: an agent whose computer hasn't picked it up yet can't be named, and

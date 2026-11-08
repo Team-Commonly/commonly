@@ -783,7 +783,7 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
               {offeredSeats.map((seat) => {
                 if (!seat.userId) return null;
                 const byo = draftByoCandidates.find((agent) => agent.userId === seat.userId);
-                const awaiting = Boolean(byo?.nameable && byo.awaitingMachine);
+                const awaiting = Boolean(byo?.awaitingMachine);
                 const unnameable = Boolean(byo && (!byo.nameable || awaiting));
                 return (
                   <React.Fragment key={seat.userId}>

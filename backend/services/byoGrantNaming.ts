@@ -272,19 +272,21 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
     // eslint-disable-next-line no-await-in-loop
     const judgement = await judgeSeatConfinement({ agentUserId: String(user._id), agentName, instanceId });
     const base = { userId: String(user._id), agentName, instanceId };
+    // Placed on a machine its daemon hasn't adopted yet: judged unbound for now.
+    const awaitingMachine = Boolean(user.botMetadata?.requestedMachineId) && !user.botMetadata?.machineId;
+    const awaiting = awaitingMachine ? { awaitingMachine: true as const } : {};
     if (judgement.hostUnconfined) {
       out.push({ ...base, nameable: false, reason: 'unconfined_host', sandbox: 'unconfined' });
     } else if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) {
-      out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' });
+      out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown', ...awaiting });
     } else {
-      const awaitingMachine = Boolean(user.botMetadata?.requestedMachineId) && !user.botMetadata?.machineId;
       out.push({
         ...base,
         nameable: true,
         sandbox: sandboxStateFor(judgement, {
           machineId: user.botMetadata?.machineId, runtimeType: installation.config?.runtime?.runtimeType,
         }),
-        ...(awaitingMachine ? { awaitingMachine: true as const } : {}),
+        ...awaiting,
       });
     }
   }
