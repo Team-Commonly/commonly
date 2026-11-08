@@ -396,8 +396,8 @@ class SchedulerService {
       { scheduled: false, timezone: 'UTC' },
     );
 
-    // Refresh the skill marketplace catalog from the upstream openclaw/skills
-    // repo every 6 hours — pulls the latest JSON and overlays fresh star
+    // Refresh the skill marketplace catalog every 6 hours: re-read the local
+    // catalog (or SKILLS_UPSTREAM_INDEX_URL, when set) and overlay fresh star
     // counts. See backend/services/skillsRefreshService.ts.
     const skillsRefreshJob: CronJob = cron.schedule(
       '0 */6 * * *',
@@ -781,7 +781,7 @@ class SchedulerService {
       '- Onboarding-silence scan runs every 5 minutes'
       + `${process.env.ONBOARDING_ALERT_EMAIL ? '' : ' (LOG-ONLY: ONBOARDING_ALERT_EMAIL unset)'}`,
     );
-    console.log('- Skills catalog refreshes from upstream every 6 hours (stars re-fetched via GitHub API)');
+    console.log('- Skills catalog refreshes every 6 hours (stars re-fetched via GitHub API)');
     console.log('- Installable reconciliation runs every 5 minutes (CAS/idempotent; no lease required)');
 
     this.startupTimers.push(setTimeout(() => {
