@@ -108,10 +108,12 @@ jobs:
         # The exact lines the CLI prints, read from the code that prints them.
         run: |
           (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
-          node --input-type=module -e "
+          lines=$(node --input-type=module -e "
             import { UBUNTU_BWRAP_PROFILE_COMMANDS as lines } from './cli/src/lib/sandbox/host-check.js';
             console.log(lines.join('\n'));
-          " | bash -e
+          ")
+          test -n "$lines"
+          bash -ec "$lines"
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
         env:

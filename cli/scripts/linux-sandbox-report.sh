@@ -67,13 +67,13 @@ printed() {
 }
 
 echo "=== the lines the CLI prints"
-printed UBUNTU_BWRAP_PROFILE_COMMANDS | bash -e
+cmds=$(printed UBUNTU_BWRAP_PROFILE_COMMANDS) && test -n "$cmds" && bash -ec "$cmds"
 probe "with the printed lines run"
 profiles "with one profile"
 sudo systemctl reload apparmor
 profiles "after an AppArmor reload"
 probe "after an AppArmor reload"
-printed UBUNTU_BWRAP_PROFILE_UNDO | bash -e
+undo=$(printed UBUNTU_BWRAP_PROFILE_UNDO) && test -n "$undo" && bash -ec "$undo"
 probe "after the printed undo"
 
 echo "=== what the package would add"

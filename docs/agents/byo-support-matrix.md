@@ -45,7 +45,7 @@ Since the next CLI release, both stop at start with one message, routes that cha
 
 The profile lets any local program use bubblewrap to create user namespaces, with no capabilities for what it starts. **The lines take one file out of `apparmor-profiles` and don't install the package.** Installing it enforces 21 more profiles at once, among them ping, dnsmasq and smbd: 28 enforced before, 49 after (run 42400201955). The one file adds 2 profiles, survives an AppArmor reload, and undoes cleanly (run 42400323320).
 
-Not walked: a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
+Not walked: a full @mention on the one-file lines (the 13 s and 14 s answers loaded the same file from the installed package), a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
 
 ## Other harnesses
 
