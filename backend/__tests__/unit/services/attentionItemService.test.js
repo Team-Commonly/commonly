@@ -180,6 +180,32 @@ describe('attentionItemService', () => {
     expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toContain('"sam"');
   });
 
+  it('emails the installer when they are a decider, else the first named decider', async () => {
+    const people = [
+      { _id: 'sam', username: 'Sam', isBot: false },
+      { _id: 'lee', username: 'Lee', isBot: false },
+      { _id: 'kai', username: 'Kai', isBot: false },
+    ];
+    const run = async (deciders) => {
+      jest.clearAllMocks();
+      mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee', 'kai'] }));
+      mockUserFind.mockReturnValue(chain(people));
+      mockUserFindById.mockReturnValue(chain(null));
+      mockInstallationFindOne.mockReturnValue(chain({ installedBy: 'sam' }));
+      mockUpdateOne.mockResolvedValue({ upsertedId: 'attention-1' });
+      await AttentionItemService.recordDecision({
+        _id: 'decision-1', podId: 'pod-1', agentUserId: 'scout', agentName: 'scout',
+        title: 'Which release?', options: [{ label: 'Now' }, { label: 'Later' }], deciders,
+      });
+      return mockSendNeedsYouEmail.mock.calls.map(([item]) => item.recipientUserId);
+    };
+
+    expect(await run([{ userId: 'lee', username: 'Lee' }, { userId: 'sam', username: 'Sam' }])).toEqual(['sam']);
+    expect(await run([{ userId: 'kai', username: 'Kai' }, { userId: 'lee', username: 'Lee' }])).toEqual(['kai']);
+    // A decider who has left is skipped.
+    expect(await run([{ userId: 'gone', username: 'Gone' }, { userId: 'lee', username: 'Lee' }])).toEqual(['lee']);
+  });
+
   it('uses the installation in this pod before a global bot owner', async () => {
     mockPodFindById.mockReturnValue(chain({ _id: 'pod-1', name: 'Ship room', members: ['sam', 'lee'] }));
     mockUserFind.mockReturnValue(chain([

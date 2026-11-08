@@ -262,6 +262,38 @@ describe('relayAgentMessageThroughAdapter', () => {
     expect(verdicts.record).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'interrupt', reason: 'card' }));
   });
 
+  test('a card with named deciders interrupts only a chat linked to one of them', async () => {
+    const forLee = { ...card, deciders: [{ userId: 'lee', username: 'Lee' }] };
+    const leeChat = fakeAdapter('alpha', { externalMessageId: 'm-1', result: {} });
+    await relayAgentMessageThroughAdapter(leeChat, message(row('a', { linkedUserId: 'lee' }), {
+      card: forLee, podMessageId: 'pm-1',
+    }));
+    expect(leeChat.send).toHaveBeenCalledWith(expect.objectContaining({ card: forLee }));
+    expect(verdicts.record).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'interrupt', reason: 'card' }));
+
+    jest.clearAllMocks();
+    Integration.findByIdAndUpdate.mockResolvedValue({});
+    // Sam's chat, mirroring everything: the line goes as ordinary chat, with no
+    // card stored and no verdict.
+    const samChat = fakeAdapter('alpha', { externalMessageId: 'm-2', result: {} });
+    await relayAgentMessageThroughAdapter(samChat, message(row('b', { linkedUserId: 'sam', relayAllAgentMessages: true }), {
+      card: forLee, podMessageId: 'pm-1',
+    }));
+    expect(samChat.send).toHaveBeenCalledWith(expect.objectContaining({ card: undefined }));
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.$push['config.cards']).toBeUndefined();
+    expect(verdicts.record).not.toHaveBeenCalled();
+
+    // Without a mirror, the escalation policy decides, and a plain line stays put.
+    jest.clearAllMocks();
+    const quietChat = fakeAdapter('alpha', { externalMessageId: 'm-3', result: {} });
+    await relayAgentMessageThroughAdapter(quietChat, message(row('c', { linkedUserId: 'sam' }), {
+      card: forLee, podMessageId: 'pm-1',
+    }));
+    expect(quietChat.send).not.toHaveBeenCalled();
+    expect(verdicts.record).not.toHaveBeenCalled();
+  });
+
   test('a throw anywhere ends in the adapter log, never in the caller', async () => {
     const adapter = fakeAdapter('alpha', null, { send: jest.fn(async () => { throw new Error('network'); }) });
     await expect(relayAgentMessageThroughAdapter(adapter, message(row('a', { relayAllAgentMessages: true }))))

@@ -237,6 +237,7 @@ export const requestDecision = async (input: RequestDecisionOptions): Promise<Re
     question,
     options,
     ...(context ? { context } : {}),
+    ...(deciders ? { deciders } : {}),
   };
 
   const posted = await AgentMessageService.postMessage({
@@ -421,8 +422,12 @@ export const chooseDecision = async (
     return { status: 403, body: { error: 'Only human pod members can rule on this decision' } };
   }
   // A card that names its deciders is theirs to rule; anyone else can read it.
-  if (row.deciders?.length
-    && !row.deciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
+  // Once none of them is still in the pod, any human member may rule, so the
+  // card can't be stranded.
+  const presentDeciders = (row.deciders || [])
+    .filter((decider: any) => isListedPodMember(pod, String(decider.userId)));
+  if (presentDeciders.length
+    && !presentDeciders.some((decider: any) => String(decider.userId) === String(callerUserId))) {
     return {
       status: 403,
       body: { error: 'This decision is for someone else to rule', code: 'not_a_decider', decision: decisionPayload(row) },

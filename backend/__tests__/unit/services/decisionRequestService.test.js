@@ -354,5 +354,19 @@ describe('DecisionRequestService', () => {
       await chooseDecision({ decisionId: 'decision-1', callerUserId: LILY, value: 'Canary' });
       expect(mockDecision.findOneAndUpdate).toHaveBeenCalled();
     });
+
+    test('once every named decider has left, any human member can rule', async () => {
+      mockPod.findById.mockImplementation(() => podChain({ members: [SAM, BOT], type: 'team' }));
+      mockDecision.findById.mockResolvedValue(pending({ deciders: [{ userId: LILY, username: 'lily' }] }));
+      mockUser.findById.mockReturnValue(userChain({ _id: SAM, username: 'sam', isBot: false }));
+      mockDecision.findOneAndUpdate.mockResolvedValue(null);
+      await chooseDecision({ decisionId: 'decision-1', callerUserId: SAM, value: 'Canary' });
+      expect(mockDecision.findOneAndUpdate).toHaveBeenCalled();
+    });
+
+    test('the relay card carries the deciders, so a bridge can skip the others', async () => {
+      await requestDecision({ ...source(), deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].relayCard.deciders).toEqual([{ userId: LILY, username: 'lily' }]);
+    });
   });
 });

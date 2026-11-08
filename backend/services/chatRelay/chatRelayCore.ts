@@ -307,6 +307,22 @@ const recordCardVerdict = async (
   });
 };
 
+/**
+ * Whether a decision card may interrupt this chat. A card without named
+ * deciders goes to every bound chat, as before. A card with deciders goes only
+ * to a chat whose linked Commonly user is one of them.
+ */
+export const cardIsForIntegration = (
+  card: DecisionRelayCard | undefined,
+  integration: { config?: object | null } | null | undefined,
+): boolean => {
+  if (!card) return false;
+  if (!card.deciders?.length) return true;
+  const linked = (integration?.config as { linkedUserId?: unknown } | null | undefined)?.linkedUserId;
+  if (!linked) return false;
+  return card.deciders.some((decider) => String(decider.userId) === String(linked));
+};
+
 export const podLinkFor = (podId: string, podMessageId?: string | null, card?: DecisionRelayCard): string => {
   const base = publicAppUrl();
   return card && podMessageId
@@ -330,13 +346,17 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
   opts: OutboundRelayOptions<I>,
 ): Promise<void> => {
   const {
-    podId, agentUsername, content, podMessageId, card,
+    podId, agentUsername, content, podMessageId,
   } = opts;
   try {
     // The dispatcher selects each subscription. Its row is the authority for
     // this send; the fallback preserves legacy direct rows.
     const integration = opts.integration ?? await adapter.findLiveIntegration(podId);
     if (!integration) return;
+    // A card that names its deciders interrupts only a chat linked to one of
+    // them. Anywhere else it is ordinary chat: the escalation policy decides,
+    // no card is stored, and no verdict is recorded.
+    const card = cardIsForIntegration(opts.card, integration) ? opts.card : undefined;
     const holdReason = card ? cardHoldReasonFor(integration, podId) : null;
     if (holdReason) {
       if (podMessageId) await recordCardVerdict(adapter, integration, podId, podMessageId, 'hold', holdReason);
@@ -351,7 +371,9 @@ export const relayAgentMessageThroughAdapter = async <I extends ChatRelayIntegra
       content, agentUsername, integration, podId,
     })) return;
 
-    const sent = await adapter.send({ ...opts, integration, link: podLinkFor(podId, podMessageId, card) });
+    const sent = await adapter.send({
+      ...opts, card, integration, link: podLinkFor(podId, podMessageId, card),
+    });
     if (!sent) return;
     if (!sent.externalMessageId) {
       // Bound chat. Only a permanent, classified failure flips the connector; a

@@ -168,6 +168,18 @@ describe.each(['telegram', 'slack'])('%s decision reply', (provider) => {
     expect(confirmation()).toContain("You're no longer in Launch");
   });
 
+  test('a member who is not a decider is told who rules it, and the card stays open', async () => {
+    choose.mockResolvedValueOnce({
+      status: 403,
+      body: { code: 'not_a_decider', decision: { deciders: [{ userId: 'u-lee', username: 'lee' }] } },
+    });
+    await receive();
+    expect(messages).toHaveLength(0);
+    await assertOpen();
+    expect(confirmation()).toContain('This one is for @lee to rule');
+    expect(confirmation()).not.toContain('no longer in');
+  });
+
   test('membership guard is first, including for an already-ruled card', async () => {
     Pod.findById.mockImplementation(() => chain({ name: 'Launch', members: [] }));
     await receive();
