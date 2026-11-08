@@ -173,6 +173,16 @@ jobs:
         env:
           DEV_HELM_HIDDENMCP_ALLOWLIST: ${{ secrets.DEV_HELM_HIDDENMCP_ALLOWLIST }}
 
+      - name: Materialize agent-computer overlay (runner-only)
+        # Per-instance agentComputer.users and agentComputer.steel.gate.imageTag
+        # (docs/runbooks/agent-computer-steel.md), kept out of the repo like the
+        # overlays above. Unset, it writes an empty overlay: users stays [] and
+        # no browser renders.
+        run: |
+          printf '%s\n' "${DEV_HELM_AGENT_COMPUTER}" > "$RUNNER_TEMP/agent-computer.yaml"
+        env:
+          DEV_HELM_AGENT_COMPUTER: ${{ secrets.DEV_HELM_AGENT_COMPUTER }}
+
       - name: Build + push backend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -256,6 +266,7 @@ jobs:
             -f k8s/helm/commonly/values-dev.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
             -f "$RUNNER_TEMP/allowlist.yaml" \
+            -f "$RUNNER_TEMP/agent-computer.yaml" \
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
             --set agents.commonlyBot.image.tag="$TAG" \
