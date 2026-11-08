@@ -4589,3 +4589,16 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **Fix:** the adapter uses OpenCode's own character set, so the allow and the withheld-tool denies both match. A real-binary test reads the `tools` array the binary sends to the model route.
 
 **Lesson:** a test that compares config to the adapter's own idea of a name proves only that the two agree. A rule meant for another program needs that program to read it.
+
+## 120. `commonly_request_decision` can't name deciders, though the route can (2026-11-08)
+
+*Origin: building named deciders. The route gained `deciderUserIds` before the MCP tool did.*
+
+**Surface:** `commonly_request_decision` in `commonly-mcp/src/tools.js`, and `POST /api/agents/runtime/decisions`.
+
+**False model:** an MCP agent reading its tool list concludes a decision always goes to every human in the pod. The route takes `deciderUserIds` (1 to 5 member ids); the tool's schema doesn't list it, so the agent can't pass it.
+
+**Fix:** pending. The tool gains `deciderUserIds` in its own PR, because that change publishes `@commonlyai/mcp`. A caller that knows only usernames resolves them to ids first.
+
+**Lesson:** the same as the quick rule on `commonly_*` names. A tool's schema describes one runtime's surface, and the route is the authority on what's allowed.
+
