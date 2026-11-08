@@ -1887,6 +1887,9 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
     'features.multi_agent=false',
     'features.multi_agent_v2.max_concurrent_threads_per_session=1',
     'features.goals=false',
+    'features.plugins=false',
+    'features.apps=false',
+    'analytics.enabled=false',
   ];
   const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
 

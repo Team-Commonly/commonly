@@ -584,6 +584,8 @@ const writePublicCodexInstructions = async (publicHome, ctx) => {
 //   the whole catalog.
 // - `features.goals` removes the goal tools. A goal is kept on the thread and
 //   comes back in the next turn's context.
+// - `features.plugins`, `features.apps` and `analytics.enabled` turn off plugins,
+//   account apps and usage analytics, which a public seat has no use for.
 //
 // Measured against the tool list sent to the model, on codex-cli 0.162.1 with
 // gpt-5.5, gpt-5.6 and gpt-6 models and on 0.159.3 with gpt-5.5 and gpt-6 models
@@ -593,6 +595,9 @@ const PUBLIC_BUILTIN_TOOL_FLAGS = Object.freeze([
   '-c', 'features.multi_agent=false',
   '-c', 'features.multi_agent_v2.max_concurrent_threads_per_session=1',
   '-c', 'features.goals=false',
+  '-c', 'features.plugins=false',
+  '-c', 'features.apps=false',
+  '-c', 'analytics.enabled=false',
   '-c', 'agents.max_depth=0',
 ]);
 
