@@ -129,6 +129,20 @@ describe('every harness on the add page', () => {
     expect(await screen.findByText(/Couldn’t save the model and effort for sam-codex/)).toBeInTheDocument();
     expect(screen.queryByText(/Only the person who installed/)).toBeNull();
     expect(axios.patch).not.toHaveBeenCalled();
+    expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
+  });
+
+  test('a legacy seat stored only as runtimeType codex counts as Codex', async () => {
+    await pickCodexModelOnExistingSeat();
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
+      ? Promise.resolve({ data: { runtimeEditable: true, runtimeSourcePodId: 'p0', runtimeControls: { runtimeType: 'codex' } } })
+      : base(url, config)));
+    axios.patch.mockResolvedValue({ data: {} });
+    fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
+    await screen.findByText(/your connect command for/i);
+    expect(axios.patch).toHaveBeenCalledWith('/api/registry/pods/p0/agents/sam-codex',
+      { config: { environment: { model: 'gpt-6.1-sol' } }, instanceId: 'default' }, expect.anything());
   });
 
   test('a reconnect of a seat this person can’t edit says so and issues no key', async () => {
