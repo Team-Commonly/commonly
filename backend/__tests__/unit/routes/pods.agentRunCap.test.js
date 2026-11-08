@@ -87,6 +87,23 @@ describe('PATCH /api/pods/:id/agent-run-cap', () => {
     expect(res.status).toBe(200);
     expect(res.body.agentRunCap).toBeNull();
     expect(mockPod.value.agentRunCap).toBeUndefined();
+    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      detail: 'agentRunCap=default previous=20',
+    }));
+  });
+
+  test('setting the same value writes no audit entry', async () => {
+    mockPod.value = pod({ agentRunCap: 20 });
+    expect((await setCap(20)).status).toBe(200);
+    expect(AuditLog.create).not.toHaveBeenCalled();
+  });
+
+  test('a refusal leaves the stored cap and the audit log alone', async () => {
+    mockPod.value = pod({ agentRunCap: 20 });
+    expect((await setCap(51)).status).toBe(400);
+    expect((await setCap(10, 'member-2')).status).toBe(403);
+    expect(mockPod.value.agentRunCap).toBe(20);
+    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
   test.each([0, 2, 51, 2.5, '20', undefined])('refuses %p: never off, and within 3..50', async (value) => {

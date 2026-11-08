@@ -87,6 +87,23 @@ describe('a pod\'s own run cap', () => {
     expect(Object.prototype.hasOwnProperty.call(raw, 'agentRunCap')).toBe(false);
   });
 
+  it('keeps an operator\'s instance-wide off switch, whatever the pod says', () => {
+    const before = process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP;
+    process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP = '0';
+    try {
+      expect(AgentMessageService.resolveConsecutiveRunCap(20)).toBe(0);
+    } finally {
+      if (before === undefined) delete process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP;
+      else process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP = before;
+    }
+  });
+
+  it('reads no pod for a pod id that is an object, not an id', async () => {
+    await expect(AgentMessageService.postMessage({
+      agentName: 'builder', instanceId: 'default', podId: { $ne: null }, content: 'Hello.',
+    })).rejects.toMatchObject({ code: 'pod_not_found' });
+  });
+
   it('refuses a stored cap outside 3..50 at the model', async () => {
     await expect(Pod.create({ name: 'Off', type: 'chat', createdBy: owner._id, agentRunCap: 0 })).rejects.toThrow();
   });

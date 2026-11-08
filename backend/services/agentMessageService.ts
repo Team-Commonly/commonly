@@ -892,7 +892,9 @@ class AgentMessageService {
   }
 
   static resolveConsecutiveRunCap(podRunCap?: unknown): number {
-    // A pod's own cap (Pod.agentRunCap, set by its creator) wins inside its range.
+    // An operator's instance-wide 0 turns the cap off everywhere, pods included.
+    if (process.env.AGENT_MESSAGE_CONSECUTIVE_RUN_CAP?.trim() === '0') return 0;
+    // Otherwise a pod's own cap (Pod.agentRunCap, set by its creator) wins inside its range.
     if (Number.isInteger(podRunCap)
       && (podRunCap as number) >= AgentMessageService.POD_RUN_CAP_MIN
       && (podRunCap as number) <= AgentMessageService.POD_RUN_CAP_MAX) return podRunCap as number;
@@ -1725,9 +1727,13 @@ class AgentMessageService {
       return { success: true, skipped: true, reason: 'heartbeat_diagnostic_suppressed' };
     }
 
-    const sourcePod = (routesErrorsToOwnerDM && isErrorContent)
-      ? await Pod.findById(podId).select('type agentRunCap').lean() as { type?: string; agentRunCap?: number } | null
-      : null;
+    // The pod id reaches the query only as an ObjectId or a plain string, so
+    // no operator object can stand in for it.
+    const podKey = podId instanceof mongoose.Types.ObjectId ? podId : String(podId ?? '');
+    const readPod = async () => await Pod.findById(podKey).select('type agentRunCap').lean() as {
+      type?: string; agentRunCap?: number;
+    } | null;
+    const sourcePod = (routesErrorsToOwnerDM && isErrorContent) ? await readPod() : null;
     if (routesErrorsToOwnerDM && isErrorContent && sourcePod?.type !== 'agent-admin') {
       try {
         const shouldPostSourceNotice = normalizedAgentName !== 'openclaw';
@@ -1752,8 +1758,7 @@ class AgentMessageService {
       }
     }
 
-    const dedupePod = sourcePod
-      || (await Pod.findById(podId).select('type agentRunCap').lean() as { type?: string; agentRunCap?: number } | null);
+    const dedupePod = sourcePod || await readPod();
     const isAgentAdminPod = dedupePod?.type === 'agent-admin';
     if (!isAgentAdminPod) {
       // Duplicate suppression is for shared rooms: an agent re-posting the same
