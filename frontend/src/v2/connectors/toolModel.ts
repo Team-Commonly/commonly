@@ -50,6 +50,8 @@ export interface ByoCandidate {
   nameable: boolean;
   reason?: 'unconfined_host' | 'adapter_unsupported';
   sandbox: ByoSandbox;
+  /** F179: placed on a machine whose daemon hasn't picked it up yet, so its sandbox isn't known. */
+  awaitingMachine?: boolean;
 }
 
 /** `superseded` is a DERIVED read-only value the server reports for a parked

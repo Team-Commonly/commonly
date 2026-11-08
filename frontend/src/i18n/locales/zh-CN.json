@@ -3145,6 +3145,7 @@
       "consentNoSandbox": "{{agent}} 运行在你的电脑上，不在 Commonly 里，也没有沙箱。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
       "readOnlyHint": "运行在你电脑上的智能体只能读取。",
       "prWriteConsent": "{{agents}} 还能向这个仓库提交代码和发起 PR，每次都要你批准。",
+      "awaitingMachine": "{{agent}} 还没在你的电脑上启动，暂时不知道它有没有沙箱。启动后这里会自动更新。",
       "reasonUnconfinedHost": "运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
       "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
       "namedHeading": "运行在你电脑上",

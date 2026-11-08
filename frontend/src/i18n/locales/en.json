@@ -3148,6 +3148,7 @@
       "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
       "readOnlyHint": "An agent on your computer can only read.",
       "prWriteConsent": "{{agents}} can also send commits and pull requests to this repository, each one after you approve it.",
+      "awaitingMachine": "{{agent}} hasn’t started on your computer yet, so its sandbox isn’t known. This updates by itself once it does.",
       "reasonUnconfinedHost": "Ran without a sandbox Commonly can enforce, so no grant can be used.",
       "reasonAdapterUnsupported": "Connectors need a sandboxed harness: only {{harnesses}} agents can be named.",
       "namedHeading": "on your computer",

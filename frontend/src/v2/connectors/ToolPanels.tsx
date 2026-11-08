@@ -783,14 +783,19 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
               {offeredSeats.map((seat) => {
                 if (!seat.userId) return null;
                 const byo = draftByoCandidates.find((agent) => agent.userId === seat.userId);
-                const unnameable = Boolean(byo && !byo.nameable);
+                const awaiting = Boolean(byo?.awaitingMachine);
+                const unnameable = Boolean(byo && (!byo.nameable || awaiting));
                 return (
                   <React.Fragment key={seat.userId}>
                     <label className="v2-connector-aside__relay">
                       <input type="checkbox" disabled={unnameable} checked={!unnameable && draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
                       {seat.displayName || seat.name}
                     </label>
-                    {byo && unnameable && <span className="v2-tools__hint">{byoReason(byo)}</span>}
+                    {byo && unnameable && (
+                      <span className="v2-tools__hint" role={awaiting ? 'status' : undefined}>
+                        {awaiting ? t('tools.byo.awaitingMachine', { agent: byoAgentLabel(byo) }) : byoReason(byo)}
+                      </span>
+                    )}
                   </React.Fragment>
                 );
               })}

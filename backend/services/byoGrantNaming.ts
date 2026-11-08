@@ -227,6 +227,13 @@ export interface ByoCandidate {
   nameable: boolean;
   reason?: 'unconfined_host' | 'adapter_unsupported';
   sandbox: IRoomGrantByoConsent['agents'][number]['sandbox'];
+  /**
+   * F179: the seat was placed on a machine whose daemon hasn't adopted it yet.
+   * Until it does, the server has no machine to read the sandbox from, so
+   * `sandbox` describes the unbound seat, not where it will run. Display only:
+   * nothing that enforces a grant reads it, and the mint judges again.
+   */
+  awaitingMachine?: true;
 }
 
 /**
@@ -246,8 +253,10 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
   const pod = await Pod.findById(podId).select('members').lean();
   if (!pod) return [];
   const users = await User.find({ _id: { $in: (pod.members || []).map(String) }, botType: 'agent' })
-    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId').lean() as Array<{
-      _id: unknown; botMetadata?: { agentName?: string; instanceId?: string; machineId?: string };
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.requestedMachineId')
+    .lean() as Array<{
+      _id: unknown;
+      botMetadata?: { agentName?: string; instanceId?: string; machineId?: string; requestedMachineId?: string | null };
     }>;
   const out: ByoCandidate[] = [];
   for (const user of users) {
@@ -263,10 +272,13 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
     // eslint-disable-next-line no-await-in-loop
     const judgement = await judgeSeatConfinement({ agentUserId: String(user._id), agentName, instanceId });
     const base = { userId: String(user._id), agentName, instanceId };
+    // Placed on a machine its daemon hasn't adopted yet: judged unbound for now.
+    const awaitingMachine = Boolean(user.botMetadata?.requestedMachineId) && !user.botMetadata?.machineId;
+    const awaiting = awaitingMachine ? { awaitingMachine: true as const } : {};
     if (judgement.hostUnconfined) {
       out.push({ ...base, nameable: false, reason: 'unconfined_host', sandbox: 'unconfined' });
     } else if (judgement.refusal && !namingLiftsRefusal(judgement.refusal)) {
-      out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' });
+      out.push({ ...base, nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown', ...awaiting });
     } else {
       out.push({
         ...base,
@@ -274,6 +286,7 @@ export const listByoCandidates = async (podId: string, callerId: string): Promis
         sandbox: sandboxStateFor(judgement, {
           machineId: user.botMetadata?.machineId, runtimeType: installation.config?.runtime?.runtimeType,
         }),
+        ...awaiting,
       });
     }
   }

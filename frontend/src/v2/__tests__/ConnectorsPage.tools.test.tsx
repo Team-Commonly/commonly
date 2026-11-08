@@ -2152,6 +2152,49 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
   });
 
   // F175a: a harness that can't hold a grant names the ones that can.
+  // F179: placed on a machine that hasn't picked it up, the agent's sandbox
+  // isn't known yet. It can't be named until it is, and the form reads again
+  // by itself, so the real state appears without a reload.
+  it('an agent its computer has not started yet waits, then reads its real sandbox state', async () => {
+    let agents = [candidate({ sandbox: 'unconfined', awaitingMachine: true })];
+    mockTools({ grants: [], seats: { p1: [scout, claude], p2: [] }, route: (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined) });
+    renderPage();
+    const popover = await openToolPopover('GitHub');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
+    expect(await within(form).findByText('Claude hasn’t started on your computer yet, so its sandbox isn’t known. This updates by itself once it does.'))
+      .toBeInTheDocument();
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
+
+    agents = [candidate({ sandbox: 'confined' })];
+    await waitFor(() => expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeEnabled(), { timeout: 8000 });
+    expect(within(form).queryByText(/hasn’t started on your computer/)).toBeNull();
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
+    expect(consentBox(form)).toHaveAccessibleName(`Claude runs on your computer, outside Commonly. ${NOTICE}`);
+  }, 15000);
+
+  it('a failed re-read keeps the agent waiting and unnameable, and reading goes on', async () => {
+    let reply = () => Promise.resolve({ data: { agents: [candidate({ sandbox: 'unconfined', awaitingMachine: true })] } });
+    mockTools({ grants: [], seats: { p1: [scout, claude], p2: [] }, route: (url) => (url === '/api/grants/byo-candidates' ? reply() : undefined) });
+    renderPage();
+    const popover = await openToolPopover('GitHub');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
+    await within(form).findByText(/hasn’t started on your computer/);
+
+    const reads = () => axios.get.mock.calls.filter(([url]) => url === '/api/grants/byo-candidates').length;
+    const before = reads();
+    reply = () => Promise.reject(new Error('offline'));
+    await waitFor(() => expect(reads()).toBe(before + 1), { timeout: 8000 });
+    await settle();
+    expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
+    expect(within(form).getByText(/hasn’t started on your computer/)).toBeInTheDocument();
+
+    reply = () => Promise.resolve({ data: { agents: [candidate({ sandbox: 'confined' })] } });
+    await waitFor(() => expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeEnabled(), { timeout: 8000 });
+  }, 25000);
+
   it('an agent on a harness with no sandbox is offered disabled, naming the harnesses that can', async () => {
     const form = await openAdd([candidate({ nameable: false, reason: 'adapter_unsupported', sandbox: 'unknown' })]);
     expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();

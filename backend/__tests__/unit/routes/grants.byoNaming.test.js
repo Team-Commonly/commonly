@@ -132,11 +132,26 @@ beforeEach(async () => {
   Integration.findById.mockImplementation(async () => connection);
   Installable.findOne.mockReturnValue({ lean: async () => buildGithubToolInstallable() });
   agentRows = [{ _id: BYO, botType: 'agent', botMetadata: { agentName: 'lily-claude', instanceId: 'default' } }];
-  mockUserFind.mockImplementation(() => ({ select: () => ({ lean: async () => agentRows }) }));
+  // Honours the projection: a field the query doesn't select doesn't come back.
+  mockUserFind.mockImplementation(() => ({
+    select: (fields) => ({ lean: async () => agentRows.map((row) => projectRow(row, fields)) }),
+  }));
   mockOwns.mockResolvedValue({ owned: true });
   // A workspace-trust Claude Code seat: the server knows it is not confined.
   mockJudge.mockResolvedValue({ refusal: { reason: 'sandbox_trust_not_public' }, scope: 'seat' });
 });
+
+const projectRow = (row, fields) => {
+  if (typeof fields !== 'string') return row;
+  const out = { _id: row._id };
+  fields.split(/\s+/).filter(Boolean).forEach((field) => {
+    const [head, ...rest] = field.split('.');
+    if (!rest.length) { if (row[head] !== undefined) out[head] = row[head]; return; }
+    const value = row[head]?.[rest.join('.')];
+    if (value !== undefined) out[head] = { ...(out[head] || {}), [rest.join('.')]: value };
+  });
+  return out;
+};
 
 describe('POST /api/grants naming a BYO agent', () => {
   test('a read grant naming the owner\'s own agent, with consent, is minted and exempts only it', async () => {
@@ -386,6 +401,37 @@ describe('GET /api/grants/byo-candidates', () => {
     mockJudge.mockResolvedValue({ refusal: { reason: 'sandbox_mode_unenforceable' }, scope: 'seat', hostUnconfined: true });
     const res = await candidates();
     expect(res.body.agents).toEqual([expect.objectContaining({ userId: BYO, nameable: false, reason: 'unconfined_host' })]);
+  });
+
+  // F179: placed on a machine whose daemon hasn't adopted it yet, the seat's
+  // sandbox can't be read from that machine. The form waits for it.
+  test('a seat placed on a machine that has not adopted it yet is marked awaiting', async () => {
+    agentRows[0].botMetadata.requestedMachineId = 'machine-a';
+    const res = await candidates();
+    expect(res.body.agents).toEqual([expect.objectContaining({ userId: BYO, nameable: true, awaitingMachine: true })]);
+  });
+
+  test('once adopted, or never placed on a machine, nothing is awaited', async () => {
+    agentRows[0].botMetadata.machineId = 'machine-a';
+    agentRows[0].botMetadata.requestedMachineId = null;
+    expect((await candidates()).body.agents[0]).not.toHaveProperty('awaitingMachine');
+    agentRows[0].botMetadata = { agentName: 'lily-claude', instanceId: 'default' };
+    expect((await candidates()).body.agents[0]).not.toHaveProperty('awaitingMachine');
+  });
+
+  test('a seat refused before its machine adopts it is awaited, so the form reads the adopted verdict', async () => {
+    agentRows[0].botMetadata.requestedMachineId = 'machine-a';
+    mockJudge.mockResolvedValue({ refusal: { reason: 'adapter_confines_public_only' }, scope: 'seat' });
+    const [agent] = (await candidates()).body.agents;
+    expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'adapter_unsupported', awaitingMachine: true }));
+  });
+
+  test('a seat its machine refuses is not nameable and never awaited, even with a request pending', async () => {
+    agentRows[0].botMetadata.requestedMachineId = 'machine-a';
+    mockJudge.mockResolvedValue({ refusal: { reason: 'sandbox_mode_unenforceable' }, scope: 'seat', hostUnconfined: true });
+    const [agent] = (await candidates()).body.agents;
+    expect(agent).toEqual(expect.objectContaining({ nameable: false, reason: 'unconfined_host' }));
+    expect(agent).not.toHaveProperty('awaitingMachine');
   });
 
   test('an agent someone else also installed is left out', async () => {
