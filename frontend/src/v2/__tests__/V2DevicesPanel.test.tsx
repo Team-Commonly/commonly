@@ -52,6 +52,36 @@ test('the folded Devices summary updates after revoking a listed device', async 
   expect(screen.queryByText('None')).not.toBeInTheDocument();
 });
 
+// F352: a revoke that fails says so, and the summary still describes the list.
+test('a failed revoke shows its own error and leaves the folded summary on the device count', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [{ id: 'd4', label: 'sam-laptop · commonly-cli', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: null }] } });
+  axios.delete.mockRejectedValue(new Error('500'));
+  render(<V2DevicesPanel asFold showHeading={false} />);
+
+  expect(await screen.findByText('1 CLI device')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Devices').closest('summary'));
+  fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
+  expect(await screen.findByText('Couldn’t revoke that device.')).toBeInTheDocument();
+  expect(screen.getByText('1 CLI device')).toBeInTheDocument();
+  expect(screen.queryByText('Couldn’t load')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+});
+
+test('a revoke that succeeds after one that failed clears the error', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [{ id: 'd5', label: 'sam-laptop · commonly-cli', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: null }] } });
+  axios.delete.mockRejectedValueOnce(new Error('500')).mockResolvedValueOnce({ data: { message: 'Device revoked' } });
+  render(<V2DevicesPanel />);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
+  expect(await screen.findByText('Couldn’t revoke that device.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
+  expect(await screen.findByText(/^Revoked/)).toBeInTheDocument();
+  expect(screen.queryByText('Couldn’t revoke that device.')).not.toBeInTheDocument();
+});
+
 test('the folded summary says None only when there are no devices at all', async () => {
   axios.get.mockResolvedValue({ data: { devices: [] } });
   render(<V2DevicesPanel asFold showHeading={false} />);
