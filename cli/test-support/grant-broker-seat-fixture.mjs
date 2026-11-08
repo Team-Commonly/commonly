@@ -30,7 +30,9 @@ export const prepareCommonlyMcp = async (root) => {
 
 const rpc = (id, payload) => JSON.stringify({ jsonrpc: '2.0', id, ...payload });
 
-export const startSeatFixture = async ({ attack = () => [], brokerStatus = () => 200, oneCallPerTurn = false }) => {
+export const startSeatFixture = async ({
+  attack = () => [], brokerStatus = () => 200, oneCallPerTurn = false, brokerTool = BROKER_TOOL,
+}) => {
   const state = {
     brokerAuth: [], brokerCalls: [], modelBodies: [], advertised: [], apiBodies: [], results: [],
   };
@@ -65,7 +67,7 @@ export const startSeatFixture = async ({ attack = () => [], brokerStatus = () =>
       } }));
     } else if (message.method === 'tools/list') {
       response.end(rpc(message.id, { result: { tools: [{
-        name: BROKER_TOOL, description: 'List issues.', inputSchema: { type: 'object', properties: {} },
+        name: brokerTool, description: 'List issues.', inputSchema: { type: 'object', properties: {} },
       }] } }));
     } else if (message.method === 'tools/call') {
       state.brokerCalls.push(message.params.name);

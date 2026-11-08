@@ -228,6 +228,20 @@ describe('opencode MCP config', () => {
     expect(config).toEqual({});
   });
 
+  test('a server name in a permission rule is spelled the way OpenCode spells it in the tool name', () => {
+    // F334: 1.19.4 names a tool `<server>_<tool>` and keeps hyphens, so a rule
+    // for `commonly_grant_broker_*` matched nothing and the '*' deny dropped the
+    // broker's tools from the model's list. The real-binary proof is in
+    // adapters.opencode.seatbelt.smoke.test.mjs.
+    const permission = publicPermissions('workspace', ['commonly', 'commonly-grant-broker']);
+    expect(permission['commonly-grant-broker_*']).toBe('allow');
+    expect(permission['commonly_grant_broker_*']).toBeUndefined();
+    expect(permission['commonly-grant-broker_commonly_attach_file']).toBe('deny');
+    const keys = Object.keys(permission);
+    expect(keys.indexOf('commonly-grant-broker_commonly_attach_file'))
+      .toBeGreaterThan(keys.indexOf('commonly-grant-broker_*'));
+  });
+
   test('public permissions deny shell execution and external paths, while allowing declared MCP tools', () => {
     const ownerTurn = publicPermissions('workspace', ['commonly'], { ownerWoken: true });
     for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle']) {
@@ -242,7 +256,7 @@ describe('opencode MCP config', () => {
     expect(permission.bash).toBe('deny');
     expect(permission.external_directory).toBe('deny');
     expect(permission['commonly_*']).toBe('allow');
-    expect(permission['room_grants_*']).toBe('allow');
+    expect(permission['room-grants_*']).toBe('allow');
     // TASK-287: attach_file is denied after the wildcard allow, so the deny wins.
     const keys = Object.keys(permission);
     expect(permission.commonly_commonly_attach_file).toBe('deny');
@@ -253,7 +267,7 @@ describe('opencode MCP config', () => {
       'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message']) {
       expect(permission[`commonly_${tool}`]).toBe('deny');
       expect(keys.indexOf(`commonly_${tool}`)).toBeGreaterThan(keys.indexOf('commonly_*'));
-      expect(permission[`room_grants_${tool}`]).toBe('deny');
+      expect(permission[`room-grants_${tool}`]).toBe('deny');
     }
     expect(permission.commonly_commonly_read_agent_memory).toBeUndefined();
     expect(permission.edit['*']).toBe('allow');
@@ -1988,7 +2002,8 @@ describe('opencode public seat — the grant broker (F175a)', () => {
           expect(permission.webfetch).toBe('deny');
           expect(permission.task).toBe('deny');
           // The broker's own tools are allowed, its withheld writes still denied.
-          expect(permission['commonly_grant_broker_*']).toBe('allow');
+          expect(permission['commonly-grant-broker_*']).toBe('allow');
+          expect(permission['commonly-grant-broker_commonly_attach_file']).toBe('deny');
           seen = credential;
         },
       });

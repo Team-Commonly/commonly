@@ -511,7 +511,12 @@ const substitutePublicPlaceholders = (value, ctx) => {
 const isSafeMcpName = (name) => typeof name === 'string'
   && /^[A-Za-z0-9_-]+$/.test(name);
 
-const permissionMcpName = (name) => name.replace(/[^A-Za-z0-9_]/g, '_');
+// How OpenCode spells an MCP server in a tool name, and so in a permission rule
+// (1.19.4: `<server>_<tool>`, each part through `/[^a-zA-Z0-9_-]/g` to `_`). The
+// hyphen stays. Rewriting it left a rule that matched nothing, and the `'*'`
+// deny then took `commonly-grant-broker`'s tools off the model's list, with no
+// log line, though the server had connected and listed them.
+const permissionMcpName = (name) => name.replace(/[^A-Za-z0-9_-]/g, '_');
 
 const buildMcpConfig = (servers, ctx = {}) => {
   const mcp = {};
