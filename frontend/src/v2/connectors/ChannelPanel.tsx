@@ -307,7 +307,7 @@ const ChannelPanel: React.FC<Props> = ({ m, item: panelItem }) => {
                   <p>{t('connectors.slackNoAgent', { defaultValue: 'No agent is in this pod yet. Messages will reach the pod; choose a lead later.' })}</p>
                 )}
                 <div className="v2-connector-aside__actions">
-                  <button type="button" className="v2-connector-aside__primary" disabled={busy || pods === null || (availableLeads.length > 0 && !selectedSlackLead)} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
+                  <button type="button" className="v2-connector-aside__primary" disabled={busy || pods === null || (availableLeads.length > 0 && !selectedSlackLead)} data-unready={(!busy && pods !== null && availableLeads.length > 0 && !selectedSlackLead) || undefined} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
                     {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>

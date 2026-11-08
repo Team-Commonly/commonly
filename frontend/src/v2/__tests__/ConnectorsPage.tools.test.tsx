@@ -1906,8 +1906,12 @@ describe('F214: pull-request access in the grant form', () => {
     await settle();
     const consent = () => within(form).getByRole('checkbox', { name: /runs on your computer/ });
     const grant = within(form).getByRole('button', { name: 'Grant' });
+    // F152: waiting on the consent, it is marked not-ready, so it draws as unavailable.
+    expect(grant).toBeDisabled();
+    expect(grant).toHaveAttribute('data-unready');
     fireEvent.click(consent());
     expect(grant).toBeEnabled();
+    expect(grant).not.toHaveAttribute('data-unready');
 
     fireEvent.click(within(form).getByRole('checkbox', { name: CHOICE }));
     expect(grant).toBeDisabled();
