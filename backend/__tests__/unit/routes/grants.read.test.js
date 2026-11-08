@@ -482,7 +482,8 @@ describe('GET /api/grants/:grantId — the seat confinement refusal (TASK-063)',
       config: { runtime: { runtimeType, adapter }, environment },
     });
     if (bound) {
-      await Machine.create({ ownerUserId: machineOwner || installer._id, machineId, name: 'Mac' });
+      // A live daemon that has reported its sandbox; an unreported host is never confined (F356).
+      await Machine.create({ ownerUserId: machineOwner || installer._id, machineId, name: 'Mac', hostSandboxReportedAt: new Date() });
     }
     const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: String(seat._id) }, audience: [String(seat._id)] }));
     return {

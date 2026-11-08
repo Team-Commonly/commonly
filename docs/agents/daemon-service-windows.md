@@ -79,6 +79,12 @@ Rules the code enforces:
   The server stores either Windows value as `Machine.hostUnconfined`, and `judgeSeatConfinement`
   refuses grant use for every seat bound to that machine (`'default'` clears it; an older daemon that
   sends nothing leaves it as it was).
+- **A host that hasn't reported is refused, never read as confined (F356).** The daemon adopts seats
+  in `tick()` before its first heartbeat, so a new Windows machine used to read as confined for those
+  first seconds. Each report now stamps `Machine.hostSandboxReportedAt`; until it does,
+  `judgeSeatConfinement` refuses with `sandbox_not_reported` (`hostUnreported`), and the grant form
+  says the computer hasn't reported yet. A daemon older than #3388 never reports, so its seats get no
+  grants until its CLI is updated.
 - The flag is refused on macOS and Linux. A failed install puts the marker back as it was; uninstall
   removes it even when uninstall fails partway.
 - If the 77/78 park cannot disable the task, the launcher sleeps instead of exiting, so the watchdog

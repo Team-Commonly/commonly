@@ -224,8 +224,13 @@ export async function recordMachineHeartbeat(
   if (normalized !== null) machine.agentStates = normalized;
   const inventory = normalizeRuntimeInventory(runtimeInventory);
   if (inventory !== null) { machine.runtimeInventory = inventory; machine.inventoryAt = new Date(); }
-  if (typeof hostSandbox === 'string' && HOST_SANDBOX_REPORTS.unconfined.includes(hostSandbox)) machine.hostUnconfined = true;
-  else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) machine.hostUnconfined = false;
+  if (typeof hostSandbox === 'string' && HOST_SANDBOX_REPORTS.unconfined.includes(hostSandbox)) {
+    machine.hostUnconfined = true;
+    machine.hostSandboxReportedAt = new Date();
+  } else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) {
+    machine.hostUnconfined = false;
+    machine.hostSandboxReportedAt = new Date();
+  }
   await machine.save();
   return serializeMachine(machine.toObject ? machine.toObject() : machine);
 }

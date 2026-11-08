@@ -48,7 +48,7 @@ export interface ByoCandidate {
   agentName: string;
   instanceId: string;
   nameable: boolean;
-  reason?: 'unconfined_host' | 'adapter_unsupported';
+  reason?: 'unconfined_host' | 'unreported_host' | 'adapter_unsupported';
   sandbox: ByoSandbox;
   /** F179: placed on a machine whose daemon hasn't picked it up yet, so its sandbox isn't known. */
   awaitingMachine?: boolean;

@@ -654,9 +654,11 @@ export const useToolPanels = (m: ToolConnectorsModel, accessNoticePage: string |
   const byoConsentLine = (agent: ByoCandidate) => (agent.sandbox !== 'confined'
     ? t('tools.byo.consentNoSandbox', { agent: byoAgentLabel(agent) })
     : t('tools.byo.consent', { agent: byoAgentLabel(agent) }));
-  const byoReason = (agent: ByoCandidate) => (agent.reason === 'unconfined_host'
-    ? t('tools.byo.reasonUnconfinedHost')
-    : t('tools.byo.reasonAdapterUnsupported', { harnesses: grantHarnessNames(t) }));
+  const byoReason = (agent: ByoCandidate) => {
+    if (agent.reason === 'unconfined_host') return t('tools.byo.reasonUnconfinedHost');
+    if (agent.reason === 'unreported_host') return t('tools.byo.reasonUnreportedHost');
+    return t('tools.byo.reasonAdapterUnsupported', { harnesses: grantHarnessNames(t) });
+  };
   const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
     ? t('tools.byo.namedNoSandbox', { agent: name })
     : t('tools.byo.named', { agent: name }));

@@ -48,6 +48,12 @@ export interface SeatConfinementJudgement {
    * a declaration, no consent lifts this one (F94, ruling A).
    */
   hostUnconfined?: true;
+  /**
+   * F356: the refusal is because the seat's machine has not reported its
+   * sandbox yet. It also sets hostUnconfined, so nothing lifts it; this flag
+   * only lets a surface say "not reported" instead of "no sandbox".
+   */
+  hostUnreported?: true;
 }
 
 export interface SeatCallerIdentity {
@@ -153,16 +159,40 @@ const UNSANDBOXED_RUN_REFUSAL: GrantBrokerRefusal = {
     + 'with `commonly agent clear-unsandboxed`',
 };
 
+/** F356: a machine whose daemon has not reported its sandbox yet. */
+export const UNREPORTED_HOST_REFUSAL: GrantBrokerRefusal = {
+  code: GRANT_BROKER_REFUSAL_CODE,
+  decidedBy: 'server',
+  reason: 'sandbox_not_reported',
+  detail: "this agent's computer has not reported whether it runs agents in a sandbox, so no grant can be used "
+    + 'from it yet; it reports on the daemon\'s next heartbeat (update the Commonly CLI if this stays)',
+};
+
 export const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
   if (typeof machineId !== 'string' || !machineId) return false;
   return Boolean(await Machine.exists({ machineId, hostUnconfined: true }));
+};
+
+/**
+ * The seat's machine as a sandbox verdict: 'unconfined' (reported none),
+ * 'unreported' (no report yet, never read as confined), 'confined', or 'none'
+ * when the seat has no machine (a foreground run marks the seat itself).
+ */
+const hostSandboxState = async (machineId: unknown): Promise<'unconfined' | 'unreported' | 'confined' | 'none'> => {
+  if (typeof machineId !== 'string' || !machineId) return 'none';
+  const machine = await Machine.findOne({ machineId }).select('hostUnconfined hostSandboxReportedAt').lean();
+  if (!machine) return 'none';
+  if ((machine as { hostUnconfined?: unknown }).hostUnconfined === true) return 'unconfined';
+  return (machine as { hostSandboxReportedAt?: unknown }).hostSandboxReportedAt ? 'confined' : 'unreported';
 };
 
 /** The refusal a seat's host earns whatever its declaration says, or null. */
 export const unconfinedHostRefusal = async (seat: {
   botMetadata?: { machineId?: unknown; hostUnconfined?: unknown };
 } | null): Promise<GrantBrokerRefusal | null> => {
-  if (await onUnconfinedHost(seat?.botMetadata?.machineId)) return UNCONFINED_HOST_REFUSAL;
+  const host = await hostSandboxState(seat?.botMetadata?.machineId);
+  if (host === 'unconfined') return UNCONFINED_HOST_REFUSAL;
+  if (host === 'unreported') return UNREPORTED_HOST_REFUSAL;
   return seat?.botMetadata?.hostUnconfined === true ? UNSANDBOXED_RUN_REFUSAL : null;
 };
 
@@ -171,7 +201,10 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
   // A foreground run has no machine to report for it, so it marks the seat
   // itself (POST /api/agents/runtime/host-unconfined).
   const hostRefusal = await unconfinedHostRefusal(seat);
-  if (hostRefusal) return { refusal: hostRefusal, scope: 'seat', hostUnconfined: true };
+  if (hostRefusal) {
+    return { refusal: hostRefusal, scope: 'seat', hostUnconfined: true,
+      ...(hostRefusal === UNREPORTED_HOST_REFUSAL ? { hostUnreported: true as const } : {}) };
+  }
   const keys = seatKeysFor(caller, seat);
   const owners = await ownerIdsFor(keys);
   if (!owners.size) return NOT_JUDGED;

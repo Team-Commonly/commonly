@@ -3147,6 +3147,7 @@
       "prWriteConsent": "{{agents}} 还能向这个仓库提交代码和发起 PR，每次都要你批准。",
       "awaitingMachine": "{{agent}} 还没在你的电脑上启动，暂时不知道它有没有沙箱。启动后这里会自动更新。",
       "reasonUnconfinedHost": "运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
+      "reasonUnreportedHost": "它所在的电脑还没上报沙箱状态，暂时用不了任何授权。",
       "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
       "namedHeading": "运行在你电脑上",
       "named": "{{agent}} 在 Commonly 之外运行",
@@ -3163,6 +3164,7 @@
         "notAgent": "授权中只能指定智能体。",
         "notOwned": "你只能指定由你独自安装的智能体。",
         "unconfinedHost": "这个智能体运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
+        "unreportedHost": "这个智能体所在的电脑还没上报沙箱状态，暂时用不了任何授权。一分钟后再试，或在那台电脑上更新 Commonly CLI。",
         "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。"
       }
     }
