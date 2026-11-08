@@ -51,8 +51,16 @@ jobs:
           node-version: '22'
 
       - name: Install kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.26.0/kind-linux-amd64
+          # From the GitHub release, signed in with the job token, retried, and
+          # checked against the release's published sha256. Without --fail, curl
+          # saved an error page as the binary during the 11-08 GitHub incident.
+          curl -sSfL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.26.0/kind-linux-amd64 -o ./kind
+          echo "d445b44c28297bc23fd67e51cc24bb294ae7b977712be2d4d312883d0835829b  ./kind" | sha256sum --check --strict
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
