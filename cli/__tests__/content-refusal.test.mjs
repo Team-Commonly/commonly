@@ -31,6 +31,15 @@ describe('classifying a content refusal', () => {
     expect(classifySpawnFailure(new Error(message))).toBe('content_refused');
   });
 
+  // The review of #3745: a seat quoting the wording while it fails is not refused.
+  it.each([
+    'claude exited with code 1: the regex matches Provider finish_reason: content_filter anywhere',
+    'pi exited with code 1: Provider finish_reason: content_filter_v2',
+    'pi exited with code 0: quoting "Provider stopped with: sensitive" from spawn-retry.js',
+  ])('leaves pi\'s content-stop wording in someone else\'s text in the runtime class: %s', (message) => {
+    expect(classifySpawnFailure(new Error(message))).toBe('runtime');
+  });
+
   it('leaves a bare mention of a content filter in the runtime class', () => {
     expect(classifySpawnFailure(new Error('pi exited with code 1: content_filter config not found'))).toBe('runtime');
   });

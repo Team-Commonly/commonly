@@ -74,9 +74,12 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // backoff 5 times in 52 minutes, every one refused, and the seat handled
 // nothing else until the kernel retired the event. Only the refusal wordings
 // themselves are matched, so an ordinary failure that mentions a flag is not.
-// pi writes its own line for a provider's content stop, and those are matched as
-// pi writes them (pi-ai 0.84.1: openai-completions.js, anthropic-messages.js).
-const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this content was flagged|content[_ ]policy[_ ]violation|cyber[_ ]policy|Provider finish_reason: content_filter|Provider stopped with: sensitive)/i;
+const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this content was flagged|content[_ ]policy[_ ]violation|cyber[_ ]policy)/i;
+// pi writes its own line for a provider's content stop (pi-ai 0.84.1:
+// openai-completions.js, anthropic-messages.js) as the whole errorMessage, so
+// only the pi failure that IS that line matches. Anywhere else the wording is
+// text someone wrote, such as a seat quoting this file, and a match is terminal.
+const PI_CONTENT_STOP_RE = /^pi exited with code \d+(?: \(upstream \d+\))?: Provider (?:finish_reason: content_filter|stopped with: sensitive)$/;
 // The third miss is why there is now a PHRASE as well as a word list, and it is
 // a different failure from the first two. Measured across the fleet's logs on
 // 2026-08-25: 283 failures reading "You've hit your weekly limit", 55 reading
@@ -155,7 +158,9 @@ export const classifySpawnFailure = (error) => {
   if (error?.code === PUBLIC_CODEX_VERSION_CODE) return SPAWN_FAILURE_CLASS.CONFIGURATION;
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
-  if (CONTENT_REFUSED_RE.test(text)) return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
+  if (CONTENT_REFUSED_RE.test(text) || PI_CONTENT_STOP_RE.test(String(error?.message || '').trim())) {
+    return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
+  }
   if (error?.code === 'spawn_stalled') return SPAWN_FAILURE_CLASS.STALLED;
   // Provider APIs commonly report an exhausted account quota as HTTP 429.
   // Prefer the more specific body/message over the generic status code so a
