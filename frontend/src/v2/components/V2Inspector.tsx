@@ -282,7 +282,13 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const viewerIsRoomHuman = Boolean(currentUserId) && roomMembers.some(
     (m) => m && String(m._id) === String(currentUserId) && !m.isBot,
   );
-  const roomAgentName = roomMembers.find((m) => m?.isBot)?.username || pod?.name || '';
+  // The pod's name is the agent's display label (resolveAgentDisplayLabel);
+  // the raw username is the last resort, never the first.
+  const roomAgentName = (detail.agents?.[0] as { displayName?: string } | undefined)?.displayName
+    || pod?.name || roomMembers.find((m) => m?.isBot)?.username || '';
+  // When the agent is gone the thread's notice carries the close, and this
+  // card's "or {{name}} writing to you" would promise a reply that can't come.
+  const showInspectorClose = viewerIsRoomHuman && !(pod as { agentGone?: boolean } | null)?.agentGone;
 
   const renderGroup = (
     group: InspectorGroup,
@@ -501,7 +507,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
 
         {/* F307: a quiet last card in the person's own direct message. No confirm:
             writing again, Talk to or Undo opens it again. */}
-        {pod.type === 'agent-room' && viewerIsRoomHuman && (
+        {pod.type === 'agent-room' && showInspectorClose && (
           <section className="v2-workspace-inspector__card v2-close-dm-group" data-testid="inspector-close-dm" aria-labelledby="workspace-inspector-close">
             <h2 className="v2-workspace-inspector__label" id="workspace-inspector-close">{t('podChat.closeDm.title')}</h2>
             <p>{t('podChat.closeDm.hint', { name: roomAgentName })}</p>

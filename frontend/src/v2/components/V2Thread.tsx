@@ -1661,7 +1661,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const viewerIsRoomHuman = isAgentRoom && isPodMember
     && !(members || []).some((m) => m?.isBot && String(m._id) === String(currentUserId));
   const showAgentGoneNotice = Boolean(viewerIsRoomHuman && pod.agentGone);
-  const goneAgentName = directAgent?.displayName || botMembers[0]?.username || pod.name || t('common.agent');
+  const goneAgentName = directAgent?.displayName || pod.name || botMembers[0]?.username || t('common.agent');
   const showAwaitingAgentReply = Boolean(
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
@@ -2319,7 +2319,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
               {showAgentGoneNotice && (
                 <div className="v2-close-dm" data-testid="agent-room-gone" role="status">
                   <p>{t('podChat.closeDm.notice', { name: goneAgentName })}</p>
-                  {closeDm.failed && <p>{t('podChat.closeDm.failed')}</p>}
+                  {closeDm.failed && <p role="alert">{t('podChat.closeDm.failed')}</p>}
                   <div className="v2-close-dm__actions">
                     <button
                       type="button"

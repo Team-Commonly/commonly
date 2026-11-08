@@ -13,20 +13,18 @@ export type CloseRefusal = 'pod_not_found' | 'not_agent_room' | 'not_room_member
 
 type RoomDoc = { _id: unknown; type?: string; members?: unknown[]; closedAt?: Date | null };
 
-/** The room's human member is the one member who isn't a bot. */
-const isRoomsHuman = async (pod: RoomDoc, userId: string): Promise<boolean> => {
-  const memberIds = (pod.members || []).map((m) => String((m as { _id?: unknown })?._id || m));
-  if (!memberIds.includes(userId)) return false;
-  const user = await User.findById(userId).select('isBot').lean() as { isBot?: boolean } | null;
-  return Boolean(user && !user.isBot);
-};
+const isMember = (pod: RoomDoc, userId: string): boolean => (pod.members || [])
+  .some((m) => String((m as { _id?: unknown })?._id || m) === userId);
 
 const resolveRoom = async (podId: string, userId: string): Promise<{ pod?: RoomDoc; refusal?: CloseRefusal }> => {
   const pod = await Pod.findById(podId).select('type members closedAt').lean() as RoomDoc | null;
-  // A non-member learns nothing about the pod: same answer as a missing one.
-  if (!pod) return { refusal: 'pod_not_found' };
-  if (!(await isRoomsHuman(pod, userId))) return { refusal: pod.type === 'agent-room' ? 'not_room_member' : 'pod_not_found' };
+  // A non-member learns nothing about the pod, not even its type: same
+  // answer as a missing one, as getPodById gives.
+  if (!pod || !isMember(pod, userId)) return { refusal: 'pod_not_found' };
   if (pod.type !== 'agent-room') return { refusal: 'not_agent_room' };
+  // The room's human is the one member who isn't a bot; the agent can't close it.
+  const user = await User.findById(userId).select('isBot').lean() as { isBot?: boolean } | null;
+  if (!user || user.isBot) return { refusal: 'not_room_member' };
   return { pod };
 };
 

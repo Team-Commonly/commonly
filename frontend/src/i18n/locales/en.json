@@ -763,13 +763,13 @@
   },
   "podChat": {
     "closeDm": {
-      "notice": "{{name}} was removed, so nothing will answer here. Close this direct message to take it off your list. Its messages stay.",
+      "notice": "{{name}} was removed, so nothing will answer here. Its messages stay. Close this direct message if you’re done with it.",
       "close": "Close direct message",
       "title": "Close",
       "hint": "Takes this off your list. Writing here again, or {{name}} writing to you, brings it back.",
       "closed": "Closed {{name}}",
       "undo": "Undo",
-      "failed": "Couldn't close it. Try again."
+      "failed": "Couldn’t close it. Try again."
     },
     "copyCode": "Copy code",
     "firstTask": {

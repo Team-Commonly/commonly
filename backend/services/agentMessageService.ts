@@ -2206,6 +2206,8 @@ class AgentMessageService {
       });
 
       await mongoMessage.save();
+      // F307: the same reopen as the PostgreSQL path above.
+      if (authorKind !== 'kernel') await reopenIfClosed(podId);
       await mongoMessage.populate('userId', 'username profilePicture isBot');
       const serializedMongoMessage = typeof mongoMessage.toObject === 'function'
         ? mongoMessage.toObject()

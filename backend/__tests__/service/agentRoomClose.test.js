@@ -74,7 +74,7 @@ it('a closed room leaves GET /api/pods, its URL still opens, and reopen brings i
 it('refuses the agent member, a stranger, and any pod that is not an agent-room', async () => {
   const stranger = await User.create({ username: 'stranger', email: 's@x.test', password: 'x'.repeat(12) });
   expect((await request(app).post(`/api/pods/${room._id}/close`).set('Authorization', bearer(agent))).status).toBe(403);
-  expect((await request(app).post(`/api/pods/${room._id}/close`).set('Authorization', bearer(stranger))).status).toBe(403);
+  expect((await request(app).post(`/api/pods/${room._id}/close`).set('Authorization', bearer(stranger))).status).toBe(404);
   expect((await request(app).post(`/api/pods/${team._id}/close`).set('Authorization', bearer(human))).status).toBe(400);
   expect((await request(app).post(`/api/pods/${team._id}/close`).set('Authorization', bearer(stranger))).status).toBe(404);
   expect((await Pod.findById(room._id).lean()).closedAt).toBeUndefined();

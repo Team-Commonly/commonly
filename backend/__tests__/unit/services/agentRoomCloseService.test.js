@@ -58,7 +58,7 @@ describe('closeAgentRoom / reopenAgentRoom', () => {
   test('a non-member gets the same answer as a missing pod', async () => {
     const { room } = await make();
     const { human: stranger } = await make();
-    expect((await svc.closeAgentRoom(String(room._id), String(stranger._id))).refusal).toBe('not_room_member');
+    expect((await svc.closeAgentRoom(String(room._id), String(stranger._id))).refusal).toBe('pod_not_found');
     const chat = await Pod.create({ name: 'team', type: 'chat', createdBy: stranger._id, members: [stranger._id] });
     const { human: outsider } = await make();
     expect((await svc.closeAgentRoom(String(chat._id), String(outsider._id))).refusal).toBe('pod_not_found');

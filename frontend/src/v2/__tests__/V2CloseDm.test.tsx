@@ -99,7 +99,7 @@ describe('thread: the agent is gone', () => {
     axios.post.mockRejectedValueOnce(new Error('nope'));
     renderAt(<V2Thread detail={roomDetail({ agentGone: true })} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Close direct message' }));
-    expect(await screen.findByText("Couldn't close it. Try again.")).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t close it. Try again.')).toBeInTheDocument();
     expect(screen.getByTestId('where')).toHaveTextContent('/v2/pods/room1');
     expect(lastClosedRoom()).toBeNull();
   });
@@ -114,6 +114,18 @@ describe('inspector: the quiet Close card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close direct message' }));
     await waitFor(() => expect(onPodChanged).toHaveBeenCalled());
     expect(axios.post).toHaveBeenCalledWith('/api/pods/room1/close', {}, expect.anything());
+  });
+
+  test('names the agent by its display label, not its username', async () => {
+    const detail = roomDetail({ name: 'Otter Helper' });
+    detail.members[0].username = 'otter-7f3a';
+    renderAt(<V2Inspector detail={detail} currentUserId="u1" />);
+    expect(await screen.findByTestId('inspector-close-dm')).toHaveTextContent('or Otter Helper writing to you');
+  });
+
+  test('steps aside when the agent is gone: the thread notice carries the close', () => {
+    renderAt(<V2Inspector detail={roomDetail({ agentGone: true })} currentUserId="u1" />);
+    expect(screen.queryByTestId('inspector-close-dm')).toBeNull();
   });
 
   test('never shows to the agent member, or on another pod type', () => {
