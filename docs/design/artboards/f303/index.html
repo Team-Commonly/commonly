@@ -50,16 +50,17 @@
   .side { padding: 12px; display: flex; flex-direction: column; gap: 4px; }
   .side .item { padding: 6px 8px; border-radius: 4px; }
   .side .item--on { background: var(--tint); }
-  .status { margin: 4px 0 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--tint); display: flex; justify-content: space-between; gap: 12px; }
+  .status { margin: 4px 0 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); align-items: center; display: flex; justify-content: space-between; gap: 12px; }
   .m390 { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 520px; }
-  .m390 .btn, .m390 .link { min-height: 44px; display: inline-flex; align-items: center; }
+  .m390 .btn, .m390 .link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .m390 .side .item { min-height: 44px; display: flex; align-items: center; padding: 0 8px; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; max-width: 860px; margin: 8px 0 0; }
   dt { font-weight: 600; } dd { margin: 0; color: #475467; }
 </style>
 </head>
 <body>
 <h1>F303: closing a direct message</h1>
-<p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state below is drawn in light and dark, at 1440 (shown at half scale) and at 390. Names are samples.</p>
+<p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state is drawn twice, once at 1440 (shown at half scale) and once at 390, one in light and one in dark; together they cover both themes at both widths. Names are samples.</p>
 
 <h2>1. The agent is gone: the pod says so and offers the close</h2>
 <p class="why">This is the case F303 was filed on. The agent was uninstalled, so nothing will answer, and today the pod sits in the list with no way out. The notice sits at the foot of the thread, above the composer, so it is the last thing read. "Close" is the primary action here because it's the only useful one. The composer stays: writing still works, and it would reopen the pod for the person.</p>
@@ -125,8 +126,8 @@
   <dt>Who</dt><dd>Only the human member. The control doesn't render for anyone else, and the endpoint refuses them.</dd>
   <dt>Reopen</dt><dd>The pod reopens when the person writes in it, when <code>getOrCreateAgentRoom</code> runs (Talk to), and when the agent posts.</dd>
   <dt>Lists</dt><dd>A closed pod leaves <code>GET /api/pods</code> and the recap's pods, as F307 lists. Its URL still opens it.</dd>
-  <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已被移除，这里不会再有回复。关闭这个私信，它就不会出现在你的列表里，消息都会保留。"</dd>
-  <dt>Agent gone</dt><dd>State 1 shows when the room's agent has no active install for this pod. That's the same test <code>dropUninstalledAgentRooms</code> uses, read for one pod.</dd>
+  <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已移除，这里不会再有回复。关闭后它会从你的列表里消失，消息都会保留。"</dd>
+  <dt>Agent gone</dt><dd>State 1 shows when the pod's agent has no install row in this pod whose status isn't <code>uninstalled</code>. That's the same test <code>dropUninstalledAgentRooms</code> uses, read for one pod, so a pending or stopped install still counts as present.</dd>
 </dl>
 </body>
 </html>
