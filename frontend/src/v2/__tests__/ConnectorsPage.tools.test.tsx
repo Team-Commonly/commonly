@@ -2162,14 +2162,14 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     const popover = await openToolPopover('GitHub');
     fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
     const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
-    expect(await within(form).findByText('Claude hasn’t started on its computer yet, so its sandbox isn’t known. This updates by itself once it does.'))
+    expect(await within(form).findByText('Claude hasn’t started on your computer yet, so its sandbox isn’t known. This updates by itself once it does.'))
       .toBeInTheDocument();
     expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeDisabled();
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
 
     agents = [candidate({ sandbox: 'confined' })];
     await waitFor(() => expect(within(form).getByRole('checkbox', { name: 'Claude' })).toBeEnabled(), { timeout: 8000 });
-    expect(within(form).queryByText(/hasn’t started on its computer/)).toBeNull();
+    expect(within(form).queryByText(/hasn’t started on your computer/)).toBeNull();
     fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
     expect(consentBox(form)).toHaveAccessibleName(`Claude runs on your computer, outside Commonly. ${NOTICE}`);
   }, 15000);
