@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { buildMemoryPreamble } from '../memory-bridge.js';
+import { OWNER_WOKEN_MEMORY_TOOLS } from '../public-withheld-tools.js';
 import { effectiveSandboxTrust, refuseWorkspaceTrust, validateEnvironmentSpec } from '../environment.js';
 import { writeCredentialFile } from '../credential-file.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
@@ -49,7 +50,7 @@ const templateLiteral = (value) => {
 // public seat past 50 unseen falls back to continueAnyway, which it keeps.
 // Self-install, the memory writes (log_cycle included) and delete_message are
 // left out on every public seat (F118, F141, PUBLIC_ONLY_WITHHELD_TOOLS);
-// reading memory stays.
+// reading memory stays. The writes join only on a turn its owner woke (F145).
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
@@ -61,6 +62,10 @@ export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_dm_agent', 'commonly_ask_agent', 'commonly_request_decision',
   'commonly_respond_to_ask', 'commonly_react_to_message',
 ]);
+
+const publicGooseTools = (ctx) => (ctx?.ownerWoken === true
+  ? [...PUBLIC_GOOSE_TOOLS, ...OWNER_WOKEN_MEMORY_TOOLS]
+  : PUBLIC_GOOSE_TOOLS);
 
 export const assertSandboxSupported = (environment = {}) => {
   const sandbox = environment?.sandbox || {};
@@ -185,7 +190,7 @@ export const extensionArgs = (servers, ctx) => {
       ctx.publicExtensions.push({ type: 'stdio', name: server.name, cmd: command[0],
         args: command.slice(1).map((part) => substitute(part, ctx)),
         envs: Object.fromEntries(Object.entries(delivery.env).map(([name, value]) => [name, substitute(value, ctx)])),
-        available_tools: PUBLIC_GOOSE_TOOLS,
+        available_tools: publicGooseTools(ctx),
       });
     } else {
       args.push('--with-extension', `${server.name}:${[...env, ...commandWords].join(' ')}`);
@@ -366,7 +371,7 @@ export default {
         ...extensionArgs(ctx.environment?.mcp, {
           credentialFile: credential?.path || '', instanceUrl: ctx.instanceUrl || '',
           runtimeToken: ctx.runtimeToken || '',
-          publicSeat: isPublic, mcpReadDirectories, publicExtensions, brokerExtensions,
+          publicSeat: isPublic, ownerWoken: ctx.ownerWoken, mcpReadDirectories, publicExtensions, brokerExtensions,
         }),
         ...(!isPublic ? ['-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true })] : []),
       ];
@@ -377,8 +382,9 @@ export default {
         extensions: publicExtensions.map((extension) => ({ ...extension,
           envs: { ...extension.envs, OPENSSL_CONF: opensslConfig },
         })),
-        // F118: a public seat reads its memory but is not offered a write.
-        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true, memoryReadOnly: true }),
+        // F118, F145: a public seat reads its memory, and is offered a write
+        // only on a turn its owner woke.
+        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true, memoryReadOnly: ctx.ownerWoken !== true }),
       })), { mode: 0o600 });
       const env = {
         ...safeEnv(sourceEnv),

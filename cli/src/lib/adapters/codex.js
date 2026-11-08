@@ -82,7 +82,7 @@ import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -267,9 +267,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
     // ...except the tools no public seat is offered (public-withheld-tools.js),
-    // self-install and the memory writes included (F118).
+    // self-install and the memory writes included (F118). This list is argv on
+    // every spawn, `exec resume` too, so a resumed thread gets this turn's list.
     if (ctx.publicSeat) {
-      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_SEAT_WITHHELD_TOOLS.map(toml).join(',')}]`);
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${publicSeatWithheldTools(ctx).map(toml).join(',')}]`);
     }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
@@ -1050,7 +1051,7 @@ export default {
       freshSession: !ctx.sessionId,
       workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
       // F118: a public seat reads its memory but is not offered a write.
-      memoryReadOnly: sandbox?.trust === 'public',
+      memoryReadOnly: sandbox?.trust === 'public' && ctx.ownerWoken !== true,
     });
 
     const workspacePath = sandbox?.trust === 'public'
@@ -1076,6 +1077,7 @@ export default {
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: sandbox?.trust === 'public',
+        ownerWoken: ctx.ownerWoken,
         commandResolution: { env: ctx.env || process.env, ...ctx._commandResolution },
       });
       if (mcp.unavailableMcp.length) throw publicMcpUnavailableError(mcp.unavailableMcp);

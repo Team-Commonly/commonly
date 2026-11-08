@@ -29,6 +29,7 @@ import { createClient } from '../lib/api.js';
 import {
   buildSpawnId,
   createSpawnCredentialLease,
+  turnEventIds,
   readSpawnPolicy,
   resolveSpawnTtlSeconds,
   revokeOrphanedSpawnCredentials,
@@ -2829,12 +2830,13 @@ export const performRun = ({
     // The adapter also denies the memory tools for it (memoryWithheld).
     const memoryWithheld = Boolean(placement.reason);
     const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
-    // F118: a public seat reads its memory but never writes it. Its summary is
-    // its own output, which a stranger in the pod can steer, so the wrapper does
-    // not sync it back; the adapters withhold the memory-write tools the same
-    // way. A workspace seat's public turn is covered by memoryWithheld too.
-    const memoryWriteWithheld = memoryWithheld
-      || effectiveSandboxTrust(placement.environment?.sandbox?.trust) === 'public';
+    // F118: a public seat reads its memory, and its summary is never synced
+    // back: that summary is its own output, which a stranger in the pod can
+    // steer. Its memory tools are withheld unless the kernel says the owner woke
+    // this turn (F145). A workspace seat's public turn is covered by
+    // memoryWithheld too, and never gets them.
+    const publicSeat = effectiveSandboxTrust(placement.environment?.sandbox?.trust) === 'public';
+    const memoryWriteWithheld = memoryWithheld || publicSeat;
 
     // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -2924,6 +2926,9 @@ export const performRun = ({
       spawnId: buildSpawnId({ agentName, eventId: event?._id || event?.payload?.batchEventIds || null }),
       desiredTtlSeconds: spawnCredentialTtlSeconds,
       policy: spawnPolicyOrNull === null ? null : await spawnPolicyOrNull,
+      // F145: the kernel decides from these rows whether the owner woke the
+      // turn. No events means no: a turn that withholds memory asks for nothing.
+      ...(publicSeat ? { publicSeat: true, eventIds: memoryWithheld ? [] : turnEventIds(event) } : {}),
       log,
     });
     let opened;
@@ -3020,6 +3025,7 @@ export const performRun = ({
         environment: placement.environment,
         // Only when set, so every other spawn context stays as it was.
         ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
+        ...(publicSeat && !memoryWithheld && opened.ownerWoken === true ? { ownerWoken: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],

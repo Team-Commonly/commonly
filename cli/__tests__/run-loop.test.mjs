@@ -5785,3 +5785,93 @@ describe('performRun — an item past the prompt cap waits for the next turn', (
     run.handle.stop();
   });
 });
+
+describe('F145: a public seat asks the kernel whether its owner woke this turn', () => {
+  // A fresh id per use: the wrapper remembers each event it has handled.
+  let nextEvent = 0;
+  const eventId = () => { nextEvent += 1; return `6aef55a1bdc8d55d38${String(nextEvent).padStart(6, '0')}`; };
+  const openedAs = (ownerWoken, source = 'spawn') => ({
+    token: 'cm_agent_child', credentialId: source === 'spawn' ? 'c1' : null, source, expiresAt: null, grantedSeconds: 900, ownerWoken,
+  });
+
+  // One poll per entry of `turns`; each is the events of that poll and what the
+  // mint answers for them.
+  const runTurns = async ({ environment, turns }) => {
+    const scheduled = [];
+    const answers = [...turns];
+    let polls = [...turns.map((turn) => turn.events)];
+    const get = jest.fn(async (path) => {
+      if (String(path).includes('/events')) return { events: polls.shift() || [] };
+      return {};
+    });
+    const post = jest.fn(async () => ({}));
+    createClient.mockReturnValue({ get, post, del: jest.fn(async () => ({})) });
+    const leases = [];
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const { stop } = performRun({
+      instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'my-stub', environment,
+      adapter: { ...stubAdapter, spawn },
+      setTimeoutImpl: (callback) => { scheduled.push(callback); return 0; },
+      spawnCredentialLeaseFactory: (args) => {
+        leases.push(args);
+        const answer = answers.shift();
+        return { open: async () => answer.opened, close: async () => ({ revoked: true }) };
+      },
+    });
+    await drainMicrotasks();
+    for (let turn = 1; turn < turns.length; turn += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await scheduled.shift()();
+      // eslint-disable-next-line no-await-in-loop
+      await drainMicrotasks();
+    }
+    stop();
+    polls = [];
+    return { leases, contexts: spawn.mock.calls.map((call) => call[1]) };
+  };
+
+  const PUBLIC = { sandbox: { trust: 'public', mode: 'workspace' } };
+
+  test('a public seat sends its event, and the answer reaches the adapter', async () => {
+    const id = eventId();
+    const { leases, contexts } = await runTurns({
+      environment: PUBLIC,
+      turns: [{ events: [makeEvent({ _id: id })], opened: openedAs(true) }],
+    });
+    expect(leases[0]).toEqual(expect.objectContaining({ publicSeat: true, eventIds: [id] }));
+    expect(contexts[0].ownerWoken).toBe(true);
+  });
+
+  test('a turn does not inherit the turn before it', async () => {
+    const { contexts } = await runTurns({
+      environment: PUBLIC,
+      turns: [
+        { events: [makeEvent({ _id: eventId() })], opened: openedAs(true) },
+        { events: [makeEvent({ _id: eventId() })], opened: openedAs(false) },
+      ],
+    });
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0].ownerWoken).toBe(true);
+    expect(contexts[1].ownerWoken).toBeUndefined();
+  });
+
+  test.each([
+    ['the kernel says no', openedAs(false)],
+    ['the lease fell back to the seat token', openedAs(false, 'seat-fallback')],
+    ['the answer is missing', { token: 'cm_agent_child', credentialId: 'c1', source: 'spawn' }],
+  ])('no ownerWoken reaches the adapter when %s', async (_name, opened) => {
+    const { contexts } = await runTurns({
+      environment: PUBLIC, turns: [{ events: [makeEvent({ _id: eventId() })], opened }],
+    });
+    expect(contexts[0].ownerWoken).toBeUndefined();
+  });
+
+  test('a private seat sends neither field, and an adapter context stays as it was', async () => {
+    const { leases, contexts } = await runTurns({
+      environment: {}, turns: [{ events: [makeEvent({ _id: eventId() })], opened: openedAs(true) }],
+    });
+    expect(leases[0]).not.toHaveProperty('publicSeat');
+    expect(leases[0]).not.toHaveProperty('eventIds');
+    expect(contexts[0]).not.toHaveProperty('ownerWoken');
+  });
+});

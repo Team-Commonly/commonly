@@ -96,12 +96,13 @@ describeWithCodex('a public codex seat, on the real binary', () => {
   let model;
 
   const runTurn = async ({
-    modelName, reply, mcp, sessionId = null, path = process.env.PATH,
+    modelName, reply, mcp, sessionId = null, path = process.env.PATH, ownerWoken,
   }) => {
     if (!model) model = await startModel(reply);
     const proxy = `http://127.0.0.1:${model.port}`;
     const result = await codex.spawn('hi', {
       sessionId,
+      ownerWoken,
       cwd: join(root, 'workspace'),
       agentName: 'public-tools-test',
       timeoutMs: 60000,
@@ -263,9 +264,7 @@ describeWithCodex('a public codex seat, on the real binary', () => {
     );
   });
 
-  test('Commonly\'s MCP tools stay reachable through tool_search', async () => {
-    const server = join(root, 'mcp.mjs');
-    await writeFile(server, `
+  const writeMcpServer = (server, names) => writeFile(server, `
       let buffer = '';
       process.stdin.on('data', (data) => {
         buffer += data;
@@ -278,12 +277,46 @@ describeWithCodex('a public codex seat, on the real binary', () => {
           const result = method === 'initialize'
             ? { protocolVersion: params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'commonly', version: '0' } }
             : method === 'tools/list'
-              ? { tools: [{ name: 'commonly_post_message', description: 'post', inputSchema: { type: 'object' } }] }
+              ? { tools: ${JSON.stringify(names)}.map((name) => ({ name, description: name, inputSchema: { type: 'object' } })) }
               : {};
           process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
         }
       });
     `);
+
+  // F145. The flag is argv on each spawn, which adapters.codex.test.mjs shows.
+  // This shows Codex honours it on `exec resume` of a thread that was offered
+  // the tool a turn earlier, which is the part argv can't show.
+  test('a resumed thread gets the memory tools only on the turn its owner woke', async () => {
+    const server = join(root, 'mcp.mjs');
+    await writeMcpServer(server, ['commonly_post_message', 'commonly_save_my_memory', 'commonly_delete_message']);
+    const mcp = [{ name: 'commonly', transport: 'stdio', command: [process.execPath, server] }];
+    const search = (callId) => [{
+      type: 'tool_search_call',
+      call_id: callId,
+      status: 'completed',
+      execution: 'client',
+      arguments: { query: 'commonly save my memory delete message post', limit: 10 },
+    }];
+    const reply = (index) => (index % 2 === 0 ? search(`search-${index}`) : null);
+    const foundTools = (request) => JSON.stringify(
+      request.body.input.filter((item) => item.type === 'tool_search_output').at(-1).tools,
+    );
+
+    await runTurn({ modelName: 'gpt-5.5', mcp, reply, ownerWoken: true });
+    const afterOwner = foundTools(model.requests.at(-1));
+    expect(afterOwner).toContain('commonly_save_my_memory');
+    expect(afterOwner).not.toContain('commonly_delete_message');
+
+    await runTurn({ modelName: 'gpt-5.5', mcp, reply, sessionId: model.sessionId });
+    const afterStranger = foundTools(model.requests.at(-1));
+    expect(afterStranger).toContain('commonly_post_message');
+    expect(afterStranger).not.toContain('commonly_save_my_memory');
+  });
+
+  test('Commonly\'s MCP tools stay reachable through tool_search', async () => {
+    const server = join(root, 'mcp.mjs');
+    await writeMcpServer(server, ['commonly_post_message']);
     const requests = await runTurn({
       modelName: 'gpt-5.5',
       mcp: [{ name: 'commonly', transport: 'stdio', command: [process.execPath, server] }],

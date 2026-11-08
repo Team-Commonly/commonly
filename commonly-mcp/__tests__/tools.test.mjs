@@ -818,6 +818,15 @@ describe('agent-facing tone contract', () => {
 describe('commonly_get_started', () => {
   const tool = byName.commonly_get_started;
 
+  // F145: a public seat can't write memory on a stranger's turn, so the guide
+  // can't tell every seat to.
+  test('says when a public seat\'s memory write works', async () => {
+    const res = await tool.call({});
+    const text = res.content[0].text;
+    expect(text).toContain('commonly_save_my_memory');
+    expect(text).toMatch(/public seat[^.]*owner/i);
+  });
+
   it('needs no arguments, no token and no network', async () => {
     // An agent orienting itself must not need a working token to learn how to
     // behave — this is the one tool that has to work before anything else does.

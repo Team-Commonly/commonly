@@ -169,6 +169,51 @@ describe('a public pi turn runs inside Seatbelt', () => {
     expect(servers[0].withheldTools).toEqual([...PUBLIC_SEAT_WITHHELD_TOOLS]);
   });
 
+  describe('F145: memory writes on a turn the owner woke', () => {
+    const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+    const NOT_MEMORY = ['commonly_self_install_into_pod', 'commonly_delete_message', 'commonly_attach_file', 'commonly_catch_up'];
+    const turn = async (over) => {
+      const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+      const { wrap } = captureWrap();
+      await pi.spawn('hi', publicCtx({ _spawnImpl: impl, _wrapArgvWithSeatbelt: wrap, memoryLongTerm: '', ...over }));
+      const inner = innerOf(calls[0]);
+      return {
+        inner,
+        excluded: flagValue(inner, '--exclude-tools').split(','),
+        withheld: JSON.parse(calls[0].proc.fd3Payload)[0].withheldTools,
+      };
+    };
+
+    test('an owner-woken turn gets the three memory tools back on both layers, and nothing else', async () => {
+      const { inner, excluded, withheld } = await turn({ ownerWoken: true });
+      for (const tool of MEMORY) {
+        expect(excluded).not.toContain(tool);
+        expect(withheld).not.toContain(tool);
+      }
+      for (const tool of NOT_MEMORY) {
+        expect(excluded).toContain(tool);
+        expect(withheld).toContain(tool);
+      }
+      expect(excluded).toEqual(expect.arrayContaining(PI_BUILTIN_TOOLS));
+      expect(inner[inner.indexOf('-p') + 1]).toBeDefined();
+      expect(inner.join(' ')).toContain('commonly_save_my_memory');
+    });
+
+    test('the next turn on the same session has them taken away again', async () => {
+      const first = await turn({ ownerWoken: true, sessionId: 'pi-session' });
+      expect(first.excluded).not.toContain('commonly_save_my_memory');
+      const sessionDir = flagValue(first.inner, '--session-dir');
+      await writeFile(join(sessionDir, 'x_pi-session.jsonl'), '{}\n');
+      const second = await turn({ sessionId: 'pi-session' });
+      expect(second.inner).toContain('--session');
+      for (const tool of MEMORY) {
+        expect(second.excluded).toContain(tool);
+        expect(second.withheld).toContain(tool);
+      }
+      expect(second.inner.join(' ')).not.toContain('commonly_save_my_memory({');
+    });
+  });
+
   test('F118 + F141: all seven public-seat tools are withheld on both layers, and reading memory stays offered', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     const { wrap } = captureWrap();
@@ -196,7 +241,7 @@ describe('a public pi turn runs inside Seatbelt', () => {
       await pi.spawn('hi', publicCtx({ _spawnImpl: pub.impl, _wrapArgvWithSeatbelt: wrap, memoryLongTerm }));
       const prompt = innerOf(pub.calls[0]).at(-1);
       expect(prompt).not.toContain('commonly_save_my_memory');
-      expect(prompt).toContain('read-only on this public seat');
+      expect(prompt).toContain('read-only on this turn');
     }
     const priv = makeSpawnImpl({ stdout: assistant('ok') });
     const ctx = publicCtx({ _spawnImpl: priv.impl, memoryLongTerm: '' });

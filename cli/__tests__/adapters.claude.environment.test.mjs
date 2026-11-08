@@ -1413,9 +1413,9 @@ describe('claude adapter — a workspace seat', () => {
   });
 
   const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }, extra = {}) => claude.spawn('hi', {
-    ...extra,
     agentName: 'workspace-test',
     sessionId: null,
+    ...extra,
     cwd,
     skillMountDir: scratch,
     env: { PATH: process.env.PATH, COMMONLY_HOST_SECRET: 'must-not-inherit' },
@@ -1496,6 +1496,33 @@ describe('claude adapter — a workspace seat', () => {
   // are denied on public trust. Reading its memory stays.
   const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
     'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message'];
+
+  describe('F145: memory writes on a turn the owner woke', () => {
+    const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+    const NOT_MEMORY = ['commonly_self_install_into_pod', 'commonly_delete_message', 'commonly_attach_file', 'commonly_catch_up'];
+    const publicTurn = async (extra) => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'kept notes', ...extra });
+      const { args } = calls[0];
+      return { args, denied: args.slice(args.indexOf('--disallowedTools') + 1) };
+    };
+
+    test('an owner-woken turn gets the three memory tools back and nothing else', async () => {
+      const { args, denied } = await publicTurn({ ownerWoken: true });
+      for (const tool of MEMORY) expect(denied).not.toContain(`mcp__commonly__${tool}`);
+      for (const tool of NOT_MEMORY) expect(denied).toContain(`mcp__commonly__${tool}`);
+      expect(args[args.lastIndexOf('-p') + 1]).toContain('commonly_save_my_memory');
+    });
+
+    test('a turn that resumes the owner\'s session has them taken away again', async () => {
+      const owner = await publicTurn({ ownerWoken: true });
+      for (const tool of MEMORY) expect(owner.denied).not.toContain(`mcp__commonly__${tool}`);
+      const { args, denied } = await publicTurn({ sessionId: 'not-used' });
+      expect(args).toContain('--resume');
+      for (const tool of MEMORY) expect(denied).toContain(`mcp__commonly__${tool}`);
+      expect(args[args.lastIndexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
+    });
+  });
 
   test('a public seat keeps the denies it had, without the workspace ones, and loses self-install and memory writes', async () => {
     const { impl, calls } = makeSpawnImpl();

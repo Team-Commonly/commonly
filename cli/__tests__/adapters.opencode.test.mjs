@@ -229,6 +229,14 @@ describe('opencode MCP config', () => {
   });
 
   test('public permissions deny shell execution and external paths, while allowing declared MCP tools', () => {
+    const ownerTurn = publicPermissions('workspace', ['commonly'], { ownerWoken: true });
+    for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle']) {
+      expect(ownerTurn[`commonly_${tool}`]).toBeUndefined();
+    }
+    for (const tool of ['commonly_self_install_into_pod', 'commonly_delete_message', 'commonly_attach_file', 'commonly_catch_up']) {
+      expect(ownerTurn[`commonly_${tool}`]).toBe('deny');
+    }
+
     const permission = publicPermissions('workspace', ['commonly', 'room-grants']);
     expect(permission['*']).toBe('deny');
     expect(permission.bash).toBe('deny');
