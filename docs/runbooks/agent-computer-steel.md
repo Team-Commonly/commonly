@@ -67,9 +67,13 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    more:
    - `<keyPrefix>agent-computer-waker-token`
    - `<keyPrefix>agent-computer-steel-token`
-2. Add the owner's user id to `agentComputer.users` in the private overlay.
+2. Add the owner's user id to `agentComputer.users` in the agent-computer
+   overlay: the `DEV_HELM_AGENT_COMPUTER` repo secret, which `Deploy Dev`
+   writes to its own `-f` file after the private one. A GitHub secret can't
+   be read back, so keep the overlay's source in an operator-private file
+   and set the secret from it whole.
 3. Run `Deploy Dev`. Then set `agentComputer.steel.gate.imageTag` in the
-   overlay to that deploy's backend tag. Every deploy moves the backend tag,
+   same overlay to that deploy's backend tag. Every deploy moves the backend tag,
    and any change to the Steel pod template restarts the browser, so an
    unpinned gate drops a live session on each deploy.
 4. The backend reads both tokens only at pod start (the secret refs are
