@@ -7,6 +7,7 @@ import { usePhone } from '../connectors/usePhone';
 import { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import { useTalkToAgent } from './useTalkToAgent';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { AgentConnection, connectionLabel, fetchOwnedConnection } from '../utils/agentConnection';
 import '../primitives/primitives.css';
 import './V2AgentMemory.css';
 
@@ -188,6 +189,18 @@ const V2AgentMemory: React.FC = () => {
     return () => { cancelled = true; };
   }, [agentName, instanceId]);
 
+  // The head's status dot (d215 frame: "connected · 4 pods"). Only an owner or
+  // admin reads Memory, and the same roster read the profile uses gives the state.
+  const [connection, setConnection] = useState<AgentConnection | null>(null);
+  useEffect(() => {
+    if (state !== 'ready' || !agentName) { setConnection(null); return undefined; }
+    let cancelled = false;
+    fetchOwnedConnection((url) => axios.get(url), agentName, instanceId || 'default')
+      .then((result) => { if (!cancelled) setConnection(result?.connection || null); })
+      .catch(() => { if (!cancelled) setConnection(null); });
+    return () => { cancelled = true; };
+  }, [state, agentName, instanceId]);
+
   const profileHref = `/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const memoryLabel = t('agentSettings.memory', { defaultValue: 'Memory' });
@@ -219,7 +232,18 @@ const V2AgentMemory: React.FC = () => {
         <V2Avatar name={agentLabel} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
         <div className="v2m-ahead">
           <h1>{agentLabel}</h1>
-          {head && <p className="st">{t('agentProfile.memory.inPods', { count: head.pods })}</p>}
+          {head && (
+            <p className="st">
+              {connection ? (
+                <>
+                  <span className={`v2m-dot v2m-dot--${connection.state}`} aria-hidden="true" />
+                  <span data-testid="agent-memory-connection">{connectionLabel(connection, t)}</span>
+                  {' · '}
+                  {t('agentProfile.memory.podCount', { count: head.pods })}
+                </>
+              ) : t('agentProfile.memory.inPods', { count: head.pods })}
+            </p>
+          )}
         </div>
         <span className="sp" />
         {!phone && tabs}

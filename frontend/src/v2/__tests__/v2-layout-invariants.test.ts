@@ -5517,6 +5517,15 @@ test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on pho
 });
 
 
+test('the drawer priority chip is a select that keeps the P0 fill', () => {
+  // A transparent fill on every chip outranked the P0 rule (0,2,1 over 0,2,0) and
+  // left P0's light text on nothing. Only the outlined chips drop the field fill.
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select')).not.toContain('background');
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select:not(.v2-board__priority--p0)'))
+    .toContain('background-color: transparent');
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p0')).toContain('background: var(--v2-prio-p0-bg)');
+});
+
 test('TASK-443 lease typography outranks the ownership cell font size', () => {
   expect(ruleBody(boardCss, '.v2-board__ownership .v2-board__lease-value'))
     .toContain('font: 500 12px/16px var(--v2-font-mono)');

@@ -1789,17 +1789,12 @@
       "pr": "查看 PR",
       "record": "查看记录",
       "priority": "优先级",
-      "assignedTo": "分配给",
-      "claimedBy": "认领人",
-      "leaseLeft": "认领剩余时间",
       "unassigned": "未分配",
       "notClaimed": "尚未认领",
       "expiredAt": "认领已于{{time}}到期",
       "remaining": "{{minutes}}分钟 · 至{{time}}",
-      "timeUnavailable": "认领时间不可用",
       "follow": "关注任务",
       "following": "已关注",
-      "watchers": "关注者",
       "digestHint": "更新会显示在你的摘要中。",
       "memberUnavailable": "成员不可用",
       "saveError": "未能保存更改，请重试。",
@@ -1807,7 +1802,11 @@
       "showEarlierUpdates": "显示{{count}}条更早的更新",
       "hideEarlierUpdates": "隐藏更早的更新",
       "depends": "依赖",
-      "noDeps": "无"
+      "noDeps": "无",
+      "owner": "负责人",
+      "prRow": "PR",
+      "more": "更多",
+      "watcherCount": "{{count}}人关注"
     },
     "form": {
       "title": "标题",
@@ -2343,7 +2342,8 @@
       "private": "只有 {{name}} 的所有者和管理员能查看它的记忆。",
       "loadFailed": "记忆加载失败，刷新页面重试。",
       "noMatch": "没有和“{{query}}”匹配的记录。",
-      "noEntry": "无记录"
+      "noEntry": "无记录",
+      "podCount_other": "{{count}}个 Pod"
     },
     "activity": {
       "title": "近期活动",
