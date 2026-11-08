@@ -107,7 +107,6 @@ const V2AccountSection: React.FC = () => {
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [usernameBusy, setUsernameBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -117,17 +116,30 @@ const V2AccountSection: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadPhotoButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  // Each field follows its own saved value. One Save writes the username
+  // before the name, and the saved name falls back to the username, so a new
+  // username would otherwise wipe a name typed in the same save. A name the
+  // person has edited and not yet saved stays as typed.
+  const nameEdited = useRef(false);
+  useEffect(() => { if (!nameEdited.current) setName(savedName); }, [savedName]);
   useEffect(() => {
-    setName(savedName);
     setUsername(accountUsername);
     setSavedUsername(accountUsername);
-    setEmail(accountEmail);
-  }, [accountEmail, savedName, accountUsername]);
+  }, [accountUsername]);
+  useEffect(() => { setEmail(accountEmail); }, [accountEmail]);
 
+  // One Save for the form. The username goes first because it can be refused
+  // (taken, or the wrong shape); a refusal stops before the name is written,
+  // so the form never reports half a save as done.
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (busy) return;
     const nextName = name.trim();
-    if (nextName === savedName) {
+    const nextUsername = username.trim().toLowerCase();
+    const nameChanged = nextName !== savedName;
+    const usernameChanged = nextUsername !== savedUsername.toLowerCase();
+    if (!nameChanged && !usernameChanged) {
+      nameEdited.current = false;
       setNotice('settings.account.noChanges');
       setError(null);
       return;
@@ -136,52 +148,41 @@ const V2AccountSection: React.FC = () => {
     setBusy(true);
     setNotice(null);
     setError(null);
-    try {
-      await updateProfile({ displayName: nextName });
-      setNotice('settings.account.saved');
-    } catch (requestError) {
+    const failure = (requestError: unknown, fallback: string) => {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
-      setError(message?.error || message?.msg || t('settings.account.saveFailed'));
+      setError(message?.error || message?.msg || t(fallback));
+    };
+    try {
+      if (usernameChanged) {
+        try {
+          const response = updateUsername
+            ? await updateUsername(nextUsername)
+            : await axios.put('/api/users/username', { username: nextUsername });
+          const updatedUsername = String(
+            (response as { username?: string; data?: { username?: string } })?.username
+              || (response as { data?: { username?: string } })?.data?.username
+              || nextUsername,
+          );
+          setUsername(updatedUsername);
+          setSavedUsername(updatedUsername);
+        } catch (requestError) {
+          failure(requestError, 'settings.username.saveFailed');
+          return;
+        }
+      }
+      if (nameChanged) {
+        try {
+          await updateProfile({ displayName: nextName });
+        } catch (requestError) {
+          failure(requestError, 'settings.account.saveFailed');
+          return;
+        }
+      }
+      nameEdited.current = false;
+      setNotice(nameChanged ? 'settings.account.saved' : 'settings.username.saved');
     } finally {
       setBusy(false);
     }
-  };
-
-  const saveUsername = async () => {
-    const nextUsername = username.trim().toLowerCase();
-    if (nextUsername === accountUsername.toLowerCase()) {
-      setNotice('settings.username.noChanges');
-      setError(null);
-      return;
-    }
-
-    setUsernameBusy(true);
-    setNotice(null);
-    setError(null);
-    try {
-      const response = updateUsername
-        ? await updateUsername(nextUsername)
-        : await axios.put('/api/users/username', { username: nextUsername });
-      const updatedUsername = String(
-        (response as { username?: string; data?: { username?: string } })?.username
-          || (response as { data?: { username?: string } })?.data?.username
-          || nextUsername,
-      );
-      setUsername(updatedUsername);
-      setSavedUsername(updatedUsername);
-      setNotice('settings.username.saved');
-    } catch (requestError) {
-      const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
-      setError(message?.error || message?.msg || t('settings.username.saveFailed'));
-    } finally {
-      setUsernameBusy(false);
-    }
-  };
-
-  const handleUsernameKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    if (!usernameBusy) void saveUsername();
   };
 
   const choosePhoto = () => fileInputRef.current?.click();
@@ -341,7 +342,7 @@ const V2AccountSection: React.FC = () => {
       <div className="v2-settings__account-fields">
         <label>
           <span>{t('settings.account.name')}</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
+          <input value={name} onChange={(event) => { nameEdited.current = true; setName(event.target.value); }} required maxLength={80} />
         </label>
         <label>
           <span>{t('settings.account.username')}</span>
@@ -351,21 +352,11 @@ const V2AccountSection: React.FC = () => {
               aria-label={t('settings.account.username')}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              onKeyDown={handleUsernameKeyDown}
               minLength={2}
               maxLength={40}
-              pattern="[a-z0-9][a-z0-9-]{1,39}"
               autoComplete="off"
               aria-describedby="v2-settings-username-help"
             />
-            <button
-              className="v2p-b v2p-b-s v2p-b-sm"
-              type="button"
-              onClick={() => { if (!usernameBusy) void saveUsername(); }}
-              disabled={usernameBusy}
-            >
-              {usernameBusy ? t('settings.username.saving') : t('settings.username.save')}
-            </button>
           </div>
           <span className="v2-settings__field-help" id="v2-settings-username-help">
             {t('settings.username.help')}

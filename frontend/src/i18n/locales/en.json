@@ -320,11 +320,8 @@
       "failed": "Could not sign out everywhere. Try again."
     },
     "username": {
-      "noChanges": "No username changes to save.",
       "saved": "Username saved.",
       "saveFailed": "Couldn’t save your username. Try again.",
-      "save": "Save username",
-      "saving": "Saving…",
       "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you."
     },
     "avatar": {

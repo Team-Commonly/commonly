@@ -70,6 +70,44 @@ describe('direction C threading restyle (PR 2b)', () => {
     jest.useRealTimers();
   });
 
+  // The strip stayed over the chat at 390 until the same message was tapped
+  // again. A tap elsewhere, or using one of its actions, now closes it.
+  test('at 390 a revealed strip closes on a tap outside the message and after Reply', () => {
+    jest.useFakeTimers();
+    const orig = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: q.includes('hover: none'), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
+    const onReply = jest.fn();
+    const { container } = render(
+      <MemoryRouter>
+        <V2MessageRow message={msg(5)} onReply={onReply} />
+        <V2MessageRow message={msg(6)} onReply={onReply} />
+      </MemoryRouter>,
+    );
+    const row = container.querySelector('#message-5');
+    const reveal = () => {
+      fireEvent.pointerDown(row);
+      act(() => { jest.advanceTimersByTime(600); });
+      fireEvent.pointerUp(row);
+      fireEvent.click(row);
+      expect(row).toHaveClass('v2-msg--reveal');
+    };
+
+    reveal();
+    // A press inside the message (its own strip included) keeps it open.
+    fireEvent.pointerDown(row.querySelector('.v2-msg__strip'));
+    expect(row).toHaveClass('v2-msg--reveal');
+    fireEvent.pointerDown(container.querySelector('#message-6'));
+    expect(row).not.toHaveClass('v2-msg--reveal');
+
+    reveal();
+    fireEvent.click(within(row.querySelector('.v2-msg__strip')).getByRole('button', { name: /reply/i }));
+    expect(onReply).toHaveBeenCalledTimes(1);
+    expect(row).not.toHaveClass('v2-msg--reveal');
+
+    window.matchMedia = orig;
+    jest.useRealTimers();
+  });
+
   test('a quoted reply is a link that lands on its source when loaded, else sets the hash', () => {
     window.location.hash = '';
     const { container } = render(

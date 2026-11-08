@@ -618,6 +618,23 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
     if (pressRevealedRef.current) { pressRevealedRef.current = false; return; }
     if (actionsRevealed) { setActionsRevealed(false); setPickerOpen(false); }
   };
+  // A revealed strip closes on a tap anywhere outside this message, and once
+  // one of its actions has run. Before, only a second tap on the same message
+  // hid it, so a strip stayed over the chat after a reply or a scroll away.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!actionsRevealed) return undefined;
+    const dismiss = (event: PointerEvent) => {
+      if (rowRef.current && event.target instanceof Node && rowRef.current.contains(event.target)) return;
+      setActionsRevealed(false);
+      setPickerOpen(false);
+    };
+    document.addEventListener('pointerdown', dismiss, true);
+    return () => document.removeEventListener('pointerdown', dismiss, true);
+  }, [actionsRevealed]);
+  const closeStripAfter = <A extends unknown[]>(action?: (...args: A) => void) => (
+    action ? (...args: A) => { setActionsRevealed(false); setPickerOpen(false); action(...args); } : undefined
+  );
   // Surface why a reaction failed instead of swallowing it. Before this, a
   // rejected reaction (bad emoji 400, non-member 403, rate-limit 429) did
   // nothing visible — which made the ❤️-validation bug read as "reactions
@@ -856,6 +873,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
 
   return (
     <div
+      ref={rowRef}
       id={`message-${message.id}`}
       data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined}
       tabIndex={-1}
@@ -914,13 +932,13 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
       <V2MessageActions
         message={message}
         author={author}
-        onReply={onReply}
-        onThread={onThread}
+        onReply={closeStripAfter(onReply)}
+        onThread={closeStripAfter(onThread)}
         canInteract={canInteract}
         pickerOpen={pickerOpen}
         reactions={renderList}
         onTogglePicker={() => setPickerOpen((open) => !open)}
-        onToggleReaction={toggleReaction}
+        onToggleReaction={closeStripAfter(toggleReaction)}
       />
       <div className="v2-msg__body">
         {!grouped && (

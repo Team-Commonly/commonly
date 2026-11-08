@@ -792,6 +792,13 @@
     opacity: 1;
     pointer-events: auto;
   }
+  /* A code line wider than the phone was cut at the block's edge, and nothing
+     showed it scrolled. Lines wrap here instead, as the connect page's command
+     block does; Copy still takes the text exactly as written. */
+  .v2-msg__content pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
 
 .v2-root:lang(zh) .v2-msg__content,

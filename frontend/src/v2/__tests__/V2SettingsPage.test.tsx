@@ -338,7 +338,7 @@ describe('V2SettingsPage', () => {
     renderSettings();
 
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: ' Team-Member ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save username' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('team-member'));
     expect(await screen.findByRole('status')).toHaveTextContent('Username saved.');
@@ -346,14 +346,14 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText(/previous username stays reserved/i)).toBeInTheDocument();
   });
 
-  test('submits the username rename from Enter without submitting the display-name form', async () => {
+  test('Enter in the username field saves the rename alone when the name is unchanged', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'team-member' });
     renderSettings();
 
     const usernameInput = screen.getByLabelText('Username');
     fireEvent.change(usernameInput, { target: { value: 'team-member' } });
-    fireEvent.keyDown(usernameInput, { key: 'Enter', code: 'Enter' });
+    fireEvent.submit(usernameInput.closest('form') as HTMLFormElement);
 
     await waitFor(() => expect(auth.updateUsername).toHaveBeenCalledWith('team-member'));
     expect(auth.updateProfile).not.toHaveBeenCalled();
@@ -367,14 +367,73 @@ describe('V2SettingsPage', () => {
 
     const usernameInput = screen.getByLabelText('Username');
     fireEvent.change(usernameInput, { target: { value: 'taken-name' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save username' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Username is already taken.');
     expect(screen.getByText('@lily')).toBeInTheDocument();
     expect(screen.queryByText('@taken-name')).not.toBeInTheDocument();
   });
 
-  test('localizes the username save controls and help in Chinese', async () => {
+  // The form had two saves: one beside the username, one for the form. One now
+  // carries both, and only the form's Save is drawn.
+  test('one Save writes the username and the name, and there is no second save button', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateUsername.mockResolvedValue({ ...auth.currentUser, username: 'team-member' });
+    auth.updateProfile.mockResolvedValue({ ...auth.currentUser, displayName: 'Lily Shen' });
+    renderSettings();
+
+    expect(screen.queryByRole('button', { name: 'Save username' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^save/i })).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily Shen' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(auth.updateProfile).toHaveBeenCalledWith({ displayName: 'Lily Shen' }));
+    expect(auth.updateUsername).toHaveBeenCalledWith('team-member');
+    expect(await screen.findByRole('status')).toHaveTextContent('Account saved.');
+    expect(screen.getByText('@team-member')).toBeInTheDocument();
+  });
+
+  // The username lands first and updates the signed-in user, as AuthContext
+  // does. That must not reset the name typed in the same save.
+  test('a failed name save after a new username keeps the typed name', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateProfile.mockRejectedValueOnce({ response: { data: { error: 'Name could not be saved.' } } });
+    const Live = () => {
+      const [user, setUser] = React.useState(auth.currentUser);
+      const updateUsername = async (next: string) => { const updated = { ...user, username: next }; setUser(updated); return updated; };
+      return (
+        <AuthContext.Provider value={{ ...auth, currentUser: user, user, updateUsername }}>
+          <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
+        </AuthContext.Provider>
+      );
+    };
+    render(<Live />);
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily Shen' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Name could not be saved.');
+    expect(screen.getByText('@team-member')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Lily Shen');
+  });
+
+  test('a refused username stops the save before the name is written', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateUsername.mockRejectedValueOnce({ response: { data: { error: 'Username is already taken.' } } });
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily Shen' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'taken-name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Username is already taken.');
+    expect(auth.updateProfile).not.toHaveBeenCalled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  test('localizes the save control and the username help in Chinese', async () => {
     await i18nReady;
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     let finishUpdate: ((value: unknown) => void) | undefined;
@@ -382,10 +441,10 @@ describe('V2SettingsPage', () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     const view = renderSettings();
 
-    expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存用户名' })).not.toBeInTheDocument();
     expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'team-member' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
 
     await act(async () => { finishUpdate?.({ ...auth.currentUser, username: 'team-member' }); });
