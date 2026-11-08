@@ -491,6 +491,11 @@ const V2AgentBYO: React.FC = () => {
       setExistingConnection(null);
       return undefined;
     }
+    // A different seat's connection is dropped now, not when this lookup lands,
+    // so its Reconnect (and the harness it implies) never shows under another
+    // name or pod. A refresh of the same seat keeps it, without a flicker.
+    const seatKey = `${podId}:${sanitizeAgentName(name)}:${prefill.instanceId}`;
+    setExistingConnection((current) => (current?.seat === seatKey ? current : null));
     let cancelled = false;
     const timer = setTimeout(() => {
       api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: SeatRuntime; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
@@ -503,7 +508,7 @@ const V2AgentBYO: React.FC = () => {
             runtimeType: match.runtime?.runtimeType || '',
             installedBy: match.installedBy,
             harness: seatHarness(match.runtime),
-            seat: `${match.name}:${match.instanceId}`,
+            seat: seatKey,
           } : null);
         })
         .catch(() => { if (!cancelled) setExistingConnection(null); });

@@ -151,6 +151,17 @@ describe('BYO default agent name follows where it runs', () => {
     await waitFor(() => expect(screen.getByTestId('byo-runner-claude')).toHaveAttribute('aria-pressed', 'true'), { timeout: 5000 });
   });
 
+  // CodeRabbit r4507373296: until the lookup for a new name lands, the old
+  // seat's Reconnect must not show under it.
+  test('a name change drops the previous seat\'s connection before the next lookup lands', async () => {
+    mockGet([{ name: 'gw-codex', installedBy: 'u1', runtime: { runtimeType: 'codex' }, connection: { state: 'revoked', lastSeenAt: null } }]);
+    renderAt('/v2/agents/byo?pod=p1&name=gw-codex&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state')).toBeInTheDocument(), { timeout: 5000 });
+    fireEvent.change(nameInput(), { target: { value: 'gw-other' } });
+    expect(screen.queryByTestId('byo-connection-state')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+  });
+
   test('a runner picked before the roster arrives is not replaced by the agent\'s harness', async () => {
     let releaseRoster;
     const rosterReady = new Promise((resolve) => { releaseRoster = resolve; });
