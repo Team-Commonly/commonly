@@ -28,10 +28,14 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // F352: a failed revoke is not a failed load. It set the load error, so the
+  // fold said "Couldn't load" over a list that had loaded.
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setRevokeError(null);
       const response = await axios.get<{ devices: Device[] }>('/api/auth/devices');
       setDevices(response.data.devices);
       setError(null);
@@ -51,10 +55,11 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
     });
     if (!confirmed) return;
     try {
+      setRevokeError(null);
       await axios.delete(`/api/auth/devices/${device.id}`);
       setDevices((current) => current.map((entry) => entry.id === device.id ? { ...entry, revokedAt: new Date().toISOString() } : entry));
     } catch {
-      setError(t('settings.devices.revokeFailed'));
+      setRevokeError(t('settings.devices.revokeFailed'));
     }
   };
 
@@ -98,6 +103,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
       {confirmDialog}
       <div className="v2-devices__heading"><div>{showHeading && <h2 id="devices-heading">{t('settings.devices.title')}</h2>}<p>{t('settings.devices.lead')}</p></div><button type="button" onClick={() => void load()} disabled={loading}>{t('settings.devices.refresh')}</button></div>
       {error && <p className="v2-devices__error">{error}</p>}
+      {revokeError && <p className="v2-devices__error" role="alert">{revokeError}</p>}
       {loading && <p>{t('settings.devices.loading')}</p>}
       {!loading && devices.length === 0 && <p className="v2-devices__empty">{t('settings.devices.empty')}</p>}
       {!loading && devices.length > 0 && <div className="v2-devices__list">
