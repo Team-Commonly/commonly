@@ -243,6 +243,17 @@ const sanitizeAgentName = (raw: string): string => raw
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
+type SeatRuntime = { runtimeType?: string; adapter?: string; wrappedCli?: string; reportedCli?: string };
+
+// The harness an existing seat runs, as `agent run --adapter` names it, or null
+// when the roster doesn't say. The install payload labels Claude Code
+// `claude-code`; the adapter flag calls it `claude`.
+export const seatHarness = (runtime?: SeatRuntime): string | null => {
+  const raw = runtime?.adapter || runtime?.wrappedCli || runtime?.reportedCli || runtime?.runtimeType || '';
+  const id = raw === 'claude-code' ? 'claude' : raw;
+  return KNOWN_HARNESS_IDS.includes(id) ? id : null;
+};
+
 const V2AgentBYO: React.FC = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
@@ -303,7 +314,7 @@ const V2AgentBYO: React.FC = () => {
   // name, pod and mode it was shown for.
   const [pendingNarrowing, setPendingNarrowing] = useState<{ agentName: string; narrowing: InstallNarrowing } | null>(null);
   const [existingConnection, setExistingConnection] = useState<{
-    connection: AgentConnection; runtimeType: string; installedBy?: string;
+    connection: AgentConnection; runtimeType: string; installedBy?: string; harness?: string | null;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -482,7 +493,7 @@ const V2AgentBYO: React.FC = () => {
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
+      api.get<{ agents?: Array<{ name: string; instanceId: string; runtime?: SeatRuntime; connection?: AgentConnection; installedBy?: string }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`)
         .then((result) => {
           if (cancelled) return;
           const match = result.agents?.find((agent) => agent.name === sanitizeAgentName(name)
@@ -491,12 +502,24 @@ const V2AgentBYO: React.FC = () => {
             connection: match.connection,
             runtimeType: match.runtime?.runtimeType || '',
             installedBy: match.installedBy,
+            harness: seatHarness(match.runtime),
           } : null);
         })
         .catch(() => { if (!cancelled) setExistingConnection(null); });
     }, 250);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
+  // F353: a reconnect opens on the harness the agent runs. Defaulting to Claude
+  // Code printed `--adapter claude` for a Codex agent. Applied once, so a tab the
+  // person picks afterwards stands; a link's own ?adapter= wins.
+  const reconnectHarnessApplied = useRef(false);
+  useEffect(() => {
+    if (!prefill.reconnect || prefill.adapter || reconnectHarnessApplied.current) return;
+    const harness = existingConnection?.harness;
+    if (!harness) return;
+    reconnectHarnessApplied.current = true;
+    setListenAdapter(harness);
+  }, [existingConnection, prefill.adapter, prefill.reconnect]);
   // Re-default while the person hasn't typed a name: when the user resolves
   // after mount, and when the mode or the runner changes.
   const defaultAgentName = defaultNameFor(mode, mode === 'machine' ? adapter : listenAdapter);

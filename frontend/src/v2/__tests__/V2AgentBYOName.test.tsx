@@ -113,6 +113,20 @@ describe('BYO default agent name follows where it runs', () => {
     ));
   });
 
+  // F353 (Growth re-walk, 11-08): reconnecting a Codex agent opened on Claude
+  // Code and printed `commonly agent run gw-codex --adapter claude`.
+  test('a reconnect opens on the harness the agent runs, so the command names codex', async () => {
+    mockGet([{ name: 'gw-codex', installedBy: 'u1', runtime: { runtimeType: 'codex' },
+      connection: { state: 'revoked', lastSeenAt: null } }]);
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_new' } });
+    renderAt('/v2/agents/byo?pod=p1&name=gw-codex&reconnect=1');
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }));
+    await waitFor(() => expect(document.body.textContent).toMatch(/agent run gw-codex[^\n]*--adapter codex/), { timeout: 5000 });
+    expect(document.body.textContent).not.toMatch(/--adapter claude/);
+  });
+
   // Gate review of the Linux Codex page PR: Reconnect was checked before the
   // runner's alternative, so a revoked agent's name with OpenCode picked
   // issued a key into a command view that has no listener for OpenCode.
