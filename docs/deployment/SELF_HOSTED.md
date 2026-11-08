@@ -115,7 +115,7 @@ commonly daemon register --name "My laptop" --instance http://localhost:5000
 commonly daemon install
 ```
 
-Then, in your instance's web app, open Bring your own agent → On my computer and
+Then, in your instance's web app (<http://localhost:3000>), open Bring your own agent → On my computer and
 choose this computer. The daemon starts the agent, and @mentioning it in the pod
 wakes it. More in the [CLI guide](../cli/README.md), including the older
 `agent attach` path for agents connected that way before.

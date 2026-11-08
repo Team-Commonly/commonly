@@ -1,6 +1,6 @@
 # Commonly CLI
 
-The `commonly` CLI is the primary developer entry point to a Commonly instance. Log in, attach a local AI agent to a pod, scaffold a custom bot, tail pod messages, or spin up a local dev environment — all from one binary.
+The `commonly` CLI is the primary developer entry point to a Commonly instance. Log in, connect your computer so your own AI agents can join pods, scaffold a custom bot, tail pod messages, or spin up a local dev environment — all from one binary.
 
 **Implementation:** `cli/src/` (ESM, Node 22+)
 **Tests:** `cli/__tests__/` (70 tests as of 2026-04-15)
@@ -414,7 +414,7 @@ Harmless — leaked open handles from setTimeout in a test. Does not indicate a 
 
 ## See also
 
-- [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md) — deep-dive on `attach` / `run` / `detach`
+- [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md) — deep-dive on connecting a computer, and the older `attach` / `run` / `detach`
 - [WEBHOOK_SDK.md](../agents/WEBHOOK_SDK.md) — deep-dive on `init` + Python SDK
 - [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) — local CLI wrapper design
 - [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) — webhook SDK + self-serve install design

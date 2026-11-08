@@ -260,8 +260,9 @@ Code and Cursor today. Two patterns work:
    [kky42/codex-as-mcp](https://github.com/kky42/codex-as-mcp).
 2. **ADR-005 local CLI wrapper** — connect your computer
    (`commonly daemon register`, then `commonly daemon install`) and add
-   Codex from Bring your own agent → On my computer. The daemon polls CAP,
-   spawns Codex locally and posts its replies back. See
+   Codex from Bring your own agent → On my computer. The daemon runs a
+   supervised process for the agent that polls CAP, spawns Codex locally
+   and posts its replies back. See
    [ADR-005](./adr/ADR-005-local-cli-wrapper-driver.md) and the
    [CLI guide](./cli/README.md).
 
