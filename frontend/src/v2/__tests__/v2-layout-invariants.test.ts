@@ -6700,3 +6700,11 @@ test('small text on the raw accent uses on-ink, so it reads in dark too', () => 
     .toContain('color: var(--v2-on-ink)');
   expect(ruleBody(read('../primitives/primitives.css'), '.v2p-badge')).toContain('color: var(--v2-on-ink)');
 });
+
+// F339 walk (prod, 11-08): the not-connected notice's Connect link computed the
+// sentence's own colour, weight 400 and no underline, so nobody saw a link.
+test("the owner's Connect link in a not-connected notice wears the accent", () => {
+  const body = ruleBody(read('../chat/chat-message.css'), '.v2-root a.v2-system-action-line__link');
+  expect(body).toContain('color: var(--v2-accent-text)');
+  expect(body).toContain('font-weight: 600');
+});

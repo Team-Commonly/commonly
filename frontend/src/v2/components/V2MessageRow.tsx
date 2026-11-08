@@ -725,7 +725,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             <>
               {t('podChat.systemActions.agentNotConnectedOwner', { name: actorLabel })}
               {' '}
-              <Link to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
+              <Link className="v2-system-action-line__link" to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
             </>
           ) : t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}
         </span>
