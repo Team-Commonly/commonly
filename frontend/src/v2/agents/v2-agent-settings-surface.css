@@ -120,6 +120,9 @@
 .v2-agent-settings-page .wt td { padding: 8px 14px; border-top: 1px solid var(--d); vertical-align: middle; color: var(--ink2); }
 .v2-agent-settings-page .wt td:first-child { font-weight: 600; color: var(--ink); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-agent-settings-page .wt td:last-child { text-align: right; width: 44px; }
+/* Other people's 1:1 rooms: one plain count line, no link or controls. Its
+   cell is both first and last child, so it undoes both column rules. */
+.v2-agent-settings-page .wt tr.v2-agent-wake-pods__others td { width: auto; max-width: none; padding-top: 12px; padding-bottom: 12px; text-align: left; white-space: normal; font-weight: 500; color: var(--se); }
 .v2-agent-settings-page details.disc > summary .lb svg.i { width: 16px; height: 16px; color: var(--se); flex: none; }
 
 .v2-agent-settings-page .lrow .vl code { font: 12px/1.4 var(--v2-font-mono); overflow-wrap: anywhere; }

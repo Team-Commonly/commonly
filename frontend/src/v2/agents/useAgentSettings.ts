@@ -56,6 +56,7 @@ interface ManageSettingsResponse {
   runtimeManaged?: boolean;
   harnessCatalog?: HarnessCatalogEntry[];
   installations: Array<{ podId: string; podName: string; status: string }>;
+  otherDirectRoomCount?: number;
 }
 
 // Markers the page turns into translated text, so neither is shown as it stands.
@@ -105,8 +106,11 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
     // source for discovering this viewer's settings.
     const rows = settingsResponse.data.installations || [];
     const preferredPodId = settingsResponse.data.writablePodId;
-    const candidates = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
+    const candidates: Array<{ podId: string }> = [...rows].sort((left, right) => Number(right.podId === preferredPodId)
       - Number(left.podId === preferredPodId));
+    // Other people's direct rooms come back as a count, not rows. When the
+    // agent lives only there, the writable pod is still how the page loads it.
+    if (preferredPodId && !rows.some((row) => row.podId === preferredPodId)) candidates.push({ podId: preferredPodId });
     for (const pod of candidates) {
       try {
         const response = await axios.get<{ agent: AgentSettingsInstallation }>(installationUrl(pod.podId), {
@@ -136,7 +140,9 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    throw new Error(rows.length ? PODS_REFUSED : NOTHING_MANAGEABLE);
+    // Rooms counted but not listed still mean the agent has pods; only an admin
+    // can read another person's room, so everyone else gets the refused state.
+    throw new Error(rows.length || settingsResponse.data.otherDirectRoomCount ? PODS_REFUSED : NOTHING_MANAGEABLE);
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {

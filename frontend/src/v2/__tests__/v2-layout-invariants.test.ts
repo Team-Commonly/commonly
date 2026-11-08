@@ -278,6 +278,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i')).toContain('pointer-events: none');
   });
 
+  // The count of other people's direct rooms is one text cell that is both the
+  // first and last cell of its row. Without this rule it took the last
+  // column's 44px right-aligned width, and at 390 it collapsed to 21px tall.
+  test('Agent settings: the other-direct-rooms count spans the row at row height', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const others = ruleBody(surface, '.v2-agent-settings-page .wt tr.v2-agent-wake-pods__others td');
+    expect(others).toContain('width: auto');
+    expect(others).toContain('text-align: left');
+    expect(others).toContain('padding-top: 12px');
+    expect(others).toContain('padding-bottom: 12px');
+  });
+
   test('Agent settings: hover opens the note only where a pointer hovers, so a second tap can close it', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const hoverOnly = surface.indexOf('@media (hover: hover)');

@@ -1369,21 +1369,52 @@ describe('one Identity & access list (d215 frame)', () => {
     test('private pods named after the agent say which one they are', async () => {
       const base = fleet({ state: 'connected' });
       axios.get.mockImplementation((url, ...rest) => (url.includes('/manage-settings')
-        ? Promise.resolve({ data: { writablePodId: 'pod-1', installations: [
+        ? Promise.resolve({ data: { writablePodId: 'pod-1', otherDirectRoomCount: 2, installations: [
           { podId: 'pod-1', podName: 'Maya', podType: 'agent-room', status: 'active' },
           { podId: 'pod-2', podName: 'Maya', podType: 'agent-admin', status: 'active' },
           { podId: 'pod-3', podName: 'Workspace', podType: 'chat', status: 'active' },
         ] } })
         : base(url, ...rest)));
       renderPage();
-      const rows = await screen.findAllByRole('link', { name: 'Maya' });
-      expect(rows).toHaveLength(2);
-      expect(rows[0].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^direct$/);
-      expect(rows[1].closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
-      expect(screen.getByRole('button', { name: 'Maya, direct' })).toBeInTheDocument();
+      // The caller's own 1:1 room reads as theirs, not as the agent's name.
+      const own = await screen.findByRole('link', { name: 'Your direct room' });
+      expect(own).toHaveAttribute('href', '/v2/pods/pod-1');
+      expect(own.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Your direct room' })).toBeInTheDocument();
+      const admin = screen.getByRole('link', { name: 'Maya' });
+      expect(admin.closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
       expect(screen.getByRole('button', { name: 'Maya, admin' })).toBeInTheDocument();
       const team = screen.getByRole('link', { name: 'Workspace' });
       expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
+      // Other people's rooms are one count line: no link, no controls.
+      const others = screen.getByText('Direct rooms with others: 2');
+      const row = others.closest('tr');
+      expect(row).toHaveClass('v2-agent-wake-pods__others');
+      expect(row.querySelector('a, button, input, select')).toBeNull();
+    });
+
+    test('an admin with only other people\'s rooms sees the count instead of the empty state', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/manage-settings')
+        ? Promise.resolve({ data: { writablePodId: 'pod-9', otherDirectRoomCount: 1, installations: [] } })
+        : base(url, ...rest)));
+      renderPage();
+      expect(await screen.findByText('Direct rooms with others: 1')).toBeInTheDocument();
+      expect(screen.queryByText('No pods to manage')).toBeNull();
+    });
+
+    test('an owner who can\'t read those rooms gets the refused state, not "can\'t open"', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url.includes('/manage-settings')) {
+          return Promise.resolve({ data: { writablePodId: 'pod-9', otherDirectRoomCount: 1, installations: [] } });
+        }
+        if (url.includes('/pods/pod-9/')) return Promise.reject(Object.assign(new Error('403'), { response: { status: 403 } }));
+        return base(url, ...rest);
+      });
+      renderPage();
+      expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+      expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
     });
 
     test('the page stays up through an add, and the new pod lands in the list', async () => {
