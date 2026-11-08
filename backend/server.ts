@@ -47,6 +47,7 @@ const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
 const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
 const { accessLog } = require('./middleware/accessLog');
+const { serverErrorReport } = require('./services/serverErrorReport');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -164,6 +165,9 @@ if (startServices) (async () => {
 // One line per answered request, route template and hashed caller only
 // (middleware/accessLog). First, so a request CORS refuses is logged too.
 app.use(accessLog);
+// Every 5xx response reaches Sentry with its route and no data, a route's own
+// `res.status(500)` included (services/serverErrorReport). Before CORS, as above.
+app.use(serverErrorReport);
 
 // Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
 app.use(cors(corsOptions(allowedOrigins)));
