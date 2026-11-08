@@ -75,11 +75,28 @@ const isRunning = (pid) => {
   return !isZombie(pid);
 };
 const strayPids = new Set();
+// F340: the sweep once found a grandchild running that the test's own check had
+// just seen gone, and nothing said what the process was. A failure now names its
+// state, parent and command line from /proc (or kill(0)'s answer off Linux), so
+// the next recurrence shows whether it was the grandchild, a reused pid, or a
+// process mid-teardown.
+const describeProc = (pid) => {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const [, comm, state, ppid] = /^\d+ \((.*)\) (\S) (\d+)/.exec(stat) || [];
+    let cmd = '';
+    try { cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' ').trim().slice(0, 120); } catch { /* gone */ }
+    return `state ${state}, ppid ${ppid}, comm ${comm}, cmd ${JSON.stringify(cmd)}`;
+  } catch (e) {
+    try { process.kill(pid, 0); return `no /proc (${e.code}); kill(0) ok`; } catch (k) { return `no /proc (${e.code}); kill(0) ${k.code}`; }
+  }
+};
 afterEach(async () => {
   const strays = [...strayPids].filter(isRunning);
   strayPids.clear();
+  const described = strays.map((pid) => `grandchild ${pid} outlived its test (${describeProc(pid)})`);
   for (const pid of strays) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
-  expect(strays.map((pid) => `grandchild ${pid} outlived its test`)).toEqual([]);
+  expect(described).toEqual([]);
   const leaked = [...spawned].filter((child) => child.exitCode === null && child.signalCode === null);
   spawned.clear();
   for (const child of leaked) child.kill('SIGKILL');
@@ -197,9 +214,19 @@ describe('the turn runner', () => {
         ownGroup = wantsOwnProcessGroup(ctx);
         child = spawnInOwnGroup(childSpawn, process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
         spawned.add(child);
+        // A pid is read only from a whole line, so a chunk split mid-number can't
+        // record a pid the grandchild doesn't have (F340).
+        let pending = '';
         child.stderr.on('data', (chunk) => {
-          grandchild = Number(String(chunk).trim());
-          strayPids.add(grandchild);
+          pending += String(chunk);
+          const lines = pending.split('\n');
+          pending = lines.pop();
+          for (const line of lines) {
+            if (/^\d+$/.test(line.trim())) {
+              grandchild = Number(line.trim());
+              strayPids.add(grandchild);
+            }
+          }
         });
         child.once('spawn', () => ctx.onSpawn({}, child));
       }),
