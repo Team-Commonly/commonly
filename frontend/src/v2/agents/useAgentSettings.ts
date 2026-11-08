@@ -56,6 +56,7 @@ interface ManageSettingsResponse {
   runtimeManaged?: boolean;
   harnessCatalog?: HarnessCatalogEntry[];
   installations: Array<{ podId: string; podName: string; status: string }>;
+  otherDirectRoomCount?: number;
 }
 
 // Markers the page turns into translated text, so neither is shown as it stands.
@@ -139,7 +140,9 @@ export const useAgentSettings = (agentName: string, instanceId: string) => {
         }
       }
     }
-    throw new Error(rows.length ? PODS_REFUSED : NOTHING_MANAGEABLE);
+    // Rooms counted but not listed still mean the agent has pods; only an admin
+    // can read another person's room, so everyone else gets the refused state.
+    throw new Error(rows.length || settingsResponse.data.otherDirectRoomCount ? PODS_REFUSED : NOTHING_MANAGEABLE);
   }, [agentName, instanceId, installationUrl]);
 
   useEffect(() => {
