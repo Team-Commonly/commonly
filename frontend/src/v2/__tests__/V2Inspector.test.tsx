@@ -70,7 +70,7 @@ describe('V2Inspector', () => {
     });
   });
 
-  test('D215 panel fold: every group is one closed row at rest and opens on demand', async () => {
+  test('D215 panel fold: Needs you starts open, the rest are closed rows that open on demand', async () => {
     sessionStorage.removeItem(INSPECTOR_OPEN_KEY);
     renderInspector({
       currentUserId: 'owner-1',
@@ -78,26 +78,35 @@ describe('V2Inspector', () => {
     });
     const folds = ['Needs you', 'Agents', 'Files', 'Who can join']
       .map((name) => screen.getByRole('button', { name: new RegExp(`^${name}`) }));
-    folds.forEach((fold) => expect(fold).toHaveAttribute('aria-expanded', 'false'));
-    // Counts ride the rows; the content stays out of the DOM until opened.
+    // The d215 frame opens Needs you; every other group is one closed row.
+    expect(folds[0]).toHaveAttribute('aria-expanded', 'true');
+    folds.slice(1).forEach((fold) => expect(fold).toHaveAttribute('aria-expanded', 'false'));
+    expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
+    // Counts ride the rows; a closed group's content stays out of the DOM.
     expect(folds[0]).toHaveAccessibleName('Needs you 1');
     expect(folds[1]).toHaveAccessibleName('Agents 2');
     expect(await screen.findByRole('button', { name: 'Files 7' })).toBeInTheDocument();
-    expect(screen.queryByText('Slack default mode')).not.toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'Invite-only' })).not.toBeInTheDocument();
 
     fireEvent.click(folds[3]);
     expect(folds[3]).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('radio', { name: 'Invite-only' })).toBeInTheDocument();
-    fireEvent.click(folds[0]);
-    expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
-    expect(JSON.parse(sessionStorage.getItem(INSPECTOR_OPEN_KEY) || '[]')).toEqual(['join', 'needs-you']);
+    expect(JSON.parse(sessionStorage.getItem(INSPECTOR_OPEN_KEY) || '[]')).toEqual(['needs-you', 'join']);
     fireEvent.click(folds[0]);
     // The group body closes by size, inert, then unmounts when its animation ends.
     const closing = screen.getByText('Slack default mode').closest('.v2-fold') as Element;
     expect(closing).toHaveClass('v2-fold--closing');
     fireEvent.animationEnd(closing);
     expect(screen.queryByText('Slack default mode')).not.toBeInTheDocument();
+    // Closing it sticks for the session.
+    expect(JSON.parse(sessionStorage.getItem(INSPECTOR_OPEN_KEY) || '[]')).toEqual(['join']);
+  });
+
+  test('a session that closed Needs you keeps it closed', () => {
+    sessionStorage.setItem(INSPECTOR_OPEN_KEY, JSON.stringify([]));
+    renderInspector();
+    expect(screen.getByRole('button', { name: /^Needs you/ })).toHaveAttribute('aria-expanded', 'false');
+    sessionStorage.removeItem(INSPECTOR_OPEN_KEY);
   });
 
   test('section titles carry no mono captions', () => {
@@ -175,7 +184,7 @@ describe('V2Inspector', () => {
 
     renderInspector({ detail: { ...detail, messages } as any });
     expect(screen.getByRole('heading', { name: /Needs you/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Thread' }));
     expect(screen.queryByRole('heading', { name: /Needs you/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^cy/ }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/pod-1#message-20');
@@ -193,14 +202,14 @@ describe('V2Inspector', () => {
 
   test('the threads view says so when the pod has none', () => {
     renderInspector();
-    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Thread' }));
     expect(screen.getByText('No threads in the loaded messages.')).toBeInTheDocument();
   });
 
   test('opening another pod puts the panel back on the pod view', () => {
     const view = renderInspector();
-    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
-    expect(screen.getByRole('radio', { name: 'Threads' })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: 'Thread' }));
+    expect(screen.getByRole('radio', { name: 'Thread' })).toBeChecked();
     view.rerender(
       <MemoryRouter>
         <V2Inspector

@@ -14,6 +14,9 @@
 .v2m-ahead { display: block; min-width: 0; }
 .v2m-ahead h1 { font: 800 24px/1 var(--v2-font-display); letter-spacing: -0.03em; margin: 0; white-space: nowrap; }
 .v2m-ahead .st { display: flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); margin: 5px 0 0; }
+/* The connection dot: filled while it reaches the agent, a ring otherwise. */
+.v2m-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; border: 1px solid var(--v2-status-idle); }
+.v2m-dot--connected, .v2m-dot--available { border-color: var(--v2-status-live); background: var(--v2-status-live); }
 .v2m-pbody { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 28px; box-sizing: border-box; }
 
 /* The frame's grid stretches its row, so the nav column runs as tall as the notes. */

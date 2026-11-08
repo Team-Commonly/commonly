@@ -1627,7 +1627,7 @@
       "joinOpen": "Open",
       "viewLabel": "Panel view",
       "viewPod": "Pod",
-      "viewThreads": "Threads",
+      "viewThreads": "Thread",
       "hidePanel": "Hide panel",
       "noThreads": "No threads in the loaded messages."
     },
@@ -1800,17 +1800,12 @@
       "pr": "View PR",
       "record": "View record",
       "priority": "Priority",
-      "assignedTo": "Assigned to",
-      "claimedBy": "Claimed by",
-      "leaseLeft": "Lease left",
       "unassigned": "Unassigned",
       "notClaimed": "Not claimed",
       "expiredAt": "Lease expired at {{time}}",
       "remaining": "{{minutes}}m · until {{time}}",
-      "timeUnavailable": "Lease time unavailable",
       "follow": "Follow task",
       "following": "Following",
-      "watchers": "Watchers",
       "digestHint": "Updates appear in your digest.",
       "memberUnavailable": "Member unavailable",
       "saveError": "Could not save this change. Try again.",
@@ -1818,7 +1813,12 @@
       "showEarlierUpdates": "Show {{count}} earlier updates",
       "hideEarlierUpdates": "Hide earlier updates",
       "depends": "Depends on",
-      "noDeps": "None"
+      "noDeps": "None",
+      "owner": "Owner",
+      "prRow": "PR",
+      "more": "More",
+      "watcherCount": "{{count}} following",
+      "openInChat": "Open in chat"
     },
     "form": {
       "title": "Title",
@@ -2356,7 +2356,9 @@
       "private": "Only {{name}}'s owner and admins can read its memory.",
       "loadFailed": "Memory didn't load. Refresh to try again.",
       "noMatch": "No notes match “{{query}}”.",
-      "noEntry": "No entry"
+      "noEntry": "No entry",
+      "podCount_one": "{{count}} pod",
+      "podCount_other": "{{count}} pods"
     },
     "activity": {
       "title": "Recent activity",

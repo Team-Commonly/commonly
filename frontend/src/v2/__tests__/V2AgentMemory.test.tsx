@@ -56,6 +56,41 @@ describe('Edit', () => {
   });
 });
 
+describe('head status', () => {
+  const wire = (connection) => axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory')) return Promise.resolve({ data: { viewerRole: 'owner', totalEntries: 0, sections: [] } });
+    if (url.startsWith('/api/agent-profile')) return Promise.resolve({ data: { agent: { displayName: 'Maya' }, pods: { count: 4 } } });
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-9' } });
+    if (url === '/api/registry/pods/pod-9/agents') {
+      return Promise.resolve({ data: { agents: [{ name: 'maya-claude', instanceId: 'default', connection }] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+
+  it('shows the connection dot and state beside the pod count, as the frame does', async () => {
+    wire({ state: 'connected', lastSeenAt: null });
+    renderPage();
+    expect(await screen.findByTestId('agent-memory-connection')).toHaveTextContent('Connected');
+    const line = document.querySelector('.v2m-ahead .st');
+    expect(line).toHaveTextContent('Connected · 4 pods');
+    expect(line.querySelector('.v2m-dot--connected')).not.toBeNull();
+  });
+
+  it('draws a ring, not a filled dot, for an agent that has stopped', async () => {
+    wire({ state: 'stopped', lastSeenAt: null });
+    renderPage();
+    await screen.findByTestId('agent-memory-connection');
+    expect(document.querySelector('.v2m-dot--stopped')).not.toBeNull();
+  });
+
+  it('keeps the plain pod line when no pod roster reports a connection', async () => {
+    wire(undefined);
+    renderPage();
+    await waitFor(() => expect(document.querySelector('.v2m-ahead .st')).toHaveTextContent('In 4 pods'));
+    expect(screen.queryByTestId('agent-memory-connection')).toBeNull();
+  });
+});
+
 describe('groupSections', () => {
   it('gives soul its own Identity group, shared its own Shared group, and journal sections to Journal', () => {
     const groups = groupSections([section('daily'), section('soul'), section('cycles'), section('shared')]);

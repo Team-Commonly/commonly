@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
-import V2PodBoard from '../components/V2PodBoard';
+import V2PodBoard, { prLabel } from '../components/V2PodBoard';
 import { AuthContext } from '../../context/AuthContext';
 
 let mockSocketValue = { socket: null, connected: false, joinPod: jest.fn(), leavePod: jest.fn() };
@@ -584,7 +584,15 @@ describe('V2PodBoard', () => {
   });
 });
 
-test('priority orders cards, separates assignment from claim, and edits the stored priority', async () => {
+// Follow sits under the drawer head's More button (d215 frame).
+// The popover grows in from visibility: hidden, so wait for its item.
+const openMore = async () => {
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'More' }));
+  await screen.findByRole('menuitemcheckbox');
+};
+const followItem = () => screen.getByRole('menuitemcheckbox', { name: /Follow task|Following/ });
+
+test('priority orders cards, shows the claim as the one owner row, and edits the stored priority', async () => {
   const task = { taskId: 'TASK-9', taskNum: 9, title: 'Urgent work', priority: 'P0', status: 'claimed', assignee: 'rivet', claimedBy: 'u2', claimExpiresAt: new Date(Date.now() + 18 * 60000).toISOString(), watchers: [], updates: [] };
   const low = { ...task, taskId: 'TASK-1', taskNum: 1, title: 'Later work', priority: 'P3', status: 'claimed' };
   wireAxios([low, task]);
@@ -595,11 +603,61 @@ test('priority orders cards, separates assignment from claim, and edits the stor
   expect(cards[0]).toHaveTextContent('TASK-9');
   fireEvent.click(screen.getByTitle('TASK-9'));
   const dialog = screen.getByRole('dialog', { name: /Urgent work/ });
-  expect(within(dialog).getByText('Assigned to').nextElementSibling).toHaveTextContent('rivet');
-  expect(within(dialog).getByText('Claimed by').nextElementSibling).toHaveTextContent('u2');
+  // The claimant owns the row while the claim holds; the assignee is on the record.
+  const owner = within(dialog).getByText('Owner').nextElementSibling;
+  expect(owner).toHaveTextContent('u2');
+  expect(owner).toHaveTextContent(/18m · until/);
+  expect(owner).not.toHaveTextContent('rivet');
+  expect(within(dialog).queryByText('Assigned to')).not.toBeInTheDocument();
+  expect(within(dialog).queryByText('Watchers')).not.toBeInTheDocument();
   fireEvent.change(within(dialog).getByLabelText('Priority'), { target: { value: 'P1' } });
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-9', { priority: 'P1' }, expect.any(Object)));
   expect(await within(dialog).findByDisplayValue('P1')).toBeInTheDocument();
+});
+
+test('an agent claimant keyed by its instance id still shows its face, on the card and in the owner row', async () => {
+  // A hosted agent's claim stores claimedBy = its instance id and claimedByUserId = its User id.
+  const task = { taskId: 'TASK-4', title: 'Agent work', status: 'claimed', claimedBy: 'fay', claimedByUserId: 'agent-id',
+    claimExpiresAt: new Date(Date.now() + 10 * 60000).toISOString(), watchers: [], updates: [] };
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task], permissions: { canWrite: true } } });
+    if (url.startsWith('/api/pods/')) return Promise.resolve({ data: { name: 'My Workspace', members: [{ _id: 'agent-id', username: 'openclaw-fay', displayName: 'Fay', isBot: true, profilePicture: 'default' }] } });
+    return Promise.resolve({ data: {} });
+  });
+  renderBoard();
+  const card = await screen.findByTitle('TASK-4');
+  // The agent tier draws a character image; initials would be text with no img.
+  await waitFor(() => expect(card.querySelector('.v2-board__card-avatar img')).not.toBeNull());
+  fireEvent.click(card);
+  const owner = within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling;
+  expect(owner).toHaveTextContent('Fay');
+  expect(owner.querySelector('.v2-board__member-avatar img')).not.toBeNull();
+});
+
+test('the pr row links the pull request by its number', async () => {
+  const task = { taskId: 'TASK-5', title: 'Shipped', status: 'done', prUrl: 'https://github.com/Team-Commonly/commonly/pull/409', watchers: [], updates: [] };
+  wireAxios([task]);
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-5'));
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByRole('link', { name: '#409' })).toHaveAttribute('href', task.prUrl);
+  expect(within(dialog).getByText('PR').tagName).toBe('DT');
+  expect(within(dialog).queryByRole('link', { name: 'View PR' })).not.toBeInTheDocument();
+});
+
+test('Open in chat takes the drawer to the pod\'s chat', async () => {
+  wireAxios([{ taskId: 'TASK-6', title: 'Talk it over', status: 'pending', watchers: [], updates: [] }]);
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-6'));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Open in chat' }));
+  expect(await screen.findByText('chat page')).toBeInTheDocument();
+});
+
+test('prLabel reads a pull number and nothing else', () => {
+  expect(prLabel('https://github.com/a/b/pull/409')).toBe('#409');
+  expect(prLabel('https://github.com/a/b/pull/409/files')).toBe('#409');
+  expect(prLabel('https://github.com/a/b/pull/4090x')).toBeNull();
+  expect(prLabel('https://example.com/review/1')).toBeNull();
 });
 
 test('follow is self-service and shows a failed request without changing subscription state', async () => {
@@ -608,16 +666,23 @@ test('follow is self-service and shows a failed request without changing subscri
   axios.post.mockRejectedValueOnce(new Error('offline'));
   renderBoard();
   fireEvent.click(await screen.findByTitle('TASK-1'));
-  const follow = screen.getByRole('button', { name: 'Follow task' });
+  await openMore();
+  const follow = followItem();
+  expect(follow).toHaveTextContent('0 following');
   fireEvent.click(follow);
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not save');
-  expect(follow).toHaveAttribute('aria-pressed', 'false');
+  expect(follow).toHaveAttribute('aria-checked', 'false');
   axios.post.mockResolvedValueOnce({ data: { task: { ...task, watchers: ['u1'] } } });
   wireAxios([{ ...task, watchers: ['u1'] }]);
   fireEvent.click(follow);
-  expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
+  await waitFor(() => expect(followItem()).toHaveAttribute('aria-checked', 'true'));
+  expect(followItem()).toHaveTextContent('Following');
+  expect(followItem()).toHaveTextContent('1 following');
   expect(axios.post).toHaveBeenLastCalledWith('/api/v1/tasks/pod-1/TASK-1/watch', { following: true }, expect.any(Object));
-  expect(screen.getByText('alice')).toBeInTheDocument();
+  // Escape inside the menu closes the menu, not the drawer.
+  fireEvent.keyDown(followItem(), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('menuitemcheckbox')).not.toBeInTheDocument());
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
@@ -629,7 +694,8 @@ test('viewer priority is read-only while follow remains available', async () => 
   renderBoard();
   fireEvent.click(await screen.findByTitle('TASK-1'));
   expect(screen.getByLabelText('Priority')).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Follow task' })).toBeEnabled();
+  await openMore();
+  expect(followItem()).toHaveAttribute('aria-disabled', 'false');
 });
 
 test('drawer traps keyboard focus and restores its opener', async () => {
@@ -640,9 +706,12 @@ test('drawer traps keyboard focus and restores its opener', async () => {
   fireEvent.click(opener);
   const close = screen.getByRole('button', { name: 'Close' });
   expect(close).toHaveFocus();
-  fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
-  const buttons = within(screen.getByRole('dialog')).getAllByRole('button');
-  expect(buttons[buttons.length - 1]).toHaveFocus();
+  // The priority chip is now the first control; Shift+Tab from it wraps to the last.
+  const priority = screen.getByLabelText('Priority');
+  priority.focus();
+  fireEvent.keyDown(priority, { key: 'Tab', shiftKey: true });
+  const controls = screen.getByRole('dialog').querySelectorAll('button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled)');
+  expect(controls[controls.length - 1]).toHaveFocus();
   fireEvent.keyDown(document, { key: 'Escape' });
   expect(opener).toHaveFocus();
 });
@@ -678,7 +747,8 @@ test('Follow keeps focus during a pending request and refuses a second click', a
   axios.post.mockImplementationOnce(() => new Promise((resolve) => { finishFollow = resolve; }));
   renderBoard();
   fireEvent.click(await screen.findByTitle('TASK-1'));
-  const follow = screen.getByRole('button', { name: 'Follow task' });
+  await openMore();
+  const follow = followItem();
   follow.focus();
   fireEvent.click(follow);
   expect(follow).toHaveAttribute('aria-disabled', 'true');
@@ -689,7 +759,7 @@ test('Follow keeps focus during a pending request and refuses a second click', a
   wireAxios([{ ...task, watchers: ['u1'] }]);
   await act(async () => { finishFollow({ data: { task: { ...task, watchers: ['u1'] } } }); });
   expect(follow).toHaveAttribute('aria-disabled', 'false');
-  expect(follow).toHaveAttribute('aria-pressed', 'true');
+  expect(follow).toHaveAttribute('aria-checked', 'true');
   expect(follow).toHaveFocus();
 });
 
@@ -701,12 +771,13 @@ test('a delayed Follow response cannot replace another follower from the current
   axios.post.mockImplementationOnce(() => new Promise((resolve) => { finishFollow = resolve; }));
   renderBoard();
   fireEvent.click(await screen.findByTitle('TASK-1'));
-  fireEvent.click(screen.getByRole('button', { name: 'Follow task' }));
+  await openMore();
+  fireEvent.click(followItem());
   // Both writes commit while the first response is delayed. No GET is pending.
   wireAxios([{ ...task, watchers: ['u1', 'u2'] }]);
   await act(async () => { finishFollow({ data: { task: { ...task, watchers: ['u1'] } } }); });
-  expect(await screen.findByRole('button', { name: /Following/ })).toHaveAttribute('aria-pressed', 'true');
-  expect(document.querySelectorAll('.v2-board__watcher')).toHaveLength(2);
+  await waitFor(() => expect(followItem()).toHaveAttribute('aria-checked', 'true'));
+  expect(followItem()).toHaveTextContent('2 following');
 });
 
 test('the drawer links to the task record only when the server says the reader may read it', async () => {

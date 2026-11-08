@@ -6,7 +6,7 @@ import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
 import { presetCharacterOptions } from '../../utils/avatarUtils';
 import { characterAvatarFor } from '../utils/avatars';
-import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel, fetchOwnedConnection } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
 import { roomRefusal } from '../utils/roomRefusal';
@@ -221,24 +221,9 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
     }
     let cancelled = false;
     const headers = { Authorization: `Bearer ${token}` };
-    getClient().get<{ writablePodId?: string | null }>(
-      `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings?instanceId=${encodeURIComponent(instanceId || 'default')}`,
-      { headers },
-    ).then(async (writable) => {
-      const podId = writable.data.writablePodId;
-      if (!podId) return null;
-      const roster = await getClient().get<{ agents?: Array<{
-        name: string; instanceId: string; runtime?: { runtimeType?: string }; connection?: AgentConnection;
-      }> }>(`/api/registry/pods/${encodeURIComponent(podId)}/agents`, { headers });
-      return { podId, roster };
-    }).then((result) => {
-      if (cancelled) return;
-      const match = result?.roster.data.agents?.find((row) => row.name === agentName
-        && row.instanceId === (instanceId || 'default') && row.connection);
-      setOwnedConnection(match?.connection ? {
-        connection: match.connection, podId: result!.podId, runtimeType: match.runtime?.runtimeType,
-      } : null);
-    }).catch(() => { if (!cancelled) setOwnedConnection(null); });
+    fetchOwnedConnection((url) => getClient().get(url, { headers }), agentName, instanceId || 'default')
+      .then((result) => { if (!cancelled) setOwnedConnection(result); })
+      .catch(() => { if (!cancelled) setOwnedConnection(null); });
     return () => { cancelled = true; };
   }, [agentName, instanceId, memIndex]);
 
