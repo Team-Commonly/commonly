@@ -1844,16 +1844,18 @@ const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless
 // F335: a turn that posted through a tool and then failed is retried with the
 // same prompt, often in a fresh session, so nothing tells the retry its answer
 // is already up. It names that post, so the retry adds what's missing or stays
-// silent instead of answering the person a second time.
+// silent instead of answering the person a second time. A batch's attempt can't
+// say which item its post answered, so in a batch the line says so.
 const EARLIER_ATTEMPT_EXCERPT = 300;
-export const earlierAttemptPosted = (part) => {
+export const earlierAttemptPosted = (part, { batch = false } = {}) => {
   const text = String(part?.content || '').replace(/\s+/g, ' ').trim();
-  const excerpt = text.length > EARLIER_ATTEMPT_EXCERPT
-    ? `${text.slice(0, EARLIER_ATTEMPT_EXCERPT)}…`
-    : text;
-  return `[An earlier attempt at this item failed after it posted in this pod (message ${part.id})`
+  const cut = text.length > EARLIER_ATTEMPT_EXCERPT;
+  const excerpt = cut ? `${text.slice(0, EARLIER_ATTEMPT_EXCERPT)}…` : text;
+  return `[An earlier attempt at ${batch ? 'this batch' : 'this item'} failed after it posted in this pod (message ${part.id})`
     + `${excerpt ? `, beginning ${JSON.stringify(excerpt)}` : ''}. That post is already there: don't post it again. `
-    + 'Add only what it still lacks, then checkpoint. If it already answers this item, checkpoint it and end with NO_REPLY.]';
+    + (batch ? 'It may answer this item or another one here. ' : '')
+    + (cut ? 'Read that message in full before you decide. ' : '')
+    + 'Add only what this item still lacks, then checkpoint. If it already answers this item, checkpoint it and end with NO_REPLY.]';
 };
 
 export const answersAPerson = (entry) => (
@@ -3434,7 +3436,9 @@ export const performRun = ({
       const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       const earlierPart = heldRetryParts.get(String(entry.event._id));
-      const earlierLine = earlierPart ? `\n${earlierAttemptPosted(earlierPart)}` : '';
+      const earlierLine = earlierPart
+        ? `\n${earlierAttemptPosted(earlierPart, { batch: shownEntries.length > 1 })}`
+        : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
         ? `\n[After ${answersAPerson(entry) ? 'all of your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({

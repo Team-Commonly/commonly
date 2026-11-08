@@ -275,19 +275,41 @@ describe('a retry after an attempt that posted', () => {
   });
 });
 
+describe('a batch', () => {
+  test("doesn't claim the post answered each item, since the attempt can't say which", async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-a'), makeEvent('evt-b')]] });
+    const spawn = jest.fn()
+      .mockImplementationOnce(async () => {
+        server.childPosts('answer-a', { content: 'Answer for a.' });
+        throw killed();
+      })
+      .mockResolvedValue({ text: 'NO_REPLY' });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await retryOnce(run);
+      const prompt = spawn.mock.calls[1][0];
+      expect(prompt).toContain('An earlier attempt at this batch failed after it posted in this pod (message answer-a)');
+      expect(prompt).toContain('It may answer this item or another one here.');
+      expect(prompt).not.toContain(EARLIER);
+    } finally { run.handle.stop(); }
+  });
+});
+
 describe('what the line says', () => {
   test('a long post is cut, and its whitespace folds to one line', () => {
     const line = earlierAttemptPosted({ id: 'm1', content: `first\n\nsecond ${'x'.repeat(400)}` });
     expect(line).toContain('beginning "first second x');
     expect(line).toContain('…"');
+    expect(line).toContain('Read that message in full before you decide.');
     expect(line).not.toMatch(/\n/);
-    expect(line.length).toBeLessThan(600);
+    expect(line.length).toBeLessThan(700);
   });
 
   test('a post with no text still names its id', () => {
     expect(earlierAttemptPosted({ id: 'm2', content: '' }))
       .toBe('[An earlier attempt at this item failed after it posted in this pod (message m2). '
-        + "That post is already there: don't post it again. Add only what it still lacks, then checkpoint. "
+        + "That post is already there: don't post it again. Add only what this item still lacks, then checkpoint. "
         + 'If it already answers this item, checkpoint it and end with NO_REPLY.]');
   });
 });
