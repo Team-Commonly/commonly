@@ -13,7 +13,7 @@
  *  - the in-memory trace store keeps no event data.
  */
 import { jest } from '@jest/globals';
-import { spawn as childSpawn } from 'child_process';
+import { spawn as childSpawn, execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -77,7 +77,8 @@ const isRunning = (pid) => {
 const strayPids = new Set();
 // F340: the sweep once found a grandchild running that the test's own check had
 // just seen gone, and nothing said what the process was. A failure now names its
-// state, parent and command line from /proc (or kill(0)'s answer off Linux), so
+// state, parent and command line, from /proc on Linux (where CI runs) and from
+// ps elsewhere, so
 // the next recurrence shows whether it was the grandchild, a reused pid, or a
 // process mid-teardown.
 const describeProc = (pid) => {
@@ -88,7 +89,12 @@ const describeProc = (pid) => {
     try { cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' ').trim().slice(0, 120); } catch { /* gone */ }
     return `state ${state}, ppid ${ppid}, comm ${comm}, cmd ${JSON.stringify(cmd)}`;
   } catch (e) {
-    try { process.kill(pid, 0); return `no /proc (${e.code}); kill(0) ok`; } catch (k) { return `no /proc (${e.code}); kill(0) ${k.code}`; }
+    try {
+      const ps = execFileSync('ps', ['-o', 'stat=,ppid=,command=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+      return `ps: ${JSON.stringify(ps.slice(0, 160))}`;
+    } catch (psError) {
+      return `no /proc (${e.code}) and no ps row (${psError.status ?? psError.code})`;
+    }
   }
 };
 afterEach(async () => {
@@ -217,17 +223,19 @@ describe('the turn runner', () => {
         // A pid is read only from a whole line, so a chunk split mid-number can't
         // record a pid the grandchild doesn't have (F340).
         let pending = '';
+        const notePid = (line) => {
+          if (/^\d+$/.test(line.trim())) {
+            grandchild = Number(line.trim());
+            strayPids.add(grandchild);
+          }
+        };
         child.stderr.on('data', (chunk) => {
           pending += String(chunk);
           const lines = pending.split('\n');
           pending = lines.pop();
-          for (const line of lines) {
-            if (/^\d+$/.test(line.trim())) {
-              grandchild = Number(line.trim());
-              strayPids.add(grandchild);
-            }
-          }
+          lines.forEach(notePid);
         });
+        child.stderr.on('end', () => notePid(pending));
         child.once('spawn', () => ctx.onSpawn({}, child));
       }),
     };
