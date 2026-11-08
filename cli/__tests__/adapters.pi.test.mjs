@@ -440,6 +440,30 @@ describe('spawn', () => {
       expect(err.message).toMatch(/^pi exited with code 0: fetch failed$/);
       expect(err.message).not.toMatch(/No project session/);
     });
+    // F336: a 429 answered by a tool-call-only message (pi's retry succeeded, so the
+    // refusal is let go), then a connection fault. Before, no text meant silent.
+    const toolOnly = event({ type: 'message_end', message: { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'toolCall', name: 'commonly_post_message' }] } });
+    const recovered = event({ type: 'auto_retry_start', attempt: 1, errorMessage: '429: rate limited' })
+      + event({ type: 'auto_retry_end', success: true, attempt: 1 });
+    test('a tool-only recovery then a statusless failure fails the turn, so it is retried', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: recovered + toolOnly + stopped('error', 'fetch failed') + ended, stderr: startupWarning, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toMatch(/^pi exited with code 0: fetch failed$/);
+      expect(err.status).toBeUndefined();
+    });
+    test('a textless error stop pi kept a refusal for still resolves, so the run loop names it', async () => {
+      const { impl } = makeSpawnImpl({ stdout: toolOnly + stopped('error', 'upstream refused') + ended + refused429, code: 0 });
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.text).toBe('');
+      expect(result.upstream).toMatchObject({ status: 429 });
+    });
+    test('a tool-only turn that ends on a normal stop stays silent', async () => {
+      const { impl } = makeSpawnImpl({ stdout: toolOnly + final('') + ended, code: 0 });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('');
+    });
     // F320: a stop pi gave a cause, with no status in it. pi 0.84.1 writes this
     // errorMessage for an OpenAI-shaped finish_reason (openai-completions.js).
     test('a content filter stop names its cause, so it is refused rather than retried', async () => {

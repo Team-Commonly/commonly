@@ -690,7 +690,10 @@ const runPi = ({
     // A refused turn exits 0 too, so here the stream is what says the text was
     // interim. Posting it would answer with half a turn (F258). The last stop
     // decides, not `reply.upstream`, which outlives a refusal pi recovered from.
-    if (code === 0 && reply.sawAssistant && !reply.finished && reply.lastStop === 'error') {
+    // With no text the turn fails too when no status names it (F336): a tool-only
+    // message, then "fetch failed", is a fault to retry, not a silent turn. A
+    // refusal pi kept still resolves, so the run loop names it (TASK-096).
+    if (code === 0 && !reply.finished && reply.lastStop === 'error' && (reply.sawAssistant || !reply.upstream)) {
       return reject(stoppedTurnFailure(reply, {
         code, signal, stderr, credentials,
       }));
