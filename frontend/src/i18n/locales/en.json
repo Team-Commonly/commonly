@@ -1817,7 +1817,8 @@
       "owner": "Owner",
       "prRow": "PR",
       "more": "More",
-      "watcherCount": "{{count}} following"
+      "watcherCount": "{{count}} following",
+      "openInChat": "Open in chat"
     },
     "form": {
       "title": "Title",

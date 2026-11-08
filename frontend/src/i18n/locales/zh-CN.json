@@ -1806,7 +1806,8 @@
       "owner": "负责人",
       "prRow": "PR",
       "more": "更多",
-      "watcherCount": "{{count}}人关注"
+      "watcherCount": "{{count}}人关注",
+      "openInChat": "在对话中打开"
     },
     "form": {
       "title": "标题",

@@ -645,6 +645,14 @@ test('the pr row links the pull request by its number', async () => {
   expect(within(dialog).queryByRole('link', { name: 'View PR' })).not.toBeInTheDocument();
 });
 
+test('Open in chat takes the drawer to the pod\'s chat', async () => {
+  wireAxios([{ taskId: 'TASK-6', title: 'Talk it over', status: 'pending', watchers: [], updates: [] }]);
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-6'));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Open in chat' }));
+  expect(await screen.findByText('chat page')).toBeInTheDocument();
+});
+
 test('prLabel reads a pull number and nothing else', () => {
   expect(prLabel('https://github.com/a/b/pull/409')).toBe('#409');
   expect(prLabel('https://github.com/a/b/pull/409/files')).toBe('#409');

@@ -1184,6 +1184,15 @@ const V2PodBoard: React.FC = () => {
               <span className="v2-board__card-spacer" />
               <button
                 type="button"
+                className="v2-board__drawer-chat v2-board__key v2-board__key--ghost v2-board__key--icon v2-board__key--sm"
+                aria-label={t('board.detail.openInChat')}
+                title={t('board.detail.openInChat')}
+                onClick={() => navigate(`/v2/pods/${podId}`)}
+              >
+                <ShellGlyph name="out" size={16} />
+              </button>
+              <button
+                type="button"
                 className="v2-board__drawer-more v2-board__key v2-board__key--ghost v2-board__key--icon v2-board__key--sm"
                 aria-label={t('board.detail.more')}
                 title={t('board.detail.more')}
