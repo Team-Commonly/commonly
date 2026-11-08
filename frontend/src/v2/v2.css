@@ -3820,7 +3820,16 @@ body.modern-ui.v2-canvas {
    selector here carries makes order-fragile fixes easy to write by accident. */
 .v2-root button.v2-connector-row__action:hover:not(:disabled):not(.v2-connector-row__action--secondary),
 .v2-root a.v2-connector-row__action:hover:not(.v2-connector-row__action--secondary) { background: var(--v2-ink-hover); }
-.v2-root button.v2-connector-row__action:disabled { cursor: progress; opacity: 0.65; }
+/* F152: faded ink still read as the enabled Grant button in light mode. A
+   disabled primary action drops to the quiet surface look, so "not yet" can't be
+   mistaken for "ready". The secondary keeps its fade. */
+.v2-root button.v2-connector-row__action:disabled:not(.v2-connector-row__action--secondary) {
+  border-color: var(--v2-border);
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-tertiary);
+  cursor: not-allowed;
+}
+.v2-root button.v2-connector-row__action--secondary:disabled { cursor: not-allowed; opacity: 0.65; }
 .v2-root button.v2-connector-row__action--secondary,
 .v2-root a.v2-connector-row__action--secondary { border-color: var(--v2-border); background: var(--v2-surface); color: var(--v2-ink); }
 .v2-root button.v2-connector-row__action--secondary:hover,

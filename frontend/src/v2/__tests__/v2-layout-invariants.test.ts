@@ -2837,6 +2837,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Split per SELECTOR, not per rule: both variants share one declaration block.
     expect(inkHoverChunks).toHaveLength(2);
     expect(inkHoverChunks.find((selector) => selector.includes('button.v2-connector-row__action:hover'))).toContain(':not(:disabled)');
+    // F152: a disabled primary action leaves the ink fill, so it can't pass for an enabled one.
+    const disabledPrimary = topLevelRuleBody(v2, '.v2-root button.v2-connector-row__action:disabled:not(.v2-connector-row__action--secondary)');
+    expect(disabledPrimary).toContain('background: var(--v2-surface-tint)');
+    expect(disabledPrimary).toContain('color: var(--v2-text-tertiary)');
+    expect(disabledPrimary).not.toContain('opacity');
     for (const selector of inkHoverChunks) {
       expect(selector).toContain(':not(.v2-connector-row__action--secondary)');
     }
