@@ -139,6 +139,7 @@ const V2AccountSection: React.FC = () => {
     const nameChanged = nextName !== savedName;
     const usernameChanged = nextUsername !== savedUsername.toLowerCase();
     if (!nameChanged && !usernameChanged) {
+      nameEdited.current = false;
       setNotice('settings.account.noChanges');
       setError(null);
       return;
