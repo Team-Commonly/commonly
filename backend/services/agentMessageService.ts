@@ -941,26 +941,40 @@ class AgentMessageService {
   }
 
   /**
-   * Has a wake fired here since this agent last posted? That wake's post goes
-   * past the run cap: one line per wake in a quiet pod is not a monologue. One
-   * post per wake, since the post itself is what ends it.
+   * Is this post part of a wake's output? A wake's turn goes past the run cap:
+   * one turn per wake in a quiet pod is not a monologue. A turn often says a
+   * line and then its detail (Triage's "Swept: 1 new" and the finding), so the
+   * pass covers the wake's own posts, at most OWED_POSTS_PER_WAKE of them and
+   * within OWED_TURN_WINDOW_MS of the wake. Posts before the wake are what
+   * decide whether it is owed at all; posts after it are the turn itself.
    *
    * Two wakes count. A scheduled one is `config.schedule.lastFiredAt`, which
-   * agentScheduleService writes. A heartbeat is the newest delivered or acked
-   * `heartbeat` AgentEvent for this agent in this pod; every heartbeat, hosted
+   * agentScheduleService writes. A heartbeat is one of the newest two delivered
+   * or acked `heartbeat` AgentEvents for this agent in this pod; every heartbeat, hosted
    * ones included, is such a row (a native turn runs from the row enqueue
    * creates). The `unread-digest` heartbeat counts too: it fires only on
    * others' unread activity, which has already broken the run, and the floor
    * below bounds it. A pending heartbeat hasn't woken anyone, so it doesn't.
    *
-   * A heartbeat earns the pass only when the agent's last own post here is at
-   * least HEARTBEAT_OWED_POST_FLOOR_MS old, so a 10-minute heartbeat still
-   * can't post six lines an hour into an empty room. A fixed floor rather than
-   * the install's interval: the interval would grant a short heartbeat exactly
-   * the drip the cap exists to stop. The schedule wake has no floor; it fires
-   * once a day.
+   * A heartbeat's turn is owed only when the agent's last own post before
+   * that heartbeat is at least HEARTBEAT_OWED_POST_FLOOR_MS old. So whatever
+   * its interval, a heartbeat agent in an empty room gets at most one turn,
+   * OWED_POSTS_PER_WAKE lines, an hour. A fixed floor rather than the
+   * install's interval: the interval would grant a short heartbeat exactly the
+   * drip the cap exists to stop. The schedule wake has no floor; it fires once
+   * a day.
+   *
+   * Known limit: the turn is bounded by time and count, not by which turn made
+   * a post, because a native post carries no event id. Any own post inside an
+   * open turn spends that turn's budget, whatever produced it.
    */
   static readonly HEARTBEAT_OWED_POST_FLOOR_MS = 60 * 60 * 1000;
+
+  /** A line and two details: past that a turn is a monologue again. */
+  static readonly OWED_POSTS_PER_WAKE = 3;
+
+  /** From delivery; a wake's turn is over by then, and a later post is not its output. */
+  static readonly OWED_TURN_WINDOW_MS = 15 * 60 * 1000;
 
   static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
     try {
@@ -981,21 +995,43 @@ class AgentMessageService {
       // the normalized id. No collation: it would keep the query off the
       // partial heartbeat_newest_per_install index.
       const instanceIds = Array.from(new Set([instance, String(row?.instanceId || 'default')]));
-      const heartbeat = await AgentEvent.findOne({
+      // The newest two: a heartbeat that lands mid-turn must not cut off the
+      // turn the one before it started.
+      const heartbeats = await AgentEvent.find({
         agentName: name,
         instanceId: { $in: instanceIds },
         status: { $in: ['delivered', 'acked'] },
         type: 'heartbeat',
         podId: { $eq: podId },
-      }).sort({ createdAt: -1 }).select('createdAt').lean();
-      const beatAt = new Date(heartbeat?.createdAt || 0).valueOf();
-      if (!firedAt && !beatAt) return false;
+      }).sort({ createdAt: -1 }).limit(2).select('createdAt deliveredAt').lean() as Array<{
+        createdAt?: Date; deliveredAt?: Date;
+      }>;
+      if (!firedAt && !heartbeats.length) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-      const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
-      const lastOwnAt = new Date(own[own.length - 1]?.createdAt || 0).valueOf();
-      if (firedAt > lastOwnAt) return true;
-      return beatAt > lastOwnAt
-        && Date.now() - lastOwnAt >= AgentMessageService.HEARTBEAT_OWED_POST_FLOOR_MS;
+      // An approval receipt under the agent's identity is a system line: it
+      // neither speaks for the agent nor spends a turn (as countConsecutiveRun).
+      const ownAt = recent
+        .filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId))
+        .filter((message) => String((message as { messageType?: string })?.messageType || '').toLowerCase() !== 'system')
+        .map((message) => new Date(message?.createdAt || 0).valueOf());
+      const now = Date.now();
+      // The wake at `wakeAt` still owes its turn: nothing posted since, or
+      // fewer than the turn's posts and still inside its window, which runs
+      // from delivery so a seat that polls late keeps its whole turn.
+      const turnOpen = (wakeAt: number, startedAt: number) => {
+        const since = ownAt.filter((at) => at >= wakeAt).length;
+        if (since === 0) return true;
+        return since < AgentMessageService.OWED_POSTS_PER_WAKE
+          && now - startedAt <= AgentMessageService.OWED_TURN_WINDOW_MS;
+      };
+      const lastBefore = (wakeAt: number) => ownAt.filter((at) => at < wakeAt).reduce((x, y) => Math.max(x, y), 0);
+      if (firedAt && turnOpen(firedAt, firedAt)) return true;
+      return heartbeats.some((heartbeat) => {
+        const beatAt = new Date(heartbeat?.createdAt || 0).valueOf();
+        const deliveredAt = new Date(heartbeat?.deliveredAt || 0).valueOf();
+        return Boolean(beatAt) && turnOpen(beatAt, Math.max(beatAt, deliveredAt))
+          && now - lastBefore(beatAt) >= AgentMessageService.HEARTBEAT_OWED_POST_FLOOR_MS;
+      });
     } catch (error) {
       // Toward posting (review-checklist rule 19): a refusal here is a job's
       // result nobody sees, and the cost is one post past the cap.
