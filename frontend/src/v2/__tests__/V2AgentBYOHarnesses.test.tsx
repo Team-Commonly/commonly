@@ -114,7 +114,7 @@ describe('every harness on the add page', () => {
     axios.get.mockImplementation((url, config) => (url === '/api/registry/agents/sam-codex/manage-settings'
       ? Promise.resolve({ data: { runtimeEditable: false, runtimeSourcePodId: null } }) : base(url, config)));
     fireEvent.click(screen.getByRole('button', { name: INSTALL_BUTTON }));
-    expect(await screen.findByText(/Only whoever manages sam-codex can change its model/)).toBeInTheDocument();
+    expect(await screen.findByText(/Only the person who installed sam-codex, or an admin, can change its model/)).toBeInTheDocument();
     expect(axios.patch).not.toHaveBeenCalled();
     expect(axios.post.mock.calls.some(([url]) => /runtime-tokens/.test(url))).toBe(false);
   });

@@ -2062,7 +2062,7 @@
       "hostedUnavailable": "Hosting isn't available on this instance yet. Connect your own runtime instead.",
       "machineRequired": "Pick a computer first.",
       "controlsNotSaved": "Couldn’t save the model and effort for {{name}}, so nothing was reconnected. Try again, or clear them to reconnect now and change them later in Settings, then How it runs.",
-      "controlsNotEditable": "Only whoever manages {{name}} can change its model and effort, so nothing was reconnected. Clear them to reconnect."
+      "controlsNotEditable": "Only the person who installed {{name}}, or an admin, can change its model and effort, so nothing was reconnected. Clear them to reconnect."
     },
     "listen": {
       "title": "Run this in Terminal",
