@@ -180,6 +180,13 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
       if (attemptStatus) {
         status = attemptStatus;
         raw = bodyFromError(candidate);
+      } else if (typeof candidate === 'string' && candidate.trim()) {
+        // F341: the retries ended on a failure that names no status ("fetch
+        // failed"), so that is the turn's cause, not a 429 an earlier attempt
+        // hit. Holding the old status named the turn refused and it went
+        // unretried. An end with no error text at all says nothing, and keeps it.
+        status = null;
+        raw = null;
       }
       continue;
     }
