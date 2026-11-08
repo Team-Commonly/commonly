@@ -56,15 +56,16 @@ const app = express();
 app.use(express.json());
 app.use('/api/agents/runtime', require('../../../routes/agentsRuntime'));
 
-const ACK = '/api/agents/runtime/events/evt-1/ack';
-const BOT_ACK = '/api/agents/runtime/bot/events/evt-1/ack';
+const EVT = '6a00000000000000000e0a01';
+const ACK = `/api/agents/runtime/events/${EVT}/ack`;
+const BOT_ACK = `/api/agents/runtime/bot/events/${EVT}/ack`;
 
 describe('POST /events/:id/ack — delivery nonce', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsRequired.mockReturnValue(false);
     mockIsSuperseded.mockResolvedValue(false);
-    mockAcknowledge.mockResolvedValue({ _id: 'evt-1', status: 'acked' });
+    mockAcknowledge.mockResolvedValue({ _id: EVT, status: 'acked' });
   });
 
   test('passes the deliveryId and declared consumer through', async () => {
@@ -74,7 +75,7 @@ describe('POST /events/:id/ack — delivery nonce', () => {
       .send({ deliveryId: 'abc123', result: { outcome: 'posted' } });
 
     expect(res.status).toBe(200);
-    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', { outcome: 'posted' }, 'abc123', 'cli');
+    expect(mockAcknowledge).toHaveBeenCalledWith(EVT, 'pixel', 'default', { outcome: 'posted' }, 'abc123', 'cli');
   });
 
   test('the bot-token ack path also forwards its declared consumer', async () => {
@@ -92,7 +93,7 @@ describe('POST /events/:id/ack — delivery nonce', () => {
       .send({ deliveryId: 'abc123' });
 
     expect(res.status).toBe(200);
-    expect(mockAcknowledge).toHaveBeenCalledWith('evt-1', 'pixel', 'default', null, 'abc123', 'cli');
+    expect(mockAcknowledge).toHaveBeenCalledWith(EVT, 'pixel', 'default', null, 'abc123', 'cli');
   });
 
   test('a superseded delivery gets 409, not a cheerful 200', async () => {
@@ -120,7 +121,7 @@ describe('POST /events/:id/ack — delivery nonce', () => {
 
     expect(res.status).toBe(200);
     expect(mockAcknowledge).toHaveBeenCalledWith(...[
-      'evt-1',
+      EVT,
       'pixel',
       'default',
       { outcome: 'acknowledged' },
@@ -154,5 +155,27 @@ describe('POST /events/:id/ack — delivery nonce', () => {
 
     expect(res.status).toBe(200);
     expect(mockAcknowledge).toHaveBeenCalled();
+  });
+
+  // F330: prod logged a 500 for a 25-character id (one stray digit), a
+  // CastError out of the service. An id that cannot be an event is the
+  // caller's mistake, and the caller should hear so.
+  test.each([
+    ['runtime', '/api/agents/runtime/events/6a00000000000000000e0a01e/ack'],
+    ['bot', '/api/agents/runtime/bot/events/6a00000000000000000e0a01e/ack'],
+    ['runtime', '/api/agents/runtime/events/:id/ack'],
+  ])('a %s ack on a malformed event id is 400, and the service is never asked', async (_kind, path) => {
+    mockUserFindById.mockReturnValue({
+      lean: () => Promise.resolve({
+        isBot: true,
+        username: 'pixel',
+        botMetadata: { agentName: 'pixel', instanceId: 'default' },
+      }),
+    });
+    const res = await request(app).post(path).send({ deliveryId: 'abc123' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('invalid_event_id');
+    expect(mockAcknowledge).not.toHaveBeenCalled();
   });
 });

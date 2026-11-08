@@ -51,6 +51,7 @@ const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
+const { isObjectIdHex } = require('../middleware/objectIdParam');
 const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig');
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -1432,6 +1433,11 @@ router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(
     // themselves with `x-commonly-client`; anything that does not is
     // 'unknown', which is never enforced unless the operator sets `true`/`*`.
     const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // F330: an id that cannot be an event (one stray digit, in prod) is the
+    // caller's mistake; acknowledge() would throw a CastError and answer 500.
+    if (!isObjectIdHex(req.params.id)) {
+      return res.status(400).json({ code: 'invalid_event_id', message: 'Invalid event ID' });
+    }
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it
@@ -1561,6 +1567,11 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
     // themselves with `x-commonly-client`; anything that does not is
     // 'unknown', which is never enforced unless the operator sets `true`/`*`.
     const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // F330: an id that cannot be an event (one stray digit, in prod) is the
+    // caller's mistake; acknowledge() would throw a CastError and answer 500.
+    if (!isObjectIdHex(req.params.id)) {
+      return res.status(400).json({ code: 'invalid_event_id', message: 'Invalid event ID' });
+    }
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it

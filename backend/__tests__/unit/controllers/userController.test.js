@@ -171,17 +171,19 @@ describe('User Controller', () => {
   });
 
   describe('getUserById', () => {
+    // ObjectId-shaped: a non-ObjectId id is 404 before any lookup (F330).
+    const U1 = '6a0000000000000000000a01';
     it('returns the user when found', async () => {
       const mockUser = mockUserDoc({ _id: 'u1', username: 'test' });
       User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
-      const req = { params: { id: 'u1' }, user: { id: 'viewer' } };
+      const req = { params: { id: U1 }, user: { id: 'viewer' } };
       const res = {
         json: jest.fn(),
         status: jest.fn().mockReturnThis(),
         send: jest.fn(),
       };
       await userController.getUserById(req, res);
-      expect(User.findById).toHaveBeenCalledWith('u1');
+      expect(User.findById).toHaveBeenCalledWith(U1);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', username: 'test' }));
     });
 
@@ -193,7 +195,7 @@ describe('User Controller', () => {
         botMetadata: { displayName: 'Vale', agentName: 'openclaw', instanceId: 'vale' },
       });
       User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
-      const req = { params: { id: 'u1' }, user: { id: 'viewer' } };
+      const req = { params: { id: U1 }, user: { id: 'viewer' } };
       const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
 
       await userController.getUserById(req, res);
@@ -207,7 +209,7 @@ describe('User Controller', () => {
 
     it('returns 404 if the user is not found', async () => {
       User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(null) });
-      const req = { params: { id: 'missing' }, user: { id: 'viewer' } };
+      const req = { params: { id: '6a0000000000000000000aff' }, user: { id: 'viewer' } };
       const res = {
         json: jest.fn(),
         status: jest.fn().mockReturnThis(),
