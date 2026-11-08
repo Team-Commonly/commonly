@@ -136,6 +136,11 @@ describe('modelUnavailableFailure', () => {
     expect(modelUnavailableFailure(CLAUDE_403_UNNAMED, { fallbackModel: 'bad model <b>' })).toEqual({ model: null });
     expect(modelUnavailableHint(null)).toMatch(/this agent's model isn't available.*Settings, then Model\.$/);
   });
+
+  test('a CLI agent name outside the handle charset falls back to Settings rather than echo it', () => {
+    expect(modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' })).toMatch(/Settings, then Model\.$/);
+    expect(modelUnavailableHint('m-1', { cliAgentName: 'gw-codex' })).toMatch(/commonly agent config gw-codex --model <model>/);
+  });
 });
 
 const makeEvent = (id) => ({
@@ -145,7 +150,7 @@ const makeEvent = (id) => ({
 const drain = async () => { for (let i = 0; i < 24; i += 1) await new Promise((r) => setImmediate(r)); };
 const podPosts = (post) => post.mock.calls.filter(([route]) => String(route).endsWith('/pods/pod-abc/messages'));
 
-const runOnce = async (error, { model = 'seat-model' } = {}) => {
+const runOnce = async (error, { model = 'seat-model', readSavedControls = false } = {}) => {
   const post = jest.fn().mockResolvedValue({});
   const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] }
     : route === '/api/agents/runtime/events' ? { events: [makeEvent(`evt-${Math.random()}`)] } : {}));
@@ -154,7 +159,7 @@ const runOnce = async (error, { model = 'seat-model' } = {}) => {
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'hint-seat',
     environment: { model }, adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
-    setTimeoutImpl: () => 0, onError: () => {}, log: () => {},
+    setTimeoutImpl: () => 0, onError: () => {}, log: () => {}, readSavedControls,
   });
   await drain();
   stop();
@@ -178,6 +183,16 @@ describe('performRun posts the model hint', () => {
       content: `The model provider says ${model} isn't available for this agent. To change it, open the agent's Settings, then Model.`,
     }]]);
     expect(post.mock.calls.filter(([route]) => String(route).includes('/ack'))).toHaveLength(0);
+  });
+
+  // F354 (Growth re-walk, 11-08): a seat started with `agent run` shows Settings'
+  // model control read only, so its notice names the command instead.
+  test('a seat run from the CLI is told the command that changes its model, not Settings', async () => {
+    const post = await runOnce(CLAUDE_403, { readSavedControls: true });
+    const [[, body]] = podPosts(post);
+    expect(body.content).toBe("The model provider says claude-opus-5-5 isn't available for this agent. "
+      + 'To change it, run commonly agent config hint-seat --model <model> on the computer it runs on, then restart commonly agent run hint-seat.');
+    expect(body.content).not.toMatch(/Settings/);
   });
 
   // Some of these post their own line (turn-failure-notice.js), never a model hint.

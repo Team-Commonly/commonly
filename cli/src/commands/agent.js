@@ -2627,7 +2627,8 @@ export const performRun = ({
       const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
-        text: modelUnavailableHint(failure.model),
+        // readSavedControls is set only for a seat no daemon or managed runner owns.
+        text: modelUnavailableHint(failure.model, { cliAgentName: readSavedControls ? agentName : null }),
         limit: chatCharLimit,
         maxChunks: maxChatChunks,
         log,

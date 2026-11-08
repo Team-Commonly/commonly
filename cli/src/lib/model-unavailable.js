@@ -131,7 +131,20 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   return { model: safeModelName(fallbackModel) };
 };
 
-/** The one line posted in the pod. */
-export const modelUnavailableHint = (model) => (model
-  ? `The model provider says ${model} isn't available for this agent. To change it, open the agent's Settings, then Model.`
-  : "The model provider says this agent's model isn't available. To change it, open the agent's Settings, then Model.");
+const CLI_AGENT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * The one line posted in the pod. A seat the daemon runs takes its model from
+ * Settings. A seat started with `commonly agent run` shows that control read
+ * only, so `cliAgentName` names the command that does change it (F354: the
+ * notice sent those owners to a control they couldn't use).
+ */
+export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
+  const what = model
+    ? `The model provider says ${model} isn't available for this agent.`
+    : "The model provider says this agent's model isn't available.";
+  const name = typeof cliAgentName === 'string' && CLI_AGENT_NAME_RE.test(cliAgentName) ? cliAgentName : null;
+  return name
+    ? `${what} To change it, run commonly agent config ${name} --model <model> on the computer it runs on, then restart commonly agent run ${name}.`
+    : `${what} To change it, open the agent's Settings, then Model.`;
+};
