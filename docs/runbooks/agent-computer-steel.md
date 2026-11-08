@@ -87,11 +87,16 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
      one on the Durable Object runs the worker's `buildCapTools`. Neither list
      has a computer tool;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
-     included. A declared list is the whole tool surface of a native install:
-     an install with no list gets every tool that isn't opt-in, and declaring
-     one drops the rest. So it also names every other tool the agent should
-     keep, such as `commonly_read_context` and `commonly_post_message`, and
-     the memory tools if it uses them;
+     included. A declared list is the whole set of the runtime's own tools
+     for a native install: an install with no list gets every one that isn't
+     opt-in, and declaring one drops the rest. So it also names every other
+     tool the agent should keep, such as `commonly_read_context` and
+     `commonly_post_message`, and the memory tools if it uses them;
+   - connector tools are not in that list. A live grant on the pod or the seat
+     adds its tools on top of `config.tools`, and only revoking the grant
+     removes them. Check that no live grant reaches the agent's pod or seat
+     (`GET /api/pods/:podId/grants` returns none) before giving it the
+     computer, and after every reinstall;
    - no other installation lists them.
    - The agent uses the computer only on a turn whose message its owner
      wrote (`computer_requester_denied` otherwise), so a heartbeat or another
