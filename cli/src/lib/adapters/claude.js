@@ -878,7 +878,7 @@ const publicWitnessError = ({ code, tool, error }) => {
     ? `Commonly MCP server ${tool} was not shown connected`
     : `Commonly tool ${tool} failed in a way the model must not narrate`;
   const failure = new Error(
-    `public seat withheld this turn's reply: ${what} (${reason}), so nothing was posted and the event stays unacked for retry`,
+    `public seat withheld this turn's reply: ${what} (${reason}), so the CLI posted no reply for it (posts the agent made through its tools stay) and the event stays unacked for retry`,
   );
   failure.code = code;
   return failure;

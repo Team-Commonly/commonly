@@ -404,6 +404,8 @@ describe('opencode public seat withholds a turn whose Commonly tools failed', ()
     await expect(outcome).rejects.toMatchObject({ code: PUBLIC_TOOL_FAILED_CODE });
     await expect(runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}'))))
       .rejects.toThrow(/^(?!.*backend is unreachable).*commonly_commonly_list_pods failed in a way the model must not narrate/);
+    await expect(runSeat(turn(toolError('commonly_commonly_list_pods', '{"message":"fetch failed"}'))))
+      .rejects.toThrow(/^(?!.*nothing was posted).*the CLI posted no reply for it/);
   });
 
   test.each([

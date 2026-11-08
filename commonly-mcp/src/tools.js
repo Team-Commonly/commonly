@@ -301,7 +301,10 @@ export const buildTools = (config) => {
         if (heldPods.size) {
           if (!turnedBack.has(eventId)) {
             turnedBack.add(eventId);
-            throw new Error('Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.');
+            // A 409 like the hold itself, so a public seat's CLI reads it as an
+            // answer the model acts on, not a broken tool that withholds the turn.
+            const message = 'Not checkpointed: a post of yours came back held, so it never reached the pod. Read, then post it again before you checkpoint. If it no longer needs saying, checkpoint this event again.';
+            throw new HttpError(409, { code: 'checkpoint_turned_back', message }, message);
           }
           lettingGo = [...heldPods];
         }
