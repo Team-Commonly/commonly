@@ -3,13 +3,6 @@
   color: var(--v2-text-primary);
 }
 
-/* The page head spans the shell; only the body sits in the 960px column. */
-.v2-agent-settings__column {
-  width: min(100%, 960px);
-  margin: 0 auto;
-  padding: 24px;
-}
-
 .v2-agent-settings__state { padding: 32px; color: var(--v2-text-secondary); }
 .v2-agent-settings__state--no-access h1 { margin: 0 0 6px; color: var(--v2-text-primary); font-family: var(--v2-font-display); font-size: 19px; line-height: 1.25; letter-spacing: -0.02em; }
 .v2-agent-settings__state--no-access .v2p-b { color: var(--v2-text-primary); }
@@ -17,14 +10,6 @@
 @media (max-width: 760px) {
   .v2-agent-settings__state--no-access { padding: 24px 16px; }
 }
-
-/* Header: avatar, name and the Profile / Memory / Settings tabs on one row. */
-.v2-agent-settings__head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 28px; min-height: 76px; border-bottom: 1px solid var(--v2-border-soft); box-sizing: border-box; }
-.v2-agent-settings__ident h1 { margin: 0; font-size: 20px; }
-/* Scoped under the header so these beat the base tab rules declared later. */
-.v2-agent-settings__head .v2-agent-settings__seg { margin-left: auto; margin-top: 0; margin-bottom: 0; border-bottom: 0; }
-.v2-agent-settings__head .v2-agent-settings__seg [aria-current="page"] { border-bottom: 0; }
-@media (max-width: 600px) { .v2-agent-settings__head { padding: 12px 16px; } }
 
 .v2-agent-settings__tabs {
   display: flex;
@@ -44,9 +29,6 @@
   border-bottom: 2px solid var(--v2-accent);
 }
 
-.v2-agent-settings__section { padding: 28px 0; }
-.v2-agent-settings__section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.v2-agent-settings__section h2 { margin: 0; font-family: var(--v2-font-display); font-size: 20px; }
 /* Lifted buttons (.b, icon .ib, segment tabs) belong to the surface (v2-agent-settings-surface.css);
    excluded here so this (0,3,1) rule does not out-rank their sizing or focus ring. */
 .v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold) {
@@ -64,9 +46,7 @@
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):hover { background: var(--v2-surface-hover); }
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 .v2-root .v2-agent-settings button:not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold):disabled { opacity: .55; cursor: default; }
-.v2-root .v2-agent-settings .v2-agent-settings__section-head button { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
-.v2-root .v2-agent-settings .v2-agent-settings__section-head button:hover,
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child:hover { background: var(--v2-ink-hover); }
 .v2-root .v2-agent-settings a.v2-agent-settings__action {
   display: inline-flex;
@@ -88,7 +68,6 @@
   outline: 1px solid var(--v2-accent);
 }
 .v2-agent-settings__error { color: var(--v2-danger); }
-.v2-agent-settings__empty { margin-top: 24px; color: var(--v2-text-secondary); }
 .v2-agent-settings__keys { list-style: none; padding: 0; margin: 20px 0 0; }
 .v2-agent-settings__revoked-keys { margin-top: 20px; border-top: 1px solid var(--v2-border-soft); padding-top: 14px; }
 .v2-agent-settings__revoked-keys summary { width: fit-content; cursor: pointer; color: var(--v2-text-secondary); font-family: var(--v2-font-mono); font-size: 12px; }
@@ -111,7 +90,6 @@
   /* Same selector as the base rule above, so the phone target wins by order. */
   .v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold) { min-height: 44px; }
   .v2-agent-settings { padding: 16px; }
-  .v2-agent-settings__section-head { flex-direction: column; align-items: flex-start; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
   /* D223 (TASK-730): the same 52px phone top bar feature pages get from
      .v2-feature__header. The page pads 16px, so the bar bleeds out of it. */

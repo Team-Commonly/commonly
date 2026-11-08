@@ -257,16 +257,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
-    expect(ruleBody(agentSettings, '.v2-agent-settings__column')).toContain('width: min(100%, 960px)');
     expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
   });
 
-  test('agent Settings section headers stack at phone width so the key hint stays visible', () => {
-    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__section-head');
-    const header = selectorRuleBody(phone, '.v2-agent-settings__section-head');
-    expect(header).toContain('flex-direction: column');
-    expect(header).toContain('align-items: flex-start');
+  // The old page's layout (column, head, sections) is gone with the page; nothing renders it.
+  test('the old agent Settings layout rules stay deleted', () => {
+    for (const cls of ['column', 'head', 'ident', 'seg', 'section', 'section-head', 'empty']) {
+      expect(agentSettings).not.toMatch(new RegExp(`\\.v2-agent-settings__${cls}(?![\\w-])`));
+    }
   });
 
   test('Agent settings: the wake select fits its value and its chevron passes clicks through', () => {
@@ -333,7 +332,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
-    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
+    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child')).toContain('background: var(--v2-ink)');
   });
 
   test('agent Settings controls reach 44px at phone width', () => {
