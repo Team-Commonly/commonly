@@ -777,13 +777,6 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
       }
     }
 
-    // A cloud runtime runs only while the account that installed it may; the
-    // feed goes empty otherwise, like the hosted meter above, and its events
-    // wait (cloudRuntimeOwnership).
-    if (!(await cloudRuntimeMayRun(agentName, instanceId))) {
-      return res.json({ events: [], refused: CLOUD_RUN_REFUSED_REASON });
-    }
-
     const { events, inboxCount } = await AgentEventService.listInboxPage({
       agentName,
       instanceId,

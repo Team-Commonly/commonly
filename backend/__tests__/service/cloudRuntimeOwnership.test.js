@@ -6,6 +6,7 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils
 const User = require('../../models/User');
 const { AgentInstallation } = require('../../models/AgentRegistry');
 const { cloudRuntimeMayRun, clearCloudRuntimeCache } = require('../../services/cloudRuntimeOwnership');
+const AgentIdentityService = require('../../services/agentIdentityService');
 
 describe('cloudRuntimeMayRun', () => {
   let n = 0;
@@ -50,10 +51,11 @@ describe('cloudRuntimeMayRun', () => {
     await row(admin._id, native);
     await row(visitor._id, { ...native, autoJoinSource: 'agent-room' });
     expect(await cloudRuntimeMayRun('helper')).toBe(true);
-    // A projection alone, with its owner's row gone, gates nothing.
+    // A projection alone falls back to the owner on record, here a revoked one.
     await AgentInstallation.deleteMany({ installedBy: admin._id });
+    await person({ username: AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType('helper'), 'default'), isBot: true, botMetadata: { agentName: 'helper', ownerUserId: visitor._id } });
     clearCloudRuntimeCache();
-    expect(await cloudRuntimeMayRun('helper')).toBe(true);
+    expect(await cloudRuntimeMayRun('helper')).toBe(false);
   });
 
   it('leaves a first-party auto-install with no runtime alone', async () => {
@@ -67,6 +69,50 @@ describe('cloudRuntimeMayRun', () => {
     await row(creator._id, { runtime: { runtimeType: 'webhook' } });
     await row(creator._id, { runtime: { runtimeType: 'codex', host: 'byo' } });
     expect(await cloudRuntimeMayRun('helper')).toBe(true);
+  });
+
+  it('leaves a first-party app such as Scout alone, for every account', async () => {
+    const creator = await person();
+    await AgentInstallation.create({
+      agentName: 'scout', instanceId: 'u1a2b3c4d5', podId: new mongoose.Types.ObjectId(), version: '1',
+      installedBy: creator._id, status: 'active', config: native,
+    });
+    expect(await cloudRuntimeMayRun('scout', 'u1a2b3c4d5')).toBe(true);
+  });
+
+  it('leaves a hosted agent alone: it is metered per owner instead', async () => {
+    const creator = await person();
+    await row(creator._id, { runtime: { runtimeType: 'hosted' } });
+    expect(await cloudRuntimeMayRun('helper')).toBe(true);
+  });
+
+  it('finds the owner row whatever case its instance id was stored in', async () => {
+    const owner = await person();
+    await row(owner._id, native, { instanceId: 'Kit' });
+    expect(await cloudRuntimeMayRun('helper', 'kit')).toBe(false);
+  });
+
+  it('reads the runtime from the agent type when the row stores none', async () => {
+    const owner = await person();
+    await AgentInstallation.create({
+      agentName: 'openclaw', instanceId: 'kit', podId: new mongoose.Types.ObjectId(), version: '1',
+      installedBy: owner._id, status: 'active', config: {},
+    });
+    expect(await cloudRuntimeMayRun('openclaw', 'kit')).toBe(false);
+  });
+
+  it('lets it run when the read fails, without caching that', async () => {
+    const owner = await person();
+    await row(owner._id, native);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const find = jest.spyOn(AgentInstallation, 'find').mockImplementationOnce(() => { throw new Error('down'); });
+    try {
+      expect(await cloudRuntimeMayRun('helper')).toBe(true);
+      expect(await cloudRuntimeMayRun('helper')).toBe(false);
+    } finally {
+      find.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it('lets a system install by a bot run', async () => {

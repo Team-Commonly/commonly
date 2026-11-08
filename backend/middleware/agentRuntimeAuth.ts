@@ -18,6 +18,7 @@ import {
 import { podsWithOutsiderWritableGrants } from '../services/nativeOutsiderGrantPolicy';
 import { podWriteSurvivesNarrowing } from '../services/outsiderGrantNarrowingRule';
 import { installationIdentityFilter } from '../services/agentInstallationIdentity';
+import { cloudRuntimeMayRun, CLOUD_RUN_REFUSED_REASON } from '../services/cloudRuntimeOwnership';
 import { classifyRuntimeOutsiderGrantRoute } from '../services/runtimeOutsiderGrantRoutes';
 
 // eslint-disable-next-line global-require
@@ -213,6 +214,9 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req.agentInstallation = (installations[0] as never) || null;
 
       if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
+      if (!await cloudRuntimeMayRun(agentName, instanceId)) {
+        return res.status(403).json({ code: CLOUD_RUN_REFUSED_REASON, message: 'This agent is not running.' });
+      }
 
       touchLastActive(String(agentUser._id));
       await markCredentialUsed();
@@ -328,6 +332,9 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     if (!await checkOutsiderGrantRuntimeNarrowing(
       req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
     )) return undefined;
+    if (!await cloudRuntimeMayRun(installation.agentName, installation.instanceId || 'default')) {
+      return res.status(403).json({ code: CLOUD_RUN_REFUSED_REASON, message: 'This agent is not running.' });
+    }
 
     if (legacyBotUser) touchLastActive(String(legacyBotUser._id));
     await markCredentialUsed();
