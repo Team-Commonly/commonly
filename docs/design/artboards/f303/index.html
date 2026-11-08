@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F303 Close a DM</title>
+<style>
+  /* Values copied from frontend/src/v2/v2.css (light :root, dark [data-v2-theme="dark"]). */
+  :root {
+    --bg: #ffffff; --surface: #ffffff; --tint: #f2f4f7; --border: #d0d5dd;
+    --ink: #101828; --ink2: #475467; --ink3: #667085; --accent: #1d3fd1;
+    --fill-a: #333c4e; --fill-b: #161d2c; --on-fill: #ffffff;
+    --font: "IBM Plex Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  .dark {
+    --bg: #141922; --surface: #141922; --tint: #1e2531; --border: #364051;
+    --ink: #e8ebf1; --ink2: #aeb6c4; --ink3: #8b94a5; --accent: #6680ff;
+    --fill-a: #f4f5f8; --fill-b: #dce0e8; --on-fill: #0b0e13;
+  }
+  body { margin: 0; padding: 24px 16px 64px; background: #e9ecf1; font: 400 13px/20px var(--font); color: #101828; }
+  h1 { font: 600 18px/26px var(--font); margin: 0 0 4px; }
+  .lede { max-width: 760px; color: #475467; margin: 0 0 24px; }
+  h2 { font: 600 14px/20px var(--font); margin: 32px 0 4px; }
+  .why { max-width: 760px; color: #475467; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  .frame { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .cap { font: 500 11px/16px var(--mono); color: #667085; margin: 0 0 6px; }
+  .w1440 { width: 720px; }  /* a 1440 frame drawn at half width: chat column + inspector */
+  .w390 { width: 390px; }
+  .split { display: grid; grid-template-columns: 1fr 260px; min-height: 360px; }
+  .chat { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border); }
+  .head { display: flex; align-items: center; gap: 8px; padding: 0 0 12px; border-bottom: 1px solid var(--border); font-weight: 600; }
+  .chip { font: 500 11px/18px var(--font); color: var(--ink3); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; }
+  .msg { display: grid; grid-template-columns: 28px 1fr; gap: 8px; }
+  .av { width: 28px; height: 28px; border-radius: 4px; background: var(--tint); border: 1px solid var(--border); }
+  .who { font-weight: 600; } .when { color: var(--ink3); font-size: 12px; margin-left: 6px; }
+  /* The notice: Signal §3, one white card with a border, ink text, no icon. */
+  .notice { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .notice p { margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .btn { font: 500 13px/20px var(--font); border-radius: 4px; padding: 4px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink); }
+  .btn--fill { color: var(--on-fill); background: linear-gradient(180deg, var(--fill-a), var(--fill-b)); border-color: transparent; }
+  .link { font: 500 13px/20px var(--font); color: var(--accent); background: none; border: 0; padding: 0; }
+  .composer { margin-top: auto; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; color: var(--ink3); }
+  .insp { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .group { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; }
+  .group h3 { margin: 0 0 4px; font: 600 12px/18px var(--font); color: var(--ink2); }
+  .group p { margin: 0 0 6px; color: var(--ink2); font-size: 12.5px; line-height: 18px; }
+  .side { padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .side .item { padding: 6px 8px; border-radius: 4px; }
+  .side .item--on { background: var(--tint); }
+  .status { margin: 4px 0 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--tint); display: flex; justify-content: space-between; gap: 12px; }
+  .m390 { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 520px; }
+  .m390 .btn, .m390 .link { min-height: 44px; display: inline-flex; align-items: center; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; max-width: 860px; margin: 8px 0 0; }
+  dt { font-weight: 600; } dd { margin: 0; color: #475467; }
+</style>
+</head>
+<body>
+<h1>F303: closing a direct message</h1>
+<p class="lede">A person can close a direct message pod they hold with an agent. It leaves their list and comes back when either side writes again. Nothing is deleted. The agent's history and memory stay. The kernel half is F307: a single <code>Pod.closedAt</code> and a close endpoint gated to the human member. Each state below is drawn in light and dark, at 1440 (shown at half scale) and at 390. Names are samples.</p>
+
+<h2>1. The agent is gone: the pod says so and offers the close</h2>
+<p class="why">This is the case F303 was filed on. The agent was uninstalled, so nothing will answer, and today the pod sits in the list with no way out. The notice sits at the foot of the thread, above the composer, so it is the last thing read. "Close" is the primary action here because it's the only useful one. The composer stays: writing still works, and it would reopen the pod for the person.</p>
+<div class="row">
+  <div><p class="cap">1440 · light</p>
+  <div class="frame w1440"><div class="split">
+    <div class="chat">
+      <div class="head">otter <span class="chip">Direct message</span></div>
+      <div class="msg"><div class="av"></div><div><span class="who">otter</span><span class="when">Nov 7</span><div>Done. The summary is pinned in the pod.</div></div></div>
+      <div class="notice" data-state="agent-gone"><p>otter was removed, so nothing will answer here. Close this direct message to take it off your list. Its messages stay.</p>
+        <div class="actions"><button class="btn btn--fill">Close direct message</button></div></div>
+      <div class="composer">Message otter</div>
+    </div>
+    <div class="insp"><div class="group"><h3>Close</h3><p>Takes this off your list. Writing here again brings it back.</p><button class="link">Close direct message</button></div></div>
+  </div></div></div>
+  <div><p class="cap">390 · dark</p>
+  <div class="frame w390 dark"><div class="m390">
+    <div class="head">otter <span class="chip">Direct message</span></div>
+    <div class="msg"><div class="av"></div><div><span class="who">otter</span><span class="when">Nov 7</span><div>Done. The summary is pinned in the pod.</div></div></div>
+    <div class="notice"><p>otter was removed, so nothing will answer here. Close this direct message to take it off your list. Its messages stay.</p>
+      <div class="actions"><button class="btn btn--fill">Close direct message</button></div></div>
+    <div class="composer">Message otter</div>
+  </div></div></div>
+</div>
+
+<h2>2. The agent is still here: the close lives in the inspector, quietly</h2>
+<p class="why">Closing a live direct message is housekeeping, not an alarm, so the thread shows no notice. The inspector gets a last group with one sentence and a link-weight action. There's no confirm, because a close is undone by writing again or by the undo in state 3. At 390 the same group sits at the end of the pod's info sheet.</p>
+<div class="row">
+  <div><p class="cap">1440 · dark</p>
+  <div class="frame w1440 dark"><div class="split">
+    <div class="chat">
+      <div class="head">planner <span class="chip">Direct message</span></div>
+      <div class="msg"><div class="av"></div><div><span class="who">planner</span><span class="when">10:42</span><div>Three tasks moved to Done.</div></div></div>
+      <div class="composer">Message planner</div>
+    </div>
+    <div class="insp"><div class="group"><h3>Close</h3><p>Takes this off your list. Writing here again, or planner writing to you, brings it back.</p><button class="link">Close direct message</button></div></div>
+  </div></div></div>
+  <div><p class="cap">390 · light (info sheet)</p>
+  <div class="frame w390"><div class="m390">
+    <div class="group"><h3>Files</h3><p>No files yet.</p></div>
+    <div class="group"><h3>Close</h3><p>Takes this off your list. Writing here again, or planner writing to you, brings it back.</p><button class="link">Close direct message</button></div>
+  </div></div></div>
+</div>
+
+<h2>3. After the close: the list drops it, with an undo</h2>
+<p class="why">The page goes to the pods list, which no longer shows the pod. One status line names what closed and offers Undo. It stays until the person navigates away, and it isn't a toast that times out, so a slow reader still gets it. Undo clears <code>closedAt</code> and opens the pod again.</p>
+<div class="row">
+  <div><p class="cap">1440 · light (sidebar)</p>
+  <div class="frame" style="width:300px"><div class="side">
+    <div class="status" role="status"><span>Closed otter</span><button class="link">Undo</button></div>
+    <div class="item">My Workspace</div><div class="item">On-call</div><div class="item">planner</div>
+  </div></div></div>
+  <div><p class="cap">390 · dark (pods list)</p>
+  <div class="frame w390 dark"><div class="m390" style="min-height:240px">
+    <div class="status" role="status"><span>Closed otter</span><button class="link">Undo</button></div>
+    <div class="side" style="padding:0"><div class="item">My Workspace</div><div class="item">On-call</div><div class="item">planner</div></div>
+  </div></div></div>
+</div>
+
+<h2>Rules the build follows</h2>
+<dl>
+  <dt>Scope</dt><dd>Only <code>agent-room</code> (a person and an agent). Agent-to-agent DMs and team pods don't get it. Team pods keep their own leave path.</dd>
+  <dt>Who</dt><dd>Only the human member. The control doesn't render for anyone else, and the endpoint refuses them.</dd>
+  <dt>Reopen</dt><dd>The pod reopens when the person writes in it, when <code>getOrCreateAgentRoom</code> runs (Talk to), and when the agent posts.</dd>
+  <dt>Lists</dt><dd>A closed pod leaves <code>GET /api/pods</code> and the recap's pods, as F307 lists. Its URL still opens it.</dd>
+  <dt>Words</dt><dd>"direct message", never "room". zh-CN: 关闭私信 · "已关闭 otter" · 撤销 · "otter 已被移除，这里不会再有回复。关闭这个私信，它就不会出现在你的列表里，消息都会保留。"</dd>
+  <dt>Agent gone</dt><dd>State 1 shows when the room's agent has no active install for this pod. That's the same test <code>dropUninstalledAgentRooms</code> uses, read for one pod.</dd>
+</dl>
+</body>
+</html>
