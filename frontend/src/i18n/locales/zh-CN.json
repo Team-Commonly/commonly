@@ -3355,7 +3355,8 @@
     "saveInterval": "保存间隔",
     "minutesShort": "{{minutes}}分钟",
     "hostedRun": {
-      "running": "运行中。",
+      "label": "状态",
+      "running": "运行中",
       "stopped": "已停止。重新启动前，它不会回复。",
       "starting": "正在启动…",
       "slow": "还在启动。如果一直这样，请再点一次启动。",

@@ -566,6 +566,11 @@ const V2AgentSettingsPage: React.FC = () => {
                 <V2AgentSkills podId={podId} podName={access.pods.find((pod) => pod.id === podId)?.name || podId}
                   agentName={agentName} instanceId={instanceId} onCount={setSkillCount} />
               </div>
+              {/* Outside How it runs, so an owner sees whether it's running and finds Stop or Start without opening a section. */}
+              {installation?.runtime?.runtimeType === 'hosted' && (
+                <V2AgentHostedRun agentName={agentName} displayName={displayName} instanceId={instanceId}
+                  onChanged={() => setConnectionRefreshNonce((nonce) => nonce + 1)} />
+              )}
               {/* Opens by itself when the machine placement needs a move or failed. */}
               <details className="disc" data-testid="agent-how-it-runs" ref={runsRef}>
                 <summary>
@@ -576,10 +581,6 @@ const V2AgentSettingsPage: React.FC = () => {
                   <V2AgentSettingsIcon name="chev" className="chev" />
                 </summary>
                 <div className="dbody v2-agent-settings-page__runsbody">
-                  {installation?.runtime?.runtimeType === 'hosted' && (
-                    <V2AgentHostedRun agentName={agentName} displayName={displayName} instanceId={instanceId}
-                      onChanged={() => setConnectionRefreshNonce((nonce) => nonce + 1)} />
-                  )}
                   <V2AgentRuntimeBody
                     key={`runtime:${agentName}:${instanceId}`}
                     name={agentName}

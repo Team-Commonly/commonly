@@ -41,7 +41,7 @@ describe('hosted agent stop and start', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Its memory and pods stay.');
     expect(client.post).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Keep running' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Running.');
+    expect(screen.getByRole('status')).toHaveTextContent('Running');
     expect(client.post).not.toHaveBeenCalled();
   });
 
@@ -69,7 +69,7 @@ describe('hosted agent stop and start', () => {
     client.get.mockResolvedValueOnce({ data: { runtime: { engine: 'native', ready: false, provisionedAt: null } } });
     renderRun();
     fireEvent.click(await screen.findByRole('button', { name: 'Start' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Running.'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Running'));
     expect(client.post).toHaveBeenCalledWith('/api/hosted/provision', body);
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
