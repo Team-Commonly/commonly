@@ -26,10 +26,12 @@ jobs:
   mcp:
     runs-on: windows-latest
     timeout-minutes: 15
-    # The pinned leg is the gate. The @latest leg is an early warning: it never
-    # blocks a PR, and a red one means a Claude Code release broke the page's
-    # line, so bump the pin only once the page works with it (F107).
-    continue-on-error: ${{ matrix.claude_code == 'latest' }}
+    # The pinned leg is the gate. The @latest leg is an early warning: a red one
+    # means a Claude Code release broke the page's line, so fix the page, then
+    # bump the pin (F107). On a PR it doesn't block, because the PR didn't cause
+    # it. On the daily schedule it fails the run for real, since job-level
+    # continue-on-error reports a failed job as green and nobody would see it.
+    continue-on-error: ${{ matrix.claude_code == 'latest' && github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -45,3 +47,12 @@ jobs:
         env:
           COMMONLY_SMOKE_CLAUDE_CODE: ${{ matrix.claude_code == 'latest' && 'latest' || '' }}
         run: node commonly-mcp/scripts/windows-mcp-smoke.mjs
+      # A tolerated red still shows: an error annotation on the run and a line in
+      # its summary, so a PR author sees a Claude Code release broke the page.
+      - name: Say a Claude Code release broke the page's line
+        if: failure() && matrix.claude_code == 'latest'
+        shell: bash
+        run: |
+          msg="Claude Code @latest can't run the Bring your own page's Windows MCP line. Fix the page (V2AgentBYO.tsx), then bump CLAUDE_CODE_PINNED in commonly-mcp/scripts/windows-mcp-smoke.mjs."
+          echo "::error title=Claude Code @latest broke the Windows MCP line::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
