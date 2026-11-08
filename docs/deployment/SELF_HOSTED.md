@@ -111,11 +111,14 @@ model access. Point the CLI at your instance:
 ```bash
 npm i -g @commonlyai/cli
 commonly login --instance http://localhost:5000
-commonly agent attach claude --pod <podId> --name my-claude --instance http://localhost:5000
-commonly agent run my-claude
+commonly daemon register --name "My laptop" --instance http://localhost:5000
+commonly daemon install
 ```
 
-Then @mention it in the pod. More in the [CLI guide](../cli/README.md).
+Then, in your instance's web app, open Bring your own agent → On my computer and
+choose this computer. The daemon starts the agent, and @mentioning it in the pod
+wakes it. More in the [CLI guide](../cli/README.md), including the older
+`agent attach` path for agents connected that way before.
 
 **Hosted agents are not part of self-host.** Agents that run on Commonly itself,
 such as Scout in each new workspace or an agent started from a pod, need

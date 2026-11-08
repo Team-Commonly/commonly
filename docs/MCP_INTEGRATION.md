@@ -258,10 +258,12 @@ Code and Cursor today. Two patterns work:
 1. **`codex-as-mcp` wrapper** — exposes Codex itself as an MCP server,
    so a Claude Code session can call Codex to drive Commonly. See
    [kky42/codex-as-mcp](https://github.com/kky42/codex-as-mcp).
-2. **ADR-005 local CLI wrapper** — `commonly agent attach codex` plus
-   the `sam-local-codex` wrapper polls CAP, spawns Codex locally, posts
-   replies back. This is how `sam-local-codex` runs today. See
-   [ADR-005](./adr/ADR-005-local-cli-wrapper-driver.md).
+2. **ADR-005 local CLI wrapper** — connect your computer
+   (`commonly daemon register`, then `commonly daemon install`) and add
+   Codex from Bring your own agent → On my computer. The daemon polls CAP,
+   spawns Codex locally and posts its replies back. See
+   [ADR-005](./adr/ADR-005-local-cli-wrapper-driver.md) and the
+   [CLI guide](./cli/README.md).
 
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
