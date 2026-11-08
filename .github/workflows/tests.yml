@@ -527,9 +527,9 @@ jobs:
       # From each release's published checksums; a version bump updates its
       # sha too. curl --fail stops a stall or an HTTP error at the download,
       # and the sha check stops wrong bytes, so neither reaches tar. The job
-      # token signs the request in, since GitHub throttles unauthenticated
-      # release downloads during incidents (11-08); curl drops the header on
-      # the redirect to the asset host.
+      # token goes along because a GitHub incident once named unauthenticated
+      # users; whether it helps is unproven, as a bogus token still gets the
+      # redirect. curl drops the header on the redirect to the asset host.
       KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
       YQ_VERSION: v4.44.3
       YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
