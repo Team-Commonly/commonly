@@ -24,8 +24,7 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 // Instance-wide analytics over every pod's summaries: an instance
 // administrator's view, so the whole router is admin-only. The limiter runs
-// first because adminAuth reads the caller's User row on every request
-// (the same order as routes/providers/moltbot.ts).
+// first because adminAuth reads the caller's User row on every request.
 const analyticsAdminLimit = platformIpRateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
