@@ -127,6 +127,24 @@ describe('BYO default agent name follows where it runs', () => {
     expect(document.body.textContent).not.toMatch(/--adapter claude/);
   });
 
+  test('a runner picked before the roster arrives is not replaced by the agent\'s harness', async () => {
+    let releaseRoster;
+    const rosterReady = new Promise((resolve) => { releaseRoster = resolve; });
+    mockGet();
+    const plainGet = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (url === '/api/registry/pods/p1/agents'
+      ? rosterReady.then(() => ({ data: { agents: [{ name: 'gw-codex', instanceId: 'default', installedBy: 'u1',
+        runtime: { runtimeType: 'codex' }, connection: { state: 'revoked', lastSeenAt: null } }] } }))
+      : plainGet(url)));
+    renderAt('/v2/agents/byo?pod=p1&name=gw-codex&reconnect=1');
+    fireEvent.click(await screen.findByTestId('byo-runner-claude', {}, { timeout: 5000 }));
+    releaseRoster();
+    await waitFor(() => expect(screen.getByTestId('byo-connection-state'))
+      .toHaveTextContent('Disconnected: key revoked'), { timeout: 5000 });
+    expect(screen.getByTestId('byo-runner-claude')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('byo-runner-codex')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   // Gate review of the Linux Codex page PR: Reconnect was checked before the
   // runner's alternative, so a revoked agent's name with OpenCode picked
   // issued a key into a command view that has no listener for OpenCode.

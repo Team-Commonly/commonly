@@ -243,13 +243,13 @@ const sanitizeAgentName = (raw: string): string => raw
   .replace(/^-+|-+$/g, '')
   .slice(0, 64);
 
-type SeatRuntime = { runtimeType?: string; adapter?: string; wrappedCli?: string; reportedCli?: string };
+type SeatRuntime = { runtimeType?: string; adapter?: string; reportedCli?: string };
 
 // The harness an existing seat runs, as `agent run --adapter` names it, or null
 // when the roster doesn't say. The install payload labels Claude Code
 // `claude-code`; the adapter flag calls it `claude`.
 export const seatHarness = (runtime?: SeatRuntime): string | null => {
-  const raw = runtime?.adapter || runtime?.wrappedCli || runtime?.reportedCli || runtime?.runtimeType || '';
+  const raw = runtime?.adapter || runtime?.reportedCli || runtime?.runtimeType || '';
   const id = raw === 'claude-code' ? 'claude' : raw;
   return KNOWN_HARNESS_IDS.includes(id) ? id : null;
 };
@@ -510,11 +510,13 @@ const V2AgentBYO: React.FC = () => {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, name, nameTouched, podId, prefill.instanceId, prefill.reconnect]);
   // F353: a reconnect opens on the harness the agent runs. Defaulting to Claude
-  // Code printed `--adapter claude` for a Codex agent. Applied once, so a tab the
-  // person picks afterwards stands; a link's own ?adapter= wins.
+  // Code printed `--adapter claude` for a Codex agent. Applied once, and never
+  // over a tab the person picked, even before the roster arrived; a link's own
+  // ?adapter= wins.
   const reconnectHarnessApplied = useRef(false);
+  const listenAdapterPicked = useRef(false);
   useEffect(() => {
-    if (!prefill.reconnect || prefill.adapter || reconnectHarnessApplied.current) return;
+    if (!prefill.reconnect || prefill.adapter || reconnectHarnessApplied.current || listenAdapterPicked.current) return;
     const harness = existingConnection?.harness;
     if (!harness) return;
     reconnectHarnessApplied.current = true;
@@ -1484,7 +1486,7 @@ const V2AgentBYO: React.FC = () => {
           data-testid={`byo-runner-${runner}`}
           disabled={submitting}
           // The name follows the runner, so a key prompt for the old name is stale.
-          onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+          onClick={() => { setPendingReplacement(null); listenAdapterPicked.current = true; setListenAdapter(runner); }}
         >
           {harnessLabel(harnessCatalog, runner)}
         </button>
