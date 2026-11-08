@@ -239,7 +239,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summary;
     } catch (error) {
-      console.error(`Error summarizing pod ${podId}:`, error);
+      console.error('Error summarizing pod %s:', podId, error);
       throw error;
     }
   }
@@ -322,7 +322,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
         // eslint-disable-next-line no-await-in-loop
         const batchResults = await Promise.all(
           batch.map((podId) => this.summarizePodMessages(podId).catch((error) => {
-            console.error(`Failed to summarize pod ${podId}:`, error);
+            console.error('Failed to summarize pod %s:', podId, error);
             return null;
           })),
         );
@@ -392,7 +392,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
       const summaries = await Summary.aggregate(pipeline) as unknown[];
       return summaries;
     } catch (error) {
-      console.error(`Error fetching ${podType} room summaries:`, error);
+      console.error('Error fetching %s room summaries:', podType, error);
       throw error;
     }
   }
@@ -421,7 +421,7 @@ Focus on extracting meaningful insights, notable quotes, discussion pivots, and 
 
       return summary;
     } catch (error) {
-      console.error(`Error fetching latest summary for pod ${podId}:`, error);
+      console.error('Error fetching latest summary for pod %s:', podId, error);
       throw error;
     }
   }
