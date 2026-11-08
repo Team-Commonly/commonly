@@ -204,6 +204,9 @@ describe('attentionItemService', () => {
     expect(await run([{ userId: 'kai', username: 'Kai' }, { userId: 'lee', username: 'Lee' }])).toEqual(['kai']);
     // A decider who has left is skipped.
     expect(await run([{ userId: 'gone', username: 'Gone' }, { userId: 'lee', username: 'Lee' }])).toEqual(['lee']);
+    // Every decider has left: it waits on the whole pod and emails the installer.
+    expect(await run([{ userId: 'gone', username: 'Gone' }])).toEqual(['sam']);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(3);
   });
 
   it('uses the installation in this pod before a global bot owner', async () => {

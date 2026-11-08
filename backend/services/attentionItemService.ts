@@ -523,10 +523,12 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
     if (!podId || !id) return;
     const members = await currentHumanMembers(podId);
     // A card that names its deciders waits only on them.
-    const deciderIds = new Set((decision.deciders || []).map((decider: any) => String(decider.userId)));
-    const recipients = deciderIds.size
-      ? members.filter((member: unknown) => deciderIds.has(String((member as { _id?: unknown })?._id ?? member)))
-      : members;
+    // Once none of them is still in the pod, it waits on every member, the same
+    // fallback chooseDecision applies to who may rule.
+    const namedIds = new Set((decision.deciders || []).map((decider: any) => String(decider.userId)));
+    const present = members.filter((member: unknown) => namedIds.has(String((member as { _id?: unknown })?._id ?? member)));
+    const deciderIds = present.length ? namedIds : new Set<string>();
+    const recipients = present.length ? present : members;
     const pod = await Pod.findById(podId).select('name').lean();
     const installerId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
     // With named deciders the email goes to one of them: the installer if
