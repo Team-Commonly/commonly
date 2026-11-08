@@ -96,6 +96,8 @@ export interface V2Message {
     kind?: string;
     action?: string;
     actorName?: string;
+    /** `agentName:instanceId` on a system line about one agent (agent-not-connected, -stopped, …). */
+    agentKey?: string;
     taskId?: string;
     elements?: unknown[];
     v?: number;

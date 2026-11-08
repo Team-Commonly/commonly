@@ -43,7 +43,7 @@ import {
   normalizeAgentSegment,
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
-import { agentConnectLink } from '../utils/agentConnectLink';
+import { agentConnectLink, agentKeyOf } from '../utils/agentConnectLink';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
@@ -461,6 +461,11 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // not need to refetch the board.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, pod?._id, firstTaskProposalKey, viewerOwnsPod]);
+  // F339: Bring your own's connect link, keyed the way an agent-not-connected notice names its agent.
+  const ownerConnectLinks = useMemo(() => new Map(agentStates
+    .filter((row) => row.isOwner && row.state === 'never-connected')
+    .map((row) => [agentKeyOf(row.agentName, row.instanceId), agentConnectLink(row)] as const)
+    .filter(([, link]) => Boolean(link))), [agentStates]);
   const startsByMessageId = useMemo(() => {
     // A start that navigates must stay inside the app: an in-app /v2/ path
     // only, never a protocol-relative or absolute URL from a payload. A start
@@ -2128,6 +2133,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             decisionByMessageId={decisionByMessageId}
             settledDecisionByMessageId={settledDecisionByMessageId}
             agentDisplayNames={agentDisplayNames}
+            ownerConnectLinks={ownerConnectLinks}
             agentTags={agentTags}
             agentAuthorKeys={agentAuthorKeys}
             afterMessage={teammateMoment ? { messageId: teammateMoment.messageId, content: teammateCard } : undefined}

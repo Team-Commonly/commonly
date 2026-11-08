@@ -9,6 +9,7 @@ import V2ApprovalCard from './V2ApprovalCard';
 import V2BYOHandoffCard from './V2BYOHandoffCard';
 import V2GigCard from './V2GigCard';
 import V2RunTraceLink from './V2RunTraceLink';
+import { normalizeAgentKey } from '../utils/agentConnectLink';
 import V2DecisionCard, { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
 import V2MessageActions, { type V2RenderedReaction } from './V2MessageActions';
 import { V2Message } from '../hooks/useV2PodDetail';
@@ -127,6 +128,10 @@ interface V2MessageRowProps {
   // raw User row username "openclaw-nova". Frontend-only display layer; the
   // underlying User row is unchanged.
   agentDisplayNames?: Map<string, string>;
+  // `agentName:instanceId` → Bring your own's connect link, only for agents the
+  // viewer owns and has never connected (F339). An agent-not-connected notice
+  // for one of these tells its owner so and links there.
+  ownerConnectLinks?: Map<string, string>;
   // Lowercased author key → runtime short name (`codex`, `claude`, …), the
   // mono tag after the time on agent rows (direction C). Absent = no tag.
   agentTags?: Map<string, string>;
@@ -573,7 +578,7 @@ const arrivedJustNow = (message: V2Message): boolean => (
   typeof message.liveArrivedAt === 'number' && Date.now() - message.liveArrivedAt < LIVE_ENTER_WINDOW_MS
 );
 
-const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
+const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, ownerConnectLinks, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
   // Decided at mount and never again, so a re-render or a refetch that drops
   // the flag cannot replay the enter.
@@ -701,6 +706,10 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
     ? SYSTEM_NOTICE_KEYS[message.payload.action as string] : undefined;
   if (noticeKey) {
     const actorLabel = overriddenDisplay || message.payload?.actorName || author;
+    // F339: the notice ended "Its owner can connect it" for the owner too, with
+    // no way to, and new people left on it.
+    const ownerConnectLink = noticeKey === 'agentNotConnected' && typeof message.payload?.agentKey === 'string'
+      ? ownerConnectLinks?.get(normalizeAgentKey(message.payload.agentKey)) : undefined;
     return (
       <div id={`message-${message.id}`} className={`v2-system-action-line v2-system-action-line--notice${enterClass}`}>
         <V2Avatar
@@ -711,7 +720,15 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           kind="agent"
           seed={message.user_id || undefined}
         />
-        <span className="v2-system-action-line__notice">{t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}</span>
+        <span className="v2-system-action-line__notice">
+          {ownerConnectLink ? (
+            <>
+              {t('podChat.systemActions.agentNotConnectedOwner', { name: actorLabel })}
+              {' '}
+              <Link to={ownerConnectLink}>{t('agentConnection.connect')}</Link>
+            </>
+          ) : t(`podChat.systemActions.${noticeKey}`, { name: actorLabel })}
+        </span>
         {time && <time dateTime={message.created_at}>{time}</time>}
       </div>
     );

@@ -333,6 +333,50 @@ describe('V2MessageRow', () => {
     expect(line?.querySelector('button')).toBeNull();
   });
 
+  // F339: new people @mentioned their own never-connected agent, read "Its owner
+  // can connect it", and left without connecting.
+  const notConnected = (agentKey?: string) => ({
+    id: '48', pod_id: 'pod-1', user_id: 'agent-1',
+    content: 'stored server text', message_type: 'system',
+    created_at: '2026-11-08T15:00:00.000Z',
+    payload: { kind: 'system-action', action: 'agent-not-connected', actorName: 'Forge', ...(agentKey ? { agentKey } : {}) },
+    user: { username: 'forge-agent', isBot: true },
+  });
+  const connectLink = '/v2/agents/byo?pod=pod-1&name=forge&instanceId=default&reconnect=1';
+
+  it("tells the agent's owner it's theirs to connect, and links there", () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={notConnected('Forge:undefined')} ownerConnectLinks={new Map([['forge:default', connectLink]])} />
+      </MemoryRouter>,
+    );
+    const line = screen.getByText(/You haven't connected Forge yet, so it won't see this until it runs\./).closest('.v2-system-action-line');
+    expect(line).toHaveClass('v2-system-action-line--notice');
+    expect(screen.getByRole('link', { name: 'Connect' })).toHaveAttribute('href', connectLink);
+    expect(screen.queryByText(/Its owner can connect it/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the owner-neutral notice for anyone else, or another agent', () => {
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={notConnected('forge:default')} ownerConnectLinks={new Map([['nova:default', connectLink]])} />
+        <V2MessageRow message={{ ...notConnected(), id: '49' }} ownerConnectLinks={new Map([['forge:default', connectLink]])} />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByText("Forge isn't connected yet, so it won't see this until it runs. Its owner can connect it.")).toHaveLength(2);
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
+  it("renders the owner's notice in zh-CN", async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    render(
+      <MemoryRouter>
+        <V2MessageRow message={notConnected('forge:default')} ownerConnectLinks={new Map([['forge:default', connectLink]])} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/你还没有接入 Forge，它运行起来才能看到这条消息。/)).toBeInTheDocument();
+  });
+
   it('leaves an unknown system action to the existing renderer', () => {
     render(
       <MemoryRouter>

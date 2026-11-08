@@ -769,6 +769,7 @@
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
       "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
+      "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
     },

@@ -29,6 +29,7 @@ interface V2ThreadMessagesProps {
   decisionByMessageId: Map<string, V2DecisionCardData>;
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
+  ownerConnectLinks?: Map<string, string>;
   agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
@@ -137,6 +138,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   decisionByMessageId,
   settledDecisionByMessageId,
   agentDisplayNames,
+  ownerConnectLinks,
   agentTags,
   agentAuthorKeys,
   onAuthorClick,
@@ -337,6 +339,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
+                ownerConnectLinks={ownerConnectLinks}
                 agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
@@ -537,6 +540,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     isDecisionRuling={Boolean(ruling)}
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
+                    ownerConnectLinks={ownerConnectLinks}
                     agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}
