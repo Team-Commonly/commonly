@@ -17,4 +17,7 @@ export interface DecisionRelayCard {
   question: string;
   options: DecisionCardOption[];
   context?: string;
+  // Who rules on it, when the agent named them. A bridge interrupts only a
+  // chat linked to one of these people.
+  deciders?: Array<{ userId: string; username: string }>;
 }

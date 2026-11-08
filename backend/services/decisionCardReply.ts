@@ -160,6 +160,12 @@ export const resolveDecisionCardReply = async (input: {
     });
     return answer(`✓ Ruled: ${value}`);
   }
+  if (outcome.status === 403 && outcome.body.code === 'not_a_decider') {
+    const named = (outcome.body.decision?.deciders || [])
+      .map((decider: { username?: string }) => `@${decider.username}`).join(', ');
+    return answer(`This one is for ${named || 'someone else'} to rule, so your reply wasn't recorded.`
+      + ` Open it in Commonly: ${link}`);
+  }
   if (outcome.status === 403) return answer(denied);
   if (outcome.status === 409 && outcome.body.decision?.status === 'ruled') {
     return alreadyRuled(outcome.body.decision.ruling || {});

@@ -521,9 +521,27 @@ export const recordDecision = async (decision: any, options: RecordOptions = {})
     const podId = decision?.podId;
     const id = decision?._id || decision?.id;
     if (!podId || !id) return;
-    const recipients = await currentHumanMembers(podId);
+    const members = await currentHumanMembers(podId);
+    // A card that names its deciders waits only on them.
+    // Once none of them is still in the pod, it waits on every member, the same
+    // fallback chooseDecision applies to who may rule.
+    const namedIds = new Set((decision.deciders || []).map((decider: any) => String(decider.userId)));
+    const present = members.filter((member: unknown) => namedIds.has(String((member as { _id?: unknown })?._id ?? member)));
+    const deciderIds = present.length ? namedIds : new Set<string>();
+    const recipients = present.length ? present : members;
     const pod = await Pod.findById(podId).select('name').lean();
-    const emailRecipientId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
+    const installerId = await installerForAgent(decision.agentUserId, podId, decision.agentName, decision.instanceId);
+    // With named deciders the email goes to one of them: the installer if
+    // they were named and are still in the pod, otherwise the first named
+    // decider still in the pod.
+    const recipientIds = recipients.map((member: unknown) => String((member as { _id?: unknown })?._id ?? member));
+    const firstDecider = (decision.deciders || [])
+      .map((decider: any) => String(decider.userId))
+      .find((deciderId: string) => recipientIds.includes(deciderId));
+    let emailRecipientId = installerId;
+    if (deciderIds.size && !(installerId && recipientIds.includes(String(installerId)))) {
+      emailRecipientId = firstDecider || null;
+    }
     const choiceOptions = (decision.options || []).filter((option: any) => option?.label).map((option: any) => ({
       label: String(option.label), ...(option.description ? { description: String(option.description) } : {}),
       ...(option.recommended ? { recommended: true } : {}),

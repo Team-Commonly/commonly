@@ -13,7 +13,7 @@ jest.mock('../../../models/DecisionRequest', () => mockDecision);
 const mockPod = { findById: jest.fn() };
 jest.mock('../../../models/Pod', () => mockPod);
 
-const mockUser = { findById: jest.fn() };
+const mockUser = { findById: jest.fn(), find: jest.fn() };
 jest.mock('../../../models/User', () => mockUser);
 
 const mockPostMessage = jest.fn();
@@ -284,5 +284,95 @@ describe('DecisionRequestService', () => {
       .resolves.toEqual({ status: 403, body: { error: 'Only human pod members can rule on this decision' } });
     expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
     expect(mockPGMessage.create).not.toHaveBeenCalled();
+  });
+
+  describe('named deciders', () => {
+    const SAM = 'a'.repeat(24);
+    const LILY = 'b'.repeat(24);
+    const BOT = 'c'.repeat(24);
+    const OUTSIDER = 'd'.repeat(24);
+    const people = [
+      { _id: SAM, username: 'sam', isBot: false },
+      { _id: LILY, username: 'lily', isBot: false },
+      { _id: BOT, username: 'helper-bot', isBot: true },
+      { _id: OUTSIDER, username: 'outsider', isBot: false },
+    ];
+    beforeEach(() => {
+      mockPod.findById.mockImplementation(() => podChain({ members: [SAM, LILY, BOT], type: 'team' }));
+      mockUser.find.mockImplementation(({ _id: { $in: ids } }) => ({
+        select: () => ({ lean: async () => people.filter((person) => ids.includes(person._id)) }),
+      }));
+    });
+
+    test('stores them, names them in the card, and returns them', async () => {
+      const result = await requestDecision({ ...source(), deciderUserIds: [LILY, SAM, LILY] });
+      expect(mockPostMessage.mock.calls[0][0].content).toContain('For @lily, @sam');
+      expect(mockDecision.create).toHaveBeenCalledWith(expect.objectContaining({
+        deciders: [{ userId: LILY, username: 'lily' }, { userId: SAM, username: 'sam' }],
+      }));
+      expect(result.deciders).toHaveLength(2);
+    });
+
+    test.each([
+      ['an agent', [BOT]],
+      ['someone outside the pod', [OUTSIDER]],
+      ['an unknown id', ['e'.repeat(24)]],
+    ])('refuses %s before posting anything', async (_label, ids) => {
+      await expect(requestDecision({ ...source(), deciderUserIds: ids }))
+        .rejects.toMatchObject({ status: 400, code: 'decider_not_member' });
+      expect(mockPostMessage).not.toHaveBeenCalled();
+      expect(mockDecision.create).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['an empty list', []],
+      ['six people', [SAM, LILY, BOT, OUTSIDER, 'e'.repeat(24), 'f'.repeat(24)]],
+      ['a username', ['sam']],
+      ['a single id string', SAM],
+      ['an operator object', [{ $ne: null }]],
+    ])('refuses %s as deciderUserIds', async (_label, value) => {
+      await expect(requestDecision({ ...source(), deciderUserIds: value }))
+        .rejects.toMatchObject({ status: 400, code: 'invalid_deciderUserIds' });
+      expect(mockPostMessage).not.toHaveBeenCalled();
+      expect(mockDecision.create).not.toHaveBeenCalled();
+    });
+
+    test('six copies of one id name one decider', async () => {
+      const result = await requestDecision({ ...source(), deciderUserIds: Array(6).fill(LILY) });
+      expect(result.deciders).toEqual([{ userId: LILY, username: 'lily' }]);
+    });
+
+    test('a member who is not a decider cannot rule, and no lock is taken', async () => {
+      mockDecision.findById.mockResolvedValue(pending({ deciders: [{ userId: LILY, username: 'lily' }] }));
+      mockUser.findById.mockReturnValue(userChain({ _id: SAM, username: 'sam', isBot: false }));
+      const result = await chooseDecision({ decisionId: 'decision-1', callerUserId: SAM, value: 'Canary' });
+      expect(result.status).toBe(403);
+      expect(result.body.code).toBe('not_a_decider');
+      expect(result.body.decision.deciders).toEqual([{ userId: LILY, username: 'lily' }]);
+      expect(mockDecision.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(mockPGMessage.create).not.toHaveBeenCalled();
+    });
+
+    test('a named decider reaches the lock', async () => {
+      mockDecision.findById.mockResolvedValue(pending({ deciders: [{ userId: LILY, username: 'lily' }] }));
+      mockUser.findById.mockReturnValue(userChain({ _id: LILY, username: 'lily', isBot: false }));
+      mockDecision.findOneAndUpdate.mockResolvedValue(null);
+      await chooseDecision({ decisionId: 'decision-1', callerUserId: LILY, value: 'Canary' });
+      expect(mockDecision.findOneAndUpdate).toHaveBeenCalled();
+    });
+
+    test('once every named decider has left, any human member can rule', async () => {
+      mockPod.findById.mockImplementation(() => podChain({ members: [SAM, BOT], type: 'team' }));
+      mockDecision.findById.mockResolvedValue(pending({ deciders: [{ userId: LILY, username: 'lily' }] }));
+      mockUser.findById.mockReturnValue(userChain({ _id: SAM, username: 'sam', isBot: false }));
+      mockDecision.findOneAndUpdate.mockResolvedValue(null);
+      await chooseDecision({ decisionId: 'decision-1', callerUserId: SAM, value: 'Canary' });
+      expect(mockDecision.findOneAndUpdate).toHaveBeenCalled();
+    });
+
+    test('the relay card carries the deciders, so a bridge can skip the others', async () => {
+      await requestDecision({ ...source(), deciderUserIds: [LILY] });
+      expect(mockPostMessage.mock.calls[0][0].relayCard.deciders).toEqual([{ userId: LILY, username: 'lily' }]);
+    });
   });
 });
