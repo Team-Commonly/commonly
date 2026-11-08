@@ -771,6 +771,7 @@
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
+      "agentNotConnectedOwner": "You haven't connected {{name}} yet, so it won't see this until it runs.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",
       "taskClaimedVerb": "claimed"
     },
