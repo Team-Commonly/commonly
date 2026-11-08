@@ -64,12 +64,17 @@ describe('a scheduled post and the run cap', () => {
     console.warn.mockRestore();
   });
 
-  it('lets one post through for a wake since the last post, and only one', async () => {
+  it('lets a wake\'s turn through, up to its post limit', async () => {
     await tick();
     await firedAt(new Date());
     await tick();
     expect((await post('Count for today.')).success).toBe(true);
-    expect((await post('And one more thing.')).reason).toBe('consecutive_run_cap');
+    expect((await post('The detail behind it.')).success).toBe(true);
+    for (let n = 3; n <= AgentMessageService.OWED_POSTS_PER_WAKE; n += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await post(`Detail ${n}.`)).success).toBe(true);
+    }
+    expect((await post('One past the limit.')).reason).toBe('consecutive_run_cap');
   });
 
   it('finds the wake on a row from before instance ids were stored', async () => {
@@ -173,9 +178,27 @@ describe('a heartbeat post and the run cap', () => {
     expect((await post('Sweep: one new issue.')).success).toBe(true);
   });
 
-  it('refuses a second post until the next heartbeat', async () => {
+  // Triage's 21:28Z sweep: "Swept: 1 new" posted and its finding was refused.
+  it('lets a heartbeat\'s line and its detail both through on a quiet pod', async () => {
+    await beat({ agoMs: MINUTE, status: 'delivered' });
+    expect((await post('Swept: 1 new.')).success).toBe(true);
+    expect((await post('New: the finding, for whoever owns it.')).success).toBe(true);
+  });
+
+  it('stops a heartbeat\'s turn at its post limit', async () => {
+    await beat({ agoMs: MINUTE });
+    for (let n = 1; n <= AgentMessageService.OWED_POSTS_PER_WAKE; n += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await post(`Finding ${n}.`)).success).toBe(true);
+    }
+    expect((await post('A flood.')).reason).toBe('consecutive_run_cap');
+  });
+
+  it('closes the turn after its window, until the next heartbeat', async () => {
     await beat({ agoMs: MINUTE });
     expect((await post('Sweep: one new issue.')).success).toBe(true);
+    // The same wake, past its window: no longer this turn's output.
+    await ageMessages(AgentMessageService.OWED_TURN_WINDOW_MS);
     expect((await post('And another thing.')).reason).toBe('consecutive_run_cap');
     // Past the floor, but no heartbeat since that post.
     await ageMessages(5 * 60 * MINUTE);

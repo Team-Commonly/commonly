@@ -941,9 +941,12 @@ class AgentMessageService {
   }
 
   /**
-   * Has a wake fired here since this agent last posted? That wake's post goes
-   * past the run cap: one line per wake in a quiet pod is not a monologue. One
-   * post per wake, since the post itself is what ends it.
+   * Is this post part of a wake's output? A wake's turn goes past the run cap:
+   * one turn per wake in a quiet pod is not a monologue. A turn often says a
+   * line and then its detail (Triage's "Swept: 1 new" and the finding), so the
+   * pass covers the wake's own posts, at most OWED_POSTS_PER_WAKE of them and
+   * within OWED_TURN_WINDOW_MS of the wake. Posts before the wake are what
+   * decide whether it is owed at all; posts after it are the turn itself.
    *
    * Two wakes count. A scheduled one is `config.schedule.lastFiredAt`, which
    * agentScheduleService writes. A heartbeat is the newest delivered or acked
@@ -958,9 +961,16 @@ class AgentMessageService {
    * can't post six lines an hour into an empty room. A fixed floor rather than
    * the install's interval: the interval would grant a short heartbeat exactly
    * the drip the cap exists to stop. The schedule wake has no floor; it fires
-   * once a day.
+   * once a day. The floor is read against the last post before the wake, so a
+   * turn's own second line doesn't fail it.
    */
   static readonly HEARTBEAT_OWED_POST_FLOOR_MS = 60 * 60 * 1000;
+
+  /** A summary and up to five details (one per finding): past that it is a flood again. */
+  static readonly OWED_POSTS_PER_WAKE = 6;
+
+  /** A wake's turn is over by then; a later post is not its output. */
+  static readonly OWED_TURN_WINDOW_MS = 15 * 60 * 1000;
 
   static async owedScheduledPost(podId: unknown, agentName: string, instanceId: string, userId: unknown): Promise<boolean> {
     try {
@@ -991,11 +1001,22 @@ class AgentMessageService {
       const beatAt = new Date(heartbeat?.createdAt || 0).valueOf();
       if (!firedAt && !beatAt) return false;
       const recent = await AgentMessageService.getRecentMessages(podId, 20) as Array<MessageNormalized & { user_id?: string }>;
-      const own = recent.filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId));
-      const lastOwnAt = new Date(own[own.length - 1]?.createdAt || 0).valueOf();
-      if (firedAt > lastOwnAt) return true;
-      return beatAt > lastOwnAt
-        && Date.now() - lastOwnAt >= AgentMessageService.HEARTBEAT_OWED_POST_FLOOR_MS;
+      const ownAt = recent
+        .filter((message) => String(message?.userId?._id || message?.user_id || '') === String(userId))
+        .map((message) => new Date(message?.createdAt || 0).valueOf());
+      const now = Date.now();
+      // Owed to the wake at `wakeAt`: the turn hasn't used its posts up or run
+      // past its window. `before` is the last own post before the wake.
+      const turnOpen = (wakeAt: number) => {
+        const since = ownAt.filter((at) => at >= wakeAt).length;
+        if (since === 0) return true;
+        return since < AgentMessageService.OWED_POSTS_PER_WAKE
+          && now - wakeAt <= AgentMessageService.OWED_TURN_WINDOW_MS;
+      };
+      const lastBefore = (wakeAt: number) => ownAt.filter((at) => at < wakeAt).reduce((a, b) => Math.max(a, b), 0);
+      if (firedAt && turnOpen(firedAt)) return true;
+      return Boolean(beatAt) && turnOpen(beatAt)
+        && now - lastBefore(beatAt) >= AgentMessageService.HEARTBEAT_OWED_POST_FLOOR_MS;
     } catch (error) {
       // Toward posting (review-checklist rule 19): a refusal here is a job's
       // result nobody sees, and the cost is one post past the cap.
