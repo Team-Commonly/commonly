@@ -68,7 +68,11 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
         ? when.toLocaleTimeString(appDateLocale(), { hour: 'numeric', minute: '2-digit' })
         : when.toLocaleDateString(appDateLocale(), { month: 'short', day: 'numeric' });
     };
+    // D44: "None" above a list of revoked devices read as a contradiction, so a
+    // fold whose devices are all revoked says so.
+    const revokedCount = devices.length - live.length;
     const summary = loading ? t('settings.devices.loadingShort') : error ? t('settings.devices.loadFailedShort')
+      : live.length === 0 && revokedCount > 0 ? t('settings.devices.noneActive', { count: revokedCount })
       : live.length === 0 ? t('settings.devices.none')
         : lastUsed ? t('settings.devices.countUsed', { devices: count, when: usedLabel(lastUsed as string) }) : count;
     return (

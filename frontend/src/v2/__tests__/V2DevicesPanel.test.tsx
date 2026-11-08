@@ -47,5 +47,22 @@ test('the folded Devices summary updates after revoking a listed device', async 
   fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
   await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/auth/devices/d3'));
+  // D44: not "None" above a list that still shows the revoked device.
+  expect(await screen.findByText('None active · 1 revoked')).toBeInTheDocument();
+  expect(screen.queryByText('None')).not.toBeInTheDocument();
+});
+
+test('the folded summary says None only when there are no devices at all', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [] } });
+  render(<V2DevicesPanel asFold showHeading={false} />);
   expect(await screen.findByText('None')).toBeInTheDocument();
+});
+
+test('a fold of only revoked devices counts them (D44, measured at 1440 on prod)', async () => {
+  axios.get.mockResolvedValue({ data: { devices: [
+    { id: 'r1', label: 'old-a', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: '2026-10-20T09:30:00.000Z' },
+    { id: 'r2', label: 'old-b', createdAt: '2026-08-31T00:00:00.000Z', lastUsedAt: null, revokedAt: '2026-10-21T09:30:00.000Z' },
+  ] } });
+  render(<V2DevicesPanel asFold showHeading={false} />);
+  expect(await screen.findByText('None active · 2 revoked')).toBeInTheDocument();
 });
