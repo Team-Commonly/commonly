@@ -45,7 +45,7 @@ Since the next CLI release, both stop at start with one message, routes that cha
 
 The profile lets any local program use bubblewrap to create user namespaces, with no capabilities for what it starts. **The lines take one file out of `apparmor-profiles` and don't install the package.** Installing it enforces 21 more profiles at once, among them ping, dnsmasq and smbd: 28 enforced before, 49 after (run 42400201955). The one file adds 2 profiles, survives an AppArmor reload, and undoes cleanly (run 42400323320).
 
-Not walked: a full @mention on the one-file lines (the 13 s and 14 s answers loaded the same file from the installed package), a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
+Walked on the one-file lines exactly as printed (11-08, the workflow ran them and then started the agent): Codex answered in 14 s (run 42474065504), and Claude Code in 17 s on CLI 0.1.294 with MCP 0.3.43 (run 42483828858). An earlier Claude run failed at the checkpoint, not in the sandbox (#3740). Not walked: a person's own sign-in, the profile after a reboot, a desktop install, other distros, and a real OpenCode or Qwen turn under the profile, so those two aren't offered it. `byo-linux.yml` takes `runner` and `bwrap_profile`.
 
 ## Other harnesses
 
