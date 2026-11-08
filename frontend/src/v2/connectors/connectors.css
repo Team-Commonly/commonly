@@ -21,7 +21,7 @@
 /* head: title, count, search, filter */
 .v2-cx-head { flex: none; display: flex; align-items: center; gap: 12px; min-height: 76px; padding: 0 28px; border-bottom: 1px solid var(--v2-border-soft); }
 .v2-cx-head h1 { margin: 0; font: 800 24px/1 var(--v2-font-display, inherit); letter-spacing: -0.03em; white-space: nowrap; }
-.v2-cx-head__meta { font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-cx-head__meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 500 11.5px/1.3 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-cx-head__sp { flex: 1; }
 .v2-cx-searchbtn { all: unset; box-sizing: border-box; display: none; cursor: pointer; place-items: center; width: 44px; height: 44px; margin-right: -8px; border-radius: 8px; color: var(--v2-text-secondary); }
 .v2-cx-searchbtn svg { width: 18px; height: 18px; }
@@ -103,6 +103,19 @@ div.v2-cx-warning p { margin: 0; color: inherit; font-size: inherit; line-height
 .v2-root .v2-cx-list button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
 .v2-root .v2-cx-list .v2-connector-row__action { grid-column: 1; grid-row: auto; justify-self: start; }
 .v2-cx-drawer__offer { display: grid; gap: 10px; }
+/* the confirmation after Grant, with the grant it names right under it */
+.v2-cx-fresh { display: grid; gap: 10px; }
+.v2-cx-confirm { margin: 0; padding: 10px 12px; border: 1px solid var(--v2-success); border-radius: var(--v2-radius-sm); background: var(--v2-success-soft); color: var(--v2-text-primary); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; }
+.v2-cx-confirm:focus { outline: none; }
+.v2-cx-live { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* the ended grants' count, as a fold under a live grant */
+.v2-cx-off--fold { margin-left: 0; font: inherit; }
+/* a mode's raw tool ids, for anyone who wants them */
+.v2-tools__names > summary { width: fit-content; cursor: pointer; border-radius: 4px; color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
+.v2-tools__names > summary:hover { color: var(--v2-text-primary); }
+.v2-tools__names > summary:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2-tools__names .v2-tools__hint { display: block; margin-top: 6px; }
+.v2-tools__names code { max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 
 /* phone: three to a row, a tab bar below (the shell's), the reveal as a sheet */
 @media (max-width: 640px) {
@@ -113,6 +126,7 @@ div.v2-cx-warning p { margin: 0; color: inherit; font-size: inherit; line-height
   .v2-cx-body .v2-cx-seg { display: flex; width: 100%; box-sizing: border-box; margin: 0 0 10px; }
   .v2-cx-body .v2-cx-seg button { flex: 1 1 0; }
   .v2-cx-body .v2-cx-search { width: auto; margin: 0 0 10px; }
+  .v2-cx-off--fold { min-height: 44px; }
   .v2-cx-off--phone { display: block; margin: 10px 0 0 4px; font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); }
   .v2-cx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .v2-cx-tile { height: 104px; }

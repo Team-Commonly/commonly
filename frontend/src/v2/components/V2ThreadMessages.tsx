@@ -29,6 +29,7 @@ interface V2ThreadMessagesProps {
   decisionByMessageId: Map<string, V2DecisionCardData>;
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
+  ownerConnectLinks?: Map<string, string>;
   agentTags?: Map<string, string>;
   agentAuthorKeys: Set<string>;
   onAuthorClick?: (author: string) => void;
@@ -42,6 +43,8 @@ interface V2ThreadMessagesProps {
   startsDisabled?: boolean;
   // The welcome's hosted start while it runs in place, or after it failed.
   hostedStart?: WelcomeHostedStartState;
+  /** Only the pod's creator runs the hosted start in place; everyone else follows its link. */
+  viewerOwnsPod?: boolean;
   onQuoteNavigate?: (messageId: string | number) => void;
   onDecisionRuled?: (decisionId: string, ruling: V2DecisionRuling) => void;
   onAimAtThread: (rootId: string, preview: string) => void;
@@ -135,6 +138,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   decisionByMessageId,
   settledDecisionByMessageId,
   agentDisplayNames,
+  ownerConnectLinks,
   agentTags,
   agentAuthorKeys,
   onAuthorClick,
@@ -145,6 +149,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onStart,
   startsDisabled = false,
   hostedStart = null,
+  viewerOwnsPod = false,
   onQuoteNavigate,
   onDecisionRuled,
   onAimAtThread,
@@ -334,6 +339,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 isDecisionRuling={Boolean(settledRuling)}
                 onDecisionRuled={onDecisionRuled}
                 agentDisplayNames={agentDisplayNames}
+                ownerConnectLinks={ownerConnectLinks}
                 agentTags={agentTags}
                 agentAuthorKeys={agentAuthorKeys}
                 onAuthorClick={onAuthorClick}
@@ -367,6 +373,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                         {hostedHere?.status === 'failed' && (
                           <p className="v2-chat__start-note v2-chat__start-note--error" role="alert">{hostedHere.error}</p>
                         )}
+                        {/* Says what the click gives back. It is the one start that answers
+                            with no typing, and nothing else on the welcome says so. */}
+                        {viewerOwnsPod && start.action === WELCOME_HOSTED_ACTION && !hostedHere && (
+                          <p className="v2-chat__start-note">{t('podChat.starts.hostedNote')}</p>
+                        )}
                       </React.Fragment>
                     );
                   })}
@@ -388,8 +399,10 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 <div className="v2-chat__delivery-hint" role="status">
                   <Trans
                     i18nKey={agentDeliveryHint.wokenAgent ? 'podChat.deliveryHintOthers' : 'podChat.deliveryHint'}
-                    values={{ handle: agentDeliveryHint.mentionHandle, woken: agentDeliveryHint.wokenAgent }}
-                    components={{ handle: <strong /> }}
+                    components={{
+                      handle: <strong>@{agentDeliveryHint.mentionHandle}</strong>,
+                      woken: <>{agentDeliveryHint.wokenAgent}</>,
+                    }}
                   />
                 </div>
               )}
@@ -527,6 +540,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     isDecisionRuling={Boolean(ruling)}
                     onDecisionRuled={onDecisionRuled}
                     agentDisplayNames={agentDisplayNames}
+                    ownerConnectLinks={ownerConnectLinks}
                     agentTags={agentTags}
                     agentAuthorKeys={agentAuthorKeys}
                     onAuthorClick={onAuthorClick}

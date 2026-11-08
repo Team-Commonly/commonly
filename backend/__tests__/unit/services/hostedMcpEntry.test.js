@@ -22,6 +22,10 @@ const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calenda
 const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
 const LINEAR_READ_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
+const LINEAR_1107_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-11-07.json');
+// Re-pinned from the 2026-11-07 capture; every other Linear pin is the 10-19 one.
+const LINEAR_REPINNED_1107 = ['save_comment', 'save_diff_comment', 'save_document', 'save_project',
+  'save_project_label', 'submit_diff_review', 'update_diff'];
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 // The 11-04 capture backs the five Atlassian writers, which Atlassian re-described.
 const ATLASSIAN_1104_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-11-04.json');
@@ -987,6 +991,14 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'google-calendar').title).toBe('Google Calendar');
   });
 
+  // Who approves, and whether anything can write at all, depends on the grant and
+  // the connection, so a line about the whole connector cannot promise it. The
+  // broker parks a hosted write for the connection's owner, and a read grant has none.
+  test('the Linear entry\'s description says what it holds and promises no approval', () => {
+    const [entry] = HOSTED_MCP_ENTRIES;
+    expect(entry.description).toBe('Issues, projects, cycles and releases in your own Linear workspace.');
+  });
+
   test('the shipped Linear entry pins approval-required writers and names a revoke page', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
     // 68 captured tools minus two external fetches and four excluded writers.
@@ -1013,7 +1025,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.resource).toBe('https://mcp.linear.app/mcp');
     expect(entry.issuer).toBe('https://mcp.linear.app');
     expect(entry.client).toBe('cimd');
-    expect([...entry.scopes].sort()).toEqual(['openid', 'read']);
+    expect([...entry.scopes].sort()).toEqual(['openid', 'read', 'write']);
   });
 
   test('the Google Calendar entry is pre-registered and pins only its five read tools', () => {
@@ -1488,13 +1500,15 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const capture = LINEAR_CAPTURE;
     const [entry] = HOSTED_MCP_ENTRIES;
     expect(capture.server).toBe(entry.resource);
-    // The pins came from a consenting list at read write openid. The entry asks
-    // for less until an agent can reach an approved write (F224).
-    expect(capture.scopeRequested.split(' ').filter((scope) => scope !== 'write').sort())
-      .toEqual([...entry.scopes].sort());
+    expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    // Its writes need `write` on the token, so an older read-only connection
+    // cannot be granted them until it reconnects.
     expect(entry.writeScope).toBe('write');
-    expect(entry.scopes).not.toContain(entry.writeScope);
+    expect(entry.scopes).toContain(entry.writeScope);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of LINEAR_1107_CAPTURE.tools) {
+      if (LINEAR_REPINNED_1107.includes(tool.name)) measured.set(tool.name, tool);
+    }
     const excludedByPinRuling = new Set(['get_attachment', 'extract_images', 'prepare_attachment_upload',
       'create_attachment_from_upload', 'create_attachment', 'create_issue_label']);
     expect(entry.tools.map((tool) => tool.name)).toEqual(
@@ -1515,6 +1529,24 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(capture.tools).toHaveLength(68);
     expect(entry.tools.find((tool) => tool.name === 'get_diff').description).toContain('not fetch targets');
     expect(entry.tools.find((tool) => tool.name === 'get_diff_threads').description).toContain('not fetch targets');
+  });
+
+  test('the 2026-11-07 capture drifted exactly the seven pins it re-pinned', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'linear');
+    const before = new Map(LINEAR_CAPTURE.tools.map((tool) => [tool.name, tool]));
+    const asFirstPinned = {
+      ...entry,
+      tools: entry.tools.map((tool) => (LINEAR_REPINNED_1107.includes(tool.name)
+        ? { ...tool, inputSchema: before.get(tool.name).inputSchema } : tool)),
+    };
+    const drifted = assessEntryTools(asFirstPinned, LINEAR_1107_CAPTURE.tools)
+      .filter((item) => item.verdict === 'tool_drift').map((item) => item.name).sort();
+    expect(drifted).toEqual(LINEAR_REPINNED_1107);
+    expect(assessEntryTools(entry, LINEAR_1107_CAPTURE.tools).map((item) => item.verdict)
+      .every((verdict) => verdict === 'ok')).toBe(true);
+    // A re-pin never adds a tool: these two are new upstream and stay out.
+    const pinned = new Set(entry.tools.map((tool) => tool.name));
+    expect(pinned.has('whoami') || pinned.has('prepare_file_upload')).toBe(false);
   });
 
   test('Linear writers use local summaries and the 19 reviewed irreversible flags', () => {
@@ -1538,7 +1570,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(issue.description).toContain('connection owner');
     expect(issue.description).toContain('agent installed in that Linear workspace');
     expect(issue.inputSchema.properties.delegate).toEqual(measured.get('save_issue').inputSchema.properties.delegate);
-    expect(assessEntryTools(entry, LINEAR_CAPTURE.tools).every((item) => item.verdict === 'ok')).toBe(true);
+    expect(assessEntryTools(entry, LINEAR_1107_CAPTURE.tools).every((item) => item.verdict === 'ok')).toBe(true);
   });
 
   test('the 10-01 pins remain compatible with exactly five changes in the 10-14 capture', () => {
@@ -1560,7 +1592,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(changed.every((assessment) => assessment.detail.includes('compatibly'))).toBe(true);
     // Control: the shipped pins against the same capture are clean, so the five
     // above are about the first pins and not about the capture.
-    expect(assessEntryTools(entry, LINEAR_CAPTURE.tools).every((assessment) => assessment.verdict === 'ok'))
+    expect(assessEntryTools(entry, LINEAR_1107_CAPTURE.tools).every((assessment) => assessment.verdict === 'ok'))
       .toBe(true);
   });
 

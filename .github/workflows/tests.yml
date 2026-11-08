@@ -364,15 +364,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          # The tool-contract guard compares the submodule pin against the
-          # merge base with origin/main to catch a ROLLBACK, which containment
-          # structurally cannot see. At the default depth 1 there is no
-          # origin/main and no shared history, so that check could not run at
-          # all (#2497). The guard now says so loudly instead of passing, and
-          # this is what lets it answer.
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -389,11 +380,13 @@ jobs:
       - run: cd commonly-mcp && npm ci --include=dev
       - run: cd cli && npm ci --include=dev
       - run: cd workers/agent-runtime && npm ci --include=dev
-      - run: npm run verify:moltbot-tools
+      - run: npm run verify:preset-tools
+      - run: node --test scripts/retired-gateway.test.mjs
       - run: npm run verify:litellm-patch-runner
       - run: npm run verify:readme-invariants
       - run: node --test scripts/__tests__/latchkey-route.test.mjs
       - run: node --test scripts/d14-pr-walk.test.mjs
+      - run: node --test scripts/ui-crawl-verdicts.test.mjs
       # These node:test files lived only in the retired all-in-one job.
       - name: Run agent service tests
         run: |
@@ -531,7 +524,15 @@ jobs:
       # Update manually by running: gh api /repos/datreeio/CRDs-catalog/commits/main --jq .sha
       CRDS_CATALOG_SHA: 15e9b72701ce617b0ac15da611a7fb2e54b980dd
       KUBECONFORM_VERSION: v0.7.0
+      # From each release's published checksums; a version bump updates its
+      # sha too. curl --fail stops a stall or an HTTP error at the download,
+      # and the sha check stops wrong bytes, so neither reaches tar. The job
+      # token goes along because a GitHub incident once named unauthenticated
+      # users; whether it helps is unproven, as a bogus token still gets the
+      # redirect. curl drops the header on the redirect to the asset host.
+      KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
       YQ_VERSION: v4.44.3
+      YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
 
     steps:
       - name: Checkout code
@@ -550,14 +551,24 @@ jobs:
       - run: npm ci --ignore-scripts --include=dev
 
       - name: Install kubeconform
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" -o kc.tgz
+          curl -sSL --fail --retry 4 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" -o kc.tgz
+          echo "${KUBECONFORM_SHA256}  kc.tgz" | sha256sum --check --strict
           sudo tar -xzf kc.tgz -C /usr/local/bin/ kubeconform
           kubeconform -v
 
       - name: Install yq
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -sSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          curl -sSL --fail --retry 4 --retry-all-errors --connect-timeout 10 --max-time 60 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          echo "${YQ_SHA256}  yq" | sha256sum --check --strict
           chmod +x yq
           sudo mv yq /usr/local/bin/yq
           yq --version

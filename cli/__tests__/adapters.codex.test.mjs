@@ -1412,6 +1412,40 @@ describe('codex adapter — the public Codex home on Linux', () => {
   };
   const filesystemFlag = (calls) => calls[0].args.find((a) => a.startsWith('permissions.commonly_public.filesystem='));
 
+  describe('F145: memory writes on a turn the owner woke', () => {
+    const NOT_MEMORY = ['commonly_attach_file', 'commonly_catch_up', 'commonly_self_install_into_pod', 'commonly_delete_message'];
+    const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+    const disabled = (calls) => calls[0].args.find((arg) => arg.startsWith('mcp_servers.commonly.disabled_tools='));
+    const promptOf = (calls) => calls[0].args.at(-1);
+    const mcp = [{ name: 'commonly', transport: 'stdio', command: [process.execPath, '/tmp/commonly-mcp-test.mjs'] }];
+    const turn = (extra) => publicSpawn(fakeHome, { cwd: project, extra: {
+      environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' }, mcp },
+      memoryLongTerm: '',
+      ...extra,
+    } });
+
+    test('an owner-woken turn gets the three memory tools back and nothing else', async () => {
+      const calls = await turn({ ownerWoken: true });
+      for (const tool of NOT_MEMORY) expect(disabled(calls)).toContain(tool);
+      for (const tool of MEMORY) expect(disabled(calls)).not.toContain(tool);
+      expect(promptOf(calls)).toContain('commonly_save_my_memory');
+    });
+
+    test('a stranger\'s turn that resumes the owner\'s thread has them taken away again', async () => {
+      await turn({ ownerWoken: true });
+      const calls = await turn({ sessionId: 'thread-1' });
+      expect(calls[0].args).toContain('resume');
+      for (const tool of [...NOT_MEMORY, ...MEMORY]) expect(disabled(calls)).toContain(tool);
+      expect(promptOf(calls)).not.toContain('commonly_save_my_memory');
+    });
+
+    test('an owner turn resuming a stranger\'s thread gets them back', async () => {
+      const calls = await turn({ sessionId: 'thread-1', ownerWoken: true });
+      expect(calls[0].args).toContain('resume');
+      for (const tool of MEMORY) expect(disabled(calls)).not.toContain(tool);
+    });
+  });
+
   let fakeHome;
   let project;
   beforeEach(async () => {
@@ -1887,6 +1921,9 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
     'features.multi_agent=false',
     'features.multi_agent_v2.max_concurrent_threads_per_session=1',
     'features.goals=false',
+    'features.plugins=false',
+    'features.apps=false',
+    'analytics.enabled=false',
   ];
   const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
 

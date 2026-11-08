@@ -10,7 +10,8 @@ export const PUBLIC_WITHHELD_TOOLS = Object.freeze(['commonly_attach_file', 'com
 // capabilities. A public seat answers strangers, so an injected message must
 // not be able to spread the agent into other pods or rewrite its memory.
 // Withheld on public trust only: a Claude workspace seat keeps its memory
-// writes, and denies self-install itself (claude.js, workspaceDenies).
+// writes, and denies self-install itself (claude.js, workspaceDenies). The
+// memory writes come back on a turn the owner woke (F145, below).
 // commonly_log_cycle is a memory write too: it appends to the agent's
 // `cycles[]` through POST /api/agents/runtime/memory/sync. Reading memory
 // (commonly_read_agent_memory, and the long_term the wrapper puts in the
@@ -31,3 +32,17 @@ export const PUBLIC_ONLY_WITHHELD_TOOLS = Object.freeze([
 export const PUBLIC_SEAT_WITHHELD_TOOLS = Object.freeze([
   ...PUBLIC_WITHHELD_TOOLS, ...PUBLIC_ONLY_WITHHELD_TOOLS,
 ]);
+
+// F145: what comes back on a turn the kernel verified its owner woke, so the
+// owner keeps a remembering agent. The kernel refuses these writes on any other
+// public turn, whatever an adapter offers.
+export const OWNER_WOKEN_MEMORY_TOOLS = Object.freeze([
+  'commonly_write_agent_memory',
+  'commonly_save_my_memory',
+  'commonly_log_cycle',
+]);
+
+/** What a public seat is not offered on this turn. Only a literal `true` opens it. */
+export const publicSeatWithheldTools = (ctx) => (ctx?.ownerWoken === true
+  ? PUBLIC_SEAT_WITHHELD_TOOLS.filter((tool) => !OWNER_WOKEN_MEMORY_TOOLS.includes(tool))
+  : PUBLIC_SEAT_WITHHELD_TOOLS);

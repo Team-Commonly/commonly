@@ -4,7 +4,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // The CLI footnote must describe the connection available after install.
 // `agent init` scaffolds a Python webhook and does not connect Claude/Codex.
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -80,9 +80,15 @@ describe('V2AgentBYO footnote', () => {
     expect(footnote).toHaveTextContent(`Choose “${modeTitle('byo-mode-byo')}”; after install`);
   });
 
-  // D245: the listener runs on Windows too (unsandboxed), so the footnote is the same as a Mac's.
-  test.each([[''], ['?adapter=codex']])('on Windows (%s), the footnote points to the listener command', async (query) => {
-    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+  // D245: the listener runs on Windows too (unsandboxed), and on Linux with
+  // either tool (Codex walked 11-05), so the footnote is the same as a Mac's.
+  test.each([
+    ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', ''],
+    ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', '?adapter=codex'],
+    ['Linux', 'Mozilla/5.0 (X11; Linux x86_64)', ''],
+    ['Linux', 'Mozilla/5.0 (X11; Linux x86_64)', '?adapter=codex'],
+  ])('on %s (%s %s), the footnote points to the listener command', async (_os, userAgent, query) => {
+    setUserAgent(userAgent);
     window.history.replaceState({}, '', `/${query}`);
     renderPage();
     const footnote = await screen.findByText(/Prefer the CLI\?/);
@@ -92,13 +98,23 @@ describe('V2AgentBYO footnote', () => {
     expect(footnote).not.toHaveTextContent(/supported computer|on a Mac computer/);
   });
 
-  test('on Linux with Codex, the footnote still points to a Mac or hosting', async () => {
-    setUserAgent('Mozilla/5.0 (X11; Linux x86_64)');
-    window.history.replaceState({}, '', '/?adapter=codex');
+  // The only pair of the page's two runners with no listener, plus a runner
+  // that has its own lines: neither has a next step that shows one.
+  test.each([
+    ['Codex on Windows in an open pod', '?adapter=codex'],
+    ['OpenCode', '?adapter=opencode'],
+  ])('%s: the footnote promises no listener command', async (_case, query) => {
+    const base = axios.get.getMockImplementation();
+    axios.get.mockImplementation((url) => (url === '/api/pods'
+      ? Promise.resolve({ data: [{ _id: 'p1', name: 'Workspace', type: 'chat', joinPolicy: 'open', members: ['u1'] }] })
+      : base(url)));
+    setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+    window.history.replaceState({}, '', `/${query}`);
     renderPage();
-    const footnote = await screen.findByText(/Prefer the CLI\?/);
     await screen.findByTestId('byo-mode-byo');
-    expect(footnote).toHaveTextContent('run the listener on a Mac computer');
-    expect(footnote).toHaveTextContent(`To answer @mentions from Linux, choose “${modeTitle('byo-mode-hosted')}”`);
+    fireEvent.click(screen.getByTestId('byo-mode-byo'));
+    await waitFor(() => expect(document.querySelector('.v2-byo__footnote')).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector('.v2-byo__footnote')).not.toHaveTextContent('the next step shows the listener command'));
   });
+
 });

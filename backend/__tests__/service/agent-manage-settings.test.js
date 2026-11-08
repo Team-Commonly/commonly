@@ -56,7 +56,7 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.installations).toEqual([expect.objectContaining({
-      podId: String(podA._id), status: 'active', wakeOnMessage: true, humanOnly: true, boardWake: false,
+      podId: String(podA._id), podType: 'chat', status: 'active', wakeOnMessage: true, humanOnly: true, boardWake: false,
       heartbeatEnabled: false, heartbeatMinutes: 60,
     })]);
     expect(response.body.activePodCount).toBe(2);
@@ -395,5 +395,65 @@ describe('per-installation agent settings', () => {
     expect((await AgentInstallation.findOne({
       podId: podA._id, agentName: 'settings-agent', instanceId: 'same',
     })).status).toBe('active');
+  });
+
+  // Each person's 1:1 room with the agent carries the agent's name, so the
+  // owner saw identical "direct" rows. The owner isn't a member of anyone
+  // else's room and doesn't learn who talks to the agent: those rooms reach
+  // the owner only as a count, never as a row, id or name.
+  it('lists only the caller\'s own direct room and counts the others', async () => {
+    const bot = await User.create({ username: 'settings-room-bot', email: 'settings-room-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-room-agent', instanceId: 'default' } });
+    const third = await User.create({ username: 'settings-third', email: 'settings-third@test.com', password: 'password123' });
+    const mine = await Pod.create({ name: 'settings-room-agent', type: 'agent-room', createdBy: bot._id, members: [owner._id, bot._id] });
+    const theirs = await Pod.create({ name: 'settings-room-agent', type: 'agent-room', createdBy: bot._id, members: [other._id, bot._id] });
+    const thirds = await Pod.create({ name: 'settings-room-agent', type: 'agent-room', createdBy: bot._id, members: [third._id, bot._id] });
+    try {
+      // The others' rooms are older, so an unfiltered fallback would pick one.
+      await AgentInstallation.create([
+        { agentName: 'settings-room-agent', instanceId: 'default', podId: theirs._id, version: '1', installedBy: owner._id, createdAt: new Date('2026-01-01') },
+        { agentName: 'settings-room-agent', instanceId: 'default', podId: thirds._id, version: '1', installedBy: owner._id, createdAt: new Date('2026-01-02') },
+        { agentName: 'settings-room-agent', instanceId: 'default', podId: mine._id, version: '1', installedBy: owner._id, createdAt: new Date('2026-01-03') },
+      ]);
+      const response = await request(app).get('/api/registry/agents/settings-room-agent/manage-settings?instanceId=default')
+        .set('Authorization', `Bearer ${token(owner)}`);
+      expect(response.status).toBe(200);
+      expect(response.body.installations.map((row) => row.podId)).toEqual([String(mine._id)]);
+      expect(response.body.otherDirectRoomCount).toBe(2);
+      expect(response.body.writablePodId).toBe(String(mine._id));
+      expect(response.body.podCount).toBe(3);
+      // runtimeSourcePodId stays: runtime saves must reach the pod the daemon
+      // reads, and a bare id names no one (the room 404s for a non-member).
+      const withoutSource = (data) => JSON.stringify({ ...data, runtimeSourcePodId: undefined });
+      const body = withoutSource(response.body);
+      for (const id of [theirs._id, thirds._id, other._id, third._id]) expect(body).not.toContain(String(id));
+      expect(body).not.toContain('settings-other');
+      expect(body).not.toContain('settings-third');
+
+      // The person in a room sees it as their own and the rest only as a count.
+      await AgentInstallation.updateMany({ agentName: 'settings-room-agent' }, { $set: { installedBy: other._id } });
+      const theirView = await request(app).get('/api/registry/agents/settings-room-agent/manage-settings?instanceId=default')
+        .set('Authorization', `Bearer ${token(other)}`);
+      expect(theirView.body.installations.map((row) => row.podId)).toEqual([String(theirs._id)]);
+      expect(theirView.body.otherDirectRoomCount).toBe(2);
+      expect(withoutSource(theirView.body)).not.toContain(String(mine._id));
+
+      // With no room of their own, nothing names any room.
+      await AgentInstallation.deleteMany({ podId: mine._id });
+      await AgentInstallation.updateMany({ agentName: 'settings-room-agent' }, { $set: { installedBy: owner._id } });
+      const noneOwn = await request(app).get('/api/registry/agents/settings-room-agent/manage-settings?instanceId=default')
+        .set('Authorization', `Bearer ${token(owner)}`);
+      expect(noneOwn.body.installations).toEqual([]);
+      expect(noneOwn.body.otherDirectRoomCount).toBe(2);
+      // The page still has to load the agent to manage it, so one id comes
+      // back as the writable pod. No row, name or member does.
+      expect([String(theirs._id), String(thirds._id)]).toContain(noneOwn.body.writablePodId);
+      const loadable = JSON.stringify({ ...noneOwn.body, runtimeSourcePodId: undefined, writablePodId: undefined });
+      for (const id of [theirs._id, thirds._id, other._id, third._id]) expect(loadable).not.toContain(String(id));
+    } finally {
+      await AgentInstallation.deleteMany({ agentName: 'settings-room-agent' });
+      await Pod.deleteMany({ _id: { $in: [mine._id, theirs._id, thirds._id] } });
+      await User.deleteMany({ _id: { $in: [bot._id, third._id] } });
+    }
   });
 });

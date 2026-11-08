@@ -83,7 +83,9 @@ const ID = {
   wait: 'aa000000000000000000000b',
 };
 
-const QUOTA = () => new Error('insufficient_quota: billing limit');
+// QUOTA for the circuit, with no allowance wording: these tests count turn posts,
+// and insufficient_quota would add the pod's notice (F235) once per cause per hour.
+const QUOTA = () => new Error('billing limit reached');
 const deferred = () => {
   let resolve;
   let reject;

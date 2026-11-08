@@ -72,7 +72,10 @@ const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
-const { runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE } = require('../../../services/nativeRuntimeService');
+const {
+  runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE, ROOM_TURNS_USED_LINE, TURN_UNAVAILABLE_LINE, forgetStopLines,
+  stopLineAlreadySaid, triggerTextIsHumanWritten,
+} = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const OWNER = '507f1f77bcf86cd799439099';
@@ -132,6 +135,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
   let savedRun;
   beforeEach(() => {
     jest.clearAllMocks();
+    forgetStopLines();
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
     mockHostedBroker.mockImplementation((actual, ...args) => actual.hostedBrokerToolsForRun(...args));
@@ -702,6 +706,436 @@ describe('a hosted turn the guard stops, or that fails', () => {
     const result = await runAgent(hostedInstall(), mention);
     expect(result).toMatchObject({ status: 'failed', errorKind: 'user_ceiling' });
     expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+  });
+
+  describe('F234: a stop before any turn ran', () => {
+    const personIs = (fields) => User.findById.mockImplementation(() => ({
+      select: () => ({ lean: () => Promise.resolve(fields) }),
+    }));
+    const human = { entitlements: { pro: false }, isBot: false };
+    const nativeInstall = () => ({
+      podId: POD,
+      agentName: 'guide',
+      instanceId: 'default',
+      displayName: 'Guide',
+      installedBy: OWNER,
+      config: { runtime: { runtimeType: 'native' }, systemPrompt: 'help', model: 'deepseek-v4-flash', tools: [] },
+    });
+    const inThread = { ...mention, payload: { ...mention.payload, threadRootId: 4242 } };
+    const agentsAsk = () => personIs({ isBot: true });
+    const atPlanLine = () => AgentRun.countDocuments.mockResolvedValue(100000);
+    const litellmEnv = { base: process.env.LITELLM_BASE_URL, key: process.env.LITELLM_MASTER_KEY };
+    const dropLiteLLM = () => {
+      litellmEnv.base = process.env.LITELLM_BASE_URL;
+      litellmEnv.key = process.env.LITELLM_MASTER_KEY;
+      delete process.env.LITELLM_BASE_URL;
+    };
+    const User = require('../../../models/User');
+
+    beforeEach(() => {
+      AgentRun.countDocuments.mockReset();
+      AgentRun.countDocuments.mockResolvedValue(0);
+    });
+    afterEach(() => {
+      personIs(human);
+      if (litellmEnv.base) process.env.LITELLM_BASE_URL = litellmEnv.base;
+      if (litellmEnv.key) process.env.LITELLM_MASTER_KEY = litellmEnv.key;
+      delete process.env.HOSTED_TURNS_PER_DAY;
+    });
+
+    test('no model reachable: the person is told, nothing runs, and the event still fails', async () => {
+      dropLiteLLM();
+      const result = await runAgent(hostedInstall(), inThread);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'config' });
+      expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({
+        failureNotice: true, personWaiting: true, kind: 'error', threadRootId: 4242,
+      });
+      expect(AgentRun.create).not.toHaveBeenCalled();
+    });
+
+    test('a model that goes away after the run row was written gets the same line', async () => {
+      AgentRun.create.mockImplementationOnce(async (doc) => {
+        delete process.env.LITELLM_BASE_URL;
+        return { ...doc, _id: 'run-gone', turns: [], save: jest.fn() };
+      });
+      litellmEnv.base = process.env.LITELLM_BASE_URL;
+      await runAgent(hostedInstall(), mention);
+      expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+    });
+
+    test.each([
+      ['a heartbeat', { type: 'heartbeat', eventId: 'hb', payload: {} }, () => {}],
+      ['a board wake', { ...mention, payload: { ...mention.payload, boardWake: true } }, () => {}],
+      ['an ambient message', { type: 'message.posted', eventId: 'm', payload: { userId: OWNER, messageId: 'm' } }, () => {}],
+      ['an agent\'s @', mention, agentsAsk],
+    ])('no model reachable: %s stays quiet', async (_label, trigger, arrange) => {
+      dropLiteLLM();
+      arrange();
+      await runAgent(hostedInstall(), trigger);
+      expect(posted()).toEqual([]);
+    });
+
+    test('hosted turns switched off: a person is told, a heartbeat is not', async () => {
+      process.env.HOSTED_TURNS_PER_DAY = '0';
+      const result = await runAgent(hostedInstall(), mention);
+      expect(result).toMatchObject({ status: 'succeeded', runId: '' });
+      expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      AgentMessageService.postMessage.mockClear();
+      await runAgent(hostedInstall(), { type: 'heartbeat', eventId: 'hb', payload: {} });
+      expect(posted()).toEqual([]);
+    });
+
+    test('an event type hosted agents do not take gets no line', async () => {
+      await runAgent(hostedInstall(), { ...mention, type: 'thread.mention' });
+      expect(posted()).toEqual([]);
+    });
+
+    test('an event type hosted agents do not take gets no line with no model either', async () => {
+      dropLiteLLM();
+      const result = await runAgent(hostedInstall(), { ...mention, type: 'thread.mention' });
+      expect(result).toMatchObject({ status: 'succeeded', runId: '' });
+      expect(posted()).toEqual([]);
+    });
+
+    test('an agent that is not hosted says its room is out of turns', async () => {
+      AgentRun.countDocuments.mockResolvedValueOnce(100000);
+      await runAgent(nativeInstall(), inThread);
+      expect(posted()).toEqual([ROOM_TURNS_USED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({
+        failureNotice: true, personWaiting: true, threadRootId: 4242,
+      });
+    });
+
+    test('its owner\'s day being used up reads as no turns left, with no name in it', async () => {
+      AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
+      const result = await runAgent(nativeInstall(), mention);
+      expect(result).toMatchObject({ status: 'failed', errorKind: 'user_ceiling' });
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('an agent\'s @ at an agent that is not hosted stays quiet', async () => {
+      AgentRun.countDocuments.mockResolvedValueOnce(100000);
+      agentsAsk();
+      await runAgent(nativeInstall(), mention);
+      expect(posted()).toEqual([]);
+    });
+
+    test('five asks from one person in one place get one line', async () => {
+      atPlanLine();
+      for (let ask = 0; ask < 5; ask += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await runAgent(hostedInstall(), mention);
+      }
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('five asks landing together get one line', async () => {
+      atPlanLine();
+      await Promise.all([1, 2, 3, 4, 5].map(() => runAgent(hostedInstall(), mention)));
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('another person, and another thread, each get their own line', async () => {
+      atPlanLine();
+      await runAgent(hostedInstall(), mention);
+      await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, userId: '507f1f77bcf86cd799439098' } });
+      await runAgent(hostedInstall(), inThread);
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE, HOSTED_TURNS_USED_LINE, HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('asking again after ten minutes gets a fresh line', async () => {
+      atPlanLine();
+      const now = jest.spyOn(Date, 'now');
+      now.mockReturnValue(1_800_000_000_000);
+      await runAgent(hostedInstall(), mention);
+      now.mockReturnValue(1_800_000_000_000 + 9 * 60_000);
+      await runAgent(hostedInstall(), mention);
+      now.mockReturnValue(1_800_000_000_000 + 10 * 60_000);
+      await runAgent(hostedInstall(), mention);
+      now.mockRestore();
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE, HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('a line that failed to post does not stand for the next ask', async () => {
+      atPlanLine();
+      AgentMessageService.postMessage.mockRejectedValueOnce(new Error('pg down'));
+      await runAgent(hostedInstall(), mention);
+      await runAgent(hostedInstall(), mention);
+      expect(posted()).toEqual([HOSTED_TURNS_USED_LINE, HOSTED_TURNS_USED_LINE]);
+    });
+
+    test('a count that failed is one ask\'s failure, so every ask gets its line', async () => {
+      AgentRun.countDocuments.mockResolvedValueOnce(0).mockRejectedValueOnce(new Error('mongo down'));
+      await runAgent(hostedInstall(), mention);
+      AgentRun.countDocuments.mockResolvedValueOnce(0).mockRejectedValueOnce(new Error('mongo down'));
+      await runAgent(hostedInstall(), mention);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE, HOSTED_RUN_FAILED_LINE]);
+    });
+
+    test.each([
+      ['an agent\'s @', mention, agentsAsk],
+      ['a board wake', { ...mention, payload: { ...mention.payload, boardWake: true } }, () => {}],
+      ['a welcome wake', { ...mention, payload: { ...mention.payload, welcomeWake: true } }, () => {}],
+      ['a reply under the agent\'s message that @s someone else', { ...mention, payload: { ...mention.payload, implicitReply: true, mentions: ['someone-else'] } }, () => {}],
+    ])('a turn that failed on %s posts no line, because it answers no ask', async (_label, trigger, arrange) => {
+      arrange();
+      chatReplies = [{ status: 500, headers: {}, data: {} }];
+      const result = await runAgent(hostedInstall(), trigger);
+      expect(result.status).toBe('failed');
+      expect(posted()).toEqual([]);
+    });
+
+    test('a person whose own agent joined their row is still told', async () => {
+      chatReplies = [guardStop];
+      const coalesced = [{ messageId: 'msg-2', userId: '507f1f77bcf86cd799439098', rawContent: 'and this?' }];
+      await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, coalesced } });
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].personWaiting).toBe(true);
+    });
+
+    test('a person who addressed a non-hosted agent is told when its model fails', async () => {
+      chatReplies = [{ status: 500, headers: {}, data: {} }];
+      await runAgent(nativeInstall(), inThread);
+      expect(posted()).toEqual(['Model deepseek-v4-flash could not answer (HTTP 500). Please try again.']);
+      expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({
+        failureNotice: true, personWaiting: true, threadRootId: 4242,
+      });
+    });
+
+    describe('a person row with no isBot field', () => {
+      test('counts as a person, as noteUnansweredMention reads it', async () => {
+        personIs({ username: 'older-row' });
+        atPlanLine();
+        await runAgent(hostedInstall(), mention);
+        expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+      });
+
+      test('still gives commonly_fetch_url no address', async () => {
+        personIs({ username: 'older-row' });
+        await expect(triggerTextIsHumanWritten(mention)).resolves.toBe(false);
+      });
+
+      test('a failed lookup reads as a person waiting, so the stop is said', async () => {
+        User.findById.mockImplementation(() => ({ select: () => ({ lean: () => Promise.reject(new Error('mongo down')) }) }));
+        atPlanLine();
+        const result = await runAgent(hostedInstall(), mention);
+        expect(result).toMatchObject({ status: 'succeeded', runId: '' });
+        expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+      });
+
+      test('a sender id that is an ObjectId is read like a string', async () => {
+        const { Types } = require('mongoose');
+        atPlanLine();
+        await runAgent(hostedInstall(), { ...mention, payload: { ...mention.payload, userId: new Types.ObjectId(OWNER) } });
+        expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+      });
+    });
+
+    test('a chat row that names no message reads as nobody waiting', async () => {
+      atPlanLine();
+      await runAgent(hostedInstall(), { ...mention, payload: { content: 'hi', userId: OWNER } });
+      expect(posted()).toEqual([]);
+    });
+
+    describe('a person who @s the agent in a post comment', () => {
+      const comment = (postPodId) => ({
+        type: 'thread.mention',
+        eventId: '507f1f77bcf86cd799439013',
+        payload: {
+          content: '@guide what about this?',
+          userId: OWNER,
+          thread: { postId: 'post-1', postPodId, commentId: 'c-1' },
+        },
+      });
+
+      test('is told when the model fails', async () => {
+        chatReplies = [{ status: 500, headers: {}, data: {} }];
+        await runAgent(nativeInstall(), comment(POD));
+        expect(posted()).toEqual(['Model deepseek-v4-flash could not answer (HTTP 500). Please try again.']);
+      });
+
+      test('is told at the room cap', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(100000);
+        await runAgent(nativeInstall(), comment(POD));
+        expect(posted()).toEqual([ROOM_TURNS_USED_LINE]);
+      });
+
+      test('is told when no model is reachable', async () => {
+        dropLiteLLM();
+        await runAgent(nativeInstall(), comment(POD));
+        expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      });
+
+      test('another agent\'s comment stays quiet', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(100000);
+        agentsAsk();
+        await runAgent(nativeInstall(), comment(POD));
+        expect(posted()).toEqual([]);
+      });
+
+      test('a comment still gives commonly_fetch_url no address', async () => {
+        await expect(triggerTextIsHumanWritten(comment(POD))).resolves.toBe(false);
+      });
+
+      // mentionPodId is then just some pod of the commenter's: the line would
+      // land in a room that has nothing to do with the post.
+      test.each([
+        ['the model fails', () => { chatReplies = [{ status: 500, headers: {}, data: {} }]; }],
+        ['the room is out of turns', () => { AgentRun.countDocuments.mockResolvedValueOnce(100000); }],
+        ['no model is reachable', dropLiteLLM],
+      ])('on a post with no pod, stays quiet when %s', async (_label, arrange) => {
+        arrange();
+        await runAgent(nativeInstall(), comment(null));
+        expect(posted()).toEqual([]);
+      });
+    });
+
+    describe('what counts as asking this agent', () => {
+      const adjacent = { implicitReply: true, adjacentReply: true, mentions: [] };
+      const withFlags = (flags) => ({ ...mention, payload: { ...mention.payload, ...flags } });
+
+      test('a reply under the agent\'s message that @s someone else gets no stop line', async () => {
+        atPlanLine();
+        await runAgent(hostedInstall(), withFlags({ implicitReply: true, mentions: ['someone-else'] }));
+        expect(posted()).toEqual([]);
+      });
+
+      test('a reply under the agent\'s message that @s nobody else is told', async () => {
+        atPlanLine();
+        await runAgent(hostedInstall(), withFlags({ implicitReply: true, mentions: [] }));
+        expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+      });
+
+      describe('a person carrying on with the agent, addressing nobody', () => {
+        test('is told at the cap', async () => {
+          atPlanLine();
+          await runAgent(hostedInstall(), withFlags(adjacent));
+          expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+        });
+
+        test('is told when the model fails', async () => {
+          chatReplies = [{ status: 500, headers: {}, data: {} }];
+          await runAgent(hostedInstall(), withFlags(adjacent));
+          expect(posted()).toEqual([`DeepSeek V4 Flash could not answer just now. ${HOSTED_RUN_FAILED_LINE}`]);
+        });
+
+        test('an empty completion fails, costs no turn and gets the line', async () => {
+          chatReplies = [reply('')];
+          const result = await runAgent(hostedInstall(), withFlags(adjacent));
+          expect(result).toMatchObject({ status: 'failed', errorKind: 'tool_error' });
+          expect(savedRun.metered).toBe(false);
+          expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+        });
+
+        test('the reply is marked as answering a waiting person, so a repeat isn\'t skipped', async () => {
+          chatReplies = [toolCalls(call('p1', 'commonly_post_message', { content: 'Blue' })), reply('')];
+          await runAgent(hostedInstall(), withFlags(adjacent));
+          expect(AgentMessageService.postMessage.mock.calls[0][0]).toMatchObject({ content: 'Blue', personWaiting: true });
+        });
+      });
+
+      describe('a message joined to a row that asked nothing', () => {
+        const notAsk = { implicitReply: true, mentions: ['someone-else'] };
+        const joined = (entry) => withFlags({
+          ...notAsk,
+          coalesced: [{ messageId: 'msg-2', rawContent: '@maya-agent and you?', ...entry }],
+        });
+
+        test('the same person\'s later @ of this agent is told', async () => {
+          atPlanLine();
+          await runAgent(hostedInstall(), joined({ userId: OWNER }));
+          expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+        });
+
+        test('one marked notAnAsk is not', async () => {
+          atPlanLine();
+          await runAgent(hostedInstall(), joined({ userId: OWNER, notAnAsk: true }));
+          expect(posted()).toEqual([]);
+        });
+
+        test('their own agent\'s message is not a person asking', async () => {
+          atPlanLine();
+          await runAgent(hostedInstall(), joined({ userId: '507f1f77bcf86cd799439098' }));
+          expect(posted()).toEqual([]);
+        });
+      });
+    });
+
+    describe('one line for a burst, on every lasting stop', () => {
+      const burst = async (install) => {
+        for (let ask = 0; ask < 3; ask += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await runAgent(install(), mention);
+        }
+      };
+
+      test('the per-user ceiling', async () => {
+        AgentRun.countDocuments.mockImplementation((query) => Promise.resolve(query.metered ? 0 : 100000));
+        await burst(hostedInstall);
+        expect(posted()).toEqual([HOSTED_TURNS_USED_LINE]);
+      });
+
+      test('no model reachable', async () => {
+        dropLiteLLM();
+        await burst(hostedInstall);
+        expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      });
+
+      test('no model reachable once the run row is written', async () => {
+        litellmEnv.base = process.env.LITELLM_BASE_URL;
+        AgentRun.create.mockImplementation(async (doc) => {
+          delete process.env.LITELLM_BASE_URL;
+          return { ...doc, _id: 'run-gone', turns: [], save: jest.fn() };
+        });
+        await runAgent(hostedInstall(), mention);
+        process.env.LITELLM_BASE_URL = litellmEnv.base;
+        await runAgent(hostedInstall(), mention);
+        expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      });
+
+      test('hosted turns switched off', async () => {
+        process.env.HOSTED_TURNS_PER_DAY = '0';
+        await burst(hostedInstall);
+        expect(posted()).toEqual([TURN_UNAVAILABLE_LINE]);
+      });
+
+      test('a room cap', async () => {
+        AgentRun.countDocuments.mockImplementation((query) => Promise.resolve(query.podId ? 100000 : 0));
+        await burst(nativeInstall);
+        expect(posted()).toEqual([ROOM_TURNS_USED_LINE]);
+      });
+    });
+
+    describe('what the bound remembers', () => {
+      test('a full memory drops what has expired and keeps what has not', () => {
+        const now = jest.spyOn(Date, 'now');
+        now.mockReturnValue(1_800_000_000_000);
+        expect(stopLineAlreadySaid('old', 2)).toBe(false);
+        now.mockReturnValue(1_800_000_000_000 + 9 * 60_000);
+        expect(stopLineAlreadySaid('fresh', 2)).toBe(false);
+        now.mockReturnValue(1_800_000_000_000 + 11 * 60_000);
+        expect(stopLineAlreadySaid('new', 2)).toBe(false);
+        expect(stopLineAlreadySaid('fresh', 2)).toBe(true);
+        now.mockRestore();
+      });
+
+      test('a memory full of live keys clears, because a repeat line is the safe way to be wrong', () => {
+        expect(stopLineAlreadySaid('a', 2)).toBe(false);
+        expect(stopLineAlreadySaid('b', 2)).toBe(false);
+        expect(stopLineAlreadySaid('a', 2)).toBe(true);
+        expect(stopLineAlreadySaid('c', 2)).toBe(false);
+        expect(stopLineAlreadySaid('a', 2)).toBe(false);
+      });
+    });
+
+    test.each([
+      ['turns used', HOSTED_TURNS_USED_LINE],
+      ['turns used in a room', ROOM_TURNS_USED_LINE],
+      ['unavailable', TURN_UNAVAILABLE_LINE],
+    ])('the %s line is plain words with no price or internal name', (_label, line) => {
+      expect(line).not.toMatch(/\bcap\b|ceiling|litellm|provider|model|budget|plan|owner|spend|\$|\d+\s*(usd|dollars?)/i);
+    });
   });
 
   test('a heartbeat past its cap stays quiet', async () => {

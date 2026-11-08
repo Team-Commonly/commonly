@@ -32,11 +32,14 @@
  * "left" by whether the listener path could have worked. An unknown or
  * missing value records the visit without an OS.
  *
- * Three surface marks come from the browser through POST /api/stats/byo-step,
+ * Four surface marks come from the browser through POST /api/stats/byo-step,
  * as fixed step names: inviteCardShownAt and inviteCardDismissedAt for
- * the "invite a teammate" card, and byoOfferShownAt the first time the thread
- * shows a start that links to Bring your own. "Shown" is the card or start
- * mounting in the transcript, not proof it was scrolled into view.
+ * the "invite a teammate" card, byoOfferShownAt the first time the thread
+ * shows a start that links to Bring your own, and welcomeShownAt the first time
+ * Scout's welcome renders with a start open in a pod the person created. That
+ * last one is the render podOpenedAt can't prove: podOpenedAt is written when
+ * the request arrives, before the messages are read. "Shown" is the card or
+ * start mounting in the transcript, not proof it was scrolled into view.
  */
 import User from '../models/User';
 import { SCOUT_STARTS } from '../config/native-agents/scout';
@@ -49,8 +52,10 @@ const byoCommandKindMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
-export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt';
-export const SURFACE_MARKS: readonly SurfaceMark[] = ['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'];
+export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
+export const SURFACE_MARKS: readonly SurfaceMark[] = [
+  'inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt', 'welcomeShownAt',
+];
 
 export function markPodOpened(userId: unknown, pod: { createdBy?: unknown } | null | undefined): void {
   const id = String(userId || '');
@@ -344,6 +349,26 @@ export function markSurface(userId: unknown, mark: SurfaceMark): void {
   } catch {
     // Telemetry fails open: it must never break the ping that carries it.
     marked.delete(id);
+  }
+}
+
+/**
+ * verifiedAt is the first time a person's email link turned `verified` from
+ * false to true, so the email-verify leg can be timed from register (D141). It
+ * records nothing for an account that never took that step: Google and GitHub
+ * sign-ups, an instance with no mail configured, a password reset, and anyone
+ * verified before this mark shipped. Measuring starts at deploy.
+ */
+export function markEmailVerified(userId: unknown): void {
+  const id = String(userId || '');
+  if (!id) return;
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.verifiedAt': { $exists: false } },
+      { $set: { 'onboarding.verifiedAt': new Date() } },
+    ).catch(() => undefined);
+  } catch {
+    // Telemetry fails open: it must never break a verification.
   }
 }
 

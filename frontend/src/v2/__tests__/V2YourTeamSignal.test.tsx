@@ -1,9 +1,10 @@
 // @ts-nocheck
 // Your Team, direction C (YourTeam.dc.html) — ux-lead rulings 66163–66165.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
+import i18n, { i18nReady } from '../../i18n';
 import V2YourTeamPage from '../components/V2YourTeamPage';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -107,6 +108,37 @@ describe('Your Team (direction C)', () => {
     expect(within(cardOf('Mate')).queryByTestId('team-card-fix-command')).toBeNull();
   });
 
+  test('a never-connected card links to the page that hands out its key, keeping the agent\'s name', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+      { name: 'bound', instanceId: 'default', displayName: 'Bound', userId: 'bound-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'wrapper' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run bound' },
+      { name: 'hook', instanceId: 'default', displayName: 'Hook', userId: 'hook-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'Start your webhook service.' },
+    ] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    // A wrapper's Reconnect refuses an agent never bound to a computer, and a webhook has no command.
+    expect(within(cardOf('Bound')).queryByTestId('team-card-connect')).toBeNull();
+    expect(within(cardOf('Hook')).queryByTestId('team-card-connect')).toBeNull();
+    fireEvent.click(within(cardOf('Local')).getByTestId('team-card-connect'));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/agents/byo?pod=p1&name=local&instanceId=default&reconnect=1');
+  });
+
+  test('a second instance keeps its command and gets no Connect: the page would install a sibling', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'nova', displayName: 'Nova', userId: 'nova-user', installedBy: 'u1', podId: 'p1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+    ] });
+    await waitFor(() => expect(screen.getByText('Nova')).toBeInTheDocument());
+    expect(within(cardOf('Nova')).getByTestId('team-card-fix-command')).toHaveTextContent('commonly agent run local');
+    expect(within(cardOf('Nova')).queryByTestId('team-card-connect')).toBeNull();
+  });
+
   test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
     renderPage({ p1Agents: [{
       name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
@@ -126,6 +158,48 @@ describe('Your Team (direction C)', () => {
     expect(screen.getByRole('button', { name: 'Bring your own' })).toHaveClass('v2-team__byo');
     expect(screen.getByRole('button', { name: 'Hire an agent' })).toHaveClass('v2-team__hire');
     expect(screen.queryByRole('button', { name: 'Add a computer' })).toBeNull();
+  });
+
+  test('an agent that dropped off with an ask waiting keeps the ring and Answer, so the head count can be acted on', async () => {
+    renderPage({ p1Agents: [{
+      name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state: 'stale', lastSeenAt: minutesAgo(420) },
+    }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    const card = cardOf('Wren');
+    expect(screen.getByText(/1 needs you/)).toBeInTheDocument();
+    expect(card).toHaveClass('v2-team-card--needsYou');
+    // The ask stays readable, and the connection is a separate, unaccented line.
+    expect(card.querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('● needs you · Slack defaults');
+    const offline = within(card).getByTestId('team-card-offline');
+    expect(offline).toHaveClass('v2-team-card__status');
+    expect(offline).not.toHaveClass('v2-team-card__status--needsYou');
+    expect(offline.textContent).not.toBe('');
+    const answer = within(card).getByRole('button', { name: 'Answer' });
+    const reconnect = within(card).getByRole('button', { name: 'Reconnect' });
+    // One filled button on a card: the ask comes first, and Reconnect steps back.
+    expect(answer).toHaveClass('v2p-b-p');
+    expect(reconnect).toHaveClass('v2p-b-s');
+    expect(reconnect).not.toHaveClass('v2p-b-p');
+    expect(answer.compareDocumentPosition(reconnect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test.each([['stale'], ['revoked']])('a %s agent with nothing to ask stays idle, and Reconnect stays bordered', async (state) => {
+    renderPage({ queue: [], p1Agents: [{
+      name: 'wren', instanceId: 'default', displayName: 'Wren', userId: 'wren-user',
+      installedBy: 'u1', runtime: { runtimeType: 'webhook' },
+      connection: { state, lastSeenAt: minutesAgo(420) },
+    }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    const card = cardOf('Wren');
+    expect(card).toHaveClass('v2-team-card--idle');
+    expect(within(card).queryByRole('button', { name: 'Answer' })).toBeNull();
+    expect(within(card).queryByTestId('team-card-offline')).toBeNull();
+    // Ink on a team card is for an ask, so a run of dropped seats doesn't outweigh one.
+    const reconnect = within(card).getByRole('button', { name: 'Reconnect' });
+    expect(reconnect).toHaveClass('v2p-b-s');
+    expect(reconnect).not.toHaveClass('v2p-b-p');
   });
 
   test('the agent waiting on you: ring, cobalt mark, `● needs you · <ask>`, Answer ink + Talk bordered — keyed on actorUserId, not a name', async () => {
@@ -191,6 +265,39 @@ describe('Your Team (direction C)', () => {
     expect(card.querySelector('.v2-team-card__status')).not.toHaveTextContent('●');
     expect(card.querySelector('.v2-team-card__desc')).toBeNull();
     expect(card.textContent).not.toMatch(/[“”]/);
+  });
+
+  test('a refused Talk reads from the code, so it follows the app language', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Kai')).toBeInTheDocument());
+    axios.post.mockRejectedValue({ response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } } });
+    fireEvent.click(within(cardOf('Kai')).getByRole('button', { name: 'Talk to Kai one-to-one' }));
+    expect(await screen.findByText(/Join a pod where someone hosts it to talk to it\./)).toBeInTheDocument();
+    expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
+
+  test("the needs-you line doesn't repeat the name on the card", async () => {
+    renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('● needs you · mentioned you');
+  });
+
+  test('the mention line follows the app language', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage({ queue: [{ id: 'm-1', kind: 'mention', title: 'Wren mentioned you', actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
+      await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+      expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent('提及了你');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test.each([['blocked', 'Wren is blocked'], ['approval', 'Wren requests approval']])('a %s title keeps its subject', async (kind, title) => {
+    renderPage({ queue: [{ id: 'k-1', kind, title, actorName: 'Wren', podId: 'p2', messageId: '900', actorUserId: 'wren-user' }] });
+    await waitFor(() => expect(screen.getByText('Wren')).toBeInTheDocument());
+    expect(cardOf('Wren').querySelector('.v2-team-card__status--needsYou')).toHaveTextContent(`● needs you · ${title}`);
   });
 
   test('without a matching actorUserId nobody needs you, even if a name would match', async () => {

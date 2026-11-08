@@ -138,6 +138,38 @@ describe('readUpstreamRefusal', () => {
   test('a successful auto retry is not a refusal', () => {
     expect(readUpstreamRefusal(asLines('{"type":"auto_retry_end","success":true,"attempt":1}'))).toBeNull();
   });
+
+  // F320: pi 0.84.1 prints `auto_retry_end` with `success: true` once a retried
+  // call answers (agent-session.js). A refusal before it was recovered from.
+  test('a refusal pi then recovered from is not kept', () => {
+    const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
+    const fetchFailed = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"fetch failed"}}';
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered))).toBeNull();
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered, fetchFailed))).toBeNull();
+  });
+
+  // The #3745 review: a compaction that continues the turn is a recovery too,
+  // so the turn's later stop names its own cause. An aborted one, or one that
+  // doesn't continue the turn, leaves the refusal standing.
+  test('a refusal before a compaction that continues the turn is not kept', () => {
+    const continued = '{"type":"compaction_end","reason":"overflow","result":{"summary":"s"},"aborted":false,"willRetry":true}';
+    const filtered = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"Provider finish_reason: content_filter"}}';
+    expect(readUpstreamRefusal(asLines(budget429, continued, filtered))).toBeNull();
+    const aborted = '{"type":"compaction_end","reason":"overflow","aborted":true,"willRetry":false}';
+    expect(readUpstreamRefusal(asLines(budget429, aborted))?.status).toBe(429);
+  });
+
+  test('a refusal after a recovery is read', () => {
+    const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered, budget429))).toEqual({
+      status: 429,
+      detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00',
+    });
+    expect(readUpstreamRefusal(asLines(budget429, recovered, messageEndError))).toEqual({
+      status: 503,
+      detail: 'upstream connect error',
+    });
+  });
 });
 
 describe('redactKnownCredentials and spawnCredentials', () => {

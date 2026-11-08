@@ -16,6 +16,7 @@
 .v2-settings__link { color: inherit; text-decoration: none; }
 .v2-settings__link:hover { background: var(--v2-surface-hover); }
 .v2-settings__link:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
+.v2-settings__guide { display: none; }
 .v2-settings__edit { padding: 12px 16px 14px; border-top: 1px solid var(--v2-border-soft); }
 .v2-settings__edit--closed { display: none; }
 .v2-settings__token-detail { padding: 0 16px 12px; }
@@ -56,6 +57,8 @@
    ::before centred on it (Cofounder ruling 11-04: the pick wins on look, no tap target
    under 44). */
 @media (max-width: 760px) {
+  .v2-settings__guide { display: grid; width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+  .v2-settings__actions-list > .v2-settings__guide + .v2p-disc { border-top: 1px solid var(--v2-border-soft); }
   .v2-settings .v2p-b.v2p-b-sm { height: 28px; }
   .v2-settings .v2p-ib.v2p-b-sm { width: 28px; height: 28px; }
   .v2-settings .v2p-seg.v2p-seg--sm button { height: 24px; }
@@ -81,6 +84,9 @@
 }
 
 .v2-settings__account-row { min-height: 64px; }
+/* The identity takes the row's width: a long name clipped in a 180px label column beside an empty cell. */
+.v2-settings .v2-settings__account-row { grid-template-columns: minmax(0, 1fr) auto; }
+.v2-settings__account-row .lb { min-width: 0; }
 
 .v2-settings__avatar {
   width: 44px;

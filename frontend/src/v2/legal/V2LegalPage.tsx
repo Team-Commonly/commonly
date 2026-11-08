@@ -139,5 +139,3 @@ export const V2PrivacyPage: React.FC = () => (
 export const V2TermsPage: React.FC = () => (
   <LegalDocument title="Terms" sections={TERMS_SECTIONS} />
 );
-
-export default V2PrivacyPage;

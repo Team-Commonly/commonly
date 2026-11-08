@@ -9,7 +9,7 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) })),
-  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ username: 'ada' }) }) })),
+  findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ username: 'ada', isBot: false }) }) })),
 }));
 jest.mock('../../../services/hostedRuntimeService', () => ({
   ...jest.requireActual('../../../services/hostedRuntimeService'),
@@ -173,7 +173,8 @@ describe('runAgent carries the trigger thread root to the cards and the failed-r
   test('the failed-run notice for a directly addressed thread mention passes the thread root', async () => {
     axios.post.mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
 
-    await runAgent(seat, threaded);
+    // The line goes to a person, so the trigger names one.
+    await runAgent(seat, { ...threaded, payload: { ...threaded.payload, userId: '507f1f77bcf86cd799439055' } });
 
     const notice = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.runFailed);
     expect(notice).toBeDefined();

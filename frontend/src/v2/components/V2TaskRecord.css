@@ -80,6 +80,7 @@
 .v2-feature--task-record .v2-task-record__more dt { font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); overflow-wrap: anywhere; }
 .v2-feature--task-record .v2-task-record__more dd { margin: 0; min-width: 0; font: 500 12.5px/1.4 var(--v2-font-mono); color: var(--v2-text-primary); overflow-wrap: anywhere; }
 .v2-feature--task-record .v2-task-record__bone { height: 12px; width: 46%; border-radius: 4px; background: var(--v2-surface-tint); }
+.v2-feature--task-record .v2-task-record__task .v2-task-record__bone { display: block; height: 27px; }
 .v2-feature--task-record .v2-task-record__list--loading .v2-task-record__row { cursor: default; grid-template-columns: 28px minmax(0, 1fr); }
 .v2-feature--task-record .v2-task-record__list--loading .v2-task-record__mk { background: var(--v2-surface-tint); box-shadow: none; }
 .v2-feature--task-record .v2-task-record__foot { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--v2-border-soft); }
@@ -115,7 +116,11 @@
   .v2-feature--task-record .v2-task-record__menu { top: calc(100% + 4px); }
   .v2-feature--task-record .v2-task-record__menu button { height: 44px; }
   .v2-feature--task-record .v2-task-record__body { padding: 16px 16px 12px; }
-  .v2-feature--task-record .v2-task-record__task { font-size: 19px; margin-bottom: 4px; }
+  /* A long title is three lines here, so the timeline stays on screen. */
+  .v2-feature--task-record .v2-task-record__task {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+    font-size: 19px; margin-bottom: 4px;
+  }
   .v2-feature--task-record .v2-task-record__id { display: block; margin: 0 0 16px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
   .v2-feature--task-record .v2-task-record__row { grid-template-columns: 28px minmax(0, 1fr) auto; min-height: 56px; align-items: start; padding-top: 8px; }
   .v2-feature--task-record .v2-task-record__e::before { top: 0; }

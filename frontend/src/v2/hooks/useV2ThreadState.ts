@@ -130,5 +130,3 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
     [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing],
   );
 };
-
-export default useV2ThreadState;

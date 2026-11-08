@@ -5,7 +5,7 @@ import type { IAgentRunTurn, IAgentRunTurnToolCall } from '../models/AgentRun';
 // MiB in BSON, leaving room for top-level metrics far below Mongo's 16 MiB.
 // Count limits also bound the amount of trace the browser has to render.
 export const RUN_TRACE_BYTES = 2 * 1024 * 1024;
-export const RUN_VALUE_BYTES = 4096;
+const RUN_VALUE_BYTES = 4096;
 const MAX_TURNS = 128;
 const MAX_CALLS_PER_TURN = 64;
 

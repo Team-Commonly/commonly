@@ -88,6 +88,17 @@ describe('group pod agent liveness', () => {
     expect(row).toHaveTextContent("Sam Agent isn't connected yet");
   });
 
+  test('gives the installer a way back to the connect command', async () => {
+    mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true, connectPodId: 'pod-1' }]);
+    renderChat(makeDetail());
+
+    const row = await screen.findByTestId('pod-agent-liveness');
+    expect(row.querySelector('a')).toHaveAttribute(
+      'href',
+      '/v2/agents/byo?pod=pod-1&name=sam-agent&instanceId=default&reconnect=1',
+    );
+  });
+
   test('says when an agent that went quiet last checked in', async () => {
     mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false }]);
     renderChat(makeDetail());
@@ -181,5 +192,33 @@ describe('group pod agent liveness', () => {
 
     await screen.findByTestId('agent-room-liveness');
     expect(screen.queryByTestId('pod-agent-liveness')).not.toBeInTheDocument();
+  });
+});
+
+// F339: two new people @mentioned their own never-connected agent, read "Its
+// owner can connect it" under their message, and left without connecting.
+describe("the not-connected notice under the owner's own mention", () => {
+  const notice = {
+    id: 'n1', pod_id: 'p1', user_id: 'bot-1', content: 'stored server text', message_type: 'system',
+    created_at: '2026-11-08T15:00:00.000Z',
+    payload: { kind: 'system-action', action: 'agent-not-connected', actorName: 'Sam Agent', agentKey: 'sam-agent:default' },
+    user: { username: 'sam-agent', isBot: true },
+  };
+
+  test('tells the owner and links to connect it', async () => {
+    mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true, connectPodId: 'pod-1' }]);
+    renderChat(makeDetail({ messages: [notice] }));
+
+    const line = (await screen.findByText(/You haven't connected Sam Agent yet/)).closest('.v2-system-action-line');
+    expect(line.querySelector('a')).toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=sam-agent&instanceId=default&reconnect=1');
+  });
+
+  test('stays owner-neutral for someone who does not own the agent', async () => {
+    mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: false }]);
+    renderChat(makeDetail({ messages: [notice] }));
+
+    await screen.findByTestId('pod-agent-liveness');
+    const line = screen.getByText(/Its owner can connect it/).closest('.v2-system-action-line');
+    expect(line.querySelector('a')).toBeNull();
   });
 });

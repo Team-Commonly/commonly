@@ -12,15 +12,24 @@
  * adoption). Two clauses, both must hold:
  *   - an active installation of the identity installedBy the owner exists;
  *   - no active installation of it exists installedBy anyone else.
- * Agent-DM installations are conversation projections, not ownership. They
- * do not satisfy either clause. The negative clause stops a shared identity (two humans each
- * installed it) from being bound to, or minted by, one person. Once #609 gives
- * per-owner identities it becomes redundant rather than wrong, so it stays.
+ * A DM's row is a conversation projection, not ownership: it names whoever
+ * opened the DM (dmService, except for a hosted agent's), so it satisfies
+ * neither clause. That covers both DM_POD_TYPES_GUARD types. `agent-admin` isn't
+ * one of them, and its rows count. The one difference between the two: an
+ * `agent-room` row carries the agent's runtime, so an agent can be left with
+ * nothing else, and then the person on record as its owner still stands on
+ * their own DM (ownershipInstallations).
+ *
+ * The negative clause stops a shared identity (two humans each installed it)
+ * from being bound to, or minted by, one person. Once #609 gives per-owner
+ * identities it becomes redundant rather than wrong, so it stays.
  *
  * Moved here from routes/agentBinding.ts on 2026-10-14, so the daemon routes
  * and the token routes share one rule. Setting a push webhook URL (install and
  * agent-config routes) applies it too, admins exempt.
  */
+
+import { installationIdentityFilter } from './agentInstallationIdentity';
 
 export type OwnershipFailure = 'owner_installation_missing' | 'another_installer' | 'unknown_installer';
 
@@ -30,21 +39,69 @@ export type OwnershipCheck =
 
 const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
-type RuntimeInstallation = { installedBy?: unknown; podId?: unknown };
+type RuntimeInstallation = { _id?: unknown; installedBy?: unknown; podId?: unknown };
 
-const ownershipInstallations = async (agentName: string, instanceId: string): Promise<RuntimeInstallation[]> => {
+/** The registry's publisher, or the owner on the bot's record. Neither is a guest. */
+const isIdentityOwnerOnRecord = async (userId: unknown, agentName: string, instanceId: string): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentRegistry } = require('../models/AgentRegistry');
+  const entry = await AgentRegistry.findOne({ agentName }).select('publisher.userId').lean();
+  if (entry?.publisher?.userId && String(entry.publisher.userId) === String(userId)) return true;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const User = require('../models/User');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const AgentIdentityService = require('./agentIdentityService');
+  const bot = await User.findOne({
+    username: AgentIdentityService.buildAgentUsername(AgentIdentityService.resolveAgentType(agentName), instanceId),
+    isBot: true,
+  }).select('botMetadata.ownerUserId').lean();
+  return Boolean(bot?.botMetadata?.ownerUserId) && String(bot.botMetadata.ownerUserId) === String(userId);
+};
+
+const ACTIVE_ROWS = { status: 'active' };
+const PLACED_ROWS = { status: { $ne: 'uninstalled' } };
+const KEPT_ROWS = {};
+
+/** An identity's rows of one reading, and the type of each that sits in a DM. */
+const identityRows = async (agentName: string, instanceId: string, reading: Record<string, unknown>) => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { AgentInstallation } = require('../models/AgentRegistry');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Pod = require('../models/Pod');
   const installations: RuntimeInstallation[] = await AgentInstallation.find({
-    agentName, instanceId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
+    ...installationIdentityFilter(agentName, instanceId), ...reading,
+  })
+    .collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
   const dmPods = await Pod.find({
-    _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) }, type: 'agent-dm',
-  }).select('_id').lean();
-  const dmPodIds = new Set(dmPods.map((pod: { _id: unknown }) => String(pod._id)));
-  return installations.filter((installation) => !dmPodIds.has(String(installation.podId)));
+    _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) },
+    type: { $in: ['agent-dm', 'agent-room'] },
+  }).select('_id type').lean();
+  const dmPodTypes = new Map<string, string>(
+    dmPods.map((pod: { _id: unknown; type?: string }) => [String(pod._id), String(pod.type)]),
+  );
+  return { installations, dmPodTypes };
+};
+
+/**
+ * The rows that speak to who owns an identity, as `userId` asks: active ones
+ * unless `reading` says otherwise. Rows in other pods answer that alone. When an identity is down to agent-rooms, the
+ * owner on record has their own DM's row, and other people's DMs don't count
+ * against them. For anyone else their own DM is still not an installation, and
+ * other people's rows still stand in their way, so nobody takes over an agent
+ * by being the last one talking to it.
+ */
+const ownershipInstallations = async (
+  userId: unknown, agentName: string, instanceId: string, reading: Record<string, unknown> = ACTIVE_ROWS,
+): Promise<RuntimeInstallation[]> => {
+  const { installations, dmPodTypes } = await identityRows(agentName, instanceId, reading);
+  const standing = installations.filter((installation) => !dmPodTypes.has(String(installation.podId)));
+  if (standing.length) return standing;
+  const rooms = installations.filter((installation) => dmPodTypes.get(String(installation.podId)) === 'agent-room');
+  if (!rooms.length) return [];
+  const isCallers = (installation: RuntimeInstallation) => String(installation.installedBy) === String(userId);
+  return await isIdentityOwnerOnRecord(userId, agentName, instanceId)
+    ? rooms.filter(isCallers)
+    : rooms.filter((installation) => !isCallers(installation));
 };
 
 /**
@@ -72,7 +129,9 @@ export const identityHoldsRuntimeToken = async (agentName: string, instanceId: s
     $or: [{ 'agentRuntimeTokens.0': { $exists: true } }, { apiTokenHash: { $type: 'string' } }],
   });
   if (botHolds) return true;
-  const sibling = await AgentInstallation.findOne({ agentName, instanceId, 'runtimeTokens.0': { $exists: true } })
+  const sibling = await AgentInstallation.findOne({
+    ...installationIdentityFilter(agentName, instanceId), 'runtimeTokens.0': { $exists: true },
+  })
     .collation(RUNTIME_INSTALLATION_COLLATION).select('_id').lean();
   return Boolean(sibling);
 };
@@ -85,9 +144,36 @@ export const RUNTIME_TOKEN_HELD = {
 } as const;
 
 /**
+ * RUNTIME_TOKEN_HELD for a row that already exists, where a different name is
+ * no answer. It names what this caller can do: the revoke route if they pass
+ * its rule (DELETE .../tokens, routes/registry/agent-tokens.ts), who can if not.
+ */
+export const heldTokenOnRowRefusal = ({ podId, agentName, instanceId, mayRevoke }: {
+  podId: string; agentName: string; instanceId: string; mayRevoke: boolean;
+}) => {
+  const held = 'This agent holds a token, so it can\'t run on Commonly as well.';
+  if (!mayRevoke) {
+    return {
+      code: RUNTIME_TOKEN_HELD.code,
+      error: `${held} Only its sole installer or an instance admin can revoke that token.`,
+    };
+  }
+  return {
+    code: RUNTIME_TOKEN_HELD.code,
+    error: `${held} Revoke its tokens, which disconnects anything using them, then set it active again.`,
+    revoke: {
+      method: 'DELETE',
+      path: `/api/registry/pods/${encodeURIComponent(podId)}/agents/${encodeURIComponent(agentName)}`
+        + `/tokens?instanceId=${encodeURIComponent(instanceId)}`,
+    },
+  };
+};
+
+/**
  * Nothing active and something uninstalled: the install paths revoke what such
- * an identity left behind (revokeRuntimeTokensAfterLastUninstall), and no token
- * route can reach it first, because each one needs an active row.
+ * an identity left behind (revokeRuntimeTokensAfterLastUninstall). The per-token
+ * routes can't reach it first, since each needs an active row; the whole-identity
+ * revoke can, on a paused one, which only does the same thing sooner.
  */
 export const identityIsDormant = async (agentName: string, instanceId: string): Promise<boolean> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -98,7 +184,9 @@ export const identityIsDormant = async (agentName: string, instanceId: string): 
   return Boolean(await statusRow('uninstalled')) && !(await statusRow('active'));
 };
 
-const RESTORED_FIELDS = ['status', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite'];
+const RESTORED_FIELDS = [
+  'status', 'staleSince', 'version', 'displayName', 'scopes', 'config', 'githubIssueWrite', 'installedBy',
+];
 
 /**
  * Undo an installation write, as the issuer takes a token back after its own
@@ -111,7 +199,8 @@ export const takeBackInstallation = async (
 ): Promise<void> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { AgentInstallation } = require('../models/AgentRegistry');
-  const row = {
+  // By id when there is one: install finds a legacy mixed-case row, which `key` doesn't spell.
+  const row = previous?._id ? { _id: { $eq: previous._id } } : {
     agentName: { $eq: key.agentName }, podId: { $eq: key.podId }, instanceId: { $eq: key.instanceId },
   };
   if (!previous) {
@@ -134,7 +223,7 @@ export const describeRuntimeIdentityBlockers = async (
   agentName: string,
   instanceId: string,
 ): Promise<RuntimeIdentityBlocker[]> => {
-  const others = (await ownershipInstallations(agentName, instanceId))
+  const others = (await ownershipInstallations(ownerUserId, agentName, instanceId))
     .filter((installation) => String(installation.installedBy) !== String(ownerUserId));
   if (!others.length) return [];
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -166,7 +255,7 @@ const otherInstallerFailure = async (
   agentName: string,
   instanceId: string,
 ): Promise<OwnershipFailure | null> => {
-  const others = (await ownershipInstallations(agentName, instanceId))
+  const others = (await ownershipInstallations(ownerUserId, agentName, instanceId))
     .find((installation) => String(installation.installedBy) !== String(ownerUserId));
   if (!others) return null;
   // MongoDB $ne also matches a missing field. Keep that legacy state safely
@@ -180,13 +269,147 @@ export const ownsRuntimeIdentity = async (
   agentName: string,
   instanceId: string,
 ): Promise<OwnershipCheck> => {
-  const installations = await ownershipInstallations(agentName, instanceId);
+  const installations = await ownershipInstallations(ownerUserId, agentName, instanceId);
   const mine = installations
     .find((installation) => installation.installedBy && String(installation.installedBy) === String(ownerUserId));
   if (!mine) return { owned: false, failure: 'owner_installation_missing' };
   const other = installations.find((installation) => String(installation.installedBy) !== String(ownerUserId));
   const failure = other ? (other.installedBy ? 'another_installer' : 'unknown_installer') : null;
   return failure ? { owned: false, failure } : { owned: true };
+};
+
+/**
+ * Does this person hold no installation of the agent that counts? A room or a
+ * mention writes a row naming whoever opened it, so `installedBy` alone reads a
+ * guest as the owner. A failed read says no: the caller keeps what it had.
+ */
+export const isGuestOfIdentity = async (
+  userId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<boolean> => {
+  const ownership = await ownsRuntimeIdentity(userId, agentName.toLowerCase(), instanceId.toLowerCase())
+    .catch((error: Error): OwnershipCheck => {
+      console.warn('Could not read the agent\'s owner:', error.message);
+      return { owned: true };
+    });
+  return ownership.owned === false && ownership.failure === 'owner_installation_missing';
+};
+
+/**
+ * The same rule for what belongs to the identity whichever pod it runs in, its
+ * memory and its name, where paused rows count: a paused installation is still
+ * somebody's. `unknown_installer` comes first so an owner hears what to repair.
+ */
+export const ownsIdentityCountingPaused = async (
+  ownerUserId: unknown,
+  agentName: string,
+  instanceId: string,
+): Promise<OwnershipCheck> => {
+  const installations = await ownershipInstallations(ownerUserId, agentName, instanceId, PLACED_ROWS);
+  if (installations.some((installation) => !installation.installedBy)) {
+    return { owned: false, failure: 'unknown_installer' };
+  }
+  if (installations.some((installation) => String(installation.installedBy) !== String(ownerUserId))) {
+    return { owned: false, failure: 'another_installer' };
+  }
+  return installations.length ? { owned: true } : { owned: false, failure: 'owner_installation_missing' };
+};
+
+/**
+ * The same rule over every row an identity has kept, for writing into its
+ * memory: memory outlives an uninstall, so an uninstalled row still says whose
+ * memory sits under the name. Empty means nobody stands on the identity.
+ */
+export const keptOwnershipInstallations = (
+  userId: unknown, agentName: string, instanceId: string,
+): Promise<RuntimeInstallation[]> => ownershipInstallations(userId, agentName, instanceId, KEPT_ROWS);
+
+/**
+ * Put a renamed identity's label on its DM rows, whoever opened them, and say
+ * which pods those are. A post and a mention read the row's label, and a stopped
+ * DM row can come back. Keyed on the identity, so nothing else's rows move.
+ */
+export const relabelIdentityDmRows = async (
+  agentName: string, instanceId: string, displayName: string,
+): Promise<unknown[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const { installations, dmPodTypes } = await identityRows(agentName, instanceId, KEPT_ROWS);
+  const dmRows = installations.filter((installation) => dmPodTypes.has(String(installation.podId)));
+  if (!dmRows.length) return [];
+  await AgentInstallation.updateMany({ _id: { $in: dmRows.map((row) => row._id) } }, { $set: { displayName } });
+  return dmRows.map((row) => row.podId);
+};
+
+/**
+ * Pause or resume an identity's DM rows, whoever opened them, and say which pods
+ * those are. The status write only reaches rows its caller installed, and a
+ * paused agent should go quiet in a guest's DM as well. Only a running or paused
+ * row moves. A resume applies what a row of its own would meet: it doesn't start
+ * an in-process row beside a token, one a grant now keeps out of its pod, or a
+ * hosted row past its owner's cap.
+ * The pods come from the rows now at `status`, so a retry after a failed profile
+ * write catches up, and a row retired meanwhile stays out.
+ */
+export const setIdentityDmRowsStatus = async (
+  agentName: string, instanceId: string, status: 'active' | 'paused', chargedTo?: unknown,
+): Promise<unknown[]> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { configRunsInProcess, hostedEngineInEffect } = require('./hostedEngine');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { assertAgentRuntimeMayJoinPod, runtimeTypeFromConfig } = require('./outsiderGrantAgentJoinPolicy');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { isHostedInstallation, resumeCapRefusal } = require('./hostedRuntimeService');
+  const { installations, dmPodTypes } = await identityRows(agentName, instanceId, KEPT_ROWS);
+  const rowIds = installations.filter((installation) => dmPodTypes.has(String(installation.podId))).map((row) => row._id);
+  const from = status === 'paused' ? 'active' : 'paused';
+  const chargedRows = chargedTo ? { installedBy: { $eq: chargedTo } } : {};
+  const moving: Array<{ _id: unknown; podId: unknown; config?: unknown; installedBy?: unknown }> = await AgentInstallation.find({
+    _id: { $in: rowIds }, status: from, ...chargedRows,
+  }).select('podId config installedBy').lean();
+  const tokenHeld = status === 'active' && moving.length
+    ? await identityHoldsRuntimeToken(agentName, instanceId)
+    : false;
+  const mayResume = async (row: { podId: unknown; config?: unknown; installedBy?: unknown }): Promise<boolean> => {
+    if (tokenHeld && configRunsInProcess(row.config)) return false;
+    if (isHostedInstallation(row) && await resumeCapRefusal(row.installedBy, agentName, instanceId)) return false;
+    try {
+      await assertAgentRuntimeMayJoinPod(row.podId, runtimeTypeFromConfig(row.config), hostedEngineInEffect({ config: row.config }));
+      return true;
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'outsider_grant_non_native_agent_join') return false;
+      throw error;
+    }
+  };
+  const allowed = status === 'active' ? await Promise.all(moving.map(mayResume)) : moving.map(() => true);
+  const dmRows = moving.filter((_row, index) => allowed[index]);
+  if (dmRows.length) {
+    await AgentInstallation.updateMany({ _id: { $in: dmRows.map((row) => row._id) }, status: from }, { $set: { status } });
+  }
+  const settled: Array<{ podId: unknown }> = await AgentInstallation.find({ _id: { $in: rowIds }, status: { $eq: status }, ...chargedRows })
+    .select('podId').lean();
+  return settled.map((row) => row.podId);
+};
+
+/** Paused and nothing running: a DM opened now shouldn't be what wakes the agent. */
+export const identityIsPaused = async (agentName: string, instanceId: string): Promise<boolean> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { AgentInstallation } = require('../models/AgentRegistry');
+  const statusRow = (status: string) => AgentInstallation.exists(
+    { ...installationIdentityFilter(agentName, instanceId), status }, { collation: RUNTIME_INSTALLATION_COLLATION },
+  );
+  return Boolean(await statusRow('paused')) && !(await statusRow('active'));
+};
+
+/** Whoever installed the identity in a pod that isn't a DM, for recording a key an admin finds. */
+export const standingInstaller = async (agentName: string, instanceId: string): Promise<unknown> => {
+  const { installations, dmPodTypes } = await identityRows(agentName, instanceId, PLACED_ROWS);
+  return installations.find((installation) => (
+    installation.installedBy && !dmPodTypes.has(String(installation.podId))
+  ))?.installedBy;
 };
 
 /**

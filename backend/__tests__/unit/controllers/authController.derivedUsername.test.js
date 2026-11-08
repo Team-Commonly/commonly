@@ -37,9 +37,7 @@ describe('register with no username (TASK-290 A)', () => {
   beforeAll(async () => {
     await setupMongoDb();
     // The unique username index has to exist for the race below to collide.
-    // Not User.init(): the model's collation index on the same key clashes
-    // with it by name and rejects.
-    await User.collection.createIndex({ username: 1 }, { unique: true });
+    await User.init();
   });
   afterAll(async () => { await closeMongoDb(); });
   afterEach(async () => {

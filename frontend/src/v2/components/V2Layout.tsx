@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useMatch, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import V2NavRail from './V2NavRail';
 import V2PodsSidebar from './V2PodsSidebar';
 import V2Thread from './V2Thread';
@@ -74,6 +75,7 @@ const createdAtTime = (createdAt?: string): number => {
 };
 
 const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
+  const { t } = useTranslation();
   // This layout is shared by the index and pod routes. Read the URL directly:
   // parent route params do not include a matched child's :podId.
   const paramPodId = useMatch('/v2/pods/:podId')?.params.podId;
@@ -268,7 +270,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
           <button
             type="button"
             className="v2-inspector-backdrop"
-            aria-label="Close inspector"
+            aria-label={t('inspector.workspace.close')}
             onClick={toggleInspector}
           />
           <V2Inspector

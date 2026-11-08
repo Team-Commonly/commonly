@@ -24,10 +24,12 @@ import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import BlockIcon from '@mui/icons-material/Block';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { useV2Api } from '../hooks/useV2Api';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
@@ -59,6 +61,7 @@ interface BoardTask {
   status: string;
   assignee?: string | null;
   claimedBy?: string | null;
+  claimedByUserId?: string | null;
   claimExpiresAt?: string | null;
   notes?: string | null;
   prUrl?: string | null;
@@ -100,6 +103,11 @@ interface FocusRead {
 
 const memberId = (member: PodMember): string => member._id || '';
 const memberLabel = (member: PodMember): string => member.displayName || member.username || memberId(member);
+// "#409" for a GitHub pull URL, as the frame's pr row reads; null otherwise.
+export const prLabel = (url: string): string | null => {
+  const match = /\/pull\/(\d+)(?:[/?#]|$)/.exec(url);
+  return match ? `#${match[1]}` : null;
+};
 
 interface ColumnMeta {
   key: CanonicalStatus;
@@ -213,6 +221,11 @@ const V2PodBoard: React.FC = () => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [podMembers, setPodMembers] = useState<PodMember[]>([]);
+  // Follow lives under the drawer head's More button, as in the d215 frame.
+  // The menu sits inside the drawer, so the drawer's focus trap still holds.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Re-render at the next lease boundary even if no socket event arrives.
   // A lapsed claim must stop looking held while the board stays open.
@@ -233,6 +246,7 @@ const V2PodBoard: React.FC = () => {
     setDetailSaving(false);
     setDetailError(null);
     setUpdatesExpanded(false);
+    setMoreOpen(false);
     setSelected(task);
   }, []);
 
@@ -240,8 +254,16 @@ const V2PodBoard: React.FC = () => {
     const dialog = detailDialogRef.current;
     if (!selected || !dialog) return undefined;
     const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), a[href], input:not(:disabled)'));
-    controls()[0]?.focus();
+    // Close takes focus on open, as before the priority chip became a control.
+    (dialog.querySelector<HTMLElement>('.v2-board__drawer-close') || controls()[0])?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
+      // Escape closes an open More menu first, and focus goes back to its button.
+      if (event.key === 'Escape' && moreMenuRef.current) {
+        event.preventDefault();
+        setMoreOpen(false);
+        moreButtonRef.current?.focus();
+        return;
+      }
       if (event.key === 'Escape') { event.preventDefault(); openTask(null); }
       if (event.key !== 'Tab') return;
       const items = controls();
@@ -254,6 +276,18 @@ const V2PodBoard: React.FC = () => {
     document.addEventListener('keydown', onKeyDown);
     return () => { document.removeEventListener('keydown', onKeyDown); detailReturnRef.current?.focus(); };
   }, [selected?.taskId, openTask]);
+
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    moreMenuRef.current?.querySelector<HTMLElement>('[role="menuitemcheckbox"]')?.focus();
+    const onPointerDown = (event: PointerEvent | MouseEvent) => {
+      const target = event.target as Node;
+      if (moreMenuRef.current?.contains(target) || moreButtonRef.current?.contains(target)) return;
+      setMoreOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [moreOpen]);
 
   const updateDetail = useCallback(async (task: BoardTask, change: { priority: TaskPriority } | { following: boolean }) => {
     if (!podId || detailSaving) return;
@@ -287,14 +321,24 @@ const V2PodBoard: React.FC = () => {
     }
   }, [api, podId, detailSaving, t]);
 
+  // A hosted agent's claim is keyed by its instance id, not its User id, so
+  // matching claimedBy alone missed every agent and the card fell back to
+  // initials. The claim route also records the User id; match that first.
+  const claimantMember = useCallback((task: BoardTask): PodMember | undefined => {
+    const ids = [task.claimedByUserId, task.claimedBy].filter(Boolean);
+    return podMembers.find((item) => ids.includes(memberId(item)))
+      || podMembers.find((item) => item.username === task.claimedBy);
+  }, [podMembers]);
   const claimHolderName = useCallback((task: BoardTask): string => {
-    const member = podMembers.find((item) => memberId(item) === task.claimedBy || item.username === task.claimedBy);
+    const member = claimantMember(task);
     if (member) return memberLabel(member);
     // The claim route records the claimant's User id and resolved author on
     // the update. Match identity rather than the wording of the update text.
-    const holderUpdate = task.updates?.slice().reverse().find((update) => update.authorId === task.claimedBy);
+    const holderUpdate = task.updates?.slice().reverse().find((update) => (
+      Boolean(update.authorId) && (update.authorId === task.claimedByUserId || update.authorId === task.claimedBy)
+    ));
     return holderUpdate?.author || (/^[0-9a-f]{24}$/i.test(task.claimedBy || '') ? t('board.detail.memberUnavailable') : task.claimedBy) || '';
-  }, [podMembers, t]);
+  }, [claimantMember, t]);
   const leaseFor = (task: BoardTask) => {
     const claimed = ['claimed', 'in_progress', 'in-progress'].includes(task.status) && Boolean(task.claimedBy);
     const expiry = Date.parse(task.claimExpiresAt || '');
@@ -320,7 +364,7 @@ const V2PodBoard: React.FC = () => {
       return <span className="v2-board__unclaimed" role="img" aria-label={t('board.detail.notClaimed')} title={t('board.detail.notClaimed')} />;
     }
     const holder = claimHolderName(task);
-    const member = podMembers.find((item) => memberId(item) === task.claimedBy || item.username === task.claimedBy);
+    const member = claimantMember(task);
     const state = lease.expired ? 'expired' : 'live';
     return (
       <span className="v2-board__owner-line">
@@ -362,6 +406,7 @@ const V2PodBoard: React.FC = () => {
   const [focusConflictReviewed, setFocusConflictReviewed] = useState(false);
   const [focusBaseRevision, setFocusBaseRevision] = useState<number | null>(null);
   const focusDialogRef = useRef<HTMLDivElement | null>(null);
+  const { confirm, dialog: confirmDialog } = useV2Confirm();
   const focusReturnRef = useRef<HTMLElement | null>(null);
   const focusTaskRowRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const focusMoveTargetRef = useRef<string | null>(null);
@@ -595,8 +640,14 @@ const V2PodBoard: React.FC = () => {
       || focusScope.trim() !== (current?.scope || '')
       || focusOwner !== initialOwner
       || focusTaskIds.join('\u0000') !== initialTasks.join('\u0000');
-    if (!dirty || window.confirm(t('board.focus.discard'))) setFocusEditorOpen(false);
-  }, [focusSaving, focusRead, podMembers, focusGoal, focusScope, focusOwner, focusTaskIds, t]);
+    if (!dirty) {
+      setFocusEditorOpen(false);
+      return;
+    }
+    void confirm({ message: t('board.focus.discard'), confirmLabel: t('board.focus.discardAction') }).then((confirmed) => {
+      if (confirmed) setFocusEditorOpen(false);
+    });
+  }, [focusSaving, focusRead, podMembers, focusGoal, focusScope, focusOwner, focusTaskIds, confirm, t]);
 
   closeFocusEditorRef.current = closeFocusEditor;
 
@@ -610,6 +661,9 @@ const V2PodBoard: React.FC = () => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        // App.tsx blurs the active element on any Escape that reaches the document, which would
+        // take focus back out of the confirm this can open.
+        event.stopPropagation();
         closeFocusEditorRef.current();
         return;
       }
@@ -1093,6 +1147,8 @@ const V2PodBoard: React.FC = () => {
         </>
       )}
 
+      {confirmDialog}
+
       {drawerTask && (
         <div
           className="v2-modal__overlay v2-board__overlay v2-board__overlay--drawer"
@@ -1115,8 +1171,55 @@ const V2PodBoard: React.FC = () => {
             <div className="v2-board__grab" aria-hidden="true" />
             <div className="v2-board__drawer-head">
               <span className="v2-board__drawer-id">{drawerTask.taskId}</span>
-              <span className={`v2-board__priority${drawerTask.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(drawerTask.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{drawerTask.priority || 'P2'}</span>
+              <select
+                className={`v2-board__priority v2-board__priority-select${drawerTask.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(drawerTask.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}
+                aria-label={t('board.detail.priority')}
+                title={t('board.detail.priority')}
+                value={drawerTask.priority || 'P2'}
+                disabled={detailSaving || !taskWriteAllowed}
+                onChange={(event) => updateDetail(drawerTask, { priority: event.target.value as TaskPriority })}
+              >
+                {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+              </select>
               <span className="v2-board__card-spacer" />
+              <button
+                type="button"
+                className="v2-board__drawer-chat v2-board__key v2-board__key--ghost v2-board__key--icon v2-board__key--sm"
+                aria-label={t('board.detail.openInChat')}
+                title={t('board.detail.openInChat')}
+                onClick={() => navigate(`/v2/pods/${podId}`)}
+              >
+                <ShellGlyph name="out" size={16} />
+              </button>
+              <button
+                type="button"
+                className="v2-board__drawer-more v2-board__key v2-board__key--ghost v2-board__key--icon v2-board__key--sm"
+                aria-label={t('board.detail.more')}
+                title={t('board.detail.more')}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                ref={moreButtonRef}
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                <MoreHorizIcon aria-hidden="true" />
+              </button>
+              {moreOpen && (
+                <div className="v2-board__more-menu" role="menu" aria-label={t('board.detail.more')} ref={moreMenuRef}>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={following}
+                    className="v2-board__more-item"
+                    aria-disabled={detailSaving || !currentUser?._id}
+                    onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(drawerTask, { following: !following }); }}
+                  >
+                    <span className="v2-board__more-check">{following && <ShellGlyph name="check" size={14} />}</span>
+                    <span>{t(following ? 'board.detail.following' : 'board.detail.follow')}</span>
+                    <span className="v2-board__more-count">{t('board.detail.watcherCount', { count: watchers.length })}</span>
+                  </button>
+                  <p className="v2-board__more-hint">{t('board.detail.digestHint')}</p>
+                </div>
+              )}
               <button
                 type="button"
                 className="v2-board__drawer-close v2-board__key v2-board__key--ghost v2-board__key--icon v2-board__key--sm"
@@ -1148,11 +1251,6 @@ const V2PodBoard: React.FC = () => {
                     );
                   })}
                 </div>
-                {drawerTask.prUrl && (
-                  <a className="v2-board__detail-pr" href={drawerTask.prUrl} target="_blank" rel="noreferrer">
-                    {t('board.detail.pr')}
-                  </a>
-                )}
                 {recordReadAllowed && taskRecordPath(podId, drawerTask.taskId) && (
                   <Link className="v2-board__detail-pr" to={taskRecordPath(podId, drawerTask.taskId) as string}>
                     {t('board.detail.record')}
@@ -1160,33 +1258,42 @@ const V2PodBoard: React.FC = () => {
                 )}
               </div>
               <dl className="v2-board__ownership">
-                <dt><label htmlFor="task-priority">{t('board.detail.priority')}</label></dt>
-                <dd><select id="task-priority" value={drawerTask.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(drawerTask, { priority: event.target.value as TaskPriority })}>
-                  {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
-                </select></dd>
-                <dt>{t('board.detail.assignedTo')}</dt>
-                <dd>{drawerTask.assignee ? <>{memberAvatar(podMembers.find((member) => member.username === drawerTask.assignee) || {}, drawerTask.assignee)}{drawerTask.assignee}</> : <span className="v2-board__empty-owner">{t('board.detail.unassigned')}</span>}</dd>
-                <dt>{t('board.detail.claimedBy')}</dt>
-                <dd>{leaseFor(drawerTask).claimed ? <><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${leaseFor(drawerTask).expired ? 'expired' : 'live'}`} />{memberAvatar(podMembers.find((item) => memberId(item) === drawerTask.claimedBy || item.username === drawerTask.claimedBy) || {}, claimHolderName(drawerTask))}{claimHolderName(drawerTask)}</> : <span className="v2-board__empty-owner">{t('board.detail.notClaimed')}</span>}</dd>
-                <dt>{t('board.detail.leaseLeft')}</dt>
-                <dd className="v2-board__lease-value">{leaseFor(drawerTask).claimed && leaseFor(drawerTask).knownExpiry
-                  ? leaseFor(drawerTask).expired ? t('board.detail.expiredAt', { time: timeLabel(leaseFor(drawerTask).expiry) })
-                    : t('board.detail.remaining', { minutes: leaseFor(drawerTask).minutes, time: timeLabel(leaseFor(drawerTask).expiry) })
-                  : t(leaseFor(drawerTask).claimed ? 'board.detail.timeUnavailable' : 'board.detail.notClaimed')}</dd>
+                <dt>{t('board.detail.owner')}</dt>
+                <dd>{(() => {
+                  // The frame's one owner row: the claimant and the lease while a
+                  // claim holds, else the assignee. The record page keeps the history.
+                  const lease = leaseFor(drawerTask);
+                  if (lease.claimed) {
+                    const name = claimHolderName(drawerTask);
+                    const state = lease.expired ? 'expired' : 'live';
+                    return (
+                      <>
+                        {memberAvatar(claimantMember(drawerTask) || {}, name)}
+                        <span className="v2-board__owner-name">{name}</span>
+                        <span className={`v2-board__lease-value v2-board__lease-value--${state}`}>
+                          <span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${state}`} />
+                          {lease.knownExpiry
+                            ? lease.expired ? t('board.detail.expiredAt', { time: timeLabel(lease.expiry) })
+                              : t('board.detail.remaining', { minutes: lease.minutes, time: timeLabel(lease.expiry) })
+                            : t('board.owner.claimedShort')}
+                        </span>
+                      </>
+                    );
+                  }
+                  if (drawerTask.assignee) {
+                    return <>{memberAvatar(podMembers.find((member) => member.username === drawerTask.assignee) || {}, drawerTask.assignee)}<span className="v2-board__owner-name">{drawerTask.assignee}</span></>;
+                  }
+                  return <span className="v2-board__empty-owner">{t('board.detail.unassigned')}</span>;
+                })()}</dd>
+                {drawerTask.prUrl && (
+                  <>
+                    <dt>{t('board.detail.prRow')}</dt>
+                    <dd><a className="v2-board__pr-link" href={drawerTask.prUrl} target="_blank" rel="noreferrer">{prLabel(drawerTask.prUrl) || t('board.detail.pr')}</a></dd>
+                  </>
+                )}
                 <dt>{t('board.detail.depends')}</dt>
                 <dd>{drawerTask.dep ? <span className="v2-board__dep">{drawerTask.dep}</span> : <span className="v2-board__empty-owner">{t('board.detail.noDeps')}</span>}</dd>
               </dl>
-              <section className="v2-board__watchers" aria-label={t('board.detail.watchers')}>
-                <div className="v2-board__watchers-head"><h3>{t('board.detail.watchers')}</h3><span className="v2-board__watchers-count">{watchers.length}</span>
-                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(drawerTask, { following: !following }); }}>{following && <ShellGlyph name="check" size={14} />}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
-                </div>
-                <div className="v2-board__watcher-list">{watchers.map((id) => {
-                  const member = podMembers.find((item) => memberId(item) === id) || (id === currentUser?._id ? currentUser : {});
-                  const name = memberLabel(member) || t('board.detail.memberUnavailable');
-                  return <span className="v2-board__watcher" key={id}>{memberAvatar(member, name)}{name}</span>;
-                })}</div>
-                <p className="v2-board__watcher-hint">{t('board.detail.digestHint')}</p>
-              </section>
               {detailError && <p className="v2-modal__error" role="alert">{detailError}</p>}
               {drawerTask.notes && <p className="v2-board__detail-notes">{drawerTask.notes}</p>}
               {(drawerTask.updates?.length || 0) > 0 && (

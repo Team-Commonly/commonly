@@ -23,6 +23,7 @@ await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMoc
 const mod = await import('../src/lib/adapters/pi.js');
 const pi = mod.default;
 const { classifySpawnFailure } = await import('../src/lib/spawn-retry.js');
+const { cantAnswerNotice } = await import('../src/lib/turn-failure-notice.js');
 const { extractReply, thinkingFor, resolveMcpServers, buildModelsJson, resolveProvider } = mod;
 
 const event = (obj) => `${JSON.stringify(obj)}\n`;
@@ -391,6 +392,118 @@ describe('spawn', () => {
     test('a retried turn that then finishes counts as finished', () => {
       const stdout = interim + event({ type: 'agent_end', willRetry: true }) + final('done') + ended;
       expect(extractReply(stdout).finished).toBe(true);
+    });
+
+    // F258: pi ends a refused turn with exit 0, so the exit code can't say the
+    // interim message was never answered.
+    const refused429 = event({
+      type: 'auto_retry_end', success: false, attempt: 3, finalError: '429: {"message":"Budget has been exceeded"}',
+    });
+
+    test('a clean exit after an interim message and a refused model fails the turn', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'upstream refused') + ended + refused429, code: 0,
+      });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
+    });
+
+    // pi prints this on every fresh session. It isn't why the turn failed.
+    const startupWarning = "Warning: No project session found with id 's1'; creating a new session with that id.";
+    test.each([
+      [429, '429: {"message":"Budget has been exceeded"}', /upstream refused 429: Budget has been exceeded/],
+      [401, '401: Invalid key', /upstream refused 401/],
+    ])('a refused %s names the refusal, not the startup warning', async (status, finalError, wording) => {
+      const refused = event({
+        type: 'auto_retry_end', success: false, attempt: 3, finalError,
+      });
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', finalError) + ended + refused, stderr: startupWarning, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBe(status);
+      expect(err.message).toMatch(wording);
+      expect(err.message).not.toMatch(/No project session/);
+    });
+    test('stderr cannot name the status of a refused turn', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'upstream refused') + ended + refused429,
+        stderr: 'mcp: code 500 from server',
+        code: 0,
+      });
+      await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
+    });
+    test('an interim message then a failure with no status still fails the turn, naming pi\'s cause', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'fetch failed') + ended, stderr: startupWarning, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.message).toMatch(/^pi exited with code 0: fetch failed$/);
+      expect(err.message).not.toMatch(/No project session/);
+    });
+    // F320: a stop pi gave a cause, with no status in it. pi 0.84.1 writes this
+    // errorMessage for an OpenAI-shaped finish_reason (openai-completions.js).
+    test('a content filter stop names its cause, so it is refused rather than retried', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'Provider finish_reason: content_filter') + ended, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.message).toMatch(/content_filter/);
+      expect(classifySpawnFailure(err)).toBe('content_refused');
+    });
+    test('the cause pi gave is scrubbed of the spawn key', async () => {
+      const key = 'sk-live-test-secret-value';
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', `connect failed for key ${key}`) + ended, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({
+        _spawnImpl: impl, env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: key },
+      })).catch((e) => e);
+      expect(err.message).toMatch(/connect failed/);
+      expect(err.message).not.toContain(key);
+    });
+    // F320: the kept detail is the provider's prose, and a status it mentions
+    // isn't the one pi was refused with.
+    test('a refused turn\'s status is the refusal\'s, not one its detail names', async () => {
+      const finalError = '429: {"message":"proxy said status 503"}';
+      const refused = event({
+        type: 'auto_retry_end', success: false, attempt: 3, finalError,
+      });
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', finalError) + ended + refused, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBe(429);
+    });
+    // In pi's own order: the failed attempt, a retry, then the answer.
+    const failedAttempt = stopped('error', '429: {"message":"Budget has been exceeded"}')
+      + event({ type: 'agent_end', messages: [], willRetry: true })
+      + event({ type: 'auto_retry_start', attempt: 1 });
+    test('a refusal pi recovered from still posts the answer it finished on', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: failedAttempt + final('done') + event({ type: 'auto_retry_end', success: true }) + ended, code: 0,
+      });
+      const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
+      expect(result.text).toBe('done');
+    });
+    // F320: a later failure is not the refusal pi recovered from, so it can't
+    // read as a used-up allowance.
+    test('a failure after a recovered refusal is not read as that refusal', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: failedAttempt + interim + event({ type: 'auto_retry_end', success: true, attempt: 1 })
+          + stopped('error', 'fetch failed') + ended,
+        code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBeUndefined();
+      expect(err.message).not.toMatch(/429|Budget/);
+      expect(cantAnswerNotice(err)).toBeNull();
+    });
+    test('a recovered refusal does not fail an answer cut off at the token cap', async () => {
+      const cutOff = event({
+        type: 'message_end', message: { role: 'assistant', stopReason: 'length', content: [{ type: 'text', text: 'most of it' }] },
+      });
+      const { impl } = makeSpawnImpl({ stdout: failedAttempt + cutOff + ended, code: 0 });
+      expect((await pi.spawn('p', baseCtx({ _spawnImpl: impl }))).text).toBe('most of it');
     });
 
     test('a clean exit still posts its reply without agent_end', async () => {

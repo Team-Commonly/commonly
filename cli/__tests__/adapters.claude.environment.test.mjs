@@ -1413,9 +1413,9 @@ describe('claude adapter — a workspace seat', () => {
   });
 
   const workspaceSpawn = (impl, sandbox = { mode: 'workspace', trust: 'workspace' }, extra = {}) => claude.spawn('hi', {
-    ...extra,
     agentName: 'workspace-test',
     sessionId: null,
+    ...extra,
     cwd,
     skillMountDir: scratch,
     env: { PATH: process.env.PATH, COMMONLY_HOST_SECRET: 'must-not-inherit' },
@@ -1496,6 +1496,33 @@ describe('claude adapter — a workspace seat', () => {
   // are denied on public trust. Reading its memory stays.
   const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
     'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message'];
+
+  describe('F145: memory writes on a turn the owner woke', () => {
+    const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+    const NOT_MEMORY = ['commonly_self_install_into_pod', 'commonly_delete_message', 'commonly_attach_file', 'commonly_catch_up'];
+    const publicTurn = async (extra) => {
+      const { impl, calls } = makeSpawnImpl();
+      await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'kept notes', ...extra });
+      const { args } = calls[0];
+      return { args, denied: args.slice(args.indexOf('--disallowedTools') + 1) };
+    };
+
+    test('an owner-woken turn gets the three memory tools back and nothing else', async () => {
+      const { args, denied } = await publicTurn({ ownerWoken: true });
+      for (const tool of MEMORY) expect(denied).not.toContain(`mcp__commonly__${tool}`);
+      for (const tool of NOT_MEMORY) expect(denied).toContain(`mcp__commonly__${tool}`);
+      expect(args[args.lastIndexOf('-p') + 1]).toContain('commonly_save_my_memory');
+    });
+
+    test('a turn that resumes the owner\'s session has them taken away again', async () => {
+      const owner = await publicTurn({ ownerWoken: true });
+      for (const tool of MEMORY) expect(owner.denied).not.toContain(`mcp__commonly__${tool}`);
+      const { args, denied } = await publicTurn({ sessionId: 'not-used' });
+      expect(args).toContain('--resume');
+      for (const tool of MEMORY) expect(denied).toContain(`mcp__commonly__${tool}`);
+      expect(args[args.lastIndexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
+    });
+  });
 
   test('a public seat keeps the denies it had, without the workspace ones, and loses self-install and memory writes', async () => {
     const { impl, calls } = makeSpawnImpl();
@@ -2362,6 +2389,33 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
   ])('withholds the turn when a Commonly call fails with %s', async (_label, content) => {
     const stdout = stream(init('connected'), call('t1', 'mcp__commonly__list_pods'), failed('t1', content), result('Every call is failing.'));
     await expect(turn(stdout)).rejects.toMatchObject({ code: 'public_tool_failed' });
+  });
+
+  // The 11-08 lx-otter walk: the turn had already posted through its tools when
+  // a checkpoint failed, so the withheld line must not say nothing was posted.
+  test('a withheld turn says the CLI posted no reply, not that nothing was posted', async () => {
+    const stdout = stream(
+      init('connected'),
+      call('t1', 'mcp__commonly__commonly_post_message'), succeeded('t1', '{"id":"m1"}'),
+      call('t2', 'mcp__commonly__commonly_checkpoint_event'), failed('t2', '{"message":"fetch failed"}'),
+      result(''),
+    );
+    const outcome = turn(stdout);
+    await expect(outcome).rejects.toMatchObject({ code: 'public_tool_failed' });
+    await expect(outcome).rejects.toThrow(/the CLI posted no reply for it \(posts the agent made through its tools stay\)/);
+    await expect(turn(stdout)).rejects.toThrow(/^(?!.*nothing was posted)/);
+  });
+
+  // The MCP's checkpoint turn-back is a 409 (commonly-mcp/src/tools.js), so a
+  // public seat lets the model answer it instead of withholding the turn.
+  test('posts after a checkpoint turned back with a 409', async () => {
+    const turnedBack = JSON.stringify({ status: 409, body: { code: 'checkpoint_turned_back' }, message: 'Not checkpointed' });
+    const stdout = stream(
+      init('connected'),
+      call('t1', 'mcp__commonly__commonly_checkpoint_event'), failed('t1', turnedBack),
+      result('Done.'),
+    );
+    await expect(turn(stdout)).resolves.toMatchObject({ text: 'Done.' });
   });
 
   // `pending` at init is not a failure: the server may finish starting during

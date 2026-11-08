@@ -6,7 +6,6 @@
 #        ./dev.sh gc                      - reap ephemeral slots past their 24 h TTL
 #        ./dev.sh test                    - unit tests (in-memory, no services needed)
 #        ./dev.sh test:integration        - integration tests (requires ./dev.sh up)
-#        ./dev.sh clawdbot [up|down|logs]
 #        ./dev.sh cluster [up|down|test]  - local k8s via kind (free, needs docker+kind+helm)
 
 set -e
@@ -54,32 +53,21 @@ read_env_value() {
     printf '%s' "$line"
 }
 
-is_truthy_env_value() {
-    # NOTE: ${1,,} is a bash 4+ expansion; macOS ships bash 3.2 as /bin/bash,
-    # where it fails at runtime with "bad substitution". tr keeps this portable.
-    local value
-    value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-    case "$value" in
-        1|true|yes|on)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-is_local_clawdbot_enabled() {
-    local value
-    value="$(read_env_value "COMMONLY_LOCAL_CLAWDBOT" || true)"
-    is_truthy_env_value "$value"
+# Containers from the retired clawdbot compose profile. Compose no longer knows
+# them, so `down` leaves them running, holding port 18789 and the mounted
+# credentials, and restart: unless-stopped brings them back after a reboot.
+stop_retired_gateway() {
+    local name
+    for name in clawdbot-gateway-dev clawdbot-cli-dev; do
+        if [ -n "$(docker ps -q --filter "name=^/${name}$" 2>/dev/null || true)" ]; then
+            echo "🛑 Stopping retired container ${name}. Remove it with: docker rm ${name}"
+            docker stop "$name" >/dev/null || true
+        fi
+    done
 }
 
 set_compose_args() {
     COMPOSE_ARGS=(-f "$COMPOSE_FILE")
-    if is_local_clawdbot_enabled; then
-        COMPOSE_ARGS+=(--profile clawdbot)
-    fi
 }
 
 ensure_local_env_file() {
@@ -120,19 +108,6 @@ print_local_dev_notes() {
         echo "  • commonly-bot will stay idle until you provision it from Agents Hub."
         echo "    That is expected for fresh local setups."
     fi
-
-    if is_local_clawdbot_enabled; then
-        echo "  • COMMONLY_LOCAL_CLAWDBOT=1 — ./dev.sh up includes the clawdbot profile."
-    else
-        echo "  • COMMONLY_LOCAL_CLAWDBOT=0 — fresh ./dev.sh up skips clawdbot services."
-        echo "    Run: commonly dev clawdbot"
-    fi
-
-    if has_nonempty_env_value "CLAWDBOT_GATEWAY_TOKEN"; then
-        echo "  • Clawdbot gateway token detected."
-    else
-        echo "  • Clawdbot services are optional. Bootstrap them with: commonly dev clawdbot"
-    fi
 }
 
 case "$1" in
@@ -146,6 +121,7 @@ case "$1" in
         # Set higher timeout for frontend npm install
         export COMPOSE_HTTP_TIMEOUT=300
         set_compose_args
+        stop_retired_gateway
         docker compose "${COMPOSE_ARGS[@]}" up -d
         echo "✅ Development environment started!"
         echo "🌐 Frontend: http://localhost:3000"
@@ -162,6 +138,7 @@ case "$1" in
 
     down)
         echo "🛑 Stopping development environment..."
+        stop_retired_gateway
         docker compose -f $COMPOSE_FILE down
         echo "✅ Development environment stopped!"
         ;;
@@ -358,48 +335,10 @@ case "$1" in
         ;;
 
     clawdbot)
-        case "$2" in
-            up)
-                echo "🤖 Starting Clawdbot services..."
-                docker compose -f $COMPOSE_FILE --profile clawdbot up -d
-                echo "✅ Clawdbot services started!"
-                echo "🧠 Clawdbot Gateway: http://localhost:18789"
-                echo "🌉 Clawdbot Bridge: polling Commonly API"
-                echo ""
-                echo "📋 View logs: ./dev.sh clawdbot logs"
-                ;;
-            down)
-                echo "🛑 Stopping Clawdbot services..."
-                docker compose -f $COMPOSE_FILE --profile clawdbot stop clawdbot-gateway clawdbot-cli
-                echo "✅ Clawdbot services stopped!"
-                ;;
-            logs)
-                echo "📋 Showing logs for: clawdbot-$3"
-                docker compose -f $COMPOSE_FILE logs -f "clawdbot-$3"
-                ;;
-            restart)
-                echo "🔄 Restarting Clawdbot services..."
-                docker compose -f $COMPOSE_FILE --profile clawdbot restart clawdbot-gateway clawdbot-cli
-                echo "✅ Clawdbot services restarted!"
-                ;;
-            build)
-                echo "🔨 Building Clawdbot containers..."
-                docker compose -f $COMPOSE_FILE --profile clawdbot build clawdbot-gateway clawdbot-cli
-                echo "✅ Clawdbot containers built!"
-                ;;
-            *)
-                echo "🤖 Clawdbot Commands"
-                echo ""
-                echo "Usage: ./dev.sh clawdbot [command]"
-                echo ""
-                echo "Commands:"
-                echo "  up       - Start Clawdbot services (gateway, bridge, cli)"
-                echo "  down     - Stop Clawdbot services"
-                echo "  restart  - Restart Clawdbot services"
-                echo "  logs     - Show bridge logs (or: logs gateway, logs cli)"
-                echo "  build    - Build Clawdbot containers"
-                ;;
-        esac
+        stop_retired_gateway
+        echo "The local OpenClaw gateway was retired (ADR-021 Part B), so this command no longer does anything."
+        echo "Use native agents, or attach a local CLI with: commonly agent attach <cli>"
+        exit 1
         ;;
 
     *)
@@ -417,7 +356,6 @@ case "$1" in
         echo "  clean     - Clean up containers and volumes"
         echo "  shell     - Open shell in service (shell [service])"
         echo "  test      - Run backend tests (Docker Compose)"
-        echo "  clawdbot  - Manage Clawdbot services (clawdbot up|down|logs|restart)"
         echo "  cluster   - Local Kubernetes cluster (requires kind + helm)"
         echo "              cluster up|down|test|logs|status"
         echo ""
@@ -425,7 +363,6 @@ case "$1" in
         echo "  ./dev.sh up"
         echo "  ./dev.sh logs backend"
         echo "  ./dev.sh shell frontend"
-        echo "  ./dev.sh clawdbot up"
         echo "  ./dev.sh cluster up"
         echo "  ./dev.sh cluster test"
         echo "  ./dev.sh cluster down"

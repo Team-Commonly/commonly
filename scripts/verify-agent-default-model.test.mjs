@@ -11,14 +11,10 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'verify-agent-defau
 const CLAUDE = { model_name: 'claude-haiku-5-5', litellm_params: { model: 'anthropic/claude-haiku-5-5' } };
 const DEEPSEEK = { model_name: 'deepseek-v4-flash', litellm_params: { model: 'deepseek/deepseek-v4-flash' } };
 
-const manifest = ({ modelList = [CLAUDE, DEEPSEEK], routerSettings = {}, litellmSettings = {}, primary = 'openrouter/claude-haiku-5-5', backendEnv = [], extraDocs = [] } = {}) => {
+const manifest = ({ modelList = [CLAUDE, DEEPSEEK], routerSettings = {}, litellmSettings = {}, backendEnv = [], extraDocs = [] } = {}) => {
   const docs = [
     { kind: 'ConfigMap', metadata: { name: 'litellm-config' }, data: { 'config.yaml': JSON.stringify({ model_list: modelList, router_settings: routerSettings, litellm_settings: litellmSettings }) } },
     { kind: 'Deployment', metadata: { name: 'backend' }, spec: { template: { spec: { containers: [{ env: [{ name: 'AGENT_DEFAULT_MODEL', value: 'claude-haiku-5-5' }, ...backendEnv] }] } } } },
-    { kind: 'ConfigMap', metadata: { name: 'clawdbot-config' }, data: { 'moltbot.json': JSON.stringify({
-      models: { providers: { openrouter: { baseUrl: 'http://litellm.ns.svc.cluster.local:4000', models: [{ id: 'claude-haiku-5-5' }] } } },
-      agents: { defaults: { model: { primary, fallbacks: ['google/gemini-2.5-flash'] } } },
-    }) } },
     ...extraDocs,
   ];
   return docs.map((d) => JSON.stringify(d)).join('\n---\n');
@@ -111,13 +107,6 @@ test('a fallback or alias target with no route fails, with or without --no-deeps
       assert.match(result.stderr, /falls back to "no-such-model", which is not a LiteLLM model_name/);
     }
   }
-});
-
-test('a google/* primary fails; a google/* fallback is listed but not resolved', () => {
-  const result = verify(manifest({ primary: 'google/gemini-2.5-flash' }));
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /goes straight to Google/);
-  assert.match(verify(manifest({ modelList: [CLAUDE] })).stdout, /google\/gemini-2\.5-flash \(direct to Google, not resolved\)/);
 });
 
 test('without --no-deepseek, a DeepSeek fallback is allowed (base)', () => {

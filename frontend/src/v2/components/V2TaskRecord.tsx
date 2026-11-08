@@ -179,12 +179,15 @@ const V2TaskRecord: React.FC = () => {
   }, [api, podId, valid]);
 
   // The task's title, from the board's own list (there is no single-task read).
-  // Never blocks the record: until it lands, or if it fails or the task is not
-  // in the list, the heading stays the id.
+  // Never blocks the record: until it lands the heading is a placeholder, with
+  // the id on the line below, and if it fails or the task is not in the list
+  // the heading is the id.
   const [title, setTitle] = useState<string | null>(null);
+  const [titlePending, setTitlePending] = useState(true);
   useEffect(() => {
     let live = true;
     setTitle(null);
+    setTitlePending(true);
     if (!valid) return undefined;
     api.get<{ tasks?: Array<{ taskId?: unknown; title?: unknown }> }>(`/api/v1/tasks/${encodeURIComponent(podId)}`)
       .then((data) => {
@@ -192,7 +195,8 @@ const V2TaskRecord: React.FC = () => {
         const task = data.tasks.find((row) => row && row.taskId === taskId);
         if (task && typeof task.title === 'string' && task.title.trim()) setTitle(task.title);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (live) setTitlePending(false); });
     return () => { live = false; };
   }, [api, podId, taskId, valid]);
 
@@ -357,7 +361,11 @@ const V2TaskRecord: React.FC = () => {
         {retryable && <button type="button" className="v2-task-record__key v2-task-record__key--soft" onClick={retry}>{t('taskRecord.retry')}</button>}
       </div>}
       {loaded && <>
-        <h2 className="v2-task-record__task">{title || taskId}</h2>
+        <h2 className="v2-task-record__task" title={title || undefined}>
+          {title || (titlePending
+            ? <><span className="v2-task-record__sr">{taskId}</span><span className="v2-task-record__bone" aria-hidden="true" /></>
+            : taskId)}
+        </h2>
         <p className="v2-task-record__id">{`${taskId} · ${counts}`}</p>
         {downloadError && <p className="v2-task-record__alert" role="alert">{t('taskRecord.downloadError')}</p>}
         {!lines.length && <div className="v2-task-record__none">

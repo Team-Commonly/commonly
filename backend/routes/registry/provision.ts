@@ -15,6 +15,7 @@ const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAg
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
 const DMService = require('../../services/dmService');
 const {
+  composeGatewayRetired,
   provisionAgentRuntime,
   startAgentRuntime,
   restartAgentRuntime,
@@ -40,6 +41,7 @@ const {
 } = require('./tokens');
 const { PRESET_DEFINITIONS, withCyclesDirective } = require('./presets');
 const { applyPresetDefaultSkills } = require('../../services/presetSkillsAutoImport');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
 const { ownsRuntimeIdentity, runtimeCredentialRefusal } = require('../../services/runtimeIdentityOwnership');
 
 // Inlined per-route limiter on this DB-touching handler. The previous version
@@ -181,6 +183,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
         const provisionerUser = await User.findById(userId).select('entitlements').lean();
         const isEntitled = provisionerUser?.entitlements?.cloudAgents === true;
         if (!isEntitled) {
+          logInstallRefusal('registry.provision', 'cloud_agents_not_entitled', {
+            userId, agentName: name, instanceId: normalizedInstanceId, podId,
+          });
           return res.status(403).json({
             code: 'cloud_agents_not_entitled',
             message: 'Hosted (cloud) agents require entitlement; you can connect your own local/BYO agent instead.',
@@ -197,6 +202,18 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       if (!ownership.owned) {
         return res.status(403).json({ code: ownership.failure, error: runtimeCredentialRefusal[ownership.failure] });
       }
+    }
+
+    // Refused before any token is minted or rotated. Without this the start
+    // fails and the install is still recorded as provisioned.
+    if (composeGatewayRetired(runtimeType)) {
+      logInstallRefusal('registry.provision', 'local_gateway_retired', {
+        userId, agentName: name, instanceId: normalizedInstanceId, podId,
+      });
+      return res.status(410).json({
+        code: 'local_gateway_retired',
+        message: 'The local OpenClaw gateway was retired. Use a native agent, or attach a local CLI.',
+      });
     }
 
     const agentUser = await AgentIdentityService.getOrCreateAgentUser(name.toLowerCase(), {
@@ -493,6 +510,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
       agentUsername: agentUser.username,
     });
   } catch (error: unknown) {
+    if ((error as { code?: string })?.code === 'in_process_agent_no_token') {
+      return res.status(409).json({ code: 'in_process_agent_no_token', error: (error as Error).message });
+    }
     console.error('Error provisioning agent runtime:', error);
     if ((error as any).status) {
       return res.status((error as any).status).json({ error: (error as Error).message });

@@ -9,6 +9,7 @@ const { resolveAgentDisplayLabel } = require('../../services/agentIdentityServic
 const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
 const { hostedEngineInEffect } = require('../../services/hostedEngine');
+const { PLACEHOLDER_AGENT_DESCRIPTION } = require('../../services/agentInstallationIdentity');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -318,7 +319,7 @@ const snapshotPointer = (handle: string): string =>
   + 'the pod shows my current state.';
 
 const composeInstallIntro = ({
-  displayName, blurb, handle, state, fixCommand,
+  displayName, blurb, handle, state, fixCommand, connectable = false,
 }: {
   displayName: string;
   blurb?: string;
@@ -333,12 +334,16 @@ const composeInstallIntro = ({
   // remove, so the hedge is not decoration (fleet review 2026-08-14).
   state: string;
   fixCommand: string;
+  // Made on the page: no computer has its key, so the bare command can't run,
+  // and the agent's Settings has the Connect that issues a new one.
+  connectable?: boolean;
 }): string => {
   // Older CLI versions seeded description from displayName, producing intros
   // like "Hi all — I'm bot. bot Ping me ...". Drop a blurb that just repeats
   // the name.
   const trimmed = String(blurb || '').trim().replace(/\s+/g, ' ');
   const meaningless = !trimmed
+    || trimmed === PLACEHOLDER_AGENT_DESCRIPTION
     || trimmed.toLowerCase() === String(displayName).toLowerCase();
   const lead = meaningless
     ? `Hi all — I'm ${displayName}, just joined the pod.`
@@ -347,6 +352,11 @@ const composeInstallIntro = ({
   // Certain, and never ran: flat declarative, and SCOPED to the posting. The
   // certainty is about THIS MOMENT (no token has ever been used yet), which is
   // precisely what a reader an hour later mistakes for a claim about then.
+  if (state === 'never-connected' && connectable) {
+    return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
+      + `Whoever installed me can connect me from my Settings — then @${handle} will get through. `
+      + snapshotPointer(handle);
+  }
   if (state === 'never-connected') {
     return `${lead} As I post this, nothing is running me yet, so mentioning me won't reach anyone. `
       + `Whoever installed me can start me with \`${fixCommand}\` on the machine `
@@ -383,6 +393,10 @@ const composeInstallIntro = ({
 // first match, so a harness swap made in one pod shows in all of them.
 // The four keys move as a group: an older install's adapter must not outlive
 // a newer install's runtimeType, which would bring back the stale chip.
+// When that newest install names no adapter, its poller's report (reportedCli,
+// display only) rides along. Without it the overlay drops a pod's own adapter
+// and the chip falls back to the bare runtimeType: a seat declared claude-code
+// that runs opencode read "claude" in exactly the pods that named its adapter.
 const runtimeIdentityKey = (agentName: any, instanceId: any) => `${agentName}:${instanceId || 'default'}`;
 
 const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<string, Record<string, unknown>>> => {
@@ -409,7 +423,10 @@ const resolveSeatRuntimeIdentities = async (installations: any[]): Promise<Map<s
     const key = runtimeIdentityKey(row.agentName, row.instanceId);
     if (resolved.has(key)) continue;
     const identity = declaredRuntimeIdentity(row.config);
-    if (identity) resolved.set(key, identity);
+    if (!identity) continue;
+    const reportedCli = row.config?.runtime?.reportedCli;
+    if (reportedCli && !identity.adapter && !identity.wrappedCli) identity.reportedCli = reportedCli;
+    resolved.set(key, identity);
   }
   return resolved;
 };

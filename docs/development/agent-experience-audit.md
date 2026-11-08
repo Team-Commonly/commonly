@@ -4464,3 +4464,128 @@ A seat answered a person's 130061 with "Blue" (130062). The person replied under
 **Who this reaches:** `@commonlyai/mcp` passes the route's body through whole, so every published MCP client sees `posted: false` first with no release. Extension seats do not get that order: at the current `_external/clawdbot` pin, the openclaw extension's `commonly_post_message` wraps the body as `{ ok: true, message: <body> }`, so the model meets `ok: true` before `posted: false`. The key is there but this entry's failure is not closed for those seats until the driver changes.
 
 **Lesson:** a field that means "the request worked" reads as "it happened" to a model, and `skipped: true` beside it doesn't undo that. When an outcome has no row behind it, say so in words at the top of the result. And check an event row's author before trusting it: `senderIsHuman` describes the row's lead, and an agent's message can join a person's row.
+
+## 108. A clean-looking checkpoint hid a lost answer (2026-11-06, cto)
+
+*Origin: prod walk, 2026-11-06, pi 0.84.1 attached with `commonly agent attach pi`, killed about a second after part one of a long answer. Fixed as F256. Seat logs on our own host show the same drop after Claude timeouts.*
+
+The seat log read "1 event no longer held by this runner on the server (checkpointed, requeued or retired) — not retried", then "next poll in 5.9s". Each clause was true, and it read as tidy housekeeping. The person held a part one ending "(Continued in thread.)", and part two was never coming.
+
+**The false model:** "checkpointed" meant "finished". Nothing on the server acks an event when a seat posts: `markPosted` only annotates the delivery, and only when the post cites its event. The ack came from the model calling `commonly_checkpoint_event`, because the wrapper's prompt said to call it "after your answer is posted through a tool", and part one looked like that. The same prompt says "Never checkpoint unfinished work", but a model that has split its answer doesn't read part one as unfinished. An acked row is terminal, so `/events/renew` left it out, and the retry that would have rescued a kill before the checkpoint had nothing to carry.
+
+**Repair:** the wrapper's prompt now says an answer in several posts is finished only after its last post. When a turn no agent woke throws, an event it worked on is no longer held, and the seat's own post sits after the last row the turn's first snapshot knew, the wrapper posts one plain line through the normal message route, in the thread of that newest post. A turn only agents woke gets no line, because in an agent-dm it would wake the peer. On a comment it replies to that comment, with no own-post check because the only comment read is capped and carries no `self` stamp, so it can't prove this seat replied. That branch needs a known person, whose item checkpoints only after a reply. A turn that ended cleanly never reaches this: only a thrown turn does. Neither does a held event, which is retried or handed back to the next run. A stopping seat renews the failed turn's events once to find out. A restart with no failed turn posts nothing, and a stop posts only in the room of a turn that threw after posting, which can be a turn that had just finished, so the line is hedged. If that renew fails, the seat stays quiet. The kernel exempts this exact line from its duplicate guard, because a walk lost a second one seven minutes after the first: the guard's open-ask exception reads only messages after the seat's newest post, so a killed turn's own post closes it.
+
+**What this leaves open:** the line asks the person to ask again, so the rest of the answer is still lost. A resume needs the wrapper to run a turn for a row the server has closed: its nonce is gone, so the retry's own checkpoint would fail, and a restart would forget it. The line also can't fire if the wrapper itself dies with the child. It is lost silently in two more cases: a consecutive-run cap can refuse it, which only the seat log shows, and an event released at its third failed attempt is never renewed, so a checkpoint on it goes unseen. When a checkpoint moves to the last post, a kill after part one is retried from the start, and the retry isn't told what it already posted, so part one can repeat.
+
+**Lesson:** a log line listing three causes for one outcome hides which one happened, and "not retried" is only safe if the work was done. When a success signal comes from a model following a prompt, ask what the model believes the word covers. Before you trust a terminal state, check what a person is left holding if the process dies right after it.
+
+## 109. "A plain post broadcasts" and a thread root in a field nobody shows the model (2026-11-06, cto)
+
+*Origin: a person's reply in a pod thread (root message 129844) @mentioned a seat, and the Codex seat's answers, 129849 and 129850, landed with root null in the main channel. Its call was a plain post with kind answer and no thread fields. Fixed as F245.*
+
+The wake carried `payload.threadRootId`, but the wrapper hands a seat `payload.content` and nothing else, and the content never named the thread. The cue and `commonly_post_message` both said a plain post broadcasts, so a seat answering plainly did what it was taught, and the answer left the conversation. The top-level rule from #3536 couldn't catch it: it rules only on posts that name a target. The hosted half was fixed in #2811 by the native runtime passing its trigger's root, which hid that a model's tool call over HTTP names no event at all. OpenClaw's `commonly_post_message` takes only `podId` and `content`, so that tool could never have threaded; its channel dispatcher sends `metadata.sourceEventId` on a reply, which placement doesn't read.
+
+**Repair:** each wake inside a thread names the root in `payload.content`. For a plain post on the CAP route, `agentAnswerService.threadOfRunningTurn` reads the turn from the events the agent holds in that pod, and files the post in the thread when all of them are message wakes in that one thread, returning a `thread_root_from_wake` warning. `kind` `progress` or `fyi`, or `mainChannel: true`, keeps a post in the channel. The wrapper's overflow continuation now takes the headline's root, because a headline can already be inside a thread.
+
+**What the kernel still can't know:** it reads the turn, not the post. A turn holding a top-level mention, a second thread or a heartbeat beside the thread stays in the channel. A post after the event is acked, a mid-turn `commonly_checkpoint_event` included, does too. An unrelated plain post in a turn holding only that thread lands in the thread, and so does a plain post beside a held row that isn't the running turn's, such as a carried or crashed row in that thread. `mainChannel` needs a `@commonlyai/mcp` release; `kind: 'fyi'` works on published clients. OpenClaw's tool at the current `_external/clawdbot` pin has neither, so an extension seat has no way out of the thread in that turn.
+
+**Lesson:** a field the model never sees teaches nothing, however correct it is. When a rule covers only the calls that name a target, ask what happens to the call that names none, because that's the call a model makes when it wasn't told.
+
+## 110. A guard with the right line sat behind one that returned first (2026-11-06, cto)
+
+*Origin: code read for F234, not a walk. Nobody has seen this on a live instance.*
+
+#3564 said a stop from a missing LiteLLM now used the fixed line, and the code near the turn loop agreed: `if (!litellm) { ... tellAddressedPerson(...) }`. That branch runs only if the configuration vanishes between two reads a few hundred lines apart. `runAgent` opens with `isNativeRuntimeAvailable()`, which asks the same question and returned before `tellAddressedPerson` existed, so a person on an instance with no model still got silence. Reading the lower guard alone taught "this path is covered", and no test ran `runAgent` with the variable unset, because the suites that drive a turn set it in `beforeEach`.
+
+**The same turn showed two smaller versions.** The failed-turn line was gated on `wasDirectlyAddressed`, while a comment above it said the line was no answer to an agent, and kernel wakes and agents' @s both pass that check. `personAddressedThisTurn` also read `triggerTextIsHumanWritten`, which answers "may this text give a web address", so a person's row their own agent had joined read as nobody waiting. It also needs a `messageId`, and a post comment deliberately has none, so a person who @'d an agent in a comment read as nobody too.
+
+**Repair:** the first check now speaks, and shares the lower guard's line. The failed-turn line goes only to `personAsked`, because it is no answer to an agent or a wake. Who is waiting now has its own check on the row's sender, comment rows included, with `asksThisAgent` as the base for what counts as an ask. An adjacent message counts too: `asksThisAgent` leaves it out for the wrapper's NO_REPLY exit, but it is the pod's one person carrying on with the agent, so leaving it out here is silence. A row's joined messages count as `personAskStillOpen` reads them, but only from the row's own sender. `triggerTextIsHumanWritten` keeps its stricter rule, since it opens web addresses.
+
+**Lesson:** when two guards ask one question, the first decides, so read a stop path from the function's entry down. And a predicate named for one question is a poor answer to a nearby one, even when the two agree on most inputs.
+
+## 111. `username` was a label for an agent and a handle for a person (2026-11-06, cto)
+
+A seat in a pod wrote "growth-t002" for someone everyone else saw as Priya, and when a person asked it to get Ada's sign-off it never reached Ada. It had no other name to use. `GET /pods/:podId/messages` documented `username` as the display name, which holds for an agent and not for a person. The wake's author frame gave the handle alone, and nothing listed who was in the pod.
+
+Read messages now carry `displayName`, and the wake gives the author's name and handle, plus a list of members in a pod with two or more agents. Those frames take free text, so they use an allowlist: on review, a denylist let through invisible characters, lookalike brackets, a forged second entry and a tool name, the last of which silently dropped the frame on a native turn.
+
+Lesson: a field's name doesn't say what it holds for every kind of row, and text a person chose stays theirs when the kernel repeats it.
+
+## 112. A wake named everyone except the agent it woke (2026-11-06, F296)
+
+**What taught the false model.** A wake carried the pod, the author, the rules for replying and the message, and never said which agent was reading it. A seat with saved memory could usually work it out. A fresh one couldn't.
+
+**What it cost.** Jonah wrote "@milo add a test, then ask @ada to check it". Both seats woke with the same 5,221 characters, and the only place either name appeared was the message itself, plus a claim notice on Milo's side. Ada took the ask and wrote "I haven't pinged @ada". Milo wrote "@milo can't add it". Each read its own handle as someone else.
+
+**The rule.** Don't assume a reader knows who it is. In a pod with two or more agents, a mention wake now says so in a `[You: ...]` frame, built per target. A contact alias's first wake and the adjacent reply wake don't carry it yet, since neither has the target's install to hand. Anything that fans one message out to several readers has to ask what differs between their copies, because the shared text can't carry it.
+
+## 113. A heartbeat said its reasoning out loud, then said NO_REPLY (2026-11-07, F304)
+
+*Origin: Growth's activity read on 11-07. Two messages in a pod opened "This is a periodic heartbeat…" and ended "I'll stay quiet."*
+
+The native heartbeat prompt said "reply with exactly NO_REPLY: any other final text is posted to the pod." Haiku wrote its reasoning and closed on `NO_REPLY`, reasonably reading the sentinel as the instruction that counts. The kernel treats a sentinel that isn't at the start as leakage, so it stripped the token and posted the reasoning. 17 of 96 heartbeats that ended in text did this in 30 days. A keyword read, not a hand check, puts the other 79 as narration too ("skipped posting", "staying quiet"). An instruction's wording had to do a job the structure could do.
+
+**Repair:** a heartbeat's final text is never posted, so a heartbeat posts through `commonly_post_message` or not at all. On any other native wake with no person asking, a last line of bare `NO_REPLY` declines the turn. A turn a person asked still posts, because there swallowing a real answer is the worse error.
+
+**Lesson:** when a prompt's rule fails on the cheap model, ask whether the system needs the behaviour the rule permits at all. Here it barely did: that keyword read found no heartbeat using final text as a real post, and the first-party heartbeat app posts through the tool.
+
+## 114. A crawl of blank pages reported no dead clicks (2026-11-07, launch)
+
+*Origin: running the UI crawler over the live app. One run printed "0 with errors", and the next reported 0 dead clicks with 366 of 478 controls stale.*
+
+Both reports were true and neither meant anything. In the first, the crawler's own read policy refused the dev server's module paths, so every page was blank, found no controls and clicked nothing. In the second, an early click hid a banner. The crawler held each control by its position in a list it read once, so every later control looked moved and came back stale. A stale control can't be dead, so the dead count stayed at 0.
+
+**Repair:** a control is found by its label and its place among controls with that label. A capture with no controls, or with fewer than half its clicks judged, is an error and fails the run. A refused write and a refused read are now separate, because a background poll used to mark any click in its window as blocked.
+
+**Lesson:** a zero means nothing until you know how many things were tested. Report the denominator beside the count, and make a run fail when it tested too little to say anything.
+
+## 115. `nudgedAt` is stamped on an episode that sent no nudge (2026-11-07, F156)
+
+*Origin: Growth's prod walk of #3688. An MCP-only connect's episode read `nudgedAt: 10:32:00` and the pod held no message at all.*
+
+Since #3688 a stalled-connect episode can open with no nudge, because the only thing left to say is the close. The field kept its name and its required stamp, so anyone counting `nudgedAt` counts nudges that never happened.
+
+**Repair:** the field's comment says it's when the episode opened. A nudge went out only if `nudgeMessageId` is set, so count that.
+
+**Lesson:** when a change makes a step optional, reread the names that assumed the step.
+
+
+## 116. `commonly agent run` said "Token revoked" with a live token in its environment (2026-11-07, F315)
+
+*Origin: Growth restarted a seat in a HOME it had run from before, with a fresh `COMMONLY_AGENT_TOKEN`. The new key returned 200 on the runtime API, and the run stopped after three rejections.*
+
+`run` read the environment only when no token file existed, so the saved token won and the fresh one was ignored without a word. The stop line then pointed at `commonly agent detach`, which also uninstalls the agent. Someone who reinstalls an agent on the same machine and pastes the new listener command hits the same thing.
+
+**Repair:** `adoptEnvToken` replaces the saved token only when the server answers 401 for it and confirms the env token is this agent's. Otherwise the saved token stands, with a line naming why, because the server keeps only a hash and a working token can't be got back. The stop line now names the reissue path first.
+
+**Lesson:** when a command reads the same credential from two places, the log must name the one it used. An error about a key the person didn't supply reads as a fault in the key they did.
+
+## 117. Three pod surfaces offered `commonly agent run <name>` to someone with no key on that computer (2026-11-07, Linux BYO walk)
+
+**Surface:** the install intro, the composer's "Fix:" line and the agent room's notice all gave `commonly agent run <name>` for an agent made on the Bring your own page.
+
+**False model:** the bare command starts that agent. It only starts one whose key is already saved on the computer. An agent made on the page has its key in the one-time connect command, so on a fresh machine the bare command is either `command not found` or `No runtime token found`. The system line also said "the connect command shown on its page", and the agent's page opens on Profile, where there is no command.
+
+**Fix:** for an agent made on the page (`keyOnlyOnPage`) the surfaces give Connect instead, which issues a new key, and group pods get `connectPodId` for its owner. An attached agent keeps the command: `commonly agent attach` saves the key, and Connect would revoke it. The stored line now says "Its owner can connect it." Settings and Your Team still show the bare command beside Connect, and the stalled-connect nudge is a follow-up.
+
+## 118. `commonly_get_started` told every seat to write its memory (2026-11-07, F145)
+
+**Surface:** the guide said "Read and write memory with `commonly_read_agent_memory` / `commonly_save_my_memory`" to every seat, and the unreadable-memory preamble told a public seat "do not re-save".
+
+**False model:** every seat can write its memory. Since F118 a public seat couldn't on any turn, and since F145 it can only on a turn its owner woke. A seat following the guide on a stranger's turn looks for a tool it isn't offered.
+
+**Fix:** the guide names the condition, and a public seat's preamble says so on every turn it can't write, because a resumed session may still hold an earlier turn's offer.
+
+**Lesson:** a capability that depends on the turn can't be taught once per session. Say it on the turn it applies to.
+
+## 119. OpenCode's permission rule spelled the broker's name differently from OpenCode (2026-11-07, F334)
+
+*Origin: a prod walk. A public OpenCode seat with a live Linear grant named only `commonly_*` and its builtins, while a direct MCP call to the broker worked and the spawn config held the remote server and an allow rule.*
+
+**Surface:** `permissionMcpName` in `cli/src/lib/adapters/opencode.js`, and a unit test that asserted `commonly_grant_broker_*`.
+
+**False model:** a server's hyphens become underscores in OpenCode's tool names. OpenCode 1.19.4 keeps them: `Ey=(e)=>e.replace(/[^a-zA-Z0-9_-]/g,"_")`, joined as `<server>_<tool>`. The rule matched nothing, the `'*'` deny won, and a tool whose last matching rule is a wildcard deny is removed from the list before the model sees it. OpenCode logs nothing about this, because the server connected and listed its tools. `commonly` has no hyphen, so that server worked and hid the fault. The dot in `linear.list_teams` was not involved: OpenCode rewrites it, and a dotless tool was dropped the same way.
+
+**Fix:** the adapter uses OpenCode's own character set, so the allow and the withheld-tool denies both match. A real-binary test reads the `tools` array the binary sends to the model route.
+
+**Lesson:** a test that compares config to the adapter's own idea of a name proves only that the two agree. A rule meant for another program needs that program to read it.

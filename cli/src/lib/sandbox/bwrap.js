@@ -14,6 +14,7 @@
  */
 
 import { spawnSync } from 'child_process';
+import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 
@@ -60,7 +61,51 @@ const DEFAULT_RO_BINDS = [
 // ubuntu run 38982219348). Starting one empty namespace is the real check.
 const NAMESPACE_PROBE = ['--unshare-all', '--ro-bind', '/', '/', 'true'];
 
-export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } = {}) => {
+const APPARMOR_USERNS_SYSCTL = '/proc/sys/kernel/apparmor_restrict_unprivileged_userns';
+
+// Inside a container the sysctl reports the host, and what blocks bwrap is the
+// container's own policy, so the host's AppArmor is not the person's way out.
+// Docker leaves /.dockerenv, Podman /run/.containerenv, and systemd writes
+// /run/systemd/container inside a container (nspawn, LXC), never on a host.
+// The filesystem is injectable for the tests.
+const CONTAINER_MARKERS = ['/.dockerenv', '/run/.containerenv', '/run/systemd/container'];
+export const readApparmorRestriction = ({ read = readFileSync, exists = existsSync } = {}) => {
+  if (CONTAINER_MARKERS.some((marker) => exists(marker))) return false;
+  try {
+    return read(APPARMOR_USERNS_SYSCTL, 'utf8').trim() === '1';
+  } catch {
+    return false;
+  }
+};
+
+// os-release values may be quoted, so `ID="ubuntu"` reads the same as `ID=ubuntu`.
+// /etc/os-release wins; /usr/lib/os-release is the file it normally links to,
+// read only when the first is missing.
+const readOsRelease = (read) => {
+  try {
+    return read('/etc/os-release', 'utf8');
+  } catch {
+    return read('/usr/lib/os-release', 'utf8');
+  }
+};
+export const readUbuntuRelease = ({ read = readFileSync } = {}) => {
+  try {
+    const release = readOsRelease(read);
+    if (!/^ID=(["']?)ubuntu\1$/m.test(release)) return null;
+    // The last assignment wins, as it does when a shell sources the file.
+    const versions = [...release.matchAll(/^VERSION_ID=(["']?)([\d.]+)\1$/gm)];
+    return versions.at(-1)?.[2] ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const detectBwrap = ({
+  spawn = spawnSync,
+  platform = process.platform,
+  readRestriction = readApparmorRestriction,
+  readRelease = readUbuntuRelease,
+} = {}) => {
   if (platform !== 'linux') {
     return { available: false, error: nonLinuxMessage(platform) };
   }
@@ -78,6 +123,12 @@ export const detectBwrap = ({ spawn = spawnSync, platform = process.platform } =
       const reason = (probe.stderr || probe.error?.message || `exit ${probe.status}`).trim().split('\n').pop();
       return {
         available: false,
+        // Only when bwrap ran and exited refusing: a probe that timed out or
+        // couldn't spawn says nothing about this host.
+        namespaceRefused: !probe.error && typeof probe.status === 'number',
+        reason,
+        apparmorRestricted: readRestriction(),
+        ubuntuRelease: readRelease(),
         error: `bubblewrap is installed but cannot start a sandbox on this machine (${reason}). `
           + 'On Ubuntu 24.04 and later, AppArmor restricts the unprivileged user namespaces it needs.',
       };

@@ -2161,6 +2161,21 @@ test('the static / carries the landing FAQ and its FAQPage JSON-LD (TASK-531)', 
 });
 
 
+test('the static / carries the listing badge for a checker that runs no JS, served from this origin', async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), 'seo-badge-'));
+  try {
+    const source = await readFile(resolve(frontendDir, 'index.html'), 'utf8');
+    await writeFile(join(outputDir, 'index.html'), source.replace('src="/src/index.tsx"', 'src="/assets/index-test.js"'));
+    await generateSeoPages({ outputDir });
+    const home = await readFile(join(outputDir, 'index.html'), 'utf8');
+    assert.match(home, /<a href="https:\/\/www\.opensourcealternatives\.to"><img src="\/badge-osa\.svg"/);
+    // nginx's img-src refuses a third-party host, so the file has to ship with the site.
+    assert.match(await readFile(resolve(frontendDir, 'public/badge-osa.svg'), 'utf8'), /As seen on Open Source Alternatives/);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
 test('the compare page is unlisted: noindex, out of the sitemap, and linked from nothing', async () => {
   const [translationText, useCaseText, guideText, llmsText] = await Promise.all([
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),

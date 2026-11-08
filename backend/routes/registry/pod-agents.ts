@@ -1,5 +1,7 @@
 // Pod/agent management routes — extracted from registry.js (GH#112)
 // Handles: list agents in pod, get single agent, uninstall agent
+import { runInstructionFor } from '../../services/agentStateService';
+import { isGuestOfIdentity } from '../../services/runtimeIdentityOwnership';
 const express = require('express');
 const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
@@ -8,8 +10,9 @@ const AgentTemplate = require('../../models/AgentTemplate');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
-const { hostedRunsNative } = require('../../services/hostedEngine');
+const { hostedRunsNative, readHostedConfig } = require('../../services/hostedEngine');
 const { retireHostedRoomRows } = require('../../services/hostedRuntimeService');
+const { retireDmRowsWithAgent } = require('../../services/agentDmRowService');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
@@ -118,6 +121,9 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
       }
 
       await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
+      // Removed from this DM on purpose, so an agent reinstalled later doesn't come back to it.
+      await AgentInstallation.updateMany({ agentName: { $in: installationNames }, podId, instanceId },
+        { $unset: { retiredWithAgentAt: 1 } }).collation({ locale: 'en', strength: 2 });
       if (agentUser) {
         // Older uninstall paths could leave a bearer on an orphaned User row.
         await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
@@ -139,6 +145,7 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
 
     await AgentInstallation.uninstall(name, podId, instanceId);
     await retireHostedRoomRows(name, instanceId, installation.installedBy);
+    await retireDmRowsWithAgent(name, instanceId, podId);
     await revokeRuntimeTokensAfterLastUninstall(name, instanceId);
     await AgentProfile.deleteOne({ agentId: buildAgentProfileId(name, instanceId), podId });
 
@@ -162,6 +169,12 @@ podAgentsRouter.delete('/agents/:name/pods/:podId', auth, async (req: any, res: 
     res.status(500).json({ error: 'Failed to uninstall agent' });
   }
 });
+
+// A room's row or an auto-join's is a copy of the agent's config, whoever it
+// names, and the person who set the URL reads it on their own row.
+const isProjectionRow = (pod: any, installation: any): boolean => (
+  pod?.type === 'agent-room' || Boolean(normalizeConfigMap(installation.config)?.autoJoinSource)
+);
 
 /**
  * GET /api/registry/pods/:podId/agents
@@ -409,6 +422,14 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
 
+    // A room's row names whoever opened it, who isn't always who runs the agent.
+    const isGuestRow = (i: any) => read(() => isGuestOfIdentity(viewerId, i.agentName, i.instanceId || 'default'));
+    const roomRows = (pod.type === 'agent-room' ? installations as any[] : [])
+      .filter((i: any) => installedByViewer(i) && runInstructionFor(i));
+    const guestRows = new Set<unknown>((await Promise.all(
+      roomRows.map(async (i: any) => (await isGuestRow(i) ? i : null)),
+    )).filter(Boolean));
+
     res.json({
       callerSpoke,
       agents: installations.map((i: any) => {
@@ -427,7 +448,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           lastActiveAt,
           user,
           lastMessage: (user && lastMessageByUserId.get(String(user._id))) || null,
-          revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
+          revealWebhookUrl: !isProjectionRow(pod, i) && (viewerIsAdmin || installedByViewer(i)),
           runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
         // Every return path below carries the narrowing state: a boolean per
@@ -462,6 +483,12 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         // machine-key action and Reconnect link on that field, not on connection.
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
+        // Its owner stopped it, which is an answer, not a missing status. A
+        // daemon seat sharing the identity is still running, so it goes on.
+        const hostedRecord = readHostedConfig(i);
+        if (!daemonBound && runtimeType === 'hosted' && hostedRecord.deprovisionedAt && !hostedRecord.provisionedAt) {
+          return { ...payload, connection: { state: 'stopped', lastSeenAt: null } };
+        }
         // The harness label moves to `adapter`, so the chat tag keeps naming it.
         // The poller's report (TASK-704) outranks a stale runtimeType declaration:
         // a seat declared codex that polls claude must not project codex here.
@@ -486,11 +513,10 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
         });
         // TASK-716: the command that makes a never-connected seat run goes to
-        // the installer only, the same rule /agent-states applies to fixCommand.
+        // its installer, never a room's guest, the rule /agent-states applies.
         // It is `commonly agent run <name>`; no token or URL is in it.
-        // eslint-disable-next-line global-require
-        const fixCommand = connection?.state === 'never' && installedByViewer(i)
-          ? require('../../services/agentStateService').runInstructionFor(i) : null;
+        const fixCommand = connection?.state === 'never' && installedByViewer(i) && !guestRows.has(i)
+          ? runInstructionFor(i) : null;
         return {
           ...seatPayload,
           connection,
@@ -576,9 +602,9 @@ podAgentsRouter.get('/pods/:podId/agents/:name', auth, async (req: any, res: any
         profile,
         runtimeIdentity,
         iconUrl: templateIcon || registryEntry?.iconUrl || '',
-        revealWebhookUrl: installedBy === String(userId)
+        revealWebhookUrl: !isProjectionRow(pod, installation) && (installedBy === String(userId)
           || (Boolean(normalizeConfigMap(installation.config)?.runtime?.webhookUrl)
-            && await isGlobalAdminUser(userId)),
+            && await isGlobalAdminUser(userId))),
       }),
     });
   } catch (error) {

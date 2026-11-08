@@ -28,8 +28,9 @@ jest.mock('../../../services/avatarService', () => ({ normalizeAvatarUrl: (v) =>
 const User = require('../../../models/User');
 const userController = require('../../../controllers/userController');
 
-const OWNER = 'user-owner';
-const VIEWER = 'user-viewer';
+// Ids are ObjectId-shaped: getUserById answers 404 for anything else (F330).
+const OWNER = '6a0000000000000000000a01';
+const VIEWER = '6a0000000000000000000a02';
 
 const makeUserDoc = (id) => ({
   _id: id,

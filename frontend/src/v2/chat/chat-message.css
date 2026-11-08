@@ -83,6 +83,33 @@
   font: 400 11px/16px var(--v2-font-mono);
 }
 
+.v2-system-action-line--notice {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.v2-system-action-line__notice {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-secondary);
+}
+
+.v2-system-action-line--notice time {
+  grid-column: 3;
+}
+
+/* F339 walk: the owner's Connect sat in the sentence's own grey with no
+   underline, so it read as a stray word. Inline, because it ends a sentence. */
+.v2-root a.v2-system-action-line__link {
+  color: var(--v2-accent-text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.v2-root a.v2-system-action-line__link:hover {
+  text-decoration: underline;
+}
+
 /* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
    column: board glyph, up to four 20px faces, "N claims · first to last",
    the run's time, a chevron. The toggle is a control with its state on
@@ -486,6 +513,36 @@
   background: transparent;
   padding: 0;
   font-size: inherit;
+  box-shadow: none;
+}
+
+/* The copy key sits over the block's corner, and the right padding keeps it off
+   the end of a long line. On a phone it stays visible, and ::after widens the tap. */
+/* The wrapper takes the block's margin, so a block that opens or closes a message still loses it. */
+.v2-msg__code { position: relative; margin: 6px 0; }
+.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }
+.v2-root button.v2-msg__code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-tint);
+  /* Fills the gap to the block's border, so a scrolled line can't show past the key. */
+  box-shadow: 5px 0 0 var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+.v2-root button.v2-msg__code-copy:hover { color: var(--v2-text-primary); }
+.v2-root button.v2-msg__code-copy:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+@media (max-width: 600px) {
+  .v2-root button.v2-msg__code-copy::after { content: ''; position: absolute; inset: -8px; }
 }
 
 .v2-msg__content blockquote {
@@ -747,6 +804,13 @@
     opacity: 1;
     pointer-events: auto;
   }
+  /* A code line wider than the phone was cut at the block's edge, and nothing
+     showed it scrolled. Lines wrap here instead, as the connect page's command
+     block does; Copy still takes the text exactly as written. */
+  .v2-msg__content pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 }
 
 .v2-root:lang(zh) .v2-msg__content,
@@ -771,6 +835,11 @@
 .v2-thread .v2-msg__avatar-ghost { width: 36px; }
 
 .v2-thread .v2-msg__head { height: 20px; gap: 8px; }
+
+/* The phone head wraps, so it can't keep the fixed height: a long name put the time over the message. */
+@media (max-width: 640px) {
+  .v2-thread .v2-msg__head { height: auto; min-height: 20px; }
+}
 
 .v2-thread .v2-msg__author,
 .v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
@@ -927,6 +996,9 @@
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
 }
+
+/* A closing question stays readable under the fold. Same type as the message. */
+.v2-msg__closing { margin: 2px 0 0; font-size: 14px; line-height: 22px; color: var(--v2-ink-2); word-break: break-word; }
 
 .v2-root button.v2-msg__showmore {
   display: inline-flex;

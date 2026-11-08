@@ -3,7 +3,7 @@
 // shared with another of the owner's computers gets when it was added. Two
 // added in the same minute, or with no timestamp, fall back to the tail of the
 // machine ID. A unique name is returned unchanged.
-export interface NamedMachine {
+interface NamedMachine {
   machineId: string;
   name: string;
   createdAt?: string | null;

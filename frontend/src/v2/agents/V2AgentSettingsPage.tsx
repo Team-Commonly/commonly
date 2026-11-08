@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
@@ -10,13 +10,14 @@ import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { appDateLocale } from '../utils/appLocale';
-import { useAgentSettings } from './useAgentSettings';
+import { agentSettingsErrorText as errorLabel, NOTHING_MANAGEABLE, PODS_REFUSED, useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
 import V2AgentListingRow from './V2AgentListingRow';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
+import V2AgentHostedRun from './V2AgentHostedRun';
 import V2AgentWakePods from './V2AgentWakePods';
-import V2AgentPolicy from './V2AgentPolicy';
+import V2AgentPolicy, { AGENT_MEMORY_EDITOR_ID } from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
 import './v2-agent-settings.css';
 import './v2-agent-settings-surface.css';
@@ -41,12 +42,6 @@ const dateLabel = (value: string | null | undefined, t: (key: string) => string)
 // The owner memory index the Memory tab reads; only its counts are used here.
 interface MemoryIndex { sections?: Array<{ updatedAt?: string | null; notes?: unknown[] }> }
 
-const errorLabel = (error: unknown, fallback: string): string => (
-  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && error.message)
-  || fallback
-);
-
 const V2AgentSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
@@ -55,11 +50,17 @@ const V2AgentSettingsPage: React.FC = () => {
   const [removedLast, setRemovedLast] = useState(false);
   const [keys, setKeys] = useState<RuntimeKey[]>([]);
   const [keysReadyFor, setKeysReadyFor] = useState<string | null>(null);
+  const quietRefresh = useRef(false);
   const [keysForbidden, setKeysForbidden] = useState(false);
+  // The list couldn't be read. Only the key row depends on it, so the page stays up.
+  const [keysFailed, setKeysFailed] = useState(false);
+  const [keysRetrying, setKeysRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
+  // Held here, not in the Wake list: a refresh that moves the writable pod swaps the page for its loading state.
+  const [addedPod, setAddedPod] = useState<{ identity: string; name: string } | null>(null);
   const [connection, setConnection] = useState<AgentConnection | null>(null);
   const connectionState = connection?.state ?? null;
   // The key panel opens by itself for anything the owner must see or answer; a failed skills read opens
@@ -83,6 +84,16 @@ const V2AgentSettingsPage: React.FC = () => {
   useEffect(() => {
     if (runsNeedAttention && runsRef.current) runsRef.current.open = true;
   }, [runsNeedAttention]);
+  // The Memory tab's Edit control opens How it runs, where the editor sits. The page loads in
+  // stages, so this waits for the fold to mount, and opens it once. The editor scrolls itself in.
+  const editorLink = useLocation().hash === `#${AGENT_MEMORY_EDITOR_ID}`;
+  const landedOnEditor = useRef(false);
+  useEffect(() => {
+    if (!editorLink) landedOnEditor.current = false;
+    if (!editorLink || landedOnEditor.current || !runsRef.current) return;
+    landedOnEditor.current = true;
+    runsRef.current.open = true;
+  });
   const [memory, setMemory] = useState<{ notes: number; updatedAt: string | null } | null>(null);
   const navigate = useNavigate();
   // The same width the page's one-line phone rows start at.
@@ -110,16 +121,28 @@ const V2AgentSettingsPage: React.FC = () => {
     return response.data || [];
   }, [agentName, instanceId]);
 
+  // Keyed on the agent, not on the settings read: a refresh leaves the agent's
+  // connection as it was, and the header shouldn't drop it while it's re-read.
   useEffect(() => {
+    setConnection(null);
+  }, [agentName, instanceId]);
+
+  useEffect(() => {
+    // An add changes the pod list and nothing else this effect resets, so the
+    // page stays up. A move to another writable pod is a new identity and reloads.
+    const quiet = quietRefresh.current && keysReadyFor === identityKey;
+    quietRefresh.current = false;
+    if (quiet) return undefined;
     let active = true;
     setKeys([]);
     setKeysReadyFor(null);
     setKeysForbidden(false);
+    setKeysFailed(false);
+    setKeysRetrying(false);
     setError(null);
     setOneTimeKey(null);
     setPendingAction(null);
     setBusy(false);
-    setConnection(null);
     setKeyOpen(false);
     setSkillsOpen(false);
     setSkillCount(undefined);
@@ -136,7 +159,8 @@ const V2AgentSettingsPage: React.FC = () => {
           setKeysForbidden(true);
           setKeysReadyFor(identityKey);
         } else {
-          setError(errorLabel(requestError, t('agentSettings.unavailable')));
+          setKeysFailed(true);
+          setKeysReadyFor(identityKey);
         }
       });
     }
@@ -154,7 +178,10 @@ const V2AgentSettingsPage: React.FC = () => {
       pending = true;
       try {
         const rows = await fetchKeys();
-        if (active) setKeys(rows);
+        if (active) {
+          setKeys(rows);
+          setKeysFailed(false);
+        }
       } catch {
         // Keep the last list; the next tick or focus retries.
       } finally {
@@ -172,9 +199,30 @@ const V2AgentSettingsPage: React.FC = () => {
     };
   }, [access, podId, fetchKeys]);
 
+  const retryKeys = useCallback(async () => {
+    const requestIdentity = currentIdentity.current;
+    setKeysRetrying(true);
+    try {
+      const rows = await fetchKeys();
+      if (currentIdentity.current !== requestIdentity) return;
+      setKeys(rows);
+      setKeysFailed(false);
+    } catch (requestError) {
+      if (currentIdentity.current !== requestIdentity) return;
+      if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+        setKeysForbidden(true);
+        setKeysFailed(false);
+      }
+    } finally {
+      if (currentIdentity.current === requestIdentity) setKeysRetrying(false);
+    }
+  }, [fetchKeys]);
+
   // The Memory row's summary, from the same owner/admin index the Memory tab reads.
   // A viewer without identity-wide key access is not the owner, so it is not asked.
-  const memoryReady = keysReadyFor === identityKey && !keysForbidden;
+  // Nothing that revokes or replaces a key may act on a list the page never read.
+  const keysKnown = !keysForbidden && !keysFailed;
+  const memoryReady = keysReadyFor === identityKey && keysKnown;
   useEffect(() => {
     setMemory(null);
     if (!memoryReady) return undefined;
@@ -252,9 +300,30 @@ const V2AgentSettingsPage: React.FC = () => {
 
   if (loading) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.loading')}</div>;
   if (removedLast) return <div className="v2-agent-settings__state" role="status">{t('agentSettings.noPod')}</div>;
-  if (!access || !podId) return <div className="v2-agent-settings__state" role="alert">
-    {error || errorLabel(loadError, t('agentSettings.unavailable'))}
-  </div>;
+  if (!access || !podId) {
+    const marker = loadError instanceof Error ? loadError.message : null;
+    // Your team always opens. A profile doesn't: a private agent's reads "Agent not found".
+    const wayOut = <Link className="v2p-b v2p-b-s" to="/v2/agents">{t('agentSettings.yourTeam')}</Link>;
+    if (marker === NOTHING_MANAGEABLE) {
+      return (
+        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" role="alert" data-testid="agent-settings-no-access">
+          <h1>{t('agentSettings.noAccess.title')}</h1>
+          <p>{t('agentSettings.noAccess.body')}</p>
+          {wayOut}
+        </div>
+      );
+    }
+    const text = error || errorLabel(loadError, t('agentSettings.unavailable'));
+    if (marker === PODS_REFUSED) {
+      return (
+        <div className="v2-agent-settings__state v2-agent-settings__state--no-access" role="alert">
+          <p>{text}</p>
+          {wayOut}
+        </div>
+      );
+    }
+    return <div className="v2-agent-settings__state" role="alert">{text}</div>;
+  }
   if (keysReadyFor !== identityKey) return <div className="v2-agent-settings__state" role={error ? 'alert' : 'status'}>
     {error || t('agentSettings.loading')}
   </div>;
@@ -316,7 +385,15 @@ const V2AgentSettingsPage: React.FC = () => {
   const displayName = access.displayName || agentName;
   const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
   const runtimeDetails = describeRuntime(runtime);
-  const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
+  const runtimeName = runtimeDetails.adapter || runtime.adapter || runtime.runtimeType;
+  const runtimeSummary = [
+    runtimeName === 'hosted' || runtimeName === 'webhook' ? t(`agentManage.controls.runtimeKind_${runtimeName}`) : runtimeName,
+    runtime.model,
+  ].filter(Boolean).join(' · ');
+  // The server says `available` only for an agent that runs inside Commonly, so it
+  // has no machine to report and needs no key. A hosted agent on another engine
+  // does poll with a key, so runtimeType alone can't say this.
+  const runsOnCommonly = connectionState === 'available';
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
   const memoryHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`;
   const talkLabel = t('agentProfile.hero.talkTo', { name: displayName });
@@ -327,7 +404,7 @@ const V2AgentSettingsPage: React.FC = () => {
   );
   const status = (
     <div className="st">
-      {connection && <span className={`dot${disconnected ? ' dot--off' : connection.state === 'connected' ? '' : ' dot--idle'}`} aria-hidden="true" />}
+      {connection && <span className={`dot${disconnected ? ' dot--off' : connection.state === 'connected' || connection.state === 'available' ? '' : ' dot--idle'}`} aria-hidden="true" />}
       {[connection && connectionLabel(connection, t), t('agentSettings.podCount', { count: access.pods.length })].filter(Boolean).join(' · ')}
     </div>
   );
@@ -366,8 +443,20 @@ const V2AgentSettingsPage: React.FC = () => {
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
           {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
-          {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
-          <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+          {roomFailed && <p role="alert" className="v2-agent-settings__error">{roomFailed}</p>}
+          <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod}
+            onRemoved={(...removed) => { setAddedPod(null); onRemoved(...removed); }}
+            displayName={displayName}
+            addedPod={addedPod?.identity === `${agentName}:${instanceId}` ? addedPod.name : null}
+            onAdded={(name) => {
+              // After the refresh, so the note lands with the header's new count.
+              const added = { identity: `${agentName}:${instanceId}`, name };
+              quietRefresh.current = true;
+              void refresh().catch((requestError) => {
+                quietRefresh.current = false;
+                setError(errorLabel(requestError, t('agentSettings.unavailable')));
+              }).finally(() => setAddedPod(added));
+            }} />
           <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
             <h2 id="agent-identity-access" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityAccess')}</h2>
             <div className="list">
@@ -375,14 +464,19 @@ const V2AgentSettingsPage: React.FC = () => {
               <div className="lrow">
                 <span className="lb"><V2AgentSettingsIcon name="key" />{t('agentSettings.runtimeKey')}</span>
                 <span className="vl">
-                  {keysForbidden ? t('agentSettings.keyUnavailable') : <>
+                  {keysForbidden ? t('agentSettings.keyUnavailable') : keysFailed ? t('agentSettings.keysLoadFailed') : runsOnCommonly && !activeKeys.length ? t('agentSettings.keyNotNeeded') : <>
                     <span className={`dot${disconnected || !activeKeys.length ? ' dot--off' : ''}`} aria-hidden="true" />
                     {activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}
                     {newestUse && <span className="mo">{t('agentSettings.keyUsed', { when: localizeRelativeTime(newestUse, t, { pastEvent: true }) })}</span>}
                   </>}
                 </span>
                 <span className="ac">
-                  {!keysForbidden && (
+                  {keysFailed && (
+                    <button type="button" className="b b-g b-sm" disabled={keysRetrying} onClick={() => void retryKeys()}>
+                      {t('agentSettings.keysRetry')}
+                    </button>
+                  )}
+                  {keysKnown && (
                     <button type="button" className="b b-g ib b-sm" title={t('agentSettings.keyActions')} aria-label={t('agentSettings.keyActions')}
                       ref={keyToggleRef} aria-expanded={keyOpen} aria-controls="agent-key-panel"
                       // A key shown only once can't be folded away; Done is the way out of it.
@@ -394,7 +488,7 @@ const V2AgentSettingsPage: React.FC = () => {
               </div>
               {keyOpen && <div id="agent-key-panel" className="v2-agent-settings-page__keypanel">
                 {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
-                {!keysForbidden && (installation?.runtime?.runtimeType === 'wrapper' ? (
+                {keysKnown && (installation?.runtime?.runtimeType === 'wrapper' ? (
                   <p className="v2-agent-settings-page__live">{t('agentSettings.wrapperReconnect')}</p>
                 ) : !disconnected && (
                   <div className="v2-agent-settings-page__actions">
@@ -403,7 +497,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     </button>
                   </div>
                 ))}
-                {pendingAction === 'replace' && !keysForbidden && (
+                {pendingAction === 'replace' && keysKnown && (
                   <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
                     <p>{t('agentByo.rekey.warning', { name: displayName })}</p>
                     <div className="v2-agent-settings__actions">
@@ -424,7 +518,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     }}>{t('agentSettings.done')}</button>
                   </div>
                 )}
-                {!keysForbidden && (
+                {keysKnown && (
                   <>
                     {activeKeys.length ? <ul className="v2-agent-settings__keys">{activeKeys.map(renderKey)}</ul>
                       : null}
@@ -435,7 +529,7 @@ const V2AgentSettingsPage: React.FC = () => {
                   </>
                 )}
               </div>}
-              <AgentControlLoader agentName={agentName} instanceId={instanceId} hideWhenConnected
+              <AgentControlLoader agentName={agentName} instanceId={instanceId} actionsOnly
                 refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
               <V2AgentListingRow key={`listing:${agentName}:${instanceId}`} agentName={installation?.name || agentName} instanceId={installation?.instanceId || instanceId} />
               <V2AgentConnectorsRow key={`grants:${agentName}:${instanceId}`} name={agentName} instanceId={instanceId} />
@@ -454,11 +548,11 @@ const V2AgentSettingsPage: React.FC = () => {
                 </span>
               </div>
               <div className="lrow">
-                <span className="lb"><V2AgentSettingsIcon name="grid" />{t('agentSkills.title')}</span>
+                <span className="lb"><V2AgentSettingsIcon name="grid" />{t('agentSkills.title')}{phone && skillCount === 0 && ` · ${t('agentSettings.none').toLowerCase()}`}</span>
                 <span className="vl">
                   {typeof skillCount === 'number' && (skillCount > 0
                     ? t('agentSettings.skillCount', { count: skillCount })
-                    : <span className="mu">{t('agentSettings.none')}</span>)}
+                    : !phone && <span className="mu">{t('agentSettings.none')}</span>)}
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}
@@ -477,11 +571,15 @@ const V2AgentSettingsPage: React.FC = () => {
                 <summary>
                   <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
                   <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}
-                    <span className="mo">{t(`agentManage.controls.${processState}`)}</span>
+                    {!(runsOnCommonly && processState === 'notReported') && <span className="mo">{t(`agentManage.controls.${processState}`)}</span>}
                   </span>
                   <V2AgentSettingsIcon name="chev" className="chev" />
                 </summary>
                 <div className="dbody v2-agent-settings-page__runsbody">
+                  {installation?.runtime?.runtimeType === 'hosted' && (
+                    <V2AgentHostedRun agentName={agentName} displayName={displayName} instanceId={instanceId}
+                      onChanged={() => setConnectionRefreshNonce((nonce) => nonce + 1)} />
+                  )}
                   <V2AgentRuntimeBody
                     key={`runtime:${agentName}:${instanceId}`}
                     name={agentName}
@@ -493,7 +591,7 @@ const V2AgentSettingsPage: React.FC = () => {
                     } : undefined}
                   />
                   <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
-                    installation={installation} update={update} />
+                    installation={installation} update={update} scrollToEditor={editorLink} />
                 </div>
               </details>
             </div>

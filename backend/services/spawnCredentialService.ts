@@ -34,6 +34,7 @@
 //      crash it exists to survive (Vera, 70714).
 import { Types } from 'mongoose';
 import AgentCredential from '../models/AgentCredential';
+import { turnWokenByOwner } from './ownerWokenTurn';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { hash, randomSecret } = require('../utils/secret') as {
@@ -44,6 +45,12 @@ const { hash, randomSecret } = require('../utils/secret') as {
 /** The only scope a minted child carries. Its presence is what marks a row as
  *  a spawn credential, and it is the check that makes invariant 1 above true. */
 export const SPAWN_SCOPE = 'spawn';
+
+// F145: added beside SPAWN_SCOPE, always by the server. A public seat's child
+// carries PUBLIC_SEAT_SCOPE and can't write memory unless it also carries
+// OWNER_WOKEN_SCOPE, which `turnWokenByOwner` alone decides at the mint.
+export const PUBLIC_SEAT_SCOPE = 'public-seat';
+export const OWNER_WOKEN_SCOPE = 'owner-woken';
 
 // 15 minutes is the renewal TTL: it is what an abandoned credential outlives
 // its spawn by, and it is why the default is short rather than long.
@@ -78,6 +85,12 @@ export interface MintSpawnCredentialInput {
   // before the substrate existed, or one whose row was never backfilled.
   agentUserId?: Types.ObjectId | string | null;
   installedBy?: Types.ObjectId | string | null;
+  // F145. `publicSeat` and `eventIds` come from the supervisor and only ever
+  // narrow: neither can grant a write, and `identity` is the caller's own,
+  // read off its authentication.
+  publicSeat?: unknown;
+  eventIds?: unknown;
+  identity?: { agentName?: unknown; instanceId?: unknown } | null;
 }
 
 export type MintSpawnCredentialResult =
@@ -88,6 +101,7 @@ export type MintSpawnCredentialResult =
       expiresAt: Date;
       maxExpiresAt: Date;
       spawnId: string;
+      ownerWoken: boolean;
     }
   | { ok: false; code: 'child_cannot_mint' | 'invalid_spawn_id' | 'invalid_ttl' };
 
@@ -107,6 +121,11 @@ export const clampSpawnTtlSeconds = (ttlSeconds: unknown): number | null => {
 
 export const isSpawnCredential = (row: { scopes?: string[] } | null | undefined): boolean => (
   Array.isArray(row?.scopes) && row!.scopes!.includes(SPAWN_SCOPE)
+);
+
+/** A public seat's child on a turn its owner didn't wake. Every other caller writes as it always has. */
+export const memoryWriteOwnerOnly = (row: { scopes?: string[] } | null | undefined): boolean => (
+  Array.isArray(row?.scopes) && row!.scopes!.includes(PUBLIC_SEAT_SCOPE) && !row!.scopes!.includes(OWNER_WOKEN_SCOPE)
 );
 
 /**
@@ -182,6 +201,9 @@ export async function mintSpawnCredential(
   const ttlSeconds = clampSpawnTtlSeconds(input.ttlSeconds);
   if (ttlSeconds === null) return { ok: false, code: 'invalid_ttl' };
 
+  const publicSeat = input.publicSeat === true;
+  const ownerWoken = publicSeat && await turnWokenByOwner({ ...input.identity, eventIds: input.eventIds });
+
   const token = `cm_agent_${randomSecret(32)}`;
   const now = Date.now();
   const expiresAt = new Date(now + ttlSeconds * 1000);
@@ -195,7 +217,11 @@ export async function mintSpawnCredential(
     machineId: seat.machineId ?? null,
     parentId: seat._id,
     label: `spawn:${spawnId}`,
-    scopes: [SPAWN_SCOPE],
+    scopes: [
+      SPAWN_SCOPE,
+      ...(publicSeat ? [PUBLIC_SEAT_SCOPE] : []),
+      ...(ownerWoken ? [OWNER_WOKEN_SCOPE] : []),
+    ],
     expiresAt,
     maxExpiresAt,
   });
@@ -207,6 +233,7 @@ export async function mintSpawnCredential(
     expiresAt,
     maxExpiresAt,
     spawnId,
+    ownerWoken,
   };
 }
 
@@ -307,6 +334,8 @@ export async function revokeOrphanSpawnCredentials({
 
 module.exports = {
   SPAWN_SCOPE,
+  PUBLIC_SEAT_SCOPE,
+  OWNER_WOKEN_SCOPE,
   SPAWN_TTL_DEFAULT_SECONDS,
   SPAWN_TTL_MAX_SECONDS,
   SPAWN_TTL_MIN_SECONDS,
@@ -314,6 +343,7 @@ module.exports = {
   MAX_SPAWN_ID_LENGTH,
   clampSpawnTtlSeconds,
   isSpawnCredential,
+  memoryWriteOwnerOnly,
   resolveSeatCredential,
   mintSpawnCredential,
   renewSpawnCredential,

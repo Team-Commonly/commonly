@@ -65,6 +65,19 @@ test.each(['default', 'hosted'])('a pod-targeted Sentry read grant reaches nativ
   expect(names()).toContain('sentry_find_organizations');
 });
 
+test('a write-with-confirm grant hands the model the write tool (F215)', async () => {
+  await grant({ tools: ['sentry.find_organizations', 'sentry.update_issue'], writeMode: 'write-with-confirm' });
+  expect(await run()).toMatchObject({ status: 'succeeded' });
+  expect(names()).toEqual(expect.arrayContaining(['sentry_find_organizations', 'sentry_update_issue']));
+});
+
+test('a read grant that names the write tool hands the model only its reads', async () => {
+  await grant({ tools: ['sentry.find_organizations', 'sentry.update_issue'] });
+  expect(await run()).toMatchObject({ status: 'succeeded' });
+  expect(names()).toContain('sentry_find_organizations');
+  expect(names()).not.toContain('sentry_update_issue');
+});
+
 test('a current member outside the mint audience receives no Sentry capability', async () => {
   await grant({ audience: [String(owner._id)] });
   expect(await run()).toMatchObject({ status: 'succeeded' });

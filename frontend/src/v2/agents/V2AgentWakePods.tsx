@@ -2,12 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { useV2Confirm } from '../hooks/useV2Confirm';
 import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
+import V2AgentSettingsIcon from './V2AgentSettingsIcon';
+import V2AgentAddToPod from './V2AgentAddToPod';
 
 interface InstallationSettings {
   podId: string;
   podName: string;
+  podType?: string;
   status: string;
   wakeOnMessage: boolean;
   humanOnly: boolean;
@@ -17,6 +21,14 @@ interface InstallationSettings {
   /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
   hostedHeartbeat?: HostedHeartbeat | null;
 }
+
+// An agent's private pods all carry its name, so the row says which one it is.
+// The caller's own 1:1 room reads "Your direct room" instead (see podLabel);
+// other people's rooms never reach this list, only their count.
+const PERSONAL_POD_KINDS: Record<string, 'direct' | 'admin'> = {
+  'agent-dm': 'direct',
+  'agent-admin': 'admin',
+};
 
 // Message wake is one choice of three, shown together: the human-only
 // filter used to appear only after "Wake on messages" was ticked (D173).
@@ -44,7 +56,10 @@ const V2AgentWakePods: React.FC<{
   instanceId: string;
   updatePod: (podId: string, patch: AgentPodWakePatch) => Promise<unknown>;
   onRemoved?: (podId: string, wasLastPod: boolean) => void;
-}> = ({ agentName, instanceId, updatePod, onRemoved }) => {
+  onAdded?: (podName: string) => void;
+  addedPod?: string | null;
+  displayName?: string;
+}> = ({ agentName, instanceId, updatePod, onRemoved, onAdded, addedPod, displayName }) => {
   const { t } = useTranslation();
   const [installations, setInstallations] = useState<InstallationSettings[]>([]);
   const [busyPod, setBusyPod] = useState<string | null>(null);
@@ -58,6 +73,12 @@ const V2AgentWakePods: React.FC<{
   // D244: an agent that runs on Commonly takes a heartbeat at most hourly, and
   // its owner's hosted agents share a daily heartbeat cap. Null for any other agent.
   const [hostedHeartbeat, setHostedHeartbeat] = useState<HostedHeartbeat | null>(null);
+  // Other people's 1:1 rooms with this agent: a count, with no names or links.
+  const [otherDirectRooms, setOtherDirectRooms] = useState(0);
+  // Hover and keyboard focus open the note by CSS; a tap has neither, so it pins the note open.
+  const [wakeNoteOpen, setWakeNoteOpen] = useState(false);
+  // Bumped after an add, so the table re-reads the row the server made.
+  const [reloads, setReloads] = useState(0);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
   // A pod whose heartbeat select is set to Off, until its Save applies it.
   const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
@@ -68,31 +89,40 @@ const V2AgentWakePods: React.FC<{
   const identity = `${agentName}:${instanceId}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
+  const { confirm, dialog: confirmDialog } = useV2Confirm(identity);
   // Per-pod save state; see save() below.
   const committedRef = useRef<Record<string, InstallationSettings>>({});
   const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
   const sendingRef = useRef<Record<string, boolean>>({});
+  const readIdentity = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setInstallations([]);
-    setRuntimeNarrowing(null);
-    setHostedHeartbeat(null);
-    setBusyPod(null);
     setError(null);
-    setDraftMinutes({});
-    setDraftOff({});
-    committedRef.current = {};
-    queuedRef.current = {};
-    sendingRef.current = {};
+    // A re-read of the same agent keeps its rows on screen until the new ones land.
+    if (readIdentity.current !== identity) {
+      readIdentity.current = null;
+      setLoading(true);
+      setInstallations([]);
+      setRuntimeNarrowing(null);
+      setOtherDirectRooms(0);
+      setHostedHeartbeat(null);
+      setBusyPod(null);
+      setDraftMinutes({});
+      setDraftOff({});
+      committedRef.current = {};
+      queuedRef.current = {};
+      sendingRef.current = {};
+    }
     const load = async () => {
       try {
         const settingsResult = await axios.get<{
           installations: InstallationSettings[]; activePodCount: number; podCount: number; turnCap?: number;
           runtimeNarrowing?: RuntimeNarrowingStatus | null; hostedHeartbeat?: HostedHeartbeat | null;
+          otherDirectRoomCount?: number;
         }>(`${base}?${query}`);
         if (!active) return;
+        readIdentity.current = identity;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
         committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
@@ -101,6 +131,8 @@ const V2AgentWakePods: React.FC<{
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
         setTurnCap(settingsResult.data.turnCap ?? null);
         setRuntimeNarrowing(settingsResult.data.runtimeNarrowing ?? null);
+        const others = Number(settingsResult.data.otherDirectRoomCount);
+        setOtherDirectRooms(Number.isInteger(others) && others > 0 ? others : 0);
         setHostedHeartbeat(settingsResult.data.hostedHeartbeat ?? null);
       } catch (requestError) {
         if (active) setError((requestError as { response?: { status?: number } })?.response?.status === 403
@@ -114,7 +146,7 @@ const V2AgentWakePods: React.FC<{
     };
     void load();
     return () => { active = false; };
-  }, [base, query, identity, t]);
+  }, [base, query, identity, t, reloads]);
 
   // Saves per pod go out one at a time, newest pick last. The message-wake
   // radios stay enabled while a save is in flight (disabling them dropped
@@ -171,12 +203,14 @@ const V2AgentWakePods: React.FC<{
   };
 
   const remove = async (entry: InstallationSettings) => {
-    // eslint-disable-next-line no-alert
     const willRevokeKeys = activePodCount <= (entry.status === 'active' ? 1 : 0);
     const confirmKey = podCount === 1 ? 'agentSettings.removeLastConfirm'
       : willRevokeKeys ? 'agentSettings.removeDisconnectConfirm' : 'agentSettings.removeConfirm';
-    if (!window.confirm(t(confirmKey,
-      { podName: entry.podName }))) return;
+    const confirmed = await confirm({
+      message: t(confirmKey, { podName: entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoomInSentence') : entry.podName }),
+      confirmLabel: t('agentSettings.remove'),
+    });
+    if (!confirmed) return;
     const requestedIdentity = identity;
     setBusyPod(entry.podId);
     setError(null);
@@ -216,6 +250,20 @@ const V2AgentWakePods: React.FC<{
   const intervalsFor = (entry: InstallationSettings) => HEARTBEAT_INTERVALS
     .filter((value) => value >= floorFor(entry));
   const overCap = turnCap !== null && heartbeatTurns > turnCap;
+  const heartbeatNote = hostedHeartbeat && (hostedHeartbeat.runsPerDay > 0
+    ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
+    : t('agentSettings.heartbeatHostedOff'));
+  const wakeNote = heartbeatNote
+    ? t('agentSettings.wakeNote', { mentions: t('agentSettings.mentionsAlwaysWake'), heartbeat: heartbeatNote })
+    : t('agentSettings.mentionsAlwaysWake');
+
+  const podKindLabel = (entry: InstallationSettings): string | null => {
+    const kind = PERSONAL_POD_KINDS[entry.podType || ''];
+    return kind ? t(`podsSidebar.workspace.${kind}`) : null;
+  };
+  const podLabel = (entry: InstallationSettings): string => (
+    entry.podType === 'agent-room' ? t('agentSettings.yourDirectRoom') : entry.podName
+  );
 
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
@@ -223,29 +271,31 @@ const V2AgentWakePods: React.FC<{
 
   return (
     <div className="v2-agent-wake-pods">
+      {confirmDialog}
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
       <h2 className="gtitle">
         <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
         {t('agentSettings.wakeTitle')}
-        <span className="info" tabIndex={0} aria-label={t('agentSettings.mentionsAlwaysWake')}>
+        <span role="button" tabIndex={0} className={`info${wakeNoteOpen ? ' pin' : ''}`} aria-label={wakeNote}
+          onClick={() => setWakeNoteOpen((open) => !open)} onBlur={() => setWakeNoteOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setWakeNoteOpen((open) => !open);
+          }}>
           <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></svg>
-          <span className="tip" role="tooltip">{t('agentSettings.mentionsAlwaysWake')}</span>
+          <span className="tip" role="tooltip">{wakeNote}</span>
         </span>
         <span className="v2-agent-wake-pods__cap">
           {turnCap === null
-            ? t('agentSettings.heartbeatTurnsNoCap', { turns: heartbeatTurns })
-            : t('agentSettings.heartbeatTurns', { turns: heartbeatTurns, cap: turnCap })}
+            ? t('agentSettings.heartbeatTurnsNoCap', { count: heartbeatTurns })
+            : t('agentSettings.heartbeatTurns', { count: heartbeatTurns, cap: turnCap })}
         </span>
       </h2>
       {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
-      {hostedHeartbeat && <p className="v2-agent-wake-pods__hint">
-        {hostedHeartbeat.runsPerDay > 0
-          ? t('agentSettings.heartbeatHosted', { count: hostedHeartbeat.runsPerDay })
-          : t('agentSettings.heartbeatHostedOff')}
-      </p>}
       {runtimeNarrowing && <V2RuntimeNarrowingNotice agentName={agentName} status={runtimeNarrowing} />}
       <div className="list">
-        {installations.length ? (
+        {installations.length || otherDirectRooms ? (
           <table className="wt">
             <thead>
               <tr>
@@ -259,11 +309,12 @@ const V2AgentWakePods: React.FC<{
             <tbody>
               {installations.map((entry) => (
                 <tr className="v2-agent-wake-pods__pod" key={entry.podId} data-open={openPods[entry.podId] ? 'true' : undefined}>
-                  <td>
-                    <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
+                  <td data-personal={podKindLabel(entry) || entry.podType === 'agent-room' ? 'true' : undefined}>
+                    <Link to={`/v2/pods/${entry.podId}`}>{podLabel(entry)}</Link>
+                    {podKindLabel(entry) && <span className="v2-agent-wake-pods__kind">{podKindLabel(entry)}</span>}
                     <span className="v2-agent-wake-pods__mode">{t(`agentSettings.messageWakeShort_${messageWakeChoice(entry)}`)}</span>
                     <button type="button" className="v2-agent-wake-pods__fold" aria-expanded={!!openPods[entry.podId]}
-                      aria-label={entry.podName}
+                      aria-label={[podLabel(entry), podKindLabel(entry)].filter(Boolean).join(', ')}
                       onClick={() => setOpenPods((current) => ({ ...current, [entry.podId]: !current[entry.podId] }))}>
                       <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
                     </button>
@@ -308,9 +359,10 @@ const V2AgentWakePods: React.FC<{
                               <option value="off">{t('agentSettings.heartbeatOff')}</option>
                               {[...new Set([...intervalsFor(entry), entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
-                                  <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
+                                  <option value={value} key={value}>{t('agentSettings.minutesShort', { minutes: value })}</option>
                                 ))}
                             </select>
+                            <V2AgentSettingsIcon name="chev" />
                           </label>
                           {dirty && <button type="button" className="b b-g b-sm" disabled={busyPod === entry.podId}
                             onClick={() => { void save(entry, { heartbeatEnabled: !off, heartbeatMinutes: minutes }); }}>
@@ -329,10 +381,22 @@ const V2AgentWakePods: React.FC<{
                   </td>
                 </tr>
               ))}
+              {otherDirectRooms > 0 && (
+                <tr className="v2-agent-wake-pods__others">
+                  <td colSpan={5}>{t('agentSettings.otherDirectRooms', { count: otherDirectRooms })}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         ) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
+        <V2AgentAddToPod agentName={agentName} displayName={displayName || agentName} query={query}
+          installedPodIds={installations.map((entry) => entry.podId)}
+          onAdded={(podName) => {
+            setReloads((count) => count + 1);
+            onAdded?.(podName);
+          }} />
       </div>
+      {addedPod && <p className="v2-agent-wake-pods__hint" role="status">{t('agentSettings.addToPod.added', { pod: addedPod })}</p>}
     </div>
   );
 };

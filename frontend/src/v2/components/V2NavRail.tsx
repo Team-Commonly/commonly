@@ -94,7 +94,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
           <span>commonly</span>
         </div>
 
-        <nav className="v2-rail__nav" aria-label="v2 navigation">
+        <nav className="v2-rail__nav" aria-label={t('common.nav.label')}>
           {NAV_ITEMS.map((item) => (
             <React.Fragment key={item.key}>
               <button

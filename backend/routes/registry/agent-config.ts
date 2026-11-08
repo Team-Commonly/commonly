@@ -28,9 +28,12 @@ const {
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const {
+  heldTokenOnRowRefusal,
   identityHoldsRuntimeToken,
+  ownsIdentityCountingPaused,
   ownsRuntimeIdentity,
-  RUNTIME_TOKEN_HELD,
+  relabelIdentityDmRows,
+  setIdentityDmRowsStatus,
   takeBackInstallation,
   webhookUrlRefusal,
 } = require('../../services/runtimeIdentityOwnership');
@@ -39,7 +42,8 @@ const { configWriteRefusal, runtimeKeepingType } = require('../../services/confi
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
 const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
 const { configRunsInProcess, hostedEngineInEffect, readHostedConfig } = require('../../services/hostedEngine');
-const { isHostedInstallation } = require('../../services/hostedRuntimeService');
+const { logInstallRefusal } = require('../../services/installRefusalLog');
+const { isHostedInstallation, resumeCapRefusal } = require('../../services/hostedRuntimeService');
 
 const agentConfigRouter = express.Router();
 // Serialize this route's IDENTITY.md read/modify/write operations per account.
@@ -298,15 +302,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     // A display name belongs to the portable User principal. Check every
     // installed projection, including paused ones: runtime-token ownership
     // intentionally looks only at active rows and would reject a paused seat
-    // even when this caller is its sole installer.
+    // even when this caller is its sole installer. A DM's row isn't an
+    // installation here either (services/runtimeIdentityOwnership).
     if (displayName !== undefined && !isInstanceAdmin) {
-      const missingInstaller = peerInstallations.some((entry: any) => !entry.installedBy);
-      const anotherInstaller = peerInstallations.some(
-        (entry: any) => entry.installedBy && entry.installedBy.toString() !== userId.toString(),
-      );
-      if (missingInstaller || anotherInstaller) {
+      const ownership = await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId);
+      if (!ownership.owned) {
         return res.status(403).json({
-          code: missingInstaller ? 'unknown_installer' : 'another_installer',
+          code: ownership.failure,
           error: 'Only the sole installer or an instance admin can rename this agent identity',
         });
       }
@@ -320,11 +322,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     }
 
     let accessiblePodIds = [podId.toString()];
+    const dmPeerPodIds = new Set<string>();
     if (peerByPod.size > 1) {
       const peerPodIds = Array.from(peerByPod.keys()).filter(Boolean);
       const peerPods = await Pod.find({ _id: { $in: peerPodIds } })
-        .select('_id members createdBy')
+        .select('_id members createdBy type')
         .lean();
+      peerPods.filter((entry: any) => AgentIdentityService.DM_POD_TYPES_GUARD?.has(String(entry.type)))
+        .forEach((entry: any) => dmPeerPodIds.add(entry._id.toString()));
       accessiblePodIds = peerPods
         .filter((entry: any) => isInstanceAdmin || userHasPodAccess(entry, userId))
         .map((entry: any) => entry._id.toString());
@@ -361,8 +366,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
     }
     // A rename changes the portable User label seen in every pod. Refuse it
-    // unless the same request will update every non-uninstalled projection.
-    if (displayName !== undefined && installationsToUpdate.length !== peerByPod.size) {
+    // unless the same request will update every non-uninstalled projection. A
+    // DM's row is its opener's, so only its label moves, once this write goes
+    // through (relabelIdentityDmRows).
+    const renameLeavesARow = Array.from(peerByPod.entries()).some(
+      ([entryPodId, entry]: any[]) => !dmPeerPodIds.has(entryPodId) && !installationsToUpdate.includes(entry),
+    );
+    if (displayName !== undefined && renameLeavesARow) {
       return res.status(409).json({
         code: 'identity_rename_scope_incomplete',
         error: 'This identity has installations outside your writable pods',
@@ -405,7 +415,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
         .map((entry: any) => entry.installedBy?.toString?.())
         .filter(Boolean)));
       const ownerInstallations = await AgentInstallation.find({
-        $or: [{ podId: { $in: writablePodIds } }, { installedBy: { $in: installerIds } }],
+        $or: [{ podId: { $in: [...writablePodIds, ...dmPeerPodIds] } }, { installedBy: { $in: installerIds } }],
         status: 'active',
       });
       const nameTaken = ownerInstallations.some((entry: any) => (
@@ -454,8 +464,31 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     };
     const rowsEntering = installationsToUpdate.filter(entersInProcess);
     const holdsToken = () => identityHoldsRuntimeToken(name.toLowerCase(), normalizedInstanceId);
+    const refuseTokenHeld = async () => {
+      const agentName = name.toLowerCase();
+      const mayRevoke = isInstanceAdmin
+        || (await ownsIdentityCountingPaused(userId, agentName, normalizedInstanceId)).owned;
+      return res.status(409).json(heldTokenOnRowRefusal({
+        podId: String(podId), agentName, instanceId: normalizedInstanceId, mayRevoke,
+      }));
+    };
     if (rowsEntering.length && await holdsToken()) {
-      return res.status(409).json(RUNTIME_TOKEN_HELD);
+      return refuseTokenHeld();
+    }
+    if (status === 'active') {
+      const installers = new Set<string>(installationsToUpdate
+        .filter((entry: any) => isHostedInstallation(entry) && entry.status !== 'active')
+        .map((entry: any) => String(entry.installedBy)));
+      for (const installer of installers) {
+        // eslint-disable-next-line no-await-in-loop
+        const refusal = await resumeCapRefusal(installer, name.toLowerCase(), normalizedInstanceId);
+        if (refusal) {
+          logInstallRefusal('registry.resume', 'hosted_cap_reached', {
+            userId: installer, agentName: name.toLowerCase(), instanceId: normalizedInstanceId, used: refusal.used, cap: refusal.cap,
+          });
+          return res.status(403).json(refusal);
+        }
+      }
     }
     const rowsToRestore = rowsEntering.map((entry: any) => ({
       key: { agentName: entry.agentName, podId: entry.podId, instanceId: entry.instanceId },
@@ -487,7 +520,42 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
       if (rowsToRestore.length && await holdsToken()) {
         await Promise.all(rowsToRestore.map(({ key, previous }: any) => takeBackInstallation(key, previous)));
-        return res.status(409).json(RUNTIME_TOKEN_HELD);
+        return refuseTokenHeld();
+      }
+      if (effectiveDisplayName) {
+        const dmPodIds = await relabelIdentityDmRows(name.toLowerCase(), normalizedInstanceId, effectiveDisplayName);
+        if (dmPodIds.length) {
+          await AgentProfile.updateMany(
+            { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },
+            { $set: { name: effectiveDisplayName } },
+            { runValidators: true },
+          );
+        }
+      }
+      // A DM's row is its opener's, so the save above skipped it, and pausing an
+      // agent means everywhere. Only whoever owns the agent can say that.
+      if (status === 'active' || status === 'paused') {
+        const ownership = isInstanceAdmin
+          ? { owned: true }
+          : await ownsIdentityCountingPaused(userId, name.toLowerCase(), normalizedInstanceId);
+        // One of several owners can't speak for the agent, but a room on their
+        // line is theirs to pay for: their pause or resume reaches those rooms
+        // and no others, or a paused owner keeps paying and a resumed room
+        // never wakes.
+        const coOwner = ownership.failure === 'another_installer' && installationsToUpdate.length > 0;
+        let dmPodIds: unknown[] = [];
+        if (ownership.owned) {
+          dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status);
+        } else if (coOwner) {
+          dmPodIds = await setIdentityDmRowsStatus(name.toLowerCase(), normalizedInstanceId, status, userId);
+        }
+        if (dmPodIds.length) {
+          await AgentProfile.updateMany(
+            { agentId: buildAgentProfileId(name, normalizedInstanceId), podId: { $in: dmPodIds } },
+            { $set: { status } },
+            { runValidators: true },
+          );
+        }
       }
       // The card's sentence is the shared User's, so it follows only when this
       // write reached every installation of the identity, as a rename must.

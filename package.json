@@ -15,7 +15,7 @@
     "lint:fix:backend": "cd backend && npm run lint:fix",
     "lint:fix:frontend": "cd frontend && npm run lint:fix",
     "lint:fix:cli": "cd cli && npm run lint:fix",
-    "verify:moltbot-tools": "node scripts/verify-moltbot-tool-contract.js",
+    "verify:preset-tools": "node scripts/verify-preset-tool-names.js",
     "verify:litellm-patch-runner": "node scripts/verify-litellm-patch-runner.js",
     "verify:numbered-rules": "node scripts/verify-numbered-rules.js",
     "verify:ax-audit-numbering": "node scripts/verify-ax-audit-numbering.js",

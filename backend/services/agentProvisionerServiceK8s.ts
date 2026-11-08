@@ -837,10 +837,9 @@ const normalizeWorkspaceDocs = async (accountId: any, { gateway } : any = {}) =>
 // Idempotently `git init` the agent's `/workspace/<accountId>/` directory
 // and stamp a workspace-local user.name / user.email so any agent that
 // wants to `git commit && git push` against a real GitHub repo can do so
-// without a manual bootstrap step. Credential helper is wired globally
-// in the clawdbot postStart hook (see k8s/helm/.../clawdbot-deployment.yaml),
-// so `git push` against `https://github.com/...` already auths via
-// `/state/.git-credentials`. Cloud-codex pods get the equivalent treatment
+// without a manual bootstrap step. The credential helper came from the gateway
+// chart's postStart hook, which retired under ADR-021 Part B, so nothing wires
+// `/state/.git-credentials` from this repo now. Cloud-codex pods get the equivalent treatment
 // from their boot script — this brings moltbot to parity.
 const ensureWorkspaceGitRepo = async (accountId: any, { gateway } : any = {}) => {
   const podName = await resolveGatewayPodNameWithRetry(gateway);
@@ -3260,11 +3259,23 @@ const getAgentRuntimeLogs = async (
 };
 
 /**
- * Returns session directory sizes in bytes for all agents on the gateway.
+ * Returns session directory sizes in bytes for all agents on the gateway, or
+ * none when the gateway Deployment doesn't exist.
  * @returns {Promise<Array<{accountId: string, bytes: number}>>}
  */
 const getAgentSessionSizes = async (options = {}) => {
-  const podName = await resolveGatewayPodNameWithRetry((options as any).gateway);
+  // The gateway is retired (ADR-021 Part B). With no Deployment there are no
+  // sessions to measure, so the 10-minute check reads none, rather than waiting
+  // 60 s for a pod that cannot appear and logging an ERROR each time (F329).
+  // Any other read error still fails, at once.
+  const gateway = (options as any).gateway;
+  try {
+    await k8sAppsApi.readNamespacedDeployment(resolveGatewayDeploymentName(gateway), NAMESPACE);
+  } catch (error: any) {
+    if (error?.response?.statusCode === 404) return [];
+    throw error;
+  }
+  const podName = await resolveGatewayPodNameWithRetry(gateway);
   const script = [
     'set -eu',
     'for dir in /state/agents/*/sessions; do',

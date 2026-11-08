@@ -136,3 +136,12 @@ describe('RoomGrant', () => {
     }
   });
 });
+
+describe('RoomGrantError', () => {
+  it('holds the trail\'s owner apart from the details a route serializes', () => {
+    const { RoomGrantError } = require('../../../services/roomGrantService');
+    const error = new RoomGrantError('refused', 'refused', 403, undefined, 'owner-1');
+    expect(error.credentialOwnerId).toBe('owner-1');
+    expect(error.details).toBeUndefined();
+  });
+});

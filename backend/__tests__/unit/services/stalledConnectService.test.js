@@ -15,6 +15,7 @@ const OLD_TOKEN = new Date(NOW.getTime() - 30 * MINUTE);
 const FRESH_TOKEN = new Date(NOW.getTime() - 2 * MINUTE);
 
 const mockInstallFind = jest.fn();
+const mockOwns = jest.fn();
 const mockInstallFindById = jest.fn();
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
@@ -42,13 +43,20 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 const mockAttentionResolve = jest.fn();
+const mockAttentionDismiss = jest.fn();
 jest.mock('../../../services/attentionItemService', () => ({
   resolveActioned: (...a) => mockAttentionResolve(...a),
+  resolve: (...a) => mockAttentionDismiss(...a),
 }));
 
 const mockEpCreate = jest.fn();
 const mockEpFind = jest.fn();
 const mockEpUpdate = jest.fn();
+jest.mock('../../../models/Pod', () => ({ exists: () => Promise.resolve(true) }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ...jest.requireActual('../../../services/runtimeIdentityOwnership'),
+  ownsRuntimeIdentity: (...args) => mockOwns(...args),
+}));
 jest.mock('../../../models/StalledConnectEpisode', () => ({
   create: (...a) => mockEpCreate(...a),
   find: (...a) => mockEpFind(...a),
@@ -70,7 +78,8 @@ const install = (over = {}) => ({
   ...over,
 });
 
-const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
+const setup = ({ installs = [install()], userTokens = [], open = [], machineId } = {}) => {
+  mockOwns.mockResolvedValue({ owned: true });
   mockInstallFind.mockReturnValue({
     limit: () => ({ lean: () => Promise.resolve(installs) }),
   });
@@ -84,10 +93,13 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
       expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
       expect(fields).toContain('agentRuntimeTokens.createdAt');
       expect(fields).toContain('agentRuntimeTokens.lastMcpSeenAt');
+      expect(fields).toContain('agentRuntimeTokens.lastUsedAt');
+      expect(fields).toContain('botMetadata.machineId');
       const rows = (filter.$or || []).map((pair) => ({
         botMetadata: {
           agentName: pair['botMetadata.agentName'],
           instanceId: pair['botMetadata.instanceId'],
+          machineId,
         },
         agentRuntimeTokens: userTokens,
       }));
@@ -128,6 +140,49 @@ describe('resolveTokenEpisode', () => {
 });
 
 describe('stalledConnectService.scan', () => {
+  const madeOnPage = { config: { runtime: { runtimeType: 'webhook', adapter: 'claude', host: 'byo' } } };
+
+  it('sends an agent made on the page to Connect, since its key is on no computer', async () => {
+    setup({ installs: [install(madeOnPage)] });
+    await scan({ now: NOW });
+
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('Open my Settings, press Connect, and run the command it gives you on the machine where I should live');
+    expect(content).not.toContain('commonly agent run');
+  });
+
+  it.each([
+    ['an attached agent, whose key is saved', { config: { runtime: { runtimeType: 'claude-code', host: 'byo' } } }, undefined],
+    ['an agent init bot, whose key is saved', { config: { runtime: { runtimeType: 'webhook', host: 'byo' } } }, undefined],
+    ['a seat on a machine', madeOnPage, 'machine-1'],
+    ['a second instance', { ...madeOnPage, instanceId: 'other' }, undefined],
+  ])('keeps the command for %s', async (_label, over, machineId) => {
+    setup({ installs: [install(over)], machineId });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
+  it('keeps the command when the owner can\'t be read: Connect could be refused', async () => {
+    setup({ installs: [install(madeOnPage)] });
+    mockOwns.mockRejectedValue(new Error('read failed'));
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
+  it.each([
+    ['the bot row', { userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: OLD_TOKEN }] }],
+    ['an older token', { userTokens: [{ createdAt: new Date(OLD_TOKEN.getTime() - 60 * 1000), lastUsedAt: OLD_TOKEN }] }],
+    ['a token with no issue time', { userTokens: [{ lastUsedAt: OLD_TOKEN }] }],
+    ['the installation', { runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: OLD_TOKEN }] }],
+  ])('keeps the command once %s shows a call, because Settings stops offering Connect', async (_label, { userTokens, runtimeTokens }) => {
+    setup({ installs: [install({ ...madeOnPage, ...(runtimeTokens ? { runtimeTokens } : {}) })], userTokens });
+    await scan({ now: NOW });
+
+    expect(mockPost.mock.calls[0][0].content).toContain('commonly agent run ai1-agent');
+  });
+
   it('nudges a seat whose token was issued long ago and never used', async () => {
     setup();
     const r = await scan({ now: NOW });
@@ -589,11 +644,12 @@ describe('stalledConnectService.scan', () => {
       }),
     }));
 
-    await scan({ now: NOW });
+    const result = await scan({ now: NOW });
 
     expect(mockUserFind.mock.calls[0][0].$or).toHaveLength(1);
-    // Both installs got the first row's token, so both are stalled episodes.
-    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user', 'user']);
+    // Both installs got the first row's token: one person, one line.
+    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user']);
+    expect(result.skippedSameToken).toBe(1);
   });
 
   it('only considers BYO seats — nothing else can derive never-connected', async () => {
@@ -945,6 +1001,23 @@ describe('keeping the forward promise', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockEpUpdate).toHaveBeenCalled();
+  });
+
+  it('treats an uninstall as gone: the row stays, and the post would bring the agent back', async () => {
+    mockAttentionDismiss.mockClear();
+    setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'nudge9' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ status: 'uninstalled' })),
+    });
+
+    const result = await scan({ now: NOW });
+
+    expect(result.resolved).toHaveLength(1);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEpUpdate.mock.calls[0][1].$set.status).toBe('resolved');
+    // Its "needs you" row goes too, and not as acted on.
+    expect(mockAttentionDismiss).toHaveBeenCalledWith('message', 'nudge9');
+    expect(mockAttentionResolve).not.toHaveBeenCalled();
   });
 });
 

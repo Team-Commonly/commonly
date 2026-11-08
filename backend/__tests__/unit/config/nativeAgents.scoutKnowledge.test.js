@@ -123,7 +123,8 @@ describe('Scout onboarding knowledge', () => {
   // with the published CLI (D164, run 41926949969), and works there with CLI
   // 0.1.243 or newer; on Linux or WSL it runs in the bubblewrap jail (F96),
   // walked on prod on an API key (run 41945040493) and CI-only on a login;
-  // Codex off a Mac is untested; the daemon is unverified.
+  // Codex on Linux runs under its own sandbox, walked on prod on an API key (run
+  // 41994906534); Codex on native Windows has no sandbox; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
     expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
     expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
@@ -131,9 +132,18 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) runs in a bubblewrap sandbox\. With an API key \(ANTHROPIC_API_KEY\), in a pod that is not fully private, the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is checked only in CI with a stand-in model, so say which\./);
     expect(prompt).not.toMatch(/native Windows is not verified to answer/);
     expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux\)/);
-    expect(prompt).toMatch(/Codex off a Mac is not tested\./);
+    expect(prompt).toMatch(/Codex on Linux \(WSL 2 included\) runs under its own sandbox, which uses bubblewrap there \(not the jail Claude Code runs in\): on Nov 5 the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine through a model gateway on an API key; with their own ChatGPT sign-in or OpenAI key it is not checked on Linux yet, so say which\. Codex on native Windows has no sandbox: it can run only in an invite-only pod that isn't public or listed\./);
+    expect(prompt).not.toMatch(/Codex off a Mac/);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: point them to "Use my own agent" on the Bring your own page, which shows the Linux command \(it needs bubblewrap installed\), offer "Run it here" with commonly_offer_hosted_agent/);
+    // Heard before running anything; "Run it here" first, the profile last and
+    // theirs to choose, the protection never turned off.
+    expect(prompt).toMatch(/On Ubuntu 24\.04 and later, AppArmor can stop bubblewrap from starting, for Claude Code and Codex alike, so tell a person on Ubuntu this before they run the Linux command\./);
+    expect(prompt).toMatch(/"Run it here" first, the MCP command for Claude Code, and last, optional and their own call, Ubuntu's own AppArmor profile/);
+    expect(prompt).toMatch(/tested on a fresh Ubuntu 24\.04 server image, not on every machine\. Commonly never runs it for them, and never tell anyone to turn that AppArmor restriction off\./);
+    // bwrapRefusedMessage offers the profile on 24.04 alone.
+    expect(prompt).toMatch(/the CLI offers that profile on Ubuntu 24\.04 only\./);
+    expect(prompt).not.toMatch(/sysctl/);
     expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).toMatch(/`claude mcp list` showing Connected means the server started, not that a tool was used/);
   });
@@ -145,7 +155,13 @@ describe('Scout onboarding knowledge', () => {
       /on Linux \(WSL included\) in an invite-only pod/,
       /answers only while every pod it is in is invite-only/,
       /Claude Code on macOS, Linux or WSL/,
-      /Codex (on|runs on|works on) (native )?(Linux|WSL|Windows)\b(?! or WSL, or any tool)/,
+      // Codex on Linux is walked on an API key through a gateway only (run
+      // 41994906534), and never on native Windows, so no general claim.
+      /Codex (works|answers|answered|runs|is verified|is tested) on (native )?(Linux|WSL|Windows)\b/,
+      /Codex on (native )?Windows (works|answers|runs)\b/,
+      /Codex on (Linux|WSL)( 2)? (works|answers|answered|runs on|runs in|is verified|is tested)\b/,
+      /Codex on Linux \(WSL( 2)? included\) (works|answers|answered|runs in|is verified|is tested)\b/,
+      /Codex on Linux[^.]*\b(is|was|has been) walked\b/,
       /daemon (works|is working|is verified)/,
       /does not answer @mentions today/,
       // Linux Claude Code is walked on an API key only (run 41945040493); its
@@ -200,7 +216,7 @@ describe('Scout onboarding knowledge', () => {
   // Windows joins the list now that it is walked there.
   test('proposes the card only for Claude Code or Codex on macOS, and Claude Code on native Windows', () => {
     expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code or Codex on macOS, and Claude Code on native Windows\./);
-    expect(prompt).toMatch(/Any other pair, such as either one on Linux or WSL, Codex off a Mac, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
+    expect(prompt).toMatch(/Any other pair, such as either one on Linux or WSL, Codex on native Windows, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
     ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
   });
 
@@ -218,13 +234,13 @@ describe('Scout onboarding knowledge', () => {
   });
 
   // The answer matches what the Connect page itself offers on that OS
-  // (agentByo.listen.windowsNote / unavailableCodex).
+  // (agentByo.listen.windowsNote / linuxCodex).
   test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
     expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does not cover\./);
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
     expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
     expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: point them to "Use my own agent" on the Bring your own page, which shows the Linux command \(it needs bubblewrap installed\), offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
-    expect(prompt).toMatch(/For Codex off a Mac, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
+    expect(prompt).toMatch(/For Codex on Linux or WSL, do not propose a connect card either: point them to "Use my own agent" on the Bring your own page, where they choose Codex under Adapter, press "Get my connect command", and then pick Linux among the operating-system buttons above the command \(the page starts on Claude, and a WSL user's browser reports Windows\), then copy the Linux command \(it needs bubblewrap installed\), or offer "Run it here"\. For Codex on native Windows, offer running it in WSL 2 or "Run it here", and say plainly why: it has no sandbox there, so it runs with their own access and anyone in the pod can direct it\./);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
     // D245: the page no longer says Claude Code can't run on Windows. Its note
     // describes an opt-in --unsandboxed listener and names neither "Run it
@@ -239,7 +255,11 @@ describe('Scout onboarding knowledge', () => {
     expect(en.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
     expect(zh.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
     expect(en.agentByo.listen.reachClaudeLinux).toMatch(/On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention\. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet/);
-    expect(en.agentByo.listen.unavailableCodex).toMatch(/has been tested only on a Mac and may not answer @mentions from \{\{os\}\} yet\. Choose “Run it here” for a hosted agent, or run the command on a Mac\./);
+    // Codex on Linux has its command now (run 41994906534), so the page's
+    // Mac-only line is gone and the Linux note says how far it is walked.
+    expect(en.agentByo.listen.unavailableCodex).toBeUndefined();
+    expect(zh.agentByo.listen.unavailableCodex).toBeUndefined();
+    expect(en.agentByo.listen.linuxCodex).toMatch(/^On Nov 5 we ran Codex on a fresh Ubuntu machine against Commonly, through a model gateway with an API key, and it answered its first @mention\. With your own ChatGPT sign-in or OpenAI key it hasn’t been checked on Linux yet\.$/);
   });
 
   // Stranger journey 2026-10-26: Scout wrote the Terminal steps and asked
@@ -250,13 +270,25 @@ describe('Scout onboarding knowledge', () => {
     );
     expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
     expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);
-    expect(prompt).toMatch(
-      /Where the connect card applies, the card is the Terminal half: propose it and give only the MCP line/,
-    );
+    expect(prompt).toMatch(/Where the connect card applies, the card is the whole reply: propose it and write no MCP line/);
   });
 
-  // A card gets only the MCP line in text, so Codex needs a line of its own:
-  // the Claude Code one does not configure Codex.
+  // Asked for the MCP line too is when Codex needs a line of its own: the Claude
+  // Code one does not configure Codex.
+  test('gives the MCP line only when they asked for it, after the card', () => {
+    expect(prompt).toMatch(/unless they asked about both directions or for Commonly inside their own sessions/);
+    expect(prompt).toMatch(/propose the card first and post the MCP line after it with commonly_post_message/);
+  });
+
+  // Growth's re-walks: outside a code block `@commonlyai` chipped. With the line
+  // first it said "the card below" twice, once under a pending card and once
+  // with none, so the card goes first and the line can't point down at it.
+  test('keeps the MCP line whole and posts it whatever became of the card', () => {
+    expect(prompt).toMatch(/in a code block so it copies as one command/);
+    expect(prompt).toMatch(/If the card is refused because one is already pending, still post the line/);
+    expect(prompt).toMatch(/Post the line each time they ask, even after they declined a card/);
+  });
+
   test('gives an MCP line for each tool the card connects', () => {
     expect(prompt).toContain('`claude mcp add commonly -e COMMONLY_API_URL=... '
       + '-e COMMONLY_AGENT_TOKEN=... -- npx -y @commonlyai/mcp`');

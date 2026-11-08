@@ -1,9 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
+import { agentSettingsErrorText as message } from './useAgentSettings';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import './v2-agent-policy.css';
+
+// The Memory tab's Edit control links here.
+export const AGENT_MEMORY_EDITOR_ID = 'agent-memory-editor';
 
 type MemorySection = 'soul' | 'long_term' | 'shared';
 type MemoryDocument = { content: string; updatedAt: string | null; visibility: string };
@@ -13,19 +17,15 @@ const trustAdapters = new Set(['claude', 'codex', 'opencode', 'qwen']);
 // A 403 is an answer, not a failure: the viewer can't edit this memory, and a retry won't change that.
 const forbidden = (error: unknown): boolean => (error as { response?: { status?: number } })?.response?.status === 403;
 
-const message = (error: unknown, fallback: string) => (
-  (error as { response?: { data?: { error?: string } } })?.response?.data?.error
-  || (error instanceof Error && error.message) || fallback
-);
-
 interface Props {
   agentName: string;
   instanceId: string;
   installation: AgentSettingsInstallation | null;
   update: (patch: AgentSettingsPatch) => Promise<unknown>;
+  scrollToEditor?: boolean;
 }
 
-const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update }) => {
+const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, update, scrollToEditor = false }) => {
   const { t } = useTranslation();
   const environment = (installation?.config?.environment || {}) as { adapter?: string; sandbox?: { mode?: string } };
   const runtime = installation?.runtime;
@@ -49,6 +49,16 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     setTrustMode(environment.sandbox?.mode || '');
   }, [installation]);
 
+  // Reached from the Memory tab's Edit control. Scrolled to once the editor has drawn, because
+  // only then has the page above it stopped growing.
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const editorDrawn = Boolean(documents) || memoryPrivate || Boolean(memoryLoadError);
+  useEffect(() => {
+    if (!scrollToEditor || !editorDrawn) return;
+    document.getElementById(AGENT_MEMORY_EDITOR_ID)?.scrollIntoView?.({ block: 'center' });
+    // Without this, the next Tab starts from the top of the page.
+    if (document.activeElement === document.body) editorHeading.current?.focus({ preventScroll: true });
+  }, [scrollToEditor, editorDrawn]);
   const memoryUrl = `/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/editable`;
   const loadMemory = useCallback(async (preserveDraft = false) => {
     const response = await axios.get<{ sections: MemoryDocuments }>(memoryUrl);
@@ -166,9 +176,9 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         </div>}
       </>}
     </div>}
-    {/* Memory editing has no frame here yet (the artboard moves it to the Memory tab, which cannot edit yet), so it keeps its live markup. */}
-    <div className="v2-agent-policy__group">
-      <h3>{t('agentPolicy.memory')}</h3>
+    {/* Memory editing has no frame here yet; the Memory tab's Edit control opens it, and it keeps its live markup. */}
+    <div className="v2-agent-policy__group" id={AGENT_MEMORY_EDITOR_ID}>
+      <h3 ref={editorHeading} tabIndex={-1}>{t('agentPolicy.memory')}</h3>
       {documents ? <>
         <div className="v2-agent-policy__memory-tabs" role="tablist" aria-label={t('agentPolicy.memory')}>
           {memorySections.map((entry) => <button type="button" role="tab" aria-selected={entry === section}

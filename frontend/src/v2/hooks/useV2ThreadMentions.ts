@@ -10,12 +10,17 @@ import {
   rawAgentName,
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
+import { agentConnectLink } from '../utils/agentConnectLink';
 
 type MentionReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
 interface MentionAgentState {
   state: MentionReachState;
   fixCommand?: string;
+  agentName?: string;
+  instanceId?: string;
+  connectPodId?: string;
+  noSavedKey?: boolean;
 }
 
 interface MentionItem extends V2ComposerMention {
@@ -154,7 +159,8 @@ export const useV2ThreadMentions = ({
         return rows;
       }
       seen.add(agentName);
-      rows.push({ agentName, state: state.state, fixCommand: state.fixCommand });
+      const connectLink = state.noSavedKey ? agentConnectLink(state) : '';
+      rows.push({ agentName, state: state.state, fixCommand: state.fixCommand, ...(connectLink ? { connectLink } : {}) });
       return rows;
     }, []);
   }, [agentStateByHandle, draft]);
@@ -221,5 +227,3 @@ export const useV2ThreadMentions = ({
     selectMention,
   };
 };
-
-export default useV2ThreadMentions;

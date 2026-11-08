@@ -81,6 +81,11 @@ const openRow = async (toolName, rowName) => {
   const aside = await within(drawer).findByRole('complementary', { name: 'Grant details' });
   return { drawer, aside };
 };
+// Ended grants fold under a live one, and stay open when there is none.
+const unfold = (drawer) => {
+  const fold = within(drawer).queryByRole('button', { name: /^inactive · / });
+  if (fold?.getAttribute('aria-expanded') === 'false') fireEvent.click(fold);
+};
 const grantReads = () => axios.get.mock.calls.filter(([url]) => url === '/api/grants');
 const meta = () => document.querySelector('.v2-cx-head__meta');
 
@@ -134,9 +139,12 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
-    expect(await within(drawer).findAllByRole('button', { name: 'View GitHub in Pod 21' })).toHaveLength(3);
+    await within(drawer).findAllByRole('button', { name: 'View GitHub in Pod 21' });
+    unfold(drawer);
+    expect(within(drawer).getAllByRole('button', { name: 'View GitHub in Pod 21' })).toHaveLength(3);
     expect(within(drawer).getByText(/revoked by sam 10m/)).toBeInTheDocument();
     expect(within(drawer).getByText(/expired 10m/)).toBeInTheDocument();
+    unfold(drawer);
     fireEvent.click(within(drawer).getAllByRole('button', { name: 'Grant again' })[0]);
     expect(await screen.findByRole('option', { name: 'Pod 21' })).toBeInTheDocument();
     // The grant list is one read for the owner, never one per pod. The hook reads once
@@ -156,8 +164,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    const aside = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
     fireEvent.click(await within(aside).findByRole('button', { name: 'Make this pod invite-only' }));
     await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/pods/p2/join-policy', { joinPolicy: 'invite-only' }, expect.anything()));
@@ -173,8 +182,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    const aside = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
     await within(aside).findByText('Agents can self-install into this pod. Make it invite-only to use this connector.');
     expect(within(aside).queryByRole('button', { name: 'Make this pod invite-only' })).not.toBeInTheDocument();
@@ -188,8 +198,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    const aside = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    const aside = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     fireEvent.click(within(aside).getByRole('button', { name: 'Grant' }));
     await within(aside).findByText('Use a separate unbridged pod for this connector.');
     expect(within(aside).queryByRole('button', { name: 'Make this pod invite-only' })).not.toBeInTheDocument();
@@ -228,7 +239,7 @@ describe('Connectors page: tools', () => {
 
       // The count always followed the clock; the tile did not, so the two disagreed
       // on screen until a reload.
-      expect(meta()).toHaveTextContent('0 on · 1 available');
+      expect(meta()).toHaveTextContent('0 on · 1 connected, no grant · 0 available');
       expect(screen.queryByRole('img', { name: 'Granted' })).toBeNull();
     } finally {
       jest.useRealTimers();
@@ -252,6 +263,7 @@ describe('Connectors page: tools', () => {
     const liveDot = live.querySelector('.v2-connector-row__dot');
     expect(liveDot).toHaveClass('v2-connector-row__dot--live');
     await waitFor(() => expect(liveDot).toHaveClass('v2-connector-row__dot--pulse'));
+    unfold(drawer);
     const gone = within(drawer).getByRole('button', { name: 'View GitHub in Ops' });
     expect(within(gone).getByText('revoked by sam 10m ago')).toBeInTheDocument();
     expect(gone.closest('.v2-connector-row')).toHaveClass('v2-connector-row--dead');
@@ -259,8 +271,9 @@ describe('Connectors page: tools', () => {
     // The ended grant sits under its own heading, below the live one.
     expect(within(drawer).getByText('inactive · 1')).toBeInTheDocument();
     // The entry is granted, so the drawer offers no Add.
-    expect(within(drawer).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+    expect(within(drawer).queryByRole('button', { name: 'Grant to agents' })).not.toBeInTheDocument();
     expect(within(drawer).getAllByRole('button', { name: 'Manage' })).toHaveLength(1);
+    unfold(drawer);
     expect(within(drawer).getByRole('button', { name: 'Grant again' })).toBeInTheDocument();
     // Direction A: Manage is the gear (word in title + aria-label), and the age rides the kicker.
     for (const manage of within(drawer).getAllByRole('button', { name: 'Manage' })) {
@@ -281,6 +294,7 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     const gone = await within(drawer).findByRole('button', { name: 'View GitHub in Ops' });
     expect(within(gone).getByText(/granted 2d$/)).toBeInTheDocument();
     expect(within(gone).getByText('revoked by sam 2d ago')).toBeInTheDocument();
@@ -295,6 +309,7 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     const row = await within(drawer).findByRole('button', { name: 'View GitHub in Ops' });
     expect(within(row).getByText(new RegExp(`${expected}$`))).toBeInTheDocument();
   });
@@ -333,6 +348,7 @@ describe('Connectors page: tools', () => {
 
     const drawer = await openTool('GitHub');
     const live = await within(drawer).findByRole('button', { name: 'View GitHub in Launch pod' });
+    unfold(drawer);
     const ops = await within(drawer).findByRole('button', { name: 'View GitHub in Ops' });
     // One key holds both names, so the language orders them.
     expect(live.querySelector('strong')?.textContent).toBe('granted to Launch pod by sam');
@@ -366,6 +382,7 @@ describe('Connectors page: tools', () => {
     const drawer = await openTool('GitHub');
     // Found by the pod's name: if the seat leaks back into the accessible name
     // this query returns nothing, which is the fix's own control.
+    unfold(drawer);
     const row = await within(drawer).findByRole('button', { name: 'View GitHub in Ops' });
     expect(row.querySelector('strong')?.textContent).toBe('granted to Reed by sam');
     expect(row.querySelector('.v2-connector-row__kicker')?.textContent).toMatch(/^Ops · granted /);
@@ -538,6 +555,7 @@ describe('Connectors page: tools', () => {
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant_live/revoke', undefined, expect.any(Object)));
     await waitFor(() => expect(grantReads().length).toBeGreaterThan(before));
 
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'View GitHub in Ops' }));
     const gone = await screen.findByRole('complementary', { name: 'Grant details' });
     expect(within(gone).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
@@ -622,7 +640,7 @@ describe('Connectors page: tools', () => {
       // The re-read that follows still lists the connection; the page does not.
       await waitFor(() => expect(catalogReads().length).toBeGreaterThan(reads));
       expect(screen.queryByRole('button', { name: /Disconnect Atlassian|Yes, disconnect/ })).not.toBeInTheDocument();
-      expect(within(popover).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+      expect(within(popover).queryByRole('button', { name: 'Grant to agents' })).not.toBeInTheDocument();
     });
 
     it('a granted connection offers it in the grant card, and a provider page from the server is linked', async () => {
@@ -729,7 +747,7 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const popover = await openToolPopover('Atlassian');
-      expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      expect(within(popover).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
     });
 
@@ -800,7 +818,7 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const popover = await openToolPopover('Atlassian');
-      expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      expect(within(popover).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
     });
 
@@ -834,12 +852,12 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const popover = await openToolPopover('GitHub');
-    await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 available'));
+    await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 connected, no grant · 0 available'));
     expect(within(popover).getByText('Issues and pull requests.')).toBeInTheDocument();
     expect(within(popover).getByText('read')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Granted' })).toBeNull();
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     // Default: read, every non-internal seat in the room, 7 days; under read only read tools are on the list.
     expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
     expect(within(form).getByText('github.list_issues')).toBeInTheDocument();
@@ -868,9 +886,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
-    await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 available'));
+    await waitFor(() => expect(meta()).toHaveTextContent('0 on · 1 connected, no grant · 0 available'));
     expect(within(drawer).getByText('read')).toBeInTheDocument();
-    expect(within(drawer).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
     expect(within(drawer).getByText('inactive · 1')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'Granted' })).toBeNull();
   });
@@ -882,8 +900,8 @@ describe('Connectors page: tools', () => {
     await findTile('GitHub');
     expect(screen.getByRole('img', { name: 'An admin installs this once' })).toBeInTheDocument();
     const popover = await openToolPopover('GitHub');
-    expect(within(popover).getByText('install the GitHub App first · an admin does this once')).toBeInTheDocument();
-    expect(within(popover).queryByRole('button', { name: 'Add' })).toBeNull();
+    expect(within(popover).getByText('Install the GitHub App first · an admin does this once')).toBeInTheDocument();
+    expect(within(popover).queryByRole('button', { name: 'Grant to agents' })).toBeNull();
     expect(within(popover).queryByRole('button', { name: 'Install GitHub App' })).toBeNull();
   });
 
@@ -966,8 +984,9 @@ describe('Connectors page: tools', () => {
     axios.post.mockClear();
     // The first grant is revoked too now (the page keeps a confirmed revoke), so pick the Ops row's own button.
     const body = await screen.findByRole('region', { name: 'GitHub' });
+    unfold(body);
     fireEvent.click(within(within(body).getByRole('button', { name: 'View GitHub in Ops' }).closest('article')).getByRole('button', { name: 'Grant again' }));
-    const again = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    const again = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     expect(within(again).getByRole('heading', { name: 'GitHub · Ops' })).toBeInTheDocument();
     fireEvent.click(within(again).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
@@ -991,8 +1010,10 @@ describe('Connectors page: tools', () => {
     it('Grant again renders only for the granter', async () => {
       renderPage({ auth: member });
       const drawer = await openTool('GitHub');
+      unfold(drawer);
       await within(drawer).findByRole('button', { name: 'View GitHub in Ops' });
       // The dead row offers a member Manage (read the grant), never the mint.
+      unfold(drawer);
       expect(within(drawer).queryByRole('button', { name: 'Grant again' })).toBeNull();
       expect(within(drawer).getAllByRole('button', { name: 'Manage' })).toHaveLength(2);
     });
@@ -1028,7 +1049,7 @@ describe('Connectors page: tools', () => {
       // One entry granted, so one is still available, and the entry the grant names
       // is the one that carries the Granted dot (label and glyph from its own entry).
       await screen.findByRole('img', { name: 'Granted' });
-      await waitFor(() => expect(meta()).toHaveTextContent('1 on · 1 available'));
+      await waitFor(() => expect(meta()).toHaveTextContent('1 on · 1 connected, no grant · 0 available'));
       expect(dots()).toHaveLength(1);
       expect(tileNode('Linear').querySelector('.v2-cx-tile__dot')).not.toBeNull();
       expect(tileNode('GitHub').querySelector('.v2-cx-tile__dot')).toBeNull();
@@ -1040,8 +1061,9 @@ describe('Connectors page: tools', () => {
       const github = await openTool('GitHub');
       // Its only grant is the ended one, so the drawer carries the offer beside it.
       expect(within(github).queryByRole('button', { name: 'View GitHub in Launch pod' })).not.toBeInTheDocument();
+      unfold(github);
       expect(within(github).getByRole('button', { name: 'View GitHub in Ops' })).toBeInTheDocument();
-      expect(within(github).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      expect(within(github).getByRole('button', { name: 'Grant to agents' })).toBeInTheDocument();
     });
 
     it('the granted entry itself leaves the offer, the other one stays', async () => {
@@ -1052,7 +1074,7 @@ describe('Connectors page: tools', () => {
       expect(tileNode('GitHub').querySelector('.v2-cx-tile__dot')).not.toBeNull();
       expect(tileNode('Linear').querySelector('.v2-cx-tile__dot')).toBeNull();
       const github = await openTool('GitHub');
-      expect(within(github).queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+      expect(within(github).queryByRole('button', { name: 'Grant to agents' })).not.toBeInTheDocument();
       const linear = await openToolPopover('Linear');
       expect(linear.textContent).toContain('Issues in Linear.');
       expect(linear.textContent).not.toContain('GitHub');
@@ -1073,10 +1095,10 @@ describe('Connectors page: tools', () => {
 
     const popover = await openToolPopover('Linear');
     expect(popover).toHaveTextContent('read');
-    expect(popover).not.toHaveTextContent('read, or read and write');
+    expect(popover).not.toHaveTextContent('Read, or read and write');
 
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     const modeGroup = within(form).getByRole('group', { name: 'what it may do' });
     expect(within(modeGroup).getAllByRole('button')).toHaveLength(1);
     expect(within(modeGroup).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
@@ -1231,7 +1253,7 @@ describe('Connectors page: tools', () => {
     await expandOff('Tools');
     expect(await screen.findByText('Airtable')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Grant to agents' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove connection' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, remove' }));
     await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-hidden', expect.anything()));
@@ -1280,11 +1302,11 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const popover = await openToolPopover('Linear');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     expect(await within(form).findByRole('alert')).toHaveTextContent('The selected target is unavailable.');
-    expect(screen.getByRole('complementary', { name: 'Add Linear' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Grant Linear to agents' })).toBeInTheDocument();
     expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
       connectionId: 'conn-2', target: { kind: 'pod', id: 'p1' }, audience: ['a1'],
     }), expect.any(Object));
@@ -1312,8 +1334,8 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const popover = await openToolPopover('Linear');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     expect(await within(form).findByRole('alert')).toHaveTextContent(message);
     const previousGet = axios.get.getMockImplementation();
@@ -1323,7 +1345,7 @@ describe('Connectors page: tools', () => {
     const reads = axios.get.mock.calls.length;
     await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
     await waitFor(() => expect(axios.get.mock.calls.length).toBeGreaterThan(reads));
-    expect(screen.getByRole('complementary', { name: 'Add Linear' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Grant Linear to agents' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(message);
     await waitFor(() => expect(meta()).toHaveTextContent('0 on'));
   });
@@ -1337,8 +1359,8 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const popover = await openToolPopover('Linear');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     fireEvent.change(within(form).getByRole('combobox', { name: 'pod' }), { target: { value: 'p2' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
@@ -1351,8 +1373,8 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const popover = await openToolPopover('Linear');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     const submit = within(form).getByRole('button', { name: 'Grant' });
     expect(submit).toBeEnabled();
     fireEvent.click(within(form).getByRole('checkbox', { name: 'Scout' }));
@@ -1371,8 +1393,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('Linear');
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    const form = await screen.findByRole('complementary', { name: 'Grant Linear to agents' });
     const agent = within(form).getByRole('checkbox', { name: 'Scout' });
     expect(agent).not.toBeChecked();
     const submit = within(form).getByRole('button', { name: 'Grant' });
@@ -1392,8 +1415,9 @@ describe('Connectors page: tools', () => {
     renderPage();
 
     const drawer = await openTool('GitHub');
+    unfold(drawer);
     fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-    const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     const scoutBox = within(form).getByRole('checkbox', { name: 'Scout' });
     const submit = within(form).getByRole('button', { name: 'Grant' });
     expect(scoutBox.checked).toBe(selected);
@@ -1440,7 +1464,7 @@ describe('Connectors page: tools', () => {
       mockTools({ grants: [grantRevoked], trails: {} });
       renderPage();
       const drawer = await openTool('GitHub');
-      fireEvent.click(await within(drawer).findByRole('button', { name: /^添加$|^Add$/ }));
+      fireEvent.click(await within(drawer).findByRole('button', { name: /^授权给智能体$|^Grant to agents$/ }));
       const form = await screen.findByRole('complementary');
       expect(within(form).getByText('无需确认')).toBeInTheDocument();
       expect(within(form).queryByText('nothing asks first')).toBeNull();
@@ -1477,7 +1501,7 @@ describe('Connectors page: tools', () => {
 
       await findTile('Sentry');
       expect(toolTiles()).toEqual(['GitHub', 'Linear', 'Atlassian', 'Airtable', 'Sentry']);
-      await waitFor(() => expect(meta()).toHaveTextContent('0 on · 5 available'));
+      await waitFor(() => expect(meta()).toHaveTextContent('0 on · 5 connected, no grant · 0 available'));
       expect(screen.queryByText(/inactive ·/)).not.toBeInTheDocument();
       expect(screen.queryByText('Nothing matches.')).not.toBeInTheDocument();
     });
@@ -1509,6 +1533,8 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const drawer = await openTool('GitHub');
+      expect(drawer.querySelectorAll('.v2-connector-row')).toHaveLength(2);
+      unfold(drawer);
       const rows = Array.from(drawer.querySelectorAll('.v2-connector-row'));
       expect(rows).toHaveLength(11);
       expect(rows.slice(0, 2).every((row) => !row.classList.contains('v2-connector-row--dead'))).toBe(true);
@@ -1559,7 +1585,7 @@ describe('Linear read note', () => {
     renderPage();
     const pop = await openToolPopover('Linear');
     expect(within(pop).getAllByRole('note')).toHaveLength(1);
-    expect(within(pop).getByRole('note')).toHaveTextContent("Agents can read Linear from here, but they can't write to it.");
+    expect(within(pop).getByRole('note')).toHaveTextContent("This Linear connection isn't granted to any agent yet. A grant lets agents read it, not change it.");
   });
 
   it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
@@ -1577,18 +1603,18 @@ describe('Linear read note', () => {
     expect(within(drawer).queryByRole('note')).not.toBeInTheDocument();
   });
 
-  it('another connected hosted connector does not carry it', async () => {
+  it('another connected hosted connector states its own access the same way', async () => {
     const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian', connections: [{ connectionId: 'conn-atl', owner: '', repo: '' }] };
     mockTools({ entries: [atlassian], grants: [] });
     renderPage();
     const pop = await openToolPopover('Atlassian');
-    expect(within(pop).queryByRole('note')).not.toBeInTheDocument();
+    expect(within(pop).getByRole('note')).toHaveTextContent("This Atlassian connection isn't granted to any agent yet.");
   });
 });
 
 // F213: no form-made grant gives an agent a write today, so the form offers none
 // until F214 and F215 restore it. A grant already stored keeps its true mode.
-describe('the form offers read, and a stored write grant stays what it is', () => {
+describe('the form offers read, a hosted connection adds ask-first, and a stored write grant stays what it is', () => {
   const sentryEntry = {
     installableId: 'sentry', list: 'tools', label: 'Sentry', description: 'Issues in Sentry.', available: true,
     connectionType: 'hosted-mcp', entryId: 'sentry',
@@ -1601,24 +1627,55 @@ describe('the form offers read, and a stored write grant stays what it is', () =
   };
   const modeButtons = (form) => within(within(form).getByRole('group', { name: 'what it may do' })).getAllByRole('button');
 
-  it.each([
-    ['a GitHub App', githubEntry, 'GitHub', 'github.list_issues', 'github.comment_on_issue'],
-    ['a hosted connection', sentryEntry, 'Sentry', 'sentry.list_issues', 'sentry.update_issue'],
-  ])('%s with write tools offers only read, and mints read', async (_kind, entry, label, readTool, writeTool) => {
+  it('a GitHub App with write tools offers only read, and mints read', async () => {
     axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
-    mockTools({ entries: [entry], grants: [] });
+    mockTools({ entries: [githubEntry], grants: [] });
     renderPage();
-    const popover = await openToolPopover(label);
-    expect(within(popover).queryByText('read, or read and write')).toBeNull();
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: `Add ${label}` });
+    const popover = await openToolPopover('GitHub');
+    expect(within(popover).queryByText('Read, or read and write')).toBeNull();
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read']);
-    expect(within(form).getByText(readTool)).toBeInTheDocument();
-    expect(within(form).queryByText(writeTool)).toBeNull();
+    expect(within(form).getByText('github.list_issues')).toBeInTheDocument();
+    expect(within(form).queryByText('github.comment_on_issue')).toBeNull();
     expect(within(form).getByText('nothing asks first')).toBeInTheDocument();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: [readTool] });
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: ['github.list_issues'] });
+  });
+
+  it('a hosted connection starts on read and never offers an unattended write', async () => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockTools({ entries: [sentryEntry], grants: [] });
+    renderPage();
+    const popover = await openToolPopover('Sentry');
+    expect(within(popover).getByText(/A grant can be read only, or read and write\./)).toBeInTheDocument();
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Sentry to agents' });
+    expect(modeButtons(form).map((button) => button.textContent)).toEqual(['read', 'read and write, ask first']);
+    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(form).queryByText('sentry.update_issue')).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ writeMode: 'read', tools: ['sentry.list_issues'] });
+  });
+
+  it('a hosted connection mints ask-first with its write tools when that is chosen', async () => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockTools({ entries: [sentryEntry], grants: [] });
+    renderPage();
+    const popover = await openToolPopover('Sentry');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant Sentry to agents' });
+    fireEvent.click(within(form).getByRole('button', { name: 'read and write, ask first' }));
+    expect(within(form).getByText('sentry.update_issue')).toBeInTheDocument();
+    expect(within(form).getByText('a write would ask first')).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({
+      writeMode: 'write-with-confirm',
+      tools: ['sentry.list_issues', 'sentry.update_issue'],
+    });
   });
 
   it.each([
@@ -1808,8 +1865,8 @@ describe('F214: pull-request access in the grant form', () => {
     axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
     renderPage();
     const popover = await openToolPopover('GitHub');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    return screen.findByRole('complementary', { name: 'Add GitHub' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    return screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
   };
   const mintBody = () => axios.post.mock.calls.find(([url]) => url === '/api/grants')[1];
 
@@ -1941,8 +1998,9 @@ describe('F214: pull-request access in the grant form', () => {
       mockTools({ entries: [twoRepos], grants: [ended], seats: { p1: [scout], p2: [] }, trails: { grant_pr: { ...trail, grantId: 'grant_pr' } } });
       renderPage();
       const drawer = await openTool('GitHub');
+      unfold(drawer);
       fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
-      const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+      const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
       expect(within(form).getByRole('checkbox', { name: CHOICE })).not.toBeChecked();
       expect(within(form).queryByText(ENDS)).toBeNull();
     });
@@ -1996,8 +2054,8 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
     renderPage();
     const popover = await openToolPopover('GitHub');
-    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
-    const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    fireEvent.click(within(popover).getByRole('button', { name: 'Grant to agents' }));
+    const form = await screen.findByRole('complementary', { name: 'Grant GitHub to agents' });
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
     await settle();
     return form;
@@ -2083,7 +2141,7 @@ describe('F94: naming your own agent that runs outside Commonly', () => {
     const box = within(form).getByRole('checkbox', { name: 'Claude' });
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
-    expect(within(form).getByText('Runs on native Windows, where no grant can be used.')).toBeInTheDocument();
+    expect(within(form).getByText('Ran without a sandbox Commonly can enforce, so no grant can be used.')).toBeInTheDocument();
     expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));

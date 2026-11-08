@@ -27,6 +27,7 @@ const {
   renewIntervalMs,
   resolveSpawnTtlSeconds,
   revokeOrphanedSpawnCredentials,
+  turnEventIds,
 } = await import('../src/lib/spawn-credential.js');
 
 const SEAT = 'cm_agent_seat_token';
@@ -358,5 +359,68 @@ describe('revokeOrphanedSpawnCredentials', () => {
       .resolves.toEqual({ ok: false, reason: 'sweep-failed' });
     expect(lines.join('\n')).toContain('boot sweep skipped (404)');
     expect(lines.join('\n')).toContain('boot sweep skipped (no response)');
+  });
+});
+
+describe('F145: a public seat\'s lease asks whether its owner woke the turn', () => {
+  const ids = ['6aef55a1bdc8d55d38de8ecf', '6aef55a1bdc8d55d38de8eea'];
+  const client = (post) => ({ post: jest.fn(post) });
+
+  test('sends publicSeat and the turn\'s events, and carries the answer', async () => {
+    const seen = client(async () => ({ token: CHILD, credentialId: 'c1', expiresAt: mintedAt(), ownerWoken: true }));
+    const opened = await openSpawnCredential({
+      client: seen, seatToken: SEAT, spawnId: 's', publicSeat: true, eventIds: ids,
+    });
+    expect(seen.post).toHaveBeenCalledWith(SPAWN_CREDENTIAL_BASE, { spawnId: 's', publicSeat: true, eventIds: ids });
+    expect(opened.ownerWoken).toBe(true);
+  });
+
+  test('sends neither on a private seat', async () => {
+    const seen = client(async () => ({ token: CHILD, credentialId: 'c1', expiresAt: mintedAt(), ownerWoken: true }));
+    await openSpawnCredential({ client: seen, seatToken: SEAT, spawnId: 's' });
+    expect(seen.post).toHaveBeenCalledWith(SPAWN_CREDENTIAL_BASE, { spawnId: 's' });
+  });
+
+  test.each([
+    ['an older backend that doesn\'t answer', undefined],
+    ['a false answer', false],
+    ['a truthy answer that isn\'t true', 'true'],
+  ])('reads %s as not owner-woken', async (_name, ownerWoken) => {
+    const opened = await openSpawnCredential({
+      client: client(async () => ({ token: CHILD, credentialId: 'c1', expiresAt: mintedAt(), ownerWoken })),
+      seatToken: SEAT, spawnId: 's', publicSeat: true, eventIds: ids,
+    });
+    expect(opened.ownerWoken).toBe(false);
+  });
+
+  test.each([
+    ['a 503', async () => { throw httpError(503); }],
+    ['no response', async () => { throw new Error('socket hang up'); }],
+    ['a route-absent 404', async () => { throw httpError(404); }],
+    ['a success with no token, even one claiming the answer', async () => ({ ownerWoken: true })],
+  ])('falls back to the seat token on %s, and is never owner-woken', async (_name, post) => {
+    const opened = await openSpawnCredential({
+      client: client(post), seatToken: SEAT, spawnId: 's', publicSeat: true, eventIds: ids,
+    });
+    expect(opened.source).toBe('seat-fallback');
+    expect(opened.ownerWoken).toBe(false);
+  });
+
+  test('the lease passes both through and hands the answer back', async () => {
+    const seen = client(async () => ({ token: CHILD, credentialId: 'c1', expiresAt: mintedAt(), ownerWoken: true }));
+    const lease = createSpawnCredentialLease({
+      client: seen, seatToken: SEAT, spawnId: 's', publicSeat: true, eventIds: ids,
+      setIntervalImpl: () => null, clearIntervalImpl: () => {},
+    });
+    expect((await lease.open()).ownerWoken).toBe(true);
+    expect(seen.post.mock.calls[0][1]).toEqual({ spawnId: 's', publicSeat: true, eventIds: ids });
+  });
+
+  test('a turn\'s events are its batch, or the one event it ran', () => {
+    expect(turnEventIds({ _id: ids[0], payload: {} })).toEqual([ids[0]]);
+    expect(turnEventIds({ _id: `batch-${ids[0]}`, type: 'inbox.batch', payload: { batchEventIds: ids } })).toEqual(ids);
+    expect(turnEventIds({ _id: ids[0], type: 'chat.mention', payload: { batchEventIds: [ids[1]] } })).toEqual([ids[0]]);
+    expect(turnEventIds({ _id: ids[0] })).toEqual([ids[0]]);
+    expect(turnEventIds(null)).toEqual([]);
   });
 });

@@ -230,4 +230,204 @@ describe('revive-native-installations', () => {
       expect(again.revived).toBe(0);
     });
   });
+
+  describe('an identity that holds a token', () => {
+    const User = require('../../../models/User');
+    const AgentIdentityService = require('../../../services/agentIdentityService');
+
+    const giveToken = async (agentName, instanceId = 'default') => {
+      const user = await AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId });
+      await User.updateOne(
+        { _id: user._id },
+        { $push: { agentRuntimeTokens: { tokenHash: `hash-${agentName}`, label: 'test', createdAt: new Date() } } },
+      );
+    };
+
+    let warn;
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('stays stale, is logged and reported, and the other rows revive', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      await make('scout', 'native', 'stale', staleAt);
+      await giveToken('held');
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(await statusOf('held')).toEqual([{ status: 'stale', staleSince: staleAt }]);
+      expect(await statusOf('scout')).toEqual([{ status: 'active', staleSince: null }]);
+      expect(result.candidates).toBe(1);
+      expect(result.revived).toBe(1);
+      expect(result.tokenHeld).toEqual([{
+        agentName: 'held', instanceId: 'default', count: 1, oldestStaleSince: staleAt,
+      }]);
+      expect(warn.mock.calls.some(([line]) => String(line).includes('held'))).toBe(true);
+    });
+
+    it('reads a token on a sibling installation', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      const sibling = await make('held', 'webhook', 'active');
+      await AgentInstallation.updateOne(
+        { _id: sibling._id },
+        { $set: { runtimeTokens: [{ tokenHash: 'sibling-hash', label: 'test', createdAt: new Date() }] } },
+      );
+
+      await reviveNativeInstallations({ apply: true });
+
+      const rows = await AgentInstallation.find({ agentName: 'held', 'config.runtime.runtimeType': 'native' }).lean();
+      expect(rows.map((row) => row.status)).toEqual(['stale']);
+    });
+
+    it('reads the instance the row is on', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await AgentInstallation.create({
+        agentName: 'held', podId: new mongoose.Types.ObjectId(), instanceId: 'other', version: '1.0.0',
+        installedBy, status: 'stale', staleSince: staleAt, config: { runtime: { runtimeType: 'native' } },
+      });
+      await giveToken('held', 'default');
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(result.revived).toBe(1);
+      expect(result.tokenHeld).toEqual([]);
+    });
+
+    it('tells two instances of one agent apart', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      await AgentInstallation.create({
+        agentName: 'held', podId: new mongoose.Types.ObjectId(), instanceId: 'other', version: '1.0.0',
+        installedBy, status: 'stale', staleSince: staleAt, config: { runtime: { runtimeType: 'native' } },
+      });
+      await giveToken('held', 'other');
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(result.tokenHeld.map((group) => group.instanceId)).toEqual(['other']);
+      expect(result.revived).toBe(1);
+    });
+
+    it('reads a row stored with no instance as the default one', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await AgentInstallation.collection.insertOne({
+        agentName: 'held', podId: new mongoose.Types.ObjectId(), version: '1.0.0',
+        installedBy, status: 'stale', staleSince: staleAt, config: { runtime: { runtimeType: 'native' } },
+      });
+      await giveToken('held');
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(result.revived).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+    });
+
+    it('a dry run reports it and writes nothing', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      await giveToken('held');
+
+      const result = await reviveNativeInstallations();
+
+      expect(result.candidates).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+      expect(await statusOf('held')).toEqual([{ status: 'stale', staleSince: staleAt }]);
+    });
+
+    it('does not backfill a pre-runtime row', async () => {
+      const staleAt = new Date(Date.now() - 9 * DAY_MS);
+      await seedRegistry('held', { type: 'native', runtimeType: 'native' });
+      await makePreRuntime('held', staleAt, {});
+      await giveToken('held');
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      const row = await AgentInstallation.findOne({ agentName: 'held' }).lean();
+      expect(row.status).toBe('stale');
+      expect(row.config?.runtime).toBeUndefined();
+      expect(result.backfill.eligible).toBe(0);
+      expect(result.backfill.applied).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+    });
+
+    it('takes back what it wrote when a token arrives during the write', async () => {
+      const staleAt = new Date(Date.now() - 9 * DAY_MS);
+      await seedRegistry('late', { type: 'native', runtimeType: 'native' });
+      await makePreRuntime('late', staleAt, {});
+      await make('scout', 'native', 'stale', staleAt);
+      const realUpdate = AgentInstallation.updateMany.bind(AgentInstallation);
+      jest.spyOn(AgentInstallation, 'updateMany').mockImplementation(async (...args) => {
+        const written = await realUpdate(...args);
+        if (args[1]?.$set?.status === 'active') await giveToken('late');
+        return written;
+      });
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      const row = await AgentInstallation.findOne({ agentName: 'late' }).lean();
+      expect(row.status).toBe('stale');
+      expect(row.staleSince).toEqual(staleAt);
+      expect(row.config?.runtime).toBeUndefined();
+      expect(await statusOf('scout')).toEqual([{ status: 'active', staleSince: null }]);
+      expect(result.revived).toBe(1);
+      expect(result.backfill.applied).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+      expect(warn.mock.calls.some(([line]) => String(line).includes('taking back late'))).toBe(true);
+    });
+
+    it('takes the row back when the read after the write fails', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('late-read', 'native', 'stale', staleAt);
+      const realExists = User.exists.bind(User);
+      let reads = 0;
+      jest.spyOn(User, 'exists').mockImplementation((filter, ...rest) => {
+        if (String(filter?.username).includes('late-read')) {
+          reads += 1;
+          if (reads > 1) return Promise.reject(new Error('read failed'));
+        }
+        return realExists(filter, ...rest);
+      });
+      jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(reads).toBeGreaterThan(1);
+      expect(result.tokenHeld).toHaveLength(1);
+      expect(await statusOf('late-read')).toEqual([{ status: 'stale', staleSince: staleAt }]);
+    });
+
+    it('counts a token on a row stored with no instance', async () => {
+      const staleAt = new Date(Date.now() - 3 * DAY_MS);
+      await make('held', 'native', 'stale', staleAt);
+      await AgentInstallation.collection.insertOne({
+        agentName: 'held', podId: new mongoose.Types.ObjectId(), version: '1.0.0', installedBy, status: 'paused',
+        runtimeTokens: [{ tokenHash: 'legacy', label: 'test', createdAt: new Date() }],
+        config: { runtime: { runtimeType: 'webhook' } },
+      });
+
+      const result = await reviveNativeInstallations({ apply: true });
+
+      expect(result.revived).toBe(0);
+      expect(result.tokenHeld).toHaveLength(1);
+    });
+
+    it('a dry run asks once, so a later token changes nothing it reports', async () => {
+      await make('scout', 'native', 'stale', new Date(Date.now() - 3 * DAY_MS));
+      const realExists = User.exists.bind(User);
+      const exists = jest.spyOn(User, 'exists').mockImplementation(async (filter, ...rest) => {
+        const held = await realExists(filter, ...rest);
+        await giveToken('scout');
+        return held;
+      });
+
+      const result = await reviveNativeInstallations();
+      exists.mockRestore();
+
+      expect(result.revived).toBe(0);
+      expect(result.tokenHeld).toEqual([]);
+    });
+  });
 });

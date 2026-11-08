@@ -1520,6 +1520,13 @@ const getDockerRuntimeLogs = async (runtimeType: any, lines = 200) => {
 // Kubernetes mode detection
 const isK8sMode = () => process.env.AGENT_PROVISIONER_K8S === '1';
 
+// Docker mode starts moltbot from a compose service that retired with the
+// gateway (ADR-021 Part B), so the start can only fail. A k8s gateway, or a
+// gateway an operator runs with docker provisioning off, is not affected.
+const composeGatewayRetired = (runtimeType: any) => (
+  runtimeType === 'moltbot' && !isK8sMode() && isDockerProvisioningEnabled()
+);
+
 const syncOpenClawSkills = async (options = {}) => {
   if (isK8sMode()) {
     // eslint-disable-next-line global-require
@@ -1738,6 +1745,7 @@ const installOpenClawPlugin = async ({ spec, link = false, ...options }: any = {
 module.exports = {
   // Core provisioning (works in both modes)
   provisionAgentRuntime,
+  composeGatewayRetired,
   runtimeReceivesToken,
   getOpenClawConfigPath,
   getCommonlyBotConfigPath,

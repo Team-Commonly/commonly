@@ -93,15 +93,18 @@ const isWorkingTask = (task: TaskItem): boolean => (
 
 
 // D215 (TASK-691): the panel folds. Each group is one 44px row at rest and
-// opens on demand; what a person opened stays open for the session.
+// opens on demand, except Needs you, which starts open. What a person opens or
+// closes stays that way for the session.
 export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
 export const INSPECTOR_OPEN_KEY = 'v2:inspector.openGroups';
+const DEFAULT_OPEN_GROUPS: InspectorGroup[] = ['needs-you'];
 const readOpenGroups = (): Set<InspectorGroup> => {
   try {
     const raw = sessionStorage.getItem(INSPECTOR_OPEN_KEY);
-    return new Set(raw ? (JSON.parse(raw) as InspectorGroup[]) : []);
+    // The d215 frame opens Needs you; a session that closed it keeps it closed.
+    return new Set(raw ? (JSON.parse(raw) as InspectorGroup[]) : DEFAULT_OPEN_GROUPS);
   } catch {
-    return new Set();
+    return new Set(DEFAULT_OPEN_GROUPS);
   }
 };
 const writeOpenGroups = (groups: Set<InspectorGroup>) => {
@@ -146,9 +149,11 @@ const agentState = (
   agent: V2Agent,
   attention: V2AttentionItem[],
   tasks: TaskItem[],
-): { kind: 'needs-you' | 'working' | 'idle'; title?: string } => {
+): { kind: 'needs-you' | 'working' | 'not-connected' | 'idle'; title?: string } => {
   const request = attention.find((item) => matchesAgent(agent, item.actorName));
   if (request) return { kind: 'needs-you', title: request.title };
+
+  if (agent.connection?.state === 'never') return { kind: 'not-connected' };
 
   const task = tasks.find((item) => isWorkingTask(item) && matchesAgent(agent, item.assignee));
   if (task) return { kind: 'working', title: task.title };
@@ -256,6 +261,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     if (state.kind === 'needs-you') return t('inspector.workspace.agentStatus.needsYou', { title: state.title });
     if (state.kind === 'working' && state.title) return t('inspector.workspace.agentStatus.workingTask', { title: state.title });
     if (state.kind === 'working') return t('inspector.workspace.agentStatus.working');
+    if (state.kind === 'not-connected') return t('agentConnection.never');
     return t('inspector.workspace.agentStatus.idle');
   };
 

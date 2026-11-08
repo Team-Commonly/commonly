@@ -185,6 +185,17 @@ export interface DraftGrant {
   byoConsentFor?: string | null;
 }
 
+/** The last Grant that went through, for the confirmation the drawer shows. */
+export interface GrantNotice {
+  grantId: string;
+  installableId: string;
+  tool: string;
+  pod: string;
+  agents: string;
+  /** Change access: a new grant that replaced an old one. */
+  changed: boolean;
+}
+
 export interface ConnectableRepository {
   installationId: string;
   owner: string;
@@ -220,11 +231,12 @@ export const MODE_RANK: Record<GrantWriteMode, number> = { read: 0, 'write-with-
 // JSX, because eslint's i18next/no-literal-string (jsx-only) reads an array literal in
 // a JSX expression as copy — and these are ids, not words (TASK-164).
 export const WRITE_MODES: GrantWriteMode[] = ['read', 'write-with-confirm', 'write'];
-// F213 stopgap: no grant this form can mint gives an agent a write. Hosted runs
-// are offered read tools only, a named agent's grant must be read, any other
-// outside agent in the pod refuses the mint, and `write` refuses on every pod.
-// F214 added pull-request access beside this, on a GitHub App connection. F215
-// restores the modes; turning this on brings the choice back.
+// F213 stopgap, for connections other than hosted MCP: this form offers them
+// read, because a named agent's grant must be read, any other outside agent in
+// the pod refuses the mint, and `write` refuses on every pod. F214 added
+// pull-request access beside this, on a GitHub App connection. F215 lets a
+// hosted connection offer ask-first, since a hosted run parks those writes for
+// the owner; turning this on brings the other modes back, `write` included.
 export const FORM_OFFERS_WRITES: boolean = false;
 
 /**
@@ -234,6 +246,11 @@ export const FORM_OFFERS_WRITES: boolean = false;
 export const entryOffersPrWrite = (entry: ToolCatalogEntry): boolean => (
   entry.connectionType === 'github-app'
   && entry.tools.some((tool) => tool.prWrite && tool.name === 'github.create_pull_request')
+);
+
+/** Under a minute old: `shortAge` reads "just now", which zh can't put before 前. */
+export const isJustNow = (date: string | null | undefined, now: number): boolean => (
+  relativeParts(date, { includeFuture: false, now }).kind !== 'rel'
 );
 
 /**
@@ -283,5 +300,26 @@ export const boundAgentOf = (entry: ToolCatalogEntry, connectionId: string): str
 export const entryIsGranted = (entry: ToolCatalogEntry, grants: ToolGrant[], now: number): boolean => (
   grants.some((grant) => !isDead(grant, now) && entryCovers(entry, grant))
 );
+
+/**
+ * The one thing a hosted entry's panel says about writing, for what is on
+ * screen. A hosted grant is read or ask-first: the mint refuses `write`, so a
+ * hosted write always parks for the connection's owner. An offer has no grant
+ * to describe, so it says what a grant can be. `liveGrants` is the viewer's own
+ * connections' grants on this entry only, so the copy speaks for this connection:
+ * another GitHub, or another member's grant, is out of its sight.
+ */
+export type AccessStatement = 'offerRead' | 'offerAsk' | 'grantedRead' | 'grantedAsk' | 'grantedMixed';
+
+export const accessStatement = (modes: GrantWriteMode[], liveGrants: ToolGrant[]): AccessStatement => {
+  if (liveGrants.length === 0) return modes.some((mode) => mode !== 'read') ? 'offerAsk' : 'offerRead';
+  const writing = liveGrants.filter((grant) => grant.writeMode !== 'read').length;
+  if (writing === 0) return 'grantedRead';
+  return writing === liveGrants.length ? 'grantedAsk' : 'grantedMixed';
+};
+
+/** How many of these tool names are writes. A name the entry does not list counts as none. */
+export const writeToolCount = (entry: ToolCatalogEntry, tools: string[]): number => (entry.tools || [])
+  .filter((tool) => tool.requiredWriteMode !== 'read' && tools.includes(tool.name)).length;
 
 export const PER_ENTRY_REVOKE_COPY = new Set(['supabase', 'linear', 'sentry']);

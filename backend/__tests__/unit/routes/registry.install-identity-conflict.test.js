@@ -18,6 +18,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
   AgentInstallation: {
     findOne: jest.fn(),
+    rowInPod: jest.fn().mockResolvedValue(null),
     find: jest.fn(),
     install: jest.fn(),
   },

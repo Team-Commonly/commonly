@@ -64,11 +64,14 @@ describe('i18n configuration', () => {
       expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
       expect(i18n.t(key, { lng: 'zh-CN' })).not.toBe(i18n.t(key, { lng: 'en' }));
     });
-    // Catalog maps exist only in zh-CN. English has none, so the page shows the
-    // server description. The rendered tests check what the page shows.
+    // Catalog maps exist only in zh-CN, so English shows the server description.
+    // Linear is the exception (F321): its server line promises approval, which is
+    // not true of a read grant. The rendered tests check what the page shows.
     const catalogIds = [
-      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'linear', 'supabase', 'notion',
+      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'supabase', 'notion',
     ];
+    expect(i18n.t('connectors.catalogDescriptions.linear', { lng: 'zh-CN' })).toMatch(/[\u4e00-\u9fff]/);
+    expect(i18n.t('connectors.catalogDescriptions.linear', { lng: 'en' })).not.toMatch(/approval/);
     catalogIds.forEach((id) => {
       const key = `connectors.catalogDescriptions.${id}`;
       expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);

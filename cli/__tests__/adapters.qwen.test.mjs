@@ -24,7 +24,7 @@ const {
   TESTED_QWEN_VERSIONS,
   ALLOW_UNTESTED_QWEN_VERSION_ENV,
   buildQwenMcpConfig,
-  GRANT_TESTED_QWEN_VERSIONS, withoutUnprovenBroker,
+  GRANT_TESTED_QWEN_VERSIONS, publicExcludedTools, withoutUnprovenBroker,
 } = await import('../src/lib/adapters/qwen.js');
 
 beforeEach(() => {
@@ -695,5 +695,54 @@ describe('F175d: a public Qwen seat holds a broker only on a version that passed
     expect(withoutUnprovenBroker(servers, {
       version: '0.26.3', isPublic: false, instanceUrl: 'https://api.commonly.me',
     })).toBe(servers);
+  });
+});
+
+describe('F145: memory writes on a turn the owner woke', () => {
+  const MEMORY = ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle'];
+  const NOT_MEMORY = ['commonly_self_install_into_pod', 'commonly_delete_message', 'commonly_attach_file', 'commonly_catch_up'];
+  const server = (name = 'commonly') => ({ name, transport: 'stdio', command: [process.execPath, '/tmp/commonly-mcp-test.mjs'] });
+  const entries = (over = {}) => buildQwenMcpConfig([server()], {
+    credentialFile: '/tmp/cred', instanceUrl: 'https://api.commonly.me', publicSeat: true, ...over,
+  }).mcpServers.commonly.excludeTools;
+
+  test('an owner-woken turn gets the three memory tools back on the server entry, and nothing else', () => {
+    const excluded = entries({ ownerWoken: true });
+    for (const tool of MEMORY) expect(excluded).not.toContain(tool);
+    for (const tool of NOT_MEMORY) expect(excluded).toContain(tool);
+    expect(entries()).toEqual(expect.arrayContaining([...MEMORY, ...NOT_MEMORY]));
+  });
+
+  test('the excluded names follow the turn', () => {
+    const names = (ctx) => publicExcludedTools(['commonly'], ctx);
+    for (const tool of MEMORY) {
+      expect(names({ ownerWoken: true })).not.toContain(`mcp__commonly__${tool}`);
+      expect(names({})).toContain(`mcp__commonly__${tool}`);
+      expect(names({})).toContain(tool);
+    }
+    for (const tool of NOT_MEMORY) expect(names({ ownerWoken: true })).toContain(`mcp__commonly__${tool}`);
+  });
+
+  test('both spellings cover a server with another name', () => {
+    expect(publicExcludedTools(['commonly_dev'], {})).toContain('mcp__commonly_dev__commonly_attach_file');
+  });
+
+  test('a public turn says so on the real spawn, with its prompt to match', async () => {
+    await withSeat(async (ctx) => {
+      const argsOf = async (extra) => {
+        const seen = [];
+        await qwen.spawn('hello', { ...ctx, memoryLongTerm: '', ...extra, _spawnImpl: (cmd, args) => {
+          seen.push(args);
+          return fakeChild();
+        } });
+        return seen[0];
+      };
+      const owner = await argsOf({ ownerWoken: true });
+      expect(owner[owner.indexOf('--exclude-tools') + 1].split(',')).not.toContain('commonly_save_my_memory');
+      expect(owner[owner.indexOf('-p') + 1]).toContain('commonly_save_my_memory');
+      const stranger = await argsOf({});
+      expect(stranger[stranger.indexOf('--exclude-tools') + 1].split(',')).toContain('commonly_save_my_memory');
+      expect(stranger[stranger.indexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
+    });
   });
 });

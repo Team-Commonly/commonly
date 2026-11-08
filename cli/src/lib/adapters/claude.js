@@ -103,7 +103,7 @@ import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '..
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_WITHHELD_TOOLS, publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
@@ -637,7 +637,7 @@ const permissionPath = (path, platform) => (platform === 'win32'
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
 
 const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
-  trust, allow = [], memoryWithheld = false, platform = process.platform, home: homeOverride = null,
+  trust, allow = [], memoryWithheld = false, ownerWoken = false, platform = process.platform, home: homeOverride = null,
   noShell = false,
 } = {}) => {
   const home = homeOverride || homedir();
@@ -685,11 +685,12 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     : [];
   // Nor, on any confined trust, the tools no public seat is offered
   // (public-withheld-tools.js). A public seat also loses self-install and every
-  // memory write (F118). Only a workspace seat is called with its trust at
-  // every call site; the public ones pass none, so "not workspace" is public.
+  // memory write (F118), and gets the writes back on a turn its owner woke
+  // (F145). Only a workspace seat is called with its trust at every call site;
+  // the public ones pass none, so "not workspace" is public.
   const withheldTools = trust === 'workspace'
     ? PUBLIC_WITHHELD_TOOLS
-    : [...PUBLIC_WITHHELD_TOOLS, ...PUBLIC_ONLY_WITHHELD_TOOLS];
+    : publicSeatWithheldTools({ ownerWoken });
   const withheldDenies = withheldTools
     .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
   // A tool can be denied for two reasons (a withheld turn's memory write is
@@ -878,7 +879,7 @@ const publicWitnessError = ({ code, tool, error }) => {
     ? `Commonly MCP server ${tool} was not shown connected`
     : `Commonly tool ${tool} failed in a way the model must not narrate`;
   const failure = new Error(
-    `public seat withheld this turn's reply: ${what} (${reason}), so nothing was posted and the event stays unacked for retry`,
+    `public seat withheld this turn's reply: ${what} (${reason}), so the CLI posted no reply for it (posts the agent made through its tools stay) and the CLI does not ack the event (one the agent already checkpointed stays acked)`,
   );
   failure.code = code;
   return failure;
@@ -895,20 +896,31 @@ const turnReply = (stdout, { credentials, publicMcp }) => {
   return redactKnownCredentials(claudeResultText(stdout, { credentials }), credentials);
 };
 
-// The failure tail for a non-zero exit. Stream events are mostly system init
-// and status lines, which would push the terminal error past the 2000-char cut,
-// so keep the result text, or the lines that are not system or stream events.
+// A line of stdout the CLI wrote as a failure, not as part of the turn's stream:
+// prose, or an API body printed whole. A keep-list, because a typed event holds
+// the model's words or a tool's. Unparsed text opening like an event is the last
+// one, torn by the crash.
+const isCliFailureLine = (line, event) => (event
+  ? event.type === undefined || event.type === 'error'
+  : !line.trimStart().startsWith('{"'));
+
+// The failure tail for a non-zero exit. The status scan, the failure class and
+// the pod's notice all read this text, so it holds only the CLI's own words: a
+// tool result quoting `| 429: ` once named the turn's status and cut the body
+// past the JSON it sat in (F235). So the result text counts only when flagged
+// is_error. At is_error false it's the model's answer, and a crash after it says
+// nothing about the provider. A failed result with no text keeps its subtype.
+// The cost: a crash with no result event loses a synthetic API-error assistant
+// event, so it classes runtime, and the seat log loses the turn's last lines.
 export const claudeFailureTail = (stdout) => {
-  const text = String(stdout || '');
-  const lines = text.split('\n');
+  const lines = String(stdout || '').split('\n');
   const events = lines.map(parseEvent);
-  if (!events.some(Boolean)) return text.trim();
   const result = [...events].reverse().find((event) => event?.type === 'result');
-  if (String(result?.result ?? '').trim()) return String(result.result).trim();
-  return lines
-    .filter((_, i) => !['system', 'stream_event'].includes(events[i]?.type))
-    .join('\n')
-    .trim();
+  const failed = result?.is_error === true;
+  if (failed && String(result.result ?? '').trim()) return String(result.result).trim();
+  const subtype = failed && /^\w{1,40}$/.test(result.subtype) ? result.subtype : '';
+  const prose = lines.filter((line, i) => isCliFailureLine(line, events[i])).join('\n').trim();
+  return [prose, subtype].filter(Boolean).join('\n');
 };
 
 const runClaude = ({
@@ -1397,6 +1409,7 @@ const prepareArgv = async (innerArgv, ctx) => {
       ...buildPublicClaudePolicyArgs(allowedPatterns, {
         ...(sandboxTrust === 'workspace' ? { trust: sandboxTrust, allow: grants } : {}),
         memoryWithheld: ctx.memoryWithheld === true,
+        ownerWoken: ctx.ownerWoken,
         platform: ctx._platform || process.platform,
         home: ctx._home || null,
         noShell: true,
@@ -1439,7 +1452,7 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, {
-        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true,
+        trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken,
       }),
       ...(ctx.publicSkillArgs || []),
     ];
@@ -1506,8 +1519,8 @@ const prepareArgv = async (innerArgv, ctx) => {
     innerArgv = [
       ...innerArgv,
       ...buildPublicClaudePolicyArgs(allowedPatterns, workspaceBwrapSandbox
-        ? { trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true }
-        : { memoryWithheld: ctx.memoryWithheld === true }),
+        ? { trust: sandboxTrust, allow: grants, memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }
+        : { memoryWithheld: ctx.memoryWithheld === true, ownerWoken: ctx.ownerWoken }),
       ...(ctx.publicSkillArgs || []),
     ];
   } else if (allowedPatterns.length > 0) {
@@ -1674,8 +1687,9 @@ export default {
     // long-running work in its own project.
     const reapEverything = ctx.environment?.sandbox?.trust === 'public';
     const workCues = publicTrust ? [] : WORK_CUES;
-    // F118: a public seat reads its memory but is not offered a write.
-    const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public';
+    // F118, F145: a public seat reads its memory, and is offered a write only
+    // on a turn its owner woke.
+    const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public' && ctx.ownerWoken !== true;
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,

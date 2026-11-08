@@ -3,6 +3,7 @@ import { podMemberPopulate } from '../services/podMemberPopulate';
 import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
+import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -50,6 +51,7 @@ const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
+const { isObjectIdHex } = require('../middleware/objectIdParam');
 const { toPublicIntegrationConfig } = require('../models/integrationPublicConfig');
 const { isGlobalAdminUser } = require('./registry/helpers');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -175,6 +177,7 @@ const {
 const AgentAskService = require('../services/agentAskService');
 const DecisionRequestService = require('../services/decisionRequestService');
 const DMService = require('../services/dmService');
+const { isHostedRoomRefusal } = require('../services/hostedRoomRefusal');
 const ChatSummarizerService = require('../services/chatSummarizerService');
 const AgentMentionService = require('../services/agentMentionService');
 
@@ -543,7 +546,8 @@ router.post('/observation', phase4RateLimit, daemonAuth('agents:adopt'), async (
 // A foreground run on a host with no sandbox says so here, because no daemon is
 // reporting for it, and an unconfined agent can read this run's token and call
 // the grant broker itself. Set-only on purpose: that same token must never be
-// able to lift the refusal, so nothing on this route clears it. It only ever
+// able to lift the refusal, so nothing on this route clears it. Its owner can,
+// through the registry (DELETE .../agents/:name/host-unconfined). This only ever
 // adds a refusal, so a seat can set it on itself alone and nothing else.
 router.post('/host-unconfined', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
   try {
@@ -987,7 +991,9 @@ router.post('/dm', phase4RateLimit, auth, async (req: any, res: any) => {
  * Dual-auth (ADR-010 Phase 1):
  *   - Human path (JWT): existing semantics — caller must be the agent's
  *     installer or a member of an installed pod, then opens a human↔agent
- *     room with the target agent.
+ *     room with the target agent. A hosted agent's new room also needs an
+ *     owner who shares a pod with the caller; an admin's bypass doesn't reach
+ *     that, and both paths refuse with `hosted_no_shared_owner`.
  *   - Agent path (`cm_agent_*` runtime token): caller is identified by the
  *     token's resolved User row (`req.agentUser`). No installation match
  *     required — any agent can open a 1:1 with any other agent. The 1:1
@@ -1189,6 +1195,9 @@ router.post('/room', phase4RateLimit, dualAuth, async (req: any, res: any) => {
 
     return res.json({ room });
   } catch (error: any) {
+    if (isHostedRoomRefusal(error)) {
+      return res.status(error.status).json({ message: error.message, code: error.code });
+    }
     console.error('Error creating/fetching agent room:', error);
     return res.status(500).json({ message: 'Failed to create/fetch agent room' });
   }
@@ -1424,6 +1433,11 @@ router.post('/bot/events/:id/ack', phase4RateLimit, auth, requireApiTokenScopes(
     // themselves with `x-commonly-client`; anything that does not is
     // 'unknown', which is never enforced unless the operator sets `true`/`*`.
     const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // F330: an id that cannot be an event (one stray digit, in prod) is the
+    // caller's mistake; acknowledge() would throw a CastError and answer 500.
+    if (!isObjectIdHex(req.params.id)) {
+      return res.status(400).json({ code: 'invalid_event_id', message: 'Invalid event ID' });
+    }
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it
@@ -1553,6 +1567,11 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
     // themselves with `x-commonly-client`; anything that does not is
     // 'unknown', which is never enforced unless the operator sets `true`/`*`.
     const ackConsumer = String(req.header?.('x-commonly-client') || '').trim().toLowerCase() || 'unknown';
+    // F330: an id that cannot be an event (one stray digit, in prod) is the
+    // caller's mistake; acknowledge() would throw a CastError and answer 500.
+    if (!isObjectIdHex(req.params.id)) {
+      return res.status(400).json({ code: 'invalid_event_id', message: 'Invalid event ID' });
+    }
     // Phase B: refuse rather than accept-and-say-nothing. acknowledge()
     // returns null for a refused nonce-less ack, which is indistinguishable
     // from "already gone", so answering 200 here would tell the driver it
@@ -2148,7 +2167,8 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
     }
 
     // `mention`: the @handle routing resolves for the author, so a reply can
-    // address them without guessing from the display name in `username`.
+    // address them without guessing from `username`, which is a label for an
+    // agent and a handle for a person. `displayName`: what people see, or ''.
     const withMention = await AgentMessageService.withMentionHandles(page, req.params.podId);
     const attendance = beforeMs === undefined && rawThreadRootId === undefined
       ? await podAttendance(podId, installation)
@@ -2505,6 +2525,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.
       threadRootId: threadRootId || null,
+      // F245: a plain post from a turn answering one thread lands in it, unless
+      // the agent says it belongs in the main channel.
+      inferAnswerThread: req.body?.mainChannel !== true,
       installationConfig: installation.config || null,
     });
 
@@ -2792,6 +2815,16 @@ export interface CyclesAppendPayload {
 // Instance IDs are intentionally NOT lowercased — platform writers keep them raw
 // (e.g. read straight off `botMetadata.instanceId`), so lowercasing here would
 // itself introduce a mismatch. Preserve the fallback chain; only add normalization.
+// F145: on a public seat, only a turn its owner woke may write memory. Runs
+// before the body is read, so a refused caller learns nothing else about it.
+const ownerOnlyMemoryWrite = (req: any, res: any, next: any) => {
+  if (!memoryWriteOwnerOnly(req.agentCredential)) return next();
+  return res.status(403).json({
+    code: 'memory_write_owner_only',
+    message: "Memory wasn't saved. This agent's memory can only be changed on a turn its owner started.",
+  });
+};
+
 function resolveMemoryIdentity(req: any): { agentName?: string; instanceId: string } {
   const agentInstallation = req.agentInstallation;
   const rawAgentName =
@@ -3014,7 +3047,7 @@ router.get('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
  * - `byteSize` and `updatedAt` are always server-stamped via
  *   `stampSectionsForWrite`; client-supplied values are discarded.
  */
-router.put('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.put('/memory', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWrite, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {
@@ -3144,7 +3177,7 @@ router.put('/memory', phase4RateLimit, agentRuntimeAuth, async (req: any, res: a
  * `byteSize` and `updatedAt` are server-stamped. `schemaVersion` auto-set to 2.
  * v1 `content` is mirrored from `long_term.content` (same rule as PUT).
  */
-router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, async (req: any, res: any) => {
+router.post('/memory/sync', phase4RateLimit, agentRuntimeAuth, ownerOnlyMemoryWrite, async (req: any, res: any) => {
   try {
     const { agentName, instanceId } = resolveMemoryIdentity(req);
     if (!agentName) {

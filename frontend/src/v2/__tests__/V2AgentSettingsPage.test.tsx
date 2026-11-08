@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 import { AuthContext } from '../../context/AuthContext';
+import i18n from '../../i18n';
 
 jest.mock('axios', () => {
   const mock = {
@@ -56,6 +57,38 @@ test('Identity shows the listing state and links to the public profile without p
   expect(screen.getByRole('link', { name: 'View public profile' }))
     .toHaveAttribute('href', '/v2/agent/maya-claude/default');
   expect(axios.post).not.toHaveBeenCalled();
+});
+
+test('the Memory tab\'s Edit link opens How it runs and lands on the editor', async () => {
+  const scrollIntoView = jest.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const base = axios.get.getMockImplementation();
+  const doc = { content: '', updatedAt: null, visibility: 'private' };
+  axios.get.mockImplementation((url, options) => (url.endsWith('/editable')
+    ? Promise.resolve({ data: { sections: { long_term: doc, soul: doc, shared: doc } } })
+    : base(url, options)));
+  renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
+  await waitFor(() => expect(screen.getByTestId('agent-how-it-runs')).toHaveAttribute('open'));
+  await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
+  expect(document.activeElement).toHaveTextContent('Memory');
+  delete Element.prototype.scrollIntoView;
+});
+
+test('a memory load failure is what the Edit link lands on, so Try again is in view', async () => {
+  const scrollIntoView = jest.fn();
+  Element.prototype.scrollIntoView = scrollIntoView;
+  const base = axios.get.getMockImplementation();
+  axios.get.mockImplementation((url, options) => (url.endsWith('/editable')
+    ? Promise.reject(new Error('down'))
+    : base(url, options)));
+  renderPage('/v2/agents/maya-claude/default#agent-memory-editor');
+  await waitFor(() => expect(scrollIntoView.mock.contexts[0]?.id).toBe('agent-memory-editor'));
+  delete Element.prototype.scrollIntoView;
+});
+
+test('without that link, How it runs stays closed', async () => {
+  renderPage();
+  expect(await screen.findByTestId('agent-how-it-runs')).not.toHaveAttribute('open');
 });
 
 test('an ephemeral registry row is not presented as a marketplace listing', async () => {
@@ -517,7 +550,7 @@ test('runtime editor writes environment controls through the shared settings hoo
   // D215 artboard: Wake, then ONE Identity & access list in the frame's row order. This roster
   // read carries no connection signal, so the Connection row stays to say so.
   expect(sections.filter((text) => !text.startsWith('Wake'))).toEqual([
-    'Identity & access', 'Name', 'Runtime key', 'Connection', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
+    'Identity & access', 'Name', 'Runtime key', 'Connection', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
   ]);
   expect(sections[0].startsWith('Wake')).toBe(true);
   // None of the old section headings remain.
@@ -742,6 +775,43 @@ test('a name outside 1–80 characters is refused under the field; other refusal
   expect(screen.queryByText('Enter a display name of 1–80 characters.')).toBeNull();
 });
 
+describe('someone who does not manage this agent', () => {
+  test('gets a sentence and the way to Your team, not the hook\'s error text', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) return Promise.resolve({ data: { installations: [] } });
+      return Promise.resolve({ data: {} });
+    });
+    renderPage('/v2/agents/maya-claude/u1a2b');
+    const state = await screen.findByTestId('agent-settings-no-access');
+    expect(state).toHaveAttribute('role', 'alert');
+    expect(state).toHaveTextContent("You can't open these settings");
+    expect(state).toHaveTextContent('Only the installer or an admin can open them, while the agent is in a pod.');
+    // Not the profile: a private agent's reads "Agent not found", a second dead end.
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+  });
+
+  test('an installer refused every pod is not told only the installer can open this', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.includes('/manage-settings')) {
+        return Promise.resolve({ data: { installations: [{ podId: 'pod-1', podName: 'Left pod' }] } });
+      }
+      return Promise.reject(Object.assign(new Error('refused'), { response: { status: 403 } }));
+    });
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Your team' })).toHaveAttribute('href', '/v2/agents');
+  });
+
+  test('a load that fails for any other reason keeps its own error', async () => {
+    axios.get.mockRejectedValue(new Error('boom'));
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('boom');
+    expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Your team' })).not.toBeInTheDocument();
+  });
+});
+
 describe('one Identity & access list (d215 frame)', () => {
   // A connected webhook agent with one active key, a memory index and no skills or grants.
   const fleet = ({ state = 'connected', memory = 'ok', skills = 'ok', runtimeType = 'webhook', placement = null } = {}) => (url) => {
@@ -777,6 +847,147 @@ describe('one Identity & access list (d215 frame)', () => {
     }] });
     return Promise.resolve({ data: [] });
   };
+
+  test('a hosted agent that is ready reads as healthy, not like one that never connected', async () => {
+    const base = fleet({ runtimeType: 'hosted', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    const { container } = renderPage();
+    const status = await screen.findByText(/Ready on Commonly/);
+    expect(status.querySelector('.dot')).not.toHaveClass('dot--idle');
+    expect(await screen.findByText('Not needed')).toBeInTheDocument();
+    expect(screen.queryByText('No active keys.')).not.toBeInTheDocument();
+    expect(screen.getByText('Not needed').closest('.lrow').querySelector('.dot')).toBeNull();
+    const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+    expect(summary).toHaveTextContent('hosted');
+    expect(summary).not.toHaveTextContent('not reported');
+    expect(container.querySelector('.st .dot--off')).toBeNull();
+  });
+
+  test('a key list that fails to load costs the key row, not the page', async () => {
+    const base = fleet({ state: 'never' });
+    let keysUp = false;
+    axios.get.mockImplementation((url, options) => {
+      if (url !== '/api/credentials') return base(url, options);
+      return keysUp ? Promise.resolve({ data: [] }) : Promise.reject(new Error('Network Error'));
+    });
+    renderPage();
+    expect(await screen.findByText('Couldn’t load keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Network Error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Key actions' })).not.toBeInTheDocument();
+    keysUp = true;
+    fireEvent.click(within(screen.getByText('Couldn’t load keys.').closest('.lrow')).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t load keys.')).not.toBeInTheDocument();
+  });
+
+  test('an error that opens the key panel offers no key action on an unread list', async () => {
+    const base = fleet({ state: 'connected' });
+    let settingsDown = false;
+    axios.get.mockImplementation((url, ...rest) => {
+      if (url === '/api/credentials') return Promise.reject(new Error('Network Error'));
+      if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+      if (settingsDown && url.endsWith('/manage-settings')) return Promise.reject(new Error('Settings down'));
+      return base(url, ...rest);
+    });
+    axios.post.mockResolvedValue({ data: { success: true } });
+    renderPage();
+    await screen.findByText('Couldn’t load keys.');
+    settingsDown = true;
+    fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+    await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('Settings down')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
+  });
+
+  test('a retry the server refuses settles as no access, not as a load failure', async () => {
+    const base = fleet({ state: 'never' });
+    let refuse = false;
+    axios.get.mockImplementation((url, options) => {
+      if (url !== '/api/credentials') return base(url, options);
+      return Promise.reject(refuse ? Object.assign(new Error('Denied'), { response: { status: 403 } }) : new Error('Network Error'));
+    });
+    renderPage();
+    const row = (await screen.findByText('Couldn’t load keys.')).closest('.lrow');
+    refuse = true;
+    fireEvent.click(within(row).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText(/Key management is unavailable/)).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  test('an agent that never connected keeps the idle dot', async () => {
+    axios.get.mockImplementation(fleet({ state: 'never' }));
+    renderPage();
+    const status = await screen.findByText(/Not connected yet/);
+    expect(status.querySelector('.dot')).toHaveClass('dot--idle');
+    expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).toHaveTextContent('not reported');
+  });
+
+  test('a native agent reads the same way, because the server calls it available too', async () => {
+    const base = fleet({ runtimeType: 'native', state: 'available' });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    await screen.findByText(/Ready on Commonly/);
+    expect(await screen.findByText('Not needed')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-how-it-runs').querySelector('summary')).not.toHaveTextContent('not reported');
+  });
+
+  test.each(['never', 'stopped'])('a hosted agent in state %s with no key keeps the warning, since it may poll with one', async (state) => {
+    const base = fleet({ runtimeType: 'hosted', state });
+    axios.get.mockImplementation((url, options) => (url === '/api/credentials'
+      ? Promise.resolve({ data: [] }) : base(url, options)));
+    renderPage();
+    expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+    expect(screen.queryByText('Not needed')).not.toBeInTheDocument();
+  });
+
+  test('a hosted agent that does hold a key still shows it', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'hosted', state: 'available' }));
+    renderPage();
+    await screen.findByText(/Ready on Commonly/);
+    await waitFor(() => expect(screen.queryByText('Not needed')).not.toBeInTheDocument());
+    expect(await screen.findByText(/^active/)).toBeInTheDocument();
+  });
+
+  test('How it runs reads the runtime in the app language', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'hosted', state: 'available' }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      await screen.findByText(/可在 Commonly 使用/);
+      const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+      expect(summary).toHaveTextContent('托管');
+      expect(summary).not.toHaveTextContent('hosted');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('a webhook reads Webhook in How it runs under zh-CN', async () => {
+    axios.get.mockImplementation(fleet({ runtimeType: 'webhook', state: 'never' }));
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      await screen.findByText(/尚未连接/);
+      const summary = screen.getByTestId('agent-how-it-runs').querySelector('summary');
+      expect(summary).toHaveTextContent('Webhook');
+      expect(summary).not.toHaveTextContent('webhook');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  test('the short wake label reads 真人消息 under zh-CN', async () => {
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      expect(i18n.t('agentSettings.messageWakeShort_human')).toBe('真人消息');
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
 
   test('How it runs opens by itself when the machine was revoked, and stays closed when it is healthy', async () => {
     axios.get.mockImplementation(fleet({ runtimeType: 'wrapper', placement: 'revoked' }));
@@ -1004,6 +1215,21 @@ describe('one Identity & access list (d215 frame)', () => {
     }
   });
 
+  test('Talk to says why when no shared owner hosts the agent', async () => {
+    axios.get.mockImplementation(fleet());
+    axios.post.mockRejectedValue({ response: { status: 403, data: { code: 'hosted_no_shared_owner', message: 'server text' } } });
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+          <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /^Talk to/ }));
+    expect(await screen.findByText(/Join a pod where someone hosts it to talk to it\./)).toBeInTheDocument();
+    expect(screen.queryByText('server text')).not.toBeInTheDocument();
+  });
+
   test('Talk to opens the agent room from the header', async () => {
     axios.get.mockImplementation(fleet());
     axios.post.mockResolvedValue({ data: { room: { _id: 'room-1' } } });
@@ -1032,6 +1258,53 @@ describe('one Identity & access list (d215 frame)', () => {
     });
     afterEach(() => { window.matchMedia = realMatchMedia; });
 
+    test('empty Connectors and Skills read as one label, as the frame draws them', async () => {
+      axios.get.mockImplementation(fleet());
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText(/^Connectors · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(await screen.findByText(/^Skills · none$/, { selector: '.lb' })).toBeInTheDocument();
+      expect(screen.queryByText('None')).not.toBeInTheDocument();
+      for (const label of [/^Connectors · none$/, /^Skills · none$/]) {
+        expect(screen.getByText(label, { selector: '.lb' }).closest('.lrow').querySelector('.vl')).toBeEmptyDOMElement();
+      }
+    });
+
+    const renderSettings = () => render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+          <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+
+    test('a skill count keeps the plain Skills label', async () => {
+      const base = fleet();
+      axios.get.mockImplementation((url, ...rest) => (url.startsWith('/api/skills/pods/')
+        ? Promise.resolve({ data: { items: [{ id: 'skill-1', name: 'Review' }], canEdit: true, skillLoad: null } }) : base(url, ...rest)));
+      renderSettings();
+      expect(await screen.findByText('1 skill')).toBeInTheDocument();
+      expect(screen.getByText(/^Skills$/, { selector: '.lb' })).toBeInTheDocument();
+    });
+
+    test.each([
+      ['a read still out', () => new Promise(() => {}), /Loading grants/],
+      ['a read the viewer may not see', () => Promise.reject({ response: { status: 403 } }), /Owner and admins only/],
+      ['a failed read', () => Promise.reject({ response: { status: 500 } }), null],
+    ])('Connectors keeps its plain label during %s', async (_label, read, value) => {
+      const base = fleet();
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/grants') ? read() : base(url, ...rest)));
+      renderSettings();
+      expect(await screen.findByText(/^Connectors$/, { selector: '.lb' })).toBeInTheDocument();
+      if (value) expect(await screen.findByText(value, { selector: '.vl .mu' })).toBeInTheDocument();
+      expect(screen.queryByText(/^Connectors · none$/, { selector: '.lb' })).not.toBeInTheDocument();
+    });
+
     test('a 52px bar with back to Your team, the tabs as their own row, and every row still reachable', async () => {
       axios.get.mockImplementation(fleet());
       render(
@@ -1051,11 +1324,249 @@ describe('one Identity & access list (d215 frame)', () => {
       const tabs = screen.getByRole('navigation', { name: 'Agent tabs' });
       expect(tabs.closest('.mtop')).toBeNull();
       expect(tabs).toHaveClass('seg--full');
-      for (const label of ['Name', 'Runtime key', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
-        expect(screen.getByText(label, { selector: '.lb' })).toBeInTheDocument();
+      for (const label of ['Name', 'Runtime key', 'Listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
+        expect(screen.getByText(new RegExp(`^${label}( · none)?$`), { selector: '.lb' })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Your team' }));
       expect(await screen.findByText('your team')).toBeInTheDocument();
     });
+
+    test('Add to pod still reports the pod after the refresh remounts the Wake list', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url === '/api/pods'
+        ? Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] }) : base(url, ...rest)));
+      axios.post.mockResolvedValue({ data: { success: true } });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      expect(axios.post.mock.calls[0][0]).toBe('/api/registry/agents/maya-claude/pods/pod-2?instanceId=default');
+      await screen.findByRole('button', { name: 'Add to pod' });
+      expect(screen.getByText('Added to Design.')).toBeInTheDocument();
+    });
+
+    test('a Name with no display name reads as the agent, not as "default"', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url === '/api/registry/pods/pod-1/agents/maya-claude'
+        ? Promise.resolve({ data: { agent: {
+          name: 'maya-claude', instanceId: 'default', displayName: '', runtime: { runtimeType: 'webhook' },
+        } } })
+        : base(url, ...rest)));
+      renderPage();
+      const label = await screen.findByText('Name', { selector: '.lb' });
+      const row = label.closest('.lrow');
+      expect(within(row).getByText('maya-claude')).toBeInTheDocument();
+      expect(within(row).queryByText('default')).toBeNull();
+    });
+
+    test('private pods named after the agent say which one they are', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/manage-settings')
+        ? Promise.resolve({ data: { writablePodId: 'pod-1', otherDirectRoomCount: 2, installations: [
+          { podId: 'pod-1', podName: 'Maya', podType: 'agent-room', status: 'active' },
+          { podId: 'pod-2', podName: 'Maya', podType: 'agent-admin', status: 'active' },
+          { podId: 'pod-3', podName: 'Workspace', podType: 'chat', status: 'active' },
+        ] } })
+        : base(url, ...rest)));
+      renderPage();
+      // The caller's own 1:1 room reads as theirs, not as the agent's name.
+      const own = await screen.findByRole('link', { name: 'Your direct room' });
+      expect(own).toHaveAttribute('href', '/v2/pods/pod-1');
+      expect(own.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Your direct room' })).toBeInTheDocument();
+      const admin = screen.getByRole('link', { name: 'Maya' });
+      expect(admin.closest('td').querySelector('.v2-agent-wake-pods__kind')).toHaveTextContent(/^admin$/);
+      expect(screen.getByRole('button', { name: 'Maya, admin' })).toBeInTheDocument();
+      const team = screen.getByRole('link', { name: 'Workspace' });
+      expect(team.closest('td').querySelector('.v2-agent-wake-pods__kind')).toBeNull();
+      // Other people's rooms are one count line: no link, no controls.
+      const others = screen.getByText('Direct rooms with others: 2');
+      const row = others.closest('tr');
+      expect(row).toHaveClass('v2-agent-wake-pods__others');
+      expect(row.querySelector('a, button, input, select')).toBeNull();
+    });
+
+    test('an admin with only other people\'s rooms sees the count instead of the empty state', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => (url.includes('/manage-settings')
+        ? Promise.resolve({ data: { writablePodId: 'pod-9', otherDirectRoomCount: 1, installations: [] } })
+        : base(url, ...rest)));
+      renderPage();
+      expect(await screen.findByText('Direct rooms with others: 1')).toBeInTheDocument();
+      expect(screen.queryByText('No pods to manage')).toBeNull();
+    });
+
+    test('an owner who can\'t read those rooms gets the refused state, not "can\'t open"', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url.includes('/manage-settings')) {
+          return Promise.resolve({ data: { writablePodId: 'pod-9', otherDirectRoomCount: 1, installations: [] } });
+        }
+        if (url.includes('/pods/pod-9/')) return Promise.reject(Object.assign(new Error('403'), { response: { status: 403 } }));
+        return base(url, ...rest);
+      });
+      renderPage();
+      expect(await screen.findByRole('alert')).toHaveTextContent('Agent settings unavailable.');
+      expect(screen.queryByTestId('agent-settings-no-access')).not.toBeInTheDocument();
+    });
+
+    test('the page stays up through an add, and the new pod lands in the list', async () => {
+      const base = fleet({ state: 'connected' });
+      let added = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.includes('/manage-settings')) {
+          const read = base(url.split('?')[0], ...rest).then(({ data }) => ({ data: added ? {
+            ...data,
+            installations: [...data.installations, { podId: 'pod-2', podName: 'Design', status: 'active' }],
+          } : data }));
+          // A network read, so React renders whatever shows while it's out.
+          return added ? new Promise((resolve) => { setTimeout(() => resolve(read), 20); }) : read;
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      const frames = [];
+      const watch = new MutationObserver(() => frames.push({
+        page: document.body.textContent.includes('Loading agent settings'),
+        rows: document.querySelectorAll('.v2-agent-wake-pods__pod').length,
+        status: document.querySelector('.st')?.textContent,
+      }));
+      watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      await waitFor(() => expect(document.querySelectorAll('.v2-agent-wake-pods__pod')).toHaveLength(2));
+      watch.disconnect();
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.filter((frame) => frame.page)).toHaveLength(0);
+      expect(frames.filter((frame) => frame.rows === 0)).toHaveLength(0);
+      expect(frames.filter((frame) => !frame.status?.startsWith('Connected'))).toHaveLength(0);
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
+    });
+
+    test('an add after a failed first read shows the list loading, not an empty list', async () => {
+      const base = fleet({ state: 'connected' });
+      let added = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.includes('/manage-settings?')) {
+          if (!added) return Promise.reject(new Error('down'));
+          return new Promise((resolve) => { setTimeout(() => resolve(base(url.split('?')[0], ...rest)), 20); });
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        added = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      expect(await screen.findByText('Could not load settings.')).toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await waitFor(() => expect(document.querySelector('.v2-agent-wake-pods__loading')).toBeInTheDocument());
+      await waitFor(() => expect(document.querySelectorAll('.v2-agent-wake-pods__pod')).toHaveLength(1));
+    });
+
+    test('the header keeps the connection when an add moves the writable pod', async () => {
+      const base = fleet({ state: 'connected' });
+      let moved = false;
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url.endsWith('/manage-settings')) {
+          return base(url, ...rest).then(({ data }) => ({ data: moved ? {
+            ...data,
+            writablePodId: 'pod-2',
+            installations: [...data.installations, { podId: 'pod-2', podName: 'Design', status: 'active' }],
+          } : data }));
+        }
+        // The roster read after the move never lands, so only a kept status can show.
+        if (url === '/api/registry/pods/pod-2/agents') return new Promise(() => {});
+        return base(url.replace('/pods/pod-2/', '/pods/pod-1/'), ...rest);
+      });
+      axios.post.mockImplementation(() => {
+        moved = true;
+        return Promise.resolve({ data: { success: true } });
+      });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByText(/^Connected · 1 pod$/, { selector: '.st' });
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      await screen.findByText('Added to Design.');
+      await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/api/registry/pods/pod-2/agents')).toBe(true));
+      await waitFor(() => expect(document.querySelector('.st')).not.toBeNull());
+      expect(document.querySelector('.st')).toHaveTextContent('Connected · 2 pods');
+    });
+
+    test('Add to pod falls back to the agent name when no display name is set', async () => {
+      const base = fleet({ state: 'connected' });
+      axios.get.mockImplementation((url, ...rest) => {
+        if (url === '/api/pods') return Promise.resolve({ data: [{ _id: 'pod-2', name: 'Design', type: 'chat' }] });
+        if (url === '/api/registry/pods/pod-1/agents/maya-claude') {
+          return Promise.resolve({ data: { agent: { name: 'maya-claude', instanceId: 'default', displayName: '', runtime: { runtimeType: 'webhook' } } } });
+        }
+        return base(url, ...rest);
+      });
+      axios.post.mockRejectedValueOnce({ response: { data: { code: 'agent_not_active' } } });
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Add to pod' }));
+      await screen.findByRole('combobox', { name: 'Pod to add this agent to' });
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+      expect(await screen.findByText("Couldn't add maya-claude to that pod. Try again.")).toBeInTheDocument();
+    });
+
+    test.each([['connected', 'Connected'], ['available', 'Ready on Commonly'], ['revoked', 'Disconnected: key revoked'], ['never', 'Not connected yet'], ['stale', 'Not seen in']])(
+      'a %s agent says so on a phone, because no row reports a healthy state',
+      async (state, label) => {
+        axios.get.mockImplementation(fleet({ state }));
+        render(
+          <AuthContext.Provider value={authValue}>
+            <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+              <Routes><Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} /></Routes>
+            </MemoryRouter>
+          </AuthContext.Provider>,
+        );
+        await waitFor(() => expect(document.querySelector('.v2-agent-settings-page__phonestatus')).toHaveTextContent(label));
+      },
+    );
   });
 });

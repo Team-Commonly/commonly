@@ -84,6 +84,12 @@ const setScrollMetrics = (element, scrollHeight, scrollTop) => {
   Object.defineProperty(element, 'scrollHeight', { configurable: true, value: scrollHeight });
   Object.defineProperty(element, 'scrollTop', { configurable: true, writable: true, value: scrollTop });
 };
+// Opening a pod lands at the end, so these reader positions come from the reader's own scroll.
+const readerAt = (element, scrollHeight, scrollTop) => {
+  setScrollMetrics(element, scrollHeight, scrollTop);
+  fireEvent.wheel(element);
+  fireEvent.scroll(element);
+};
 const setRowContentTop = (container, messageId, contentTop) => {
   const row = container.querySelector(`#message-${messageId}`);
   if (!row) throw new Error(`row ${messageId} not mounted`);
@@ -263,7 +269,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const detail = makeDetail({ messages: initial, loadOlder });
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
-    setScrollMetrics(scroller, 1000, 400);
+    readerAt(scroller, 1000, 400);
     setRowContentTop(scroller, 'm1', 1000);
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
@@ -304,7 +310,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const detail = makeDetail({ messages: initial, loadOlder });
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
-    setScrollMetrics(scroller, 1000, 400);
+    readerAt(scroller, 1000, 400);
     setRowContentTop(scroller, 'm1', 1000);
 
     // Two clicks can arrive before React commits the loading status. The
@@ -338,7 +344,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const detail = makeDetail({ messages: initial, loadOlder });
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
-    setScrollMetrics(scroller, 1000, 400);
+    readerAt(scroller, 1000, 400);
     setRowContentTop(scroller, 'm1', 1000);
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
@@ -368,7 +374,7 @@ describe('landing on a message decides reveal vs fetch (producer)', () => {
     const detail = makeDetail({ messages: initial, loadOlder });
     const view = renderAt('', detail);
     const scroller = view.container.querySelector('.v2-chat__messages');
-    setScrollMetrics(scroller, 1000, 400);
+    readerAt(scroller, 1000, 400);
 
     fireEvent.click(view.container.querySelector('button.v2-thread__edge-line'));
     await waitFor(() => expect(loadOlder).toHaveBeenCalledTimes(1));

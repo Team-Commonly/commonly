@@ -2,6 +2,13 @@
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-jwt-secret';
 
+// Redact secret env values from this worker's stdout/stderr. globalSetup.js
+// installs the same guard in the main process; this covers --runInBand (where
+// the worker IS the main process) and any direct in-worker stream write. See
+// __tests__/utils/redactEnv.js (earned 2026-11-07).
+// eslint-disable-next-line global-require
+require('./utils/redactEnv').installStreamEnvRedaction();
+
 // Suppress console logs during tests unless needed
 if (process.env.TEST_VERBOSE !== 'true') {
   const originalConsole = console;
@@ -25,6 +32,9 @@ jest.setTimeout(30000);
 // shared testUtils helper both remove their own dbPath and temporary directory.
 // eslint-disable-next-line global-require
 require('./utils/mongoCleanup').installMongoMemoryServerCleanup();
+
+// eslint-disable-next-line global-require
+require('./utils/supertestLoopback').installSupertestLoopback();
 
 if (process.env.INTEGRATION_TEST) {
   // Connect to real services — expects Docker Compose dev stack running:

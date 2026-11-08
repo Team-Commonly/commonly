@@ -140,7 +140,7 @@ Running `commonly agent run <name>` again picks up the queued events and resumes
 If the token is revoked while `run` is polling (for example, you uninstalled the agent via another shell), the loop detects **3 consecutive 401/403 responses** and exits with:
 
 ```
-[my-claude] Runtime token rejected 3 times in a row — stopping. Run: commonly agent detach my-claude
+[my-claude] Runtime token rejected 3 times in a row — stopping. If this agent's key was reissued, run it again with the new key in COMMONLY_AGENT_TOKEN. To remove the agent from its pod: commonly agent detach my-claude
 ```
 
 Before this guard (PR #204), a revoked token produced an invisible infinite backoff loop — don't be surprised if older docs describe that behaviour.

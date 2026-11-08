@@ -34,6 +34,7 @@ const {
 } = require('../services/hostedEngine');
 const { markByoOpened, markWelcomeHostedStart } = require('../services/onboardingMarks');
 const { resolveWelcomeHostedStart } = require('../services/welcomeHostedStart');
+const { logInstallRefusal } = require('../services/installRefusalLog');
 const {
   revokeRuntimeTokensForAgent,
   issueRuntimeTokenForAgent,
@@ -190,6 +191,9 @@ const requireConfigured = (res: express.Response, engine: string): boolean => {
 };
 
 const relayWorkerError = (res: express.Response, error: any) => {
+  if (error?.code === 'in_process_agent_no_token') {
+    return res.status(409).json({ code: error.code, message: error.message });
+  }
   if (error instanceof hostedRuntime.HostedRuntimeError) {
     return res.status(error.status).json({
       code: error.status === 503 ? 'hosted_runtime_unconfigured' : 'hosted_runtime_unreachable',
@@ -290,6 +294,9 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         // omit holder metadata rather than turning a useful 403 into a 500.
         console.warn('[hosted] cap holder lookup failed:', error?.message || error);
       }
+      logInstallRefusal('hosted.provision', 'hosted_cap_reached', {
+        userId, agentName, instanceId, used: owned, cap: agentsPerUser,
+      });
       return res.status(403).json({
         code: 'hosted_cap_reached',
         message: `Hosted agents are capped at ${agentsPerUser} per user in beta`,
@@ -332,6 +339,10 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
         podIds: startedPods,
         agentLabel: agentUser.botMetadata?.displayName || installation.displayName || agentName,
       });
+      // Mentions sent while it was stopped run now, not on the next sweep.
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      void require('../services/agentEventService').rescuePendingForIdentity(agentName, instanceId)
+        .catch((error: any) => console.warn('[hosted] waiting events on start:', error?.message || error));
       return res.json({
         provisioned: true,
         // Native turns run in-process, so the agent is live from here; the page
@@ -389,7 +400,8 @@ router.post('/provision', hostedRateLimit, auth, async (req: any, res: any) => {
 /**
  * POST /api/hosted/deprovision { agentName, instanceId? }
  * Stops the runtime. The installation and identity stay — ADR-001 §3 identity
- * continuity; re-provisioning finds the same memory. The token does NOT
+ * continuity. A native-engine agent loses nothing. The Durable Object engine
+ * deletes its storage, conversation transcript included. The token does NOT
  * survive: it is revoked here, and provision mints a fresh one.
  */
 router.post('/deprovision', hostedRateLimit, auth, async (req: any, res: any) => {

@@ -80,9 +80,7 @@ const V2AgentListingRow: React.FC<Props> = ({ agentName, instanceId }) => {
   return <>
     <div className="lrow">
       <span className="lb"><V2AgentSettingsIcon name="store" />{t('agentSettings.listingTitle')}</span>
-      <span className="vl"><span role="status">{t(`agentSettings.${listingStatus}`)}</span>
-        {ownsListing && <span className="mo">{t('agentSettings.ownedTitle')}</span>}
-      </span>
+      <span className="vl"><span role="status">{t(`agentSettings.${listingStatus}`)}</span></span>
       <span className="ac">
         {/* On a phone the label folds away and the link is an icon button, so the status keeps the row. */}
         <Link className="b b-g b-sm v2-agent-settings-page__textbtn" to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}

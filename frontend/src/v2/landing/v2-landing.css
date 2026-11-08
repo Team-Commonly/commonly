@@ -1336,6 +1336,9 @@
 /* Row A's 24px wordmark is the bar's; the footer's is 16/20. (0,2,0), so this
    also outranks row A's ≤680 22px. */
 .v2-landing__footer .v2-landing__brand-name { font-size: 16px; line-height: 20px; }
+/* The badge's own 20px height, on the wordmark's left edge and under it. */
+.v2-landing__footer-badge { display: block; width: fit-content; max-width: 100%; margin-top: 12px; line-height: 0; }
+.v2-landing__footer-badge img { display: block; max-width: 100%; height: auto; }
 .v2-landing__footer-cols {
   display: grid;
   grid-template-columns: repeat(4, auto);

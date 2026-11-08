@@ -2,7 +2,7 @@
  * enforcement.test.mjs — ADR-018 D3, wrapper-side deterministic enforcement.
  *
  * Pure-unit coverage of cli/src/lib/enforcement.js:
- *  - classifyTrigger: dmKind first, snapshot isBot second, fail-open third
+ *  - classifyTrigger: dmKind first, snapshot isBot second, the kernel's stamp third, fail-open last
  *  - createCascadeGovernor: cap, human reset, decay, no double-count on retry
  *  - createClaimKeeper: win/lose/fail-open, renewal loss, release semantics
  *  - splitForChat: short passthrough, boundary preference, fences atomic,
@@ -107,6 +107,44 @@ describe('classifyTrigger', () => {
     expect(classifyTrigger(event({ messageId: 'm1' }), [{ _id: 'm1' }])).toBe('unknown');
     expect(classifyTrigger(event({ messageId: 'm1' }), null)).toBe('unknown');
     expect(classifyTrigger(event({}), [{ _id: 'm1', isBot: true }])).toBe('unknown');
+  });
+});
+
+describe('classifyTrigger — off the snapshot', () => {
+  const event = (payload) => ({ type: 'message.posted', payload: { messageId: 'old', ...payload } });
+
+  it('reads the kernel stamp when the snapshot has no such message', () => {
+    expect(classifyTrigger(event({ senderIsHuman: true }), [{ _id: 'm1', isBot: true }])).toBe('human');
+    expect(classifyTrigger(event({ senderIsHuman: false }), [{ _id: 'm1', isBot: false }])).toBe('agent');
+  });
+
+  it('reads the stamp when the snapshot failed or the row has no isBot', () => {
+    expect(classifyTrigger(event({ senderIsHuman: false }), null)).toBe('agent');
+    expect(classifyTrigger(event({ senderIsHuman: true }), [{ _id: 'old' }])).toBe('human');
+  });
+
+  it('a page of agent wakes past the snapshot is not all unknown', () => {
+    const page = ['a', 'b', 'c'].map((messageId) => event({ messageId, senderIsHuman: false }));
+    expect(page.map((entry) => classifyTrigger(entry, []))).toEqual(['agent', 'agent', 'agent']);
+  });
+
+  it('the snapshot wins where it names the author', () => {
+    expect(classifyTrigger(event({ senderIsHuman: true }), [{ _id: 'old', isBot: true }])).toBe('agent');
+  });
+
+  it('a kernel wake and a DM keep their own verdict', () => {
+    expect(classifyTrigger(event({ triggerAuthor: 'kernel', senderIsHuman: false }), [])).toBe('kernel');
+    expect(classifyTrigger(event({ dmKind: 'user-agent', senderIsHuman: false }), [])).toBe('human');
+  });
+
+  it('reads the stamp on a mention, and on a wake that names no message', () => {
+    expect(classifyTrigger({ type: 'chat.mention', payload: { messageId: 'old', senderIsHuman: true } }, []))
+      .toBe('human');
+    expect(classifyTrigger({ type: 'message.posted', payload: { senderIsHuman: false } }, [])).toBe('agent');
+  });
+
+  it('stays unknown without the stamp', () => {
+    expect(classifyTrigger(event({}), [])).toBe('unknown');
   });
 });
 
@@ -724,6 +762,20 @@ describe('deliverChatReply', () => {
         .mockResolvedValue({});
       const res = await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
       expect(res.threadRootId).toBe('99');
+    });
+
+    // F245: the kernel files a turn's plain post in the thread it answers, so the
+    // headline can already be inside one. A thread has one root, and a reply
+    // named as a root is a 400.
+    test('a headline the kernel filed in a thread continues in that thread', async () => {
+      const post = jest.fn()
+        .mockResolvedValueOnce({ message: { id: 4250, thread_root_id: 4242 } })
+        .mockResolvedValue({});
+      const res = await deliverChatReply({ client: { post, upload: jest.fn() }, podId: 'pod-1', text: prose });
+      expect(res.threadRootId).toBe('4242');
+      for (const call of post.mock.calls.slice(1)) {
+        expect(call[1].threadRootId).toBe('4242');
+      }
     });
 
     test('a refused thread headline stops without falling through to an attachment', async () => {

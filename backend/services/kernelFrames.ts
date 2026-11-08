@@ -10,12 +10,14 @@
  * its own tool list exactly (the native runtime) rewrites the frames it cannot
  * honour instead of leaving the model to claim tools it was never given. It
  * finds them by tag, here. agentMentionService writes the same tags as
- * literals (verify-moltbot-tool-contract reads them there); kernelFrames.test
+ * literals; kernelFrames.test
  * pins each tag below to its literal, so the two cannot drift apart silently.
  */
 export const KERNEL_FRAME_TAGS = Object.freeze({
   podContext: 'Pod context',
   trigger: 'Trigger',
+  memberList: 'Who is here',
+  self: 'You',
   consultation: 'Collaboration',
   collaborativePod: 'Collaborative pod',
   replyMechanics: 'Reply mechanics',

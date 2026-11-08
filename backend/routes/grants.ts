@@ -12,6 +12,7 @@ import { operatorKeyAudienceRefusal } from '../services/hostedMcpOperatorKey';
 import { consentHoldsWriteScope } from '../services/hostedMcpEntryService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { unconfinedHostRefusal } from '../services/seatGrantConfinement';
 import ToolCall from '../models/ToolCall';
 import Machine from '../models/Machine';
 import type { IRoomGrant } from '../models/RoomGrant';
@@ -218,7 +219,7 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
   }
   if (!seatGrants.length) return confinements;
   const seats = await User.find({ _id: { $in: seatGrants.map((grant) => grant.target.id) } })
-    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId')
+    .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId botMetadata.hostUnconfined')
     .lean();
   const seatsById = new Map(seats.map((seat: any) => [String(seat._id), seat]));
   const machineIds = Array.from(new Set(seats
@@ -250,6 +251,12 @@ const seatGrantRefusals = async (grants: GrantRow[]): Promise<Map<string, GrantB
   for (const grant of seatGrants) {
     const seat: any = seatsById.get(String(grant.target.id));
     const meta = seat?.botMetadata || {};
+    // eslint-disable-next-line no-await-in-loop -- a machine read only for a seat that has one
+    const hostRefusal = await unconfinedHostRefusal(seat);
+    if (hostRefusal) {
+      confinements.set(grant.grantId, { refusal: hostRefusal, scope: 'seat' });
+      continue;
+    }
     const identity = typeof meta.agentName === 'string' ? meta.agentName.trim() : '';
     const owner = typeof meta.machineId === 'string' ? ownersByMachine.get(meta.machineId) : undefined;
     if (!identity || !owner) {
@@ -324,6 +331,19 @@ const ensureTargetAccess = async (target: { kind: 'pod' | 'seat'; id: string }, 
   }
   return members;
 };
+
+// What an agent needs of the grant it just narrowed, not the stored row.
+const attenuatedGrantReply = (grant: Record<string, any>): Record<string, unknown> => ({
+  grantId: grant.grantId,
+  parentGrantId: grant.parentGrantId,
+  target: grant.target,
+  binding: grant.binding,
+  tools: grant.tools,
+  writeMode: grant.writeMode,
+  budget: grant.budget,
+  prWrite: grant.prWrite,
+  expiresAt: grant.expiresAt,
+});
 
 const handleError = (res: express.Response, error: unknown): express.Response => {
   if (error instanceof RoomGrantError) {
@@ -619,7 +639,7 @@ router.post(
     });
     // An agent attenuated its own grant: the agent is the issuer.
     recordUnboundIssuance(child, agentActor(req.agentUser as Parameters<typeof agentActor>[0]));
-    return res.status(201).json(child);
+    return res.status(201).json(attenuatedGrantReply(child));
   } catch (error) {
     return handleError(res, error);
   }

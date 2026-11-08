@@ -65,8 +65,9 @@ const jsonBody404 = (text) => {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
   const error = parsed.error && typeof parsed.error === 'object' ? parsed.error : parsed;
-  const is404 = [parsed.status, parsed.code, error.status, error.code]
-    .some((value) => String(value) === '404') || error.type === 'not_found_error';
+  const statuses = [parsed.status, parsed.code, error.status, error.code];
+  if (statuses.some((value) => Number(value) >= 500)) return false;
+  const is404 = statuses.some((value) => String(value) === '404') || error.type === 'not_found_error';
   const message = error.message ?? parsed.message;
   return is404 && typeof message === 'string' && modelShaped(message);
 };
@@ -114,11 +115,13 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   const lines = text.split('\n');
   const keyScope = NOT_AVAILABLE_FOR_KEY_RE.test(text) && (attached !== null ? attached === 403
     : lines.some((line) => STATUS_403_RE.test(line) && NOT_AVAILABLE_FOR_KEY_RE.test(line)));
+  // The attached status reads the message, so its model shape must be on the
+  // message's own first line, not in what later stderr happens to mention.
   const notFound = attached !== null
-    ? attached === 404 && (lines.some(modelShaped) || jsonBody404(text))
+    ? attached === 404 && (modelShaped(String(error.message).split('\n')[0]) || jsonBody404(text))
     : sameLine404(text) || jsonBody404(text);
   const matched = keyScope
-    || error.providerCode === 'model_not_found'
+    || (error.providerCode === 'model_not_found' && !(attached >= 500))
     || notFound;
   if (!matched) return null;
   for (const pattern of MODEL_NAME_RES) {

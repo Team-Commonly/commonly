@@ -665,6 +665,65 @@ describe('tick', () => {
     expect(logs.join('\n')).toMatch(/set the adapter back to opencode/);
   });
 
+  test('an adapter swap to pi keeps the host-local provider and saves the new adapter', async () => {
+    const provider = {
+      id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+    };
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: { model: 'claude-haiku-5-5', provider },
+      },
+    };
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'pi' },
+        environment: { model: 'claude-haiku-5-5' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'pi',
+    });
+    await supervisor.tick();
+    expect(saveToken).toHaveBeenCalledWith('wren-test', expect.objectContaining({
+      adapter: 'pi',
+      environment: expect.objectContaining({ provider }),
+    }));
+  });
+
+  // The proxy a public pi turn sits behind doesn't pin this wire.
+  test('an adapter swap to pi keeps the current seat when a public seat names Anthropic Messages', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: {
+          model: 'claude-haiku-5-5',
+          sandbox: { trust: 'public' },
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const logs = [];
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'pi' },
+        environment: { model: 'claude-haiku-5-5', sandbox: { trust: 'public' } },
+      })],
+      tokens,
+      resolveAdapter: async () => 'pi',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/a public seat reaches its provider.*keeping the current record/);
+  });
+
   test('a record whose own adapter cannot speak its provider.api does not start', async () => {
     const tokens = {
       'wren-test': {

@@ -99,6 +99,7 @@ const recordForRecipients = async (
           actorUserId: payload.actorUserId,
           messageId: payload.messageId,
           threadRootId: payload.threadRootId,
+          reviewOnCard: payload.reviewOnCard,
           options: payload.options,
           sourceCreatedAt: payload.sourceCreatedAt,
           status: 'open',
@@ -181,11 +182,13 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
         const installerId = await installerForAgent(authorId, podId);
         if (installerId) {
           const members = await currentHumanMembers(podId);
-          const installer = members.find((member) => String(member._id) === installerId);
-          if (installer) {
-            const pod = await Pod.findById(podId).select('name').lean();
+          const pod = await Pod.findById(podId).select('name type').lean();
+          // A room a guest opened with a hosted agent doesn't hold its owner.
+          const recipient = members.find((member) => String(member._id) === installerId)
+            || (pod?.type === 'agent-room' ? members[0] : undefined);
+          if (recipient) {
             const actorName = await resolveAuthorName(authorId);
-            await recordForRecipients([installer], {
+            await recordForRecipients([recipient], {
               podId, kind: 'blocked' as Kind, sourceType: 'message' as SourceType,
               sourceId: sourceKey('message', messageId),
               title: `${actorName} is blocked`, detail: compact(content),
@@ -193,7 +196,7 @@ export const recordMentionedUsers = async (message: any, options: MentionOptions
               messageId: String(messageId),
               threadRootId: String(message?.threadRootId || message?.thread_root_id || messageId),
               sourceCreatedAt: message?.createdAt || message?.created_at || undefined,
-              emailRecipientId: installerId, suppressEmail: options.suppressEmail,
+              emailRecipientId: String(recipient._id), suppressEmail: options.suppressEmail,
             });
           }
         }
@@ -504,6 +507,8 @@ export const recordActionApproval = async (row: any, displayName?: string | null
       title: label ? `${label} requests approval` : 'Approval requested', actorName: label || undefined,
       actorUserId: row?.agentUserId ? String(row.agentUserId) : undefined,
       detail: compact(row?.summary, 180), podName: pod?.name || 'Pod',
+      ...(row?.actionType === 'tool_call'
+        ? { reviewOnCard: true, messageId: row?.messageId ? String(row.messageId) : undefined } : {}),
       emailRecipientId: owner, suppressEmail: options.suppressEmail,
     });
   } catch (error) {
@@ -964,6 +969,7 @@ export const getOpenQueue = async (recipientUserId: unknown, options: OpenQueueO
       id: String(row.source.id), attentionItemId: String(row._id), kind: renderKind(row), sourceType: row.source.type, title: row.title, actorName: row.actorName || undefined, actorUserId: row.actorUserId ? String(row.actorUserId) : undefined, detail: row.detail || '',
       podId: String(row.podId), podName: (allowed.get(String(row.podId)) as any)?.name || row.podName || 'Pod',
       messageId: row.messageId, threadRootId: row.threadRootId, options: row.options || [], createdAt: row.createdAt,
+      ...(row.reviewOnCard ? { reviewOnCard: true } : {}),
     });
   }
   const remaining = Math.max(window.length - offset - picked.length, 0);

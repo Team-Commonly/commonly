@@ -14,6 +14,7 @@ const AgentMessageService = require('../../services/agentMessageService');
 const { AgentInstallation, AgentRegistry } = require('../../models/AgentRegistry');
 const registryRoutes = require('../../routes/registry');
 const { appendLongTermMemory } = require('../../services/agentMemoryService');
+const { copyInstallHandoffMemory } = require('../../services/installHandoffMemory');
 const { hash } = require('../../utils/secret');
 const ownerRoutes = require('../../routes/agentMemoryView');
 const runtimeRoutes = require('../../routes/agentsRuntime');
@@ -313,6 +314,121 @@ describe('hosted memory copied into a local agent', () => {
     } finally {
       await User.updateOne({ username: 'local-handoff' }, { $set: { 'botMetadata.ownerUserId': owner._id } });
     }
+  });
+
+  describe('which rows speak for the source and the target', () => {
+    const SOURCE = 'hosted-handoff';
+    const TARGET = 'local-handoff';
+    const runtime = { host: 'byo', runtimeType: 'stub', adapter: 'stub' };
+    const seedRow = (agentName, installedBy, podId, overrides = {}) => AgentInstallation.collection.insertOne({
+      agentName, instanceId: 'default', podId, installedBy, version: '1', status: 'active', config: {}, ...overrides,
+    });
+    const dmWith = (member, type = 'agent-room') => Pod.create({ name: 'DM', type, createdBy: member._id, members: [member._id] });
+    const elsewhere = (member) => Pod.create({ name: 'Elsewhere', type: 'chat', createdBy: member._id, members: [member._id] });
+    const dropRows = (agentName) => AgentInstallation.deleteMany({ agentName });
+    const copyAs = (user, registryOwner = owner._id) => copyInstallHandoffMemory({
+      source: { agentName: SOURCE, instanceId: 'default' }, agentName: TARGET, instanceId: 'default',
+      userId: String(user._id), registryOwner, runtime,
+    });
+    const refused = async (attempt) => {
+      await expect(attempt).rejects.toMatchObject({ status: 403 });
+      expect(await AgentMemory.findOne({ agentName: TARGET })).toBeNull();
+    };
+    const withoutBotOwner = async (work) => {
+      await User.updateOne({ username: TARGET }, { $unset: { 'botMetadata.ownerUserId': 1 } });
+      try { await work(); } finally {
+        await User.updateOne({ username: TARGET }, { $set: { 'botMetadata.ownerUserId': owner._id } });
+      }
+    };
+
+    it('a guest\'s DM row on the source leaves the owner their copy', async () => {
+      await seedRow(SOURCE, outsider._id, (await dmWith(outsider))._id);
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('a paused DM row on the source leaves the owner their copy too', async () => {
+      await seedRow(SOURCE, outsider._id, (await dmWith(outsider))._id, { status: 'paused' });
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('a DM row that is the source\'s only row gives its opener nothing to copy from', async () => {
+      await dropRows(SOURCE);
+      await dropRows(TARGET);
+      await seedRow(SOURCE, outsider._id, (await dmWith(outsider))._id);
+      await User.updateOne({ username: TARGET }, { $set: { 'botMetadata.ownerUserId': outsider._id } });
+      try {
+        await refused(copyAs(outsider, outsider._id));
+      } finally {
+        await User.updateOne({ username: TARGET }, { $set: { 'botMetadata.ownerUserId': owner._id } });
+      }
+    });
+
+    it('an agent-dm row is no source to copy from', async () => {
+      await dropRows(SOURCE);
+      await seedRow(SOURCE, owner._id, (await dmWith(owner, 'agent-dm'))._id);
+      await refused(copyAs(owner));
+    });
+
+    it('someone else\'s paused install of the source still refuses', async () => {
+      await seedRow(SOURCE, outsider._id, (await elsewhere(outsider))._id, { status: 'paused' });
+      await refused(copyAs(owner));
+    });
+
+    it('a sole installer whose source row is paused can still copy', async () => {
+      await AgentInstallation.updateOne({ agentName: SOURCE }, { $set: { status: 'paused' } });
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('someone else\'s uninstalled row on the source doesn\'t refuse', async () => {
+      await seedRow(SOURCE, outsider._id, (await elsewhere(outsider))._id, { status: 'uninstalled' });
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('a guest\'s DM row on the target leaves the owner their copy', async () => {
+      await seedRow(TARGET, outsider._id, (await dmWith(outsider))._id);
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('with only a guest\'s DM row on the target, its registry owner authorizes the copy', async () => {
+      await dropRows(TARGET);
+      await seedRow(TARGET, outsider._id, (await dmWith(outsider))._id);
+      expect(await copyAs(owner)).toEqual({ copied: true });
+    });
+
+    it('a DM row that is the target\'s only row gives its opener no target', async () => {
+      await dropRows(SOURCE);
+      await dropRows(TARGET);
+      await seedRow(SOURCE, outsider._id, (await elsewhere(outsider))._id);
+      await seedRow(TARGET, outsider._id, (await dmWith(outsider))._id);
+      await withoutBotOwner(() => refused(copyAs(outsider)));
+    });
+
+    it('someone else\'s uninstalled row on the target still refuses: their memory outlives the row', async () => {
+      await seedRow(TARGET, outsider._id, (await elsewhere(outsider))._id, { status: 'uninstalled' });
+      await refused(copyAs(owner));
+    });
+
+    it('someone else\'s paused row on the target still refuses', async () => {
+      await seedRow(TARGET, outsider._id, (await elsewhere(outsider))._id, { status: 'paused' });
+      await refused(copyAs(owner));
+    });
+
+    it('a target row with no recorded installer still refuses', async () => {
+      await seedRow(TARGET, undefined, (await elsewhere(outsider))._id);
+      await refused(copyAs(owner));
+    });
+
+    it('a guest\'s DM row doesn\'t stand in for an installation behind an unowned bot', async () => {
+      await dropRows(TARGET);
+      await seedRow(TARGET, outsider._id, (await dmWith(outsider))._id);
+      await withoutBotOwner(() => refused(copyAs(owner)));
+    });
+
+    it('an unowned bot with the registry owner\'s own DM row is theirs to copy into', async () => {
+      await dropRows(TARGET);
+      await seedRow(TARGET, owner._id, (await dmWith(owner))._id);
+      await withoutBotOwner(async () => expect(await copyAs(owner)).toEqual({ copied: true }));
+    });
   });
 
   it('handoff checks all source owners, even while resuming an existing install', async () => {

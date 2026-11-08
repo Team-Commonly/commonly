@@ -79,7 +79,12 @@
 .v2-agent-settings-page .info svg.i { width: 15px; height: 15px; }
 .v2-agent-settings-page .info:hover, .v2-agent-settings-page .info:focus-visible { color: var(--ink); }
 .v2-agent-settings-page .info .tip { display: none; position: absolute; z-index: 30; top: 24px; left: -8px; width: 260px; padding: 10px 12px; border-radius: 10px; background: var(--sf); box-shadow: var(--sh-pop); font: 400 12.5px/1.45 var(--f-body); color: var(--se); text-align: left; white-space: normal; }
-.v2-agent-settings-page .info:hover .tip, .v2-agent-settings-page .info:focus-visible .tip, .v2-agent-settings-page .info.pin .tip { display: block; }
+/* A touch browser keeps :hover after a tap, so hover opens the note only where a
+   pointer really hovers. Otherwise a second tap couldn't close it. */
+.v2-agent-settings-page .info:focus-visible .tip, .v2-agent-settings-page .info.pin .tip { display: block; }
+@media (hover: hover) {
+  .v2-agent-settings-page .info:hover .tip { display: block; }
+}
 .v2-agent-settings-page .sel { --box-h: 28px; height: var(--box-h); border-radius: 8px; background: var(--sf); box-shadow: inset 0 0 0 1px var(--b); display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
 .v2-agent-settings-page .sel svg.i { width: 14px; height: 14px; color: var(--mu); }
 
@@ -115,8 +120,12 @@
 .v2-agent-settings-page .wt td { padding: 8px 14px; border-top: 1px solid var(--d); vertical-align: middle; color: var(--ink2); }
 .v2-agent-settings-page .wt td:first-child { font-weight: 600; color: var(--ink); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-agent-settings-page .wt td:last-child { text-align: right; width: 44px; }
+/* Other people's 1:1 rooms: one plain count line, no link or controls. Its
+   cell is both first and last child, so it undoes both column rules. */
+.v2-agent-settings-page .wt tr.v2-agent-wake-pods__others td { width: auto; max-width: none; padding-top: 12px; padding-bottom: 12px; text-align: left; white-space: normal; font-weight: 500; color: var(--se); }
 .v2-agent-settings-page details.disc > summary .lb svg.i { width: 16px; height: 16px; color: var(--se); flex: none; }
 
+.v2-agent-settings-page .lrow .vl code { font: 12px/1.4 var(--v2-font-mono); overflow-wrap: anywhere; }
 /* wake table controls: the message-wake segment, board and heartbeat toggles, the interval select */
 .v2-agent-settings-page .wt .seg { display: inline-flex; flex-wrap: wrap; }
 .v2-agent-settings-page .seg > label { position: relative; cursor: pointer; height: 24px; padding: 0 8px; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--f-body); color: var(--se); white-space: nowrap; }
@@ -127,6 +136,14 @@
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .v2-agent-settings-page .v2-agent-wake-pods__toggle input:focus-visible + .tg { box-shadow: var(--v2-focus-ring); }
 .v2-agent-settings-page .v2-agent-wake-pods__interval select { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; }
+.v2-agent-settings-page .v2-agent-hosted-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 16px; }
+.v2-agent-settings-page .v2-agent-hosted-run__state { flex: 1 1 200px; margin: 0; font-size: 13px; color: var(--se); }
+.v2-agent-settings-page .v2-agent-hosted-run__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.v2-agent-settings-page .v2-agent-hosted-run__error { flex: 1 1 100%; margin: 0; font-size: 12.5px; color: var(--ink); }
+.v2-agent-settings-page .v2-agent-wake-pods__add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--d); font-size: 12.5px; }
+.v2-agent-settings-page .v2-agent-wake-pods__add .sel, .v2-agent-settings-page .v2-agent-wake-pods__add select { max-width: 100%; }
+.v2-agent-settings-page .v2-agent-wake-pods__add select { overflow: hidden; text-overflow: ellipsis; }
+.v2-agent-settings-page .v2-agent-wake-pods__add [data-testid="byo-narrowing-confirmation"] { flex: 1 1 100%; }
 .v2-agent-settings-page .v2-agent-wake-pods__hint { margin: 4px 0 0; font: 400 11.5px/1.4 var(--v2-font-mono); color: var(--mu); }
 .v2-agent-settings-page .v2-agent-wake-pods__sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .v2-agent-settings-page .v2-agent-wake-pods__error { margin: 0 0 8px; color: var(--ink); }
@@ -139,6 +156,8 @@
   /* The 390 frame keeps each row on one 48px line: the label, the value beside it, the
      action. A long value (a refusal, a status) wraps inside its own cell, never under the label. */
   .v2-agent-settings-page .lrow { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 4px 4px 12px; }
+  /* A phone taps the (i), so an invisible ring takes its hit area to 44px. */
+  .v2-agent-settings-page .info::after { content: ""; position: absolute; inset: -13px; }
   .v2-agent-settings-page .lrow .lb { font-weight: 500; }
   .v2-agent-settings-page .lrow .vl { justify-content: flex-end; text-align: right; font-size: 13px; color: var(--ink2); }
   .v2-agent-settings-page .lrow .ac .b.v2-agent-settings-page__textbtn { width: 44px; padding: 0; }
@@ -149,6 +168,7 @@
   .v2-agent-settings-page .wt, .v2-agent-settings-page .wt tbody, .v2-agent-settings-page .wt tr, .v2-agent-settings-page .wt td { display: block; width: 100%; }
 }
 .v2-agent-settings-page .v2-agent-wake-pods__cap { margin-left: auto; font: 400 11.5px/1 var(--v2-font-mono); color: var(--mu); }
+.v2-agent-settings-page .v2-agent-wake-pods__kind { margin-left: 8px; font: 400 11.5px/1 var(--v2-font-mono); color: var(--mu); }
 .v2-agent-settings-page .v2-agent-wake-pods__mode, .v2-agent-settings-page .v2-agent-wake-pods__fold { display: none; }
 /* The Wake table stacks at the same 760px the page's other phone rules use (with the thead
    block above); between 600 and 760 the five columns overflowed the page. */
@@ -158,6 +178,10 @@
   .v2-agent-settings-page .wt td:first-child { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; }
   .v2-agent-settings-page .wt td:first-child a { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .v2-agent-settings-page .wt td:first-child { max-width: none; }
+  /* These rows share a long name, so the name gives way and the kind stays readable. */
+  .v2-agent-settings-page .wt td[data-personal="true"] { flex-wrap: nowrap; }
+  .v2-agent-settings-page .wt td[data-personal="true"] a { flex: 1 1 0; white-space: nowrap; }
+  .v2-agent-settings-page .wt td[data-personal="true"] .v2-agent-wake-pods__kind { margin-left: 0; white-space: nowrap; }
   .v2-agent-settings-page .v2-agent-wake-pods__mode { display: inline; font: 400 11.5px/1 var(--v2-font-mono); color: var(--mu); }
   .v2-agent-settings-page .v2-agent-wake-pods__fold { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--mu); margin-left: auto; }
   .v2-agent-settings-page .v2-agent-wake-pods__fold svg.i { width: 16px; height: 16px; transition: transform 120ms; }
@@ -179,7 +203,7 @@
 .v2-agent-settings-page details.disc > summary:focus-visible { outline: none; border-radius: 12px; box-shadow: var(--v2-focus-ring); }
 .v2-agent-settings-page details.disc > summary .lb { font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; }
 .v2-agent-settings-page details.disc > summary .vl { font-size: 13.5px; color: var(--ink2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.v2-agent-settings-page details.disc > summary .vl .mo { font-size: 12px; color: var(--mu); }
+.v2-agent-settings-page details.disc > summary .vl .mo { font-size: 12px; color: var(--ink2); }
 /* --mu, not the frame's --ph: the chevron is the only mark of open/closed, so it keeps 3:1. */
 .v2-agent-settings-page details.disc > summary .chev { width: 18px; height: 18px; color: var(--mu); transition: transform 160ms; }
 .v2-agent-settings-page details.disc[open] > summary .chev { transform: rotate(180deg); }
@@ -198,6 +222,10 @@
 /* The select fills its box so the whole box is the hit area. An unset select pins its text to the top,
    so a line-height of the box's own height (--box-h) centres the value. */
 .v2-agent-settings-page .field select, .v2-agent-settings-page .sel select { cursor: pointer; height: var(--box-h); line-height: var(--box-h); }
+/* The wake table's small select, as drawn: it fits its value, and the chevron lets clicks through to the select. */
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval { position: relative; padding: 0; }
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval select { padding: 0 26px 0 10px; field-sizing: content; }
+.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i { position: absolute; right: 8px; pointer-events: none; }
 .v2-agent-settings-page .field input:focus-visible, .v2-agent-settings-page .field select:focus-visible, .v2-agent-settings-page .field textarea:focus-visible,
 .v2-agent-settings-page .sel input:focus-visible, .v2-agent-settings-page .sel select:focus-visible { box-shadow: none; outline: none; }
 .v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within { box-shadow: inset 0 0 0 1px var(--b), var(--v2-focus-ring); }

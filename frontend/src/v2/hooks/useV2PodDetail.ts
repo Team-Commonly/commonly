@@ -96,6 +96,8 @@ export interface V2Message {
     kind?: string;
     action?: string;
     actorName?: string;
+    /** `agentName:instanceId` on a system line about one agent (agent-not-connected, -stopped, …). */
+    agentKey?: string;
     taskId?: string;
     elements?: unknown[];
     v?: number;
@@ -153,6 +155,7 @@ export interface V2Agent {
   iconUrl?: string;
   status?: string;
   lastHeartbeatAt?: string | null;
+  connection?: { state?: string } | null;
   // Role family — resolved server-side from the agent's preset
   // (Development, Design, Strategy, Marketing, Research, etc.). Renders
   // as a small chip in the inspector and powers the Your Team filters.
@@ -245,7 +248,7 @@ const RECONNECT_ERROR = 'Messages could not be refreshed after reconnect. Try re
 // One page of history. The backend clamps `limit` to [1,200]; 50 matches the
 // showcase reader so both surfaces page at the same rate.
 const PAGE_SIZE = 50;
-export const MAX_HISTORY_SEARCH_PAGES = 5;
+const MAX_HISTORY_SEARCH_PAGES = 5;
 
 // Merge two message lists by id, newest-last. Used when prepending a page of
 // history: a plain concat would duplicate anything the socket delivered while

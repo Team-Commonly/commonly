@@ -9,6 +9,7 @@ const {
   isFreeUsername,
 } = require('../services/derivedUsername');
 const { PERSONAL_POD_TYPES } = require('../services/podTypePolicyService');
+const { isObjectIdHex } = require('../middleware/objectIdParam');
 
 // Credentials. These must never reach a response body under any circumstance,
 // not even the account's own profile: `apiToken` is the retired plaintext form
@@ -276,6 +277,9 @@ exports.updateUsername = async (req: any, res: any) => {
 
 // Get user by ID
 exports.getUserById = async (req: any, res: any) => {
+  // GET /api/users/me has no route of its own and lands here (F330): an id
+  // that cannot be a user is "not found", answered without logging a cast.
+  if (!isObjectIdHex(req.params.id)) return res.status(404).json({ msg: 'User not found' });
   try {
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
@@ -298,6 +302,7 @@ exports.getUserPublicActivity = async (req: any, res: any) => {
     if (!targetUserId) {
       return res.status(400).json({ error: 'User id is required' });
     }
+    if (!isObjectIdHex(targetUserId)) return res.status(404).json({ error: 'User not found' });
 
     const [user, recentPublicPosts, joinedPods] = await Promise.all([
       User.findById(targetUserId).select('_id username'),
@@ -363,6 +368,7 @@ exports.followUser = async (req: any, res: any) => {
     const actorUserId = String(req.userId || req.user?.id || '');
 
     if (!targetUserId) return res.status(400).json({ error: 'Target user is required' });
+    if (!isObjectIdHex(targetUserId)) return res.status(404).json({ error: 'User not found' });
     if (targetUserId === actorUserId) {
       return res.status(400).json({ error: 'You cannot follow yourself' });
     }
@@ -432,6 +438,7 @@ exports.unfollowUser = async (req: any, res: any) => {
     const actorUserId = String(req.userId || req.user?.id || '');
 
     if (!targetUserId) return res.status(400).json({ error: 'Target user is required' });
+    if (!isObjectIdHex(targetUserId)) return res.status(404).json({ error: 'User not found' });
     if (targetUserId === actorUserId) {
       return res.status(400).json({ error: 'You cannot unfollow yourself' });
     }

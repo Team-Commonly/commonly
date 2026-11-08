@@ -49,19 +49,7 @@ export const ActGlyph: React.FC<{ name: ActName; size?: number }> = ({ name, siz
 
 export type MarkName = 'attention' | 'mirror' | 'off';
 
-/** Relay mode on a channel row: a category, so a mark; the sentence lives in title and aria-label. */
-export const MarkGlyph: React.FC<{ name: MarkName; size?: number }> = ({ name, size }) => {
-  switch (name) {
-    case 'attention':
-      return <G size={size}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" /></G>;
-    case 'mirror':
-      return <G size={size}><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3" /></G>;
-    default:
-      return <G size={size}><path d="M8.6 8.6A6 6 0 0 0 6 8c0 7-3 9-3 9h14M18 8a6 6 0 0 0-9.3-5M13.7 21a2 2 0 0 1-3.4 0M3 3l18 18" /></G>;
-  }
-};
-
-export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close' | 'chat' | 'plug' | 'play' | 'more';
+export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close' | 'chat' | 'plug' | 'play' | 'more' | 'out';
 
 /** D215 sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
 export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ name, size }) => {
@@ -110,6 +98,9 @@ export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ 
       return <G size={size}><path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" /></G>;
     case 'play':
       return <G size={size}><path d="M7 5v14l11-7z" /></G>;
+    case 'out':
+      // The d215 frame's i-out: a box with an arrow leaving it.
+      return <G size={size}><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></G>;
     case 'more':
       return <G size={size}><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></G>;
     case 'alert':

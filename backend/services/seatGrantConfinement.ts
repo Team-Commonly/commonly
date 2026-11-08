@@ -144,18 +144,34 @@ const UNCONFINED_HOST_REFUSAL: GrantBrokerRefusal = {
     + 'so no grant can be used from it',
 };
 
-const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
+/** A foreground run's own mark: it says what the seat did, wherever it runs now. */
+const UNSANDBOXED_RUN_REFUSAL: GrantBrokerRefusal = {
+  code: GRANT_BROKER_REFUSAL_CODE,
+  decidedBy: 'server',
+  reason: 'sandbox_mode_unenforceable',
+  detail: 'this agent ran without a sandbox, so no grant can be used from it until its owner clears that '
+    + 'with `commonly agent clear-unsandboxed`',
+};
+
+export const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
   if (typeof machineId !== 'string' || !machineId) return false;
   return Boolean(await Machine.exists({ machineId, hostUnconfined: true }));
+};
+
+/** The refusal a seat's host earns whatever its declaration says, or null. */
+export const unconfinedHostRefusal = async (seat: {
+  botMetadata?: { machineId?: unknown; hostUnconfined?: unknown };
+} | null): Promise<GrantBrokerRefusal | null> => {
+  if (await onUnconfinedHost(seat?.botMetadata?.machineId)) return UNCONFINED_HOST_REFUSAL;
+  return seat?.botMetadata?.hostUnconfined === true ? UNSANDBOXED_RUN_REFUSAL : null;
 };
 
 export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<SeatConfinementJudgement> => {
   const seat = await loadSeat(caller.agentUserId);
   // A foreground run has no machine to report for it, so it marks the seat
   // itself (POST /api/agents/runtime/host-unconfined).
-  if (seat?.botMetadata?.hostUnconfined === true || await onUnconfinedHost(seat?.botMetadata?.machineId)) {
-    return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat', hostUnconfined: true };
-  }
+  const hostRefusal = await unconfinedHostRefusal(seat);
+  if (hostRefusal) return { refusal: hostRefusal, scope: 'seat', hostUnconfined: true };
   const keys = seatKeysFor(caller, seat);
   const owners = await ownerIdsFor(keys);
   if (!owners.size) return NOT_JUDGED;

@@ -114,6 +114,23 @@ describe('Auth Controller Tests', () => {
       expect(saved.onboarding?.signupRef).toBe(stored);
     });
 
+    it('stores a zh-CN signup\'s first pod in Chinese', async () => {
+      bcrypt.hash.mockResolvedValueOnce('hashedPassword');
+      User.findOne = jest.fn().mockResolvedValueOnce(null);
+      User.prototype.save = jest.fn(function save() { return Promise.resolve(this); });
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+      await authController.register({
+        body: {
+          username: 'zhuser', email: 'zh@example.com', password: 'Password123!', locale: 'zh-CN',
+        },
+      }, res);
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      const pod = await Pod.findOne({ name: '我的工作空间' }).lean();
+      expect(pod?.description).toBe('你的私人工作空间');
+    });
+
     it('should register a new user successfully', async () => {
       // Create a mock for bcrypt
       bcrypt.hash.mockResolvedValueOnce('hashedPassword');

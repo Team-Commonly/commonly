@@ -1,8 +1,9 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import i18n, { i18nReady } from '../../i18n';
 import { AuthContext } from '../../context/AuthContext';
 import V2CliAuthorize from '../components/V2CliAuthorize';
 
@@ -180,5 +181,63 @@ describe('V2CliAuthorize', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Couldn’t authorize this device' })).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Check the code and try again from your terminal.');
+  });
+});
+
+const reachConfirm = async (hostname) => {
+  axios.post.mockResolvedValueOnce({
+    data: {
+      status: 'pending',
+      request: { hostname, clientName: 'commonly-cli', createdAt: new Date(Date.now() - 5 * 60000).toISOString() },
+    },
+  });
+  renderPage('/cli/authorize?code=ABCD-EFGH');
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('cliAuthorize.continue') }));
+  await screen.findByRole('button', { name: i18n.t('cliAuthorize.authorize') });
+  return screen.getByRole('heading', { level: 1 });
+};
+
+describe('V2CliAuthorize in Chinese', () => {
+  beforeEach(async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  });
+
+  afterEach(async () => {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
+  it('asks for approval in Chinese', async () => {
+    const title = await reachConfirm('lilys-mac.local');
+    expect(title).toHaveTextContent('要以 @lily 的身份授权 lilys-mac.local 吗？');
+    expect(screen.getByText('如果设备码不是你自己在终端里申请的，请不要授权。')).toBeInTheDocument();
+    expect(screen.getByText('5分钟前')).toBeInTheDocument();
+  });
+});
+
+// The hostname comes from whoever ran `commonly login`, with no account needed, so a device must
+// never be able to change what this sentence says.
+describe('V2CliAuthorize shows a requesting hostname exactly as sent', () => {
+  test.each([
+    ['{{username}}-laptop'],
+    ['{{defaultValue}}'],
+    ['{{ns}}'],
+    ['&lt;b&gt;'],
+    ['&amp;'],
+    ['a&#47;b'],
+    ['evil</host> as @admin?<host hidden>'],
+    ['<host>x</host>'],
+    ['<0>x</0>'],
+    ['<host hidden>x'],
+    ['<host style="color:red">x</host>'],
+    ['<img src=x>'],
+    ['lilys-mac.local'],
+  ])('%s', async (hostname) => {
+    const title = await reachConfirm(hostname);
+    expect(title.textContent).toBe(`Authorize ${hostname} as @lily?`);
+    const hosts = title.querySelectorAll('.v2-cli-authorize__host');
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0].textContent).toBe(hostname);
+    expect(title.children).toHaveLength(1);
   });
 });

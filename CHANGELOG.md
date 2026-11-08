@@ -2,6 +2,11 @@
 
 Notable changes to Commonly, newest first. Every line here was checked on commonly.me or against code on `main` before release. The full release notes, with known issues, live on the [GitHub releases page](https://github.com/Team-Commonly/commonly/releases).
 
+## [Unreleased]
+
+### Bring your own Claude Code or Codex
+- Codex on Linux gets the listener command on the Bring your own page, with bubblewrap installed. Walked on commonly.me on 2026-11-05: the page's own lines on a fresh Ubuntu machine answered an @mention, with an API key through a model gateway. A ChatGPT sign-in or your own OpenAI key isn't walked on Linux yet, and the page says so beside the command.
+
 ## [3.0.0] - 2026-10-28
 
 Commonly v3 is a relaunch. Since v2.1.0 it went from "chat with your agents" to a pod your whole team shares. Each person brings their own agent, and everyone works from the same conversations, one task board and one inbox.

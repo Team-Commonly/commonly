@@ -108,6 +108,17 @@ const STRANDED_PENDING_MIN_AGE_MS = 60 * 1000;
 // garbageCollect, so the two bounds move together.
 const releaseCeiling = (): number => 2 * Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
 const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
+// F298: a Start answers what waited for it. The room was told the agent can't
+// answer until its owner starts it, so the half hour above would close the very
+// mention that line was about. Past a day it's closed, and the person is told.
+// Only a person gets the day: a kernel wake is worth nothing that late.
+const START_PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const PERSON_WAITING_FILTER = {
+  type: { $in: PERSON_WAITING_EVENT_TYPES },
+  'payload.triggerAuthor': { $ne: 'kernel' },
+  'payload.assignedTaskWake': { $ne: true },
+  'payload.boardWake': { $ne: true },
+};
 
 // The migration on acknowledge() runs in two phases, and BOTH are in this
 // build so the compatibility mode has an end rather than an intention.
@@ -304,6 +315,23 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// An inline reply answers exactly one event, so it needs no inference: it goes
+// where the wake came from. postMessage refuses a root it can't use, and the
+// event is settled by then, so a deleted root falls to the channel here rather
+// than lose the answer.
+const threadRootOfWake = async (event: EventDoc): Promise<number | null> => {
+  const root = Number(event.payload?.threadRootId);
+  if (!Number.isInteger(root) || root <= 0 || !process.env.PG_HOST) return null;
+  try {
+    // eslint-disable-next-line global-require
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    return await resolveThreadRoot({ podId: String(event.podId), threadRootId: root });
+  } catch (err) {
+    console.warn('[webhook] wake thread root unusable; posting to the channel:', (err as Error).message);
+    return null;
+  }
+};
+
 // Inline webhook replies take the same service path as the CAP post route
 // (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
 // installation config, then the mention or agent-dm enqueue. Resolves to a
@@ -336,7 +364,7 @@ const postInlineReply = async (
     podId: event.podId,
     content,
     replyToMessageId: null,
-    threadRootId: null,
+    threadRootId: await threadRootOfWake(event),
     installationConfig: installation.config || null,
   });
   if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
@@ -1312,41 +1340,93 @@ class AgentEventService {
    * attempt cap bounds a poison event. Only targets that would run are
    * selected, and each is re-checked by enqueue's own routing before it runs.
    */
-  static rescueStrandedPendingInProcess(now: Date, attemptCap: number): Promise<{ rescued: number; closed: number }> {
+  static rescueStrandedPendingInProcess(
+    now: Date,
+    attemptCap: number,
+    only?: { agentName: string; instanceId: string },
+  ): Promise<{ rescued: number; closed: number }> {
     if (this.inProcessDraining) return Promise.resolve({ rescued: 0, closed: 0 });
-    return this.trackInProcessWork(() => this.rescueStrandedPendingInProcessWhileServing(now, attemptCap));
+    return this.trackInProcessWork(() => this.rescueStrandedPendingInProcessWhileServing(now, attemptCap, only));
+  }
+
+  /**
+   * A hosted agent started: what waited for it while stopped runs now, not on
+   * the next sweep up to 5 minutes away. A start is the signal the sweep's
+   * minimum age stands in for, so a brand new event runs too; the claim is the
+   * same compare-and-set, so a sweep running alongside can't run one twice.
+   */
+  static rescuePendingForIdentity(agentName: string, instanceId: string): Promise<{ rescued: number; closed: number }> {
+    const attemptCap = Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
+    return this.rescueStrandedPendingInProcess(new Date(), attemptCap, {
+      agentName: agentName.toLowerCase(), instanceId,
+    });
   }
 
   private static async rescueStrandedPendingInProcessWhileServing(
     now: Date,
     attemptCap: number,
+    only?: { agentName: string; instanceId: string },
   ): Promise<{ rescued: number; closed: number }> {
-    const targets = await this.inProcessEventTargets();
+    const targets = (await this.inProcessEventTargets()).filter((target) => (
+      !only || (target.agentName === only.agentName && target.instanceId === only.instanceId)
+    ));
     if (!targets.length) return { rescued: 0, closed: 0 };
     const targetFilter = { $or: targets };
     const ceiling = new Date(now.getTime() - STRANDED_PENDING_MAX_AGE_MS);
+    const personCeiling = only ? new Date(now.getTime() - START_PENDING_MAX_AGE_MS) : ceiling;
+    const open = { status: 'pending', deliveryMode: { $ne: 'digest' }, ...targetFilter };
+    const closing = {
+      $set: {
+        status: 'failed',
+        error: 'stranded: this agent runs in-process and the event was not run in time; '
+          + 'closed so it does not sit pending unanswered',
+      },
+    };
+    // A person's mention closes on its own, so whoever closed it tells them once.
+    // Past this batch they wait for the next pass rather than close in silence.
+    const mentions = await AgentEvent.find({ ...open, ...PERSON_WAITING_FILTER, createdAt: { $lt: personCeiling } })
+      .sort({ createdAt: -1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let closed = 0;
+    for (const mention of mentions) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const retired = await AgentEvent.findOneAndUpdate(
+        { _id: mention._id, status: 'pending' }, closing, { new: true },
+      ).lean() as EventDoc | null;
+      if (retired) {
+        closed += 1;
+        // eslint-disable-next-line no-await-in-loop
+        await noteUnansweredMention(retired).catch((lineErr: Error) => {
+          console.warn('[agent-event] unanswered-mention line not posted:', lineErr?.message);
+        });
+      }
+    }
     const closedResult = await AgentEvent.updateMany(
-      { status: 'pending', deliveryMode: { $ne: 'digest' }, createdAt: { $lt: ceiling }, ...targetFilter },
-      {
-        $set: {
-          status: 'failed',
-          error: 'stranded: this agent runs in-process and the event was not run within 30 minutes of being '
-            + 'enqueued; closed so it does not sit pending unanswered',
-        },
-      },
+      { ...open, $nor: [PERSON_WAITING_FILTER], createdAt: { $lt: ceiling } },
+      closing,
     ) as { modifiedCount?: number };
-    const stranded = await AgentEvent.find({
-      status: 'pending',
-      deliveryMode: { $ne: 'digest' },
-      createdAt: {
-        $lt: new Date(now.getTime() - STRANDED_PENDING_MIN_AGE_MS),
-        $gte: ceiling,
-      },
-      $and: [
-        targetFilter,
-        { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
-      ],
-    }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+    closed += closedResult?.modifiedCount || 0;
+    const youngest = new Date(now.getTime() - (only ? 0 : STRANDED_PENDING_MIN_AGE_MS));
+    const runnable = (match: Record<string, unknown>, limit: number) => (limit > 0
+      ? AgentEvent.find({
+        status: 'pending',
+        deliveryMode: { $ne: 'digest' },
+        ...match,
+        $and: [
+          targetFilter,
+          { $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }] },
+        ],
+      }).sort({ createdAt: 1 }).limit(limit).lean() as Promise<EventDoc[]>
+      : Promise.resolve([] as EventDoc[]));
+    // A person first, so a pod full of wakes can't use up the batch.
+    const people = await runnable(
+      { ...PERSON_WAITING_FILTER, createdAt: { $lte: youngest, $gte: personCeiling } },
+      STUCK_REDISPATCH_BATCH,
+    );
+    const others = await runnable(
+      { $nor: [PERSON_WAITING_FILTER], createdAt: { $lte: youngest, $gte: ceiling } },
+      STUCK_REDISPATCH_BATCH - people.length,
+    );
+    const stranded = [...people, ...others];
     let rescued = 0;
     for (const event of stranded) {
       const agentName = String(event.agentName || '');
@@ -1368,7 +1448,7 @@ class AgentEventService {
       this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || event.type || ''));
       rescued += 1;
     }
-    return { rescued, closed: closedResult?.modifiedCount || 0 };
+    return { rescued, closed };
   }
 
   /**

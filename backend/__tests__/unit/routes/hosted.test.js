@@ -348,8 +348,10 @@ describe('/api/hosted', () => {
     mockHosted.listHostedInstallationsForUser.mockResolvedValue([
       { agentName: 'scout', instanceId: 'default', podId: 'pod-1' },
     ]);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(403);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^\[install-refused\] .*"code":"hosted_cap_reached"/));
     expect(res.body).toMatchObject({
       code: 'hosted_cap_reached',
       used: 2,
@@ -367,6 +369,16 @@ describe('/api/hosted', () => {
     const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: 'hosted_cap_reached', used: 2, cap: 1, holders: [] });
+  });
+
+  it('says why when the identity runs in process, rather than a bare 500', async () => {
+    mockFindOne.mockResolvedValue(makeInstallation());
+    mockIssueToken.mockRejectedValueOnce(Object.assign(new Error('Commonly runs this agent'), {
+      code: 'in_process_agent_no_token', status: 409,
+    }));
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ code: 'in_process_agent_no_token', message: 'Commonly runs this agent' });
   });
 
   it('mints server-side with owner lineage, provisions, records, and never returns the token', async () => {
@@ -578,6 +590,23 @@ describe('/api/hosted on the native engine', () => {
       engine: 'native', provisionedAt: PROVISIONED, about: 'Keeps the research log.',
     });
     expect(JSON.stringify(res.body)).not.toMatch(/cm_agent_/);
+  });
+
+  it('provision runs what waited while the agent was stopped, and a failure there doesn\'t fail the start', async () => {
+    const AgentEventService = require('../../../services/agentEventService');
+    const stopped = nativeInstallation({ provisionedAt: null });
+    // A stopped row isn't a target yet, so this has to come after the write.
+    let startedByThen;
+    const waiting = jest.spyOn(AgentEventService, 'rescuePendingForIdentity').mockImplementation(async () => {
+      startedByThen = stopped.config.get('hosted').provisionedAt;
+      throw new Error('sweep down');
+    });
+    mockFindOne.mockResolvedValue(stopped);
+    const res = await request(app).post('/api/hosted/provision').send({ agentName: 'scout' });
+    expect(res.status).toBe(200);
+    expect(waiting).toHaveBeenCalledWith('scout', 'default');
+    expect(startedByThen).toBeTruthy();
+    waiting.mockRestore();
   });
 
   // QA 2026-10-16: "Connect your first agent" stayed pending after a hosted

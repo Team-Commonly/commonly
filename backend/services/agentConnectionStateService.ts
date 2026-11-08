@@ -1,7 +1,6 @@
 // A connection is proven by the credential's use, not by an agent message or
 // a task claim. Keep this verdict separate from the activity shown in pods.
 export const BYO_STALE_MS = 5 * 60 * 1000;
-export const MACHINE_STALE_MS = 90 * 1000;
 
 type Credential = { tokenHash?: string; kind?: string; status?: string; lastUsedAt?: Date | string | null; expiresAt?: Date | string | null };
 

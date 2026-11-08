@@ -21,7 +21,7 @@ const writeStored = (ids: string[]) => {
   }
 };
 
-export interface UseV2Pinned {
+interface UseV2Pinned {
   pinned: Set<string>;
   isPinned: (id: string) => boolean;
   toggle: (id: string) => void;

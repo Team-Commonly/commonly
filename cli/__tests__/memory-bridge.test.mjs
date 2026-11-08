@@ -179,6 +179,30 @@ describe('buildMemoryPreamble', () => {
 
   // F118: a public seat reads its memory but cannot write it, so its prompt
   // shows what it read and never names the save tool it is not offered.
+  describe('F145: what a public seat is told about writing', () => {
+    const READ_ONLY = /only when your owner started the turn/i;
+
+    test.each([['long_term', 'notes'], ['empty', ''], ['unreadable', null]])(
+      'a stranger\'s turn with %s memory says writes need the owner, on a resumed session too',
+      (_name, value) => {
+        for (const freshSession of [true, false]) {
+          expect(buildMemoryPreamble('turn', value, { freshSession, memoryReadOnly: true })).toMatch(READ_ONLY);
+        }
+      },
+    );
+
+    test('it no longer says "do not re-save", which names a write the seat can\'t make', () => {
+      expect(buildMemoryPreamble('turn', null, { memoryReadOnly: true })).not.toMatch(/re-save/);
+      expect(buildMemoryPreamble('turn', null, { memoryReadOnly: true })).toContain('unreadable');
+    });
+
+    test('an owner-woken or private turn keeps its text', () => {
+      expect(buildMemoryPreamble('turn', null)).toMatch(/do not re-save/);
+      expect(buildMemoryPreamble('turn', 'notes')).not.toMatch(READ_ONLY);
+      expect(buildMemoryPreamble('turn', '', { freshSession: true })).not.toMatch(READ_ONLY);
+    });
+  });
+
   describe('on a public seat (memoryReadOnly)', () => {
     it('shows the long_term it read, and asks for no save', () => {
       const out = buildMemoryPreamble('do the thing', 'notes from before', {

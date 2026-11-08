@@ -89,7 +89,7 @@ const { recordByoEvent } = require('../services/byoTelemetry');
 const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
-  'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
+  'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown', 'welcome-shown',
 ]);
 // Steps that copy a setup command, and the copy types each may carry. A step
 // and its type must agree, so "token-copied" can never set the listen mark.
@@ -117,6 +117,12 @@ router.post('/byo-step', rateLimit({
 }), auth, async (req: any, res: any) => {
   const step = String(req.body?.step || '');
   if (!BYO_STEPS.has(step)) return res.status(400).json({ error: 'unknown step' });
+  // The welcome isn't a Bring your own step. Its write-once mark is the whole
+  // record, so a repeat load adds no byo_telemetry row and reads no other field.
+  if (step === 'welcome-shown') {
+    markSurface(req.userId, 'welcomeShownAt');
+    return res.json({ ok: true });
+  }
   if (step === 'mcp-command-copied' || step === 'cli-command-copied') {
     // Keep the durable funnel mark small and fixed-enum. Never accept or store
     // the copied command, which contains a runtime token.

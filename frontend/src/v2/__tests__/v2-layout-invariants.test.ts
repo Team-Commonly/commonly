@@ -257,16 +257,44 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
-    expect(ruleBody(agentSettings, '.v2-agent-settings__column')).toContain('width: min(100%, 960px)');
     expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
   });
 
-  test('agent Settings section headers stack at phone width so the key hint stays visible', () => {
-    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__section-head');
-    const header = selectorRuleBody(phone, '.v2-agent-settings__section-head');
-    expect(header).toContain('flex-direction: column');
-    expect(header).toContain('align-items: flex-start');
+  // The old page's layout (column, head, sections) is gone with the page; nothing renders it.
+  test('the old agent Settings layout rules stay deleted', () => {
+    const selectorFor = (cls: string) => new RegExp(`\\.v2-agent-settings__${cls}(?![\\w-])`);
+    // Positive control: the same pattern finds a class the stylesheet keeps, so a
+    // broken pattern can't pass the absence checks below by matching nothing.
+    expect(agentSettings).toMatch(selectorFor('actions'));
+    for (const cls of ['column', 'head', 'ident', 'seg', 'section', 'section-head', 'empty']) {
+      expect(agentSettings).not.toMatch(selectorFor(cls));
+    }
+  });
+
+  test('Agent settings: the wake select fits its value and its chevron passes clicks through', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval select')).toContain('field-sizing: content');
+    expect(ruleBody(surface, '.v2-agent-settings-page .sel.v2-agent-wake-pods__interval svg.i')).toContain('pointer-events: none');
+  });
+
+  // The count of other people's direct rooms is one text cell that is both the
+  // first and last cell of its row. Without this rule it took the last
+  // column's 44px right-aligned width, and at 390 it collapsed to 21px tall.
+  test('Agent settings: the other-direct-rooms count spans the row at row height', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const others = ruleBody(surface, '.v2-agent-settings-page .wt tr.v2-agent-wake-pods__others td');
+    expect(others).toContain('width: auto');
+    expect(others).toContain('text-align: left');
+    expect(others).toContain('padding-top: 12px');
+    expect(others).toContain('padding-bottom: 12px');
+  });
+
+  test('Agent settings: hover opens the note only where a pointer hovers, so a second tap can close it', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const hoverOnly = surface.indexOf('@media (hover: hover)');
+    expect(hoverOnly).toBeGreaterThan(-1);
+    expect(surface.indexOf('.v2-agent-settings-page .info:hover .tip')).toBeGreaterThan(hoverOnly);
   });
 
   test('agent Settings phone rows keep the value cell visible, beside the label on one line', () => {
@@ -287,6 +315,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(hint).toContain('text-align: left');
     expect(read('../agents/V2AgentNameRow.tsx')).toContain('field field--area v2-agent-settings-page__name v2-agent-settings-page__about');
   });
+  test('the BYO adapter choice wraps on a phone, so no adapter sits off screen', () => {
+    const phone = mediaBlockContaining(read('../components/V2AgentBYO.css').replace(/\/\*[\s\S]*?\*\//g, ''), '.v2-feature--byo .v2-byo__os {');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters { flex-wrap: wrap; }');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os--adapters .v2-byo__link { flex: 1 1 auto; }');
+    expect(read('../components/V2AgentBYO.tsx')).toContain('className="v2-byo__os v2-byo__os--adapters" data-testid="byo-runner"');
+    // Basis 0 is what keeps the Mac/Linux/Windows segments equal, and only the adapters wrap.
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center;');
+  });
+  test('a private Wake row stays on one line at phone width, with the kind readable', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const phone = mediaBlockContaining(surface, '.wt td[data-personal="true"]');
+    expect(phone).toContain('.wt td[data-personal="true"] { flex-wrap: nowrap; }');
+    expect(phone).toContain('.wt td[data-personal="true"] a { flex: 1 1 0; white-space: nowrap; }');
+    expect(surface).toContain('.v2-agent-wake-pods__kind { margin-left: 8px;');
+  });
   test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
@@ -304,7 +348,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
-    expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
+    // The confirming action repeats the generic rule's :not() chain, so it outranks
+    // that rule and its ink shows; with fewer classes the generic colours won.
+    const notChain = ':not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)';
+    const primary = `.v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child${notChain}`;
+    expect(ruleBody(agentSettings, primary)).toContain('background: var(--v2-ink)');
+    expect(ruleBody(agentSettings, `${primary}:hover`)).toContain('background: var(--v2-ink-hover)');
   });
 
   test('agent Settings controls reach 44px at phone width', () => {
@@ -612,14 +661,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('pointer-events: none');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('visibility: hidden');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
+    // A tap applies :hover before its click, so hover arms the pin only where hover is real.
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__pin { opacity: 1; pointer-events: auto; }\n}');
+    expect(v2).not.toMatch(/^\.v2-pods__rowwrap:hover \.v2-pods__pin/m);
     // Touch has no hover: the 390 frame still draws the time at rest, and a press and
     // hold (--reveal) is the row's hover state there, or a phone cannot pin.
     expect(v2).not.toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}/);
     expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('@media (hover: hover) {\n  .v2-pods__rowwrap:hover .v2-pods__row-time { visibility: hidden; }\n}');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
@@ -1413,6 +1466,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-system-action-line .v2-avatar')).toContain('width: 16px');
     expect(ruleBody(v2, '.v2-system-action-line__action')).toContain('grid-column: 3;');
     expect(ruleBody(v2, '.v2-system-action-line time')).toContain('grid-column: 5');
+    // A notice is a sentence a person has to read, so it wraps, and its time sits in its own column.
+    expect(ruleBody(v2, '.v2-system-action-line--notice')).toContain('grid-template-columns: 16px minmax(0, 1fr) auto');
+    expect(ruleBody(v2, '.v2-system-action-line__notice')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(v2, '.v2-system-action-line--notice time')).toContain('grid-column: 3');
     expect(ruleBody(v2, '.v2-system-action-line__name')).toContain('color: var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-system-action-line__verb')).toContain('color: var(--v2-text-tertiary)');
     expect(ruleBody(v2, '.v2-system-action-line__object')).toContain('var(--v2-font-mono)');
@@ -1436,6 +1493,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-first-run')).toContain('width: min(720px, 100%)');
     expect(ruleBody(v2, '.v2-first-run')).toContain('max-height: calc(100dvh - 48px)');
     expect(ruleBody(v2, '.v2-first-run')).toContain('overflow-y: auto');
+  });
+
+  test('the first-run lede sets text-wrap: pretty, so its last line is not a lone character', () => {
+    expect(ruleBody(readV2Css(), '.v2-first-run__lede')).toContain('text-wrap: pretty');
   });
 
   test('the first-run setup CTA beats the global inherited anchor color with its own', () => {
@@ -1464,17 +1525,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // a happy path cannot prove the old page stops being reachable. The
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
-    expect(settingsPage).toContain('<SettingsSection id="account" title="Account">');
+    expect(settingsPage).toContain(`<SettingsSection id="account" title={t('settings.sections.account')}>`);
     // D215 (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
-    expect(settingsPage).toContain('<SettingsSection id="access" title="Access">');
+    expect(settingsPage).toContain(`<SettingsSection id="access" title={t('settings.sections.access')}>`);
     // D215: the language segment lives under Look, beside the theme.
-    expect(settingsPage).toContain('<SettingsSection id="look" title="Look">');
+    expect(settingsPage).toContain(`<SettingsSection id="look" title={t('settings.sections.look')}>`);
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
     expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
     expect(settingsPage).toContain('to="/v2/connectors"');
-    expect(settingsPage).toContain('<summary>Developer apps</summary>');
+    expect(settingsPage).toContain(`<summary>{t('settings.developerApps')}</summary>`);
     expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
     expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
@@ -1522,7 +1583,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('value={username}');
     expect(settingsPage).toContain('className="v2-settings__email-control"');
     expect(settingsPage).toContain('id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)}');
-    expect(settingsPage).toContain('type="button">Change</button>');
+    expect(settingsPage).toContain(`type="button">{t('settings.account.change')}</button>`);
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
     expect(ruleBody(ss, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
@@ -1720,6 +1781,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-msg__collapse--closed pre');
     expect(ruleBody(v2, '.v2-lightbox')).toContain('rgba(16, 24, 40, 0.9)');
     expect(messageRow).not.toContain('FILE_EXT_COLORS');
+    expect(read('../chat/chat-message.css')).toContain('.v2-msg__code { position: relative; margin: 6px 0; }');
+    expect(read('../chat/chat-message.css')).toContain('.v2-msg__content .v2-msg__code pre { margin: 0; padding-right: 44px; }');
+    // The inline chip's ring would otherwise box every line of a block.
+    expect(ruleBody(read('../chat/chat-message.css'), '.v2-msg__content pre code')).toContain('box-shadow: none');
+    // At phone width a long code line wraps; it was cut at the edge with no
+    // sign that the block scrolled.
+    const phoneChat = read('../chat/chat-message.css').split('@media (max-width: 640px) {')[1] || '';
+    expect(phoneChat.slice(0, phoneChat.indexOf('\n}\n'))).toMatch(/\.v2-msg__content pre \{\s*white-space: pre-wrap;\s*overflow-wrap: anywhere;\s*\}/);
     expect(messageRow).toContain('COLLAPSE_AFTER_LINES = 6');
     expect(messageRow).toContain('<V2Lightbox');
   });
@@ -1815,7 +1884,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
     const teamPhone = teamPhoneBlock(teamCss);
-    expect(ruleBody(teamCss, '.v2-team .v2-team__head > .v2-page-head__identity', { within: teamPhone })).toContain('flex-direction: column');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__head > .v2-page-head__identity', { within: teamPhone })).toContain('flex-flow: row wrap');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__head .v2-team__meta', { within: teamPhone })).toContain('flex-basis: 100%');
     expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
     for (const css of [v2, teamCss]) {
@@ -2424,6 +2494,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('offset: 0');
     });
 
+    test("the agent room's Connect beats `.v2-root a`, so it reads as a link", () => {
+      const states = read('../chat/chat-states.css');
+      expect(ruleBody(states, '.v2-root a.v2-chat__agent-room-connect')).toContain('color: var(--v2-accent)');
+    });
+
+    test('an approval card wears the ring only while it can be answered', () => {
+      const states = read('../chat/chat-states.css');
+      expect(ruleBody(states, '.v2-approval--open')).toContain('box-shadow: 0 0 0 2px var(--v2-accent)');
+      expect(ruleBody(states, '.v2-approval')).not.toContain('box-shadow');
+    });
+
     test('chat and workspace-inspector surfaces do not paint with accent-soft', () => {
       const prefixes = [
         '.v2-chat',
@@ -2708,7 +2789,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Show is the default. This rule used to hide __detail for every state except
     // two enumerated ones, so the not-yet row that IS available
     // (ToolPanels) lost "install the GitHub App first" /
-    // "read, or read and write" and a stranger saw a "not granted" kicker with
+    // "Read, or read and write" and a stranger saw a "not granted" kicker with
     // nothing under it. The two reason strings are already render-asserted in
     // ConnectorsPage.tools.test.tsx — this is the half jsdom cannot see.
     // If one row ever needs the detail hidden on phones, add that selector to the
@@ -5039,6 +5120,14 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
     expect(landingTsx).toContain("v2-landing__brand-name");
   });
 
+  test('the listing badge sits under the footer wordmark, on our own origin, and can narrow on a phone', () => {
+    // nginx's img-src refuses a third-party host, so a hotlinked badge never paints here.
+    expect(landingTsx).toContain('<img src="/badge-osa.svg"');
+    expect(landingTsx.indexOf('v2-landing__footer-badge')).toBeGreaterThan(landingTsx.indexOf('v2-landing__footer-brand'));
+    expect(landingTsx.indexOf('v2-landing__footer-badge')).toBeLessThan(landingTsx.indexOf('v2-landing__footer-cols'));
+    expect(ruleBody(landing, '.v2-landing__footer-badge img')).toContain('max-width: 100%');
+  });
+
   test('the close is type on the page, not a navy band', () => {
     const cta = lastRuleBody('.v2-landing__cta');
     expect(cta).toContain('display: flex');
@@ -5452,6 +5541,15 @@ test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on pho
 });
 
 
+test('the drawer priority chip is a select that keeps the P0 fill', () => {
+  // A transparent fill on every chip outranked the P0 rule (0,2,1 over 0,2,0) and
+  // left P0's light text on nothing. Only the outlined chips drop the field fill.
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select')).not.toContain('background');
+  expect(ruleBody(boardCss, '.v2-root select.v2-board__priority-select:not(.v2-board__priority--p0)'))
+    .toContain('background-color: transparent');
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p0')).toContain('background: var(--v2-prio-p0-bg)');
+});
+
 test('TASK-443 lease typography outranks the ownership cell font size', () => {
   expect(ruleBody(boardCss, '.v2-board__ownership .v2-board__lease-value'))
     .toContain('font: 500 12px/16px var(--v2-font-mono)');
@@ -5473,7 +5571,9 @@ test('TASK-482 sticky bar overlays reserved space with a top border and no shado
   expect(bar).not.toContain('box-shadow');
   // The frame's layout rule carries no padding; the reserved space is its own
   // rule after it, so the bar's height is still read back by the e2e spec.
-  expect(lastRuleBody(css, '.v2-feature--byo .v2-byo__layout')).toContain('padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px))');
+  expect(ruleBody(css, '.v2-feature--byo .v2-byo__layout:has(.v2-byo__result)')).toContain('padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px))');
+  // Only a result can show the bar, so the form doesn't scroll into empty space.
+  expect(lastRuleBody(css, '.v2-feature--byo .v2-byo__layout')).toContain('padding-bottom: 40px');
   // The bar is the page's last block: its rules sit in the page's own sheet.
   expect(read('../v2.css')).not.toContain('.v2-byo__hosted-offer');
 });
@@ -5894,10 +5994,10 @@ describe('Your team lifted from the d215 frame (R06)', () => {
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('height: 44px');
   });
 
-  // Deviation from the frame: the two text links (Have an invitation code?,
-  // 20px; Connected agents, 16px) are not drawn. On a phone an invisible ring
-  // 14px above and below makes each hit area at least 44px.
-  test('on a phone, the text links gain a 44px hit ring', () => {
+  // Deviation from the frame: the Connected agents text link (16px) is not
+  // drawn. On a phone an invisible ring 14px above and below makes its hit
+  // area at least 44px.
+  test('on a phone, the text link gains a 44px hit ring', () => {
     expect(ruleBody(teamCss, '.v2-team button.v2-team__link')).toContain('position: relative');
     const phone = mediaBlockContaining(teamCss, '.v2-team button.v2-team__link::after');
     const ring = ruleBody(teamCss, '.v2-team button.v2-team__link::after', { within: phone });
@@ -6149,7 +6249,7 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     // header on the page (56px avatar, name, meta, the key at the end), not the bar.
     expect(read('../components/V2PersonProfile.tsx')).toContain('<header className="v2-profile__head">');
     expect(read('../agents/V2AgentProfile.tsx')).toContain('<header className="v2-aprofile__hero">');
-    expect(app).toMatch(/'Your Team',[\s\S]{0,300}'v2-feature--bar'/);
+    expect(app).toMatch(/t\('yourTeam\.title'\),[\s\S]{0,300}'v2-feature--bar'/);
     expect(app).toContain("feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--profile')");
     expect(app).toContain("feature(t('common.pageTitle.agentProfile'), page, false, false)");
     expect(app).not.toContain('v2-feature--aprofile');
@@ -6162,12 +6262,12 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     for (const decl of ['flex: 1 1 auto', 'min-height: 0', 'display: flex', 'flex-direction: column']) expect(legacy).toContain(decl);
     const scroll = ruleBody(v2, '.v2-feature__scroll');
     for (const decl of ['flex: 1 1 auto', 'min-height: 0']) expect(scroll).toContain(decl);
-    // Connect moved the hint to an intro line. d215 s-byo draws BYO's lead as the
-    // head's "i" hint at 1440 and 390, so BYO keeps it and draws no intro line.
-    expect(app).not.toMatch(/<V2FeaturePage title="Connect" hint=/);
+    // d215 draws Connect's and BYO's lead as the head's "i" hint at 1440 and 390,
+    // so neither page prints an intro line.
+    expect(app).toContain("<V2FeaturePage title={t('common.pageTitle.connect')} hint={t('connect.intro')}>");
     expect(read('../components/V2AgentBYO.tsx')).toMatch(/\n\s*hint=\{/);
     expect(read('../components/V2AgentBYO.tsx')).not.toContain('v2-byo__intro');
-    expect(read('../components/V2ConnectPage.tsx')).toContain("<p className=\"v2-connect__intro\">{t('connect.intro')}</p>");
+    expect(read('../components/V2ConnectPage.tsx')).not.toContain('v2-connect__intro');
   });
 
   test('finding 5: every v2p key and segment is 44px tall on a phone', () => {
@@ -6514,6 +6614,25 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(ruleBody(rt, '.v2-run-trace h2')).toContain('text-wrap: balance');
     expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
   });
+
+  test('a wrapped phone message head grows instead of overlapping the message', () => {
+    const css = read('../chat/chat-message.css');
+    expect(css).toContain('@media (max-width: 640px) {\n  .v2-thread .v2-msg__head { height: auto; min-height: 20px; }\n}');
+    expect(css.indexOf('height: auto; min-height: 20px')).toBeGreaterThan(css.indexOf('.v2-thread .v2-msg__head { height: 20px; gap: 8px; }'));
+  });
+
+  test('the G11 first-screen rules hold: phone Guide, placeholder ellipsis, the result landing', () => {
+    const settings = read('../components/V2SettingsPage.css');
+    // The identity takes the row's width; a long name used to clip in the 180px label column.
+    expect(settings).toContain('.v2-settings .v2-settings__account-row { grid-template-columns: minmax(0, 1fr) auto; }');
+    // Desktop reaches the guide from the rail, so the row is for phones only.
+    expect(settings).toContain('.v2-settings__guide { display: none; }');
+    const phone = settings.slice(settings.indexOf('@media (max-width: 760px)'));
+    expect(phone).toContain('.v2-settings__guide { display: grid;');
+    const activity = read('../components/V2ActivityPage.css');
+    expect(ruleBody(activity, '.v2-root .v2-activity__compose textarea::placeholder')).toContain('text-overflow: ellipsis');
+    expect(read('../components/V2AgentBYO.css')).toContain('.v2-byo__result { scroll-margin-top: 12px; }');
+  });
 });
 
 describe('the landing stylesheet parses as written', () => {
@@ -6533,4 +6652,59 @@ describe('the landing stylesheet parses as written', () => {
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
+});
+
+test('a Team card keeps a long description to two lines', () => {
+  const desc = ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card__desc');
+  expect(desc).toContain('-webkit-line-clamp: 2');
+  expect(desc).toContain('overflow: hidden');
+});
+
+test('a phone hint on the held line opens on its own row, so it cannot squeeze the link', () => {
+  const phone = mediaBlockContaining(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__held .v2-hint--open');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held { display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint--open { display: contents; }');
+  expect(phone).toContain('.v2-feature--byo .v2-byo__held .v2-hint__content { grid-column: 1 / -1; width: 0; min-width: 100%; }');
+  // Wrapping the row on open moved the (i) from under a hovering mouse, which closed the hint and moved it back.
+  expect(phone).not.toContain('flex-wrap');
+});
+
+test('a long held name wraps inside the link, so it cannot push the (i) off the line', () => {
+  const link = ruleBody(read('../components/V2AgentBYO.css'), '.v2-feature--byo .v2-byo__held .v2-byo__link');
+  expect(link).toContain('min-width: 0');
+  expect(link).toContain('overflow-wrap: anywhere');
+});
+
+test('the app confirm sits above a modal that opened it', () => {
+  const css = readV2Css();
+  expect(ruleBody(css, '.v2-modal__overlay')).toContain('z-index: 100');
+  expect(ruleBody(css, '.v2-confirm__overlay')).toContain('z-index: 110');
+  expect(ruleBody(css, '.v2-confirm__message')).toContain('overflow-wrap: anywhere');
+});
+
+test('the CLI approval page never clips the hostname being approved', () => {
+  const host = ruleBody(read('../components/V2CliAuthorize.css'), '.v2-cli-authorize__host');
+  expect(host).toContain('overflow-wrap: anywhere');
+  expect(host).not.toContain('nowrap');
+});
+
+// White on the dark accent is 3.44:1. On-ink is dark there and white in light.
+test('small text on the raw accent uses on-ink, so it reads in dark too', () => {
+  const css = readV2Css();
+  [
+    '.v2-root button.v2-pods__row--selected .v2-pods__row-mark:not(.v2-avatar)',
+    '.v2-mobile-tabs__count',
+    '.v2-rail__item-icon .MuiBadge-badge',
+  ].forEach((selector) => expect(ruleBody(css, selector)).toContain('color: var(--v2-on-ink)'));
+  expect(ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card__mark--needsYou'))
+    .toContain('color: var(--v2-on-ink)');
+  expect(ruleBody(read('../primitives/primitives.css'), '.v2p-badge')).toContain('color: var(--v2-on-ink)');
+});
+
+// F339 walk (prod, 11-08): the not-connected notice's Connect link computed the
+// sentence's own colour, weight 400 and no underline, so nobody saw a link.
+test("the owner's Connect link in a not-connected notice wears the accent", () => {
+  const body = ruleBody(read('../chat/chat-message.css'), '.v2-root a.v2-system-action-line__link');
+  expect(body).toContain('color: var(--v2-accent-text)');
+  expect(body).toContain('font-weight: 600');
 });

@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const AgentMessageService = require('../../../services/agentMessageService');
 const Message = require('../../../models/Message');
 const Summary = require('../../../models/Summary');
@@ -34,7 +36,27 @@ jest.mock('../../../models/AgentRegistry', () => ({
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
     })),
+    findOne: jest.fn(() => ({
+      sort: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(null),
+    })),
   },
+}));
+// owedScheduledPost reads the newest heartbeat; without a mock the unconnected
+// model throws and the read fails open, letting a capped post through.
+jest.mock('../../../models/AgentEvent', () => ({
+  findOne: jest.fn(() => ({
+    sort: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(null),
+  })),
+  find: jest.fn(() => ({
+    sort: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  })),
 }));
 jest.mock('../../../models/User', () => ({
   find: jest.fn(() => ({
@@ -225,6 +247,65 @@ describe('AgentMessageService summary persistence', () => {
       const result = await repost('chat', { personWaiting: true });
       expect(result.skipped).toBeUndefined();
       expect(Message).toHaveBeenCalled();
+    });
+
+    // F280: two cut-offs in seven minutes, the second line skipped, and with its
+    // ask settled the person heard nothing. Read from the wrapper's own source,
+    // so the kernel's copy can't drift from it.
+    const CUT_OFF_LINE = fs.readFileSync(
+      path.join(__dirname, '../../../../cli/src/lib/turn-failure-notice.js'), 'utf8',
+    ).match(/export const CUT_OFF_NOTICE = '(.+)';/)[1];
+    const repostText = (content) => {
+      Pod.findById.mockReturnValue(podLookup('chat'));
+      jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(
+        identicalRecentPostBy('agent-user-1').map((message) => ({ ...message, content })),
+      );
+      return AgentMessageService.postMessage({
+        agentName: 'hq-support',
+        instanceId: 'commonly-support',
+        podId: 'pod-dm-1',
+        content,
+        metadata: { sourceEventType: 'chat.mention' },
+      });
+    };
+
+    it('posts the wrapper\'s cut-off line even when the same line went out minutes ago', async () => {
+      const result = await repostText(CUT_OFF_LINE);
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    // F279: a long answer reaches the run cap on its own, and the line that says
+    // it stopped short is the one post the person still needs.
+    const pastTheRunCap = (content) => {
+      Pod.findById.mockReturnValue(podLookup('chat'));
+      jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(
+        ['one', 'two', 'three'].map((part) => ({ ...identicalRecentPostBy('agent-user-1')[0], content: part })),
+      );
+      return AgentMessageService.postMessage({
+        agentName: 'hq-support',
+        instanceId: 'commonly-support',
+        podId: 'pod-dm-1',
+        content,
+        metadata: { sourceEventType: 'chat.mention' },
+      });
+    };
+
+    it('posts the cut-off line past the run cap', async () => {
+      const result = await pastTheRunCap(CUT_OFF_LINE);
+      expect(result.refused).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('still refuses anything else past the run cap', async () => {
+      const result = await pastTheRunCap(`${CUT_OFF_LINE} More.`);
+      expect(result).toMatchObject({ refused: true, reason: 'consecutive_run_cap' });
+      expect(Message).not.toHaveBeenCalled();
+    });
+
+    it('still skips a repeat that only starts like the cut-off line', async () => {
+      const result = await repostText(`${CUT_OFF_LINE} More.`);
+      expect(result.skipped).toBe(true);
     });
 
     // F180: a second approval card for the same tool repeats the first's

@@ -719,13 +719,3 @@ export const findHostedToolDefinition = (
 ): ToolDefinition | undefined => (
   hostedToolDefinitions(entries, overrides).find((definition) => definition.name === name)
 );
-
-/** The entry a connection names, or undefined when the catalogue no longer offers it. */
-export const entryForConnection = (
-  connection: Pick<ToolConnection, 'type'> & { entryId?: unknown },
-  entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
-): HostedMcpEntry | undefined => (
-  connection.type === 'hosted-mcp'
-    ? findHostedMcpEntry(entries, String(connection.entryId || ''))
-    : undefined
-);

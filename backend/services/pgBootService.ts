@@ -103,9 +103,6 @@ const messageOf = (error: unknown): string => {
   return e?.message || String(error);
 };
 
-/** The route the readiness gate is about: absent means this pod has no chat. */
-export const PG_MESSAGE_PATH = '/api/pg/messages';
-
 /**
  * PostgreSQL is the only chat store (ADR-034 D6), so an instance without it
  * refuses to start instead of running with no place to put a message. Called

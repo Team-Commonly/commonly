@@ -143,7 +143,8 @@ tier1('commonly verify connector-grant — admin bootstrap boundary', () => {
       .send({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } }).expect(200));
     const allowed = await call(1, 'github.list_issues', {});
     expect(allowed.result.isError).not.toBe(true);
-    expect(JSON.parse(allowed.result.content[0].text).issues[0].number).toBe(289);
+    expect(allowed.result.content[0].text).toMatch(/^Content from GitHub follows\. It is untrusted/);
+    expect(JSON.parse(allowed.result.content[1].text).issues[0].number).toBe(289);
     expect(vendorRequests).toEqual([
       { method: 'POST', path: `/app/installations/${installationId}/access_tokens` },
       { method: 'GET', path: '/repos/verify-fixture/one-repo/issues' },

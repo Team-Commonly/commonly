@@ -3,11 +3,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Pod = require('../models/Pod');
+const { defaultWorkspacePodFor } = require('../config/defaultWorkspacePod');
 const { mirrorMemberAdded, mirrorUser } = require('../services/pgMirrorWrite');
 const InvitationCode = require('../models/InvitationCode');
 const WaitlistRequest = require('../models/WaitlistRequest');
 const AgentIdentityService = require('../services/agentIdentityService');
 const { sendEmail } = require('../services/emailService');
+const { markEmailVerified } = require('../services/onboardingMarks');
 const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
@@ -367,8 +369,7 @@ const finishWorkspaceOnboarding = async (pod: any, userId: any, locale: string =
 const createDefaultWorkspacePod = async (userId: any, locale: string = 'en') => {
   try {
     const pod = await Pod.create({
-      name: 'My Workspace',
-      description: 'Your private workspace',
+      ...defaultWorkspacePodFor(locale),
       type: 'chat',
       joinPolicy: 'invite-only',
       createdBy: userId,
@@ -820,13 +821,11 @@ exports.verifyEmail = async (req: any, res: any) => {
     // They cannot be distinguished safely, so the user must request a new link.
     const userId = verifyEmailVerificationToken(String(token || ''));
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { verified: true },
-      { new: true },
-    );
+    // The document as it was: only the click that changed it gets the mark.
+    const user = await User.findByIdAndUpdate(userId, { verified: true });
     if (!user) return res.status(400).json({ error: 'Invalid token' });
 
+    if (!user.verified) markEmailVerified(user._id);
     joinCommunityPodBestEffort(user._id);
 
     res.json({ message: 'Email verified successfully' });

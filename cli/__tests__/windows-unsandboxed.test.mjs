@@ -13,6 +13,7 @@ import {
   saveUnsandboxedOptIn,
   unsandboxedFlagRefusal,
   unsandboxedMarkerPath,
+  hostReportFailureMessage,
   hostUnconfinedForRun,
   hostSandboxReport,
 } from '../src/lib/sandbox/windows-unsandboxed.js';
@@ -198,5 +199,19 @@ describe('what a Windows user is told', () => {
     expect(error).toContain(UNSANDBOXED_FLAG);
     expect(error).not.toMatch(/macOS|WSL/);
     expect(detectBwrap({ platform: 'darwin' }).error).not.toContain(UNSANDBOXED_FLAG);
+  });
+});
+
+describe('hostReportFailureMessage', () => {
+  test('names an older server on a 404, which otherwise reads like a missing agent', () => {
+    const line = hostReportFailureMessage(Object.assign(new Error('Not found'), { status: 404 }));
+    expect(line).toContain('Not found');
+    expect(line).toContain('older than this CLI');
+  });
+
+  test('adds no hint to any other failure', () => {
+    const line = hostReportFailureMessage(Object.assign(new Error('Server error'), { status: 500 }));
+    expect(line).toContain('Server error');
+    expect(line).not.toContain('older than this CLI');
   });
 });

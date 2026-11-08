@@ -44,21 +44,18 @@ export const V2InstallNarrowingNotice: React.FC<{
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-}> = ({ agentName, narrowing, busy, onConfirm, onCancel }) => {
+  confirmLabel?: string;
+  confirmClassName?: string;
+  cancelClassName?: string;
+}> = ({ agentName, narrowing, busy, onConfirm, onCancel, confirmLabel, confirmClassName = 'v2-byo__submit', cancelClassName = 'v2-byo__link' }) => {
   const { t } = useTranslation();
   const preview = isPreview(narrowing) ? narrowing : null;
   const losesAny = Boolean(preview && (preview.losesWrites.length > 0 || preview.hiddenLosesWritesCount > 0));
-  const lines: string[] = [];
-  if (!preview) {
-    lines.push(t('outsiderNarrowing.install.unavailable', { name: agentName }));
-  } else {
-    lines.push(t('outsiderNarrowing.install.lead', { name: agentName }));
-    if (losesAny) lines.push(t('outsiderNarrowing.install.losesWrites'));
-    if (!preview.targetWritable) lines.push(t('outsiderNarrowing.install.targetBlocked'));
-  }
+  const lead = t(preview ? 'outsiderNarrowing.install.lead' : 'outsiderNarrowing.install.unavailable', { name: agentName });
   return (
     <div className="v2-byo__form" data-testid="byo-narrowing-confirmation" role="alert">
-      {lines.map((line) => <p key={line} className="v2-byo__error">{line}</p>)}
+      <p className="v2-byo__error">{lead}</p>
+      {preview && losesAny && <p className="v2-byo__error">{t('outsiderNarrowing.install.losesWrites')}</p>}
       {preview && losesAny && (
         <ul data-testid="byo-narrowing-pods">
           {preview.losesWrites.map((pod) => <li key={pod.podId}>{pod.name}</li>)}
@@ -67,10 +64,11 @@ export const V2InstallNarrowingNotice: React.FC<{
           )}
         </ul>
       )}
-      <button type="button" className="v2-byo__submit" disabled={busy} onClick={onConfirm}>
-        {t('outsiderNarrowing.install.confirm')}
+      {preview && !preview.targetWritable && <p className="v2-byo__error">{t('outsiderNarrowing.install.targetBlocked')}</p>}
+      <button type="button" className={confirmClassName} disabled={busy} onClick={onConfirm}>
+        {confirmLabel || t('outsiderNarrowing.install.confirm')}
       </button>
-      <button type="button" className="v2-byo__link" onClick={onCancel}>
+      <button type="button" className={cancelClassName} onClick={onCancel}>
         {t('outsiderNarrowing.install.cancel')}
       </button>
     </div>

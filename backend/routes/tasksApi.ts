@@ -220,8 +220,11 @@ function resolveAgentInstanceId(req: AuthReq): string | null {
 
 
 async function nextTaskId(podId: string): Promise<{ taskId: string; taskNum: number }> {
-  const last = await Task.findOne({ podId, taskId: { $exists: true } }).sort({ taskId: -1 }).select('taskId').lean() as { taskId?: string } | null;
-  const lastNum = last ? parseInt((last.taskId || '').replace('TASK-', ''), 10) : 0;
+  // Native runtime rows are N-<num>-<agent>-<ts>, and parse to NaN here.
+  // Read as numbers: as text, TASK-999 sorts after TASK-1000. Prod has TASK rows
+  // with no taskNum, so that field can't order them.
+  const rows = await Task.find({ podId, taskId: /^TASK-\d+$/ }).select('taskId -_id').lean() as Array<{ taskId?: string }>;
+  const lastNum = rows.reduce((max, row) => Math.max(max, parseInt((row.taskId || '').replace('TASK-', ''), 10) || 0), 0);
   const num = lastNum + 1;
   return { taskId: `TASK-${String(num).padStart(3, '0')}`, taskNum: num };
 }
@@ -1367,5 +1370,6 @@ module.exports.claimableConditions = claimableConditions;
 // The native runtime's commonly_claim_task claims through the same function (TASK-340).
 module.exports.claimTaskAs = claimTaskAs;
 module.exports.claimantOf = claimantOf;
+module.exports.nextTaskId = nextTaskId;
 
 export {};

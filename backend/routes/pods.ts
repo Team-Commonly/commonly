@@ -12,6 +12,8 @@ const auth = require('../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 // eslint-disable-next-line global-require
+const { requireObjectIdParam, INVALID_POD_ID } = require('../middleware/objectIdParam');
+// eslint-disable-next-line global-require
 const { getAllPods, getPodsByType, getPodById, createPod, joinPod, leavePod, removeMember, deletePod, updatePodParent } = require('../controllers/podController');
 // eslint-disable-next-line global-require
 const Pod = require('../models/Pod');
@@ -386,7 +388,7 @@ router.get('/:id/context', auth, async (req: AuthReq, res: Res) => {
   }
 });
 
-router.get('/:id/focus', podFocusReadRateLimit, auth, async (req: AuthReq, res: Res) => {
+router.get('/:id/focus', podFocusReadRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   try {
@@ -401,7 +403,7 @@ router.get('/:id/focus', podFocusReadRateLimit, auth, async (req: AuthReq, res: 
   }
 });
 
-router.patch('/:id/focus', podFocusRateLimit, auth, async (req: AuthReq, res: Res) => {
+router.patch('/:id/focus', podFocusRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
   const userId = req.user?.id || req.userId;
   const podId = req.params?.id;
   const body = req.body || {};
@@ -530,9 +532,9 @@ router.patch('/:id/contacts', podAdminRateLimit, auth, async (req: AuthReq, res:
 
 /**
  * GET /:podId/agent-states — #891 surface 1, the mention-time honesty read.
- * Thin shell: membership gate + two fetches; the per-runtime-class honesty
- * rules (and the owner-only fix-copy split) live in agentStateService, where
- * they are pure and unit-tested.
+ * Membership gate + two fetches, then the pod for Connect; the
+ * per-runtime-class honesty rules (and the owner-only fix-copy split) live in
+ * agentStateService, where they are pure and unit-tested.
  */
 const agentStatesRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -547,7 +549,7 @@ const agentStatesRateLimit = rateLimit({
 router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const pod = await Pod.findById(podId) as { type?: string } | null;
+    const pod = await Pod.findById(podId) as { type?: string; publicRead?: boolean; members?: unknown[] } | null;
     if (!pod) return res.status(404).json({ message: 'Pod not found' });
     const canView = await DMService.canViewPod(req.user?.id, pod);
     if (!canView) return res.status(403).json({ message: 'Not authorized to view pod agent states' });
@@ -557,7 +559,11 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
     // eslint-disable-next-line global-require
     const AgentIdentityService = require('../services/agentIdentityService');
     // eslint-disable-next-line global-require
-    const { deriveAgentState } = require('../services/agentStateService');
+    const { deriveAgentState, keyOnlyOnPage, offersConnect } = require('../services/agentStateService');
+    // eslint-disable-next-line global-require
+    const { connectPodFor } = require('../services/roomConnectService');
+    // eslint-disable-next-line global-require
+    const { ownsRuntimeIdentity } = require('../services/runtimeIdentityOwnership');
 
     const installations = await AgentInstallation.find({ podId, status: 'active' })
       .select('agentName instanceId displayName installedBy config runtimeTokens')
@@ -569,12 +575,14 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       'botMetadata.instanceId': String(inst.instanceId || 'default'),
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
-      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt')
+      .select('botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt')
       .lean();
     const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
+    const machineByIdentity = new Map<string, unknown>();
     (agentUsers || []).forEach((u: any) => {
       const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
       userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
+      machineByIdentity.set(key, u.botMetadata?.machineId);
     });
 
     const callerId = String(req.user?.id || '');
@@ -585,6 +593,55 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       ) || [],
       callerId,
     ));
+
+    if (pod.type === 'agent-room') {
+      await Promise.all(installations.map(async (inst: any, index: number) => {
+        const row = agents[index];
+        const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
+        if (!row.fixCommand) return;
+        // A room's row names whoever opened it, so a guest reads as the
+        // installer here. The command is the owner's, and a guest can't run it.
+        // A co-installer's saved key still runs it, so only having no install of
+        // their own takes the command off. A failed read keeps it: an owner
+        // losing it is worse than a guest seeing it.
+        const ownership = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId.toLowerCase())
+          .catch((error: Error) => {
+            console.warn('Could not read the room agent\'s owner:', error.message);
+            return { owned: true };
+          });
+        if (!ownership.owned && ownership.failure === 'owner_installation_missing') {
+          delete row.fixCommand;
+          return;
+        }
+        if (!ownership.owned) return;
+        if (row.state !== 'never-connected' || !offersConnect(inst, machineByIdentity.get(key))) return;
+        const connectPodId = await connectPodFor(inst, callerId, podId);
+        if (connectPodId) {
+          row.connectPodId = connectPodId;
+          if (keyOnlyOnPage(inst, machineByIdentity.get(key))) row.noSavedKey = true;
+        }
+      }));
+    } else if (pod.type !== 'agent-dm' && pod.type !== 'agent-admin') {
+      // The installer's way back from a shared pod, for an agent whose key is on
+      // no computer. A co-installer can't reissue it, so they keep the command.
+      await Promise.all(installations.map(async (inst: any, index: number) => {
+        const row = agents[index];
+        const key = `${AgentIdentityService.resolveAgentType(row.agentName)}:${row.instanceId.toLowerCase()}`;
+        if (!row.isOwner || row.state !== 'never-connected') return;
+        if (!keyOnlyOnPage(inst, machineByIdentity.get(key))) return;
+        const ownership = await ownsRuntimeIdentity(callerId, row.agentName, row.instanceId.toLowerCase())
+          .catch((error: Error) => {
+            console.warn('Could not read the pod agent\'s owner:', error.message);
+            return { owned: false };
+          });
+        if (!ownership.owned) return;
+        const listed = !pod.publicRead && (pod.members || []).some((id) => String(id) === callerId);
+        const connectPodId = listed ? podId : await connectPodFor(inst, callerId, podId);
+        if (!connectPodId) return;
+        row.connectPodId = connectPodId;
+        row.noSavedKey = true;
+      }));
+    }
 
     return res.json({ agents });
   } catch (error) {

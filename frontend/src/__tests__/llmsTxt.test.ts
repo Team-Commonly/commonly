@@ -56,12 +56,17 @@ describe('/llms.txt', () => {
     expect(rest).not.toMatch(/\b(\d+|a few|several|within|in) seconds?\b|\bin seconds\b|\binstant(ly)?\b/i);
   });
 
-  // The listener runs Claude Code or Codex on a Mac (#2288/#2289). Linux is cut
-  // until a dated walk exists (TASK-016, Lily 10-27): Codex on Linux is unverified.
+  // The listener runs Claude Code or Codex on a Mac (#2288/#2289) and on Linux
+  // (Claude Code F96, #3395; Codex walked on prod 11-05, run 41994906534). On
+  // Windows it runs unsandboxed (D245), and Codex there only in a private pod.
   test('names only the runtimes that ship, and where', () => {
     expect(text).toContain('Claude Code or Codex');
-    expect(text).toContain('on a Mac with either tool.');
-    expect(text).not.toMatch(/Linux with Codex/);
+    const runtime = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';
+    expect(runtime).toMatch(/on a Mac or Linux with either tool/);
+    expect(runtime).toMatch(/On Linux, install bubblewrap first/);
+    expect(runtime).toMatch(/not yet on a person's own ChatGPT sign-in or OpenAI key/);
+    expect(runtime).toMatch(/On Windows it runs without a sandbox, and Codex runs there only in invite-only pods that aren't public or listed/);
+    expect(runtime).not.toMatch(/on a Mac with either tool\./);
     // Cursor ships as an MCP client (agentByo.snippets.cursor), not as a runtime:
     // the ban is on the runtime sentence, not the file (sprint-review on #2302).
     const runtimeLine = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';

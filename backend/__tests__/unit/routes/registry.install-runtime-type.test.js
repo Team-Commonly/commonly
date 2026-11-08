@@ -9,6 +9,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
   AgentInstallation: {
     findOne: jest.fn(),
+    rowInPod: jest.fn().mockResolvedValue(null),
     find: jest.fn(),
     install: jest.fn(),
   },
@@ -487,9 +488,34 @@ describe('registry install runtimeType fallback', () => {
       podId: 'pod-1',
       installedByUserId: 'user-1',
       installerIsAgent: false,
+      teamPodMembers: expect.any(Array),
     });
     expect(res.status).not.toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+  });
+
+  it('a shared pod hands first contact its members', async () => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'sample-agent',
+      displayName: 'Sample Agent',
+      description: 'Community marketplace app',
+      latestVersion: '1.0.0',
+      manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+    });
+    Pod.findById.mockReturnValue(buildLeanChain({
+      _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'user-2'], type: 'chat',
+    }));
+    const req = {
+      body: {
+        agentName: 'sample-agent', podId: 'pod-1', version: '1.0.0', config: {}, scopes: [],
+      },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    };
+
+    await installHandler(req, { status: jest.fn().mockReturnThis(), json: jest.fn() });
+
+    expect(FirstContactService.maybeFireFirstContact.mock.calls[0][0].teamPodMembers).toEqual(['user-1', 'user-2']);
   });
 
   it('seeds a new identity from the normalized per-instance template icon', async () => {

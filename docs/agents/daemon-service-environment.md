@@ -38,7 +38,7 @@ seats it spawns need, and it carries three things:
 |---|---|---|
 | `PATH` | the children | the daemon spawns `commonly agent run`, which spawns your `claude`/`codex`/`pi` binary **by name**. launchd's default `PATH` has no `/opt/homebrew/bin`, so without this every seat dies at adapter detection |
 | `HOME` | the children | seat state, tokens and pi homes live under `~/.commonly` |
-| provider keys | the seats' adapters | the pi adapter authenticates to LiteLLM with `COMMONLY_LITELLM_KEY`; the daemon does not read seat credentials, but the adapter it spawns does |
+| provider keys | the seats' adapters | the pi adapter authenticates to LiteLLM with `COMMONLY_LITELLM_KEY`, unless the seat declares its own `provider.keyFile`; the daemon does not read seat credentials, but the adapter it spawns does |
 
 The provider keys are captured **at install time** from the shell that runs
 `commonly daemon install`, because that is the only moment the operator's

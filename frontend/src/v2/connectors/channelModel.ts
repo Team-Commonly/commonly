@@ -208,17 +208,6 @@ export const ADD_PLATFORMS = [
   { type: 'telegram', enabled: true },
   { type: 'slack', enabled: true },
 ];
-// Providers we have not built at all. This is NOT the same claim as either
-// state the catalog can report: "not enabled on this instance" is a missing
-// credential, and "not connectable yet" is a provider we have built and this
-// instance cannot offer because no builtin Installable row carries it. Both of
-// those arrive through the catalog, with their own state line, so this list
-// holds only the providers that have no manifest to arrive through. Discord
-// used to sit here, which made the page say "we don't build this" about a
-// shipping connector (routes/discord.ts) whose only defect was a missing
-// readiness() declaration; it now renders the roster state line instead.
-export const UNAVAILABLE_PLATFORM_LABELS = ['WhatsApp'];
-
 export const BOT_HANDLE = process.env.REACT_APP_TELEGRAM_BOT_HANDLE || '';
 export const RECENT_MS = 10 * 60_000;
 // Mirrors INSTALL_LOCK_TTL_MS on the server: Cancel appears exactly when the

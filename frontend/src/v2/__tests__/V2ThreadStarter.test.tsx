@@ -329,6 +329,52 @@ describe('V2Thread agent-room liveness', () => {
     expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
   });
 
+  test('the notice offers Connect, into the pod that holds the agent, when the server names one', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria', connectPodId: 'home-pod',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    const link = await screen.findByRole('link', { name: 'Connect' });
+    expect(link).toHaveAttribute('href', '/v2/agents/byo?pod=home-pod&name=openclaw&instanceId=aria&reconnect=1');
+    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('an agent made on the page offers Connect alone: no computer has its key', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria', connectPodId: 'home-pod', noSavedKey: true,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    await screen.findByRole('link', { name: 'Connect' });
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
+  });
+
+  test('with no pod from the server the notice keeps the command and offers no Connect', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true,
+          fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-fix-command')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Connect' })).not.toBeInTheDocument();
+  });
+
   test('the owner copies the fix command with one key, which confirms the copy', async () => {
     navigator.clipboard.writeText.mockClear();
     axios.get.mockResolvedValue({
@@ -689,6 +735,43 @@ describe('second-person prompt placements', () => {
     list.scrollTop = scrollTop;
     fireEvent.scroll(list);
   };
+  // A smooth follow from the top left the edge sentinel in view, so the older page loaded and
+  // its prepend stopped the follow about 2,000px short (the D215 use walk).
+  describe('opening a pod', () => {
+    const scrollHeight = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight');
+    beforeEach(() => {
+      Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() {
+        return this.classList.contains('v2-chat__messages') ? 2000 : 0;
+      } });
+    });
+    afterEach(() => {
+      delete HTMLElement.prototype.scrollHeight;
+      if (scrollHeight) Object.defineProperty(Element.prototype, 'scrollHeight', scrollHeight);
+    });
+    test('lands at the end at once, not by an animation that starts at the top', () => {
+      renderChat(withReply());
+      expect(document.querySelector('.v2-chat__messages').scrollTop).toBe(2000);
+    });
+    test('lands again on coming back through a pod with no messages', () => {
+      const settled = withReply();
+      const view = renderChat(settled);
+      document.querySelector('.v2-chat__messages').scrollTop = 300;
+      rerenderChat(view, { ...settled, pod: { ...settled.pod, _id: 'empty' }, messages: [] });
+      rerenderChat(view, settled);
+      expect(document.querySelector('.v2-chat__messages').scrollTop).toBe(2000);
+    });
+    test('waits for the first read to finish, then lands once, leaving a reader alone after that', () => {
+      const settled = withReply();
+      const view = renderChat({ ...settled, initialLoadComplete: false });
+      const list = document.querySelector('.v2-chat__messages');
+      expect(Element.prototype.scrollTo.mock.calls.at(-1)[0]).toEqual({ top: 2000, behavior: 'instant' });
+      rerenderChat(view, settled);
+      expect(list.scrollTop).toBe(2000);
+      list.scrollTop = 300;
+      rerenderChat(view, { ...settled, messages: [...settled.messages] });
+      expect(list.scrollTop).toBe(300);
+    });
+  });
   test('when the invite card mounts with the reader at the end, the thread follows it into view', async () => {
     const settled = withReply();
     const view = renderChat({ ...settled, hasMore: true });

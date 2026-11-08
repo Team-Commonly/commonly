@@ -30,7 +30,7 @@ jest.mock('../../../models/Pod', () => ({
 const mockCreate = jest.fn();
 const mockFindOneAndUpdate = jest.fn();
 jest.mock('../../../models/Task', () => ({
-  find: jest.fn(() => ({ sort: () => ({ lean: async () => [] }) })),
+  find: jest.fn(() => ({ sort: () => ({ lean: async () => [] }), select: () => ({ lean: async () => [] }) })),
   findOne: jest.fn(() => ({
     sort: () => ({ lean: async () => null, select: () => ({ lean: async () => null }) }),
     select: () => ({ lean: async () => ({ updatedAt: new Date(0), assignee: null, claimedBy: null }) }),

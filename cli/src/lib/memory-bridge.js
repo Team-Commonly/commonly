@@ -66,9 +66,11 @@ export const BACKGROUND_PROCESS_CUE = 'Background processes: anything you start 
  * only the habits its CLI can act on; passing none leaves the preamble as it
  * was.
  *
- * `memoryReadOnly` is a public seat (F118): it reads its memory and is shown
- * the long_term it read, but it is not offered the save tool, so no cue names
- * one. `memoryWithheld` wins over it: that turn reads nothing either.
+ * `memoryReadOnly` is a public seat on a turn its owner didn't wake (F118, F145):
+ * it reads its memory and is shown the long_term it read, but it is not offered
+ * the save tool, so no cue names one, and it is told why. A resumed session may
+ * hold an earlier turn's offer, so that line goes in every turn, not just fresh
+ * ones. `memoryWithheld` wins over it: that turn reads nothing either.
  */
 export const buildMemoryPreamble = (
   prompt,
@@ -80,6 +82,8 @@ export const buildMemoryPreamble = (
   // saved here" is a false claim about its own history, and it is the same
   // defect this cue exists to fix — one state over. When we could not read, say
   // that, and say nothing about what is stored.
+  const ownerOnly = 'You can read your memory on this turn but not change it: '
+    + 'a memory write works only when your owner started the turn.';
   let context;
   if (memoryWithheld) {
     // A workspace seat's turn that runs public: not unreadable and not empty,
@@ -91,15 +95,16 @@ export const buildMemoryPreamble = (
   } else if (memoryLongTerm === null) {
     context = `=== Context (your persistent memory) ===\n`
       + `(unreadable this turn — the memory read failed, so this says NOTHING `
-      + `about what you have saved. Do not treat it as empty and do not re-save `
-      + `state you may already hold.)`;
+      + `about what you have saved. Do not treat it as empty`
+      + (memoryReadOnly ? `.)\n${ownerOnly}` : ` and do not re-save state you may already hold.)`);
   } else if (memoryLongTerm) {
-    context = `=== Context (your persistent memory) ===\n${memoryLongTerm}`;
+    context = `=== Context (your persistent memory) ===\n${memoryLongTerm}`
+      + (memoryReadOnly ? `\n(${ownerOnly})` : '');
   } else if (memoryReadOnly) {
-    // F118: a public seat is not offered the save tool, so the cue that
-    // teaches it would name a tool the seat cannot call.
+    // F118: this turn isn't offered the save tool, so the cue that teaches it
+    // would name a tool the seat cannot call.
     context = `=== Context (your persistent memory) ===\n`
-      + `(empty — nothing has ever been saved here)`;
+      + `(empty — nothing has ever been saved here)\n${ownerOnly}`;
   } else {
     context = `=== Context (your persistent memory) ===\n`
       + `(empty — nothing has ever been saved here)\n`
@@ -124,7 +129,7 @@ export const buildMemoryPreamble = (
   if (memoryWithheld) {
     sessionEndCue += 'Memory is withheld this turn, so there is nothing to save.';
   } else if (memoryReadOnly) {
-    sessionEndCue += 'Memory is read-only on this public seat, so there is nothing to save.';
+    sessionEndCue += 'Memory is read-only on this turn, so there is nothing to save.';
   } else if (memoryLongTerm === null) {
     sessionEndCue += 'Memory was unreadable on this fresh session. Do not treat it as empty or '
       + 'write a replacement based on this cue.';

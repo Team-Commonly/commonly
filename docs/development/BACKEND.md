@@ -210,6 +210,7 @@ Agent registry endpoints (pod-native installs):
 | GET    | /api/registry/agents/:name                 | Get agent details                   |
 | GET    | /api/registry/presets                      | List suggested agent presets (including Social curator presets) + gateway capability/API requirement readiness, default skill bundles with setup status, recommended env vars, built-in skill inventory, and Dockerfile package capability snapshot |
 | POST   | /api/registry/install                      | Install agent into a pod            |
+| POST   | /api/registry/agents/:name/pods/:podId     | Owner adds their running agent to another pod (`instanceId` query, body `{ confirmNarrowing? }`); see below the table |
 | GET    | /api/registry/pods/:podId/agents            | List installed agents in a pod      |
 | GET    | /api/registry/pods/:podId/agents/:name      | Get one installed agent instance (`instanceId` query) |
 | GET    | /api/registry/openclaw/bundled-skills        | List bundled gateway skills (`/app/skills`) |
@@ -220,6 +221,7 @@ Agent registry endpoints (pod-native installs):
 | GET    | /api/registry/pods/:podId/agents/:name/user-token      | Get designated bot user token metadata |
 | POST   | /api/registry/pods/:podId/agents/:name/user-token      | Issue designated bot user token |
 | DELETE | /api/registry/pods/:podId/agents/:name/user-token      | Revoke designated bot user token |
+| DELETE | /api/registry/pods/:podId/agents/:name/tokens          | Revoke every token the identity holds; works on a paused, stale or error row (sole installer, paused rows counted, or admin). `runtime_token_held` from PATCH points here |
 | POST   | /api/registry/pods/:podId/agents/:name/provision       | Provision local runtime config |
 | GET    | /api/registry/pods/:podId/agents/:name/runtime-status  | Docker runtime status |
 | POST   | /api/registry/pods/:podId/agents/:name/runtime-start   | Start docker runtime |
@@ -246,6 +248,15 @@ Provisioning note:
 - Registry provisioning resolves the effective runtime instance id from the stored installation identity (instanceId/display slug) so gateway-backed instances do not overwrite each other when multiple instances are installed.
 - Runtime-token endpoints are shared-instance aware: they issue/list/revoke tokens from the bot user (`User.agentRuntimeTokens`) so the same agent instance has one token set across pods.
 - Installed-agent list payloads (`GET /api/registry/pods/:podId/agents`) now resolve icon URLs with template-aware fallback (`template iconUrl` by `(agentName + displayName)` when available, else registry icon).
+
+Adding an existing agent to another pod (`POST /api/registry/agents/:name/pods/:podId?instanceId=`):
+- For the settings page, not a new install: the server reads config and scopes from the caller's own row, so the only input is `{ confirmNarrowing?: true }`. It builds an install body and runs the `/install` handler, so the success body, membership write, PG mirror and every install refusal are the same.
+- Caller owns a row of the agent (`installedBy`) that names an owner, and is a member or creator of the target pod. A DM row or a `mention-resolution` row names whoever opened it, so it doesn't count; a DM row is copied only when it is the last row and the caller is the registry publisher. A global admin gets nothing extra, because install stamps the caller as `installedBy`.
+- Reinstalling stamps the installer: on this route and on `/install`, a row brought back from `uninstalled` takes the caller as `installedBy`, as a new row would, except in a DM pod, whose row keeps naming the agent's owner. `POST /api/personas/:agentName/hire` does the same. A paused, stale or errored row keeps its installer. Paths that aren't a person installing (auto-join, an agent's self-install, a mention, a DM opening) keep the name on the row.
+- Not copied: `heartbeat`, `autoJoinSource`, `wakeOnMessage`, `boardWake`, `welcomeWake`, `digestWake` (each pod's own) and `hosted` (install rebuilds it from the agent's engine).
+- Refusals before install: 403 `not_agent_owner`, 403 `pod_membership_required`, 403 `dm_membership_refused`, 409 `agent_not_active`, 409 `agent_already_in_pod` (with the row's `status`), 409 `agent_source_has_no_runtime`, 404 `Pod not found`. Install's own refusals follow, including 400 `webhook_url_refused` when the copied config carries a webhook URL install doesn't accept.
+- `/install` itself answers 403 `dm_membership_refused` for an agent that isn't a member of a personal pod (`agent-room`, `agent-dm`, `agent-admin`), an old row there or not. A DM never takes a member back (ADR-001 §3.10), and an `agent-admin` pod serves the one agent it was made for. It refuses before any write, so no registry row or bot user is left behind.
+- Nothing needs starting: runtime auth reads every active installation of the identity on each call, so a polling agent reaches the new pod on its next poll, with no new token. A stopped hosted agent stays stopped.
 
 ### Chat Profile Sync
 

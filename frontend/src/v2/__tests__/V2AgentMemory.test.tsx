@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import V2AgentMemory, { groupSections, journalDay, latestDay } from '../agents/V2AgentMemory';
 
 jest.mock('axios', () => {
@@ -28,6 +28,68 @@ const renderPage = () => render(
   </MemoryRouter>,
 );
 const headersOf = (groups, id) => groups.find((g) => g.id === id).sections.flatMap((s) => s.notes.map((n) => n.header));
+
+describe('Edit', () => {
+  const editButton = () => screen.queryByRole('button', { name: 'Edit memory' });
+  const Where = () => { const { pathname, hash } = useLocation(); return <p>at {pathname}{hash}</p>; };
+
+  it('opens the existing editor on Settings', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 0, sections: [] } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+          <Route path="/v2/agents/:agentName/:instanceId" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(editButton()).toBeInTheDocument());
+    fireEvent.click(editButton());
+    expect(screen.getByText('at /v2/agents/maya-claude/default#agent-memory-editor')).toBeInTheDocument();
+  });
+
+  it('is not offered to a viewer who can\'t read this memory', async () => {
+    axios.get.mockRejectedValue({ response: { status: 403 } });
+    renderPage();
+    await screen.findByText(/owner|private|admin/i);
+    expect(editButton()).toBeNull();
+  });
+});
+
+describe('head status', () => {
+  const wire = (connection) => axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/agent-memory')) return Promise.resolve({ data: { viewerRole: 'owner', totalEntries: 0, sections: [] } });
+    if (url.startsWith('/api/agent-profile')) return Promise.resolve({ data: { agent: { displayName: 'Maya' }, pods: { count: 4 } } });
+    if (url.includes('/manage-settings')) return Promise.resolve({ data: { writablePodId: 'pod-9' } });
+    if (url === '/api/registry/pods/pod-9/agents') {
+      return Promise.resolve({ data: { agents: [{ name: 'maya-claude', instanceId: 'default', connection }] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+
+  it('shows the connection dot and state beside the pod count, as the frame does', async () => {
+    wire({ state: 'connected', lastSeenAt: null });
+    renderPage();
+    expect(await screen.findByTestId('agent-memory-connection')).toHaveTextContent('Connected');
+    const line = document.querySelector('.v2m-ahead .st');
+    expect(line).toHaveTextContent('Connected · 4 pods');
+    expect(line.querySelector('.v2m-dot--connected')).not.toBeNull();
+  });
+
+  it('draws a ring, not a filled dot, for an agent that has stopped', async () => {
+    wire({ state: 'stopped', lastSeenAt: null });
+    renderPage();
+    await screen.findByTestId('agent-memory-connection');
+    expect(document.querySelector('.v2m-dot--stopped')).not.toBeNull();
+  });
+
+  it('keeps the plain pod line when no pod roster reports a connection', async () => {
+    wire(undefined);
+    renderPage();
+    await waitFor(() => expect(document.querySelector('.v2m-ahead .st')).toHaveTextContent('In 4 pods'));
+    expect(screen.queryByTestId('agent-memory-connection')).toBeNull();
+  });
+});
 
 describe('groupSections', () => {
   it('gives soul its own Identity group, shared its own Shared group, and journal sections to Journal', () => {
@@ -101,7 +163,7 @@ describe('V2AgentMemory', () => {
     expect(screen.queryByRole('heading', { name: /Journal/ })).toBeNull();
   });
 
-  it('shows the section update time once per group and never on a note', async () => {
+  it('stamps one time once, however many groups share it, and never on a note', async () => {
     axios.get.mockResolvedValue({ data: {
       viewerRole: 'owner', totalEntries: 3,
       sections: [
@@ -117,8 +179,11 @@ describe('V2AgentMemory', () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
-    // Rules and How I work each carry the long_term time; Journal has none.
-    expect(document.querySelectorAll('.v2m-saved')).toHaveLength(2);
+    // Rules and How I work share the long_term time, so only Rules says it. Journal has none.
+    const stamps = document.querySelectorAll('.v2m-saved');
+    expect(stamps).toHaveLength(1);
+    expect(stamps[0]).toHaveTextContent(/^Saved /);
+    expect(stamps[0].closest('details')).toHaveAttribute('id', 'memory-group-rules');
     expect(document.querySelectorAll('.v2m-mnote .v2m-saved')).toHaveLength(0);
   });
 

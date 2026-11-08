@@ -31,6 +31,7 @@ on:
       - 'cli/scripts/windows-byo-verdict.mjs'
       - 'cli/scripts/windows-byo-ack-recorder.mjs'
       - 'frontend/src/v2/components/V2AgentBYO.tsx'
+      - 'cli/scripts/linux-sandbox-report.sh'
       - '.github/workflows/byo-linux.yml'
   workflow_dispatch:
     inputs:
@@ -51,15 +52,25 @@ on:
         type: choice
         options: [claude, codex]
         default: claude
+      runner:
+        description: 'the Ubuntu the walk runs on'
+        type: choice
+        options: [ubuntu-22.04, ubuntu-24.04]
+        default: ubuntu-22.04
+      bwrap_profile:
+        description: "load Ubuntu's own bwrap-userns-restrict AppArmor profile before the walk (24.04)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   byo:
-    # 22.04: Ubuntu 24.04's AppArmor refuses unprivileged user namespaces, so
-    # bwrap is installed there and every sandbox it starts fails.
-    runs-on: ubuntu-22.04
+    # 22.04 by default: Ubuntu 24.04's AppArmor refuses unprivileged user
+    # namespaces, so bwrap is installed there and every sandbox it starts
+    # fails. Dispatching 24.04 shows what a person on it sees.
+    runs-on: ${{ inputs.runner || 'ubuntu-22.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +98,17 @@ jobs:
           else
             npm i -g @anthropic-ai/claude-code@2.1.318
           fi
+      - name: Load Ubuntu's bwrap profile
+        if: github.event_name == 'workflow_dispatch' && inputs.bwrap_profile
+        # The exact lines the CLI prints, read from the code that prints them.
+        run: |
+          (cd cli && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+          lines=$(node --input-type=module -e "
+            import { UBUNTU_BWRAP_PROFILE_COMMANDS as lines } from './cli/src/lib/sandbox/host-check.js';
+            console.log(lines.join('\n'));
+          ")
+          test -n "$lines"
+          bash -ec "$lines"
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -102,3 +124,20 @@ jobs:
             if [ -n "${!name}" ]; then echo "::add-mask::${!name}"; fi
           done
           node cli/scripts/linux-byo-prod.mjs
+
+  # What this Ubuntu does to the sandbox, on its own runner because it loads
+  # AppArmor profiles to measure them: the walk must see the host as it came.
+  # No secrets.
+  sandbox-report:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Report what the sandbox does here
+        run: bash cli/scripts/linux-sandbox-report.sh

@@ -195,6 +195,36 @@ export const findHeldHostedInstallation = async (
     .find((row: any) => hostedIdentityKey(row.agentName, row.instanceId) === wanted) || null;
 };
 
+/**
+ * The cap refusal for resuming this agent, or null. The cap counts running rows,
+ * so a paused agent holds no place: pause one, start another, resume the first.
+ * The same rule as an install: an agent the person still runs elsewhere isn't a
+ * new one at the cap, though it is over it, and an admin installer is exempt.
+ */
+export const resumeCapRefusal = async (
+  userId: any, agentName: string, instanceId: string,
+): Promise<Record<string, unknown> | null> => {
+  const { agentsPerUser } = hostedCaps();
+  const used = await countHostedAgentsForUser(userId);
+  if (used < agentsPerUser) return null;
+  if (used === agentsPerUser && await findHeldHostedInstallation(userId, agentName, instanceId)) return null;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
+  const installer = await User.findById(userId).select('role').lean();
+  if (installer?.role === 'admin') return null;
+  return {
+    code: 'hosted_cap_reached',
+    message: `Hosted agents are capped at ${agentsPerUser} per user in beta; connect your own agent for more.`,
+    used,
+    cap: agentsPerUser,
+    holders: await listHostedInstallationsForUser(userId).catch((error: any) => {
+      // Keep the cap response authoritative if diagnostics are unavailable.
+      console.warn('[hosted] cap holder lookup failed:', error?.message || error);
+      return [];
+    }),
+  };
+};
+
 /** `config.autoJoinSource` on the row a DM writes so the agent can answer there. */
 export const AGENT_ROOM_AUTO_JOIN_SOURCE = 'agent-room-create';
 
@@ -208,18 +238,30 @@ const identityRows = (agentName: string, instanceId: string, extra: Record<strin
 );
 
 export interface HostedOwner {
+  // Null when people host the agent but none of them can carry this requester's
+  // turns. The row is refused then, and never guessed at.
   ownerId: unknown;
-  // False when every row the owner has of this agent is uninstalled.
+  // False when every row of the agent's owners is uninstalled. A paused row is
+  // not gone: resuming it has to find its rooms, so paused stays live.
   live: boolean;
+  // True when every owner paused it. A room written now starts paused, and
+  // reaches the owner's line only when they resume it.
+  paused: boolean;
 }
+
+// Oldest rows first. Past it an owner goes unseen and the row is refused, which
+// is the safe way to be wrong: nobody is charged.
+export const HOSTED_OWNER_POD_SCAN = 500;
 
 /**
  * Who owns a hosted agent, as seen by the person opening a DM with it: a person
  * who installed it themselves, on a row that is not a DM's. An agent can be
  * hosted by several people under one identity, so `requesterId`'s own row comes
- * first, then the row of someone hosting it in a pod they share, then the
- * oldest. A DM's own row never names an owner, and neither does a row an agent
- * wrote for itself. Null when no person owns it.
+ * first, then the oldest row of someone hosting it in a pod they share. An owner
+ * who shares no pod with them is never picked, whoever else is hosting it: a
+ * stranger's turns are not theirs to pay for. Nor is a paused owner while anyone
+ * still runs it. A DM's own row never names an owner, and neither does a row an
+ * agent wrote for itself. Null when no person owns it.
  */
 export const resolveHostedOwner = async (
   agentName: string, instanceId: string, requesterId: unknown,
@@ -240,14 +282,24 @@ export const resolveHostedOwner = async (
   const owned = hosted.filter((row: any) => personIds.has(String(row.installedBy)));
   if (!owned.length) return null;
   const standing = owned.filter((row: any) => row.status !== 'uninstalled');
-  const pool: any[] = standing.length ? standing : owned;
-  const shared = await Pod.find({ _id: { $in: pool.map((row) => row.podId) }, members: requesterId })
-    .select('_id').lean();
-  const sharedIds = new Set(shared.map((pod: any) => String(pod._id)));
-  const row = pool.find((candidate) => String(candidate.installedBy) === String(requesterId))
-    || pool.find((candidate) => sharedIds.has(String(candidate.podId)))
-    || pool[0];
-  return { ownerId: row.installedBy, live: standing.length > 0 };
+  const running = standing.filter((row: any) => row.status !== 'paused');
+  const live = standing.length > 0;
+  const paused = live && !running.length;
+  let pool: any[] = owned;
+  if (running.length) pool = running;
+  else if (live) pool = standing;
+  if (!requesterId) return { ownerId: null, live, paused };
+  const own = pool.find((candidate) => String(candidate.installedBy) === String(requesterId));
+  if (own) return { ownerId: own.installedBy, live, paused };
+  const podIds = [...new Set(pool.map((candidate) => String(candidate.podId)))].slice(0, HOSTED_OWNER_POD_SCAN);
+  const shared = await Pod.find({ _id: { $in: podIds }, members: { $eq: requesterId } })
+    .select('_id members').limit(HOSTED_OWNER_POD_SCAN).lean();
+  const membersOf = new Map<string, Set<string>>(shared.map((pod: any) => [
+    String(pod._id), new Set<string>((pod.members || []).map(String)),
+  ]));
+  // An owner who left the pod no longer shares it, though their row stays.
+  const row = pool.find((candidate) => membersOf.get(String(candidate.podId))?.has(String(candidate.installedBy)));
+  return { ownerId: row ? row.installedBy : null, live, paused };
 };
 
 /**
@@ -262,7 +314,7 @@ export const retireHostedRoomRows = async (
 ): Promise<number> => {
   try {
     if (!ownerId) return 0;
-    const rows = await identityRows(agentName, instanceId, { installedBy: ownerId, status: 'active' })
+    const rows = await identityRows(agentName, instanceId, { installedBy: ownerId, status: { $in: ['active', 'paused'] } })
       .select('config.runtime config.autoJoinSource').lean();
     const hosted = (Array.isArray(rows) ? rows : []).filter((row: any) => isHostedInstallation(row));
     const inRoomsOnly = hosted.every((row: any) => row.config?.autoJoinSource === AGENT_ROOM_AUTO_JOIN_SOURCE);
@@ -433,7 +485,9 @@ module.exports = {
   countHostedAgentsForUser,
   listHostedInstallationsForUser,
   findHeldHostedInstallation,
+  resumeCapRefusal,
   AGENT_ROOM_AUTO_JOIN_SOURCE,
+  HOSTED_OWNER_POD_SCAN,
   resolveHostedOwner,
   retireHostedRoomRows,
   turnsToday,

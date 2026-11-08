@@ -923,7 +923,7 @@ describe('AgentMentionService', () => {
       // the build while a claim reversal does.
       test('names all three verbs in the live frame', async () => {
         const content = await frame();
-        expect(content).toContain('a plain post broadcasts to the channel');
+        expect(content).toContain('a plain post defaults to the channel;');
         expect(content).toContain('replyToMessageId quotes a message');
         // F212: a reply edge files the post in a thread on its own, so the
         // verbs are not independent and the frame must not say they are.
@@ -956,7 +956,7 @@ describe('AgentMentionService', () => {
       });
 
       test('control: the mechanics half alone does not satisfy the assertions above', () => {
-        const mechanicsOnly = 'a plain post broadcasts to the channel; replyToMessageId quotes '
+        const mechanicsOnly = 'a plain post defaults to the channel; replyToMessageId quotes '
           + 'and ADDRESSES a message — its author is pinged; threadRootId continues a thread '
           + 'WITHOUT pinging anyone — followers see it, the channel stays uncluttered.';
         expect(mechanicsOnly).not.toContain('if your message answers one person, reply');
@@ -1641,10 +1641,9 @@ describe('AgentMentionService', () => {
     // they are absent from the doc above. Deliberately NOT annotated with a
     // commit — every previous attempt to pin these to a sha ("live since
     // 11878b43c") named a ref on a lineage the gitlink was not tracking, and
-    // was false or true depending on the week. Whether a given pin declares
-    // these is asserted by `npm run verify:moltbot-tools` against the actual
-    // submodule; this list only records that the names are openclaw's, which
-    // is a fact about namespaces and does not move.
+    // was false or true depending on the week. This list only records that
+    // the names are openclaw's, which is a fact about namespaces and does not
+    // move.
     const OPENCLAW_ONLY = ['commonly_open_dm', 'commonly_read_attachment'];
     const KNOWN = new Set([...MCP_TOOLS, ...OPENCLAW_ONLY]);
 

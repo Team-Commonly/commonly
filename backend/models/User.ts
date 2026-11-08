@@ -216,6 +216,8 @@ export interface IUser extends Document {
    * person and never overwritten (services/onboardingMarks.ts).
    */
   onboarding?: {
+    /** First time this person's email link turned verified from false to true. */
+    verifiedAt?: Date;
     podOpenedAt?: Date;
     firstStartId?: string;
     firstStartAt?: Date;
@@ -247,6 +249,8 @@ export interface IUser extends Document {
     inviteCardDismissedAt?: Date;
     /** First Bring your own start mounted in a thread. */
     byoOfferShownAt?: Date;
+    /** First render of Scout's welcome, with a start open, in a pod they created. */
+    welcomeShownAt?: Date;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -493,6 +497,7 @@ const userSchema = new Schema<IUser>({
   digestUnsubscribeToken: { type: String, select: false },
   lastActive: { type: Date, default: Date.now },
   onboarding: {
+    verifiedAt: { type: Date },
     podOpenedAt: { type: Date },
     firstStartId: { type: String },
     firstStartAt: { type: Date },
@@ -514,6 +519,7 @@ const userSchema = new Schema<IUser>({
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
+    welcomeShownAt: { type: Date },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },
@@ -527,7 +533,9 @@ userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 })
 // per author. These collation indexes back the self-excluding collision check
 // in userController without making the labels themselves globally unique.
 const accountLabelCollation = { locale: 'en', strength: 2 };
-userSchema.index({ username: 1 }, { collation: accountLabelCollation });
+// Named because the path's own unique index takes the default username_1, and
+// Mongo refuses a second index of that name. autoIndex hides the refusal.
+userSchema.index({ username: 1 }, { collation: accountLabelCollation, name: 'username_label' });
 userSchema.index({ previousUsernames: 1 }, { collation: accountLabelCollation });
 userSchema.index({ displayName: 1 }, { collation: accountLabelCollation });
 userSchema.index({ 'botMetadata.displayName': 1 }, { collation: accountLabelCollation });

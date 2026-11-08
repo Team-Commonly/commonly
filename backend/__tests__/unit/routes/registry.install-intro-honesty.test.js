@@ -35,6 +35,14 @@ describe('install intro — the promise matches reality', () => {
     expect(intro).toMatch(/commonly agent run ngoc-tran-agent/);
   });
 
+  test('an agent made on the page points at Settings: its key is on no computer yet', () => {
+    const intro = composeInstallIntro({ ...base, state: 'never-connected', connectable: true });
+
+    expect(intro).toMatch(/won't reach anyone/);
+    expect(intro).toMatch(/connect me from my Settings/);
+    expect(intro).not.toMatch(/commonly agent run/);
+  });
+
   test('a live seat still invites the mention — the fix must not lie the other way', () => {
     // A running agent installed into a NEW pod is genuinely reachable. Telling
     // that room "nothing is running me" would be the opposite defect, which is
@@ -99,6 +107,17 @@ describe('install intro — the promise matches reality', () => {
 
     expect(intro).toMatch(/just joined the pod/);
     expect(intro).not.toMatch(/bot\. BOT/i);
+  });
+
+  test('a placeholder description is not read as a claim', () => {
+    // The self-serve path writes "A connected agent." on an agent that may
+    // never have connected, and the sentence after it says nothing runs it.
+    const intro = composeInstallIntro({
+      ...base, blurb: 'A connected agent.', state: 'never-connected',
+    });
+
+    expect(intro).not.toMatch(/connected agent/i);
+    expect(intro).toMatch(/just joined the pod/);
   });
 
   test('the dead-seat copy never blames the reader', () => {

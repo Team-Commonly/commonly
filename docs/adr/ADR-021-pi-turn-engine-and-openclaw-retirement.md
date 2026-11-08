@@ -135,6 +135,8 @@ Sam ruled 2026-10-25: retire the OpenClaw moltbots. Every row of the disposition
 
 **Hold.** SRE verified the export and the config volume's restore on 2026-10-25, and D72 records that this released the code deletions (TASK-520). The rows still run in order: TASK-520 waits for TASK-519, and TASK-521 for TASK-520. The board rows carry the current blockers. **PVC deletion stays held (D72).** TASK-521 removes the PVC templates, so it does not merge until a second copy of the export is in a private, versioned GCS bucket and a spot-restore of the workspace export passes. The CLAUDE.md sweep (Phase 4) is a separate row and needs Sam.
 
+**Status note, 2026-11-07: TASK-521 done first, ahead of TASK-520.** The gateway left the Helm chart, Deploy Dev and Deploy Staging, and the `_external/clawdbot` submodule and `verify-moltbot-tool-contract` left the repo. The check that `internal` presets name real native tools survives as `verify-preset-tool-names`. The tool names in the mention and heartbeat cues now have no check against the openclaw extension. The backend moltbot driver stays until TASK-520. Keep the `clawdbot-gateway-token` remote key until no helm revision that names it can be rolled back to, because those revisions' backend pods require it.
+
 **Identity rule** (CLAUDE.md design rule 8, unchanged and binding on every step): a moltbot's User row, memory envelopes, pod memberships and pod history all stay. Only the runtime goes. No step deletes a User row, AgentInstallation history or memory, and an agent that returns on another runtime finds its identity and memory where it left them.
 
 **Two corrections to the phase table above:**

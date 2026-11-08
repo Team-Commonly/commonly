@@ -1,5 +1,6 @@
 import StalledConnectEpisode from '../models/StalledConnectEpisode';
-import { deriveAgentState } from './agentStateService';
+import { deriveAgentState, keyOnlyOnPage } from './agentStateService';
+import { isGuestOfIdentity, ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import {
   composeStalledConnectNudge,
   composeStalledConnectMcpResolution,
@@ -64,6 +65,8 @@ export interface StalledScanResult {
   resolved: Array<{ episodeId: string; agentName: string; podId: string }>;
   skippedTooRecent: number;
   skippedNotStalled: number;
+  skippedGuest: number;
+  skippedSameToken: number;
 }
 
 export interface TokenEpisodeKey {
@@ -116,7 +119,7 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
-type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; createdAt?: Date }>;
+type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
 
 /**
  * The latest MCP-client call, at or after `since`, on a token issued at or
@@ -139,6 +142,13 @@ const latestMcpSeenSince = (tokenLists: BotTokens[], since: Date): Date | null =
 };
 
 
+// Any call on a token still on the row. Settings stops offering Connect once it
+// sees one, whatever the token's age, and replacing that key could cut off
+// whatever made the call. Revoking a token removes its row.
+const anyCallRecorded = (tokenLists: BotTokens[]): boolean => tokenLists.some(
+  (list) => (list || []).some((row) => row?.lastUsedAt),
+);
+
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
 
 /**
@@ -155,6 +165,8 @@ const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${i
  */
 const botTokensForMany = async (
   pairs: Array<{ agentName: string; instanceId: string }>,
+  // Filled when given: a seat on a machine starts there, not from the page's Connect.
+  machines?: Map<string, unknown>,
 ): Promise<Map<string, BotTokens>> => {
   const byKey = new Map<string, BotTokens>();
   if (!pairs.length) return byKey;
@@ -168,12 +180,18 @@ const botTokensForMany = async (
       'botMetadata.instanceId': p.instanceId,
     })),
   }).select(
-    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt '
-      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.createdAt',
-  ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
+    'botMetadata.agentName botMetadata.instanceId botMetadata.machineId agentRuntimeTokens.lastListenedAt '
+      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt',
+  ).lean() as Array<{
+    botMetadata?: { agentName?: string; instanceId?: string; machineId?: unknown };
+    agentRuntimeTokens?: BotTokens;
+  }>;
   for (const row of rows) {
     const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
-    if (!byKey.has(key)) byKey.set(key, row.agentRuntimeTokens || []);
+    if (!byKey.has(key)) {
+      byKey.set(key, row.agentRuntimeTokens || []);
+      machines?.set(key, row.botMetadata?.machineId);
+    }
   }
   return byKey;
 };
@@ -207,7 +225,7 @@ export const scan = async ({
   const { AgentInstallation } = require('../models/AgentRegistry');
 
   const result: StalledScanResult = {
-    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0,
+    candidates: 0, nudged: [], resolved: [], skippedTooRecent: 0, skippedNotStalled: 0, skippedGuest: 0, skippedSameToken: 0,
   };
 
   await resolveConnected({ now, result });
@@ -246,7 +264,10 @@ export const scan = async ({
     agentName: String(install.agentName || '').toLowerCase(),
     instanceId: String(install.instanceId || 'default'),
   });
-  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
+  const machinesBySeat = new Map<string, unknown>();
+  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf), machinesBySeat);
+  const explained = await explainedTokens((candidates as Array<Record<string, any>>).map((row) => seatOf(row).agentName));
+  const activeRows = new Set((candidates as Array<Record<string, any>>).map((row) => String(row._id)));
 
   for (const install of candidates as Array<Record<string, any>>) {
     const { agentName, instanceId } = seatOf(install);
@@ -268,23 +289,103 @@ export const scan = async ({
       result.skippedNotStalled += 1;
       continue;
     }
-
-    await nudgeOnce({ install, derived, issuedAt, tokenSource: source, now, result });
+    // A room's row names whoever opened it, and the nudge is for whoever runs
+    // the agent, who hears it on their own row.
+    if (await isGuestOfIdentity(install.installedBy, agentName, instanceId)) {
+      result.skippedGuest += 1;
+      continue;
+    }
+    // An MCP client never listens, so it derives never-connected however often
+    // it calls in. "Nothing is running" would be false for one that has called
+    // on this token, and the next pass's MCP close says what's true: it can
+    // post when asked, and answering @mentions takes the listener.
+    const mcpConnected = Boolean(latestMcpSeenSince([install.runtimeTokens || [], userTokens], issuedAt));
+    // One token can back the person's pod and their own room. The explanation
+    // is for them, so a line they can still read on another row covers this
+    // one. Anything less, and this row says it: silence is the failure here.
+    const told = tokenKey(agentName, instanceId, install.installedBy, issuedAt);
+    const line = explained.get(told);
+    if (line && line.installationId !== String(install._id) && activeRows.has(line.installationId)
+      && await readsPod(line.podId, install.installedBy)) {
+      result.skippedSameToken += 1;
+      continue;
+    }
+    // Connect only for its one owner: anyone else's replacement is refused.
+    const connectable = keyOnlyOnPage(install as any, machinesBySeat.get(botKey(agentName, instanceId)))
+      && !anyCallRecorded([install.runtimeTokens || [], userTokens])
+      && (await ownsRuntimeIdentity(install.installedBy, agentName, instanceId.toLowerCase())
+        .catch((error: Error) => {
+          console.warn('Could not read the stalled agent\'s owner:', error.message);
+          return { owned: false };
+        })).owned;
+    const delivered = await nudgeOnce({
+      install,
+      derived,
+      issuedAt,
+      tokenSource: source,
+      mcpConnected,
+      connectable,
+      now,
+      result,
+    });
+    if (delivered) explained.set(told, { installationId: String(install._id), podId: String(install.podId) });
   }
 
   return result;
 };
 
+type ExplainedLine = { installationId: string; podId: string };
+
+/** Leaving a pod keeps the row, so a line posted there may be out of their reach. */
+const readsPod = async (podId: string, userId: unknown): Promise<boolean> => {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const Pod = require('../models/Pod');
+  try {
+    return Boolean(await Pod.exists({ _id: podId, members: userId }));
+  } catch (error) {
+    console.warn('[stalled-connect] could not read pod members:', (error as Error).message);
+    return false;
+  }
+};
+
+const tokenKey = (agentName: string, instanceId: string, installedBy: unknown, issuedAt: Date | string): string => (
+  [agentName, instanceId, String(installedBy), new Date(issuedAt).getTime()].join('\n')
+);
+
+/** Where each person's token has a nudge that actually posted. An episode alone
+ * proves nothing: it's claimed before the post, and an MCP seat's has no nudge.
+ * A failed read returns none, and the cost is one line said twice (rule 19). */
+const explainedTokens = async (agentNames: string[]): Promise<Map<string, ExplainedLine>> => {
+  const explained = new Map<string, ExplainedLine>();
+  try {
+    const episodes = await StalledConnectEpisode.find({
+      agentName: { $in: [...new Set(agentNames)] },
+      nudgeMessageId: { $nin: [null, ''] },
+    }).select('agentName instanceId installedBy tokenIssuedAt installationId podId').lean();
+    (episodes as Array<Record<string, any>>).forEach((episode) => {
+      explained.set(
+        tokenKey(episode.agentName, episode.instanceId, episode.installedBy, episode.tokenIssuedAt),
+        { installationId: String(episode.installationId), podId: String(episode.podId) },
+      );
+    });
+  } catch (error) {
+    console.warn('[stalled-connect] could not read past episodes:', (error as Error).message);
+  }
+  return explained;
+};
+
 const nudgeOnce = async ({
-  install, derived, issuedAt, tokenSource, now, result,
+  install, derived, issuedAt, tokenSource, mcpConnected, connectable, now, result,
 }: {
   install: Record<string, any>;
   derived: { agentName: string; instanceId: string; displayName: string; fixCommand?: string };
   issuedAt: Date;
   tokenSource: 'installation' | 'user' | null;
+  mcpConnected: boolean;
+  connectable: boolean;
   now: Date;
   result: StalledScanResult;
-}): Promise<void> => {
+}): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -304,7 +405,7 @@ const nudgeOnce = async ({
         byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
       };
     } | null;
-  if (!installer?.username) return; // Nobody to address; a nameless nudge is noise.
+  if (!installer?.username) return false; // Nobody to address; a nameless nudge is noise.
 
   const handle = buildAgentUsername
     ? buildAgentUsername(derived.agentName, derived.instanceId)
@@ -335,15 +436,19 @@ const nudgeOnce = async ({
     // 11000 means this token-episode was already explained — by an earlier
     // pass, or by the reactive responder that shares this record. Correct
     // outcome, not an error.
-    if (error?.code === 11000) return;
+    if (error?.code === 11000) return false;
     throw error;
   }
+  // The episode stays open with no nudge, so the same one-per-token record
+  // carries the MCP close on the next pass.
+  if (mcpConnected) return false;
 
   const content = composeStalledConnectNudge({
     installerName: installer.username,
     displayName: derived.displayName,
     handle,
     fixCommand: derived.fixCommand || `commonly agent run ${derived.agentName}`,
+    connectable,
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
@@ -375,7 +480,7 @@ const nudgeOnce = async ({
         `[stalled-connect] no message id for episode=${episode._id} `
         + `agent=${derived.agentName} — post skipped or shape changed`,
       );
-      return;
+      return false;
     }
     await StalledConnectEpisode.updateOne(
       { _id: episode._id },
@@ -387,8 +492,10 @@ const nudgeOnce = async ({
       podId,
       installer: installer.username,
     });
+    return true;
   } catch (error) {
     console.warn('[stalled-connect] nudge post failed:', (error as Error).message);
+    return false;
   }
 };
 
@@ -420,13 +527,19 @@ const resolveConnected = async ({
   })));
   const resolveEpisode = async (ep: Record<string, any>): Promise<void> => {
     const install = await AgentInstallation.findById(ep.installationId).lean();
-    if (!install) {
+    // An uninstall keeps the row, and a post here would put the bot back in the pod.
+    if (!install || install.status === 'uninstalled') {
       // Uninstalled while stalled: close it silently. There is no room to
-      // congratulate and nobody waiting on the promise.
+      // congratulate and nobody waiting on the promise. Plain `resolve`, not
+      // `resolveActioned`: nobody started the agent the nudge asked about.
+      if (ep.nudgeMessageId) await AttentionItemService.resolve('message', String(ep.nudgeMessageId));
       await StalledConnectEpisode.updateOne(
         { _id: ep._id, status: 'open' },
         { $set: { status: 'resolved', resolvedAt: now } },
       );
+      result.resolved.push({
+        episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
+      });
       return;
     }
     const userTokens = tokensBySeat.get(botKey(String(ep.agentName), String(ep.instanceId))) || [];
@@ -467,6 +580,7 @@ const resolveConnected = async ({
     const lastCheckInAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : null;
     const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
     let resolutionMessageId = '';
+    let closeFailed = false;
     try {
       const posted = await AgentMessageService.postMessage({
         agentName: String(ep.agentName),
@@ -495,7 +609,11 @@ const resolveConnected = async ({
       resolutionMessageId = extractMessageId(posted) || '';
     } catch (error) {
       console.warn('[stalled-connect] resolution post failed:', (error as Error).message);
+      closeFailed = true;
     }
+    // With no nudge in the room, this close is the only line the seat gets, so
+    // a failed post stays open for the next pass.
+    if (closeFailed && !ep.nudgeMessageId) return;
     // The nudge asked the installer to start the agent, and they did. Its
     // "needs you" row resolves now as `actioned`, whether or not the
     // confirmation post above went out: a thread reply was never going to be

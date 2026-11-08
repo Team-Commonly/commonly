@@ -1,3 +1,4 @@
+import { isHostedRoomRefusal } from './hostedRoomRefusal';
 import { isLimitedUseTool } from './limitedUseConnectors';
 import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
@@ -104,6 +105,14 @@ export interface HostedToolDefinition extends ToolDefinitionBase {
 }
 
 export type ToolDefinition = GithubToolDefinition | HostedToolDefinition;
+
+/**
+ * The most argument text a parked call's card carries. Past it, nobody can be
+ * said to have read what they approve, so the call refuses instead of parking.
+ * It leaves room for GitHub's 65,536-character body in multi-byte text. A PR
+ * write's card is a labelled summary with its own caps (`prWriteScope.ts`).
+ */
+export const APPROVAL_CARD_ARGS_MAX_BYTES = 128 * 1024;
 
 export interface BrokerCallInput {
   grantId: string;
@@ -213,6 +222,14 @@ const nonEmptyString = (value: unknown, field: string): string => {
     throw new RoomGrantError('invalid_tool_args', `${field} is required`, 400);
   }
   return value.trim();
+};
+
+/** A comment body runs exactly as the owner approved it; leading spaces are Markdown. */
+const nonBlankText = (value: unknown, field: string): string => {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new RoomGrantError('invalid_tool_args', `${field} is required`, 400);
+  }
+  return value;
 };
 
 // Approval envelopes bind the provider destination as well as the visible
@@ -511,7 +528,7 @@ const commentPullRequest: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'body']);
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
     // The issue-comment endpoint takes issues too, so confirm the number is a
     // pull request first; otherwise this grant would reach comment_on_issue.
@@ -567,7 +584,7 @@ const reviewPullRequestComment: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['pullNumber', 'body']);
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
     const review = await GitHubAppService.createPullReview({
       owner: connection.owner,
@@ -681,7 +698,7 @@ const commentIssue: GithubToolDefinition = {
   async call(rawArgs, connection) {
     assertNoUnknown(rawArgs, ['issueNumber', 'body']);
     const issueNumber = positiveInteger(rawArgs.issueNumber, 'issueNumber');
-    const body = nonEmptyString(rawArgs.body, 'body');
+    const body = nonBlankText(rawArgs.body, 'body');
     const result = await GitHubAppService.addIssueComment({
       owner: connection.owner,
       repo: connection.repo,
@@ -1022,7 +1039,8 @@ const assertHostedOwnerUsable = async (ownerUserId?: string): Promise<void> => {
     HOSTED_OWNER_REFUSALS[refusal],
     HOSTED_OWNER_MESSAGES[refusal],
     403,
-    accountId ? { credentialOwnerId: accountId } : undefined,
+    undefined,
+    accountId,
   );
 };
 
@@ -1170,9 +1188,9 @@ const assertOutsiderGrantPodEligible = async (grant: IRoomGrant | Record<string,
  *    grant that names one, and on a `prWrite` grant: for those, opening a
  *    pull request is the only GitHub write there is.
  *
- * A hosted turn on any other grant keeps the path it had (TASK-512): its
- * projection offers it no other write, and a write that reaches the kernel
- * parks for the credential owner like any other.
+ * A hosted turn on any other grant keeps the path it had (TASK-512): a write
+ * parks for the credential owner like any other, and its projection offers the
+ * ones that do (F215).
  *
  * Hosted-MCP tools answer to their own rules and pass through untouched.
  */
@@ -1373,7 +1391,10 @@ const resolveApprovalPodId = async (
     String(target.id),
     connection.ownerUserId,
     { agentName: agentName || 'grant-broker', instanceId: instanceId || 'default' },
-  );
+  ).catch((error: unknown) => {
+    if (isHostedRoomRefusal(error)) throw new RoomGrantError(error.code, error.message, error.status);
+    throw error;
+  });
   if (!room?._id) {
     throw new RoomGrantError('approval_unavailable', 'approval room could not be created', 503);
   }
@@ -1438,6 +1459,28 @@ const connectCannotUse = (definition: ToolDefinition, connection: ToolConnection
   connection.type === 'github-app' && connection.app === 'connect'
   && CONNECT_UNSUPPORTED_TOOLS.has(definition.name)
 );
+
+/**
+ * For a surface that offers a grant's tools without resolving its connection
+ * per tool: drops the tools a Connect row can never run (F174, never offered,
+ * so never tried). A connection that will not resolve drops them too; every
+ * call on it refuses anyway, and this is an offer, not the gate.
+ */
+export const withoutToolsConnectionCannotRun = async (
+  grant: object,
+  definitions: ToolDefinition[],
+): Promise<ToolDefinition[]> => {
+  const probe = definitions.find((definition) => CONNECT_UNSUPPORTED_TOOLS.has(definition.name));
+  if (!probe) return definitions;
+  let connection: ToolConnection;
+  try {
+    connection = await resolveConnection(grant as Record<string, unknown>, probe);
+  } catch (error) {
+    if (!(error instanceof RoomGrantError)) throw error;
+    return definitions.filter((definition) => !CONNECT_UNSUPPORTED_TOOLS.has(definition.name));
+  }
+  return definitions.filter((definition) => !connectCannotUse(definition, connection));
+};
 
 const assertConnectCanUse = (definition: ToolDefinition, connection: ToolConnection): void => {
   if (!connectCannotUse(definition, connection)) return;
@@ -1539,9 +1582,7 @@ const refusedCredentialOwner = (
   error: unknown,
   resolved: string | undefined,
 ): string | undefined => (
-  error instanceof RoomGrantError && typeof error.details?.credentialOwnerId === 'string'
-    ? error.details.credentialOwnerId
-    : resolved
+  error instanceof RoomGrantError && error.credentialOwnerId ? error.credentialOwnerId : resolved
 );
 
 /** The grant's and call's facts on a trail row. The ref is shape-checked, so it can't be a URL: it's the seat's own branch name. */
@@ -1794,6 +1835,16 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       // No guard on `prepareApproval`: the helper answers for both members, and
       // a hosted tool's arguments are simply its own.
       const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection, input.agentUserId);
+      if (!isPrWriteTool(definition.name)
+        && Buffer.byteLength(JSON.stringify(canonicalArgs), 'utf8') > APPROVAL_CARD_ARGS_MAX_BYTES) {
+        throw new RoomGrantError(
+          'args_too_long_for_card',
+          'These arguments are too long for the owner to read on an approval card, so nothing was parked or sent. '
+            + 'Make a smaller change.',
+          413,
+          { retryable: false },
+        );
+      }
       let proposal: {
         ok: boolean; approvalId?: string; code?: string; reason?: string;
         reused?: boolean; callId?: string; pending?: number; error?: string;
@@ -1805,6 +1856,15 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           input.agentName,
           input.instanceId,
         );
+        // The card lives in this pod, so an owner who left would never see it.
+        if (!await Pod.exists({ _id: approvalPodId, members: connection.ownerUserId })) {
+          throw new RoomGrantError(
+            'approver_not_in_pod',
+            'The connection\'s owner decides this call and is no longer in this pod, so nothing was parked or sent.',
+            403,
+            { retryable: false },
+          );
+        }
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const approvalService = require('./approvalActionService');
         proposal = await approvalService.proposeAction({
@@ -1957,8 +2017,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     return {
       ...recorded,
       result,
-      ...(definition.connectionType === 'hosted-mcp'
-        ? { untrustedSourceTitle: definition.entryTitle } : {}),
+      // GitHub's text is as outsider-writable as a catalogue vendor's: anyone can
+      // file an issue or comment on a public repository.
+      untrustedSourceTitle: definition.connectionType === 'hosted-mcp' ? definition.entryTitle : 'GitHub',
     };
   } catch (error) {
     const reason = safeReason(error);
@@ -2009,10 +2070,11 @@ export interface ApprovedToolCallInput {
  *  - the grant is still live, unexpired, in audience, and allows the tool;
  *  - its pod still passes the outsider gate;
  *  - a PR write still has `prWrite` across the lineage;
- *  - for a PR write, the caller is judged as it was at park: a hosted turn
- *    has nothing to confine; a seat must still be confinable now, or still be
- *    named with a naming that lifts its refusal. Anything else, including a
- *    missing record of how it was judged, refuses `confinement_changed`.
+ *  - for a PR write, or any write a hosted turn parked (F215), the caller is
+ *    judged as it was at park: a hosted turn has nothing to confine; a seat
+ *    must still be confinable now, or still be named with a naming that lifts
+ *    its refusal. Anything else, including a missing record of how it was
+ *    judged, refuses `confinement_changed`.
  */
 const assertApprovedCallStillPermitted = async (
   grant: IRoomGrant | Record<string, unknown>,
@@ -2029,9 +2091,10 @@ const assertApprovedCallStillPermitted = async (
   await assertOutsiderGrantPodEligible(grant);
   // The caller's half of the write rule is the confinement check below.
   await assertPrWriteRule(grant, definition, false);
-  if (definition.connectionType !== 'github-app' || !isPrWriteTool(definition.name)) return;
   // The park record decides which judgement applies; the agent is judged live.
   const parkedAs = input.callerConfinement;
+  if (parkedAs !== 'hosted'
+    && (definition.connectionType !== 'github-app' || !isPrWriteTool(definition.name))) return;
   const changed = new RoomGrantError(
     'confinement_changed',
     'the agent\'s sandbox or naming changed since this call was parked; ask again',

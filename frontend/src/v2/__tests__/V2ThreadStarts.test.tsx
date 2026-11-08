@@ -5,9 +5,9 @@
 // person's own message. A start goes away only once this person has sent it,
 // so nothing else in the pod (a join row, Scout's follow-ups, another member)
 // can take the offer away before it is seen.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  cleanup,
+  act, cleanup,
   fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -92,8 +92,11 @@ const message = (id, userId, username, content, minute, extra = {}) => ({
 
 const OWN_POD = { _id: 'pod-1', name: 'My Workspace', type: 'chat', createdBy: 'u1' };
 
-const Harness = ({ initial, sendSpy, onOpenInvite = undefined, pod = OWN_POD }) => {
+const Harness = ({ initial, sendSpy, onOpenInvite = undefined, pod = OWN_POD, arriving = undefined }) => {
   const [messages, setMessages] = useState(initial);
+  useEffect(() => {
+    if (arriving) setMessages((current) => [...current, arriving]);
+  }, [arriving]);
   const sendMessage = async (...args) => {
     sendSpy(...args);
     const sent = message(`sent-${args[0]}`, 'u1', 'maya', args[0], 30);
@@ -358,6 +361,79 @@ const nextSteps = (starts) => ({
 const ADD = { id: 'add-first-task', label: 'Add to board', action: 'add-first-task', title: 'Fix login', sourceRef: 'https://github.com/acme/widget/issues/10' };
 const BRING_OWN = { id: 'bring-your-own', label: 'Bring your own', href: BYO_HREF };
 
+describe('V2Thread — the welcome records that it rendered (TASK-787)', () => {
+  const pings = () => axios.post.mock.calls.filter(([url, body]) => String(url).endsWith('/api/stats/byo-step')
+    && body?.step === 'welcome-shown');
+
+  beforeEach(() => {
+    resetByoStepsForTest();
+    axios.post.mockClear();
+  });
+
+  test('the first render pings once, with the fixed step and nothing from the pod', async () => {
+    renderThread([welcome]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+    expect(pings()[0][1]).toEqual({ step: 'welcome-shown' });
+  });
+
+  test('the ask start identifies a welcome by itself', async () => {
+    renderThread([{ ...welcome, payload: { kind: 'starts', starts: [{ id: 'ask-scout', label: 'Show me what you can do' }] } }]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+  });
+
+  test('a welcome that arrives after the first render still pings', async () => {
+    const tree = (arriving) => (
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter>
+          <Harness initial={[]} sendSpy={jest.fn()} arriving={arriving} />
+        </MemoryRouter>
+      </AuthContext.Provider>
+    );
+    const { rerender } = render(tree(undefined));
+    expect(pings()).toHaveLength(0);
+    rerender(tree(welcome));
+    await waitFor(() => expect(pings()).toHaveLength(1));
+  });
+
+  test('a later message and a remount in the same load do not ping again', async () => {
+    const sendSpy = renderThread([welcome]);
+    await waitFor(() => expect(pings()).toHaveLength(1));
+    fireEvent.click(within(startsGroup()).getByRole('button', { name: POD_START }));
+    await waitFor(() => expect(sendSpy).toHaveBeenCalled());
+    cleanup();
+    renderThread([welcome]);
+    expect(pings()).toHaveLength(1);
+  });
+
+  test('a welcome only someone else owns does not count: an invited person never had it', () => {
+    renderThread([welcome], jest.fn(), { pod: { ...OWN_POD, createdBy: 'someone-else' } });
+    expect(startsGroup()).toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+
+  test('an own pod with no welcome does not ping', () => {
+    renderThread([message('m1', 'u1', 'maya', 'hello', 1)]);
+    expect(pings()).toHaveLength(0);
+  });
+
+  test("starts that aren't the welcome's do not count", () => {
+    renderThread([message('m1', 'scout-1', 'scout', 'Add this?', 1, {
+      payload: { kind: 'starts', starts: [{ id: 'start-pod', label: POD_START }] },
+    })]);
+    expect(startsGroup()).toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+
+  test('a welcome with no start left to show renders no offer and does not ping', () => {
+    renderThread([
+      { ...welcome, payload: { kind: 'starts', starts: [{ id: 'connect-agent', label: CONNECT }] } },
+      message('mine', 'u1', 'maya', CONNECT, 4),
+    ]);
+    expect(screen.queryByRole('button', { name: CONNECT })).not.toBeInTheDocument();
+    expect(pings()).toHaveLength(0);
+  });
+});
+
 describe("V2Thread — a new pod's first task", () => {
   const axios = jest.requireMock('axios').default;
   beforeEach(() => {
@@ -529,6 +605,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
       ],
     },
   };
+  const NOTE = 'Nothing to install. It answers you here.';
   const PLAN = { podId: 'pod-1', existing: null, agentName: 'maya-agent' };
   const HELD = { podId: 'pod-1', existing: { agentName: 'maya-agent', instanceId: 'default', podId: 'pod-1' }, agentName: null };
   const calls = (url) => axios.post.mock.calls.filter(([called]) => called === url);
@@ -551,6 +628,33 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     expect(button).not.toHaveAccessibleDescription();
     expect(button).not.toHaveAttribute('aria-describedby');
     expect(screen.queryByText('Beta: 1 hosted agent per account, 30 turns a day.')).not.toBeInTheDocument();
+  });
+
+  test('the welcome says what the hosted start gives back, under that start only', () => {
+    renderThread([welcomeRunsHere]);
+    const note = screen.getByText(NOTE);
+    const button = screen.getByRole('button', { name: HOSTED });
+    expect(button.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(note.previousElementSibling).toBe(button);
+  });
+
+  test('a hosted start that only links has no such note: nothing runs here on the click', () => {
+    renderThread([{
+      ...welcome,
+      payload: { kind: 'starts', starts: [{ id: 'run-hosted', label: HOSTED, href: HREF }] },
+    }]);
+    expect(screen.getByRole('button', { name: HOSTED })).toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+  });
+
+  test('the note leaves once the click is under way', async () => {
+    let finish;
+    axios.post.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    renderThread([welcomeRunsHere]);
+    expect(screen.getByText(NOTE)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: HOSTED }));
+    await waitFor(() => expect(screen.queryByText(NOTE)).not.toBeInTheDocument());
+    await act(async () => { finish({ data: PLAN }); });
   });
 
   test('a held agent answers the click with its running line, even when the start carries no limits', async () => {
@@ -634,6 +738,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     await waitFor(() => expect(screen.queryByRole('button', { name: /Run an agent here|Starting/ })).not.toBeInTheDocument());
     expect(calls('/api/registry/install')).toHaveLength(1);
     expect(calls('/api/hosted/provision').map(([, body]) => body)).toEqual([{ agentName: 'maya-agent', instanceId: 'default' }]);
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -642,6 +747,17 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     fireEvent.click(screen.getByRole('button', { name: HOSTED }));
     expect(screen.getByTestId('location')).toHaveTextContent(HREF);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('a person who did not create the pod gets no note: their click leaves for the page', () => {
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u2' } } });
+    expect(screen.getByRole('button', { name: HOSTED })).toBeInTheDocument();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
+  });
+
+  test('the creator gets the note with a populated creator too', () => {
+    renderThread([welcomeRunsHere], jest.fn(), { pod: { ...OWN_POD, createdBy: { _id: 'u1' } } });
+    expect(screen.getByText(NOTE)).toBeInTheDocument();
   });
 
   test('the owner is recognised from a populated creator too', async () => {
@@ -679,6 +795,7 @@ describe('"Run an agent here" runs in place on the owner\'s own welcome (TASK-29
     fireEvent.click(screen.getByRole('button', { name: HOSTED }));
     expect(await screen.findByRole('alert')).toHaveTextContent("Hosting isn't available on this instance yet.");
     expect(screen.getByRole('button', { name: HOSTED })).toBeEnabled();
+    expect(screen.queryByText(NOTE)).not.toBeInTheDocument();
     expect(calls('/api/hosted/provision')).toHaveLength(0);
   });
 });
@@ -706,5 +823,17 @@ describe("V2Thread — Scout's starts under zh-CN", () => {
     fireEvent.click(within(group).getByRole('button', { name: '接入我在用的智能体' }));
 
     await waitFor(() => expect(sendSpy).toHaveBeenCalledWith(CONNECT, 'text', undefined, undefined));
+  });
+
+  test('the hosted start carries its note in zh-CN', async () => {
+    await i18n.changeLanguage('zh-CN');
+    renderThread([{
+      ...welcome,
+      payload: {
+        kind: 'starts',
+        starts: [{ id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' }],
+      },
+    }]);
+    expect(screen.getByText('不用安装，它就在这里回复你。')).toBeInTheDocument();
   });
 });

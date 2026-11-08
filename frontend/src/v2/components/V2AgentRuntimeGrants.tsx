@@ -10,6 +10,7 @@ import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
+import { usePhone } from '../connectors/usePhone';
 
 export interface Runtime extends RuntimeSettings {}
 
@@ -207,6 +208,7 @@ interface ConnectorsProps { name: string; instanceId: string }
 // with its revoke flow.
 export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instanceId }) => {
   const { t } = useTranslation();
+  const phone = usePhone('(max-width: 600px)');
   const api = useV2Api();
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,15 +271,18 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   const panelId = `agent-grants-${instanceId}`;
   const title = t('agentManage.grants.title', { defaultValue: 'Connector grants' });
 
+  // On a phone an empty row reads as one label, as its frame draws it.
+  const emptyOnPhone = phone && !loading && !loadError && !grantsPrivate && grants.length === 0;
+
   return (
     <>
       <div className="lrow">
-        <span className="lb"><V2AgentSettingsIcon name="plug" />{t('agentSettings.connectors')}</span>
+        <span className="lb"><V2AgentSettingsIcon name="plug" />{t('agentSettings.connectors')}{emptyOnPhone && ` · ${t('agentSettings.none').toLowerCase()}`}</span>
         <span className="vl">
           {grants.length > 0 ? [t('agentManage.grants.activeCount', { count: activeGrants }),
             endedGrants > 0 && t('agentManage.grants.endedCount', { count: endedGrants })].filter(Boolean).join(' · ')
             : grantsPrivate ? <span className="mu">{t('agentManage.grants.private')}</span>
-              : !loadError && <span className="mu">{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
+              : !loadError && !emptyOnPhone && <span className="mu">{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
         </span>
         <span className="ac">
           <Link className="b b-g ib b-sm" to="/v2/connectors" title={t('agentSettings.grantConnector')} aria-label={t('agentSettings.grantConnector')}>

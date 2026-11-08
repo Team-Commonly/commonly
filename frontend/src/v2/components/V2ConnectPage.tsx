@@ -65,8 +65,6 @@ const V2ConnectPage: React.FC = () => {
 
   return (
     <div className="v2-connect">
-      {/* The page's one-line lead: it was the head's "i" hint, which no head carries now. */}
-      <p className="v2-connect__intro">{t('connect.intro')}</p>
       <section className="v2-connect__lane" aria-labelledby="connect-cli-heading">
         <div className="v2-connect__lane-heading">
           <span className="v2-connect__number" aria-hidden="true">01</span>

@@ -56,7 +56,7 @@
   },
   "taskRecord": {
     "title": "任务记录",
-    "back": "返回看板",
+    "back": "返回任务板",
     "intro": "按顺序列出此任务发生的事。每条记录都带有上一条的哈希，任何一条被改动，链就会断开。",
     "loading": "正在加载记录…",
     "access": "该 Pod 可能没有开启记录，或你已无权访问。",
@@ -74,7 +74,7 @@
     "downloadError": "无法下载记录，请重试。",
     "actor": {
       "unknown": "未知操作者",
-      "board": "看板",
+      "board": "任务板",
       "system": "系统：{{id}}",
       "policy": "策略：{{id}}"
     },
@@ -115,12 +115,50 @@
       "cancelled": "已取消"
     }
   },
+  "cliAuthorize": {
+    "checkingSession": "正在确认登录状态…",
+    "title": "授权 Commonly CLI",
+    "signInLead": "登录后即可授权这台设备。设备码会保留在当前标签页。",
+    "deviceCode": "设备码",
+    "signInContinue": "登录后继续",
+    "enterCode": "输入终端里显示的设备码。",
+    "checking": "检查中…",
+    "continue": "继续",
+    "confirmTitle": "要以 @<user/> 的身份授权 <host/> 吗？",
+    "fallbackUser": "你",
+    "confirmLead": "这台设备正在请求使用你的 Commonly 账号。",
+    "client": "客户端",
+    "instance": "实例",
+    "requested": "请求时间",
+    "approveWarning": "如果设备码不是你自己在终端里申请的，请不要授权。",
+    "deny": "拒绝",
+    "authorize": "授权",
+    "authorizing": "授权中…",
+    "doneTitle": "设备已授权",
+    "doneBody": "现在可以回到终端了。",
+    "deniedTitle": "已拒绝授权",
+    "deniedBody": "没有向这台设备签发令牌。",
+    "expiredTitle": "设备码已过期",
+    "expiredBody": "回到终端，重新运行 <code>commonly login</code>。",
+    "usedTitle": "设备码已用过",
+    "usedBody": "这个设备码已经授权过，或已完成登录。请回到终端。",
+    "errorTitle": "无法授权这台设备",
+    "errorBody": "请检查设备码，然后在终端里重试。"
+  },
   "common": {
+    "somethingWrong": "出了点问题",
+    "loadingApp": "正在加载 Commonly",
     "brandName": "Commonly",
     "brandWordmark": "commonly",
     "agent": "智能体",
     "you": "你",
     "close": "关闭",
+    "cancel": "取消",
+    "account": {
+      "label": "账号",
+      "open": "打开账号菜单",
+      "signOut": "退出登录"
+    },
     "copy": "复制",
     "copied": "已复制",
     "aboutPage": "关于 {{title}}",
@@ -128,6 +166,7 @@
       "label": "语言"
     },
     "nav": {
+      "label": "主导航",
       "pods": "Pod",
       "agents": "智能体",
       "activity": "动态",
@@ -139,6 +178,8 @@
       "artifacts": "产物"
     },
     "pageTitle": {
+      "connect": "接入",
+      "podTools": "Pod 工具",
       "agentSettings": "智能体设置",
       "agentMemory": "智能体记忆",
       "profile": "资料页",
@@ -186,6 +227,79 @@
     "removeError": "无法移除此技能。"
   },
   "settings": {
+    "sections": {
+      "account": "账号",
+      "access": "访问权限",
+      "look": "外观",
+      "admin": "管理"
+    },
+    "accountActions": "账号操作",
+    "connectorsDetail": "管理已连接的服务",
+    "developerApps": "开发者应用",
+    "account": {
+      "fallbackName": "你的账号",
+      "noChanges": "账号没有更改。",
+      "saved": "账号已保存。",
+      "saveFailed": "无法保存账号信息，请重试。",
+      "changePhoto": "更换头像",
+      "avatarOf": "{{name}} 的头像",
+      "roleAdmin": "管理员",
+      "roleMember": "成员",
+      "editName": "编辑名称和用户名",
+      "editProfile": "编辑资料",
+      "email": "邮箱",
+      "changeEmail": "更改邮箱",
+      "editEmail": "编辑邮箱",
+      "name": "名称",
+      "username": "用户名",
+      "change": "更改",
+      "save": "保存",
+      "saving": "保存中…"
+    },
+    "apiToken": {
+      "title": "API 令牌",
+      "active": "有效",
+      "activeEnding": "有效 · 尾号 {{last4}}",
+      "generate": "生成",
+      "generating": "生成中…",
+      "regenerate": "重新生成",
+      "regenerating": "重新生成中…",
+      "revoking": "撤销中…",
+      "show": "显示",
+      "hide": "隐藏",
+      "generated": "新的 API 令牌已生成。请立即复制，并像密码一样妥善保管。",
+      "generateFailed": "无法生成 API 令牌，请重试。",
+      "revoked": "API 令牌已撤销。",
+      "revokeFailed": "无法撤销 API 令牌，请重试。",
+      "copied": "API 令牌已复制。",
+      "copyFailed": "无法复制 API 令牌，请手动选中并复制。",
+      "created": "创建时间：{{date}}"
+    },
+    "admin": {
+      "users": "用户",
+      "usersDetail": "已注册用户、封禁和邀请码",
+      "analytics": "使用分析",
+      "analyticsDetail": "注册、消息、活跃用户和激活漏斗"
+    },
+    "devices": {
+      "title": "设备",
+      "lead": "CLI 设备令牌长期有效，撤销后才失效。",
+      "refresh": "刷新",
+      "loading": "正在加载设备…",
+      "loadingShort": "加载中…",
+      "empty": "还没有连接的 CLI 设备。",
+      "never": "从未",
+      "none": "无",
+      "created": "创建时间：{{created}} · 上次使用：{{used}}",
+      "revoked": "撤销于{{date}}",
+      "revoke": "撤销",
+      "revokeConfirm": "撤销 {{label}}？这个 CLI 需要重新登录。",
+      "loadFailed": "无法加载你的设备。",
+      "loadFailedShort": "无法加载",
+      "revokeFailed": "无法撤销这台设备。",
+      "count_other": "{{count}}台 CLI 设备",
+      "countUsed": "{{devices}} · {{when}}使用"
+    },
     "deleteAccount": {
       "title": "删除账户",
       "effects": "这将永久删除你的账户和上传的文件，并取消所有有效的 Stripe 订阅。共享消息会保留。你安装的智能体运行时会暂停。它们的身份和记忆会保留。此操作无法撤销。",
@@ -204,8 +318,8 @@
       "failed": "无法退出所有浏览器会话，请重试。"
     },
     "username": {
-      "save": "保存用户名",
-      "saving": "保存中…",
+      "saved": "用户名已保存。",
+      "saveFailed": "无法保存你的用户名，请重试。",
       "help": "2–40个小写字母、数字或连字符。你的旧用户名会继续保留，但旧提及不会通知你。"
     },
     "avatar": {
@@ -254,7 +368,7 @@
     "open": "打开",
     "openPod": "打开 pod",
     "moreActions": "更多操作",
-    "openBoard": "打开看板",
+    "openBoard": "打开任务板",
     "compose": {
       "eyebrow": "发起对话",
       "title": "告诉你的智能体你在想什么",
@@ -305,6 +419,8 @@
     "approval": {
       "approve": "批准",
       "deny": "拒绝",
+      "review": "查看",
+      "needsReview": "先打开这条请求，核对后再批准。",
       "working": "正在保存…",
       "actionFailed": "无法更新该审批，请重试。"
     },
@@ -339,11 +455,11 @@
       "emptyDescription": "智能体在 Pod 中发布更新后，工作会在这里归类显示。"
     },
     "board": {
-      "eyebrow": "看板变更",
-      "title": "看板",
+      "eyebrow": "任务板变更",
+      "title": "任务板",
       "description": "此时间范围内发生变化的任务。",
-      "emptyTitle": "此时间范围内没有看板变更",
-      "emptyDescription": "任务变更会显示在这里，不会创建第二个看板。",
+      "emptyTitle": "此时间范围内没有任务板变更",
+      "emptyDescription": "任务变更会显示在这里，不会创建第二个任务板。",
       "status": {
         "pending": "待处理",
         "claimed": "进行中",
@@ -643,10 +759,18 @@
     }
   },
   "podChat": {
+    "copyCode": "复制代码",
     "firstTask": {
       "addFailed": "添加任务失败，请重试。"
     },
     "systemActions": {
+      "agentStopped": "{{name}} 已停止，要等所有者启动后才能回复。",
+      "agentRemoved": "{{name}} 已被移除，无法在这里回复。",
+      "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
+      "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
+      "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
+      "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
+      "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
       "taskClaimedVerb": "认领了"
     },
     "claimRun": {
@@ -657,6 +781,7 @@
     "starts": {
       "label": "开始方式",
       "openByo": "去接入自己的智能体",
+      "hostedNote": "不用安装，它就在这里回复你。",
       "labels": {
         "ask-scout": "看看你能做什么",
         "connect-agent": "接入我在用的智能体",
@@ -669,8 +794,8 @@
     "messageFallback": "消息",
     "cancelReply": "取消回复",
     "replyingTo": "回复 <author>{{author}}</author>：",
-    "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle>@{{handle}}</handle>。",
-    "deliveryHintOthers": "{{woken}} 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle>@{{handle}}</handle>。",
+    "deliveryHint": "尚未通知任何智能体。@提及一个智能体即可让它回复，例如 <handle/>。",
+    "deliveryHintOthers": "<woken/> 会回复这条消息。这里的其他智能体只在你 @提及 时回复，试试 <handle/>。",
     "mentionNotInPod": "{{handle}} 不在这个 Pod 中。请邀请对方加入，或到对方已加入的 Pod 中提问。",
     "mentionNotInPodWithPods": "{{handle}} 不在这个 Pod 中。可前往这些 Pod 提问：",
     "noAgentsInPod": {
@@ -707,6 +832,7 @@
       "typeaheadNever": "智能体 · @{{handle}} —— 未连接，无法回复",
       "typeaheadDark": "智能体 · @{{handle}} —— 最近没有接入",
       "neverOwner": "@{{handle}} 尚未连接 —— 它看不到这条消息。修复：{{command}}",
+      "neverOwnerConnect": "@{{handle}} 尚未连接 —— 它看不到这条消息。",
       "neverPeer": "@{{handle}} 尚未连接 —— 它看不到这条消息。它的所有者可以将其接入。",
       "darkOwner": "@{{handle}} 已有一段时间没有接入，可能不会回复。唤醒它：{{command}}",
       "darkPeer": "@{{handle}} 已有一段时间没有接入，可能不会回复。"
@@ -764,7 +890,7 @@
       "members_other": "{{count}}名成员",
       "agents_one": "{{count}}个智能体",
       "agents_other": "{{count}}个智能体",
-      "boardOpen": "看板{{count}}项待办",
+      "boardOpen": "任务板{{count}}项待办",
       "boardTasks_other": "{{count}}项待办",
       "backToPods": "返回 Pod 列表",
       "invite": "邀请",
@@ -1526,7 +1652,7 @@
       "inProgressCount": "{{count}}个进行中",
       "complete": "已完成",
       "completeCount": "{{count}}个已完成",
-      "viewRunBoard": "查看运行看板",
+      "viewRunBoard": "查看运行任务板",
       "recentTasks": "最近任务",
       "empty": "还没有任务。智能体工作时会在这里创建任务 —— 或 @提及 某个智能体并向它提出请求。"
     },
@@ -1591,7 +1717,7 @@
     }
   },
   "board": {
-    "title": "看板",
+    "title": "任务板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
     "addTo": "添加到{{column}}",
@@ -1630,10 +1756,11 @@
       "reviewLatest": "查看最新内容",
       "latestReviewed": "已查看最新内容",
       "discard": "放弃未保存的焦点更改？",
+      "discardAction": "放弃",
       "saveError": "无法保存焦点，请重试。",
       "progress": "{{done}}/{{total}}已完成"
     },
-    "loadErrorTitle": "看板加载失败",
+    "loadErrorTitle": "任务板加载失败",
     "loadErrorText": "请检查网络连接后重试。",
     "createError": "任务创建失败，请重试。",
     "col": {
@@ -1660,17 +1787,12 @@
       "pr": "查看 PR",
       "record": "查看记录",
       "priority": "优先级",
-      "assignedTo": "分配给",
-      "claimedBy": "认领人",
-      "leaseLeft": "认领剩余时间",
       "unassigned": "未分配",
       "notClaimed": "尚未认领",
       "expiredAt": "认领已于{{time}}到期",
       "remaining": "{{minutes}}分钟 · 至{{time}}",
-      "timeUnavailable": "认领时间不可用",
       "follow": "关注任务",
       "following": "已关注",
-      "watchers": "关注者",
       "digestHint": "更新会显示在你的摘要中。",
       "memberUnavailable": "成员不可用",
       "saveError": "未能保存更改，请重试。",
@@ -1678,7 +1800,12 @@
       "showEarlierUpdates": "显示{{count}}条更早的更新",
       "hideEarlierUpdates": "隐藏更早的更新",
       "depends": "依赖",
-      "noDeps": "无"
+      "noDeps": "无",
+      "owner": "负责人",
+      "prRow": "PR",
+      "more": "更多",
+      "watcherCount": "{{count}}人关注",
+      "openInChat": "在对话中打开"
     },
     "form": {
       "title": "标题",
@@ -1774,7 +1901,8 @@
         "newCommit": "新提交",
         "bundleSize": "推送包大小"
       },
-      "exactArgs": "原始参数"
+      "exactArgs": "原始参数",
+      "longValue": "共{{length}}个字符，滚动查看全部。"
     },
     "approve": "批准",
     "decline": "拒绝",
@@ -1791,6 +1919,7 @@
     "openConnect": "获取接入命令",
     "errors": {
       "expired": "该批准在决定生效前已过期。",
+      "needsReview": "这条请求和页面显示的内容对不上，刷新后再决定。",
       "failed": "决定未能保存，请重试。"
     }
   },
@@ -1848,7 +1977,7 @@
       },
       "raft": {
         "name": "Raft",
-        "what": "我们最接近的产品竞争对手。运行时、工作区和记忆都留在你自己的机器上，也支持外部智能体。",
+        "what": "我们最接近的产品竞争对手。运行时、工作空间和记忆都留在你自己的机器上，也支持外部智能体。",
         "accept": "它的源码已经公开，采用禁止竞争性使用的许可证（FSL-1.1-ALv2）：你可以自己运行，但每个版本发布满两年之前，都不能拿去对外提供与之竞争的商业产品或服务，代码仓库也不接受 PR。私有化部署标注为“即将推出”，而且 Pro 将每个智能体计作0.1个人头席位 —— 包括跑在你自己硬件、用你自己 API 密钥的智能体。"
       },
       "workspaces": {
@@ -1890,6 +2019,8 @@
     "staleHours": "已{{count}}小时未连接",
     "staleDays_other": "已{{count}}天未连接",
     "never": "尚未连接",
+    "stopped": "已停止",
+    "connect": "连接",
     "reconnect": "重新连接",
     "reconnectWaiting": "正在等待电脑重新连接此智能体。",
     "reconnectDone": "已连接。",
@@ -1934,7 +2065,6 @@
     },
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
-      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"
@@ -1946,6 +2076,8 @@
     "rekey": {
       "warning": "{{name}} 已有密钥。替换后，正在运行的智能体会断开连接，直到你运行新的接入命令。",
       "replace": "替换正在运行的智能体密钥",
+      "warningNever": "{{name}} 的密钥还没用过。替换后旧密钥会失效，你会拿到一条新的接入命令。",
+      "replaceNever": "获取新的接入命令",
       "cancel": "保留当前密钥"
     },
     "snippets": {
@@ -1977,6 +2109,7 @@
       "tokenEmpty": "安装成功，但令牌签发返回为空。请重试，或联系运维。",
       "installFailed": "安装失败。",
       "nameIsHosted": "{{name}} 是你在 Commonly 上运行的托管智能体的名字。请给你自己运行的智能体换一个名字。",
+      "hostedNameTaken": "Commonly 上已有名为 {{name}} 的智能体在运行。请换一个名字。",
       "fileTooLarge": "该文件超过 256KB 的导入上限——请精简，或只粘贴相关部分。",
       "importFailed": "导入失败。",
       "hostedCap": "你已有一个托管智能体（测试期允许{{cap}}个）。如需更多，请自带运行时。",
@@ -2002,8 +2135,10 @@
       "stopsOnCloseWithComputerWindows": "关闭这个 PowerShell 窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
       "npmPermission": "如果 npm 报 EACCES（权限被拒绝），不要加 sudo。请用版本管理工具（如 nvm）重新安装 Node，然后重新运行这四行。",
       "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
-      "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 {{name}} 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
-      "windowsCodex": "Windows 上没有 Codex 在这里能用的沙箱，所以没有任何东西限制 {{name}}。它用你自己的权限访问文件、运行命令，这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它不会获得任何连接器授权；如果这个 Pod 不再是邀请制，它就不再回复。",
+      "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 <name/> 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
+      "windowsCodex": "Windows 上没有 Codex 在这里能用的沙箱，所以没有任何东西限制 <name/>。它用你自己的权限访问文件、运行命令，这个 Pod 里的任何人，包括你之后邀请的人，都能指挥它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它不会获得任何连接器授权；如果这个 Pod 不再是邀请制，它就不再回复。",
+      "linuxUbuntu": "在 Ubuntu 24.04或更高版本上，AppArmor 可能让 bubblewrap 无法启动。这时命令会停下来，列出你可以怎么做：改用「在这里运行」；在 Ubuntu 24.04上，还可以自己用 sudo 加载 Ubuntu 提供的 AppArmor 配置文件，这一步是可选的。这个配置文件我们在全新的 Ubuntu 24.04服务器镜像上测试过，不代表每台机器都适用。",
+      "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上，用 API 密钥经模型网关连上线上的 Commonly，把 Codex 跑了一遍，它回复了第一条 @提及。用你自己登录的 ChatGPT 账号或 OpenAI 密钥时，在 Linux 上还没有验证过。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
       "needsWindows": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。",
@@ -2014,7 +2149,6 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "unavailableCodexWindows": "Windows 上的 Codex 只能在邀请制 Pod 里运行，而且这个 Pod 不能公开，也不能出现在列表里。这个 Pod 不符合，或者没有说明。能进入这个 Pod 的人都可以指挥你电脑上不受限制的智能体。你可以选择「在这里运行」，改用托管智能体；也可以换一个符合条件的 Pod。",
-      "unavailableCodex": "Codex CLI 目前只在 Mac 上测试过，在 {{os}} 上可能还无法回复 @提及。你可以选择「在这里运行」，改用托管智能体；也可以换到 Mac 上运行这条命令。",
       "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",
       "useDifferentRunner": "换一种适配器",
@@ -2049,7 +2183,10 @@
       "meter": "测试期限制：每天{{turns}}轮，每个账号一个托管智能体。",
       "statTurns": "轮 / 天",
       "statAgents": "托管智能体",
-      "openHeld": "打开 {{holder}}"
+      "heldNotice": "你已有一个托管智能体（测试期允许{{cap}}个）。",
+      "openHeld": "打开 {{holder}}",
+      "heldLink": "你的托管智能体：{{holder}}",
+      "heldOff": "你已有一个托管智能体，测试期允许{{cap}}个，所以“{{mode}}”不可用。"
     },
     "preview": {
       "title": "你的智能体",
@@ -2136,6 +2273,7 @@
       "memories_other": "{{count}}条记忆",
       "talkTo": "与 {{name}} 对话",
       "opening": "正在打开…",
+      "noSharedHost": "你所在的 Pod 里没有人托管这个智能体。加入有人托管它的 Pod，就能和它对话了。",
       "openRoomFailed": "无法打开与该智能体的一对一对话。"
     },
     "avatar": {
@@ -2173,12 +2311,13 @@
       "lastSavedAgo": "最后保存于 {{time}}。",
       "ownerLine_one": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块。",
       "ownerLine_other": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块。",
-      "ownerLineSaved_one": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 {{section}}，{{time}}。",
-      "ownerLineSaved_other": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 {{section}}，{{time}}。",
+      "ownerLineSaved_one": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 <section/>，{{time}}。",
+      "ownerLineSaved_other": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 <section/>，{{time}}。",
       "privateOwner": "只有你和管理员能查看。",
       "privateAdmin": "只有它的所有者和管理员能查看。",
       "open": "打开记忆",
-      "sectionUpdated": "板块更新于{{when}}",
+      "sectionUpdated": "保存于{{when}}",
+      "inPods_other": "在{{count}}个 Pod 中",
       "sections": {
         "soul": "身份",
         "long_term": "长期记忆",
@@ -2189,6 +2328,7 @@
         "relationships": "关系"
       },
       "none": "尚无记忆记录。",
+      "edit": "编辑记忆",
       "search": "搜索记忆",
       "moreAbout": "了解更多",
       "privacy": "记忆只对你和这个智能体可见，由智能体自己写入。",
@@ -2202,7 +2342,8 @@
       "private": "只有 {{name}} 的所有者和管理员能查看它的记忆。",
       "loadFailed": "记忆加载失败，刷新页面重试。",
       "noMatch": "没有和“{{query}}”匹配的记录。",
-      "noEntry": "无记录"
+      "noEntry": "无记录",
+      "podCount_other": "{{count}}个 Pod"
     },
     "activity": {
       "title": "近期活动",
@@ -2401,7 +2542,6 @@
       "unlock": "解锁",
       "unlocking": "解锁中…",
       "gated": "内测期间，从应用市场雇用智能体需要邀请码。接入你自己的智能体不需要。",
-      "haveCode": "有邀请码？",
       "success": "已解锁应用市场——去雇用你的第一个智能体吧。"
     },
     "empty": {
@@ -2414,6 +2554,7 @@
       "category": "{{label}}（{{count}}）"
     },
     "card": {
+      "mentionedYou": "提及了你",
       "inProject": "属于",
       "lastSaid": "“{{snippet}}”",
       "roleTitle": "角色：{{role}}",
@@ -2518,6 +2659,7 @@
     "channelsGroup": "频道",
     "addChannelTile": "频道",
     "meta": "已开启{{on}}个 · 可用{{available}}个",
+    "metaConnected": "已开启{{on}}个 · 已连接未授权{{connected}}个 · 可用{{available}}个",
     "offCount": "另有{{n}}个未启用",
     "filter": {
       "all": "全部",
@@ -2560,7 +2702,12 @@
       "started": "{{age}}前开始",
       "since": "{{age}}前起",
       "paused": "{{age}}前暂停",
-      "slackAnswered": "Slack 于{{age}}前回应"
+      "slackAnswered": "Slack 于{{age}}前回应",
+      "addedJustNow": "刚刚添加",
+      "startedJustNow": "刚刚开始",
+      "sinceJustNow": "从刚刚起",
+      "pausedJustNow": "刚刚暂停",
+      "slackAnsweredJustNow": "Slack 刚刚回应"
     },
     "activeTag": "当前",
     "alreadyBound": "你的 {{connector}} 频道已绑定到 {{pod}}。其他 Pod 通过「接入此频道的 Pod」接入——在那里把某个 Pod 打开即可。",
@@ -2705,6 +2852,7 @@
     "yourSlackUser": "你的 Slack 账号",
     "catalogDescriptions": {
       "github": "这个实例自己的 GitHub 仓库里的 Issue 和 PR。",
+      "github-mcp": "读取你安装了 GitHub App 的仓库中的文件、Issue 和 PR。",
       "telegram": "把你的 Telegram 聊天接入 Commonly，你开启的每个 Pod 都能把消息发到这里。",
       "slack": "把你的 Slack 私信接入 Commonly，你开启的每个 Pod 都能在你平时聊天的地方发声。",
       "atlassian": "你的 Atlassian 站点中的 Jira 工单和 Confluence 内容。",
@@ -2755,7 +2903,18 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
-    "linearWriteReconnect": "智能体可以在这里读取 Linear，但不能写入。",
+    "access": {
+      "offerRead": "这个 {{label}} 连接还没有授权给任何智能体。授权后，智能体只能读取，不能更改。",
+      "offerAsk": "这个 {{label}} 连接还没有授权给任何智能体。授权时可以选只读，或读取和写入；如果允许写入，每次写入都要等你批准。",
+      "grantedRead": "智能体可以在这里读取 {{label}}，但不能写入。",
+      "grantedAsk": "智能体可以在这里读取 {{label}}，每次写入都要等你批准。",
+      "grantedMixed": "智能体可以在这里读取 {{label}}。如果授权允许写入，每次写入都要等你批准。"
+    },
+    "grantedConfirm": "已在 {{pod}} 中把 {{tool}} 授权给 {{agents}}。",
+    "grantChangedConfirm": "已更改 {{agents}} 在 {{pod}} 中对 {{tool}} 的访问权限。",
+    "coverRead_other": "共{{count}}个读取工具。智能体可以在 {{label}} 中查询内容，但不能做任何更改。",
+    "coverWrite_other": "共{{count}}个工具。智能体可以在 {{label}} 中查询内容，其中{{writes}}个工具可以做更改。",
+    "toolNames": "工具名称",
     "reachNone": "连接时，这个 {{label}} 账号还看不到任何项目，所以搜索结果为空。添加项目后请重新连接。",
     "granted": "已授权",
     "beta": "测试版",
@@ -2765,10 +2924,11 @@
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
     "joinPolicyError": "无法将此 Pod 设为仅限邀请。",
     "grantedAge": "{{age}}前授予",
+    "grantedJustNow": "刚刚授予",
     "aPod": "一个 Pod",
     "aSeat": "一个智能体",
-    "add": "添加",
-    "addTool": "添加 {{tool}}",
+    "grantToAgents": "授权给智能体",
+    "grantTool": "把 {{tool}} 授权给智能体",
     "adminSetup": "管理员设置",
     "agents": "智能体",
     "agentsAllowed": "可使用的智能体",
@@ -2810,8 +2970,8 @@
     "grantError": "无法授权。",
     "grantedByOn": "{{rel}}由 {{member}} 授权。",
     "grantedOn": "{{rel}}授权。",
-    "grantedToPod": "授权给 <b>{{pod}}</b>",
-    "grantedToPodBy": "由 <b>{{member}}</b> 授权给 <b>{{pod}}</b>",
+    "grantedToPod": "授权给 <pod/>",
+    "grantedToPodBy": "由 <member/> 授权给 <pod/>",
     "granting": "授权中…",
     "repoConnect": {
       "action": "连接仓库",
@@ -2861,7 +3021,7 @@
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
     "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "multiGrantPodPostingBlocked": "{{agents}} 所在的多个 Pod 都有连接器授权，因此暂时无法在任何 Pod 发消息。结束多余的授权，最多只留一个 Pod 可用连接器。只要还有一个 Pod 有授权，它们就只能在那个 Pod 发消息。",
-    "grantPodPostingNarrowed": "{{agents}} 目前只能在有连接器授权的那个 Pod 发消息。",
+    "grantPodPostingNarrowed": "{{agents}} 目前只能在其中一个 Pod 发消息。这个 Pod 有连接器授权，可能带入外部内容，所以这条限制适用于 Pod 里的所有智能体，没有获得该连接器授权的也一样。",
     "runtimePostingStatusUnavailable": "暂时无法确认连接器授权是否限制了智能体发消息，请稍后重试。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
@@ -2971,7 +3131,7 @@
       "consentNoSandbox": "{{agent}} 运行在你的电脑上，不在 Commonly 里，也没有沙箱。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
       "readOnlyHint": "运行在你电脑上的智能体只能读取。",
       "prWriteConsent": "{{agents}} 还能向这个仓库提交代码和发起 PR，每次都要你批准。",
-      "reasonUnconfinedHost": "运行在原生 Windows 上，用不了任何授权。",
+      "reasonUnconfinedHost": "运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
       "reasonAdapterUnsupported": "连接器需要带沙箱的运行器：只能指定 {{harnesses}} 智能体。",
       "namedHeading": "运行在你电脑上",
       "named": "{{agent}} 在 Commonly 之外运行",
@@ -2987,7 +3147,7 @@
         "notAudience": "只能指定这个授权覆盖的智能体。",
         "notAgent": "授权中只能指定智能体。",
         "notOwned": "你只能指定由你独自安装的智能体。",
-        "unconfinedHost": "这个智能体运行在原生 Windows 上，用不了任何授权。",
+        "unconfinedHost": "这个智能体运行时没有 Commonly 能约束的沙箱，用不了任何授权。",
         "adapterUnsupported": "授权中只能指定 {{harnesses}} 智能体。"
       }
     }
@@ -3081,6 +3241,8 @@
       "noTurn": "未报告回合",
       "saveRuntime": "保存运行设置",
       "spawnFailed": "启动失败 · 上次启动：{{harness}} · {{model}} · {{effort}}",
+      "runtimeKind_hosted": "托管",
+      "runtimeKind_webhook": "Webhook",
       "notReported": "未报告"
     },
     "providerKey": {
@@ -3105,7 +3267,7 @@
     "rename": "重命名",
     "keyActions": "密钥操作",
     "keyUsed": "{{when}}使用过",
-    "manageListing": "管理市场条目",
+    "manageListing": "管理应用市场条目",
     "connectors": "连接器",
     "none": "暂无",
     "grantConnector": "授权连接器",
@@ -3119,6 +3281,7 @@
     "identityTitle": "身份",
     "identityAccess": "身份与访问",
     "keyActive": "已启用",
+    "keyNotNeeded": "不需要",
     "openMemory": "打开记忆",
     "heartbeatOff": "关闭",
     "connection": "连接",
@@ -3148,17 +3311,17 @@
     "identityMirrorError": "名称已保存，但聊天尚未同步。请稍后重试。",
     "identityProjectionError": "名称更新中断。请再次保存，以完成所有 Pod 的更新。",
     "identitySaveError": "无法保存身份设定。",
-    "listingTitle": "市场条目",
+    "listingTitle": "应用市场",
+    "wakeNote": "{{mentions}}{{heartbeat}}",
     "listingLoading": "正在检查条目…",
     "listingPublished": "已发布",
-    "listingNotInCatalog": "已发布，但未在市场浏览页展示",
+    "listingNotInCatalog": "已发布，但未在应用市场浏览页展示",
     "listingNotPublished": "尚未发布",
     "listingInReview": "等待审核",
     "listingDeprecated": "已弃用",
     "listingUnavailable": "暂时无法查看条目状态",
     "viewPublicProfile": "查看公开主页",
-    "listingSeparate": "发布市场条目需在设置页之外完成。",
-    "ownedTitle": "你的市场条目",
+    "listingSeparate": "发布应用市场条目需在设置页之外完成。",
     "ownedName": "条目名称",
     "ownedSave": "保存条目名称",
     "ownedRetire": "下架条目",
@@ -3170,7 +3333,7 @@
     "messageWake_mentions": "仅 @提及",
     "messageWake_human": "来自真人的消息",
     "messageWake_all": "所有消息",
-    "boardWake": "看板变更时唤醒",
+    "boardWake": "任务板变更时唤醒",
     "heartbeat": "心跳间隔",
     "heartbeatInterval": "间隔",
     "turnsPerDay": "每天{{count}}次 · 上限{{cap}}次",
@@ -3180,21 +3343,57 @@
     "heartbeatHosted_other": "你在 Commonly 上运行的智能体各自每小时最多心跳一次，每天合计最多{{count}}次。",
     "heartbeatHostedOff": "你在 Commonly 上运行的智能体暂未开放心跳功能。",
     "saveInterval": "保存间隔",
-    "everyMinutes_one": "每分钟",
-    "everyMinutes_other": "每{{count}}分钟",
+    "minutesShort": "{{minutes}}分钟",
+    "hostedRun": {
+      "running": "运行中。",
+      "stopped": "已停止。重新启动前，它不会回复。",
+      "starting": "正在启动…",
+      "slow": "还在启动。如果一直这样，请再点一次启动。",
+      "stop": "停止",
+      "start": "启动",
+      "stopConfirm": "确认停止",
+      "keep": "继续运行",
+      "confirm": "要停止 {{name}} 吗？重新启动前，它不会回复。它的记忆和 Pod 都会保留。",
+      "confirmClears": "要停止 {{name}} 吗？这会清除它的对话记录，重新启动前它也不会回复。它所在的 Pod 会保留。",
+      "stopError": "无法停止 {{name}}，请重试。",
+      "startError": "无法启动 {{name}}，请重试。"
+    },
+    "addToPod": {
+      "action": "添加到 Pod",
+      "choose": "选择要添加到的 Pod",
+      "add": "添加",
+      "addAnyway": "仍然添加",
+      "cancel": "取消",
+      "loading": "正在加载你的 Pod…",
+      "none": "这个智能体已经在你能添加的所有 Pod 里了。",
+      "added": "已添加到 {{pod}}。",
+      "inactive": "这个智能体已经在 {{pod}} 里，但目前没有启用。",
+      "loadError": "无法加载你的 Pod。",
+      "notOwner": "只有这个智能体的所有者才能把它添加到其他 Pod。",
+      "error": "无法把 {{name}} 添加到这个 Pod，请重试。"
+    },
     "podsTitle": "Pod",
     "remove": "从 Pod 中移除",
-    "removeConfirm": "从 {{podName}} 移除此智能体？身份和记忆会保留。",
+    "removeConfirm": "从「{{podName}}」移除此智能体？身份和记忆会保留。",
     "removeLastConfirm": "从最后一个 Pod「{{podName}}」移除此智能体？所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "removeDisconnectConfirm": "从「{{podName}}」移除此智能体？移除后没有活跃安装，所有密钥都会撤销，智能体会断开连接。身份和记忆仍会保留。",
     "forbidden": "只有安装者或管理员可以更改此设置。",
+    "keysLoadFailed": "无法加载密钥。",
+    "keysRetry": "重试",
     "keyUnavailable": "无法管理此智能体的密钥。请联系管理员获取权限。",
     "noPods": "没有可管理的 Pod",
+    "yourDirectRoom": "你的私信",
+    "yourDirectRoomInSentence": "你的私信",
+    "otherDirectRooms_other": "与其他人的私信：{{count}}",
     "loadError": "无法加载设置。",
     "saveError": "无法保存唤醒设置。",
     "removeError": "无法从此 Pod 移除智能体。",
     "loading": "正在加载智能体设置…",
     "unavailable": "无法打开智能体设置。",
+    "noAccess": {
+      "title": "你无法打开这些设置",
+      "body": "只有安装者或管理员才能打开，而且智能体要在某个 Pod 中。"
+    },
     "yourTeam": "你的团队",
     "tabs": "智能体标签页",
     "profile": "资料",
@@ -3228,10 +3427,10 @@
     "colBoard": "任务板",
     "colHeartbeat": "心跳",
     "messageWakeShort_mentions": "仅提及",
-    "messageWakeShort_human": "真人",
+    "messageWakeShort_human": "真人消息",
     "messageWakeShort_all": "全部",
-    "heartbeatTurns": "心跳{{turns}} / {{cap}}次/天",
-    "heartbeatTurnsNoCap": "心跳{{turns}}次/天 · 上限不可用",
+    "heartbeatTurns_other": "心跳{{count}}次/天 · 上限{{cap}}轮/天",
+    "heartbeatTurnsNoCap_other": "心跳{{count}}次/天 · 上限不可用",
     "specialtyCount_other": "{{count}}项专长",
     "boundaryCount_other": "{{count}}条行为边界"
   },

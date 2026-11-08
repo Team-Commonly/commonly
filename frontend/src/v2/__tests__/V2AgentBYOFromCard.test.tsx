@@ -7,7 +7,7 @@ jest.mock('../utils/byoTelemetry', () => ({ recordByoStep: jest.fn() }));
 // From a card (?from=card) the page is the act and where it lands. The key is
 // still minted by the click, never on load.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act as act_ } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act as act_ } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2AgentBYO from '../components/V2AgentBYO';
 import { AuthContext } from '../../context/AuthContext';
@@ -106,6 +106,27 @@ describe('BYO from an approved connect card', () => {
     expect(axios.post.mock.calls.some(([url]) => /pods\/bbb222\/agents\/sam-claude\/runtime-tokens/.test(url))).toBe(true);
   });
 
+  test('the click lands on the result heading, then brings Copy in if a short phone left it below', async () => {
+    const scrolled = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(options) { scrolled.push([this, options]); };
+    try {
+      renderAt(CARD);
+      const act = await screen.findByRole('button', { name: /get my connect command/i });
+      await waitFor(() => expect(act).toBeEnabled());
+      expect(scrolled).toEqual([]);
+      fireEvent.click(act);
+      const result = await screen.findByTestId('byo-issued-result');
+      const copyButton = within(screen.getByTestId('byo-listen')).getByRole('button', { name: /^copy$/i });
+      await waitFor(() => expect(scrolled).toEqual([
+        [result, { block: 'start' }],
+        [copyButton, { block: 'nearest' }],
+      ]));
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   test('a card for Codex opens on Codex: the title and the command say so', async () => {
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Connect your Codex');
@@ -187,9 +208,10 @@ describe('BYO from an approved connect card', () => {
   });
 });
 
-// #2289: the listener runs on a Mac or Windows with either tool, and on Linux
-// with Claude Code (F96, #3395). Codex on Linux is not tested yet. The compact page promises "One command in Terminal", so it opens
-// only where that command will be shown.
+// #2289: the listener runs on a Mac, Linux or Windows with either tool (Claude
+// Code on Linux since F96, #3395; Codex on Linux walked 11-05). The compact
+// page promises "One command in Terminal", so it opens only where that
+// command will be shown.
 describe('the compact page opens only where the command exists', () => {
   const realUserAgent = window.navigator.userAgent;
   const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
@@ -203,11 +225,10 @@ describe('the compact page opens only where the command exists', () => {
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
-  test('a Codex card opened on Linux gets the full page: Codex on Linux is not tested yet', async () => {
+  test('a Codex card opened on Linux is compact too: the command exists there now', async () => {
     setUserAgent(LINUX);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
-    expect(await screen.findByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
+    expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
   // D245: the PowerShell command exists on Windows, so the compact page opens there.

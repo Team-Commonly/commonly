@@ -74,7 +74,7 @@ const submitOAuth = (action: string, params: URLSearchParams, hasInvite: boolean
 };
 
 const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next, separator = 'before' }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Seed from cache so repeat visitors see the buttons instantly; the fetch
   // below reconciles. A *successful* empty response (self-hosted w/o OAuth)
   // correctly clears; only network failures fall back to the cached value.
@@ -111,6 +111,8 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next, separator
   const startParams = () => {
     const params = new URLSearchParams();
     if (next) params.set('next', next);
+    // A new account's Scout welcome is stored in this language (V2Register sends the same).
+    params.set('locale', i18n.language === 'zh-CN' ? 'zh-CN' : 'en');
     // A new account made through the provider keeps the first-touch ref too;
     // signing in to an existing account ignores it (oauthController).
     if (ref) params.set('ref', ref);

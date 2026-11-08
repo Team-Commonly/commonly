@@ -13,7 +13,7 @@
  *    P1/P2 contradiction)
  */
 
-const { deriveAgentState, AGENT_LISTENING_STALE_MS } = require('../../../services/agentStateService');
+const { deriveAgentState, offersConnect, AGENT_LISTENING_STALE_MS } = require('../../../services/agentStateService');
 
 const NOW = 1_700_000_000_000;
 
@@ -25,6 +25,25 @@ const byoInstall = (overrides = {}) => ({
   config: { runtime: { runtimeType: 'webhook', host: 'byo' } },
   runtimeTokens: [],
   ...overrides,
+});
+
+describe('offersConnect', () => {
+  it('offers Connect to a BYO agent', () => {
+    expect(offersConnect(byoInstall())).toBe(true);
+  });
+
+  it('holds it back from what Bring your own cannot connect', () => {
+    expect(offersConnect(byoInstall({ config: { runtime: { runtimeType: 'wrapper', host: 'byo' } } }))).toBe(false);
+    expect(offersConnect(byoInstall(), 'machine-1')).toBe(false);
+    expect(offersConnect(byoInstall({ instanceId: 'nova' }))).toBe(false);
+  });
+
+  it('holds it back from a push webhook and a native agent, which have nothing to connect', () => {
+    expect(offersConnect(byoInstall({
+      config: { runtime: { runtimeType: 'webhook', webhookUrl: 'https://example.test/hook' } },
+    }))).toBe(false);
+    expect(offersConnect(byoInstall({ config: { runtime: { runtimeType: 'native' } } }))).toBe(false);
+  });
 });
 
 describe('deriveAgentState', () => {

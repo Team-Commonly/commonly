@@ -122,6 +122,24 @@ const mentionEvents = () => AgentEventService.enqueue.mock.calls
   .filter((a) => a.type === 'chat.mention' || a.type === 'thread.mention');
 
 describe('a mention carries the thread root it was posted in (TASK-026)', () => {
+  // F245: models deprioritize structured fields, and the wrapper hands a seat
+  // only the content, so the root has to be in the content.
+  test('the thread is named inline in the content of a mention inside it', async () => {
+    await send({ id: 'm2', _id: 'm2', content: '@seat-a please look', thread_root_id: 101 });
+    const [event] = mentionEvents().filter((e) => e.agentName === 'seat-a');
+    expect(event.payload.threadRootId).toBe(101);
+    expect(event.payload.content).toContain('[This message is in thread 101, not the main channel.');
+    expect(event.payload.content).toContain('send threadRootId 101 with your post');
+    expect(event.payload.content).toContain('Do not count on a plain post to land there');
+    expect(event.payload.content.indexOf('in thread 101')).toBeLessThan(event.payload.content.indexOf('@seat-a please look'));
+  });
+
+  test('a top-level mention gets no thread line', async () => {
+    await send({ id: 'm3', _id: 'm3', content: '@seat-a please look' });
+    const [event] = mentionEvents().filter((e) => e.agentName === 'seat-a');
+    expect(event.payload.content).not.toContain('This message is in thread');
+  });
+
   test('a thread.mention to a hosted agent carries threadRootId', async () => {
     await send({
       id: 'm2', _id: 'm2', content: '@seat-a please look', source: 'thread', thread_root_id: 101, 

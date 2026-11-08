@@ -27,11 +27,13 @@ await jest.unstable_mockModule('os', () => {
 
 const {
   performAttach,
+  clearUnsandboxedMark,
   setWakeOnMessage,
   updateAgentConfiguration,
   saveAgentToken,
   loadAgentToken,
   buildDefaultEnvironment,
+  adoptEnvToken,
   bootstrapAgentRecordFromEnv,
   parseAllowGrants,
   checkRunAllowRequest,
@@ -234,6 +236,34 @@ describe('setWakeOnMessage', () => {
     await expect(setWakeOnMessage({ client, record: { agentName: 'x' }, enabled: true }))
       .rejects.toThrow(/podId/);
     expect(client.patch).not.toHaveBeenCalled();
+  });
+});
+
+describe('clearUnsandboxedMark', () => {
+  const record = {
+    agentName: 'juno', podId: 'pod-9', instanceId: 'work one', runtimeToken: 'cm_agent_j',
+  };
+
+  test('DELETEs the mark for this instance and reports what the machine still says', async () => {
+    const client = { del: jest.fn(async () => ({ cleared: true, machineUnconfined: true })) };
+    const result = await clearUnsandboxedMark({ client, record });
+    expect(client.del).toHaveBeenCalledWith(
+      '/api/registry/pods/pod-9/agents/juno/host-unconfined?instanceId=work%20one',
+    );
+    expect(result).toEqual({ agentName: 'juno', machineUnconfined: true });
+  });
+
+  test('a record with no instance clears the default one', async () => {
+    const client = { del: jest.fn(async () => ({ cleared: true, machineUnconfined: false })) };
+    const result = await clearUnsandboxedMark({ client, record: { agentName: 'juno', podId: 'pod-9' } });
+    expect(client.del.mock.calls[0][0]).toMatch(/\?instanceId=default$/);
+    expect(result.machineUnconfined).toBe(false);
+  });
+
+  test('refuses a token record without a pod', async () => {
+    const client = { del: jest.fn() };
+    await expect(clearUnsandboxedMark({ client, record: { agentName: 'x' } })).rejects.toThrow(/podId/);
+    expect(client.del).not.toHaveBeenCalled();
   });
 });
 
@@ -1007,6 +1037,110 @@ describe('saveAgentToken / loadAgentToken', () => {
 });
 
 // ── #913: bootstrap the token record from env vars on first `agent run` ─────
+describe('adoptEnvToken', () => {
+  const saved = {
+    agentName: 'smoke-agent',
+    instanceId: 'default',
+    podId: 'pod-main',
+    instanceUrl: 'https://saved.example',
+    runtimeToken: 'cm_agent_old',
+    adapter: 'claude',
+  };
+  const identity = {
+    agentName: 'smoke-agent',
+    instanceId: 'default',
+    installations: [{
+      podId: 'pod-main', instanceId: 'default', status: 'active', type: 'installation',
+    }],
+  };
+  const rejected = Object.assign(new Error('Token revoked'), { status: 401 });
+  const adopt = async (env, response = identity, savedResult = rejected) => {
+    const answer = (result) => {
+      if (result instanceof Error) throw result;
+      return result;
+    };
+    const clientFactory = jest.fn(({ token }) => ({
+      get: async () => answer(token === saved.runtimeToken ? savedResult : response),
+    }));
+    const lines = [];
+    const record = await adoptEnvToken({
+      record: saved, name: 'smoke-agent', env, clientFactory, log: (line) => lines.push(line),
+    });
+    return { record, lines, clientFactory };
+  };
+  const fresh = { COMMONLY_AGENT_TOKEN: 'cm_agent_new' };
+
+  test('with no env token, or the same one, nothing is asked and the record stands', async () => {
+    const none = await adopt({});
+    const same = await adopt({ COMMONLY_AGENT_TOKEN: ' cm_agent_old ' });
+    expect(none.record).toBe(saved);
+    expect(same.record).toBe(saved);
+    expect(none.clientFactory).not.toHaveBeenCalled();
+    expect(same.clientFactory).not.toHaveBeenCalled();
+  });
+
+  test('a fresh token for this agent replaces a rejected one, checked with that token', async () => {
+    const { record, clientFactory, lines } = await adopt(fresh);
+    expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://saved.example', token: 'cm_agent_new' });
+    expect(record).toEqual({ ...saved, runtimeToken: 'cm_agent_new' });
+    expect(lines.join()).toContain('the saved token was rejected');
+    expect(lines.join()).not.toContain('cm_agent_new');
+  });
+
+  test('a saved token that works stands, and the env token goes nowhere', async () => {
+    const { record, clientFactory, lines } = await adopt({
+      ...fresh, COMMONLY_API_URL: 'http://localhost:5000',
+    }, identity, identity);
+    expect(record).toBe(saved);
+    expect(lines.join()).toContain('still works');
+    expect(clientFactory).toHaveBeenCalledTimes(1);
+    expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://saved.example', token: 'cm_agent_old' });
+  });
+
+  test.each([
+    ['a network failure', new Error('socket hang up')],
+    ['a 403 from in front of the app', Object.assign(new Error('Forbidden'), { status: 403 })],
+  ])('a saved token that can\'t be checked stands: %s', async (_label, failure) => {
+    const { record, lines } = await adopt(fresh, identity, failure);
+    expect(record).toBe(saved);
+    expect(lines.join()).toContain('could not be checked');
+  });
+
+  test('the env URL travels with the env token', async () => {
+    const { record, clientFactory } = await adopt({ ...fresh, COMMONLY_API_URL: 'https://new.example' });
+    expect(clientFactory).toHaveBeenCalledWith({ instance: 'https://new.example', token: 'cm_agent_new' });
+    expect(record.instanceUrl).toBe('https://new.example');
+  });
+
+  test('a reinstall into another pod moves the record there', async () => {
+    const { record } = await adopt(fresh, {
+      ...identity,
+      installations: [
+        { podId: 'pod-dm', status: 'active', type: 'dm' },
+        { podId: 'pod-new', status: 'active', type: 'installation' },
+      ],
+    });
+    expect(record.podId).toBe('pod-new');
+  });
+
+  test.each([
+    ['a rejected token', new Error('401'), 'could not be checked'],
+    ['another agent\'s token', { ...identity, agentName: 'other-agent' }, 'belongs to another agent (other-agent'],
+    ['another instance\'s token', { ...identity, instanceId: 'evening' }, 'instance evening'],
+  ])('%s leaves the saved token in place and says so', async (_label, response, line) => {
+    const { record, lines } = await adopt(fresh, response);
+    expect(record).toBe(saved);
+    expect(lines.join()).toContain(line);
+    expect(lines.join()).toContain('uses the saved token');
+  });
+
+  test('a value that is no runtime token is never sent anywhere', async () => {
+    const { record, clientFactory } = await adopt({ COMMONLY_AGENT_TOKEN: 'cm_user_abc' });
+    expect(record).toBe(saved);
+    expect(clientFactory).not.toHaveBeenCalled();
+  });
+});
+
 describe('bootstrapAgentRecordFromEnv', () => {
   const identityResponse = {
     agentName: 'smoke-agent',
