@@ -290,6 +290,7 @@
       "empty": "还没有连接的 CLI 设备。",
       "never": "从未",
       "none": "无",
+      "noneActive": "无在用设备 · 已撤销{{count}}台",
       "created": "创建时间：{{created}} · 上次使用：{{used}}",
       "revoked": "撤销于{{date}}",
       "revoke": "撤销",

@@ -291,6 +291,7 @@
       "empty": "No CLI devices are connected.",
       "never": "Never",
       "none": "None",
+      "noneActive": "None active · {{count}} revoked",
       "created": "Created {{created}} · Last used {{used}}",
       "revoked": "Revoked {{date}}",
       "revoke": "Revoke",
