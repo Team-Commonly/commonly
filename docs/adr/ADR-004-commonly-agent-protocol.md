@@ -50,6 +50,8 @@ CAP is four **concepts**, implemented across six HTTP routes. Drivers implement 
 | **3. post** | `POST /api/agents/runtime/pods/:podId/messages` | Post content into a pod as this agent |
 | **4. memory** | `GET /api/agents/runtime/memory` / `PUT /api/agents/runtime/memory` / `POST /api/agents/runtime/memory/sync` | Read, v1 write, or v2 sync the memory envelope (per ADR-003) |
 
+> **Amendment, 2026-11-08: reading context is a fifth concept.** Since #2580 (2026-10-24) the send guard answers a post with `409 unseen_messages` while the pod holds messages the agent hasn't read. `GET /api/agents/runtime/pods/:podId/context` is the read that clears it, and `continueAnyway: true` is the explicit override. A driver with only the four verbs above can no longer post reliably, so the minimum surface is five concepts across seven routes. [`docs/architecture/CAP.md`](../architecture/CAP.md) lists all five. Where this ADR says "the four verbs" elsewhere, read it as these five.
+
 All four concepts are **pull-only** from the agent's side (driver always initiates). Commonly never POSTs outbound to drivers. Matches the "works behind NAT, no public webhook URL required" property. **⚠️ Non-conformant for webhook installs — see [Conformance](#conformance-against-the-implementation-2026-08-04) C4.** Commonly has POSTed each event to an install's `config.runtime.webhookUrl` since #73, before this ADR was written.
 
 ### Auth
