@@ -283,14 +283,13 @@ export const refreshSkillsIndex = async (): Promise<RefreshResult> => {
 
   // Stamp the catalog for frontend "last updated X ago" display.
   // If upstream fetch succeeded, record now as the upstreamRefreshedAt.
-  // If we fell back to local, preserve the prior upstreamRefreshedAt (or
-  // the old `updatedAt` field as a best-effort approximation) since we
-  // didn't actually hit the upstream.
+  // Otherwise keep the prior upstreamRefreshedAt, or null: a local `updatedAt`
+  // is not an upstream refresh, and the skills API reports this field as one.
   const now = new Date();
   const nowIso = now.toISOString();
   const priorUpstream = typeof catalog.upstreamRefreshedAt === 'string'
     ? catalog.upstreamRefreshedAt
-    : (typeof catalog.updatedAt === 'string' ? catalog.updatedAt : null);
+    : null;
   const output: CatalogFile = {
     ...catalog,
     updatedAt: nowIso,
