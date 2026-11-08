@@ -81,13 +81,17 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    - `native` is a cloud runtime at install, so the installer must be an
      admin or carry the `cloudAgents` entitlement
      (`cloud_agents_not_entitled` otherwise);
-   - a hosted install can't stand in for it, even on the native engine. A
-     hosted turn runs with the fixed tool list `hostedNativeRunConfig` builds
-     (`HOSTED_NATIVE_TOOLS`), never the install's own `config.tools`, so it is
-     never offered a computer tool;
+   - a hosted install can't stand in for it, on either engine. Neither reads
+     the install's own `config.tools`. A hosted turn on the native engine runs
+     the fixed list `hostedNativeRunConfig` builds (`HOSTED_NATIVE_TOOLS`), and
+     one on the Durable Object runs the worker's `buildCapTools`. Neither list
+     has a computer tool;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
-     included. A declared list is the whole tool surface of a native install,
-     so it also names `commonly_read_context` and `commonly_post_message`;
+     included. A declared list is the whole tool surface of a native install:
+     an install with no list gets every tool that isn't opt-in, and declaring
+     one drops the rest. So it also names every other tool the agent should
+     keep, such as `commonly_read_context` and `commonly_post_message`, and
+     the memory tools if it uses them;
    - no other installation lists them.
    - The agent uses the computer only on a turn whose message its owner
      wrote (`computer_requester_denied` otherwise), so a heartbeat or another
