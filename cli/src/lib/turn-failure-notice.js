@@ -42,9 +42,11 @@ const WONT_START_WORDINGS = [
 // The vendors' credit wordings open at the adapter's own label or the claude
 // adapter's stderr | stdout join, because any `: ` or status number can open a
 // log line. An unknown label stays silent. `upstream refused` is the line the run
-// loop builds for pi. The transports are how a CLI wraps a refusal it keeps whole.
+// loop builds for pi, and the pi adapter puts its label before it when a refused
+// turn exits 0 after an interim message (F320). The transports are how a CLI
+// wraps a refusal it keeps whole.
 const ADAPTER_LABEL = String.raw`(?:claude|codex|pi|opencode|goose|qwen|dsh|Hermes)(?: turn failed)?(?: exited(?: with code)? \d+)?(?: \(upstream \d{3}\))?`;
-const OWN_LEAD = String.raw`(?:^(?:${ADAPTER_LABEL}|upstream refused \d{3}): | \| )`;
+const OWN_LEAD = String.raw`(?:^(?:${ADAPTER_LABEL}(?:: upstream refused \d{3})?|upstream refused \d{3}): | \| )`;
 const TRANSPORT = String.raw`(?:unexpected status \d{3}[^:\n]*: |API Error: \d{3} |Error code: \d{3} - |Error running remote compact task: )*`;
 const OPENAI_CODE = '(?:insufficient_quota|credit_balance_exhausted)';
 const ownWording = (wording) => new RegExp(`${OWN_LEAD}${TRANSPORT}${wording}`);

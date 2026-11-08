@@ -23,6 +23,7 @@ await jest.unstable_mockModule('child_process', () => ({ spawnSync: spawnSyncMoc
 const mod = await import('../src/lib/adapters/pi.js');
 const pi = mod.default;
 const { classifySpawnFailure } = await import('../src/lib/spawn-retry.js');
+const { cantAnswerNotice } = await import('../src/lib/turn-failure-notice.js');
 const { extractReply, thinkingFor, resolveMcpServers, buildModelsJson, resolveProvider } = mod;
 
 const event = (obj) => `${JSON.stringify(obj)}\n`;
@@ -431,13 +432,47 @@ describe('spawn', () => {
       });
       await expect(pi.spawn('p', baseCtx({ _spawnImpl: impl }))).rejects.toMatchObject({ status: 429 });
     });
-    test('an interim message then a failure with no status still fails the turn', async () => {
+    test('an interim message then a failure with no status still fails the turn, naming pi\'s cause', async () => {
       const { impl } = makeSpawnImpl({
         stdout: interim + stopped('error', 'fetch failed') + ended, stderr: startupWarning, code: 0,
       });
       const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
-      expect(err.message).toMatch(/stopped before it finished/);
+      expect(err.message).toMatch(/^pi exited with code 0: fetch failed$/);
       expect(err.message).not.toMatch(/No project session/);
+    });
+    // F320: a stop pi gave a cause, with no status in it. pi 0.84.1 writes this
+    // errorMessage for an OpenAI-shaped finish_reason (openai-completions.js).
+    test('a content filter stop names its cause, so it is refused rather than retried', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', 'Provider finish_reason: content_filter') + ended, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.message).toMatch(/content_filter/);
+      expect(classifySpawnFailure(err)).toBe('content_refused');
+    });
+    test('the cause pi gave is scrubbed of the spawn key', async () => {
+      const key = 'sk-live-test-secret-value';
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', `connect failed for key ${key}`) + ended, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({
+        _spawnImpl: impl, env: { PATH: '/usr/bin', COMMONLY_LITELLM_KEY: key },
+      })).catch((e) => e);
+      expect(err.message).toMatch(/connect failed/);
+      expect(err.message).not.toContain(key);
+    });
+    // F320: the kept detail is the provider's prose, and a status it mentions
+    // isn't the one pi was refused with.
+    test('a refused turn\'s status is the refusal\'s, not one its detail names', async () => {
+      const finalError = '429: {"message":"proxy said status 503"}';
+      const refused = event({
+        type: 'auto_retry_end', success: false, attempt: 3, finalError,
+      });
+      const { impl } = makeSpawnImpl({
+        stdout: interim + stopped('error', finalError) + ended + refused, code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBe(429);
     });
     // In pi's own order: the failed attempt, a retry, then the answer.
     const failedAttempt = stopped('error', '429: {"message":"Budget has been exceeded"}')
@@ -449,6 +484,19 @@ describe('spawn', () => {
       });
       const result = await pi.spawn('p', baseCtx({ _spawnImpl: impl }));
       expect(result.text).toBe('done');
+    });
+    // F320: a later failure is not the refusal pi recovered from, so it can't
+    // read as a used-up allowance.
+    test('a failure after a recovered refusal is not read as that refusal', async () => {
+      const { impl } = makeSpawnImpl({
+        stdout: failedAttempt + interim + event({ type: 'auto_retry_end', success: true, attempt: 1 })
+          + stopped('error', 'fetch failed') + ended,
+        code: 0,
+      });
+      const err = await pi.spawn('p', baseCtx({ _spawnImpl: impl })).catch((e) => e);
+      expect(err.status).toBeUndefined();
+      expect(err.message).not.toMatch(/429|Budget/);
+      expect(cantAnswerNotice(err)).toBeNull();
     });
     test('a recovered refusal does not fail an answer cut off at the token cap', async () => {
       const cutOff = event({

@@ -93,6 +93,9 @@ describe('cantAnswerNotice', () => {
       ['Codex\'s rewording, after stderr', new Error('codex exited with code 1: a warning | Quota exceeded. Check your plan and billing details.')],
       ['the code after stderr', new Error('codex exited with code 1: a warning | insufficient_quota')],
       ['the code after a label', new Error('codex turn failed: insufficient_quota')],
+      // F320: pi's refused turn at exit 0, as the adapter writes it.
+      ['OpenAI\'s sentence, a refused pi turn that exited 0', adapterFailure('pi', `upstream refused 429: ${OPENAI_SENTENCE}`, { exitCode: 0 })],
+      ['Anthropic\'s sentence, a refused pi turn that exited 0', new Error(`pi exited with code 0: upstream refused 400: ${ANTHROPIC_SENTENCE}`)],
     ])('%s', (_name, error) => {
       expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.QUOTA);
       expect(cantAnswerNotice(error)?.text).toBe(OUT_OF_ALLOWANCE_NOTICE);
@@ -134,6 +137,7 @@ describe('cantAnswerNotice', () => {
       ['the Anthropic sentence, lower case', 'claude exited with code 1: your credit balance is too low to access the anthropic api'],
       ['the Claude Code words, lower case', 'claude exited with code 1: credit balance is too low'],
       ['a code in capitals', 'codex turn failed: INSUFFICIENT_QUOTA'],
+      ['a test name after a refused pi turn', 'pi exited with code 0: upstream refused 429: FAIL a.js: You exceeded your current quota, please check your plan and billing details.'],
     ])('%s posts nothing and keeps its backoff', (_name, message) => {
       expect(classifySpawnFailure(new Error(message))).toBe(SPAWN_FAILURE_CLASS.QUOTA);
       expect(cantAnswerNotice(new Error(message))).toBeNull();

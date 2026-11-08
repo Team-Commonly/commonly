@@ -145,6 +145,11 @@ export const keptRefusalDetail = (raw, { credentials = [] } = {}) => {
  * the ladder has finished — so it wins over the per-attempt `message_end`
  * events that precede it. A run that refused on its first attempt and never
  * retried still reports through `message_end`.
+ *
+ * A retry that answered ends the refusal. pi prints `auto_retry_end` with
+ * `success: true` once a retried call answers (agent-session.js, pi 0.84.1), so
+ * a refusal before it is one pi recovered from. Kept, it would name the cause
+ * of a later failure that has none of its own, such as `fetch failed` (F320).
  */
 export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
   let status = null;
@@ -156,6 +161,16 @@ export const readUpstreamRefusal = (stdout, { credentials = [] } = {}) => {
     try {
       event = JSON.parse(line);
     } catch {
+      continue;
+    }
+
+    // A compaction that continues the turn is pi recovering from an overflow,
+    // so a refusal before it is one pi recovered from too. The turn's own cause
+    // comes after (agent-session.js `compaction_end`, pi 0.84.1).
+    if ((event?.type === 'auto_retry_end' && event.success === true)
+      || (event?.type === 'compaction_end' && event.aborted === false && event.willRetry === true)) {
+      status = null;
+      raw = null;
       continue;
     }
 
