@@ -3386,7 +3386,7 @@
     "keyUnavailable": "Key management is unavailable for this agent. Ask an admin for access.",
     "noPods": "No pods to manage",
     "yourDirectMessage": "Your direct message",
-    "yourDirectMessageInSentence": "your direct message",
+    "yourDirectMessageInSentence": "your direct message pod",
     "otherDirectMessages_one": "Direct messages with others: {{count}}",
     "otherDirectMessages_other": "Direct messages with others: {{count}}",
     "loadError": "Could not load settings.",
