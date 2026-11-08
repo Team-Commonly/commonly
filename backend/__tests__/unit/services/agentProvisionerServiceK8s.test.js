@@ -1024,7 +1024,7 @@ describe('session sizes with no gateway', () => {
       Object.assign(new Error('forbidden'), { response: { statusCode: 403 } }),
     );
     try {
-      await expect(getAgentSessionSizes({ timeoutMs: 10, pollMs: 1 })).rejects.toThrow('forbidden');
+      await expect(getAgentSessionSizes()).rejects.toThrow('forbidden');
     } finally {
       k8s.__mock.readNamespacedDeployment.mockReset();
       k8s.__mock.readNamespacedDeployment.mockImplementation(async () => ({

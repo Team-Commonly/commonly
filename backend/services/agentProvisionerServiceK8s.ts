@@ -3259,7 +3259,8 @@ const getAgentRuntimeLogs = async (
 };
 
 /**
- * Returns session directory sizes in bytes for all agents on the gateway.
+ * Returns session directory sizes in bytes for all agents on the gateway, or
+ * none when the gateway Deployment doesn't exist.
  * @returns {Promise<Array<{accountId: string, bytes: number}>>}
  */
 const getAgentSessionSizes = async (options = {}) => {
