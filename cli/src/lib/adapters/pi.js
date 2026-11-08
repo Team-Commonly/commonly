@@ -533,12 +533,16 @@ export const buildArgs = ({
  * after an assistant message that stopped with `stop`. An overflow's `agent_end`
  * says `willRetry: false` and then pi compacts and continues, so `agent_end` after
  * an `error` or `length` stop doesn't count; the continuation's message decides.
+ * `lastError` is that last message's `errorMessage`, pi's cause for an `error`
+ * stop (`Provider finish_reason: content_filter`, `fetch failed`). It is raw
+ * provider text, so only adapterFailure's scrub may carry it anywhere.
  */
 export const extractReply = (stdout) => {
   let text = '';
   let sawAssistant = false;
   let finished = false;
   let lastStop = null;
+  let lastError;
   const errors = [];
   for (const line of String(stdout).split('\n')) {
     if (!line.trim()) continue;
@@ -548,12 +552,15 @@ export const extractReply = (stdout) => {
       const parts = (event.message.content || []).filter((c) => c?.type === 'text').map((c) => c.text || '');
       if (parts.length) { text = parts.join('\n').trim(); sawAssistant = true; }
       lastStop = event.message.stopReason;
+      lastError = typeof event.message.errorMessage === 'string' ? event.message.errorMessage : undefined;
       finished = false;
     }
     if (event?.type === 'agent_end') finished = event.willRetry !== true && lastStop === 'stop';
     if (event?.type === 'error') errors.push(String(event.message || event.error || 'error'));
   }
-  return { text, sawAssistant, finished, lastStop, errors };
+  return {
+    text, sawAssistant, finished, lastStop, lastError, errors,
+  };
 };
 
 // A turn that printed an interim message and then ended without finishing. A
@@ -562,6 +569,10 @@ export const extractReply = (stdout) => {
 // holds pi's startup warnings, and a refusal on the stream may be one pi was
 // recovering from, like an overflow's 400. A clean exit that ended on an error
 // has only the stream: its stderr is those warnings too, and the refusal stands.
+// A stop with no status still has the cause pi gave it, and without it a content
+// filter's stop classes as a runtime fault and is retried in seconds (F320).
+// The status is pi's on a clean exit, not one the kept detail mentions: that
+// detail is the provider's prose, and "proxy said status 503" on a 429 is 429.
 const stoppedTurnFailure = (reply, {
   code, signal, stderr, credentials,
 }) => {
@@ -574,10 +585,12 @@ const stoppedTurnFailure = (reply, {
       || (cleanExit ? describeUpstreamRefusal(upstream) : '')
       || (killed || cleanExit ? '' : stderr.trim().slice(-600))
       || upstream?.detail
+      || (killed || reply.lastStop !== 'error' ? '' : reply.lastError)
       || 'the turn stopped before it finished',
     { credentials, exitCode: code, limit: 600 },
   );
-  if (upstream) failure.status ??= upstream.status;
+  if (upstream && cleanExit) failure.status = upstream.status;
+  else if (upstream) failure.status ??= upstream.status;
   return failure;
 };
 

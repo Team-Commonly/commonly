@@ -23,6 +23,18 @@ describe('classifying a content refusal', () => {
     expect(classifySpawnFailure({ message: 'turn failed', body: { error: 'content_policy_violation' } })).toBe('content_refused');
   });
 
+  // F320: pi writes these for a provider's content stop (pi-ai 0.84.1).
+  it.each([
+    'pi exited with code 0: Provider finish_reason: content_filter',
+    'pi exited with code 0: Provider stopped with: sensitive',
+  ])('reads pi\'s own content stop, %s, as content_refused', (message) => {
+    expect(classifySpawnFailure(new Error(message))).toBe('content_refused');
+  });
+
+  it('leaves a bare mention of a content filter in the runtime class', () => {
+    expect(classifySpawnFailure(new Error('pi exited with code 1: content_filter config not found'))).toBe('runtime');
+  });
+
   it('leaves an ordinary failure that mentions a flag in the runtime class', () => {
     expect(classifySpawnFailure(new Error('feature flag lookup failed'))).toBe('runtime');
     expect(classifySpawnFailure(new Error('flagged as stale, retrying'))).toBe('runtime');

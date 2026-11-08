@@ -74,7 +74,9 @@ export const SPAWN_RETRY_JITTER_MAX_RATIO = 0.2;
 // backoff 5 times in 52 minutes, every one refused, and the seat handled
 // nothing else until the kernel retired the event. Only the refusal wordings
 // themselves are matched, so an ordinary failure that mentions a flag is not.
-const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this content was flagged|content[_ ]policy[_ ]violation|cyber[_ ]policy)/i;
+// pi writes its own line for a provider's content stop, and those are matched as
+// pi writes them (pi-ai 0.84.1: openai-completions.js, anthropic-messages.js).
+const CONTENT_REFUSED_RE = /(?:flagged for possible cybersecurity risk|this content was flagged|content[_ ]policy[_ ]violation|cyber[_ ]policy|Provider finish_reason: content_filter|Provider stopped with: sensitive)/i;
 // The third miss is why there is now a PHRASE as well as a word list, and it is
 // a different failure from the first two. Measured across the fleet's logs on
 // 2026-08-25: 283 failures reading "You've hit your weekly limit", 55 reading

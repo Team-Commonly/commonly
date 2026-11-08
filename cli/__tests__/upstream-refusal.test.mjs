@@ -138,6 +138,27 @@ describe('readUpstreamRefusal', () => {
   test('a successful auto retry is not a refusal', () => {
     expect(readUpstreamRefusal(asLines('{"type":"auto_retry_end","success":true,"attempt":1}'))).toBeNull();
   });
+
+  // F320: pi 0.84.1 prints `auto_retry_end` with `success: true` once a retried
+  // call answers (agent-session.js). A refusal before it was recovered from.
+  test('a refusal pi then recovered from is not kept', () => {
+    const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
+    const fetchFailed = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"fetch failed"}}';
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered))).toBeNull();
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered, fetchFailed))).toBeNull();
+  });
+
+  test('a refusal after a recovery is read', () => {
+    const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
+    expect(readUpstreamRefusal(asLines(messageEndError, recovered, budget429))).toEqual({
+      status: 429,
+      detail: 'Budget has been exceeded! Current cost: 12.34, Max budget: 10.00',
+    });
+    expect(readUpstreamRefusal(asLines(budget429, recovered, messageEndError))).toEqual({
+      status: 503,
+      detail: 'upstream connect error',
+    });
+  });
 });
 
 describe('redactKnownCredentials and spawnCredentials', () => {
