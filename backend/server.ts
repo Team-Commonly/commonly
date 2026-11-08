@@ -720,6 +720,14 @@ io.on('connection', (socket: any) => {
           }
         }
 
+        // F307: the person writing in a direct message they closed brings it
+        // back, the same as the REST write through deliverMessageToAgents.
+        if (podInstance.type === 'agent-room') {
+          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+          const { reopenIfClosed } = require('./services/agentRoomCloseService');
+          await reopenIfClosed(podInstance._id);
+        }
+
         // Broadcast message to all users in the pod room
         // Format the message to ensure all fields are present regardless of the source
         const formattedMessage = {

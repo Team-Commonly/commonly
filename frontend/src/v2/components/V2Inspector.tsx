@@ -10,6 +10,8 @@ import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
 import { compactAge, compactNow } from '../utils/compactTime';
 import V2Segmented from './V2Segmented';
+import { useCloseAgentRoom } from '../agentRoomClose';
+import './V2CloseDm.css';
 import { ShellGlyph, ShellGlyphName } from '../icons/glyphs';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { buildAgentUsername, rawAgentName } from '../utils/threadAgentIdentity';
@@ -175,6 +177,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [policyBusy, setPolicyBusy] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
+  const closeDm = useCloseAgentRoom(onPodChanged);
   // D215 (TASK-734): the panel head switches between the pod and its threads.
   const [view, setView] = useState<InspectorView>('pod');
   useEffect(() => { setView('pod'); }, [pod?._id]);
@@ -273,6 +276,19 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     : t('inspector.workspace.nothingOpen');
 
   const needsYouTotal = attentionCount ?? attention.length;
+
+  // F307: only the room's person may close it; the agent member never sees this.
+  const roomMembers = (detail.members || []) as Array<{ _id?: string; isBot?: boolean; username?: string }>;
+  const viewerIsRoomHuman = Boolean(currentUserId) && roomMembers.some(
+    (m) => m && String(m._id) === String(currentUserId) && !m.isBot,
+  );
+  // The pod's name is the agent's display label (resolveAgentDisplayLabel);
+  // the raw username is the last resort, never the first.
+  const roomAgentName = (detail.agents?.[0] as { displayName?: string } | undefined)?.displayName
+    || pod?.name || roomMembers.find((m) => m?.isBot)?.username || '';
+  // When the agent is gone the thread's notice carries the close, and this
+  // card's "or {{name}} writing to you" would promise a reply that can't come.
+  const showInspectorClose = viewerIsRoomHuman && !(pod as { agentGone?: boolean } | null)?.agentGone;
 
   const renderGroup = (
     group: InspectorGroup,
@@ -488,6 +504,24 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             )}
           </div>
         ))}
+
+        {/* F307: a quiet last card in the person's own direct message. No confirm:
+            writing again, Talk to or Undo opens it again. */}
+        {pod.type === 'agent-room' && showInspectorClose && (
+          <section className="v2-workspace-inspector__card v2-close-dm-group" data-testid="inspector-close-dm" aria-labelledby="workspace-inspector-close">
+            <h2 className="v2-workspace-inspector__label" id="workspace-inspector-close">{t('podChat.closeDm.title')}</h2>
+            <p>{t('podChat.closeDm.hint', { name: roomAgentName })}</p>
+            {closeDm.failed && <p role="alert">{t('podChat.closeDm.failed')}</p>}
+            <button
+              type="button"
+              className="v2-close-dm-link"
+              disabled={closeDm.busy}
+              onClick={() => { void closeDm.close({ id: pod._id, name: roomAgentName }); }}
+            >
+              {t('podChat.closeDm.close')}
+            </button>
+          </section>
+        )}
 
         {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, !isOwner ? (
           // Members see the policy; only the owner can change it.

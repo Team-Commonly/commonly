@@ -2,6 +2,7 @@ import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { IDENTITY_COLLATION, installationIdentityFilter } from './agentInstallationIdentity';
 import { JOINABLE_ROW_AGE_MS, RUNNING_TURN_WINDOW_MS, asksThisAgent } from './mentionCoalesce';
+import { reopenIfClosed } from './agentRoomCloseService';
 
 // eslint-disable-next-line global-require
 const socketConfig = require('../config/socket');
@@ -2131,6 +2132,9 @@ class AgentMessageService {
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId,
           );
+        // F307: the agent writing reopens a direct message its person closed.
+        // A kernel line (a failure notice) is not the agent writing.
+        if (authorKind !== 'kernel') await reopenIfClosed(podId);
 
         // The raw INSERT row carries no reply JOIN, so a replying agent's
         // broadcast would lack the quoted context until reload (#646).
@@ -2202,6 +2206,8 @@ class AgentMessageService {
       });
 
       await mongoMessage.save();
+      // F307: the same reopen as the PostgreSQL path above.
+      if (authorKind !== 'kernel') await reopenIfClosed(podId);
       await mongoMessage.populate('userId', 'username profilePicture isBot');
       const serializedMongoMessage = typeof mongoMessage.toObject === 'function'
         ? mongoMessage.toObject()

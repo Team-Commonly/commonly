@@ -64,6 +64,14 @@ describe('ActivityService recap and legacy approval authorization', () => {
     expect(Pod.find.mock.calls[0][0]).toEqual({ members: ownerId });
   });
 
+  test('leaves a closed direct message out of the recap pod list (F307)', async () => {
+    const closedRoom = { _id: 'room-closed', name: 'otter', type: 'agent-room', closedAt: new Date(), members: [ownerId] };
+    const openRoom = { _id: 'room-open', name: 'planner', type: 'agent-room', members: [ownerId] };
+    Pod.find.mockReturnValue(podQuery([pod, closedRoom, openRoom]));
+    const recap = await ActivityService.getRecap(ownerId, { window: 'today' });
+    expect(recap.pods.map((p) => p.id)).toEqual(['pod-1', 'room-open']);
+  });
+
   test('rejects a requested pod that is outside the viewer membership', async () => {
     await expect(ActivityService.getRecap(ownerId, { podId: 'not-a-member-pod' }))
       .rejects.toThrow('Access denied');

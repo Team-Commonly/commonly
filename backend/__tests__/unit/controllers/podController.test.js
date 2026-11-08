@@ -33,6 +33,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
     // deletePodCascade reads the pod's agents before deleting them.
     find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })),
     updateMany: jest.fn(),
+    aggregate: jest.fn(async () => []),
   },
 }));
 jest.mock('../../../models/AgentProfile', () => ({
@@ -752,7 +753,8 @@ describe('podController', () => {
     const req = { params: { id: 'agent-room-1' }, userId: 'me', user: {} };
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     await podController.getPodById(req, res);
-    expect(res.json).toHaveBeenCalledWith(pod);
+    // F307: an agent-room read also says whether its agent is gone.
+    expect(res.json).toHaveBeenCalledWith({ ...pod, agentGone: false });
   });
 
   // ── Gap 2 (PR #381): agent-dm §3.7 fan-out carve-out for direct ID lookup ─

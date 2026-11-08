@@ -1,4 +1,5 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
+import { closeAgentRoom, reopenAgentRoom } from '../services/agentRoomCloseService';
 import path from 'path';
 import fs from 'fs';
 import { createHash } from 'crypto';
@@ -443,6 +444,30 @@ router.post('/:id/join', rateLimit({
   handler: (_req: any, res: any) => res.status(429).json({ msg: 'rate limit exceeded: 20 pod joins per 60s' }),
 }), auth, joinPod);
 router.post('/:id/leave', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, leavePod);
+// F307: the human member of an agent-room closes or reopens it. See services/agentRoomCloseService.ts.
+const closeStatus = { pod_not_found: 404, not_room_member: 403, not_agent_room: 400 } as const;
+router.post('/:id/close', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.userId || req.user?.id || '');
+    const { closedAt, refusal } = await closeAgentRoom(String(req.params?.id), userId);
+    if (refusal) return res.status(closeStatus[refusal]).json({ error: refusal });
+    return res.json({ id: String(req.params?.id), closedAt });
+  } catch (err) {
+    console.error('[pods] close error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
+router.post('/:id/reopen', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, requireObjectIdParam('id', INVALID_POD_ID), async (req: AuthReq, res: Res) => {
+  try {
+    const userId = String(req.userId || req.user?.id || '');
+    const { refusal } = await reopenAgentRoom(String(req.params?.id), userId);
+    if (refusal) return res.status(closeStatus[refusal]).json({ error: refusal });
+    return res.json({ id: String(req.params?.id), closedAt: null });
+  } catch (err) {
+    console.error('[pods] reopen error:', (err as Error).message);
+    return res.status(500).json({ error: 'Server Error' });
+  }
+});
 router.delete('/:id/members/:memberId', podLifecycleIngressRateLimit, podLifecycleRateLimit, auth, removeMember);
 
 // Pod admin actions hit Mongo on every call but don't need much volume.

@@ -77,6 +77,7 @@ interface PodDoc {
   _id: unknown;
   name: string;
   type?: string;
+  closedAt?: Date | null;
   createdBy?: unknown;
   members?: unknown[];
   agentEnsemble?: unknown;
@@ -133,7 +134,7 @@ class ActivityService {
     // of 424, 2026-09-27), so it selected nothing while teaching that a member
     // is an object carrying a `userId` — the belief behind the `getPodFeed`
     // defect TASK-166 fixed. Deleted rather than kept as a fallback.
-    const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type').lean();
+    const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type closedAt').lean();
 
     const requestedPodId = typeof options.podId === 'string' ? options.podId : '';
     const scopedPods = requestedPodId
@@ -291,7 +292,9 @@ class ActivityService {
       since: since.toISOString(),
       generatedAt: new Date().toISOString(),
       scope: requestedPodId || 'all',
-      pods: pods.map((pod) => ({ id: String(pod._id), name: pod.name })),
+      // F307: a closed direct message stays out of the recap's pod list.
+      pods: pods.filter((pod) => pod.type !== 'agent-room' || !pod.closedAt)
+        .map((pod) => ({ id: String(pod._id), name: pod.name })),
       hasEverHadAttention,
       needsYou,
       agents: agentRecaps,

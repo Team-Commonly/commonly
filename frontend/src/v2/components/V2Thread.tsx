@@ -20,6 +20,8 @@ import {
   UseV2PodDetailResult,
   V2Start,
 } from '../hooks/useV2PodDetail';
+import { useCloseAgentRoom } from '../agentRoomClose';
+import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
@@ -239,7 +241,7 @@ interface V2ThreadProps {
   onDecisionSettled?: () => void;
 }
 
-const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onBack, onDecisionSettled }) => {
+const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible = false, inspectorCollapsed, onToggleInspector, onOpenMember, onOpenInvite, onOpenFile, onBack, onDecisionSettled }) => {
   const { t, i18n } = useTranslation();
   const {
     pod, members, messages, agents, sendMessage, loading, error, sendError,
@@ -252,6 +254,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const api = useV2Api();
   const navigate = useNavigate();
   const location = useLocation();
+  const refreshPodList = useCallback(() => podsState?.refresh({ silent: true }), [podsState]);
+  const closeDm = useCloseAgentRoom(refreshPodList);
   const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
@@ -1652,6 +1656,12 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       count: awayNames.length - 2,
       formattedCount: new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language || 'en').format(awayNames.length - 2),
     });
+  // F307: the room's agent is gone (the server read every install row as
+  // uninstalled), so nothing will answer. Offer the close, to its person only.
+  const viewerIsRoomHuman = isAgentRoom && isPodMember
+    && !(members || []).some((m) => m?.isBot && String(m._id) === String(currentUserId));
+  const showAgentGoneNotice = Boolean(viewerIsRoomHuman && pod.agentGone);
+  const goneAgentName = directAgent?.displayName || pod.name || botMembers[0]?.username || t('common.agent');
   const showAwaitingAgentReply = Boolean(
     isAgentRoom && awaitingAgentReply && awaitingAgentReply.podId === pod._id,
   );
@@ -2306,6 +2316,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               </div>
             ) : (
             <>
+              {showAgentGoneNotice && (
+                <div className="v2-close-dm" data-testid="agent-room-gone" role="status">
+                  <p>{t('podChat.closeDm.notice', { name: goneAgentName })}</p>
+                  {closeDm.failed && <p role="alert">{t('podChat.closeDm.failed')}</p>}
+                  <div className="v2-close-dm__actions">
+                    <button
+                      type="button"
+                      className="v2-close-dm__close"
+                      disabled={closeDm.busy}
+                      onClick={() => { void closeDm.close({ id: pod._id, name: goneAgentName }); }}
+                    >
+                      {t('podChat.closeDm.close')}
+                    </button>
+                  </div>
+                </div>
+              )}
               {showDirectAgentLiveness && directAgent && (
                 <div className="v2-chat__agent-room-status" data-testid="agent-room-liveness" role="status">
                   <span className="v2-chat__agent-room-status-icon" aria-hidden="true">

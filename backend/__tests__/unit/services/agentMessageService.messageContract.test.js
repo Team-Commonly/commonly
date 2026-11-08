@@ -16,6 +16,7 @@ const threadRootResolver = require('../../../services/threadRootResolver');
 const mockDispatch = jest.fn();
 
 jest.mock('../../../models/Message');
+jest.mock('../../../services/agentRoomCloseService', () => ({ reopenIfClosed: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../../models/Summary', () => ({
   findOne: jest.fn().mockResolvedValue(null),
   create: jest.fn(),
@@ -163,6 +164,15 @@ describe('message contract on an agent post (D245)', () => {
     expect(result.warnings).toBeUndefined();
     const msg = emitted.find((e) => e.event === 'newMessage');
     expect(msg.payload).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+  });
+
+  it('an agent post reopens a direct message its person closed; a kernel line does not (F307)', async () => {
+    const { reopenIfClosed } = require('../../../services/agentRoomCloseService');
+    await post({});
+    expect(reopenIfClosed).toHaveBeenCalledWith(POD);
+    reopenIfClosed.mockClear();
+    await post({ authorKind: 'kernel' });
+    expect(reopenIfClosed).not.toHaveBeenCalled();
   });
 
   it('posts anyway and returns warnings when the contract is wrong', async () => {

@@ -2,6 +2,7 @@ import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import V2ClosedDmStatus from './V2ClosedDmStatus';
 import { useLocation, useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2Segmented from './V2Segmented';
@@ -610,6 +611,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
               />
             </div>
           )}
+          <V2ClosedDmStatus selectedPodId={selectedPodId} clearOnLeave={variant === 'page'} onListChanged={() => refreshPods({ silent: true })} />
           {loading && <div className="v2-pods__empty"><span className="v2-spinner" /></div>}
           {!loading && error && <div className="v2-pods__empty">{error}</div>}
           {!loading && !error && (
