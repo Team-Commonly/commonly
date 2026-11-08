@@ -57,8 +57,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
       *) echo "Unsupported architecture for OfficeCLI: $ARCH" >&2; exit 1 ;; \
     esac && \
     REL="https://github.com/iOfficeAI/OfficeCLI/releases/download/v${OPENCLAW_OFFICECLI_VERSION}" && \
-    curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 120 "${REL}/${ASSET}" -o /usr/local/bin/officecli && \
-    curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --max-time 120 "${REL}/SHA256SUMS" -o /tmp/officecli-SHA256SUMS && \
+    curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --speed-limit 1024 --speed-time 30 "${REL}/${ASSET}" -o /usr/local/bin/officecli && \
+    curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --speed-limit 1024 --speed-time 30 "${REL}/SHA256SUMS" -o /tmp/officecli-SHA256SUMS && \
     ( cd /usr/local/bin && \
       EXPECTED="$(awk -v a="${ASSET}" '$2==a {print $1}' /tmp/officecli-SHA256SUMS)" && \
       if [ -z "$EXPECTED" ]; then echo "OfficeCLI SHA256 not found for ${ASSET}" >&2; exit 1; fi && \
