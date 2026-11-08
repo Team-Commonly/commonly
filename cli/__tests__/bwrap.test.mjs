@@ -98,6 +98,7 @@ describe('detectBwrap namespace probe', () => {
       expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID=debian\nID_LIKE=ubuntu\nVERSION_ID="12"\n' }))).toBeNull();
       expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID="ubuntu\nVERSION_ID="24.04"\n' }))).toBeNull();
       expect(readUbuntuRelease(fs({}))).toBeNull();
+      expect(readUbuntuRelease(fs({ '/etc/os-release': 'ID=ubuntu\nVERSION_ID=22.04\nVERSION_ID="24.04"\n' }))).toBe('24.04');
       expect(readUbuntuRelease(fs({ '/usr/lib/os-release': 'ID=ubuntu\nVERSION_ID="24.04"\n' }))).toBe('24.04');
       expect(readUbuntuRelease(fs({
         '/etc/os-release': 'ID=debian\nVERSION_ID="12"\n',

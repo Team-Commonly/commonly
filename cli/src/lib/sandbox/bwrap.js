@@ -92,7 +92,9 @@ export const readUbuntuRelease = ({ read = readFileSync } = {}) => {
   try {
     const release = readOsRelease(read);
     if (!/^ID=(["']?)ubuntu\1$/m.test(release)) return null;
-    return /^VERSION_ID=(["']?)([\d.]+)\1$/m.exec(release)?.[2] ?? null;
+    // The last assignment wins, as it does when a shell sources the file.
+    const versions = [...release.matchAll(/^VERSION_ID=(["']?)([\d.]+)\1$/gm)];
+    return versions.at(-1)?.[2] ?? null;
   } catch {
     return null;
   }

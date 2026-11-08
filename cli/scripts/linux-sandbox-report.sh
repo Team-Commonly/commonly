@@ -46,10 +46,11 @@ refusals() {
 fail() { echo "::error::$1"; exit 1; }
 
 profiles() {
-  local profiled enforced
+  local profiled enforced entries
   profiled=$(sudo aa-status --profiled) && enforced=$(sudo aa-status --enforced) \
     || fail "aa-status could not read the profiles ($1)"
-  echo "$1: $profiled profiles, $enforced enforced, $(ls /etc/apparmor.d | wc -l) entries in /etc/apparmor.d"
+  entries=$(ls /etc/apparmor.d) || fail "could not list /etc/apparmor.d ($1)"
+  echo "$1: $profiled profiles, $enforced enforced, $(echo "$entries" | wc -l) entries in /etc/apparmor.d"
 }
 
 sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap || fail "installing bubblewrap failed"
