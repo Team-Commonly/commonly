@@ -394,6 +394,31 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('@team-member')).toBeInTheDocument();
   });
 
+  // The username lands first and updates the signed-in user, as AuthContext
+  // does. That must not reset the name typed in the same save.
+  test('a failed name save after a new username keeps the typed name', async () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    auth.updateProfile.mockRejectedValueOnce({ response: { data: { error: 'Name could not be saved.' } } });
+    const Live = () => {
+      const [user, setUser] = React.useState(auth.currentUser);
+      const updateUsername = async (next: string) => { const updated = { ...user, username: next }; setUser(updated); return updated; };
+      return (
+        <AuthContext.Provider value={{ ...auth, currentUser: user, user, updateUsername }}>
+          <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
+        </AuthContext.Provider>
+      );
+    };
+    render(<Live />);
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Lily Shen' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Name could not be saved.');
+    expect(screen.getByText('@team-member')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('Lily Shen');
+  });
+
   test('a refused username stops the save before the name is written', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     auth.updateUsername.mockRejectedValueOnce({ response: { data: { error: 'Username is already taken.' } } });

@@ -116,12 +116,17 @@ const V2AccountSection: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadPhotoButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  // Each field follows its own saved value. One Save writes the username
+  // before the name, and the saved name falls back to the username, so a new
+  // username would otherwise wipe a name typed in the same save. A name the
+  // person has edited and not yet saved stays as typed.
+  const nameEdited = useRef(false);
+  useEffect(() => { if (!nameEdited.current) setName(savedName); }, [savedName]);
   useEffect(() => {
-    setName(savedName);
     setUsername(accountUsername);
     setSavedUsername(accountUsername);
-    setEmail(accountEmail);
-  }, [accountEmail, savedName, accountUsername]);
+  }, [accountUsername]);
+  useEffect(() => { setEmail(accountEmail); }, [accountEmail]);
 
   // One Save for the form. The username goes first because it can be refused
   // (taken, or the wrong shape); a refusal stops before the name is written,
@@ -172,6 +177,7 @@ const V2AccountSection: React.FC = () => {
           return;
         }
       }
+      nameEdited.current = false;
       setNotice(nameChanged ? 'settings.account.saved' : 'settings.username.saved');
     } finally {
       setBusy(false);
@@ -335,7 +341,7 @@ const V2AccountSection: React.FC = () => {
       <div className="v2-settings__account-fields">
         <label>
           <span>{t('settings.account.name')}</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
+          <input value={name} onChange={(event) => { nameEdited.current = true; setName(event.target.value); }} required maxLength={80} />
         </label>
         <label>
           <span>{t('settings.account.username')}</span>
