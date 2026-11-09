@@ -217,8 +217,8 @@ test('a replacement worker waits for a draining one before it runs a lane', asyn
   await stop(next);
 });
 
-// A short lease: turns may start in the first 150 ms after each write.
-const short = { runnerLeaseMs: 400, runnerTurnBoundMs: 250 };
+// A short lease: turns may start in the first 100 ms after each write.
+const short = { runnerLeaseMs: 400, runnerTurnBoundMs: 250, runnerSkewMs: 50 };
 
 test('a runner that died holding the lease is replaced once it expires', async () => {
   const dead = runner('dead', short); dead.startInProcessQueue();
@@ -279,7 +279,9 @@ test('after a timed-out drain the next runner waits for the lease to run out', a
   await waitFor(() => runAgent.mock.calls.length === 1);
   await slow.drainInProcess(20);
   const { expiresAt } = await SchedulerHeartbeatLease.findById('native-turn-runner').lean();
-  turns[0].resolve(); // within its bound, as every turn is
+  // Within its bound, as every turn is, but it left no succeeded run: the pod
+  // was killed before it answered. So the next holder answers it.
+  turns[0].resolve();
   const next = runner('next', short); next.startInProcessQueue();
   await waitFor(() => runAgent.mock.calls.length === 2, { timeout: 3000 });
   expect(startedAt[1]).toBeGreaterThanOrEqual(expiresAt.getTime());
@@ -288,6 +290,47 @@ test('after a timed-out drain the next runner waits for the lease to run out', a
   await waitFor(() => next.inProcessWork.size === 0);
   expect(maxActive).toBe(1);
   await stop(next);
+});
+
+test('a requeued turn that already answered is acked, not answered again', async () => {
+  const AgentRun = require('../../models/AgentRun');
+  const slow = runner('slow', short); slow.startInProcessQueue();
+  await waitFor(() => holds(slow));
+  const event = await slow.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  await slow.drainInProcess(20);
+  // It answered after its drain gave up on it.
+  await AgentRun.create({
+    podId, agentName: 'clerk', instanceId: 'default', trigger: 'mention', triggerEventId: event._id, status: 'succeeded',
+  });
+  turns[0].resolve();
+  const next = runner('next', short); next.startInProcessQueue();
+  await waitFor(async () => (await AgentEvent.findById(event._id)).status === 'acked', { timeout: 3000 });
+  expect(runAgent).toHaveBeenCalledTimes(1);
+  await stop(next);
+});
+
+test('a turn that waited out its lane past the lease goes back to the queue', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const holder = runner('holder', short); holder.startInProcessQueue();
+  await waitFor(() => holds(holder));
+  const first = await holder.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  const second = await holder.enqueue(input); // waits behind the first in its lane
+  const write = jest.spyOn(SchedulerHeartbeatLease, 'findOneAndUpdate').mockRejectedValue(new Error('no primary'));
+  await waitFor(() => !holds(holder));
+  turns[0].resolve();
+  await waitFor(async () => (await AgentEvent.findById(second._id)).status === 'pending');
+  await settle();
+  expect(runAgent).toHaveBeenCalledTimes(1);
+  expect((await AgentEvent.findById(second._id).lean()).inProcessQueued).toBe(true);
+  write.mockRestore();
+  await waitFor(() => runAgent.mock.calls.length === 2);
+  turns[1].resolve();
+  await waitFor(() => holder.inProcessWork.size === 0);
+  expect(maxActive).toBe(1);
+  expect(ran).toEqual([String(first._id), String(second._id)]);
+  await stop(holder);
 });
 
 test('a runner that cannot write its lease stops starting turns until it can', async () => {

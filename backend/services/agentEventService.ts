@@ -634,9 +634,12 @@ class AgentEventService {
   // The longest a turn runs: drainInProcess's default bound. A turn checks its
   // 60 s wall clock only between model calls, each up to 45 s.
   private static runnerTurnBoundMs = 150_000;
-  // Until when this process may start turns: runnerTurnBoundMs short of the
-  // expiry its last write set, measured from before that write.
+  // Room for another pod's clock to run ahead of this one's.
+  private static runnerSkewMs = 15_000;
+  // Until when this process may start turns: runnerTurnBoundMs + runnerSkewMs
+  // short of the expiry its last write set, measured from before that write.
   private static runnerLeaseUntil = 0;
+  private static inProcessQueueTick: Promise<void> | undefined;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
 
@@ -653,7 +656,7 @@ class AgentEventService {
    */
   private static async keepRunnerLease(): Promise<void> {
     const now = Date.now();
-    const window = this.runnerLeaseMs - this.runnerTurnBoundMs;
+    const window = this.runnerLeaseMs - this.runnerTurnBoundMs - this.runnerSkewMs;
     if (now < this.runnerLeaseUntil - (window * 2) / 3) return;
     try {
       const held = await SchedulerHeartbeatLease.findOneAndUpdate(
@@ -678,6 +681,8 @@ class AgentEventService {
     this.stopInProcessQueue();
     this.runnerLeaseUntil = 0;
     if (!this.runnerEnforced || !everyTurnFinished) return;
+    // A renewal already in flight would otherwise land after the delete.
+    await this.inProcessQueueTick;
     await SchedulerHeartbeatLease.deleteOne({ _id: NATIVE_RUNNER_LEASE_ID, ownerId: this.runnerId })
       .catch((err: Error) => console.warn('[native-runtime] runner lease release failed:', err.message));
   }
@@ -1558,6 +1563,10 @@ class AgentEventService {
       { new: true },
     ) as EventDoc | null;
     if (!claimed) return false;
+    // Delivered before (a timed-out drain or a sweep put it back): its turn
+    // may have answered after all, so settle that one instead of answering
+    // twice. Fresh rows skip the read.
+    if ((Number(event.attempts) || 0) > 0 && await this.settleIfAnswered(claimed, deliveryNonce)) return true;
     this.dispatchInProcess(
       claimed,
       installation,
@@ -1565,6 +1574,35 @@ class AgentEventService {
       String(event.instanceId || 'default'),
       String(claimed.type || event.type || ''),
     );
+    return true;
+  }
+
+  /**
+   * Ack a claimed event whose turn already succeeded, as the stuck sweep does,
+   * and retire any run of it left open by a process that died. True when acked.
+   */
+  private static async settleIfAnswered(claimed: EventDoc, deliveryNonce: string): Promise<boolean> {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRun = require('../models/AgentRun');
+    const agentName = String(claimed.agentName || '');
+    const instanceId = String(claimed.instanceId || 'default');
+    const runKey = { podId: claimed.podId, agentName, instanceId, triggerEventId: claimed._id };
+    const finished = await AgentRun.exists({ ...runKey, status: 'succeeded' });
+    await AgentRun.updateMany(
+      { ...runKey, status: { $in: ['queued', 'running'] } },
+      { $set: { status: 'interrupted', completedAt: new Date() } },
+    );
+    if (!finished) return false;
+    await this.acknowledge(
+      String(claimed._id),
+      agentName,
+      instanceId,
+      { outcome: 'acknowledged', reason: 'native-runtime-completed' },
+      deliveryNonce,
+      'native',
+    ).catch((ackErr: Error) => {
+      console.warn('[native-runtime] queued-turn ack failed:', ackErr?.message || ackErr);
+    });
     return true;
   }
 
@@ -1624,8 +1662,9 @@ class AgentEventService {
     const tick = () => {
       if (this.inProcessQueuePolling) return;
       this.inProcessQueuePolling = true;
-      this.keepRunnerLease()
+      this.inProcessQueueTick = this.keepRunnerLease()
         .then(() => this.pollInProcessQueue())
+        .then(() => undefined)
         .catch((err: Error) => console.warn('[native-runtime] queue pass failed:', err.message))
         .finally(() => { this.inProcessQueuePolling = false; });
     };
@@ -2219,8 +2258,14 @@ class AgentEventService {
           ...turnPayload,
           content: `${baseContent}\n\n${summary}`,
         } : turnPayload;
-        if (this.inProcessDraining) {
-          await this.requeueInProcess(event);
+        // Draining, or the runner lease lapsed while this turn waited for its
+        // lane (F52): give the turn back. Checked with no await before runAgent.
+        // If even the requeue fails it stays delivered for the stuck sweep,
+        // which runs only on the lease holder: late, never twice.
+        if (this.inProcessDraining || !this.runsTurnsHere()) {
+          await this.requeueInProcess(event).catch((err: Error) => {
+            console.warn(`[native-runtime] requeue failed for event ${eventIdStr}; the sweep has it:`, err.message);
+          });
           return { status: 'drained' };
         }
         const result = await runAgent(nativeInstallation, { type, eventId: eventIdStr, payload });

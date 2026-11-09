@@ -8,15 +8,16 @@ export function startBackgroundServices(
   env: NodeJS.ProcessEnv,
   services: BackgroundServices,
 ): boolean {
+  // F52: every process that may run native turns runs them under the runner
+  // lease, scheduler or not: a paused split's web pods surge beside each other
+  // on every roll. The queue holds the turns this process may not run. A web
+  // pod that hands its turns to the worker starts nothing here.
+  if (env.NODE_ENV !== 'test') services.nativeQueue.start();
   if (!shouldRunBackgroundServices(env)) return false;
 
   console.log('Starting summarizer scheduler...');
   services.scheduler.start();
   if (env.DISCORD_BOT_TOKEN) services.discordGateway.start();
-  // F52: where the scheduler runs, native turns run under the runner lease, and
-  // the queue holds the ones this process may not run: those web pods hand
-  // over, and those that arrive while another pod still holds the lease.
-  services.nativeQueue.start();
   return true;
 }
 

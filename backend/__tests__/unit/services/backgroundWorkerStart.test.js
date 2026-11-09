@@ -27,13 +27,13 @@ describe('background worker start gate', () => {
     expect(discordGateway.start).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
   });
 
-  // F52: the native turn queue, and the runner lease with it, runs wherever
-  // the scheduler does: the worker, or a single-process install. Never on a
-  // web pod of a worker split, which hands its turns over.
+  // F52: the native turn queue, and the runner lease with it, starts in every
+  // process, scheduler or not. A web pod that hands its turns to the worker
+  // returns early inside startInProcessQueue.
   test.each([
     ['unset', undefined, 1],
     ['on', '1', 1],
-    ['off', '0', 0],
+    ['off', '0', 1],
   ])('the native turn queue with RUN_WORKER %s', (_label, runWorker, starts) => {
     const env = { NODE_ENV: 'production' };
     if (runWorker !== undefined) env.RUN_WORKER = runWorker;
