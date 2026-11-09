@@ -132,7 +132,7 @@ the current month.
 gh variable get LATCHKEY_BUDGET_START --repo Team-Commonly/commonly
 # only if it is missing or later than now:
 gh variable set LATCHKEY_BUDGET_START --body "$(date -u +%Y-%m-01T00:00:00Z)" --repo Team-Commonly/commonly
-gh variable set LATCHKEY_BUDGET_EQMIN --body 6000 --repo Team-Commonly/commonly   # D261, 2026-11-09
+gh variable set LATCHKEY_BUDGET_EQMIN --body 6000 --repo Team-Commonly/commonly
 gh variable set LATCHKEY_EQ_PER_RUN --body 13 --repo Team-Commonly/commonly
 gh variable set LATCHKEY_HEAVY --body on --repo Team-Commonly/commonly
 # off: runs that start afterwards are entirely GitHub-hosted
@@ -144,7 +144,7 @@ before the current month. Set it to a later time, no later than now, only to
 discard runs already counted this month. A start in the future keeps every run
 on GitHub-hosted until it arrives.
 
-Sizing: 6000 × 0.8 / 13 ≈ 369 routed runs a month, paced to about 8 a day. At
+Sizing: 6000 × 0.8 / 13 ≈ 369 routed runs a month, paced to about 12 a day. At
 about 100 heavy pushes a day, most pushes run shard 1 on GitHub-hosted; the
 route's summary says which, and why.
 
