@@ -108,13 +108,15 @@ Check the estimate against the measured figure below, and raise
 The script defaults (10000 and 48) predate the one-job routing. Set the
 variables explicitly at the re-enable, below.
 
-**48 per run undercounts.** Measured on 2026-11-09 against Latchkey's own
-dashboard, November's routed runs averaged about 173 small-equivalent minutes
-each, counting medium runners at their 2× weight. That is about 3.6 times the
-default, so a gate fed 48 thought the month's budget had room long after the
-included minutes were gone. `LATCHKEY_EQ_PER_RUN` is now 175. Re-measure it
-from the dashboard's "Minutes by runner size" whenever the routed jobs or
-runner sizes change, and trust the dashboard over the gate's count.
+**The gate's count is an estimate; Latchkey's meter is the truth.** On
+2026-11-09 the dashboard showed the whole free allowance (22,452
+small-equivalent minutes) spent, with Latchkey holding new jobs until a plan
+starts or the minutes reset. The gate, counting 130 runs at 48, put November
+at about 6,240. Before re-enabling, read the dashboard's free-minutes figure.
+Don't size `LATCHKEY_EQ_PER_RUN` by dividing that total by the gate's run
+count: the allowance went on the all-jobs routing and on merge-queue runs,
+which the gate never counted. The one-job figure of 13 comes from the sizing
+above.
 
 ## Turn it on, and off
 
@@ -130,7 +132,7 @@ the current month.
 gh variable get LATCHKEY_BUDGET_START --repo Team-Commonly/commonly
 # only if it is missing or later than now:
 gh variable set LATCHKEY_BUDGET_START --body "$(date -u +%Y-%m-01T00:00:00Z)" --repo Team-Commonly/commonly
-gh variable set LATCHKEY_BUDGET_EQMIN --body 4000 --repo Team-Commonly/commonly
+gh variable set LATCHKEY_BUDGET_EQMIN --body 6000 --repo Team-Commonly/commonly   # D261, 2026-11-09
 gh variable set LATCHKEY_EQ_PER_RUN --body 13 --repo Team-Commonly/commonly
 gh variable set LATCHKEY_HEAVY --body on --repo Team-Commonly/commonly
 # off: runs that start afterwards are entirely GitHub-hosted
@@ -142,7 +144,7 @@ before the current month. Set it to a later time, no later than now, only to
 discard runs already counted this month. A start in the future keeps every run
 on GitHub-hosted until it arrives.
 
-Sizing: 4000 × 0.8 / 13 ≈ 246 routed runs a month, paced to about 8 a day. At
+Sizing: 6000 × 0.8 / 13 ≈ 369 routed runs a month, paced to about 8 a day. At
 about 100 heavy pushes a day, most pushes run shard 1 on GitHub-hosted; the
 route's summary says which, and why.
 
