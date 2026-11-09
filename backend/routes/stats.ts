@@ -90,7 +90,11 @@ const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown', 'welcome-shown',
+  'listen-stall-reported',
 ]);
+// Why a Windows visitor says the agent isn't answering. Fixed names only; any
+// other value is dropped, never stored.
+const STALL_REASONS = new Set(['node-missing', 'not-run', 'other']);
 // Steps that copy a setup command, and the copy types each may carry. A step
 // and its type must agree, so "token-copied" can never set the listen mark.
 const COPY_TYPES_BY_STEP: Record<string, string[]> = {
@@ -139,6 +143,7 @@ router.post('/byo-step', rateLimit({
   await recordByoEvent(req.userId, step as any, {
     ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
     ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
+    ...(step === 'listen-stall-reported' && STALL_REASONS.has(req.body?.reason) ? { reason: req.body.reason } : {}),
   });
   return res.json({ ok: true });
 });
