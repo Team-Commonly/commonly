@@ -47,6 +47,17 @@ interface FunnelResponse {
   };
 }
 
+// TASK-784 (D164): /api/admin/analytics/machines. Daemon machines by platform
+// (with how many had an agent answer a person) and by CLI version. null is a
+// machine that has not reported, registered by an older CLI.
+interface MachineStatsResponse {
+  total: number;
+  byPlatform: Array<{ platform: string | null; machines: number; answered: number }>;
+  byCliVersion: Array<{ cliVersion: string | null; machines: number }>;
+}
+
+const PLATFORM_KEYS = new Set(['win32', 'darwin', 'linux']);
+
 const RANGES = [7, 30, 90];
 
 const errMessage = (err: unknown, fallback: string): string => {
@@ -98,6 +109,25 @@ const V2AdminAnalytics: React.FC = () => {
   const [funnel, setFunnel] = useState<FunnelResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [machineStats, setMachineStats] = useState<MachineStatsResponse | null>(null);
+  const [machineStatsError, setMachineStatsError] = useState<string | null>(null);
+
+  // Machine counts don't depend on the range, and a failure here leaves the
+  // rest of the page standing.
+  useEffect(() => {
+    let cancelled = false;
+    api.get<MachineStatsResponse>('/api/admin/analytics/machines')
+      .then((stats) => {
+        if (cancelled) return;
+        // An older backend has no such route; a body of another shape is not counts.
+        if (stats && Array.isArray(stats.byPlatform) && Array.isArray(stats.byCliVersion)) setMachineStats(stats);
+        else setMachineStatsError(t('adminAnalytics.machines.loadFailed'));
+      })
+      .catch((err) => {
+        if (!cancelled) setMachineStatsError(errMessage(err, t('adminAnalytics.machines.loadFailed')));
+      });
+    return () => { cancelled = true; };
+  }, [api]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +263,71 @@ const V2AdminAnalytics: React.FC = () => {
             </section>
           )}
         </>
+      )}
+
+      {(machineStats || machineStatsError) && (
+        <section className="v2-admin-users__section" aria-labelledby="v2-admin-machines-title">
+          <div>
+            <h2 id="v2-admin-machines-title" className="v2-admin-users__section-title">
+              {t('adminAnalytics.machines.title')}
+            </h2>
+            {machineStats && (
+              <p className="v2-admin-users__section-sub">
+                {t('adminAnalytics.machines.summary', { total: machineStats.total })}
+              </p>
+            )}
+          </div>
+          {/* Not an alert: the page's own load error is the one alert it raises. */}
+          {machineStatsError && <p className="v2-admin-users__section-sub">{machineStatsError}</p>}
+          {machineStats && (
+            <>
+              <div className="v2-admin-users__table-wrap">
+                <table className="v2-admin-users__table">
+                  <thead>
+                    <tr>
+                      <th>{t('adminAnalytics.machines.table.platform')}</th>
+                      <th>{t('adminAnalytics.machines.table.machines')}</th>
+                      <th>{t('adminAnalytics.machines.table.answered')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machineStats.byPlatform.map((row) => (
+                      <tr key={row.platform ?? 'not-reported'}>
+                        <td>
+                          {row.platform === null
+                            ? t('adminAnalytics.machines.notReported')
+                            : (PLATFORM_KEYS.has(row.platform)
+                              ? t(`adminAnalytics.machines.platforms.${row.platform}`)
+                              : row.platform)}
+                        </td>
+                        <td>{row.machines}</td>
+                        <td>{row.answered}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="v2-admin-users__table-wrap">
+                <table className="v2-admin-users__table">
+                  <thead>
+                    <tr>
+                      <th>{t('adminAnalytics.machines.table.cliVersion')}</th>
+                      <th>{t('adminAnalytics.machines.table.machines')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {machineStats.byCliVersion.map((row) => (
+                      <tr key={row.cliVersion ?? 'not-reported'}>
+                        <td>{row.cliVersion ?? t('adminAnalytics.machines.notReported')}</td>
+                        <td>{row.machines}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
       )}
     </div>
   );

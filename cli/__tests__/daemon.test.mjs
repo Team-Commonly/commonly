@@ -35,7 +35,9 @@ const {
   firstSupervisionPass,
   formatSeatLine,
   resolveAdapterForRuntime,
+  daemonMachineReport,
 } = await import('../src/commands/daemon.js');
+const { machineHostReport } = await import('../src/lib/machine-host.js');
 
 const daemonRecord = {
   machineDbId: '507f1f77bcf86cd799439011',
@@ -220,7 +222,11 @@ describe('daemon machine calls', () => {
       persist,
     });
 
-    expect(client.post).toHaveBeenCalledWith('/api/machines', { name: daemonRecord.machineName });
+    // TASK-784: the registration carries the host report, metadata only.
+    expect(client.post).toHaveBeenCalledWith('/api/machines', {
+      name: daemonRecord.machineName,
+      host: machineHostReport(),
+    });
     expect(persist).toHaveBeenCalledWith(expect.objectContaining({
       machineDbId: daemonRecord.machineDbId,
       daemonToken: daemonRecord.daemonToken,
@@ -269,6 +275,14 @@ describe('daemon machine calls', () => {
       name: daemonRecord.machineName,
       persist: () => { throw new Error('disk full'); },
     })).rejects.toThrow(daemonRecord.machineDbId);
+  });
+
+  // TASK-784: every supervisor check-in carries the host report next to the
+  // sandbox report, so a machine an older CLI registered fills in on upgrade.
+  test('the check-in report carries the host report and the sandbox report', () => {
+    const report = daemonMachineReport();
+    expect(report.host).toEqual(machineHostReport());
+    expect(Object.keys(report).sort()).toEqual(['host', 'sandbox']);
   });
 
   test('heartbeats only the machine id held by the daemon credential record', async () => {

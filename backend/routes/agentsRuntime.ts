@@ -4,6 +4,7 @@ import dualAuth from '../middleware/dualAuth';
 import { validateAgentCardPayload } from '../services/uiCardValidation';
 import { describeSkippedPost } from '../services/skippedPostGuidance';
 import { memoryWriteOwnerOnly } from '../services/spawnCredentialService';
+import { noteMachineAnswered } from '../services/machineService';
 export {};
 
 // TASK-099: the refusal classes a driver may name on release. The enum is the
@@ -1595,6 +1596,9 @@ router.post('/events/:id/ack', phase4RateLimit, agentRuntimeAuth, async (req: an
       deliveryId,
       ackConsumer,
     );
+    // TASK-784: a seat on a daemon machine answered a person; the machine
+    // keeps the first time it did. Never fails the ack.
+    if (acked) await noteMachineAnswered(agentUser, acked);
     // See the /bot/events ack above: 409 only for nonce-presenting callers.
     if (!acked && await AgentEventService.isSupersededDelivery(
       req.params.id, agentName, instanceId, deliveryId,
