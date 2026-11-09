@@ -177,6 +177,8 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     const userTokenCache = new Map();
     const items = [];
     const sharedRuntimesNeedingRestart = new Set();
+    // A removal on a gateway with its own deployment restarts that gateway.
+    const namedGatewaysNeedingRestart = new Map<string, any>();
     for (const installation of activeInstallations) {
       try {
         const result = await reprovisionInstallation({
@@ -186,10 +188,20 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           userTokenCache,
           skipRuntimeRestart: true,
         });
+        const { runtimeGateway, ...shown } = result;
         // Track which shared runtimes need a single deferred restart
-        if (result.runtimeType === 'moltbot' && !result.skipped) sharedRuntimesNeedingRestart.add('moltbot');
+        // A removed account also needs the restart, or the gateway keeps running it.
+        if (result.runtimeType === 'moltbot' && result.removedFromRuntime && runtimeGateway) {
+          namedGatewaysNeedingRestart.set(String(runtimeGateway._id || runtimeGateway.slug), runtimeGateway);
+        } else if (result.runtimeType === 'moltbot' && (!result.skipped || result.removedFromRuntime)) {
+          sharedRuntimesNeedingRestart.add('moltbot');
+        }
         if (result.skipped) {
-          items.push({ ...result, success: true });
+          // A refused identity whose state file was not edited is not fully
+          // removed, and reads as a failure until a later run finishes it.
+          items.push(result.runtimeRemovalError
+            ? { ...shown, success: false, error: result.runtimeRemovalError }
+            : { ...shown, success: true });
           continue;
         }
         items.push({
@@ -221,8 +233,15 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
         console.warn('[reprovision-all] Failed to restart gateway:', err.message);
       });
     }
+    for (const gateway of namedGatewaysNeedingRestart.values()) {
+      // eslint-disable-next-line no-await-in-loop
+      await restartAgentRuntime('moltbot', 'default', { gateway }).catch((err: any) => {
+        console.warn('[reprovision-all] Failed to restart gateway after removal:', err.message);
+      });
+    }
 
-    const skippedCount = items.filter((item) => item.skipped).length;
+    // A skipped row that failed counts once, as failed.
+    const skippedCount = items.filter((item) => item.skipped && item.success).length;
     const failed = items.filter((item) => !item.success).length;
     return res.json({
       success: failed === 0,

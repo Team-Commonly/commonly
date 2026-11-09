@@ -2311,6 +2311,106 @@ const applyOpenClawModelDefaults = async (config: any) => {
 /**
  * Provision OpenClaw (moltbot) account in Kubernetes
  */
+/**
+ * Take one identity's account out of an OpenClaw config: its
+ * channels.commonly account, its agents.list entry and its binding. Pure, so it
+ * can be tested on a plain object. Returns the account ids it removed.
+ */
+const removeIdentityFromOpenClawConfig = (config: any, agentName: string, instanceId: string): string[] => {
+  const norm = (value: unknown, fallback: string) => String(value ?? fallback).trim().toLowerCase() || fallback;
+  const targetAgent = norm(agentName, '');
+  const targetInstance = norm(instanceId, 'default');
+  const accounts = config?.channels?.commonly?.accounts;
+  if (!targetAgent || !accounts || typeof accounts !== 'object') return [];
+  const removed = Object.entries(accounts)
+    .filter(([, entry]: [string, any]) => entry
+      && norm(entry.agentName, '') === targetAgent && norm(entry.instanceId, 'default') === targetInstance)
+    .map(([key]) => key);
+  removed.forEach((key) => { delete accounts[key]; });
+  if (removed.length && Array.isArray(config.agents?.list)) {
+    config.agents.list = config.agents.list.filter((agent: any) => !removed.includes(agent?.id));
+  }
+  if (removed.length && Array.isArray(config.bindings)) {
+    config.bindings = config.bindings.filter((binding: any) => !removed.includes(binding?.match?.accountId));
+  }
+  return removed;
+};
+
+// A gateway whose pod could not be found is not waited on again for a minute.
+// Without this, a bulk run over many refused identities on a gateway that is
+// down would wait the full pod timeout once per row.
+const GATEWAY_UNREADY_HOLD_MS = 60000;
+const gatewayUnreadyUntil = new Map<string, number>();
+const clearGatewayUnreadyHold = () => gatewayUnreadyUntil.clear();
+
+/**
+ * Remove an identity from the gateway's config, so the gateway stops running
+ * it (its heartbeat included) after the next restart. Both copies are edited:
+ * the gateway's ConfigMap (the one provisioning writes for this gateway), and
+ * its own state file, which is what the gateway actually reads at start.
+ *
+ * The state edit runs on every call, even when the ConfigMap had nothing left
+ * to remove: an earlier call may have written the ConfigMap and then failed on
+ * the state file, and nothing else would ever take the account out of it. The
+ * state edit matches the same identity the ConfigMap removal does.
+ *
+ * A state edit that did not happen is reported as `stateError`, so the caller
+ * can show the identity as not fully removed. The next reprovision retries it.
+ */
+const removeOpenClawAccount = async ({
+  agentName, instanceId, configMapName, gateway,
+}: any): Promise<{ removed: string[]; stateError?: string }> => {
+  const configKey = 'moltbot.json';
+  const resolvedConfigMap = configMapName || resolveGatewayConfigMapName(gateway);
+  const config = await readConfigMap(resolvedConfigMap, configKey);
+  const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
+  if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
+  const gatewayKey = String(gateway?.slug || gateway?._id || 'default');
+  if ((gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
+    return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };
+  }
+  let podName: string;
+  try {
+    podName = await resolveGatewayPodNameWithRetry(gateway);
+  } catch (error) {
+    gatewayUnreadyUntil.set(gatewayKey, Date.now() + GATEWAY_UNREADY_HOLD_MS);
+    console.warn('[k8s-provisioner] state removal skipped, gateway pod not ready:', (error as Error).message);
+    return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };
+  }
+  try {
+    const target = JSON.stringify(JSON.stringify({
+      agentName: String(agentName || '').trim().toLowerCase(),
+      instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
+    }));
+    const script = [
+      'set -eu',
+      'STATE=/state/moltbot.json',
+      'if [ ! -f "$STATE" ]; then exit 0; fi',
+      `python3 - <<'PYEOF'`,
+      'import json, sys',
+      'with open("/state/moltbot.json") as f: d = json.load(f)',
+      `t = json.loads(${target})`,
+      'norm = lambda v, f: (str(v).strip().lower() if v is not None else "") or f',
+      'accts = d.get("channels", {}).get("commonly", {}).get("accounts", {})',
+      'ids = set(k for k, e in accts.items() if isinstance(e, dict) and norm(e.get("agentName"), "") == t["agentName"] and norm(e.get("instanceId"), "default") == t["instanceId"])',
+      'if not ids: sys.exit(0)',
+      'for i in ids: accts.pop(i, None)',
+      'if isinstance(d.get("agents", {}).get("list"), list): d["agents"]["list"] = [a for a in d["agents"]["list"] if a.get("id") not in ids]',
+      'if isinstance(d.get("bindings"), list): d["bindings"] = [b for b in d["bindings"] if b.get("match", {}).get("accountId") not in ids]',
+      'with open("/state/moltbot.json", "w") as f: json.dump(d, f, indent=2)',
+      'print("[state-sync] removed accounts:", ",".join(sorted(ids)))',
+      'PYEOF',
+    ].join('\n');
+    await execInPod({ podName, containerName: 'clawdbot-gateway', command: ['sh', '-lc', script] });
+  } catch (error) {
+    // The ConfigMap write stands. The state file is retried on the next
+    // reprovision, since this edit runs on every call for a refused identity.
+    console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
+    return { removed, stateError: 'The state file edit failed; it is retried on the next reprovision.' };
+  }
+  return { removed };
+};
+
 const provisionOpenClawAccount = async ({
   accountId,
   runtimeToken,
@@ -3601,6 +3701,9 @@ const refreshCodexOAuthTokenIfNeeded = async ({ thresholdDays = 3 } = {}) => {
 
 module.exports = {
   buildPvcVirtualKeyReadScript,
+  removeIdentityFromOpenClawConfig,
+  removeOpenClawAccount,
+  clearGatewayUnreadyHold,
   // Test seams: the dev and community issuers, so a test can assert what each sends to LiteLLM.
   issueLiteLLMVirtualKey,
   issueLiteLLMOpenRouterKey,
