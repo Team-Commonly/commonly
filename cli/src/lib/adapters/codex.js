@@ -82,6 +82,7 @@ import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '..
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { contains, realpathOfNearest, refuseWorkspaceHoldingTurnDirs } from '../sandbox/turn-dir.js';
+import { refuseCodeRunningGitSetup } from '../sandbox/workspace-git-config.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { publicSeatWithheldTools } from '../public-withheld-tools.js';
 import { startProviderProxy } from '../provider-proxy.js';
@@ -1099,6 +1100,12 @@ export default {
     const workspacePath = sandbox?.trust === 'public'
       ? await refuseWorkspaceHoldingTurnDirs({ workspace: ctx.cwd, seat: 'public Codex agents' })
       : null;
+    // Codex runs git in the workspace outside the seat's profile, so a
+    // repository set up to run programs is refused before anything starts
+    // (sandbox/workspace-git-config.js).
+    if (workspacePath) {
+      (ctx._refuseCodeRunningGitSetup || refuseCodeRunningGitSetup)(workspacePath, { seat: 'This public Codex agent' });
+    }
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
     // so a crash in the middle of the spawn doesn't leak files in $TMPDIR.

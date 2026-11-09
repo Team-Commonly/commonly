@@ -41,7 +41,11 @@ const { default: codexAdapter, codexNativeBinary } = await import('../src/lib/ad
 // the version itself is in adapters.codex.version-floor.test.mjs.
 const codex = {
   ...codexAdapter,
-  spawn: (prompt, ctx) => codexAdapter.spawn(prompt, { _codexVersion: '0.162.1', ...ctx }),
+  // child_process is mocked here, so the workspace git check can't run git; it
+  // is tested with real git in workspace-git-config.test.mjs.
+  spawn: (prompt, ctx) => codexAdapter.spawn(prompt, {
+    _codexVersion: '0.162.1', _refuseCodeRunningGitSetup: () => {}, ...ctx,
+  }),
 };
 const {
   BRIDGE_HEADERS_VAR, BRIDGE_PATH, BRIDGE_URL_VAR,
