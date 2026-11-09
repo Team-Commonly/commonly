@@ -12,9 +12,10 @@ const mockInstallation = {
 let mockAuthorizedPodIds = ['pod-1'];
 let mockInstallations = null;
 let mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }];
+let mockAgentUser = null;
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
-  req.agentUser = { _id: 'agent-1', username: 'writer' };
+  req.agentUser = mockAgentUser || { _id: 'agent-1', username: 'writer' };
   req.agentInstallation = mockInstallation;
   req.agentInstallations = mockInstallations || [mockInstallation];
   req.agentAuthorizedPodIds = mockAuthorizedPodIds;
@@ -229,6 +230,51 @@ describe('GET /installations pod visibility', () => {
       const response = await request(app).get('/api/agents/runtime/installations');
       const dm = response.body.installations.find((entry) => entry.podId === 'dm-1');
       expect(dm).toMatchObject({ type: 'dm', publicRead: false, communityListed: false });
+    });
+  });
+});
+
+// The MCP server's channel mode pushes a mention into a person's session only
+// from senders it allows, and with no allowlist set that is the agent's owner.
+// The token's own identity is the only one this can name.
+describe('GET /installations owner', () => {
+  const withState = async ({ user = null, installations = null }, run) => {
+    [mockAgentUser, mockInstallations] = [user, installations];
+    try {
+      await run();
+    } finally {
+      [mockAgentUser, mockInstallations] = [null, null];
+    }
+  };
+  const row = (podId, installedBy) => ({ _id: podId, podId, instanceId: 'writer', status: 'active', installedBy, config: {} });
+
+  test('names the owner on record for a self-serve identity', async () => {
+    await withState({
+      user: { _id: 'agent-1', username: 'writer', botMetadata: { ownerUserId: 'owner-1' } },
+      installations: [row('pod-1', 'someone-else')],
+    }, async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.ownerUserId).toBe('owner-1');
+    });
+  });
+
+  test('with no owner on record, names the one person who installed every row, skipping its own', async () => {
+    await withState({
+      installations: [row('pod-1', 'owner-1'), row('pod-auto', 'agent-1'), row('pod-2', 'owner-1')],
+    }, async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.ownerUserId).toBe('owner-1');
+    });
+  });
+
+  test('names nobody when installers disagree or a row has none', async () => {
+    await withState({ installations: [row('pod-1', 'owner-1'), row('pod-2', 'owner-2')] }, async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.ownerUserId).toBeNull();
+    });
+    await withState({ installations: [row('pod-1', 'owner-1'), row('pod-2', undefined)] }, async () => {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.ownerUserId).toBeNull();
     });
   });
 });

@@ -1,0 +1,90 @@
+/**
+ * The MCP server object: the tool surface, plus channel mode when asked for.
+ *
+ * With channel mode off this is the tools-only server it always was: the same
+ * capabilities (`tools: {}`), no instructions, and nothing polls. With it on,
+ * the server also declares `experimental['claude/channel']`, carries the
+ * channel instructions, and runs the poll loop in ./channel.js once the client
+ * has initialized, until the transport closes. The permission-relay capability
+ * is never declared.
+ */
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+
+import { buildTools } from './tools.js';
+import { PACKAGE_VERSION } from './version.js';
+import {
+  CHANNEL_CAPABILITY,
+  CHANNEL_INSTRUCTIONS,
+  CHANNEL_NOTIFICATION,
+  startChannel,
+} from './channel.js';
+
+const PACKAGE_NAME = '@commonlyai/mcp';
+
+export const createServer = (config, { channel = false, env = process.env, channelOptions = {} } = {}) => {
+  const tools = buildTools(config);
+  const byName = new Map(tools.map((t) => [t.name, t]));
+
+  const options = channel
+    ? {
+      capabilities: { tools: {}, experimental: { [CHANNEL_CAPABILITY]: {} } },
+      instructions: CHANNEL_INSTRUCTIONS,
+    }
+    : { capabilities: { tools: {} } };
+  const server = new Server({ name: PACKAGE_NAME, version: PACKAGE_VERSION }, options);
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: tools.map(({ name, description, inputSchema }) => ({
+      name, description, inputSchema,
+    })),
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const tool = byName.get(req.params.name);
+    if (!tool) {
+      return {
+        isError: true,
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ message: `Unknown tool: ${req.params.name}` }),
+        }],
+      };
+    }
+    return tool.call(req.params.arguments || {});
+  });
+
+  const handle = { server, channel: null };
+
+  handle.connect = async (transport) => {
+    if (!channel) {
+      await server.connect(transport);
+      return;
+    }
+    // A notification goes out only after the client has initialized, and
+    // never after the transport has closed.
+    let markReady;
+    const ready = new Promise((resolve) => { markReady = resolve; });
+    server.oninitialized = () => markReady(true);
+    server.onclose = () => {
+      markReady(false);
+      handle.channel?.stop();
+    };
+    await server.connect(transport);
+    handle.channel = startChannel({
+      ...channelOptions,
+      config,
+      env,
+      notify: async (params) => {
+        if (!(await ready)) throw new Error('the transport closed');
+        await server.notification({ method: CHANNEL_NOTIFICATION, params });
+      },
+    });
+  };
+
+  return handle;
+};

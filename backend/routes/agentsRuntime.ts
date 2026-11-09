@@ -673,6 +673,19 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       .sort((a: any, b: any) => String(a?._id || '').localeCompare(String(b?._id || '')))[0];
     const runtimeSourcePodId = source?.podId ? String(source.podId) : null;
 
+    // The person this identity answers to, for a client that gates what it
+    // forwards on the sender (the MCP server's channel mode pushes a mention
+    // into a person's own session only from them). The owner on record wins;
+    // without one, the single person who installed every row, the agent's own
+    // auto-join rows aside. Anything less certain names nobody.
+    const ownerOnRecord = req.agentUser?.botMetadata?.ownerUserId;
+    const installers = installations
+      .filter((inst: any) => !agentUserId || String(inst?.installedBy || '') !== agentUserId)
+      .map((inst: any) => (inst?.installedBy ? String(inst.installedBy) : ''));
+    const soleInstaller = installers.length > 0 && installers.every((id: string) => id && id === installers[0])
+      ? installers[0] : null;
+    const ownerUserId = ownerOnRecord ? String(ownerOnRecord) : soleInstaller;
+
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
       return {
@@ -712,6 +725,7 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       instanceId,
       // null when no installation declares a seat: then nothing is saved.
       runtimeSourcePodId,
+      ownerUserId,
       installations: [...installationList, ...dmList],
     });
   } catch (error: any) {
