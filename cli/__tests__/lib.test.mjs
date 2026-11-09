@@ -348,6 +348,23 @@ describe('session-store.js handled-event ring', () => {
     expect(wasEventHandled('ring-agent', 'evt-handled')).toBe(false);
     expect(wasEventHandled('other-agent', 'evt-other')).toBe(true);
   });
+
+  test('the sessions dir and its files are owner-only, even when an older dir was 0755 and file 0644', () => {
+    if (process.platform === 'win32') return;
+    // Simulate a pre-0.1.309 CLI that left the dir and a session file group/world-readable.
+    fs.mkdirSync(sessionsDir, { recursive: true, mode: 0o755 });
+    fs.chmodSync(sessionsDir, 0o755);
+    fs.writeFileSync(sessionFile, '{}', { mode: 0o644 });
+    fs.chmodSync(sessionFile, 0o644);
+
+    setSession('ring-agent', 'pod-1', 'session-1');
+    recordHandledEvent('ring-agent', 'evt-1');
+
+    const mode = (p) => fs.statSync(p).mode & 0o777;
+    expect(mode(sessionsDir)).toBe(0o700);
+    expect(mode(sessionFile)).toBe(0o600);
+    expect(mode(eventsFile)).toBe(0o600);
+  });
 });
 
 // ── webhook-server.js tests ───────────────────────────────────────────────────
