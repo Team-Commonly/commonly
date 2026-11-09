@@ -135,11 +135,22 @@ describe('a thread read point', () => {
     ['words', 'yesterday'],
     ['a date with no time', '2026-11-09'],
     ['an impossible date', '2026-13-45T99:00:00Z'],
+    ['a day the month does not have', '2026-02-30T10:00:00Z'],
+    ['February 29 in a common year', '2026-02-29T10:00:00Z'],
+    ['hour 24', '2026-11-09T24:00:00Z'],
     ['an object', { at: '2026-11-09T10:00:00.000Z' }],
   ])('garbage `at` (%s) is a 400 and touches nothing', async (_label, at) => {
     const out = await call(setThreadRead, { userId: String(member._id), body: { at } });
     expect(out.status).toBe(400);
     expect(await readPointOf(member._id)).toBeUndefined();
+  });
+
+  it('accepts a real leap day and an offset time', async () => {
+    const leap = await call(setThreadRead, { userId: String(member._id), body: { at: '2024-02-29T10:00:00Z' } });
+    expect(leap.status).toBe(200);
+    const offset = await call(setThreadRead, { userId: String(member._id), body: { at: '2026-11-01T02:00:00-08:00' } });
+    expect(offset.status).toBe(200);
+    expect(offset.body.lastReadAt).toBe('2026-11-01T10:00:00.000Z');
   });
 
   it('only moves forward: an older write leaves the newer point in place', async () => {

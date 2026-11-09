@@ -89,6 +89,13 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   // The newest point known per root, read synchronously by markRead so two
   // calls in one tick don't both write. The state above is what renders.
   const readPointsRef = useRef<Map<string, string>>(new Map());
+  // What the server is known to hold per root (from the state fetch or a PUT
+  // that succeeded), and the write in flight. Kept apart from the optimistic
+  // point so a failed PUT is written again on the next settle.
+  const persistedRef = useRef<Map<string, number>>(new Map());
+  const inFlightRef = useRef<Map<string, number>>(new Map());
+  // Bumped on every pod change; a PUT answered after it is dropped.
+  const podGenerationRef = useRef(0);
 
   useEffect(() => {
     // Reset without minting a new Map when there is nothing to clear. Every
@@ -99,6 +106,9 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
       readPointsRef.current = new Map();
       setReadPoints(new Map());
     }
+    podGenerationRef.current += 1;
+    persistedRef.current = new Map();
+    inFlightRef.current = new Map();
     setReady(false);
     setReadTrackingSince(null);
     if (!podId) {
@@ -123,6 +133,10 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         for (const t of data?.threads || []) {
           const at = t.lastReadAt;
           if (!at || Number.isNaN(Date.parse(at))) continue;
+          const stored = persistedRef.current.get(key(t.threadRootId));
+          if (stored === undefined || Date.parse(at) > stored) {
+            persistedRef.current.set(key(t.threadRootId), Date.parse(at));
+          }
           const known = points.get(key(t.threadRootId));
           if (!known || Date.parse(at) > Date.parse(known)) {
             points.set(key(t.threadRootId), at);
@@ -188,20 +202,56 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
     else api.del(`/api/messages/${messageId}/follow`).catch(revert);
   }, [api, byRoot, patch]);
 
-  const markRead = useCallback((rootId: string, atIso: string) => {
+  // Move the rendered point forward, never back.
+  const advancePoint = useCallback((rootId: string, atIso: string) => {
     const at = Date.parse(atIso);
-    if (!rootId || Number.isNaN(at)) return;
+    if (Number.isNaN(at)) return;
     const known = readPointsRef.current.get(key(rootId));
     if (known && at <= Date.parse(known)) return;
     const next = new Map(readPointsRef.current);
     next.set(key(rootId), atIso);
     readPointsRef.current = next;
     setReadPoints(next);
+  }, []);
+
+  const markRead = useCallback((rootId: string, atIso: string) => {
+    const at = Date.parse(atIso);
+    if (!rootId || Number.isNaN(at)) return;
+    const root = key(rootId);
+    advancePoint(root, atIso);
+    // The write is skipped only when the server already holds this point or
+    // a write for it is in flight. A failed PUT clears its in-flight entry,
+    // so the next settle writes again.
+    const persisted = persistedRef.current.get(root);
+    const inFlight = inFlightRef.current.get(root);
+    if ((persisted !== undefined && at <= persisted) || (inFlight !== undefined && at <= inFlight)) return;
+    inFlightRef.current.set(root, at);
+    const generation = podGenerationRef.current;
+    const settle = () => {
+      if (inFlightRef.current.get(root) === at) inFlightRef.current.delete(root);
+    };
     // Not reverted on failure. A read point is a convenience; putting the
     // unread mark back after the person has seen the replies would be the
-    // worse error, and the next open writes again.
-    api.put(`/api/messages/${encodeURIComponent(rootId)}/read`, { at: atIso }).catch(() => undefined);
-  }, [api]);
+    // worse error.
+    api.put<{ lastReadAt?: string | null }>(`/api/messages/${encodeURIComponent(rootId)}/read`, { at: atIso })
+      .then((data) => {
+        if (generation !== podGenerationRef.current) return; // the pod changed
+        settle();
+        // The server clamps to its clock and keeps the newer of two writes;
+        // its answer is what it holds, merged forward only.
+        const stored = data?.lastReadAt;
+        const storedAt = stored ? Date.parse(stored) : Number.NaN;
+        // A write the server clamped is still answered: sending it again
+        // would change nothing, so it counts as held up to `at`.
+        const held = Number.isNaN(storedAt) ? at : Math.max(at, storedAt);
+        const previous = persistedRef.current.get(root);
+        if (previous === undefined || held > previous) persistedRef.current.set(root, held);
+        if (stored && !Number.isNaN(storedAt)) advancePoint(root, stored);
+      })
+      .catch(() => {
+        if (generation === podGenerationRef.current) settle();
+      });
+  }, [api, advancePoint]);
 
   const isThreadRoot = useCallback(
     (messageId: string) => byRoot.has(key(messageId)),

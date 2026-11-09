@@ -290,4 +290,30 @@ describe('read point, unread count and the latest-reply preview', () => {
     expect(plainPreviewText('![chart](https://x.test/c.png) see above')).toBe('chart see above');
     expect(plainPreviewText('x'.repeat(500))).toHaveLength(200);
   });
+
+  test('plainPreviewText keeps the text of an autolink and still drops inline html', () => {
+    expect(plainPreviewText('see <https://example.com/report> now')).toBe('see https://example.com/report now');
+    expect(plainPreviewText('mail <someone@example.com>')).toBe('mail someone@example.com');
+    expect(plainPreviewText('a <b>bold</b> word')).toBe('a bold word');
+  });
+
+  test('my reply that stays flat because it arrived before its root still counts as my read point', () => {
+    const root = msg(1, { user_id: 'someone', created_at: at(0) });
+    const mine = msg(2, { thread_root_id: 1, user_id: ME, created_at: at(2) });
+    const before = msg(3, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) });
+    const after = msg(4, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(3) });
+    const items = buildThreadView(
+      [root, mine, before, after],
+      state([1]),
+      new Set(['2']),
+      { viewerId: ME, readPoints: new Map(), readTrackingSince: EPOCH },
+    );
+    const c = cardOf(items);
+    // Mine stays flat in the transcript and out of the card…
+    expect(items.some((i: any) => i.kind === 'message' && i.message.id === '2')).toBe(true);
+    expect(c.replyCount).toBe(2);
+    // …but the reply before it is read; only the one after is new.
+    expect(c.unreadCount).toBe(1);
+    expect(c.newestUnreadAgentAt).toBe(Date.parse(at(3)));
+  });
 });

@@ -141,6 +141,7 @@ export const plainPreviewText = (content: string): string => String(content || '
   .replace(/```[^\n]*\n?/g, ' ') // fence lines; the code inside stays
   .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images → alt text
   .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → their text
+  .replace(/<((?:https?|ftp|mailto):[^\s<>]+|[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+)>/gi, '$1') // autolinks keep their text
   .replace(/<[^>\n]+>/g, ' ') // inline html
   .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '') // headings, quotes, list marks
   .replace(/(\*\*|__|~~|`)/g, '')
@@ -227,10 +228,20 @@ export const buildThreadView = (
   const presentIds = new Set(messages.map(idOf));
 
   const repliesByRoot = new Map<string, V2Message[]>();
+  // The viewer's own replies that render flat because they arrived before
+  // their root. They stay out of the card, but writing them means the viewer
+  // saw the thread up to then, so they count toward the read point.
+  const frozenOwnByRoot = new Map<string, V2Message[]>();
   for (const m of messages) {
     const root = rootOf(m);
     if (!root) continue;
-    if (flatIds.has(idOf(m))) continue;
+    if (flatIds.has(idOf(m))) {
+      if (viewer.viewerId && String(m.user_id || '') === String(viewer.viewerId) && presentIds.has(root)) {
+        const own = frozenOwnByRoot.get(root);
+        if (own) own.push(m); else frozenOwnByRoot.set(root, [m]);
+      }
+      continue;
+    }
     // A message whose root is not in this list (paged out, or deleted) is NOT
     // hidden. It renders flat rather than vanishing — losing a message is the
     // one outcome worse than showing it in the wrong place.
@@ -270,7 +281,13 @@ export const buildThreadView = (
     const latest = replies.reduce((acc, r) => (timeOf(r) >= timeOf(acc) ? r : acc), replies[0]);
     const rootId = idOf(m);
     const serverPoint = viewer.readPoints?.get(rootId) ?? byRoot.get(rootId)?.lastReadAt ?? null;
-    const readPoint = threadReadPoint(m, replies, viewer.viewerId, serverPoint, viewer.readTrackingSince);
+    const readPoint = threadReadPoint(
+      m,
+      [...replies, ...(frozenOwnByRoot.get(rootId) || [])],
+      viewer.viewerId,
+      serverPoint,
+      viewer.readTrackingSince,
+    );
     const unread = unreadRepliesOf(replies, viewer.viewerId, readPoint);
     const isAgent = (r: V2Message) => participantOf(r).isBot === true;
     // Auto-open looks only at agent replies after the epoch, and at none when

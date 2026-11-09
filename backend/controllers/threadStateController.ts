@@ -293,13 +293,30 @@ export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
  * moves forward, so a stale or replayed write is a 200 that changes nothing;
  * the response carries the stored point either way.
  */
-const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/;
+const ISO_TIME = '([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d(\\.\\d{1,6})?)?';
+const ISO_ZONE = '(Z|[+-]([01]\\d|2[0-3]):?[0-5]\\d)';
+const ISO_DATE_TIME = new RegExp(`^(\\d{4})-(\\d{2})-(\\d{2})T${ISO_TIME}${ISO_ZONE}$`);
+
+/**
+ * Parse `at` strictly. The shape check alone lets `2026-02-30` through, and
+ * Date rolls it over to March 2; the calendar day must survive a round trip.
+ */
+const parseReadAt = (raw: unknown): Date | null => {
+  if (typeof raw !== 'string') return null;
+  const shape = ISO_DATE_TIME.exec(raw);
+  if (!shape) return null;
+  const [year, month, day] = [Number(shape[1]), Number(shape[2]), Number(shape[3])];
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1
+    || calendar.getUTCDate() !== day) return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+};
 
 export async function setThreadRead(req: Req, res: Res): Promise<void> {
   try {
-    const atRaw = (req.body || {}).at;
-    const at = typeof atRaw === 'string' && ISO_DATE_TIME.test(atRaw) ? new Date(atRaw) : null;
-    if (!at || Number.isNaN(at.getTime())) {
+    const at = parseReadAt((req.body || {}).at);
+    if (!at) {
       res.status(400).json({ msg: 'at (ISO 8601 date-time) is required' });
       return;
     }
