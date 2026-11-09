@@ -563,8 +563,9 @@ const V2AgentBYO: React.FC = () => {
     // The pod lets the server hand back this person's own install there whose
     // key never arrived, instead of "<name>-2". BYO only: that install is a
     // webhook, so another mode handed its name would hit "already installed".
-    // Not with a persona: its display name derives a non-default instance,
-    // and the server only hands back installs on the default one.
+    // Not with a persona: its display name can derive a non-default instance
+    // (any name other than the end of the agent's own name), and the server
+    // only hands back installs on the default one.
     const inPod = mode === 'byo' && podId && !personaCard ? `&podId=${encodeURIComponent(podId)}` : '';
     api.get<{ name?: string }>(`/api/registry/agents/next-free-name?base=${encodeURIComponent(base)}${inPod}`)
       .then((result) => {
@@ -1036,7 +1037,9 @@ const V2AgentBYO: React.FC = () => {
         // model for a different harness than the seat runs isn't saved here.
         const controls = { ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) };
         // The install names no instance, so the server derives it from the
-        // display name: 'default' unless a persona names the seat. Only then is
+        // display name: 'default' unless a persona's name differs from the end
+        // of the agent's name. The check below treats every persona as that
+        // case, to stay safe. Only on 'default' is
         // the seat that answered "already installed" the one these calls reach.
         if (Object.keys(controls).length && (personaCard || prefill.instanceId !== 'default')) {
           setError(t('agentByo.errors.controlsInSettings', { name: cleanName }));
