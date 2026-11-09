@@ -452,7 +452,7 @@ test('a scheduled run writes nothing until the unique digest index is built', as
     board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
   }));
   let built;
-  const ensure = jest.spyOn(Summary, 'ensureIndexes').mockReturnValue(new Promise((resolve) => { built = resolve; }));
+  const ensure = jest.spyOn(Summary, 'ensureDigestKeyIndex').mockReturnValue(new Promise((resolve) => { built = resolve; }));
   const run = new DailyDigestService().generateAllDailyDigests({ at: new Date(digestHourUtc().getTime() + 60000) });
   await new Promise((done) => { setTimeout(done, 100); });
   expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
@@ -467,7 +467,7 @@ test('a failed index build sends nothing that run, and the next run tries again'
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
     board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
   }));
-  const ensure = jest.spyOn(Summary, 'ensureIndexes').mockRejectedValueOnce(new Error('mongo unavailable'));
+  const ensure = jest.spyOn(Summary, 'ensureDigestKeyIndex').mockRejectedValueOnce(new Error('mongo unavailable'));
   const at = new Date(digestHourUtc().getTime() + 60000);
   const service = new DailyDigestService();
 
@@ -476,6 +476,21 @@ test('a failed index build sends nothing that run, and the next run tries again'
   await service.generateAllDailyDigests({ at: new Date(at.getTime() + 60 * 60 * 1000) });
   expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
   ensure.mockRestore(); spy.mockRestore();
+});
+
+test("another Summary index failing to build doesn't stop the digest", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const others = jest.spyOn(Summary, 'ensureIndexes').mockRejectedValue(new Error('conflicting index'));
+
+  await new DailyDigestService().generateAllDailyDigests({ at: new Date(digestHourUtc().getTime() + 60000) });
+
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  expect((await Summary.collection.indexes()).some((index) => index.unique && index.key['metadata.digestKey'] === 1))
+    .toBe(true);
+  others.mockRestore(); spy.mockRestore();
 });
 
 test('an on-demand digest carries no daily key, so it never blocks the scheduled one', async () => {
