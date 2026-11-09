@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 /*
  * TASK-530 — public Privacy and Terms pages, linked from Google OAuth consent
@@ -114,28 +115,35 @@ const TERMS_SECTIONS: LegalSection[] = [
   },
 ];
 
-const LegalDocument: React.FC<{ title: string; sections: LegalSection[] }> = ({ title, sections }) => (
-  <main className="v2-root v2-legal">
-    <article className="v2-legal__doc">
-      <a className="v2-legal__home" href="/">Commonly</a>
-      <h1 className="v2-legal__title">{title}</h1>
-      {sections.map((section) => (
-        <section key={section.heading} className="v2-legal__section">
-          <h2>{section.heading}</h2>
-          {section.body.map((paragraph, index) => (
-            // eslint-disable-next-line react/no-array-index-key
-            <p key={index}>{linkEmails(paragraph)}</p>
-          ))}
-        </section>
-      ))}
-    </article>
-  </main>
-);
+const LegalDocument: React.FC<{
+  title: string;
+  titleKey: string;
+  sections: LegalSection[];
+}> = ({ title, titleKey, sections }) => {
+  useDocumentTitle(titleKey);
+  return (
+    <main className="v2-root v2-legal">
+      <article className="v2-legal__doc">
+        <a className="v2-legal__home" href="/">Commonly</a>
+        <h1 className="v2-legal__title">{title}</h1>
+        {sections.map((section) => (
+          <section key={section.heading} className="v2-legal__section">
+            <h2>{section.heading}</h2>
+            {section.body.map((paragraph, index) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <p key={index}>{linkEmails(paragraph)}</p>
+            ))}
+          </section>
+        ))}
+      </article>
+    </main>
+  );
+};
 
 export const V2PrivacyPage: React.FC = () => (
-  <LegalDocument title="Privacy" sections={PRIVACY_SECTIONS} />
+  <LegalDocument title="Privacy" titleKey="pageTitle.privacy" sections={PRIVACY_SECTIONS} />
 );
 
 export const V2TermsPage: React.FC = () => (
-  <LegalDocument title="Terms" sections={TERMS_SECTIONS} />
+  <LegalDocument title="Terms" titleKey="pageTitle.terms" sections={TERMS_SECTIONS} />
 );

@@ -3587,5 +3587,12 @@
       "noPod_other": "{{name}} can't write in any pod: outside-writable grants reach {{count}} of its pods.",
       "unavailable": "Commonly couldn't check whether an outside-writable grant limits where {{name}} can write. Until it can, {{name}}'s writes are refused."
     }
+  },
+  "pageTitle": {
+    "format": "{{page}} · Commonly",
+    "login": "Sign in",
+    "register": "Sign up",
+    "privacy": "Privacy policy",
+    "terms": "Terms of service"
   }
 }

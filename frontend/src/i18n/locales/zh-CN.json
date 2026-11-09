@@ -3576,5 +3576,12 @@
       "noPod_other": "{{name}} 现在无法在任何 Pod 里写入：它有{{count}}个 Pod 被外部可写的授权覆盖。",
       "unavailable": "暂时无法确认外部可写的授权是否限制了 {{name}} 的写入范围。确认之前，{{name}} 的写入都会被拒绝。"
     }
+  },
+  "pageTitle": {
+    "format": "{{page}} · Commonly",
+    "login": "登录",
+    "register": "注册",
+    "privacy": "隐私政策",
+    "terms": "服务条款"
   }
 }
