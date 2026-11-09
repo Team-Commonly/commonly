@@ -18,6 +18,36 @@ import { deleteOpeningsFor } from '../repositories/recordChainRepository';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Integration = require('../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { HOSTED_MCP_TYPE, removeConnection } = require('./connectionRemovalService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
+
+/**
+ * A deleted person's hosted connections go too: grants, then the token is
+ * revoked at the vendor, then the stored material is removed, in the same
+ * order a person's own removal runs (connectionRemovalService). Every row gets
+ * its attempt even when an earlier one failed. A connection that can't finish
+ * this round (the vendor refused or threw, or a token write held the row)
+ * makes this throw once all rows have been tried, so the receipt is retried
+ * next round.
+ */
+const removeOwnedConnections = async (userId: string): Promise<void> => {
+  const rows = await Integration.find({ type: HOSTED_MCP_TYPE, createdBy: userId });
+  const unfinished: string[] = [];
+  for (const connection of rows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await removeConnection({ connection, removedBy: SYSTEM_REVOKER, revokeGrants: revokeConnectionGrants });
+      if (!result.removed) unfinished.push(`${String(connection._id)}:${result.code}`);
+    } catch (error) {
+      unfinished.push(`${String(connection._id)}:${(error as Error)?.name || 'Error'}`);
+    }
+  }
+  if (unfinished.length) throw new Error(`hosted connections not removed yet: ${unfinished.join(', ')}`);
+};
 
 export class AccountDeletionError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -171,33 +201,43 @@ export const sweepAccountDeletions = async (): Promise<void> => {
       // eslint-disable-next-line no-await-in-loop
       await renewLease();
       const userId = String(receipt._id);
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await revokeOwnedAccess(userId);
-        // eslint-disable-next-line no-await-in-loop
-        await anonymizeChatAuthor(userId);
+      // Each step is its own attempt. The steps don't depend on each other, so
+      // one that keeps failing (a store that's down, a vendor that refuses)
+      // must not hold back the rest, two of which remove credentials. Any
+      // failure marks the receipt failed, and every later round retries it.
+      const steps: Array<() => Promise<unknown>> = [
+        () => revokeOwnedAccess(userId),
+        () => anonymizeChatAuthor(userId),
         // Receipts stay, so this round also catches a late line: an agent that
         // outlives its owner keeps botMetadata.ownerUserId, and that must stay,
         // because without it the next caller is stamped as the agent's owner.
-        // eslint-disable-next-line no-await-in-loop
-        await deleteOpeningsFor(userId);
-        // eslint-disable-next-line no-await-in-loop
-        await deleteOwnedUploads(userId);
+        () => deleteOpeningsFor(userId),
+        () => deleteOwnedUploads(userId),
         // A receipt means the deletion was decided: billing preflight passed,
         // or an admin chose it. A row still here under a claim past the
         // preflight lease is a delete that died before its last step. Finish
         // it, or the person stays half-deleted and their email stays stored.
         // An admin retry can't, because its claim needs the marker unset.
-        // eslint-disable-next-line no-await-in-loop
-        await User.deleteOne({
+        () => User.deleteOne({
           _id: userId,
           isBot: { $ne: true },
           accountDeletionRequestedAt: { $lt: new Date(Date.now() - 300_000) },
-        });
-      } catch (error) {
-        errors.push(error);
-        failedIds.push(userId);
+        }),
+        // This also catches a connection created after the receipt by a
+        // request that was already past auth when the account was marked.
+        () => removeOwnedConnections(userId),
+      ];
+      let failed = false;
+      for (const step of steps) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await step();
+        } catch (error) {
+          errors.push(error);
+          failed = true;
+        }
       }
+      if (failed) failedIds.push(userId);
       // Rotate failed receipts too: one persistent failure cannot starve the
       // remaining queue. Keep the intent, so every later round retries it.
       try {
