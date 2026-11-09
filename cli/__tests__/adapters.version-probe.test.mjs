@@ -136,6 +136,15 @@ describe('goose', () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(`installed ${TESTED_GOOSE_VERSIONS[0]}-rc.1 differs`));
     } finally { warn.mockRestore(); }
   });
+
+  test('a version run into letters is unknown, not the tested version', async () => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}rc1`);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('installed unknown differs'));
+    } finally { warn.mockRestore(); }
+  });
 });
 
 describe('a bare binary name', () => {
