@@ -895,6 +895,19 @@ describe('podController', () => {
       expect(body.agentEnsemble.enabled).toBe(true);
     });
 
+    it('a member is recognised among populated members, as a real read returns them', async () => {
+      // A plain object: a Pod document would cast these back to bare ids.
+      const populated = { ...loaded().toJSON(), members: [{ _id: MEMBER, username: 'maya' }] };
+      Pod.findById.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            populate: jest.fn().mockResolvedValue(populated),
+          }),
+        }),
+      });
+      expect(await read(populated, MEMBER)).toMatchObject({ agentRunCap: 12, focusRevision: 2 });
+    });
+
     it('a field the lists do not name stays out, even for a member', async () => {
       const doc = loaded();
       const plain = doc.toJSON();

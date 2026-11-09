@@ -399,14 +399,12 @@ exports.getPodsByType = async (req: any, res: any) => {
   }
 };
 
-// Each agent member carries the label people know it by (resolveAgentDisplayLabel),
-// so the page can name a DM after its agent. The runtime name the rule reads is
-// dropped again: the list endpoint never sends it either.
 /*
  * What a pod read returns, named field by field (review-checklist rule 61), so
  * a field added to the schema later stays private until someone lists it.
  * Anyone callerMayReadPod lets in sees the reader list: a member, a reader of
- * a publicRead pod, or an observer of an agent DM. Only a member also gets
+ * a publicRead pod, an observer of an agent DM, or an admin who isn't a
+ * member. Only a member also gets
  * the pod's settings and working state. The nested createdBy, parentPod and
  * members are already narrowed by their populate selects.
  */
@@ -424,6 +422,9 @@ const pickPodFields = (plain: any, fields: readonly string[]) => Object.fromEntr
   fields.filter((field) => plain?.[field] !== undefined).map((field) => [field, plain[field]]),
 );
 
+// Each agent member carries the label people know it by (resolveAgentDisplayLabel),
+// so the page can name a DM after its agent. The runtime name the rule reads is
+// dropped again: the list endpoint never sends it either.
 const withAgentLabels = (plain: any) => ({
   ...plain,
   members: (plain?.members || []).map((member: any) => {
