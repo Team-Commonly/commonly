@@ -84,23 +84,6 @@ echo -n "your_mongo_uri_from_env" | gcloud secrets create commonly-dev-mongo-uri
 echo -n "your_postgres_password" | gcloud secrets create commonly-dev-postgres-password --data-file=-
 echo -n "your_postgres_password" | gcloud secrets create commonly-dev-mongo-password --data-file=-
 
-# values-dev.yaml runs the backend and LiteLLM on their own Postgres roles
-# (backend.env.pgAppUser and litellm.pgUser). Create the roles first, as your
-# admin user: CREATE ROLE commonly_app LOGIN; GRANT USAGE, CREATE ON SCHEMA
-# public TO commonly_app; CREATE ROLE commonly_litellm LOGIN; CREATE SCHEMA IF
-# NOT EXISTS litellm AUTHORIZATION commonly_litellm; GRANT commonly_app,
-# commonly_litellm TO <your admin user>; then set each role's password with
-# psql's \password commonly_app and \password commonly_litellm, using the same
-# values as the two secrets below. The backup and ops-runner stay on the admin
-# user, which reads both roles' tables through that membership.
-# On a database that already holds Commonly's tables, move their ownership
-# first: each public table and sequence to commonly_app, and the litellm
-# schema and everything in it to commonly_litellm. Boot migrations alter
-# existing tables, which only their owner can do.
-echo -n "your_app_role_password" | gcloud secrets create commonly-dev-postgres-app-password --data-file=-
-echo -n "your_litellm_role_password" | gcloud secrets create commonly-dev-postgres-litellm-password --data-file=-
-# To keep one user instead, set those four values to "" in values-dev.yaml.
-
 # JWT and Session
 echo -n "your_jwt_secret_from_env" | gcloud secrets create commonly-dev-jwt-secret --data-file=-
 echo -n "your_session_secret" | gcloud secrets create commonly-dev-session-secret --data-file=-

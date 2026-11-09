@@ -197,12 +197,7 @@ mongosh --quiet mongodb://127.0.0.1:27017/commonly \
 # PostgreSQL, in a postgres:16 container (POSTGRES_PASSWORD set)
 docker-entrypoint.sh postgres &
 until pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done
-# Create every role the dump names as an owner, or ON_ERROR_STOP halts at the first
-# ALTER ... OWNER. Since the 2026-11 role split that is avnadmin, commonly_app and
-# commonly_litellm, not avnadmin alone.
-for r in $(gunzip -c /work/backup.sql.gz | grep -oE 'OWNER TO [a-z_][a-z0-9_]*' | cut -d' ' -f3 | sort -u); do
-  psql -h 127.0.0.1 -U postgres -c "CREATE ROLE $r"
-done
+psql -h 127.0.0.1 -U postgres -c 'CREATE ROLE avnadmin'   # the dump's object owner
 createdb -h 127.0.0.1 -U postgres restore
 gunzip -c /work/backup.sql.gz | psql -h 127.0.0.1 -U postgres -d restore -v ON_ERROR_STOP=1 -q
 ```
@@ -315,8 +310,8 @@ kubectl exec -n "${DRILL_NS}" mongo-restore -- \
 
 Then restore with the same commands as the pod above (`mongorestore
 --uri=mongodb://127.0.0.1:27017 --archive=/work/backup.archive.gz --gzip`,
-then the loop that creates every owner role the dump names, `createdb`, and
-`gunzip -c | psql -v ON_ERROR_STOP=1`), run through `kubectl exec -n "${DRILL_NS}"`.
+then `CREATE ROLE avnadmin`, `createdb`, and `gunzip -c | psql -v
+ON_ERROR_STOP=1`), run through `kubectl exec -n "${DRILL_NS}"`.
 
 **Comparing counts.** Production keeps moving after the dump, so a raw count
 taken hours later never matches. Instead, count the production documents
@@ -446,8 +441,6 @@ kubectl cp /tmp/postgresql-backup.sql.gz \
 
 PGPASSWORD="$(kubectl get secret database-credentials \
   -n "${K8S_NAMESPACE}" -o jsonpath='{.data.postgres-password}' | base64 --decode)"
-# Roles are instance-wide: the live instance already has every owner the dump names.
-# Into a fresh instance, create them first with the owner-role loop from the drill above.
 kubectl exec postgresql-restore -n "${K8S_NAMESPACE}" -- \
   env PGPASSWORD="${PGPASSWORD}" \
   createdb -h "${PG_RESTORE_HOST}" -U "${PG_RESTORE_USER}" \
