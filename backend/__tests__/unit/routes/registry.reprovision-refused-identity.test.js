@@ -88,7 +88,7 @@ describe('reprovision of a refused identity', () => {
     expect(removeOpenClawAccount).toHaveBeenCalledWith(expect.objectContaining({ gateway }));
     expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'scout', { gateway });
     expect(result).toEqual(expect.objectContaining({
-      removedFromRuntime: true, runtimeGateway: gateway, runtimeRemovalError: 'The state file edit failed.',
+      removedFromRuntime: true, runtimeGatewayId: 'gw-1', runtimeRemovalError: 'The state file edit failed.',
     }));
     spy.mockRestore();
   });

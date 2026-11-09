@@ -11,6 +11,11 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: jest.fn() },
 }));
 jest.mock('../../../routes/registry/reprovision', () => ({ reprovisionInstallation: jest.fn() }));
+const mockResolveGateway = jest.fn();
+jest.mock('../../../routes/registry/helpers', () => ({
+  ...jest.requireActual('../../../routes/registry/helpers'),
+  resolveGatewayForInstallation: (...args) => mockResolveGateway(...args),
+}));
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),
   restartAgentRuntime: jest.fn().mockResolvedValue({ restarted: true }),
@@ -57,8 +62,13 @@ describe('POST /admin/installations/reprovision-all', () => {
 
   it('a run that only removed refused accounts restarts the gateway once', async () => {
     reprovisionInstallation.mockResolvedValue({
-      installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-      skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: null,
+      installationId: 'a',
+      agentName: 'openclaw',
+      runtimeType: 'moltbot',
+      skipped: true,
+      skipReason: 'cloud_agents_not_entitled',
+      removedFromRuntime: true,
+      runtimeGatewayId: null,
     });
 
     const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
@@ -70,26 +80,38 @@ describe('POST /admin/installations/reprovision-all', () => {
 
   it('a removal on a gateway of its own restarts that gateway, and a failed state edit reads as failed', async () => {
     const gateway = { _id: 'gw-1', slug: 'team' };
+    mockResolveGateway.mockResolvedValue(gateway);
     reprovisionInstallation
       .mockResolvedValueOnce({
-        installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+        installationId: 'a',
+        agentName: 'openclaw',
+        runtimeType: 'moltbot',
+        skipped: true,
+        skipReason: 'cloud_agents_not_entitled',
+        removedFromRuntime: true,
+        runtimeGatewayId: 'gw-1',
         runtimeRemovalError: 'The state file edit failed.',
       })
       .mockResolvedValueOnce({
-        installationId: 'b', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+        installationId: 'b',
+        agentName: 'openclaw',
+        runtimeType: 'moltbot',
+        skipped: true,
+        skipReason: 'cloud_agents_not_entitled',
+        removedFromRuntime: true,
+        runtimeGatewayId: 'gw-1',
       });
 
     const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
 
     expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(mockResolveGateway).toHaveBeenCalledWith({ gatewayId: 'gw-1' });
     expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'default', { gateway });
     expect(res.body).toMatchObject({
       success: false, attempted: 2, succeeded: 0, failed: 1, skipped: 1,
     });
     expect(res.body.items[0]).toMatchObject({ success: false, error: 'The state file edit failed.' });
-    // The gateway record stays out of the response.
-    expect(res.body.items[0].runtimeGateway).toBeUndefined();
+    // Not even the gateway's id goes out in the response.
+    expect(res.body.items[0].runtimeGatewayId).toBeUndefined();
   });
 });

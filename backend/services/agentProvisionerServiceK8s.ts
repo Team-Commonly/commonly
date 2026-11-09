@@ -2365,6 +2365,14 @@ const removeOpenClawAccount = async ({
   const config = await readConfigMap(resolvedConfigMap, configKey);
   const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
   if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
+  // A gateway with no Deployment runs nothing, so there is no state file to
+  // edit and nothing left to remove: the identity is out (as with F329).
+  // Any other read error goes on to the pod wait, which reports it.
+  try {
+    await k8sAppsApi.readNamespacedDeployment(resolveGatewayDeploymentName(gateway), NAMESPACE);
+  } catch (error: any) {
+    if (error?.response?.statusCode === 404) return { removed };
+  }
   const gatewayKey = String(gateway?.slug || gateway?._id || 'default');
   if ((gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
     return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };

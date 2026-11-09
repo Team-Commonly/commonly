@@ -20,6 +20,7 @@ const {
   normalizeConfigMap,
   sanitizeRuntimeConfig,
   buildAgentProfileId,
+  resolveGatewayForInstallation,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
 const {
@@ -178,7 +179,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     const items = [];
     const sharedRuntimesNeedingRestart = new Set();
     // A removal on a gateway with its own deployment restarts that gateway.
-    const namedGatewaysNeedingRestart = new Map<string, any>();
+    const namedGatewaysNeedingRestart = new Set<string>();
     for (const installation of activeInstallations) {
       try {
         const result = await reprovisionInstallation({
@@ -188,11 +189,11 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           userTokenCache,
           skipRuntimeRestart: true,
         });
-        const { runtimeGateway, ...shown } = result;
+        const { runtimeGatewayId, ...shown } = result;
         // Track which shared runtimes need a single deferred restart
         // A removed account also needs the restart, or the gateway keeps running it.
-        if (result.runtimeType === 'moltbot' && result.removedFromRuntime && runtimeGateway) {
-          namedGatewaysNeedingRestart.set(String(runtimeGateway._id || runtimeGateway.slug), runtimeGateway);
+        if (result.runtimeType === 'moltbot' && result.removedFromRuntime && runtimeGatewayId) {
+          namedGatewaysNeedingRestart.add(String(runtimeGatewayId));
         } else if (result.runtimeType === 'moltbot' && (!result.skipped || result.removedFromRuntime)) {
           sharedRuntimesNeedingRestart.add('moltbot');
         }
@@ -233,11 +234,15 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
         console.warn('[reprovision-all] Failed to restart gateway:', err.message);
       });
     }
-    for (const gateway of namedGatewaysNeedingRestart.values()) {
-      // eslint-disable-next-line no-await-in-loop
-      await restartAgentRuntime('moltbot', 'default', { gateway }).catch((err: any) => {
+    for (const gatewayId of namedGatewaysNeedingRestart) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const gateway = await resolveGatewayForInstallation({ gatewayId });
+        // eslint-disable-next-line no-await-in-loop
+        await restartAgentRuntime('moltbot', 'default', { gateway });
+      } catch (err: any) {
         console.warn('[reprovision-all] Failed to restart gateway after removal:', err.message);
-      });
+      }
     }
 
     // A skipped row that failed counts once, as failed.

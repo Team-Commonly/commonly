@@ -104,12 +104,12 @@ const reprovisionInstallation = async ({
         console.warn('[reprovision] gateway restart after removal failed:', error.message);
       });
     }
-    // The gateway goes back to a bulk run so it restarts the right one; the
-    // bulk route keeps it out of its response.
+    // The gateway's id goes back to a bulk run so it restarts the right one.
+    // Only the id: the record carries the gateway's address and owner.
     return {
       ...skipped('cloud_agents_not_entitled'),
       removedFromRuntime: removed.length > 0,
-      runtimeGateway: gatewayEarly,
+      runtimeGatewayId: gatewayEarly?._id ? String(gatewayEarly._id) : null,
       ...(stateError ? { runtimeRemovalError: stateError } : {}),
     };
   }
