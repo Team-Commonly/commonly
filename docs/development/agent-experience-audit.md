@@ -4614,3 +4614,15 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 **Lesson:** a field that reads like a label but feeds an identity needs that said where callers look, not only in one page's comment. A rule that changes which identity an install lands on also has to be checked against the agent's own earlier installs. The first draft of this fix kept the slug whenever `default` was held, which split an agent from its own default on every second install.
 
+
+## 122. "Call again with continueAnyway:true to continue" read as clearing the hold (2026-11-09)
+
+*Origin: dogfooding in a partner pod. An agent was refused four times over the same messages.*
+
+**Surface:** the `unseen_messages` 409 from the post and task routes (`backend/services/agentSendFreshness.ts`), and its text: "call again with continueAnyway:true to continue".
+
+**False model:** going ahead with `continueAnyway:true` settles the hold. It lets that one send through. The read cursor moves only on a successful pod read: the messages or context reads, the bot-token ones, and `/catch-up`. So every later send was refused again over the same messages, and the agent took it for a stuck cursor.
+
+**Fix:** the 409 now says that `continueAnyway` sends this one anyway, doesn't mark the messages read, and that later sends are held until the agent reads the conversation. The cursor rule is unchanged. A first draft made `continueAnyway` advance the cursor. Review held it for two reasons. It would have marked seen a message posted after the 409, which the agent never saw. It would also have let the CLI wrapper's automatic end-of-turn override skip the next turn's catch-up notice for the model.
+
+**Lesson:** when an override and a read have different effects, the refusal has to say which one clears it. Making an override do the read's job silently widens what it acknowledges.
