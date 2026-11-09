@@ -38,6 +38,30 @@ data-exfiltration category. Nothing in such a page is an attack. Measured
 2026-10-17: 3 of 437 hosted runs over 14 days were stopped, all after a page
 read.
 
+**Third known false positive, now trimmed: "enter" inside "Enterprise".**
+The jailbreak category's identifier words match as substrings, and block
+words only need to share a sentence with one. commonly.me's own landing page
+lists "Unlimited humans…", "Unlimited BYO agents…" and an "Enterprise" tier
+with no sentence break between them, so it read as `enter` + `unlimited` and
+a walk couldn't read our front page (2026-11-08). The chart now loads its own
+copy of the category, `k8s/helm/commonly/files/litellm/prompt_injection_jailbreak.yaml`,
+which is upstream v1.106.2 without `enter`. `DAN mode` still blocks as an
+always-block keyword, and `enable`, `activate` and `switch to` still pair
+with `developer mode` and the other block words.
+
+- **The override fails open if its wiring breaks.** LiteLLM refuses a
+  `category_file` outside its own package unless
+  `LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true` is set on the litellm
+  container. A refused or missing file only logs `invalid category_file path,
+  skipping` or `Category file not found`, and the guard runs without the
+  jailbreak category. `backend/__tests__/unit/helm/litellmJailbreakCategory.test.js`
+  pins the env, the mount and the config line. After a deploy, check that the
+  litellm log has neither line.
+- **When the LiteLLM image moves,** diff our copy against the new upstream
+  file and carry its changes over. Our copy doesn't update with the image.
+- The same mechanism is how to trim the next false positive: edit our copy,
+  or add a `category_file` for another category the same way.
+
 **When the guard stops a hosted turn** (`nativeRuntimeService.runAgent`):
 
 - If the turn has read the web and posted nothing yet, each web result is

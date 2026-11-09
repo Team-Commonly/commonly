@@ -191,6 +191,13 @@ spec:
           containerPort: 4000
           protocol: TCP
         env:
+        # The injection-guard loads its jailbreak category from
+        # /app/prompt_injection_jailbreak.yaml, which this chart mounts. LiteLLM
+        # refuses a category_file outside its own package unless this is set,
+        # and then skips the category, so the guard would lose it silently.
+        # The path comes only from this chart's config, not from a request.
+        - name: LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS
+          value: "true"
         - name: LITELLM_MASTER_KEY
           valueFrom:
             secretKeyRef:
@@ -266,6 +273,9 @@ spec:
         - name: litellm-config
           mountPath: /app/model_fallback_signal.py
           subPath: model_fallback_signal.py
+        - name: litellm-config
+          mountPath: /app/prompt_injection_jailbreak.yaml
+          subPath: prompt_injection_jailbreak.yaml
         - name: chatgpt-auth
           mountPath: /chatgpt-auth
         resources:
