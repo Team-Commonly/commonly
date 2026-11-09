@@ -1255,15 +1255,14 @@ const V2AgentBYO: React.FC = () => {
       setupOs, listenerAvailable, ...(copyType ? { copyType } : {}), ...(reason ? { reason } : {}),
     });
   };
-  // One report per issued key; the buttons hide after the click (F342). The report belongs to the key it was made for,
-  // so a new key (Install another) asks again. The issued key lives only in this component, so a remount shows no prompt
-  // until a key is issued again.
-  const stallKey = issued ? `${issued.agentName}:${issued.issuedAt}` : null;
-  const [stallReport, setStallReport] = useState<{ key: string; reason: ByoStallReason } | null>(null);
-  const stallReason = stallReport && stallReport.key === stallKey ? stallReport.reason : null;
+  // One report per issued key; the buttons hide after the click (F342). The report holds the issued object it was made
+  // for, so a new key (Install another) asks again, whatever its name or time. The issued key lives only in this component,
+  // so a remount shows no prompt until a key is issued again. Like every funnel step, the post is fire-and-forget.
+  const [stallReport, setStallReport] = useState<{ key: object; reason: ByoStallReason } | null>(null);
+  const stallReason = issued && stallReport?.key === issued ? stallReport.reason : null;
   const reportStall = (reason: ByoStallReason) => {
-    if (!stallKey || stallReason) return;
-    setStallReport({ key: stallKey, reason });
+    if (!issued || stallReason) return;
+    setStallReport({ key: issued, reason });
     byoStep('listen-stall-reported', undefined, reason);
   };
 
