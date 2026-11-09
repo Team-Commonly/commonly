@@ -21,7 +21,8 @@ const ROLES = [...BACKEND_ROLE, ...LITELLM_ROLE];
 const render = (lane, sets = []) => {
   const args = ['template', `commonly-${lane}`, chart];
   for (const f of lanes[lane]) args.push('-f', f);
-  for (const s of sets) args.push('--set', s);
+  // A "string:" prefix sets the value with --set-string, so "123" stays a string.
+  for (const s of sets) args.push(...(s.startsWith('string:') ? ['--set-string', s.slice(7)] : ['--set', s]));
   return yaml.loadAll(execFileSync('helm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).filter(Boolean);
 };
 const refuses = (lane, sets) => {
@@ -82,8 +83,11 @@ for (const lane of Object.keys(lanes)) {
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=mongo-password']), `${lane} ${on}: a litellm role on mongo-password renders`);
     expect(refuses(lane, [on, 'litellm.pgUser=svc:prod', 'litellm.pgPasswordKey=postgres-litellm-password']), `${lane} ${on}: a litellm role that isn't a plain name renders`);
     expect(refuses(lane, [on, 'backend.env.pgAppUser=App-Role', 'backend.env.pgAppPasswordKey=postgres-app-password']), `${lane} ${on}: a backend role that isn't a plain name renders`);
-    expect(refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(64)}`, 'backend.env.pgAppPasswordKey=postgres-app-password']), `${lane} ${on}: a 64-byte backend role renders`);
-    expect(!refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(63)}`, 'backend.env.pgAppPasswordKey=postgres-app-password']) || !esKeys(render(lane)), `${lane} ${on}: a 63-byte backend role is refused`);
+    // Role-name boundaries on postgres-password, the one key every lane accepts.
+    expect(refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(64)}`, 'backend.env.pgAppPasswordKey=postgres-password']), `${lane} ${on}: a 64-byte backend role renders`);
+    expect(!refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(63)}`, 'backend.env.pgAppPasswordKey=postgres-password']), `${lane} ${on}: a 63-byte backend role is refused`);
+    expect(refuses(lane, [on, 'litellm.pgUser=pg_app', 'litellm.pgPasswordKey=postgres-password']), `${lane} ${on}: a reserved pg_ role renders`);
+    expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'string:litellm.pgPasswordKey=123']), `${lane} ${on}: a numeric password key renders`);
     expect(refuses(lane, [on, 'backend.env.pgAppUser=app_role', 'backend.env.pgAppPasswordKey=postgres/app-password']), `${lane} ${on}: a backend key that isn't a valid Secret key renders`);
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=postgres/litellm-password']), `${lane} ${on}: a litellm key that isn't a valid Secret key renders`);
   }
@@ -106,6 +110,9 @@ for (const lane of Object.keys(lanes)) {
   const lSet = litellm(set);
   if (lSet) expect(lSet.user === 'llm_role' && lSet.key === 'key:postgres-litellm-password', `${lane}: litellm set is ${JSON.stringify(lSet)}`);
 
+  // Key-length boundaries, where the key reaches the ExternalSecret.
+  expect(!refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(252)}`]), `${lane}: a 253-character key is refused`);
+  expect(refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(253)}`]), `${lane}: a 254-character key renders`);
   const prefix = esBase.find((k) => k.startsWith('postgres-password<-')).slice('postgres-password<-'.length, -'postgres-password'.length);
   const synced = (key) => `${key}<-${prefix}${key}`;
   expect(esBase.length === 3, `${lane}: database-credentials unset syncs ${esBase.join(', ')}`);

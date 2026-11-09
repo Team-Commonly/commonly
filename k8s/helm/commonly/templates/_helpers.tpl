@@ -162,11 +162,12 @@ templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
 {{- fail (printf "%s: set the Postgres role and its password key together" $path) }}
 {{- end }}
 {{- /* Postgres truncates a longer name at CREATE ROLE but not at login, so 63 is the limit. */}}
-{{- if and $role (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $role)) }}
-{{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*, at most 63)" $path $role) }}
+{{- if and $role (or (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $role)) (hasPrefix "pg_" $role)) }}
+{{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*, at most 63, no pg_ prefix)" $path $role) }}
 {{- end }}
-{{- if and $key (not (regexMatch "^[-._a-zA-Z0-9]+$" $key)) }}
-{{- fail (printf "%s: %q is not a valid Secret key ([-._a-zA-Z0-9]+)" $path $key) }}
+{{- /* A leading letter keeps the key a YAML string when rendered unquoted. */}}
+{{- if and $key (not (regexMatch "^[a-zA-Z][-._a-zA-Z0-9]{0,252}$" (toString $key))) }}
+{{- fail (printf "%s: %q is not a Secret key name (a letter, then [-._a-zA-Z0-9], at most 253)" $path (toString $key)) }}
 {{- end }}
 {{- if has $key (list "mongo-uri" "mongo-password") }}
 {{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
