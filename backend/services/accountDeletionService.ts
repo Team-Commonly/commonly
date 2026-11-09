@@ -18,6 +18,30 @@ import { deleteOpeningsFor } from '../repositories/recordChainRepository';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Integration = require('../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { HOSTED_MCP_TYPE, removeConnection } = require('./connectionRemovalService');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { revokeConnectionGrants, SYSTEM_REVOKER } = require('./roomGrantService');
+
+/**
+ * A deleted person's hosted connections go too: grants, then the token is
+ * revoked at the vendor, then the stored material is removed, in the same
+ * order a person's own removal runs (connectionRemovalService). A connection
+ * that can't finish this round (the vendor refused, or a token write held the
+ * row) throws, so the receipt is retried next round.
+ */
+const removeOwnedConnections = async (userId: string): Promise<void> => {
+  const rows = await Integration.find({ type: HOSTED_MCP_TYPE, createdBy: userId });
+  const unfinished: string[] = [];
+  for (const connection of rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await removeConnection({ connection, removedBy: SYSTEM_REVOKER, revokeGrants: revokeConnectionGrants });
+    if (!result.removed) unfinished.push(`${String(connection._id)}:${result.code}`);
+  }
+  if (unfinished.length) throw new Error(`hosted connections not removed yet: ${unfinished.join(', ')}`);
+};
 
 export class AccountDeletionError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -202,6 +226,11 @@ export const sweepAccountDeletions = async (): Promise<void> => {
           isBot: { $ne: true },
           accountDeletionRequestedAt: { $lt: new Date(Date.now() - 300_000) },
         });
+        // Last, so a vendor that refuses a revoke holds up only this step. It
+        // also catches a connection created after the receipt by a request
+        // that was already past auth when the account was marked.
+        // eslint-disable-next-line no-await-in-loop
+        await removeOwnedConnections(userId);
       } catch (error) {
         errors.push(error);
         failedIds.push(userId);
