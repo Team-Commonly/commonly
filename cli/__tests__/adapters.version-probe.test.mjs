@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
+import { jest } from '@jest/globals';
 import qwen, { TESTED_QWEN_VERSIONS } from '../src/lib/adapters/qwen.js';
 import goose, { TESTED_GOOSE_VERSIONS } from '../src/lib/adapters/goose.js';
 import { meetsMinimumVersion, probeVersion } from '../src/lib/adapters/tested-version.js';
@@ -125,6 +126,57 @@ describe('goose', () => {
     }
     expect(await probes()).toBe(1);
   });
+
+  test('a prerelease of a tested version is read in full, so it is not the tested version', async () => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+      // The same check refuses a public seat; a private one says so and continues.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`installed ${TESTED_GOOSE_VERSIONS[0]}-rc.1 differs`));
+    } finally { warn.mockRestore(); }
+  });
+
+  // CodeRabbit on #3430: the public seat refuses a prerelease of its tested version before anything spawns.
+  test('a public seat refuses a prerelease of the tested version and spawns nothing', async () => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    const spawned = jest.fn();
+    const ctx = gooseCtx(binary);
+    const keyFile = join(root, 'goose-provider-key');
+    await writeFile(keyFile, 'upstream-secret', { mode: 0o600 });
+    await expect(goose.spawn('hi', {
+      ...ctx,
+      _spawnImpl: spawned,
+      environment: {
+        model: 'probe-model',
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+        mcp: [],
+      },
+    })).rejects.toThrow(`public seats refuse untested version ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  // CodeRabbit on #3430: only the whole version is read. Anything that would admit part of a longer string is unknown.
+  test.each(['rc1', 'x', '.1', '+build', '-'])('a version with %j attached is unknown, not the tested version', async (tail) => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}${tail}`);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('installed unknown differs'));
+    } finally { warn.mockRestore(); }
+  });
+
+  test.each([['a leading v', (v) => `goose v${v}`], ['a longer version', (v) => `goose 2.${v}`], ['two parts', (v) => `goose ${v.split('.').slice(0, 2).join('.')}`]])(
+    'a version with %s is unknown', async (_label, shape) => {
+      const { binary } = await fakeHarness('goose', shape(TESTED_GOOSE_VERSIONS[0]));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('installed unknown differs'));
+      } finally { warn.mockRestore(); }
+    },
+  );
 });
 
 describe('a bare binary name', () => {

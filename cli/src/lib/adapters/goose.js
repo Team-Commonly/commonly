@@ -24,6 +24,14 @@ import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 
 // A version enters this list only after a real headless turn with that binary.
+// Each version here is proven by the real-binary smoke test on macOS and Linux
+// (.github/workflows/goose-public-proof.yml carries one pinned row per version).
+// 1.56.0 is NOT admitted (11-04, F113c): its state-machine agent loop offers the
+// model a `load_skill` operation on every turn that the extension allowlist
+// cannot remove, so a stranger could read any skill under the seat's working
+// directory (.agents/.goose/.claude skills) and Goose's builtin skills. The
+// proof failed on both hosts at the allowlist check. Re-admit a version only
+// once skills can be switched off for public turns and the proof is green.
 export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
@@ -88,7 +96,11 @@ export const assertSandboxSupported = (environment = {}) => {
   }
 };
 
-const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+// The version is read whole or not at all. A prerelease is kept (`1.54.0-rc.1` is not the tested 1.54.0), and a
+// version touching a letter, digit, `.`, `+` or `-` on either side (`1.54.0rc1`, `1.54.0.1`, `2.1.54.0`, `v1.54.0`,
+// `1.54.0+build`) reads as unknown, so the public gate never admits part of a longer string.
+const versionOf = (value) => String(value || '').trim()
+  .match(/(?<![\w.+-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)(?![\w.+-])/)?.[1] || null;
 
 /** Goose splits this string itself; reject quotes it cannot represent safely. */
 const gooseWord = (value) => {
