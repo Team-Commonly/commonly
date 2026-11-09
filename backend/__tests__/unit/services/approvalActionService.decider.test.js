@@ -438,7 +438,7 @@ describe('deciderOf (F265)', () => {
 
   it('never puts a raw id into chat text when the decider has no name left', async () => {
     lookup(null);
-    expect(await deciderOf({ resolvedBy: ID })).toMatchObject({ receiptName: 'The credential owner' });
+    expect(await deciderOf({ resolvedBy: ID })).toMatchObject({ receiptName: 'The credential owner', approver: { username: 'The credential owner' } });
   });
 
   it('uses the decider\'s name when there is one', async () => {

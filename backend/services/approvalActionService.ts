@@ -1439,10 +1439,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     }
   }
   if (parkedCall) {
-    const username = approverName || 'The workspace owner';
+    const username = approverName || DECIDER_FALLBACK_NAME;
     await finishToolCallClosureOrLeaveForRetry(transitioned, decision, {
       approver: { userId: String(callerUserId), username },
-      receiptName: approverName || RECEIPT_FALLBACK_NAME,
+      receiptName: username,
     });
     return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
   }
@@ -1601,11 +1601,12 @@ type ToolCallClosure = 'expired' | 'approved' | 'declined';
 /** What the deciding request already knows; a retry reads it back from the row. */
 type LiveDecider = { approver: { userId: string; username: string }; receiptName: string };
 /**
- * Who the room receipt names when the decider has no usable name. Only a
- * parked call gets a receipt, and only its credential owner can decide one
- * (resolveApproval). Never the raw id: the receipt is chat text.
+ * Who a parked call's receipt and its agent wake name when the decider has no
+ * usable name. Only the call's credential owner can decide it
+ * (resolveApproval), so both say the same role. Never the raw id: the receipt
+ * is chat text.
  */
-const RECEIPT_FALLBACK_NAME = 'The credential owner';
+const DECIDER_FALLBACK_NAME = 'The credential owner';
 
 /** The person who decided, for a retry that has no request to read them from. */
 export const deciderOf = async (row: Pick<IApprovalAction, 'resolvedBy'>): Promise<LiveDecider> => {
@@ -1613,8 +1614,8 @@ export const deciderOf = async (row: Pick<IApprovalAction, 'resolvedBy'>): Promi
     { username?: string; displayName?: string } | null;
   const name = user?.displayName?.trim() || user?.username?.trim();
   return {
-    approver: { userId: String(row.resolvedBy), username: name || 'The workspace owner' },
-    receiptName: name || RECEIPT_FALLBACK_NAME,
+    approver: { userId: String(row.resolvedBy), username: name || DECIDER_FALLBACK_NAME },
+    receiptName: name || DECIDER_FALLBACK_NAME,
   };
 };
 

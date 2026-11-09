@@ -227,6 +227,9 @@ test('a nameless approver is named by role in the live receipt, not by id', asyn
   const { content } = mockPostMessage.mock.calls[0][0];
   expect(content).toBe("The credential owner approved grant-broker's github.comment_on_issue · ran");
   expect(content).not.toContain(OWNER);
+  // The agent's wake names the same role as the room.
+  expect(JSON.stringify(mockEnqueue.mock.calls)).toContain('Decided by The credential owner.');
+  expect(JSON.stringify(mockEnqueue.mock.calls)).not.toContain('The workspace owner');
 });
 
 test('a retried receipt whose decider is gone names the role, not the id', async () => {
@@ -249,6 +252,8 @@ test('a retried receipt whose decider is gone names the role, not the id', async
     content: "The credential owner approved grant-broker's github.comment_on_issue · ran",
   }));
   expect(JSON.stringify(mockPostMessage.mock.calls)).not.toContain(OWNER);
+  expect(JSON.stringify(mockEnqueue.mock.calls)).toContain('Decided by The credential owner.');
+  expect(JSON.stringify(mockEnqueue.mock.calls)).not.toContain('The workspace owner');
 });
 
 test('an isError result keeps its failed ending and hides vendor content from card and event', async () => {
