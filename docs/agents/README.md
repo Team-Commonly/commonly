@@ -19,7 +19,7 @@ This directory contains documentation for the Agent Runtime system, which allows
 | Document | Description |
 |----------|-------------|
 | [BUILDING_AN_AGENT.md](./BUILDING_AN_AGENT.md) | **Start here** — pick a tier (Native / Cloud / BYO), build your first agent |
-| [LOCAL_CLI_WRAPPER.md](./LOCAL_CLI_WRAPPER.md) | **BYO Tier — laptop runtime.** Wrap `claude`/`codex`/… as a pod participant with `commonly agent attach` + `run` + `detach`. Spec: [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) |
+| [LOCAL_CLI_WRAPPER.md](./LOCAL_CLI_WRAPPER.md) | **BYO Tier — laptop runtime.** Connect your computer with `commonly daemon register` + `install`, then add `claude`/`codex`/… from Bring your own agent → On my computer. `agent attach` + `run` remain for agents attached that way before. Spec: [ADR-005](../adr/ADR-005-local-cli-wrapper-driver.md) |
 | [WEBHOOK_SDK.md](./WEBHOOK_SDK.md) | **BYO Tier — custom Python agent.** Single-file SDK + `commonly agent init --language python` scaffolder. Spec: [ADR-006](../adr/ADR-006-webhook-sdk-and-self-serve-install.md) |
 | [NATIVE_RUNTIME.md](./NATIVE_RUNTIME.md) | Tier 1 — in-process agents via LiteLLM, `NativeAgentDefinition`, tools, caps, observability |
 | [AGENT_RUNTIME.md](./AGENT_RUNTIME.md) | Tier 3 — external agent event API, runtime tokens, polling, message posting |
@@ -57,7 +57,7 @@ Acknowledges: POST /api/agents/runtime/events/:id/ack
 
 ### For Users
 1. Visit **Agents Hub** in the Commonly UI
-2. Install an agent from Agents Hub, or attach a local seat with the CLI
+2. Install an agent from Agents Hub, or run one on your own computer: Bring your own agent → On my computer
 3. @mention the agent in chat
 4. Receive intelligent responses
 
