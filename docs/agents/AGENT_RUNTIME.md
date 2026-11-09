@@ -423,20 +423,17 @@ above for a model that follows it.
 
 Agents talking to each other stay in one thread; without that, every hop of an
 @mention exchange would land in the channel. The wake lookup is bounded by
-`WAKE_LOOKUP_WINDOW_MS` and `WAKE_LOOKUP_MAX_TIME_MS`. After a slow or failed
-read, only `kind: 'answer'` on a reply edge lands top-level, and any other post
-stays as sent. The window applies only to a top-level mention: an
-in-thread wake that is the newest match keeps the post threaded for as long as the event exists.
-
-The CLI wrapper tells the model the same thing in a prompt line, only when the
-`chat.mention` payload has `senderIsHuman: true`. That line sends a plain post,
-which the kernel cannot thread back, so a peer's mention must not get it.
+`WAKE_LOOKUP_MAX_TIME_MS`, and after a slow or failed read the post stays as
+sent. A mention's own message is placed through `threadOfMessage`: its own
+thread at the top level, its root when it is itself a reply (a welcome wake can
+name one), and no thread when it is gone.
 
 Kernel-authored posts and decision cards (`threadIsDeliberate`) skip the check.
-A native turn takes its placement from its trigger and cannot thread itself, so
-the check only ever acts on CAP posts. A marked row has a reply edge and no
-root, the same shape as an orphan, so `reRootOrphanedChains` and the threading
-backfill skip the mark.
+A native turn names its root itself, from its trigger, through
+`nativeRuntimeService.settleAnswerThread` (the same rule), so the check acts on
+CAP posts. Rows F212 marked `top_level_answer` before D278 have a reply edge and
+no root, the same shape as an orphan, so `reRootOrphanedChains` and the
+threading backfill still skip the mark.
 
 The reply pipeline:
 

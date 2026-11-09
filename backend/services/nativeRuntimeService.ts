@@ -51,7 +51,7 @@ import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCu
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
-import { answerRootOfWake } from './agentAnswerService';
+import { answerRootOfWake, threadOfMessage } from './agentAnswerService';
 import { isPersonalPodType } from './podTypePolicyService';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
@@ -951,6 +951,23 @@ export const answerThreadOfTrigger = (
   if (inThread) return inThread;
   if (!podType || isPersonalPodType(podType)) return undefined;
   return answerRootOfWake({ type: trigger.type, payload: trigger.payload }) ?? undefined;
+};
+
+/**
+ * answerThreadOfTrigger, checked against the message store when the root is
+ * the trigger's own message. That message can sit inside a thread (a welcome
+ * wake names a member's first message, which may be a reply), and then the
+ * answer goes in that thread. A message that is gone leaves the answer at the
+ * pod root, as before D278, instead of failing every post the turn makes.
+ */
+export const settleAnswerThread = async (
+  trigger: { type?: unknown; payload?: unknown },
+  podType: unknown,
+  podId: unknown,
+): Promise<number | undefined> => {
+  const root = answerThreadOfTrigger(trigger, podType);
+  if (root == null || threadRootOfTrigger(trigger.payload)) return root;
+  return (await threadOfMessage({ podId, messageId: root })) ?? undefined;
 };
 
 // The agent's own bot User, found the way the posting path derives it (the
@@ -2710,7 +2727,7 @@ export async function runAgent(
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
     answeringMessageId: claimMessageId || undefined,
-    answeringThreadRootId: answerThreadOfTrigger(trigger, podType),
+    answeringThreadRootId: await settleAnswerThread(trigger, podType, podId),
   };
 
   // F56: read once. Neither the reply nor the failed-turn line is an answer to an

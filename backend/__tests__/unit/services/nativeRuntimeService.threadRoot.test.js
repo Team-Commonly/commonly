@@ -27,8 +27,14 @@ jest.mock('../../../services/messageClaimService', () => ({
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
 }));
+// The message store's answer to "which thread is this message in": by default
+// a top-level message is its own root. A test can make it a reply, or gone.
+jest.mock('../../../services/threadRootResolver', () => ({
+  resolveThreadRoot: jest.fn(async ({ replyToMessageId }) => Number(replyToMessageId)),
+}));
 
 const axios = require('axios').default;
+const { resolveThreadRoot } = require('../../../services/threadRootResolver');
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const { threadRootOfTrigger, answerThreadOfTrigger, runAgent } = require('../../../services/nativeRuntimeService');
@@ -180,6 +186,45 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
       const fallback = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.fallback);
       expect(fallback).toBeDefined();
       expect(fallback[0].threadRootId).toBe(10);
+    });
+
+    // A welcome wake names a member's first message, which can be a reply in
+    // someone's thread. Naming that reply as the root is refused, which failed
+    // every post of the turn; the answer goes in the reply's thread instead.
+    test('a trigger message that is itself a reply: the answer goes in its thread', async () => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      resolveThreadRoot.mockResolvedValueOnce(7);
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'welcome' }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(resolveThreadRoot).toHaveBeenCalledWith(expect.objectContaining({ replyToMessageId: '10' }));
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(7);
+    });
+
+    test('a trigger message that is gone: the answer posts plain, as before D278', async () => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      resolveThreadRoot.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'reply_target_unavailable' }));
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'hi' }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
+    });
+
+    test('a mention inside a thread is not looked up: the payload names its root', async () => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post.mockResolvedValueOnce(says('Plain reply, no tool.'));
+
+      await runAgent(seat, threaded);
+
+      expect(resolveThreadRoot).not.toHaveBeenCalled();
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(4);
     });
 
     test('in an agent room the tool post stays a plain post', async () => {

@@ -65,9 +65,11 @@ const AgentEvent = require('../../../models/AgentEvent');
 // top-level mention in a shared pod also carries formatMentionThreadCue; the
 // reference wake's message id is not numeric, so it is not counted here.
 const BUDGET_MAX = 4300;
+// The D278 thread line on a numeric top-level mention, measured separately.
+const THREAD_CUE_MAX = 400;
 const BUDGET_MIN = 3550;
 
-const referenceWake = async () => {
+const referenceWake = async (messageId = 'm-1') => {
   AgentInstallation.find.mockReturnValue({
     lean: jest.fn().mockResolvedValue([
       { agentName: 'seat-a', instanceId: 'default', displayName: 'Seat A' },
@@ -91,9 +93,10 @@ const referenceWake = async () => {
     podId: 'pod-1',
     userId: 'user-1',
     username: 'alice',
-    message: { id: 'm-1', content: 'hi @seat-a' },
+    message: { id: messageId, content: 'hi @seat-a' },
   });
-  const call = AgentEventService.enqueue.mock.calls.find(([a]) => a.type === 'chat.mention');
+  // The newest call: a test can build more than one wake.
+  const call = AgentEventService.enqueue.mock.calls.filter(([a]) => a.type === 'chat.mention').pop();
   return call[0].payload.content;
 };
 
@@ -107,6 +110,17 @@ describe('wake frame size budget', () => {
     // the same diff and say in the PR body what the fleet is buying, so the
     // trade is on the record instead of inside a paragraph.
     expect(content.length).toBeLessThanOrEqual(BUDGET_MAX);
+  });
+
+  // D278: a real top-level mention has a numeric id, and its wake carries one
+  // more line naming the thread to answer in. The reference id is not numeric,
+  // so the line is measured here, against its own ceiling.
+  test('a numeric top-level mention adds only the thread line', async () => {
+    const base = await referenceWake();
+    const numeric = await referenceWake('501');
+
+    expect(numeric).toContain('send threadRootId 501');
+    expect(numeric.length - base.length).toBeLessThanOrEqual(THREAD_CUE_MAX);
   });
 
   test('and has not silently lost a section', async () => {

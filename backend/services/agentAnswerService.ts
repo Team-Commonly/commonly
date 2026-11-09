@@ -116,6 +116,28 @@ export const answerRootOfWake = (event: { type?: unknown; payload?: unknown } | 
   return /^\d{1,10}$/.test(raw) && Number.isSafeInteger(own) && own > 0 ? own : null;
 };
 
+/**
+ * The thread a message belongs to: its own id at the top level, its root when
+ * it sits inside a thread. Null when it is gone or in another pod. A wake names
+ * a message, not always a root: a welcome wake names a member's first message,
+ * which can be a reply inside someone's thread. Naming that message itself as
+ * the root would be refused (thread_root_not_a_root) and fail the answer.
+ */
+export const threadOfMessage = async (
+  { podId, messageId }: { podId: unknown; messageId: unknown },
+): Promise<number | null> => {
+  if (!podId || messageId == null || messageId === '') return null;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { resolveThreadRoot } = require('./threadRootResolver');
+    const root = await resolveThreadRoot({ podId: String(podId), replyToMessageId: String(messageId) });
+    return Number.isSafeInteger(root) && root > 0 ? root : null;
+  } catch (error) {
+    console.warn('[agent-answer] message thread lookup failed; leaving the post as sent:', (error as Error).message);
+    return null;
+  }
+};
+
 /** The most deliveries one pod's turn can hold: the runner renews 50 at a time. */
 const MAX_TURN_DELIVERIES = 50;
 
@@ -153,8 +175,8 @@ export const JUST_ACKED_MS = 5 * 1000;
  * a turn that holds nothing else in this pod, until the row is acked or ages out.
  *
  * Comment wakes carry no thread root. Personal pods keep their plain post: a
- * 1:1 conversation has no channel to keep clear. A root that fails the resolver's checks
- * (deleted, say) is no reason to refuse a post that named no thread.
+ * 1:1 conversation has no channel to keep clear. A message that is gone, or in
+ * another pod, is no reason to refuse a post that named no thread.
  */
 export const threadOfRunningTurn = async ({
   podId, agentName, instanceId, kind,
@@ -170,7 +192,6 @@ export const threadOfRunningTurn = async ({
     const AgentEvent = require('../models/AgentEvent');
     const Pod = require('../models/Pod');
     const { isPersonalPodType } = require('./podTypePolicyService');
-    const { resolveThreadRoot } = require('./threadRootResolver');
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
     const held: Array<{ type?: string; payload?: unknown }> = await AgentEvent.find({
       agentName: { $eq: String(agentName).toLowerCase() },
@@ -202,14 +223,16 @@ export const threadOfRunningTurn = async ({
       .lean();
     // A full page can hide the disagreement, so it counts as one.
     if (justAcked.length > MAX_TURN_DELIVERIES || justAcked.some((event) => wakeRoot(event) !== root)) return null;
-    return await resolveThreadRoot({ podId: String(podId), threadRootId: root });
+    // The agreed id is a root, or a mention's own message, which may sit inside
+    // a thread: the message's own thread is the answer's either way.
+    return await threadOfMessage({ podId, messageId: root });
   } catch (error) {
     console.warn('[agent-answer] running-turn thread check failed; leaving the post as sent:', (error as Error).message);
     return null;
   }
 };
 
-export default { humansAnsweredBy, answerRootOfWake, threadOfRunningTurn };
+export default { humansAnsweredBy, answerRootOfWake, threadOfMessage, threadOfRunningTurn };
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports.default; Object.assign(module.exports, exports);

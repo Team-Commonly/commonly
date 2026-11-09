@@ -340,6 +340,26 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       await heldRow({ payload: { messageId: '9999' } });
       expect(await rootOf(await capPost())).toBeNull();
     });
+
+    // A welcome wake names a member's first message and carries no thread
+    // root, but that message can be a reply in someone's thread. The answer
+    // goes in that thread, not under the reply (which can't be a root).
+    it('a wake naming a reply inside a thread: the answer goes in that thread', async () => {
+      const opener = await say('kicking off a topic');
+      const firstPost = await say('hi all, new here', { root: opener.id });
+      await heldRow({ payload: { messageId: String(firstPost.id), welcomeWake: true } });
+
+      const result = await capPost();
+
+      expect(await rootOf(result)).toBe(opener.id);
+    });
+
+    it('a mention in another pod names no thread here', async () => {
+      const elsewhere = await makePod('team');
+      const asked = await say('@d141 over here', { inPod: elsewhere });
+      await heldRow({ payload: { messageId: String(asked.id) } });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
   });
 
   describe('answerRootOfWake: which thread a wake names', () => {
