@@ -225,5 +225,5 @@ in-cluster provider block above. Neither is wired yet; cody is parked at
   macOS Seatbelt only, on the versions in `TESTED_PI_VERSIONS`. The gate compares
   the whole version pi prints: a prerelease such as `0.84.1-rc.1` is not 0.84.1,
   and a version run into other characters (`0.84.1rc1`, `0.84.1.1`, `v0.84.1`,
-  `0.84.1+build`) reads as unknown and is refused. pi has no bwrap
+  `0.84.1+build`, `0.84.1~rc1`) reads as unknown and is refused. pi has no bwrap
   path, so a public pi seat off macOS is refused.

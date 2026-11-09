@@ -451,6 +451,7 @@ describe('the public version probe', () => {
   test.each([
     ['letters', (v) => `${v}rc1`], ['a fourth part', (v) => `${v}.1`], ['build metadata', (v) => `${v}+build`],
     ['a bare hyphen', (v) => `${v}-`], ['a leading v', (v) => `v${v}`], ['a longer version', (v) => `1.${v}`],
+    ['a Debian-style tilde prerelease', (v) => `${v}~rc1`],
   ])('a version with %s is unknown, not the tested version', async (_label, shape) => {
     await writeProbePi({ answer: shape(TESTED_PI_VERSIONS[0]) });
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
