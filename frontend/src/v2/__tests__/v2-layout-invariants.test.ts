@@ -2656,11 +2656,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(rule).toContain('text-overflow: ellipsis');
       expect(rule).toContain('white-space: nowrap');
     }
-    // The replier name keeps its width up to a fixed cap; only the preview
-    // shrinks. A shrinking name collapsed to "H…" on staging, and a percentage
-    // cap has no definite base inside the shrink-to-fit chip.
+    // The replier name gives way only after the preview: it may shrink
+    // (flex-shrink 1) but never grows, and the larger-basis preview absorbs the
+    // shrink first, so a long name plus both counts can't push the counter off
+    // the chip at 390. The cap stays an absolute length — a shrinking name with
+    // a percentage cap collapsed to "H…" on staging, since a percentage has no
+    // definite base inside the shrink-to-fit chip.
     const name = ruleBody(v2, '.v2-thread .v2-thread-card__name');
-    expect(name).toContain('flex: 0 0 auto');
+    expect(name).toContain('flex: 0 1 auto');
     expect(name).toMatch(/max-width: \d+(\.\d+)?em/);
     expect(ruleBody(v2, '.v2-thread .v2-thread-card__preview')).toContain('flex: 1 1 auto');
     for (const selector of ['.v2-thread .v2-thread-card__count', '.v2-thread .v2-thread-card__unread']) {

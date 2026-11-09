@@ -560,7 +560,7 @@ describe('the read point (D278)', () => {
 
     act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
     expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
-    expect(mockPut).toHaveBeenCalledWith('/api/messages/7/read', { at: '2026-11-09T10:05:00.000Z' });
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/7/read', { at: '2026-11-09T10:05:00.000Z' }, { timeout: 15000 });
 
     // The same point again, or an older one: no write, no change.
     act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
@@ -573,7 +573,7 @@ describe('the read point (D278)', () => {
     const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
     await waitFor(() => { expect(result.current.ready).toBe(true); });
     act(() => { result.current.markRead('new-root', '2026-11-09T10:05:00.000Z'); });
-    expect(mockPut).toHaveBeenCalledWith('/api/messages/new-root/read', { at: '2026-11-09T10:05:00.000Z' });
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/new-root/read', { at: '2026-11-09T10:05:00.000Z' }, { timeout: 15000 });
     expect(result.current.readPoints.get('new-root')).toBe('2026-11-09T10:05:00.000Z');
   });
 

@@ -233,17 +233,28 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
     // Not reverted on failure. A read point is a convenience; putting the
     // unread mark back after the person has seen the replies would be the
     // worse error.
-    api.put<{ lastReadAt?: string | null }>(`/api/messages/${encodeURIComponent(rootId)}/read`, { at: atIso })
+    // A finite timeout so a stalled PUT can't pin `inFlightRef` and block every
+    // later read write for this root: a timeout rejects into the catch below,
+    // which clears the in-flight entry so the next settle retries.
+    api.put<{ lastReadAt?: string | null }>(
+      `/api/messages/${encodeURIComponent(rootId)}/read`,
+      { at: atIso },
+      { timeout: REQUEST_TIMEOUT_MS },
+    )
       .then((data) => {
         if (generation !== podGenerationRef.current) return; // the pod changed
         settle();
-        // The server clamps to its clock and keeps the newer of two writes;
-        // its answer is what it holds, merged forward only.
+        // Record what the server actually holds, not what we asked for. It
+        // clamps to its clock and keeps the newer of two writes; its answer is
+        // the stored point. When it clamps `at` to an earlier time, persisting
+        // `at` would make the next identical settle a no-op and leave the
+        // stored point behind the reply — so persist the returned point, which
+        // lets a later settle retry once the clock has caught up.
         const stored = data?.lastReadAt;
         const storedAt = stored ? Date.parse(stored) : Number.NaN;
-        // A write the server clamped is still answered: sending it again
-        // would change nothing, so it counts as held up to `at`.
-        const held = Number.isNaN(storedAt) ? at : Math.max(at, storedAt);
+        // A missing or unparseable answer keeps the old "assume `at` landed"
+        // fallback: we have nothing better to record.
+        const held = Number.isNaN(storedAt) ? at : storedAt;
         const previous = persistedRef.current.get(root);
         if (previous === undefined || held > previous) persistedRef.current.set(root, held);
         if (stored && !Number.isNaN(storedAt)) advancePoint(root, stored);
