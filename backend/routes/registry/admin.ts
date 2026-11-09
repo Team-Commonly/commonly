@@ -180,6 +180,22 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     const sharedRuntimesNeedingRestart = new Set();
     // A removal on a gateway with its own deployment restarts that gateway.
     const namedGatewaysNeedingRestart = new Set<string>();
+    // The rows each restart finishes. A removed account keeps running until its
+    // gateway restarts, and the next run finds the ConfigMap clean and queues no
+    // restart, so a failed restart turns these rows into failures.
+    const removalRowsByRestart = new Map<string, any[]>();
+    const awaitRestart = (key: string, row: any) => {
+      removalRowsByRestart.set(key, [...(removalRowsByRestart.get(key) || []), row]);
+    };
+    const failRestart = (key: string, message: string) => {
+      const restartError = `The account was removed from the gateway config, but the gateway restart failed (${message}), so it may still be running. Restart the gateway.`;
+      (removalRowsByRestart.get(key) || []).forEach((row) => {
+        Object.assign(row, {
+          error: row.success ? restartError : `${row.error} ${restartError}`,
+          success: false,
+        });
+      });
+    };
     for (const installation of activeInstallations) {
       try {
         const result = await reprovisionInstallation({
@@ -200,9 +216,13 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
         if (result.skipped) {
           // A refused identity whose state file was not edited is not fully
           // removed, and reads as a failure until a later run finishes it.
-          items.push(result.runtimeRemovalError
+          const row = result.runtimeRemovalError
             ? { ...shown, success: false, error: result.runtimeRemovalError }
-            : { ...shown, success: true });
+            : { ...shown, success: true };
+          items.push(row);
+          if (result.runtimeType === 'moltbot' && result.removedFromRuntime) {
+            awaitRestart(runtimeGatewayId ? `gateway:${runtimeGatewayId}` : 'moltbot', row);
+          }
           continue;
         }
         items.push({
@@ -232,6 +252,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     if (sharedRuntimesNeedingRestart.has('moltbot')) {
       await restartAgentRuntime('moltbot', 'default', {}).catch((err: any) => {
         console.warn('[reprovision-all] Failed to restart gateway:', err.message);
+        failRestart('moltbot', err.message);
       });
     }
     for (const gatewayId of namedGatewaysNeedingRestart) {
@@ -242,6 +263,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
         await restartAgentRuntime('moltbot', 'default', { gateway });
       } catch (err: any) {
         console.warn('[reprovision-all] Failed to restart gateway after removal:', err.message);
+        failRestart(`gateway:${gatewayId}`, err.message);
       }
     }
 

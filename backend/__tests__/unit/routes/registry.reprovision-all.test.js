@@ -114,4 +114,43 @@ describe('POST /admin/installations/reprovision-all', () => {
     // Not even the gateway's id goes out in the response.
     expect(res.body.items[0].runtimeGatewayId).toBeUndefined();
   });
+
+  // The next run finds the ConfigMap clean and queues no restart, so a removal
+  // whose restart failed has to read as failed now.
+  const removedOn = (installationId, runtimeGatewayId) => ({
+    installationId,
+    agentName: 'openclaw',
+    runtimeType: 'moltbot',
+    skipped: true,
+    skipReason: 'cloud_agents_not_entitled',
+    removedFromRuntime: true,
+    runtimeGatewayId,
+  });
+
+  it('a removal whose gateway cannot be found again reads as failed, and nothing restarts', async () => {
+    mockResolveGateway.mockRejectedValue(new Error('gateway lookup failed'));
+    reprovisionInstallation.mockResolvedValueOnce(removedOn('a', 'gw-1')).mockResolvedValueOnce(removedOn('b', 'gw-2'));
+    mockResolveGateway.mockResolvedValueOnce({ _id: 'gw-1', slug: 'team' });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ success: false, failed: 1, skipped: 1 });
+    expect(res.body.items[0]).toMatchObject({ installationId: 'a', success: true });
+    expect(res.body.items[1]).toMatchObject({ installationId: 'b', success: false });
+    expect(res.body.items[1].error).toMatch(/gateway restart failed \(gateway lookup failed\)/);
+  });
+
+  it('a removal whose shared gateway restart fails reads as failed, keeping any state error', async () => {
+    restartAgentRuntime.mockRejectedValueOnce(new Error('restart refused'));
+    reprovisionInstallation
+      .mockResolvedValueOnce({ ...removedOn('a', null), runtimeRemovalError: 'The state file edit failed.' })
+      .mockResolvedValueOnce(removedOn('b', null));
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(res.body).toMatchObject({ success: false, failed: 2, skipped: 0 });
+    expect(res.body.items[0].error).toMatch(/^The state file edit failed\. The account was removed/);
+    expect(res.body.items[1].error).toMatch(/gateway restart failed \(restart refused\)/);
+  });
 });

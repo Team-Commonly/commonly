@@ -2365,13 +2365,35 @@ const removeOpenClawAccount = async ({
   const config = await readConfigMap(resolvedConfigMap, configKey);
   const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
   if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
-  // A gateway with no Deployment runs nothing, so there is no state file to
-  // edit and nothing left to remove: the identity is out (as with F329).
+  // A gateway with no Deployment usually runs nothing, so there is no state
+  // file to edit and nothing left to remove: the identity is out (as with
+  // F329). A Deployment deleted with --cascade=orphan leaves its pods running,
+  // though, and nothing here can restart them, so a pod still named for the
+  // Deployment gets the state edit and the row reads as not fully removed.
   // Any other read error goes on to the pod wait, which reports it.
+  const deploymentName = resolveGatewayDeploymentName(gateway);
+  let orphanPod: string | undefined;
   try {
-    await k8sAppsApi.readNamespacedDeployment(resolveGatewayDeploymentName(gateway), NAMESPACE);
+    await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
   } catch (error: any) {
-    if (error?.response?.statusCode === 404) return { removed };
+    if (error?.response?.statusCode === 404) {
+      // A Deployment's pods are named <deployment>-<replicaset hash>-<suffix>,
+      // so gateway-team never matches a pod of gateway-team-b. A Deployment
+      // name is a DNS label (a-z, 0-9, -), so it needs no regex escaping.
+      const ownPod = new RegExp(`^${deploymentName}-[a-z0-9]+-[a-z0-9]+$`);
+      try {
+        const pods = await k8sApi.listNamespacedPod(NAMESPACE);
+        orphanPod = (pods.body.items || [])
+          .filter((pod: any) => ownPod.test(String(pod.metadata?.name || '')))
+          .find(isPodReady)?.metadata?.name;
+      } catch (listError) {
+        return {
+          removed,
+          stateError: `The gateway's Deployment is gone and its pods could not be listed (${(listError as Error).message}); they are checked again on the next reprovision.`,
+        };
+      }
+      if (!orphanPod) return { removed };
+    }
   }
   const gatewayKey = String(gateway?.slug || gateway?._id || 'default');
   if ((gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
@@ -2379,7 +2401,7 @@ const removeOpenClawAccount = async ({
   }
   let podName: string;
   try {
-    podName = await resolveGatewayPodNameWithRetry(gateway);
+    podName = orphanPod || await resolveGatewayPodNameWithRetry(gateway);
   } catch (error) {
     gatewayUnreadyUntil.set(gatewayKey, Date.now() + GATEWAY_UNREADY_HOLD_MS);
     console.warn('[k8s-provisioner] state removal skipped, gateway pod not ready:', (error as Error).message);
@@ -2416,7 +2438,9 @@ const removeOpenClawAccount = async ({
     console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
     return { removed, stateError: 'The state file edit failed; it is retried on the next reprovision.' };
   }
-  return { removed };
+  return orphanPod
+    ? { removed, stateError: `The gateway's Deployment is gone but its pod ${orphanPod} is still running; delete that pod to stop the identity.` }
+    : { removed };
 };
 
 const provisionOpenClawAccount = async ({

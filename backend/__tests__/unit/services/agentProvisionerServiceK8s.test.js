@@ -1157,14 +1157,50 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     }
   });
 
-  test('a gateway with no Deployment has nothing left to remove', async () => {
+  const noDeployment = () => k8s.__mock.readNamespacedDeployment.mockRejectedValueOnce(
+    Object.assign(new Error('not found'), { response: { statusCode: 404 } }),
+  );
+  const readyPods = (...names) => ({
+    body: {
+      items: names.map((name) => ({
+        metadata: { name },
+        status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
+      })),
+    },
+  });
+
+  test('a gateway with no Deployment and no pod has nothing left to remove', async () => {
     clearGatewayUnreadyHold();
     k8s.__mock.execCommands.length = 0;
-    k8s.__mock.readNamespacedDeployment.mockRejectedValueOnce(Object.assign(new Error('not found'), {
-      response: { statusCode: 404 },
-    }));
-    const result = await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' });
+    noDeployment();
+    // gateway-team-b's pod is not gateway-team's.
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods('gateway-team-b-7d9f8-x2k4q'));
+    const result = await removeOpenClawAccount({
+      agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
+    });
     expect(result).toEqual({ removed: [] });
+    expect(k8s.__mock.execCommands).toEqual([]);
+  });
+
+  test('a pod that outlives its Deployment gets the state edit and reads as not fully removed', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.execPods.length = 0;
+    noDeployment();
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods('gateway-team-7d9f8-x2k4q'));
+    const result = await removeOpenClawAccount({
+      agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
+    });
+    expect(k8s.__mock.execPods).toEqual(['gateway-team-7d9f8-x2k4q']);
+    expect(result.stateError).toMatch(/Deployment is gone but its pod gateway-team-7d9f8-x2k4q is still running/);
+  });
+
+  test('a missing Deployment whose pods cannot be listed reads as not fully removed', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.execCommands.length = 0;
+    noDeployment();
+    k8s.__mock.listNamespacedPod.mockRejectedValueOnce(new Error('forbidden'));
+    const result = await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' });
+    expect(result.stateError).toMatch(/pods could not be listed \(forbidden\)/);
     expect(k8s.__mock.execCommands).toEqual([]);
   });
 
