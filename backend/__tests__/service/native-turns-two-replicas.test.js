@@ -334,21 +334,26 @@ test('a turn that waited out its lane past the lease goes back to the queue', as
   await stop(holder);
 });
 
-test('a queue pass longer than the start window does not let the lease lapse', async () => {
-  const pods = [1, 2, 3, 4].map(() => new mongoose.Types.ObjectId());
-  for (const pod of pods) await web().enqueue({ ...input, podId: pod });
+test('the lease keeps renewing while a queue pass is blocked', async () => {
+  await web().enqueue(input);
+  // Hold the pass inside its lookup until the test lets it go.
+  const gate = deferred();
+  let lookups = 0;
   jest.spyOn(Service, 'resolveInProcessInstallation').mockImplementation(async () => {
-    await new Promise((done) => { setTimeout(done, 200); });
+    lookups += 1;
+    await gate.promise;
     return install;
   });
+  const writes = jest.spyOn(SchedulerHeartbeatLease, 'findOneAndUpdate');
   const proc = runner('busy', short); proc.startInProcessQueue();
-  await waitFor(() => holds(proc));
-  let lapsed = false;
-  const sample = setInterval(() => { if (!holds(proc)) lapsed = true; }, 10);
-  await waitFor(() => runAgent.mock.calls.length === 4, { timeout: 4000 });
-  clearInterval(sample);
-  expect(lapsed).toBe(false);
-  turns.forEach((turn) => turn.resolve());
+  await waitFor(() => lookups === 1);
+  const blockedAt = writes.mock.calls.length;
+  // Renewals land behind a pass that has not moved.
+  await waitFor(() => writes.mock.calls.length >= blockedAt + 2);
+  expect(lookups).toBe(1);
+  gate.resolve();
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  turns[0].resolve();
   await waitFor(() => proc.inProcessWork.size === 0);
   await stop(proc);
 });
