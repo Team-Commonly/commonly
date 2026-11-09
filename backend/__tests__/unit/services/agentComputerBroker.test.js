@@ -21,6 +21,8 @@ const fakePage = (events = []) => {
       return tabName;
     }),
     goto: jest.fn(async (url) => { current = url; }),
+    waitForLoadState: jest.fn(async () => {}),
+    waitForFunction: jest.fn(async () => {}),
     url: () => current,
     title: jest.fn(async () => `Title ${current}`),
     locator: jest.fn((selector) => ({
@@ -103,6 +105,54 @@ const setup = (status = 'absent', resolve = jest.fn(async () => ['151.101.1.1'])
 };
 
 describe('agent computer broker (fake Steel and CDP)', () => {
+  // A single-page app is an empty shell at domcontentloaded. The walk after a
+  // deploy snapshotted a blank page and read the static tab title before the
+  // route set its own.
+  test('navigate waits for the page to render before it reads the title', async () => {
+    const { broker, context } = setup();
+    let rendered = false;
+    context.newPage.mockImplementationOnce(async () => {
+      const page = fakePage();
+      page.title.mockImplementation(async () => (rendered ? 'Sign in · Commonly' : 'Commonly AI'));
+      page.waitForFunction.mockImplementation(async () => { rendered = true; });
+      return page;
+    });
+    const result = await broker.navigate(OWNER, FIRST, 'https://www.linkedin.com/login');
+    expect(result.title).toBe('Sign in · Commonly');
+  });
+
+  test('a page that never shows text is still read, within the wait', async () => {
+    const { broker, context } = setup();
+    let page;
+    context.newPage.mockImplementationOnce(async () => {
+      page = fakePage();
+      page.waitForLoadState.mockRejectedValue(new Error('Timeout 5000ms exceeded.'));
+      page.waitForFunction.mockRejectedValue(new Error('Timeout exceeded.'));
+      return page;
+    });
+    const result = await broker.navigate(OWNER, FIRST, 'https://www.linkedin.com/blank');
+    expect(result.url).toBe('https://www.linkedin.com/blank');
+    const [, loadOptions] = page.waitForLoadState.mock.calls[0];
+    expect(loadOptions.timeout).toBeLessThanOrEqual(5000);
+    expect((await broker.snapshot(OWNER, FIRST)).text).toContain('/blank');
+    // A snapshot waits for less than a navigate does.
+    const snapshotLoad = page.waitForLoadState.mock.calls[page.waitForLoadState.mock.calls.length - 1][1];
+    expect(snapshotLoad.timeout).toBeLessThanOrEqual(2000);
+  });
+
+  test('a page a script moves off the list while it renders is closed', async () => {
+    const { broker, context } = setup();
+    let page;
+    context.newPage.mockImplementationOnce(async () => {
+      page = fakePage();
+      page.waitForFunction.mockImplementation(async () => {
+        await page.goto('https://evil.example/landing');
+      });
+      return page;
+    });
+    await expect(broker.navigate(OWNER, FIRST, 'https://www.linkedin.com/in/a')).rejects.toThrow('outside');
+  });
+
   test('one Steel session per owner, separate persistent tabs per installation', async () => {
     const { broker, pages, context, request, connect, wake } = setup();
     const [a, b] = await Promise.all([
