@@ -52,9 +52,16 @@ aiProviders:
     enabled: false
 
 backend:
-  replicaCount: 1
+  # Two web replicas take a node drain with no gap, through the backend PDB.
+  # Two are safe only with the worker split on: web pods then run RUN_WORKER=0,
+  # and the scheduler and Discord gateway run once, in backend-worker. Staging
+  # took both steps first (#3821, #3829). This is step 1 here: the worker is
+  # enabled but paused at zero until the pre-split web pod is gone. Step 2 sets
+  # startPaused: false.
+  replicaCount: 2
   worker:
-    enabled: false
+    enabled: true
+    startPaused: true
     # Cron and the Discord gateway must survive spot reclamation.
     nodeSelector:
       pool: dev
