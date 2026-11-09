@@ -839,6 +839,8 @@ spec:
       {{- end }}
       {{- if not .worker }}
       # Prefer one web replica per node, so one drain or spot reclaim takes one.
+      # matchLabelKeys counts only this ReplicaSet's pods; without it the old pods
+      # count mid-roll and both new replicas can land on one node (staging, 11-09).
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -846,6 +848,8 @@ spec:
         labelSelector:
           matchLabels:
             {{- include "commonly.backend.selectorLabels" . | nindent 12 }}
+        matchLabelKeys:
+        - pod-template-hash
       {{- end }}
 
       volumes:
