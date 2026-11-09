@@ -837,6 +837,16 @@ spec:
       tolerations:
         {{- toYaml .Values.backend.tolerations | nindent 8 }}
       {{- end }}
+      {{- if not .worker }}
+      # Prefer one web replica per node, so one drain or spot reclaim takes one.
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            {{- include "commonly.backend.selectorLabels" . | nindent 12 }}
+      {{- end }}
 
       volumes:
       - name: postgres-ca-cert
@@ -864,4 +874,23 @@ spec:
 {{- end -}}
 {{- if .Values.backend.enabled }}
 {{ include "commonly.backend.deployment" (merge (dict "worker" false) .) }}
+---
+# The web tier only; the worker is one Recreate replica and a drain just moves
+# it. A drain evicts one web replica, then waits for its replacement to be Ready
+# before the next, so two replicas take a drain with no gap. At one replica,
+# maxUnavailable 1 lets it go at once, where minAvailable 1 would hold the drain.
+# Two replicas are safe only with backend.worker.enabled: without it every web
+# pod runs the scheduler and the Discord gateway.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.backend.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.backend.selectorLabels" . | nindent 6 }}
 {{- end }}

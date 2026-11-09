@@ -199,6 +199,24 @@ backend:
       key: workload-tier
       operator: Equal
       value: spot
+  # Two web replicas take a node drain with no gap, through the backend PDB in
+  # backend-deployment.yaml. Two are safe only with the worker split on: web pods
+  # then run RUN_WORKER=0, and the scheduler and Discord gateway run once, in
+  # backend-worker. Staging takes each step before prod (TASK-355). This is step 1:
+  # the worker is enabled but paused at zero replicas until the old web pods are
+  # gone. Step 2 sets startPaused: false.
+  replicaCount: 2
+  worker:
+    enabled: true
+    startPaused: true
+    # Staging cron isn't worth a dev-pool slot; a spot reclaim only pauses it.
+    nodeSelector:
+      workload-tier: spot
+    tolerations:
+      - effect: NoSchedule
+        key: workload-tier
+        operator: Equal
+        value: spot
 
 # Staging frontend also on the spot pool, right-sized. It scheduled fine in the first
 # attempt (small request), but consolidating it onto spot keeps the contended, untainted
