@@ -52,11 +52,19 @@ with `developer mode` and the other block words.
 - **The override fails open if its wiring breaks.** LiteLLM refuses a
   `category_file` outside its own package unless
   `LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true` is set on the litellm
-  container. A refused or missing file only logs `invalid category_file path,
-  skipping` or `Category file not found`, and the guard runs without the
-  jailbreak category. `backend/__tests__/unit/helm/litellmJailbreakCategory.test.js`
-  pins the env, the mount and the config line. After a deploy, check that the
-  litellm log has neither line.
+  container. A refused, missing or malformed file only logs `invalid
+  category_file path, skipping`, `Category file not found` or `Error loading
+  category`, and the guard runs without the jailbreak category. A startup
+  error in the guard logs `proxy is starting WITHOUT this guardrail` and drops
+  the whole injection-guard. `backend/__tests__/unit/helm/litellmJailbreakCategory.test.js`
+  pins the env, the mount and the config line, but doesn't parse the file or
+  render helm. After a deploy, check that the litellm log has none of these
+  lines.
+- **What dropping `enter` gives up:** any "enter <block word>" phrase with no
+  other identifier now passes, e.g. "enter god mode" or "enter unrestricted
+  mode". The always-block keywords (`DAN mode`, `jailbreak`, …) and the other
+  identifiers still block. As a substring, `enter` also fired on "center",
+  "entered" and "entertain".
 - **When the LiteLLM image moves,** diff our copy against the new upstream
   file and carry its changes over. Our copy doesn't update with the image.
 - The same mechanism is how to trim the next false positive: edit our copy,
