@@ -116,7 +116,7 @@ describe('the shared rate-limit store', () => {
     expect(client.keysSeen.join('')).not.toContain('private');
   });
 
-  test('a Redis that is not connected falls back to counting per replica, and says so once', async () => {
+  test('a Redis that is not connected yet falls back to counting per replica, without an error line', async () => {
     const client = { ...fakeRedis(), isReady: false };
     const app = replica(client);
     const codes = [];
@@ -125,14 +125,18 @@ describe('the shared rate-limit store', () => {
       codes.push((await request(app).post('/login').send({ email: 'z@example.com' })).status);
     }
     expect(codes).toEqual([401, 401, 401, 429]);
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(String(errorSpy.mock.calls[0][0])).toMatch(/counting per replica/);
+    // A pod that is still connecting is not an outage; the connection's own
+    // errors are logged by the client, not by each limiter.
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   test('a Redis that errors falls back, and the request is still answered', async () => {
     const client = { ...fakeRedis(), eval: async () => { throw new Error('READONLY'); } };
-    expect((await request(replica(client)).post('/login').send({ email: 'e@example.com' })).status).toBe(401);
+    const app = replica(client);
+    expect((await request(app).post('/login').send({ email: 'e@example.com' })).status).toBe(401);
+    expect((await request(app).post('/login').send({ email: 'e@example.com' })).status).toBe(401);
     expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0][0])).toMatch(/counting per replica/);
   });
 
   test('a Redis that hangs costs a request the timeout, not the request', async () => {

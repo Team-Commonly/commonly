@@ -60,9 +60,13 @@ const withTimeout = <T>(promise: Promise<T>): Promise<T> => new Promise<T>((reso
 let sharedClient: RateLimitRedis | null = null;
 let sharedClientStarted = false;
 
-// One client for every limiter, started on first use and never awaited by a
-// request: until it is ready, the limiters count in memory. Off in tests, and
-// wherever REDIS_HOST is unset (local dev without Redis).
+// One client for every limiter, started when the first store is built (at
+// require time of the routes) and never awaited by a request: until it is
+// ready, the limiters count in memory, silently, since a pod that is still
+// connecting is not an outage. Off in tests, and wherever REDIS_HOST is unset
+// (local dev without Redis). The connection's own errors are logged here, once
+// per outage, with Redis's message (a WRONGPASS reads as one); node-redis
+// never puts the password in it.
 export const rateLimitRedis = (): RateLimitRedis | null => {
   if (process.env.NODE_ENV === 'test' || !process.env.REDIS_HOST) return null;
   if (!sharedClientStarted) {
@@ -81,8 +85,18 @@ export const rateLimitRedis = (): RateLimitRedis | null => {
           connectTimeout: 5_000,
         },
       });
-      client.on('error', () => { /* reported by the store, once per outage */ });
-      client.connect().catch(() => { /* reconnectStrategy keeps trying */ });
+      let failing = false;
+      client.on('error', (err: Error) => {
+        if (failing) return;
+        failing = true;
+        console.error('[rate-limit] Redis connection error; auth limiters count per replica until it recovers:', err?.message);
+      });
+      client.on('ready', () => {
+        if (!failing) return;
+        failing = false;
+        console.log('[rate-limit] Redis connection recovered');
+      });
+      client.connect().catch(() => { /* logged by the error listener; reconnectStrategy keeps trying */ });
       sharedClient = client as RateLimitRedis;
     } catch (err) {
       console.error('[rate-limit] could not create the Redis client; limiters count per replica:', (err as Error)?.message);
@@ -102,13 +116,16 @@ export class SharedRateLimitStore implements Store {
 
   private readonly getClient: () => RateLimitRedis | null;
 
-  // 'unknown' until the first call, so the log says once which store a
-  // replica started counting in, and again on each change.
+  // 'unknown' until the first Redis reply, so the log says once when a replica
+  // starts counting in Redis, and again on each change.
   private state: 'unknown' | 'redis' | 'memory' = 'unknown';
 
   constructor({ name, getClient = rateLimitRedis }: { name: string; getClient?: () => RateLimitRedis | null }) {
     this.prefix = `rl:${name}:`;
     this.getClient = getClient;
+    // Starts the shared client now, so it is usually connected before the
+    // first sign-in arrives.
+    getClient();
   }
 
   init(options: Options): void {
@@ -125,6 +142,8 @@ export class SharedRateLimitStore implements Store {
     return client?.isReady ? client : null;
   }
 
+  // A command that failed on a connected client. A client that is not
+  // connected is the connection's to report (rateLimitRedis), not each store's.
   private fellBack(err: unknown): void {
     if (this.state === 'memory') return;
     this.state = 'memory';
@@ -151,8 +170,6 @@ export class SharedRateLimitStore implements Store {
       } catch (err) {
         this.fellBack(err);
       }
-    } else if (this.getClient()) {
-      this.fellBack(new Error('Redis is not connected'));
     }
     return this.memory.increment(key);
   }
