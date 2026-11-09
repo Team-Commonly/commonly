@@ -21,7 +21,7 @@
  * restart can still suppress a re-delivered event whose ack previously failed.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -31,6 +31,23 @@ const handledEventsFile = (agentName) => join(sessionsDir(), `${agentName}.event
 const noticesFile = (agentName) => join(sessionsDir(), `${agentName}.notices.json`);
 const MAX_HANDLED_EVENTS = 500;
 const handledEventsCache = new Map();
+
+// Everything under ~/.commonly is private (D275). These files hold per-(agent,
+// pod) session IDs and event rings; keep the dir and its files owner-only, and
+// tighten an existing dir or file that a pre-0.1.309 CLI left group/world-
+// readable. A mode arg applies only when the path is created, so each write
+// chmods after — the same belt-and-braces config.js uses for the token file.
+const ensureSessionsDir = () => {
+  const dir = sessionsDir();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { chmodSync(dir, 0o700); } catch { /* a dir we don't own: leave it */ }
+  return dir;
+};
+
+const writeSessionFile = (file, data) => {
+  writeFileSync(file, data, { encoding: 'utf8', mode: 0o600 });
+  try { chmodSync(file, 0o600); } catch { /* best effort to tighten an existing file */ }
+};
 
 const readAgent = (agentName) => {
   const file = sessionsFile(agentName);
@@ -43,8 +60,8 @@ const readAgent = (agentName) => {
 };
 
 const writeAgent = (agentName, state) => {
-  if (!existsSync(sessionsDir())) mkdirSync(sessionsDir(), { recursive: true });
-  writeFileSync(sessionsFile(agentName), JSON.stringify(state, null, 2), 'utf8');
+  ensureSessionsDir();
+  writeSessionFile(sessionsFile(agentName), JSON.stringify(state, null, 2));
 };
 
 const readHandledEvents = (agentName) => {
@@ -79,8 +96,8 @@ const getHandledEvents = (agentName) => {
 };
 
 const writeHandledEvents = (agentName, ids) => {
-  if (!existsSync(sessionsDir())) mkdirSync(sessionsDir(), { recursive: true });
-  writeFileSync(handledEventsFile(agentName), JSON.stringify(ids, null, 2), 'utf8');
+  ensureSessionsDir();
+  writeSessionFile(handledEventsFile(agentName), JSON.stringify(ids, null, 2));
 };
 
 export const getSession = (agentName, podId, { binding = null } = {}) => {
@@ -173,7 +190,7 @@ export const recordNotice = (agentName, key, now = Date.now()) => {
   if (!agentName || !key) return;
   const state = readNotices(agentName);
   state[key] = new Date(now).toISOString();
-  if (!existsSync(sessionsDir())) mkdirSync(sessionsDir(), { recursive: true });
+  ensureSessionsDir();
   // Temp file then rename, so a crash mid-write never leaves a torn file, and
   // 0600 because the record says which models this seat's key cannot use.
   const file = noticesFile(agentName);
