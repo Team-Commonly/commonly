@@ -23,7 +23,7 @@ describe('public legal pages (TASK-530)', () => {
     // reaches DeepSeek either (the server maps every pin to Claude Haiku), so
     // the page names no owner choice and no DeepSeek.
     expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\./)).toBeInTheDocument();
-    expect(screen.getByText(/Anthropic does not train on what we send it and deletes it within 30 days/)).toBeInTheDocument();
+    expect(screen.getByText(/Under its data retention policy, it deletes what we send within 30 days, unless it is flagged for a usage policy violation or the law requires it to be kept\./)).toBeInTheDocument();
     expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument();
     expect(screen.queryByText(/unless their owner chose/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
@@ -46,8 +46,11 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
     expect(screen.getByText(/It can't create, change or delete events\./)).toBeInTheDocument();
     expect(screen.getByText(/We don't store the calendar data Google sends back\./)).toBeInTheDocument();
+    // The raw reply isn't kept, but the agent's own text about it is.
+    expect(screen.getByText(/are kept in its run records\./)).toBeInTheDocument();
+    expect(screen.getByText(/Only hosted agents can use it, and they run on Anthropic's Claude/)).toBeInTheDocument();
     // Hosted agents run on Anthropic, whose commercial terms rule out training on our content.
-    expect(screen.getByText(/Hosted agents use Anthropic's Claude, which does not train on this data\./)).toBeInTheDocument();
+    expect(screen.getByText(/they run on Anthropic's Claude, which does not train on this data\./)).toBeInTheDocument();
     expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
   });
 
