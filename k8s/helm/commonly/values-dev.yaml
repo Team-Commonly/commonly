@@ -52,13 +52,14 @@ aiProviders:
     enabled: false
 
 backend:
-  # Two web replicas take a node drain with no gap, through the backend PDB.
-  # Two are safe only with the worker split on: web pods then run RUN_WORKER=0,
-  # and the scheduler and Discord gateway run once, in backend-worker. Staging
-  # took both steps first (#3821, #3829). This is step 1 here: the worker is
-  # enabled but paused at zero until the pre-split web pod is gone. Step 2 sets
-  # startPaused: false.
-  replicaCount: 2
+  # TASK-355 prod step 1: the worker is enabled but paused at zero until the
+  # pre-split web pod is gone, so the scheduler and Discord gateway never run
+  # twice. Web stays at one replica here: with no worker running, web still
+  # runs native turns itself, and two web pods would run one agent's turns in
+  # a pod at once (F52). Step 2 sets startPaused: false, which moves native
+  # turns to the worker, and only then replicaCount: 2. Staging took both
+  # steps first (#3821, #3829).
+  replicaCount: 1
   worker:
     enabled: true
     startPaused: true
