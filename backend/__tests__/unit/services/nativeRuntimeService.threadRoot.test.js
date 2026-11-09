@@ -237,6 +237,45 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
 
       expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
     });
+
+    // A progress or fyi post is not the answer, so a top-level mention does not
+    // pull it into the new thread — it stays in the channel.
+    test.each(['progress', 'fyi'])('a %s post to a top-level mention stays in the channel', async (kind) => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'working on it', kind }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(AgentMessageService.postMessage.mock.calls[0][0].kind).toBe(kind);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
+    });
+
+    // An answer-bearing kind IS the answer, so it still goes in the thread.
+    test.each(['answer', 'result'])('a %s post to a top-level mention goes in its thread', async (kind) => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'done', kind }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(10);
+    });
+
+    // TASK-026 is unchanged: when the trigger was inside a thread, a progress
+    // or fyi post still belongs in that thread, not the channel.
+    test.each(['progress', 'fyi'])('a %s post to an in-thread mention stays in that thread', async (kind) => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'still going', kind }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, threaded);
+
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(4);
+    });
   });
 
   test('the fallback post in a thread passes the thread root when the model never calls a tool', async () => {

@@ -72,7 +72,7 @@ export const humansAnsweredBy = async ({
 };
 
 /** Kinds that say a post is not the answer. `ask` and `error` still reply to the person. */
-const NON_ANSWER_KINDS: ReadonlySet<string> = new Set(['progress', 'fyi']);
+export const NON_ANSWER_KINDS: ReadonlySet<string> = new Set(['progress', 'fyi']);
 
 /**
  * Every event that can carry `payload.threadRootId`. `message.posted` is here
@@ -208,7 +208,10 @@ export const threadOfRunningTurn = async ({
     const [root] = [...roots];
     if (roots.size !== 1 || root == null) return null;
     const pod = await Pod.findOne({ _id: { $eq: String(podId) } }).select('type').lean();
-    if (!pod || isPersonalPodType(pod.type)) return null;
+    // Only a known shared pod type infers a thread. An unknown/missing type (a
+    // legacy pod or a partial read) keeps the plain post, matching native
+    // (answerThreadOfTrigger) and the mention cue, which both decline to guess.
+    if (!pod || !pod.type || isPersonalPodType(pod.type)) return null;
     // Only a disagreement counts: an ack alone still files nothing, as above.
     // No `createdAt` bound: a wake can wait hours and arrive beside a new one,
     // so its age says nothing here. Retention bounds the rows read.
@@ -232,7 +235,9 @@ export const threadOfRunningTurn = async ({
   }
 };
 
-export default { humansAnsweredBy, answerRootOfWake, threadOfMessage, threadOfRunningTurn };
+export default {
+  humansAnsweredBy, answerRootOfWake, threadOfMessage, threadOfRunningTurn, NON_ANSWER_KINDS,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports.default; Object.assign(module.exports, exports);

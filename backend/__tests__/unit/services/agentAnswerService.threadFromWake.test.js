@@ -336,6 +336,20 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       expect(await rootOf(await capPost({}, personal))).toBeNull();
     });
 
+    // A legacy or partially-read pod has no type. Only a known shared type
+    // infers a thread, matching native and the mention cue, so this one keeps
+    // its plain post in the channel.
+    it('a top-level mention in a pod with no type keeps its plain post', async () => {
+      const typeless = await makePod('team');
+      await Pod.updateOne({ _id: typeless._id }, { $unset: { type: '' } });
+      const asked = await say('@d141 any thoughts?', { inPod: typeless });
+      await AgentEvent.create({
+        ...AGENT, podId: typeless._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(),
+        payload: { messageId: String(asked.id) },
+      });
+      expect(await rootOf(await capPost({}, typeless))).toBeNull();
+    });
+
     it('a mention whose message is gone: the post still lands, in the channel', async () => {
       await heldRow({ payload: { messageId: '9999' } });
       expect(await rootOf(await capPost())).toBeNull();

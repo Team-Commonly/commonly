@@ -51,7 +51,7 @@ import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCu
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
-import { answerRootOfWake, threadOfMessage } from './agentAnswerService';
+import { answerRootOfWake, threadOfMessage, NON_ANSWER_KINDS } from './agentAnswerService';
 import { isPersonalPodType } from './podTypePolicyService';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
@@ -928,6 +928,14 @@ interface DispatchContext {
    * triggers, and anything in a personal pod, keep the answer at the pod root.
    */
   answeringThreadRootId?: number;
+  /**
+   * The thread the trigger itself was posted in (TASK-026), independent of the
+   * D278 mention placement. A `progress` or `fyi` post is not the answer, so it
+   * stays in the channel for a top-level mention — but when the trigger was
+   * made inside a thread, those posts still belong in that thread, which this
+   * carries. Undefined for a top-level trigger.
+   */
+  triggerThreadRootId?: number;
 }
 
 /** The thread root a trigger event was posted in, or undefined at the pod root. */
@@ -1195,6 +1203,14 @@ export async function dispatchTool(
         validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
           ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
           : content);
+        // D278: a `progress` or `fyi` post is not the answer, so it does not
+        // inherit the top-level mention's thread — it stays in the channel. If
+        // the trigger itself was inside a thread, it still belongs there
+        // (TASK-026). Answer kinds get the full mention placement.
+        const normalizedKind = typeof args.kind === 'string' ? args.kind.trim().toLowerCase() : '';
+        const postThreadRootId = NON_ANSWER_KINDS.has(normalizedKind)
+          ? (ctx.triggerThreadRootId ?? null)
+          : (ctx.answeringThreadRootId ?? null);
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
@@ -1211,7 +1227,7 @@ export async function dispatchTool(
           // bridge appears between this check and message storage.
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
-          threadRootId: ctx.answeringThreadRootId ?? null,
+          threadRootId: postThreadRootId,
           runId: ctx.runId,
           personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
@@ -2728,6 +2744,7 @@ export async function runAgent(
     givenAddresses: new GivenAddresses(),
     answeringMessageId: claimMessageId || undefined,
     answeringThreadRootId: await settleAnswerThread(trigger, podType, podId),
+    triggerThreadRootId: threadRootOfTrigger(trigger.payload),
   };
 
   // F56: read once. Neither the reply nor the failed-turn line is an answer to an
