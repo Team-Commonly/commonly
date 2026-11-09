@@ -1,4 +1,5 @@
 import { isHostedRoomRefusal } from './hostedRoomRefusal';
+import { HOSTED_OWNER_REFUSAL_CODES } from './agentFacingRefusal';
 import { isLimitedUseTool } from './limitedUseConnectors';
 import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
@@ -1010,13 +1011,7 @@ const resolveHostedConnection = async (
  * as a 500. A row with no owner at all is `missing` — it has no person behind it,
  * and the remedy (remove the row) is the one that code names.
  */
-const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
-  banned: 'connection_owner_banned',
-  missing: 'connection_owner_missing',
-  bot: 'connection_owner_bot',
-  restricted: 'connection_owner_restricted',
-  deleting: 'connection_owner_deleting',
-};
+const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = HOSTED_OWNER_REFUSAL_CODES;
 
 const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
   banned: 'the person who connected this connection is suspended',

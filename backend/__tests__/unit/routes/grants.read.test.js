@@ -15,6 +15,8 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   if (!id) return res.status(401).json({ error: 'unauthorized' });
   req.user = { id, role: req.get('x-test-role') || 'user' };
   req.userId = id;
+  // A bot account calling on its own cm_ token: auth marks it from its row.
+  if (req.get('x-test-bot')) req.botCaller = { username: 'a-bot', botMetadata: {} };
   return next();
 });
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
@@ -310,7 +312,11 @@ describe('GET /api/grants/:grantId/calls', () => {
     // The trail names whose credential ran (plan §8) — and a row that recorded
     // none says so as null rather than dropping the key.
     expect(member.body.calls[0].credentialOwnerId).toBe('owner-1');
-    expect(member.body.calls[0]).toMatchObject({ vendorStatus: 400, vendorError: 'session required' });
+    // What the vendor answered goes only to whoever is answerable for the
+    // connection (F271): this member is none of them; the granter is.
+    expect(member.body.calls[0]).toMatchObject({ vendorStatus: null, vendorError: null });
+    const granter = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', OWNER);
+    expect(granter.body.calls[0]).toMatchObject({ vendorStatus: 400, vendorError: 'session required' });
     expect(member.body.calls[1]).toHaveProperty('credentialOwnerId', null);
     expect(ToolCall.listForGrant).toHaveBeenCalledWith(row.grantId, 100);
 
@@ -791,4 +797,89 @@ test.each(['human', 'dual', 'agent'])('grant %s routes budget the actual credent
   if (mode === 'human') read.set('x-test-user', OWNER).set('x-auth-token', credential);
   else read.set('x-test-agent', SEAT).set('x-commonly-agent-token', credential);
   expect((await read).status).toBe(429);
+});
+
+// F271: an agent reads no person's id, connection row id, consent record,
+// vendor reply or owner status, on a private pod or an open one. People keep
+// what they read before, and the vendor reply goes only to whoever is
+// answerable for the connection.
+describe('what an agent reads of a grant (F271)', () => {
+  const OPEN = { _id: POD, type: 'team', publicRead: true, communityListed: true, joinPolicy: 'open', members: [OWNER, MEMBER, SEAT] };
+  const asSeat = (url) => request(app).get(url).set('Authorization', 'Bearer cm_agent_x').set('x-test-agent', SEAT);
+  const asBot = (url) => request(app).get(url).set('x-test-user', SEAT).set('x-test-bot', '1');
+  const trail = (grantId) => ToolCall.listForGrant.mockResolvedValue([
+    trailRow({ grantId, credentialOwnerId: MEMBER, vendorStatus: 401, vendorError: 'token expired' }),
+    trailRow({ grantId, callId: 'call-2', outcome: 'refused', reason: 'connection_owner_banned', credentialOwnerId: OWNER }),
+  ]);
+  const hosted = () => RoomGrant.create(grant({
+    installationId: 'conn-1', revokedBy: OWNER, revokedAt: new Date(),
+    byoConsent: { by: OWNER, at: new Date(), version: 'byo-v1' },
+  }));
+
+  beforeEach(() => {
+    ToolCall.countsForGrant.mockResolvedValue({ total: 2, ok: 1, refused: 1, pending_approval: 0, failed: 0 });
+  });
+
+  describe.each([
+    ['a private pod', null],
+    ['an open pod', OPEN],
+  ])('on %s', (_label, podShape) => {
+    beforeEach(() => {
+      if (podShape) Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => podShape }) }));
+    });
+
+    test('the trail gives an agent no credential owner, vendor reply or owner status', async () => {
+      const row = await RoomGrant.create(grant());
+      trail(row.grantId);
+      for (const res of [await asSeat(`/api/grants/${row.grantId}/calls`), await asBot(`/api/grants/${row.grantId}/calls`)]) {
+        expect(res.status).toBe(200);
+        for (const line of res.body.calls) {
+          expect(line).toMatchObject({ credentialOwnerId: null, vendorStatus: null, vendorError: null });
+        }
+        expect(res.body.calls[1].reason).toBe('connection_unavailable');
+        expect(JSON.stringify(res.body)).not.toMatch(/token expired|owner_banned|suspended/);
+      }
+    });
+
+    test('a grant read and the pod list give an agent no person, connection row or consent', async () => {
+      const row = await hosted();
+      const reads = [
+        (await asSeat(`/api/grants/${row.grantId}`)).body,
+        (await asBot(`/api/grants/${row.grantId}`)).body,
+        ...(await asBot(`/api/pods/${POD}/grants`)).body.grants,
+      ];
+      for (const read of reads) {
+        expect(read.grantId).toBe(row.grantId);
+        expect(read).toMatchObject({ grantedBy: null, revokedBy: null, installationId: null });
+        expect(read).not.toHaveProperty('byoConsent');
+        expect(JSON.stringify(read)).not.toContain(OWNER);
+      }
+    });
+
+    test('the credential owner and the granter still read the vendor reply', async () => {
+      const row = await RoomGrant.create(grant());
+      trail(row.grantId);
+      const owner = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', MEMBER);
+      expect(owner.body.calls[0]).toMatchObject({ vendorStatus: 401, vendorError: 'token expired' });
+      // A person still reads the specific refusal code.
+      expect(owner.body.calls[1].reason).toBe('connection_owner_banned');
+      const granter = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', OWNER);
+      expect(granter.body.calls[0]).toMatchObject({ vendorStatus: 401, vendorError: 'token expired' });
+    });
+  });
+
+  test("the pod's creator reads the vendor reply too", async () => {
+    Pod.findById.mockImplementation(() => ({ select: () => ({ lean: async () => ({ ...OPEN, createdBy: STRANGER, members: [OWNER, MEMBER, SEAT, STRANGER] }) }) }));
+    const row = await RoomGrant.create(grant());
+    trail(row.grantId);
+    const creator = await request(app).get(`/api/grants/${row.grantId}/calls`).set('x-test-user', STRANGER);
+    expect(creator.body.calls[0]).toMatchObject({ vendorStatus: 401, vendorError: 'token expired' });
+  });
+
+  test('a seat grant gives its own seat no person or connection row either', async () => {
+    const row = await RoomGrant.create(grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT], installationId: 'conn-1' }));
+    const read = await asSeat(`/api/grants/${row.grantId}`);
+    expect(read.status).toBe(200);
+    expect(read.body).toMatchObject({ grantedBy: null, installationId: null });
+  });
 });
