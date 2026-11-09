@@ -447,6 +447,13 @@ describe('the public version probe', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('a version run into letters is unknown, not the tested version', async () => {
+    await writeProbePi({ answer: `${TESTED_PI_VERSIONS[0]}rc1` });
+    const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+    await expect(pi.spawn('hi', probeCtx({ _spawnImpl: impl }))).rejects.toThrow(/untested pi version unknown/);
+    expect(calls).toHaveLength(0);
+  });
+
   test('an unknown version is refused, and is not cached', async () => {
     const probes = await writeProbePi({ answer: 'not a version' });
     for (let i = 0; i < 2; i += 1) {
