@@ -180,7 +180,9 @@ describe('read-only git refuses what is not read-only', () => {
 describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
     const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
-      ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**'];
+      ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
+      ':(exclude,glob)**/.npmrc', ':(exclude,glob)**/.npmrc/**', ':(exclude,glob)**/.yarnrc*', ':(exclude,glob)**/.yarnrc*/**',
+      ':(exclude,glob)**/.commonly', ':(exclude,glob)**/.commonly/**', ':(exclude,glob)**/.codex', ':(exclude,glob)**/.codex/**'];
     const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium',
       '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false', '-c', 'log.showSignature=false'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
@@ -254,6 +256,55 @@ describe('read-only git runs the five subcommands', () => {
       expect(confined.text).toMatch(/not a git repository/i);
     } finally {
       rmSync(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+// The other names a seat's sandbox denies: .commonly and .codex (Seatbelt and
+// a public Codex profile), .npmrc and .yarnrc* (a public Codex profile). A Codex
+// seat's git tool runs outside that profile, so git itself keeps them out.
+describe('read-only git keeps .npmrc, .yarnrc, .commonly and .codex out of reach', () => {
+  const SECRET = 'OTHER_SECRET_VALUE';
+  const run = (subcommand, args) => runReadonlyGit({
+    subcommand, args, root: repo, git: GIT,
+  });
+
+  beforeAll(async () => {
+    mkdirSync(join(repo, 'pkg', '.commonly'), { recursive: true });
+    mkdirSync(join(repo, '.codex'), { recursive: true });
+    writeFileSync(join(repo, '.npmrc'), `//r/:_authToken=${SECRET}\n`);
+    writeFileSync(join(repo, 'pkg', '.yarnrc.yml'), `npmAuthToken: ${SECRET}\n`);
+    writeFileSync(join(repo, 'pkg', '.commonly', 'config.json'), `{"token":"${SECRET}"}\n`);
+    writeFileSync(join(repo, '.codex', 'auth.json'), `{"key":"${SECRET}"}\n`);
+    await bareGit(['add', '-f', '.npmrc', 'pkg/.yarnrc.yml', 'pkg/.commonly/config.json', '.codex/auth.json']);
+    await bareGit(['commit', '-q', '-m', 'commit other protected files']);
+  });
+
+  test('an argument naming one is refused (control: bare show reads it)', async () => {
+    expect((await bareGit(['show', 'HEAD:.npmrc'])).stdout).toContain(SECRET);
+    for (const args of [['HEAD:.npmrc'], [':pkg/.yarnrc.yml'], ['HEAD:pkg/.commonly/config.json'],
+      ['HEAD', '--', '.codex'], ['HEAD^{tree}:.codex/auth.json']]) {
+      expect(refusal({ subcommand: 'show', args })).toMatch(/names a file the workspace keeps out of reach/);
+    }
+    expect(refusal({ subcommand: 'blame', args: ['.npmrc'] })).toMatch(/out of reach/);
+    expect(refusal({ subcommand: 'log', args: ['-L1,1:pkg/.yarnrc.yml'] })).toMatch(/out of reach/);
+  });
+
+  test('log, show, diff and status leave them out (control: bare git shows them)', async () => {
+    expect((await bareGit(['show', 'HEAD'])).stdout).toContain(SECRET);
+    for (const [subcommand, args] of [['show', ['HEAD']], ['log', ['-p', '-n', '2']], ['diff', ['HEAD~1', 'HEAD']]]) {
+      const out = await run(subcommand, args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+    }
+    writeFileSync(join(repo, '.npmrc'), `//r/:_authToken=${SECRET}-changed\n`);
+    try {
+      const diff = await run('diff', []);
+      expect(diff.text).not.toContain(SECRET);
+      const status = await run('status', ['--short']);
+      expect(status.text).not.toContain('.npmrc');
+    } finally {
+      await bareGit(['checkout', '--', '.npmrc']);
     }
   });
 });

@@ -8,7 +8,9 @@ import {
   afterAll, beforeAll, describe, expect, test,
 } from '@jest/globals';
 import { execFile } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import {
+  mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -17,6 +19,10 @@ import { connectStdioMcp, toPiResult } from '../src/lib/adapters/pi-mcp-client.m
 import {
   GIT_TOOL, SERVER_NAME, TOOL_NAME, createGitServerHandler, parseServerArgs,
 } from '../src/lib/git-readonly-server.js';
+import {
+  WORKSPACE_GIT_PACKAGE_JSON, WORKSPACE_GIT_SERVER, WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer,
+  workspaceGitAttachment,
+} from '../src/lib/workspace-git.js';
 
 const execFileAsync = promisify(execFile);
 const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'lib', 'git-readonly-server.js');
@@ -41,6 +47,60 @@ beforeAll(async () => {
 });
 
 afterAll(() => rmSync(repo, { recursive: true, force: true }));
+
+describe('the attachment adapters give a seat', () => {
+  test('names the server as the server names itself, and points at this file', () => {
+    expect(WORKSPACE_GIT_SERVER_NAME).toBe(SERVER_NAME);
+    expect(WORKSPACE_GIT_SERVER).toBe(SERVER);
+    expect(JSON.parse(readFileSync(WORKSPACE_GIT_PACKAGE_JSON, 'utf8')).name).toBe('@commonlyai/cli');
+  });
+
+  test('runs the server at the workspace with the git it was given, or not at all', () => {
+    expect(workspaceGitAttachment(repo, { git: '/real/git' }).server).toEqual({
+      name: 'workspace_git',
+      transport: 'stdio',
+      command: [process.execPath, SERVER, '--root', repo, '--git', '/real/git'],
+    });
+    expect(workspaceGitAttachment(repo, { git: null })).toBeNull();
+    expect(workspaceGitAttachment(null, { git: '/real/git' })).toBeNull();
+  });
+
+  test('the confined server a public Codex seat gets: read-only workspace, no network, only its own folder writable', () => {
+    const calls = [];
+    const wrap = (argv, opts) => {
+      calls.push({ argv, opts });
+      return ['/usr/bin/sandbox-exec', '-p', '(profile)', ...argv];
+    };
+    const server = confinedWorkspaceGitServer(repo, {
+      stateDir: '/state/git-tool', platform: 'darwin', git: '/real/git', wrap,
+    });
+    expect(server.name).toBe('workspace_git');
+    expect(server.command).toEqual(['/usr/bin/sandbox-exec', '-p', '(profile)',
+      process.execPath, SERVER, '--root', repo, '--git', '/real/git']);
+    expect(calls[0].opts).toEqual({
+      workspacePath: repo,
+      workspaceAccess: 'read',
+      executablePath: '/real/git',
+      statePath: '/state/git-tool',
+      readOnlyDirectories: [dirname(SERVER)],
+      readOnlyPaths: [WORKSPACE_GIT_PACKAGE_JSON],
+      network: 'loopback',
+      processInfo: 'self',
+    });
+  });
+
+  test('no confined server off macOS, without git, or without a state folder', () => {
+    const wrap = () => { throw new Error('not wrapped'); };
+    for (const options of [
+      { stateDir: '/s', platform: 'linux', git: '/real/git', wrap },
+      { stateDir: '/s', platform: 'win32', git: '/real/git', wrap },
+      { stateDir: '/s', platform: 'darwin', git: null, wrap },
+      { stateDir: null, platform: 'darwin', git: '/real/git', wrap },
+    ]) {
+      expect(confinedWorkspaceGitServer(repo, options)).toBeNull();
+    }
+  });
+});
 
 describe('the JSON-RPC handler', () => {
   const handler = () => createGitServerHandler({ root: repo, git: 'git' });
