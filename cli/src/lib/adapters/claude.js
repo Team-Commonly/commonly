@@ -94,7 +94,7 @@ import {
 } from '../sandbox/seatbelt.js';
 import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
-import { workspaceGitAttachment } from '../workspace-git.js';
+import { workspaceGitAttachment, workspaceGitEnabled } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
@@ -181,9 +181,11 @@ const workspaceGrants = (sandbox) => (
 );
 // A workspace seat reads its project's history through one read-only git tool
 // (git-readonly-server.js, attached by workspace-git.js). The server runs
-// inside the jail, so the jail admits its code and the real git binary.
+// inside the jail, so the jail admits its code and the real git binary. The
+// tool is opt-in (workspaceGitEnabled): without it the seat simply has none.
 const withWorkspaceGit = (ctx) => {
   if (ctx.environment?.sandbox?.trust !== 'workspace' || !ctx.cwd) return ctx;
+  if (!workspaceGitEnabled()) return ctx;
   const attachment = workspaceGitAttachment(ctx.cwd);
   if (!attachment) {
     // eslint-disable-next-line no-console

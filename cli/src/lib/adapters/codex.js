@@ -75,7 +75,7 @@ import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { supportedGitHooks } from '../commit-attribution.js';
-import { WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer } from '../workspace-git.js';
+import { WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer, workspaceGitEnabled } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
@@ -1125,19 +1125,27 @@ export default {
       const declaredMcp = ctx.environment?.mcp || [];
       let seatMcp = declaredMcp;
       if (workspacePath) {
+        // The confined tool is opt-in (workspaceGitEnabled). A declared one is
+        // dropped either way: Codex would run it outside the sandbox.
+        const gitEnabled = workspaceGitEnabled();
         const declaresGit = declaredMcp.some((server) => server?.name === WORKSPACE_GIT_SERVER_NAME);
         if (declaresGit) {
           // eslint-disable-next-line no-console
           console.warn(`[codex] this public seat's environment declares ${WORKSPACE_GIT_SERVER_NAME}; `
-            + 'Codex would run it outside the sandbox, so the confined one replaces it');
+            + (gitEnabled
+              ? 'Codex would run it outside the sandbox, so the confined one replaces it'
+              : 'Codex would run it outside the sandbox, so it is dropped'));
         }
-        const stateDir = join(dir, 'git-tool');
-        await mkdir(stateDir, { mode: 0o700 });
-        const workspaceGit = (ctx._workspaceGitServer || confinedWorkspaceGitServer)(workspacePath, {
-          stateDir,
-          platform: ctx._platform || process.platform,
-        });
-        if (!workspaceGit) {
+        let workspaceGit = null;
+        if (gitEnabled) {
+          const stateDir = join(dir, 'git-tool');
+          await mkdir(stateDir, { mode: 0o700 });
+          workspaceGit = (ctx._workspaceGitServer || confinedWorkspaceGitServer)(workspacePath, {
+            stateDir,
+            platform: ctx._platform || process.platform,
+          });
+        }
+        if (gitEnabled && !workspaceGit) {
           // eslint-disable-next-line no-console
           console.warn('[codex] the read-only git tool needs macOS and git on this machine, so this public seat has none');
         }

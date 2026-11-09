@@ -88,8 +88,11 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
   let root;
   let workspace;
   let model;
+  // The tool is opt-in: this suite runs with it switched on.
+  const savedGitEnv = process.env.COMMONLY_WORKSPACE_GIT;
 
   beforeEach(async () => {
+    process.env.COMMONLY_WORKSPACE_GIT = '1';
     root = await mkdtemp(join(tmpdir(), 'commonly-codex-git-'));
     await Promise.all(['workspace', 'home', 'operator', 'outside'].map((dir) => mkdir(join(root, dir))));
     await writeFile(
@@ -105,6 +108,8 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
   });
 
   afterEach(async () => {
+    if (savedGitEnv === undefined) delete process.env.COMMONLY_WORKSPACE_GIT;
+    else process.env.COMMONLY_WORKSPACE_GIT = savedGitEnv;
     await model?.close();
     model = null;
     await rm(root, { recursive: true, force: true });
