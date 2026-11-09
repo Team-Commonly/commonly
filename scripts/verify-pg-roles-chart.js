@@ -110,8 +110,13 @@ for (const lane of Object.keys(lanes)) {
   if (lSet) expect(lSet.user === 'llm_role' && lSet.key === 'key:postgres-litellm-password', `${lane}: litellm set is ${JSON.stringify(lSet)}`);
 
   // Key-length boundaries, where the key reaches the ExternalSecret.
-  expect(!refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(252)}`]), `${lane}: a 253-character key is refused`);
-  expect(refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(253)}`]), `${lane}: a 254-character key renders`);
+  // The prefixed Secret Manager ID caps the key: prefix + key <= 255. Dots are invalid there.
+  const room = 255 - (esBase.find((k) => k.startsWith('postgres-password<-')).length - 'postgres-password<-'.length - 'postgres-password'.length);
+  expect(!refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(room - 1)}`]), `${lane}: a ${room}-character key (prefixed ID 255) is refused`);
+  expect(refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(room)}`]), `${lane}: a ${room + 1}-character key (prefixed ID 256) renders`);
+  for (const bad of ['.', '..pw', 'postgres.app-password']) {
+    expect(refuses(lane, ['backend.env.pgAppUser=app_role', `string:backend.env.pgAppPasswordKey=${bad}`]), `${lane}: dotted key ${bad} renders`);
+  }
   // YAML-typed key names stay strings in every field that carries them.
   for (const k of ['123', 'true']) {
     const docs = render(lane, ['litellm.enabled=true', 'backend.env.pgAppUser=app_role', `string:backend.env.pgAppPasswordKey=${k}`,

@@ -165,9 +165,9 @@ templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
 {{- if and $role (or (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $role)) (hasPrefix "pg_" $role)) }}
 {{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*, at most 63, no pg_ prefix)" $path $role) }}
 {{- end }}
-{{- /* Kubernetes Secret key rules; 253 is the ExternalSecret limit. Templates quote the key, so "123" or "true" stays a string. */}}
-{{- if and $key (not (regexMatch "^[-._a-zA-Z0-9]{1,253}$" (toString $key))) }}
-{{- fail (printf "%s: %q is not a Secret key name ([-._a-zA-Z0-9], at most 253)" $path (toString $key)) }}
+{{- /* The key is both a Kubernetes Secret key and, with the prefix, a Secret Manager ID: [a-zA-Z0-9_-] and at most 255 together. Templates quote it, so "123" or "true" stays a string. */}}
+{{- if and $key (or (not (regexMatch "^[-_a-zA-Z0-9]+$" (toString $key))) (gt (len (printf "%s%s" ($.Values.externalSecrets.keyPrefix | default "commonly-dev-") (toString $key))) 255)) }}
+{{- fail (printf "%s: %q is not a valid Secret key and Secret Manager ID ([a-zA-Z0-9_-], at most 255 with the store prefix)" $path (toString $key)) }}
 {{- end }}
 {{- if has $key (list "mongo-uri" "mongo-password") }}
 {{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
