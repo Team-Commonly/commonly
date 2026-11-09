@@ -1505,9 +1505,17 @@ export async function dispatchTool(
           const png = await agentComputerBroker.screenshot(ownerId, installationId);
           ctx.webTainted = true;
           ctx.computerReadSeen = true;
+          // The page the screenshot shows, so a set-aside can name it. A click
+          // may have moved the tab since the last read.
+          let url: string | undefined;
+          try {
+            url = await agentComputerBroker.currentUrl(ownerId, installationId);
+          } catch {
+            url = undefined;
+          }
           return {
             content: { screenshot: 'attached to the next model input' },
-            recorded: { bytes: png.length },
+            recorded: { bytes: png.length, ...(url ? { url } : {}) },
             untrustedSourceTitle: 'a computer screenshot',
             imagePngBase64: png.toString('base64'),
           };
@@ -2858,8 +2866,6 @@ export async function runAgent(
   // check cannot read, so `image` marks the tool result followed by its image.
   const computerResults: Array<{ round: number; index: number; image: boolean; page: number; url?: string }> = [];
   let computerReads = 0;
-  // The address of the page the latest read showed; a screenshot has none of its own.
-  let computerUrl: string | undefined;
   const pageAddress = (raw: unknown): string | undefined => {
     try {
       const parsed = new URL(String(raw));
@@ -2900,6 +2906,39 @@ export async function runAgent(
     if (acted) {
       for (let i = aside[0].index + 1; i < messages.length; i += 1) {
         if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+      }
+      // A refused call did nothing, and its arguments may quote the stopped
+      // page, so it leaves the history with its result. What ran stays.
+      const asideAt = new Set(aside.map(({ index }) => index));
+      const refused = new Set<string>();
+      for (let i = aside[0].index + 1; i < messages.length; i += 1) {
+        if (messages[i]?.role !== 'tool' || asideAt.has(i)) continue;
+        let parsed: any = null;
+        try { parsed = JSON.parse(String(messages[i].content)); } catch { parsed = null; }
+        if (parsed && parsed.ok === false) refused.add(String(messages[i].tool_call_id));
+      }
+      if (refused.size) {
+        const kept: any[] = [];
+        const newIndex = new Map<number, number>();
+        messages.forEach((message: any, i: number) => {
+          let next = message;
+          if (i > aside[0].index && message?.role === 'tool' && refused.has(String(message.tool_call_id))) return;
+          if (i > aside[0].index && message?.role === 'assistant' && Array.isArray(message.tool_calls)) {
+            const calls = message.tool_calls.filter((tc: any) => !refused.has(String(tc?.id)));
+            if (!calls.length && !message.content) return;
+            next = { ...message, tool_calls: calls };
+            if (!calls.length) delete next.tool_calls;
+          }
+          newIndex.set(i, kept.length);
+          kept.push(next);
+        });
+        const keptBefore = (end: number) => [...newIndex.keys()].filter((i) => i < end).length;
+        roundEnds.splice(0, roundEnds.length, ...roundEnds.map(keptBefore));
+        // `aside` holds the same objects as computerResults: remap each once.
+        new Set([...computerResults, ...webResults, ...aside]).forEach((result) => {
+          result.index = newIndex.get(result.index) ?? result.index;
+        });
+        messages.splice(0, messages.length, ...kept);
       }
     } else {
       messages.length = roundEnds[firstRound];
@@ -3270,15 +3309,16 @@ export async function runAgent(
             });
           }
           if (WEB_LOOKUP_TOOLS.has(toolName) && !result.error) webResults.push({ round, index: messages.length - 1 });
-          // A click or a typed field can change the page, so a later
-          // screenshot names no address until the next page read.
-          if (toolName === 'computer_click' || toolName === 'computer_type') computerUrl = undefined;
           if (COMPUTER_READ_TOOLS.has(toolName) && !result.error) {
             computerReads += 1;
             const image = Boolean(result.imagePngBase64);
-            if (!image) computerUrl = pageAddress((result.recorded as any)?.url);
+            // Each read names the page it showed, a screenshot included.
             computerResults.push({
-              round, index: messages.length - (image ? 2 : 1), image, page: computerReads, url: computerUrl,
+              round,
+              index: messages.length - (image ? 2 : 1),
+              image,
+              page: computerReads,
+              url: pageAddress((result.recorded as any)?.url),
             });
           }
           }

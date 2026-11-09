@@ -63,11 +63,14 @@ jest.mock('../../../services/grantBrokerProjectionService', () => {
 });
 const mockComputerSnapshot = jest.fn();
 const mockComputerScreenshot = jest.fn();
+const mockComputerUrl = jest.fn();
 jest.mock('../../../services/agentComputerBroker', () => ({
   agentComputerEnabled: () => true,
   agentComputerBroker: {
     snapshot: (...args) => mockComputerSnapshot(...args),
     screenshot: (...args) => mockComputerScreenshot(...args),
+    currentUrl: (...args) => mockComputerUrl(...args),
+    click: async () => 'clicked',
   },
 }));
 jest.mock('../../../models/Message', () => {
@@ -1352,6 +1355,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
         return { url: 'https://site.example/page?q=secret#frag', title: 'Page', text };
       });
       mockComputerScreenshot.mockResolvedValue(Buffer.from('png-bytes'));
+      mockComputerUrl.mockResolvedValue('https://site.example/page?q=secret');
     });
 
     test('the stopped page is set aside and the walk reads the next one', async () => {
@@ -1454,6 +1458,45 @@ describe('a hosted turn the guard stops, or that fails', () => {
       // The model's text after the stopped page could quote it, so it is cleared.
       expect(JSON.stringify(retry.messages)).not.toContain(STOPPED_TEXT);
       expect(savedRun.computerSetAside).toBe(1);
+    });
+
+    test('a screenshot after a click names the page the tab is on now', async () => {
+      pages = [CLEAN_TEXT];
+      mockComputerUrl.mockResolvedValue('https://site.example/next#top');
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        toolCalls(call('c2', 'computer_click', { selector: 'a.next' }), call('c3', 'computer_screenshot', {})),
+        guardStop,
+        reply('Done.'),
+      ];
+
+      await runAgent(computerInstall(), mention);
+
+      const tools = toolContents(chatBodies[3]);
+      expect(JSON.parse(tools[2])).toMatchObject({ ok: false, page: 2, url: 'https://site.example/next' });
+    });
+
+    test('a refused call after the stopped page leaves the history; what ran stays', async () => {
+      pages = [STOPPED_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        toolCalls(
+          call('c2', 'commonly_post_message', { content: 'Step one is done.' }),
+          call('c3', 'commonly_web_search', { query: STOPPED_TEXT }),
+        ),
+        guardStop,
+        reply('Done.'),
+      ];
+
+      await runAgent(computerInstall(), mention);
+
+      const retry = chatBodies[3];
+      expect(JSON.stringify(retry.messages)).not.toContain(STOPPED_TEXT);
+      const assistants = retry.messages.filter((m) => m.role === 'assistant' && m.tool_calls);
+      expect(assistants[1].tool_calls.map((tc) => tc.id)).toEqual(['c2']);
+      const ids = retry.messages.filter((m) => m.role === 'tool').map((m) => m.tool_call_id);
+      expect(ids).toEqual(['c1', 'c2']);
+      expect(posted()).toEqual(['Step one is done.']);
     });
 
     test('when the check is unavailable, the last round\'s reads are set aside and older ones stay', async () => {
