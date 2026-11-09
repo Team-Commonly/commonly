@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as childProcess from 'node:child_process';
 import { realpathSync } from 'node:fs';
+import { jest } from '@jest/globals';
 import qwen, { TESTED_QWEN_VERSIONS } from '../src/lib/adapters/qwen.js';
 import goose, { TESTED_GOOSE_VERSIONS } from '../src/lib/adapters/goose.js';
 import { meetsMinimumVersion, probeVersion } from '../src/lib/adapters/tested-version.js';
@@ -124,6 +125,16 @@ describe('goose', () => {
       expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
     }
     expect(await probes()).toBe(1);
+  });
+
+  test('a prerelease of a tested version is read in full, so it is not the tested version', async () => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+      // The same check refuses a public seat; a private one says so and continues.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`installed ${TESTED_GOOSE_VERSIONS[0]}-rc.1 differs`));
+    } finally { warn.mockRestore(); }
   });
 });
 

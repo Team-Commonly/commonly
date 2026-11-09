@@ -96,7 +96,8 @@ export const assertSandboxSupported = (environment = {}) => {
   }
 };
 
-const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+// The prerelease suffix is kept, so `1.54.0-rc.1` never reads as the tested 1.54.0.
+const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/)?.[1] || null;
 
 /** Goose splits this string itself; reject quotes it cannot represent safely. */
 const gooseWord = (value) => {
