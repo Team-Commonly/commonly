@@ -175,6 +175,13 @@ describe('read-only git refuses what is not read-only', () => {
       expect(refusal({ subcommand: 'diff', args: [name] })).toContain(name);
     }
   });
+
+  test('--end-of-options is refused in every subcommand, and so is a prefix of it', () => {
+    for (const subcommand of ['status', 'log', 'diff', 'show', 'blame']) {
+      expect(refusal({ subcommand, args: ['--end-of-options', 'HEAD'] })).toMatch(/--end-of-options is refused/);
+      expect(refusal({ subcommand, args: ['--end-of-opt', 'HEAD'] })).toMatch(/reads it as --end-of-options/);
+    }
+  });
 });
 
 describe('read-only git runs the five subcommands', () => {
@@ -355,6 +362,40 @@ describe('read-only git shows a blob only through a path it can check', () => {
     expect(log.text).not.toContain(SECRET);
   });
 
+  test('a revision whose only colon is inside @{...} is still checked (control: bare show prints the blob)', async () => {
+    // A ref with a reflog that points at the blob. git splits <rev>:<path> at
+    // the first colon outside braces, so this date names no path.
+    await bareGit(['update-ref', '--create-reflog', '-m', 'point a ref at the blob', 'refs/remotes/o/x', blob]);
+    const dated = 'o/x@{2099-01-01 00:00:00}';
+    expect((await bareGit(['show', dated])).stdout).toContain(SECRET);
+    for (const args of [[dated], ['refs/remotes/o/x@{2099-01-01 00:00:00}'], ['HEAD', dated], [`${dated}^{}`]]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+      expect(out.text).not.toContain(SECRET);
+    }
+    await bareGit(['update-ref', '-d', 'refs/remotes/o/x']);
+  });
+
+  test('a ref named like an option is never read as a revision (control: bare show prints the blob)', async () => {
+    await bareGit(['update-ref', 'refs/tags/--dash-blob', blob]);
+    await bareGit(['update-ref', 'refs/tags/--dash-commit', 'HEAD']);
+    expect((await bareGit(['show', '--end-of-options', '--dash-blob'])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', '--end-of-options', '--dash-commit:.env.blobtest'])).stdout).toContain(SECRET);
+    for (const args of [['--end-of-options', '--dash-blob'], ['--end-of-options', '--dash-commit:.env.blobtest'],
+      ['--dash-blob'], ['--dash-commit:.env.blobtest']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).not.toContain(SECRET);
+    }
+    // Through its full name the ref is a revision like any other, and is probed.
+    const full = await run(['refs/tags/--dash-blob']);
+    expect(full.ok).toBe(false);
+    expect(full.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+    await bareGit(['update-ref', '-d', 'refs/tags/--dash-blob']);
+    await bareGit(['update-ref', '-d', 'refs/tags/--dash-commit']);
+  });
+
   test('a revision check that runs out of time refuses the call', async () => {
     const out = await runReadonlyGit({
       subcommand: 'show', args: ['HEAD'], root: repo, git: GIT, timeoutMs: 0,
@@ -364,7 +405,8 @@ describe('read-only git shows a blob only through a path it can check', () => {
   });
 
   test('commits, trees, paths and ranges still show', async () => {
-    for (const args of [['HEAD'], ['HEAD^{tree}'], ['HEAD:tracked.txt'], ['HEAD~1..HEAD', '--stat'], ['--', 'tracked.txt']]) {
+    for (const args of [['HEAD'], ['HEAD^{tree}'], ['HEAD:tracked.txt'], ['HEAD~1..HEAD', '--stat'], ['--', 'tracked.txt'],
+      ['main@{2099-01-01 00:00:00}'], ['main@{2099-01-01 00:00:00}:tracked.txt']]) {
       const out = await run(args);
       expect(out.ok).toBe(true);
       expect(out.text).not.toContain(SECRET);

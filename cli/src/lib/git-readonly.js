@@ -87,6 +87,7 @@ export const DENIED_LONG_OPTIONS = Object.freeze({
   '--show-signature': 'runs gpg to check a signature',
   '--follow': 'needs exactly one path, and every log here also carries the .env excludes',
   '--full-diff': 'shows every file a picked commit changed, .env files included',
+  '--end-of-options': 'makes git read every later argument as a revision, so an option-shaped one skips the checks a revision gets',
 });
 
 // Options refused for `show` only. Each makes git pick objects itself (every
@@ -368,13 +369,29 @@ const execGit = (git, argv, { root, baseEnv, timeoutMs }) => new Promise((done) 
   }, (error, stdout, stderr) => done({ error, stdout: String(stdout || ''), stderr: String(stderr || '') }));
 });
 
-// The arguments `show` would read as revisions: before `--`, not an option.
-// One with a `:` names its path, which readonlyGitArgv has name-checked.
+// Whether git reads `arg` as `<rev>:<path>`. git splits at the first `:`
+// outside any `{...}` (get_oid_with_context_1 in object-name.c counts brace
+// depth), so a `:` inside `@{...}` or `^{...}` belongs to the revision: a
+// reflog date such as `ref@{2026-11-09 11:41:50}` names no path at all.
+const namesAPath = (arg) => {
+  let depth = 0;
+  for (const ch of arg) {
+    if (ch === '{') depth += 1;
+    else if (ch === '}' && depth > 0) depth -= 1;
+    else if (ch === ':' && depth === 0) return true;
+  }
+  return false;
+};
+
+// The arguments `show` would read as revisions: before `--`, not an option
+// (`--end-of-options` is refused, so a `-` argument is never a revision). One
+// that names a path does so through `<rev>:<path>`, and readonlyGitArgv has
+// name-checked that path; every other one is probed.
 const unnamedRevisions = (args) => {
   const revisions = [];
   for (const arg of args) {
     if (arg === '--') break;
-    if (!arg.startsWith('-') && !arg.includes(':')) revisions.push(arg);
+    if (!arg.startsWith('-') && !namesAPath(arg)) revisions.push(arg);
   }
   return revisions;
 };
