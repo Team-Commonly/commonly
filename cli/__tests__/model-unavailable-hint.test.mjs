@@ -137,10 +137,17 @@ describe('modelUnavailableFailure', () => {
     expect(modelUnavailableHint(null)).toMatch(/this agent's model isn't available.*Settings, then How it runs, then Model\.$/);
   });
 
-  test('a CLI agent name outside the handle charset falls back to Settings rather than echo it', () => {
-    expect(modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' })).toMatch(/Settings, then How it runs, then Model\.$/);
+  test('a CLI agent name outside the handle charset is not echoed, and the line still names the command', () => {
+    const bad = modelUnavailableHint('m-1', { cliAgentName: 'bad name; rm' });
+    expect(bad).toMatch(/run commonly agent config <name> --model <model> .*restart commonly agent run <name>\.$/);
+    expect(bad).not.toMatch(/bad name|Settings/);
     expect(modelUnavailableHint('m-1', { cliAgentName: 'gw-codex' })).toMatch(/commonly agent config gw-codex --model <model>/);
     expect(modelUnavailableHint('m-1', { cliAgentName: 'my_agent.v2' })).toMatch(/commonly agent config my_agent\.v2 --model/);
+    const name64 = 'a'.repeat(64);
+    expect(modelUnavailableHint('m-1', { cliAgentName: name64 })).toContain(`commonly agent config ${name64} --model`);
+    const name65 = modelUnavailableHint('m-1', { cliAgentName: `${name64}a` });
+    expect(name65).not.toContain(name64);
+    expect(name65).toContain('commonly agent config <name> --model');
     expect(modelUnavailableHint(null, { cliAgentName: 'gw-codex' })).toBe("The model provider says this agent's model isn't available. "
       + 'To change it, run commonly agent config gw-codex --model <model> on the computer it runs on, then restart commonly agent run gw-codex.');
   });
@@ -201,6 +208,13 @@ describe('performRun posts the model hint', () => {
     expect(body.content).toBe("The model provider says claude-opus-5-5 isn't available for this agent. "
       + 'To change it, run commonly agent config hint-seat --model <model> on the computer it runs on, then restart commonly agent run hint-seat.');
     expect(body.content).not.toMatch(/Settings/);
+  });
+
+  test('a seat restarted with a saved environment hears the Settings line inside the same hour', async () => {
+    expect(podPosts(await runOnce(CLAUDE_403, { readSavedControls: true, environment: null }))).toHaveLength(1);
+    const [[, body]] = podPosts(await runOnce(CLAUDE_403, { readSavedControls: true }));
+    expect(body.content).toMatch(/open the agent's Settings, then How it runs, then Model\.$/);
+    expect(podPosts(await runOnce(CLAUDE_403, { readSavedControls: true }))).toHaveLength(0);
   });
 
   // Some of these post their own line (turn-failure-notice.js), never a model hint.

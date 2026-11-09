@@ -138,14 +138,16 @@ const CLI_AGENT_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
  * under the "How it runs" section, which starts collapsed (F354: a walk missed
  * it). `cliAgentName` is for a `commonly agent run` seat whose record has no
  * saved environment: Settings doesn't reach that seat until `agent config`
- * writes one, so the line names that command instead.
+ * writes one, so the line names that command instead. A name that can't be
+ * printed safely becomes `<name>`: Settings still wouldn't reach that seat.
  */
 export const modelUnavailableHint = (model, { cliAgentName = null } = {}) => {
   const what = model
     ? `The model provider says ${model} isn't available for this agent.`
     : "The model provider says this agent's model isn't available.";
-  const name = typeof cliAgentName === 'string' && CLI_AGENT_NAME_RE.test(cliAgentName) ? cliAgentName : null;
-  return name
-    ? `${what} To change it, run commonly agent config ${name} --model <model> on the computer it runs on, then restart commonly agent run ${name}.`
-    : `${what} To change it, open the agent's Settings, then How it runs, then Model.`;
+  if (typeof cliAgentName !== 'string' || !cliAgentName) {
+    return `${what} To change it, open the agent's Settings, then How it runs, then Model.`;
+  }
+  const name = CLI_AGENT_NAME_RE.test(cliAgentName) ? cliAgentName : '<name>';
+  return `${what} To change it, run commonly agent config ${name} --model <model> on the computer it runs on, then restart commonly agent run ${name}.`;
 };

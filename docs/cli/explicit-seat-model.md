@@ -63,7 +63,11 @@ the model and pointing at the agent's Settings, then How it runs, then Model.
 That section starts collapsed, so the line names it. A `commonly agent run` seat
 whose record has no saved environment doesn't read Settings, so its line names
 `commonly agent config <name> --model <model>` and a restart instead (F354).
+A name the line can't print safely shows as `<name>`; that seat still gets the
+command, never Settings.
 Any other 403 or 404 posts nothing. The line is posted at most once per model per seat per hour,
+and the Settings line and the command line each keep their own hour, so a seat
+restarted with a saved environment hears the Settings line at once. The hour is
 recorded in `~/.commonly/sessions/<agent>.notices.json` so a restart does not
 repeat it. The turn still fails and retries as before. Matcher and tests:
 `cli/src/lib/model-unavailable.js`, `cli/__tests__/model-unavailable-hint.test.mjs`.

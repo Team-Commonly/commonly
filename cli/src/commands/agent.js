@@ -2621,15 +2621,18 @@ export const performRun = ({
   const postModelUnavailableHint = async (error, hintPodId, configuredModel) => {
     const failure = modelUnavailableFailure(error, { fallbackModel: configuredModel });
     if (!failure || !hintPodId) return;
-    const key = `model-unavailable:${failure.model || 'unknown'}`;
+    // A listener seat with no saved environment ignores Settings (see the
+    // "has no saved environment" notice above), so it gets the command. Each
+    // instruction keeps its own hour: a seat restarted with an environment
+    // hears the Settings line even if the command line went out just before.
+    const cliAgentName = readSavedControls && !environment ? agentName : null;
+    const key = `model-unavailable:${failure.model || 'unknown'}${cliAgentName ? ':agent-config' : ''}`;
     try {
       if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
       const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
-        // A listener seat with no saved environment ignores Settings (see the
-        // "has no saved environment" notice above), so it gets the command.
-        text: modelUnavailableHint(failure.model, { cliAgentName: readSavedControls && !environment ? agentName : null }),
+        text: modelUnavailableHint(failure.model, { cliAgentName }),
         limit: chatCharLimit,
         maxChunks: maxChatChunks,
         log,
