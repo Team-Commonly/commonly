@@ -214,6 +214,17 @@ const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
 const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
   + 'in this conversation. No more lookups are possible in this turn: answer with what you have, and tell the '
   + 'person which page or search you could not use.';
+// A computer read the guard stops is set aside and the turn carries on.
+// Reading pages is a walk's whole job, so one stopped page must not end it, and
+// the turn keeps every tool. The page number is the read's place in the turn;
+// the page's own URL and title came from the page, so they are not repeated.
+const COMPUTER_SET_ASIDE_NOTICE = 'This page was set aside: a content filter stopped it, and its contents are no '
+  + 'longer in this conversation. Do not read it again. Carry on with the next step, and tell the person which '
+  + 'page you could not use.';
+// How many times one turn sets computer reads aside before a stop ends it.
+const COMPUTER_SET_ASIDE_LIMIT = 5;
+// The tool results that carry what a page showed.
+const COMPUTER_READ_TOOLS = new Set(['computer_navigate', 'computer_snapshot', 'computer_screenshot']);
 const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // The refusal for any tool that round does not offer. When the round did not
 // try to post, the model reads it before one further call (F33: it asked for
@@ -225,6 +236,9 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 // on any agent. Fixed text, so it carries nothing the turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
+// The same for a native agent that is not hosted: it has no daily turns, so
+// the line makes no claim about them.
+export const NATIVE_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this. You can ask again, or ask it a different way.';
 
 // What an agent posts when a person addressed it and no turns are left: a
 // hosted agent past its daily line, or any agent past the per-user ceiling.
@@ -2838,6 +2852,45 @@ export async function runAgent(
     return { setAside: aside.length, removed: before - kept.length };
   };
 
+  // Computer reads are kept the same way. A screenshot is an image the text
+  // check cannot read, so `image` marks the tool result followed by its image.
+  const computerResults: Array<{ round: number; index: number; image: boolean; page: number }> = [];
+  let computerReads = 0;
+  let computerSetAsides = 0;
+  // Returns how many computer reads were set aside. The stopped ones go when
+  // the check finds them; otherwise the latest round's reads the check could
+  // not clear (its screenshots, or all of them when the check is unavailable).
+  // Every round after the one set aside is dropped, as for a web result.
+  const setAsideStoppedComputerResult = async (): Promise<number> => {
+    const texts = computerResults.filter((result) => !result.image);
+    const stops = texts.length
+      ? await textsTheGuardStops(litellm, texts.map(({ index }) => String(messages[index].content)), runGuardrails)
+      : [];
+    let aside: typeof computerResults;
+    if (stops && stops.includes(true)) {
+      const stoppedRound = texts[stops.indexOf(true)].round;
+      aside = texts.filter((result, i) => result.round === stoppedRound && stops[i]);
+    } else {
+      const uncleared = stops ? computerResults.filter((result) => result.image) : computerResults;
+      if (!uncleared.length) return 0;
+      const lastRound = uncleared[uncleared.length - 1].round;
+      aside = uncleared.filter((result) => result.round === lastRound);
+    }
+    const firstRound = aside[0].round;
+    messages.length = roundEnds[firstRound];
+    roundEnds.length = firstRound + 1;
+    aside.forEach(({ index, image, page }) => {
+      messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, page, error: COMPUTER_SET_ASIDE_NOTICE }) };
+      if (image) messages[index + 1] = { role: 'user', content: `The screenshot of page ${page} was set aside by a content filter.` };
+    });
+    const keptComputer = computerResults.filter((result) => result.round < firstRound
+      || (result.round === firstRound && !aside.includes(result)));
+    computerResults.splice(0, computerResults.length, ...keptComputer);
+    const keptWeb = webResults.filter((result) => result.round <= firstRound);
+    webResults.splice(0, webResults.length, ...keptWeb);
+    return aside.length;
+  };
+
   try {
     // Tool names offered in the most recent model call; a call to anything
     // else is refused at dispatch.
@@ -2971,6 +3024,16 @@ export async function runAgent(
               webResults.splice(0, webResults.length);
               webSetAsideAll = true;
               continue;
+            }
+            // A post earlier in the turn does not end a walk: the message
+            // service drops a repeat of words already in the pod.
+            if (computerResults.length > 0 && computerSetAsides < COMPUTER_SET_ASIDE_LIMIT) {
+              const setAside = await setAsideStoppedComputerResult();
+              if (setAside > 0) {
+                computerSetAsides += 1;
+                run.computerSetAside = Number(run.computerSetAside || 0) + setAside;
+                continue;
+              }
             }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
@@ -3176,6 +3239,11 @@ export async function runAgent(
             });
           }
           if (WEB_LOOKUP_TOOLS.has(toolName) && !result.error) webResults.push({ round, index: messages.length - 1 });
+          if (COMPUTER_READ_TOOLS.has(toolName) && !result.error) {
+            computerReads += 1;
+            const image = Boolean(result.imagePngBase64);
+            computerResults.push({ round, index: messages.length - (image ? 2 : 1), image, page: computerReads });
+          }
           }
         }
         roundEnds.push(messages.length);
@@ -3347,13 +3415,14 @@ export async function runAgent(
   // on native turns; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
-  if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
+  if ((hostedNative || modelFailureReason || personAsked) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
-    // A native agent's line carries the provider's reason, so a tainted turn
-    // can't post it in a bridged pod. A hosted line is our own fixed text, and
-    // noOutboundRelay keeps it in Commonly (F56).
+    // A native agent's model-failure line carries the provider's reason, so a
+    // tainted turn can't post it in a bridged pod. Every other line is our own
+    // fixed text, and noOutboundRelay keeps it in Commonly (F56).
+    const providerLine = !hostedNative && Boolean(modelFailureReason);
     if (personAsked
-      && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
+      && !(providerLine && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
@@ -3367,7 +3436,7 @@ export async function runAgent(
             ? (hostedNative
               ? `${MODEL_DISPLAY_NAMES[model] || model} could not answer just now. ${HOSTED_RUN_FAILED_LINE}`
               : `Model ${model} could not answer (${modelFailureReason}). Please try again.`)
-            : HOSTED_RUN_FAILED_LINE,
+            : (hostedNative ? HOSTED_RUN_FAILED_LINE : NATIVE_RUN_FAILED_LINE),
           messageType: 'text',
           displayName,
           installationConfig: cfg,

@@ -101,6 +101,11 @@ export interface IAgentRun extends Document {
    * plus the ones in the rounds dropped after them. Absent when none were.
    */
   webSetAside?: number;
+  /**
+   * Agent computer reads the guard stopped and the turn set aside before
+   * carrying on. Absent when none were.
+   */
+  computerSetAside?: number;
   /** F56: the model ended the turn with no text and no post. */
   emptyCompletion?: boolean;
   /**
@@ -174,6 +179,7 @@ const AgentRunSchema = new Schema<IAgentRun>(
     webSearches: { type: Number },
     webFetches: { type: Number },
     webSetAside: { type: Number },
+    computerSetAside: { type: Number },
     emptyCompletion: { type: Boolean },
     metered: { type: Boolean },
     startedAt: { type: Date, default: Date.now },

@@ -61,6 +61,15 @@ jest.mock('../../../services/grantBrokerProjectionService', () => {
   const actual = jest.requireActual('../../../services/grantBrokerProjectionService');
   return { ...actual, hostedBrokerToolsForRun: (...args) => mockHostedBroker(actual, ...args) };
 });
+const mockComputerSnapshot = jest.fn();
+const mockComputerScreenshot = jest.fn();
+jest.mock('../../../services/agentComputerBroker', () => ({
+  agentComputerEnabled: () => true,
+  agentComputerBroker: {
+    snapshot: (...args) => mockComputerSnapshot(...args),
+    screenshot: (...args) => mockComputerScreenshot(...args),
+  },
+}));
 jest.mock('../../../models/Message', () => {
   const chain = {
     sort: () => chain, limit: () => chain, select: () => chain, populate: () => chain, lean: () => Promise.resolve([]),
@@ -73,7 +82,7 @@ const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
 const ClaimHandoff = require('../../../services/messageClaimHandoffService');
 const {
-  runAgent, HOSTED_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE, ROOM_TURNS_USED_LINE, TURN_UNAVAILABLE_LINE, forgetStopLines,
+  runAgent, HOSTED_RUN_FAILED_LINE, NATIVE_RUN_FAILED_LINE, HOSTED_TURNS_USED_LINE, ROOM_TURNS_USED_LINE, TURN_UNAVAILABLE_LINE, forgetStopLines,
   stopLineAlreadySaid, triggerTextIsHumanWritten,
 } = require('../../../services/nativeRuntimeService');
 
@@ -1284,7 +1293,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBe(false);
     });
 
-    test('a native install that is not hosted is unchanged: no fixed line, no meter flag', async () => {
+    test('a native install that is not hosted gets its own fixed line and no meter flag', async () => {
       chatReplies = [guardStop];
 
       await runAgent({
@@ -1296,8 +1305,136 @@ describe('a hosted turn the guard stops, or that fails', () => {
         config: { runtime: { runtimeType: 'native' }, tools: ['commonly_read_context', 'commonly_post_message'] },
       }, mention);
 
-      expect(posted()).toEqual([]);
+      expect(posted()).toEqual([NATIVE_RUN_FAILED_LINE]);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
       expect(savedRun.metered).toBeUndefined();
+    });
+
+    test('a failed native wake nobody is waiting on stays silent', async () => {
+      chatReplies = [guardStop];
+
+      await runAgent({
+        podId: POD,
+        agentName: 'analyst',
+        instanceId: 'default',
+        displayName: 'Analyst',
+        installedBy: OWNER,
+        config: { runtime: { runtimeType: 'native' }, tools: ['commonly_read_context', 'commonly_post_message'] },
+      }, { type: 'heartbeat', eventId: '507f1f77bcf86cd799439013', payload: {} });
+
+      expect(posted()).toEqual([]);
+    });
+  });
+
+  // A walk reads page after page on the owner's computer. A page the guard
+  // stops is set aside and the walk carries on with every tool; only a turn
+  // that keeps being stopped ends, and then with the fixed line.
+  describe('a computer read the guard stops', () => {
+    const computerInstall = () => ({
+      _id: '507f1f77bcf86cd7994390cc',
+      podId: POD,
+      agentName: 'walker',
+      instanceId: 'default',
+      displayName: 'Walker',
+      installedBy: OWNER,
+      config: {
+        runtime: { runtimeType: 'native' },
+        tools: ['computer_snapshot', 'computer_screenshot', 'computer_click', 'commonly_post_message'],
+      },
+    });
+    const snapshotCall = (id) => call(id, 'computer_snapshot', {});
+    const toolContents = (body) => body.messages.filter((m) => m.role === 'tool').map((m) => String(m.content));
+    let pages;
+    beforeEach(() => {
+      pages = [];
+      mockComputerSnapshot.mockImplementation(async () => {
+        const text = pages.shift();
+        return { url: 'https://site.example/page', title: 'Page', text };
+      });
+      mockComputerScreenshot.mockResolvedValue(Buffer.from('png-bytes'));
+    });
+
+    test('the stopped page is set aside and the walk reads the next one', async () => {
+      pages = [STOPPED_TEXT, CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        guardStop,
+        toolCalls(snapshotCall('c2')),
+        reply('Walked both pages; page 1 was set aside.'),
+      ];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(posted()).toEqual(['Walked both pages; page 1 was set aside.']);
+      // The retry carries the notice in place of the page, and keeps every tool.
+      const retry = chatBodies[2];
+      const [notice] = toolContents(retry);
+      expect(notice).not.toContain(STOPPED_TEXT);
+      expect(JSON.parse(notice)).toMatchObject({ ok: false, page: 1 });
+      expect(offeredIn(retry)).toEqual(expect.arrayContaining(['computer_snapshot', 'computer_click']));
+      expect(toolContents(chatBodies[3]).some((c) => c.includes(CLEAN_TEXT))).toBe(true);
+      expect(savedRun.computerSetAside).toBe(1);
+      expect(savedRun.errorKind).toBeUndefined();
+    });
+
+    test('a screenshot the check cannot read is set aside when the page text passed', async () => {
+      pages = [CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1'), call('c2', 'computer_screenshot', {})),
+        guardStop,
+        reply('Read the page; its screenshot was set aside.'),
+      ];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      const retry = chatBodies[2];
+      const tools = toolContents(retry);
+      expect(tools[0]).toContain(CLEAN_TEXT);
+      expect(JSON.parse(tools[1])).toMatchObject({ ok: false, page: 2 });
+      expect(JSON.stringify(retry.messages)).not.toContain('data:image/png');
+      expect(savedRun.computerSetAside).toBe(1);
+    });
+
+    test('rounds after the stopped page are dropped from the retry', async () => {
+      pages = [STOPPED_TEXT, CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        toolCalls(snapshotCall('c2')),
+        guardStop,
+        reply('Done.'),
+      ];
+
+      await runAgent(computerInstall(), mention);
+
+      const tools = toolContents(chatBodies[3]);
+      expect(tools).toHaveLength(1);
+      expect(JSON.parse(tools[0])).toMatchObject({ ok: false, page: 1 });
+    });
+
+    test('a turn stopped past the limit fails with the fixed line', async () => {
+      pages = Array(6).fill(STOPPED_TEXT);
+      chatReplies = [];
+      for (let i = 0; i < 6; i += 1) chatReplies.push(toolCalls(snapshotCall(`c${i}`)), guardStop);
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('failed');
+      expect(savedRun.errorKind).toBe('guardrail_blocked');
+      expect(savedRun.computerSetAside).toBe(5);
+      expect(posted()).toEqual([NATIVE_RUN_FAILED_LINE]);
+    });
+
+    test('a stop on something other than the pages fails as before', async () => {
+      pages = [CLEAN_TEXT];
+      chatReplies = [toolCalls(snapshotCall('c1')), guardStop];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('failed');
+      expect(savedRun.computerSetAside).toBeUndefined();
+      expect(posted()).toEqual([NATIVE_RUN_FAILED_LINE]);
     });
   });
 
