@@ -40,16 +40,23 @@ for lane in default dev staging; do
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$on")" = 0
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$on")" = 1
+  # F52: with a running worker, web pods hand native turns to it and the worker
+  # runs them. Paused there is no worker, so web keeps them; off, nothing changes.
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$on")" = 1
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$on")" = ""
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$paused")" = ""
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.selector.matchLabels.app' "$on")" = backend-worker
   test "$("$yq_bin" -N 'select(.kind == "Service" and .metadata.name == "backend") | .spec.selector.app' "$on")" = backend
   test "$("$yq_bin" -N 'select((.kind == "Service" or .kind == "Ingress") and .metadata.name == "backend-worker") | .kind' "$on")" = ""
 
   # With the worker enabled, no existing resource changes except the web
-  # container's RUN_WORKER=0 env. The worker's env otherwise matches web.
+  # container's RUN_WORKER=0 and NATIVE_TURNS_ON_WORKER=1 env. The worker's
+  # env otherwise matches web.
   "$yq_bin" -N '.' "$off" > "$tmp_dir/$lane-normalized-off.yaml"
-  "$yq_bin" -N 'select(.kind != "Deployment" or .metadata.name != "backend-worker") | del(.spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-normalized-on.yaml"
+  "$yq_bin" -N 'select(.kind != "Deployment" or .metadata.name != "backend-worker") | del(.spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER" or .name == "NATIVE_TURNS_ON_WORKER"))' "$on" > "$tmp_dir/$lane-normalized-on.yaml"
   diff -u "$tmp_dir/$lane-normalized-off.yaml" "$tmp_dir/$lane-normalized-on.yaml"
-  "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-web-env.yaml"
+  "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER" and .name != "NATIVE_TURNS_ON_WORKER"))' "$on" > "$tmp_dir/$lane-web-env.yaml"
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env | map(select(.name != "RUN_WORKER"))' "$on" > "$tmp_dir/$lane-worker-env.yaml"
   diff -u "$tmp_dir/$lane-web-env.yaml" "$tmp_dir/$lane-worker-env.yaml"
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].image' "$on" > "$tmp_dir/$lane-web-image.yaml"
@@ -57,11 +64,15 @@ for lane in default dev staging; do
   diff -u "$tmp_dir/$lane-web-image.yaml" "$tmp_dir/$lane-worker-image.yaml"
 
   # What each lane actually deploys: more than one web replica only with the
-  # worker split on, or every web pod runs the scheduler and the Discord gateway.
+  # worker split on, or every web pod runs the scheduler and the Discord gateway,
+  # and only with the worker running, or two web pods run one agent's turns in
+  # a pod at once (F52).
   shipped_web=$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$shipped")
   if (( shipped_web > 1 )); then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$shipped")" = backend-worker
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$shipped")" = 0
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$shipped")" = 1
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "NATIVE_TURNS_ON_WORKER") | .value' "$shipped")" = 1
   fi
 
   if [[ $lane != default ]]; then

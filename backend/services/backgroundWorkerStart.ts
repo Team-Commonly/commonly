@@ -1,6 +1,7 @@
 type BackgroundServices = {
   scheduler: { start: () => void };
   discordGateway: { start: () => void };
+  nativeQueue: { start: () => void };
 };
 
 export function startBackgroundServices(
@@ -12,6 +13,9 @@ export function startBackgroundServices(
   console.log('Starting summarizer scheduler...');
   services.scheduler.start();
   if (env.DISCORD_BOT_TOKEN) services.discordGateway.start();
+  // Only the dedicated worker reads the queue web pods hand native turns to
+  // (F52). A single-process install runs each turn where it arrives.
+  if (env.RUN_WORKER === '1') services.nativeQueue.start();
   return true;
 }
 

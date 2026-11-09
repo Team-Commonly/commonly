@@ -587,8 +587,8 @@ class AgentEventService {
   // (F52: a marker wake and the ask posted a second later, two identical
   // replies). Each (agent, instance, pod) key holds the last turn's `over`
   // gate; the next turn starts once it opens, so it reads that turn's reply.
-  // In-process only: the backend runs one replica today, and a second
-  // replica would need a lease here.
+  // In-process only, so one process runs native turns: with the worker split
+  // on, web replicas hand theirs to the worker (nativeTurnsOnWorker below).
   private static inProcessLanes = new Map<string, { over: Promise<void> }>();
   // The lane slot held by each event's current delivery. A sweep that re-runs
   // an event has declared its earlier delivery dead, so the re-run marks that
@@ -605,6 +605,16 @@ class AgentEventService {
   // attempts until the expiry pass retired it before it ever ran.
   private static inProcessLaneRefreshMs = 30_000;
   private static inProcessDrain: Promise<{ timedOut: boolean; requeued: number }> | undefined;
+  // A web pod with the worker split on (NATIVE_TURNS_ON_WORKER=1) runs no
+  // native turn. It writes each one 'pending' and marked inProcessQueued, and
+  // the worker claims it from that queue, so every replica shares the worker's
+  // lanes. A lease across replicas would need Redis up to keep a lane.
+  private static nativeTurnsOnWorker = process.env.NATIVE_TURNS_ON_WORKER === '1';
+  // How often the worker reads the queue: a handed turn waits up to this long
+  // to be claimed, against a native reply's 4.2s median (prod, 7 days to 11-09).
+  private static inProcessQueuePollMs = Math.max(Number(process.env.AGENT_EVENT_IN_PROCESS_POLL_MS) || 500, 50);
+  private static inProcessQueueTimer: ReturnType<typeof setInterval> | undefined;
+  private static inProcessQueuePolling = false;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
 
@@ -636,6 +646,7 @@ class AgentEventService {
    */
   static drainInProcess(timeoutMs = 150_000): Promise<{ timedOut: boolean; requeued: number }> {
     this.inProcessDraining = true;
+    this.stopInProcessQueue();
     if (this.inProcessDrain) return this.inProcessDrain;
     this.inProcessDrain = (async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1437,18 +1448,104 @@ class AgentEventService {
       // Changed since the targets were read (a deprovision, an install removed).
       if (!installation) continue;
       if (this.inProcessDraining) break;
-      const deliveryNonce = mintDeliveryNonce();
       // eslint-disable-next-line no-await-in-loop
-      const claimed = await AgentEvent.findOneAndUpdate(
-        { _id: event._id, status: 'pending' },
-        { $set: { status: 'delivered', deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
-        { new: true },
-      ) as EventDoc | null;
-      if (!claimed) continue;
-      this.dispatchInProcess(claimed, installation, agentName, instanceId, String(claimed.type || event.type || ''));
-      rescued += 1;
+      if (await this.takePendingInProcess(event, installation)) rescued += 1;
     }
     return { rescued, closed };
+  }
+
+  /**
+   * Run one pending event in this process, or, on a web pod with the worker
+   * split on, put it in the worker's queue. Either way it is a compare-and-set
+   * from 'pending', so two passes never take one event twice. False when
+   * another pass took it first.
+   */
+  private static async takePendingInProcess(event: EventDoc, installation: InstallationDoc): Promise<boolean> {
+    if (this.nativeTurnsOnWorker) {
+      const handed = await AgentEvent.updateOne(
+        { _id: event._id, status: 'pending' },
+        { $set: { inProcessQueued: true } },
+      ) as { matchedCount?: number };
+      return Boolean(handed.matchedCount);
+    }
+    const deliveryNonce = mintDeliveryNonce();
+    const claimed = await AgentEvent.findOneAndUpdate(
+      { _id: event._id, status: 'pending' },
+      { $set: { status: 'delivered', deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
+      { new: true },
+    ) as EventDoc | null;
+    if (!claimed) return false;
+    this.dispatchInProcess(
+      claimed,
+      installation,
+      String(event.agentName || ''),
+      String(event.instanceId || 'default'),
+      String(claimed.type || event.type || ''),
+    );
+    return true;
+  }
+
+  /**
+   * One pass over the turns web pods put in the worker's queue, oldest first.
+   * A turn whose agent no longer runs in-process leaves the queue, and the
+   * sweeps decide it from there; one whose lookup failed waits for the next pass.
+   */
+  static pollInProcessQueue(): Promise<number> {
+    if (this.nativeTurnsOnWorker || this.inProcessDraining) return Promise.resolve(0);
+    return this.trackInProcessWork(async () => {
+      const attemptCap = Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
+      const queued = await AgentEvent.find({
+        status: 'pending',
+        inProcessQueued: true,
+        deliveryMode: { $ne: 'digest' },
+        $or: [{ attempts: { $lt: attemptCap } }, { attempts: { $exists: false } }],
+      }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
+      let ran = 0;
+      for (const event of queued) {
+        if (this.inProcessDraining) break;
+        let installation: InstallationDoc | null;
+        try {
+          // eslint-disable-next-line no-await-in-loop -- one lookup per queued turn
+          installation = await this.resolveInProcessInstallation(
+            String(event.agentName || ''),
+            String(event.instanceId || 'default'),
+            event.podId,
+          );
+        } catch (err) {
+          console.warn(
+            `[native-runtime] queued turn ${String(event._id)} lookup failed; next pass:`,
+            (err as Error).message,
+          );
+          continue;
+        }
+        if (!installation) {
+          // eslint-disable-next-line no-await-in-loop
+          await AgentEvent.updateOne({ _id: event._id, status: 'pending' }, { $unset: { inProcessQueued: 1 } });
+          continue;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        if (await this.takePendingInProcess(event, installation)) ran += 1;
+      }
+      return ran;
+    });
+  }
+
+  /** Read the queue every inProcessQueuePollMs. The worker starts it; drain stops it. */
+  static startInProcessQueue(): void {
+    if (this.nativeTurnsOnWorker || this.inProcessDraining || this.inProcessQueueTimer) return;
+    this.inProcessQueueTimer = setInterval(() => {
+      if (this.inProcessQueuePolling) return;
+      this.inProcessQueuePolling = true;
+      this.pollInProcessQueue()
+        .catch((err: Error) => console.warn('[native-runtime] queue pass failed:', err.message))
+        .finally(() => { this.inProcessQueuePolling = false; });
+    }, this.inProcessQueuePollMs);
+    this.inProcessQueueTimer.unref?.();
+  }
+
+  static stopInProcessQueue(): void {
+    if (this.inProcessQueueTimer) clearInterval(this.inProcessQueueTimer);
+    this.inProcessQueueTimer = undefined;
   }
 
   /**
@@ -2303,7 +2400,10 @@ class AgentEventService {
     }
     // A digest is data for a later turn, not a turn on its own. Native
     // installations must leave it pending just like external installations.
-    const routedToNative = Boolean(nativeInstallation) && deliveryMode === 'wake' && !this.inProcessDraining;
+    const nativeWake = Boolean(nativeInstallation) && deliveryMode === 'wake';
+    // A web pod with the worker split on runs no turn: the worker claims it.
+    const handedToWorker = nativeWake && this.nativeTurnsOnWorker;
+    const routedToNative = nativeWake && !handedToWorker && !this.inProcessDraining;
 
     const event = await AgentEvent.create({
       agentName: agentName.toLowerCase(),
@@ -2332,6 +2432,7 @@ class AgentEventService {
           deliveryNonce: mintDeliveryNonce(),
         }
         : {}),
+      ...(handedToWorker ? { inProcessQueued: true } : {}),
     }) as EventDoc;
 
     if (routedToNative && nativeInstallation) {

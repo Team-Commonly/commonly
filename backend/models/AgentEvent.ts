@@ -111,6 +111,9 @@ export interface IAgentEvent extends Document {
   // superseded child's late ack fail instead of terminating the new child's
   // delivery. `null` for events claimed before D6 shipped.
   deliveryNonce?: string | null;
+  // F52: a native turn a web pod handed to the worker, which claims it from
+  // its queue (agentEventService.pollInProcessQueue). Absent on every other event.
+  inProcessQueued?: boolean;
   // Snapshot of the folded digest state included in this wake. Ack clears it
   // only if no newer fold changed the state while the turn was running.
   digestRollupRevision?: number | null;
@@ -138,6 +141,7 @@ const AgentEventSchema = new Schema<IAgentEvent>(
     error: String,
     memoryRevisionAtDelivery: { type: Number, default: null },
     deliveryNonce: { type: String, default: null },
+    inProcessQueued: Boolean,
     digestRollupRevision: { type: Number, default: null },
     digestEventIds: [{ type: Schema.Types.ObjectId, ref: 'AgentEvent' }],
     digestSnapshotAt: { type: Date, default: null },
@@ -171,6 +175,13 @@ AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, podId: 1, creat
 AgentEventSchema.index(
   { agentName: 1, instanceId: 1, status: 1, createdAt: -1 },
   { partialFilterExpression: { type: 'heartbeat' }, name: 'heartbeat_newest_per_install' },
+);
+
+// The worker's queue read, twice a second. Partial on the handed turns still
+// pending, so it holds only those few rows.
+AgentEventSchema.index(
+  { createdAt: 1 },
+  { partialFilterExpression: { status: 'pending', inProcessQueued: true }, name: 'in_process_queue' },
 );
 
 export const AgentEvent: Model<IAgentEvent> = mongoose.model<IAgentEvent>(

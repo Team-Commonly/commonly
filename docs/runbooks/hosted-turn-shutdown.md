@@ -12,6 +12,17 @@ On SIGTERM or SIGINT:
 
 This is at-least-once recovery, not exactly-once provider execution. A provider side effect from a timed-out turn may already have happened. Existing approval/deduplication behavior still applies. SIGKILL, process crashes and unavailable DB writes still use the existing stale-delivery recovery sweeps; this change does not claim lossless recovery from those failures. Completed model turns whose acknowledgement failed remain delivered for the existing succeeded-run recovery path, rather than being blindly requeued and answered twice.
 
+## Where native turns run (F52)
+
+One process runs native turns. The lane that keeps an agent's turns in a pod in order lives in memory, so two processes running turns could start two of that agent's turns in one pod at once, each answering before the other posts. Measured on prod over the 7 days to 2026-11-09, 20.7% of follow-up turns arrived while an earlier turn in their lane was still running.
+
+- **Single process** (worker split off, or paused): native turns run where they are enqueued, as before.
+- **Worker split on and running:** the chart sets `NATIVE_TURNS_ON_WORKER=1` on web pods. A web pod writes each native wake `pending` and marked `inProcessQueued`, and runs nothing. The worker (`RUN_WORKER=1`) reads that queue every 500 ms (`AGENT_EVENT_IN_PROCESS_POLL_MS`), claims each turn with the same compare-and-set the sweeps use, and runs it in its own lanes. Its own scheduler wakes share those lanes. A hosted Start on a web pod marks what waited instead of running it.
+- **Cost:** a handed turn waits for the next poll, then three Mongo round trips (read the queue, look up the agent, claim), each about 45 ms from the cluster. That is about 0.4 s on average and 0.65 s at most, against a native reply's 4.2 s median. No Redis is involved, so a Redis outage changes nothing here.
+- **Worker rollouts:** the worker is a single `Recreate` replica, so handed turns wait through its rollout. A drained worker's unfinished turns keep the mark, so the next worker picks them up on its first pass, not on the ten-minute sweep.
+
+`scripts/verify-backend-worker-chart.sh` refuses more than one web replica unless the worker is running and web pods carry `NATIVE_TURNS_ON_WORKER=1`. So for a lane taking the split in two steps, the paused step keeps one web replica, and the unpaused step is the one that adds the second.
+
 ## Verify a rollout
 
 Verify that the replacement process responsible for scheduling actually starts the scheduler, especially in worker-split deployments. Startup garbage collection can recover eligible wakes immediately; otherwise recovery waits for the ten-minute scheduled sweep. Its one-minute minimum event age can skip a fresh wake at one sweep, so allow roughly 11 minutes for pickup plus turn execution before a human-visible reply. This is scheduled recovery, not immediate delivery.

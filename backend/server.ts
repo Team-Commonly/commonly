@@ -403,6 +403,7 @@ if (startServices) {
   startBackgroundServices(process.env, {
     scheduler: schedulerService,
     discordGateway: discordGatewayService,
+    nativeQueue: { start: () => require('./services/agentEventService').startInProcessQueue() },
   });
 }
 
