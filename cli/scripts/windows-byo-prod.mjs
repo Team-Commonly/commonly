@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 
 import { codexSystemConfig, walkAdapter } from './linux-byo-prod.mjs';
 import {
-  installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact, unconfinedNoticeFrom,
+  describeCause, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact, unconfinedNoticeFrom,
 } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -232,20 +232,28 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   // and cannot change what the agent's next post is told it has seen.
   let outcome = null;
   let lastRead = null;
+  let lastMessages = [];
   while (Date.now() - readyAt < ANSWER_TIMEOUT_MS && exited === null && !/circuit open; releasing/.test(out)) {
     // eslint-disable-next-line no-await-in-loop
     const page = await api(`/api/agents/runtime/pods/${podId}/messages?limit=20&before=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)
       .catch((err) => ({ status: 0, body: {}, error: err.message }));
     lastRead = page.error || `HTTP ${page.status}`;
+    lastMessages = page.body.messages || lastMessages;
     const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
     outcome = prodOutcome({
-      messages: page.body.messages || [], agentName, readyAt, events: recorded.events, acks: recorded.acks,
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
     });
     if (outcome.passed) break;
     // eslint-disable-next-line no-await-in-loop
     await sleep(POLL_MS);
   }
   const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
+  // Read once more after the loop: a refusal the CLI logged on its way out still names the cause.
+  if (outcome && !outcome.passed) {
+    outcome = prodOutcome({
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
+    });
+  }
   stop();
   if (outcome?.passed) {
     const said = String(outcome.reply.content || '');
@@ -259,6 +267,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
+  if (outcome?.cause) log(describeCause(outcome.cause, ADAPTER_LABEL[adapter]));
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);
