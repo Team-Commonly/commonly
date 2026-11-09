@@ -194,8 +194,27 @@ describe('V2Thread — the tab title', () => {
     expect(document.title).toBe('Scout · Commonly');
   });
 
-  test('no pod keeps the plain title', () => {
-    renderWith(null, []);
+  test('a DM names the agent from the label the pod detail resolved', () => {
+    renderWith(
+      { _id: 'pod-3', name: 'DM: openclaw-juno', type: 'agent-room', createdBy: 'u1' },
+      [{ _id: 'u1', username: 'maya' }, { _id: 'b2', username: 'openclaw-juno', isBot: true, displayLabel: 'Juno' }],
+    );
+    expect(document.title).toBe('Juno · Commonly');
+  });
+
+  test('leaving a pod for one that has not loaded puts the plain title back', () => {
+    const view = renderWith(pod('u1'), [{ _id: 'u1', username: 'maya' }]);
+    expect(document.title).toBe('Launch notes · Commonly');
+    view.rerender(
+      <AuthContext.Provider value={authValue('u1')}>
+        <MemoryRouter>
+          <V2Thread detail={{
+            pod: null, members: [], messages: [], agents: [], sendMessage: jest.fn(), loading: true, error: null, refresh: jest.fn(),
+          }}
+          />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
     expect(document.title).toBe('Commonly');
   });
 });

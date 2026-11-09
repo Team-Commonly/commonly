@@ -10,11 +10,14 @@ interface TabPod {
 }
 
 /*
- * How an agent or person is named in a DM's tab, in the same order the server
- * labels agents (resolveAgentDisplayLabel): the curated display name, then a
- * non-default instance id, then the username.
+ * How an agent or person is named in a DM's tab. The pod detail sends each
+ * agent's resolved label (resolveAgentDisplayLabel); without it, the same
+ * order applies here: the curated display name, then a non-default instance
+ * id, then the username.
  */
 export const memberTabLabel = (member: V2PodMember): string => {
+  const resolved = member.displayLabel?.trim();
+  if (member.isBot && resolved) return resolved;
   const display = member.botMetadata?.displayName?.trim();
   if (display) return display;
   const instance = member.botMetadata?.instanceId?.trim();

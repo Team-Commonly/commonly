@@ -29,6 +29,11 @@ describe('podTabName', () => {
     expect(podTabName({ name: 'x', type: 'agent-room' }, [me, bare], ME, 'en')).toBe('pi-default');
   });
 
+  test("an agent named by the pod detail's resolved label", () => {
+    const labelled = { _id: 'b-4', username: 'openclaw-x', isBot: true, displayLabel: 'Juno' };
+    expect(podTabName({ name: 'DM: openclaw-x', type: 'agent-room' }, [me, labelled], ME, 'en')).toBe('Juno');
+  });
+
   test("an owner's room with their agent names the agent", () => {
     expect(podTabName({ name: 'DM: Scout', type: 'agent-admin' }, [me, lee, scout], ME, 'en')).toBe('Scout');
   });

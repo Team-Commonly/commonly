@@ -263,7 +263,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const { currentUser } = useAuth();
   // The tab names the pod, or for a DM whoever the viewer is talking to. A pod
   // that didn't load (not found, or not the viewer's to see) keeps the plain title.
-  useDocumentTitleText(podTabName(pod, members, currentUser?._id, i18n.language));
+  useDocumentTitleText(podTabName(pod, members, currentUser?._id || currentUser?.id, i18n.language));
   const [draft, setDraft] = useState('');
   const [fixCommandCopied, setFixCommandCopied] = useState(false);
   const [sending, setSending] = useState(false);
