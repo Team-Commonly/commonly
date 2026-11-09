@@ -48,14 +48,19 @@ Every production deploy, however small.
 ## 2. Deploy
 
 ```bash
-gh workflow run deploy-dev.yml --ref main --repo Team-Commonly/commonly -f ref=<SHA>
+SHA=$(git fetch -q origin && git rev-parse --verify "<ref>^{commit}") && \
+  gh workflow run deploy-dev.yml --ref main --repo Team-Commonly/commonly -f ref="$SHA"
 gh run list --workflow=deploy-dev.yml --event workflow_dispatch -L 5 \
   --repo Team-Commonly/commonly --json databaseId,createdAt,status
 gh run watch <run-id> --exit-status --repo Team-Commonly/commonly
 ```
 
+Deploy Dev refuses any `ref` that isn't a full 40-character SHA, so resolve
+the ref with `git rev-parse` as above and never type one: on 2026-11-09 a
+short SHA stopped a dispatch at its first step. Keep the `&&`: an empty
+`ref` deploys main's head, so a ref that doesn't resolve must not dispatch.
 `gh workflow run` does not print the run it started. Take the run whose
-`createdAt` matches your dispatch, and confirm its first job names `<SHA>`
+`createdAt` matches your dispatch, and confirm its first job names `$SHA`
 before you watch it, so you never verify someone else's run.
 
 The run is always dispatched on main; `ref` picks the commit it builds. Its
