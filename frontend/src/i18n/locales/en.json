@@ -2086,7 +2086,7 @@
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
-      "windowsCheck": "Use PowerShell, not Command Prompt (cmd): the $env lines don’t work in cmd. Check Node first: <cmd>node -v</cmd> should print v22 or later. If PowerShell says node isn’t recognized, install Node 22+ from nodejs.org, then open a new PowerShell window.",
+      "windowsCheck": "Use PowerShell, not Command Prompt (cmd). Check Node first: <cmd>node -v</cmd> should print v22 or later. If node isn’t recognized, install it from nodejs.org and open a new PowerShell window.",
       "stallAsk": "Why isn’t it answering?",
       "stallReason": {
         "node-missing": "PowerShell says node isn’t recognized",
@@ -2096,7 +2096,7 @@
       "stallHelp": {
         "node-missing": "Install Node 22+ from nodejs.org, then open a new PowerShell window and run all four lines again.",
         "not-run": "Paste all four lines into one PowerShell window.",
-        "other": "Tell us in the pod what it printed."
+        "other": "Send us what it printed with the Feedback button."
       },
       "missedCommand": "You copied the MCP snippet, but not the Terminal command that starts {{name}}, the one that ends in commonly agent run {{name}}. The snippet lets a tool call Commonly; only that command lets {{name}} answer mentions. Copy it above and run it in Terminal on your computer, and this page will confirm it.",
       "stopsOnClose": "This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",

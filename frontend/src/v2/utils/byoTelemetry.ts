@@ -10,11 +10,11 @@ export type ByoStep = 'page-viewed' | 'seat-created' | 'mcp-command-copied' | 'c
 // copy of each (TASK-714), so "listen after MCP" stays visible.
 export type ByoCopyType = 'listen' | 'mcp-claude' | 'mcp-cursor' | 'daemon' | 'token';
 
-// What the result page showed: the OS it set up for and whether the listener
-// could run there. Booleans and fixed names only, never the command or token.
 // Why a Windows visitor says the agent isn't answering. Fixed names only, never typed text.
 export type ByoStallReason = 'node-missing' | 'not-run' | 'other';
 
+// What the result page showed: the OS it set up for and whether the listener
+// could run there. Booleans and fixed names only, never the command or token.
 export interface ByoSetupContext {
   setupOs: 'mac' | 'linux' | 'windows' | 'other';
   listenerAvailable: boolean;

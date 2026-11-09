@@ -96,7 +96,7 @@ describe('Windows check line before the paste', () => {
     await issue();
     const check = screen.getByTestId('byo-listen-windows-check');
     expect(check).toHaveTextContent('Use PowerShell, not Command Prompt (cmd)');
-    expect(check).toHaveTextContent('Node 22+');
+    expect(check).toHaveTextContent('v22 or later');
     expect(check.querySelector('code')).toHaveTextContent('node -v');
     const lines = screen.getByTestId('byo-listen').querySelector('.v2-byo__pre');
     expect(check.compareDocumentPosition(lines) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -131,7 +131,7 @@ describe('Windows check line before the paste', () => {
     fireEvent.click(install);
     const check = await screen.findByTestId('byo-listen-windows-check');
     expect(check).toHaveTextContent('请用 PowerShell');
-    expect(check).toHaveTextContent('Node 22+');
+    expect(check).toHaveTextContent('v22 或更高');
     expect(check.querySelector('code')).toHaveTextContent('node -v');
   });
 });
@@ -167,7 +167,7 @@ describe('Why isn’t it answering?', () => {
   test.each([
     ['node-missing', 'Install Node 22+ from nodejs.org'],
     ['not-run', 'Paste all four lines into one PowerShell window.'],
-    ['other', 'Tell us in the pod what it printed.'],
+    ['other', 'Send us what it printed with the Feedback button.'],
   ])('%s posts the fixed reason once and shows its help', async (reason, help) => {
     jest.useFakeTimers();
     setUserAgent(WINDOWS);
@@ -184,6 +184,52 @@ describe('Why isn’t it answering?', () => {
     for (const r of ['node-missing', 'not-run', 'other']) {
       expect(screen.queryByTestId(`byo-listen-stall-${r}`)).toBeNull();
     }
+    expect(stalls()).toHaveLength(1);
+  });
+
+  test('the three choices read apart, not as one run-on string', async () => {
+    jest.useFakeTimers();
+    setUserAgent(WINDOWS);
+    await issue();
+    await copyListen();
+    await pastMissedWindow();
+    expect(screen.getByTestId('byo-listen-stall')).toHaveTextContent(
+      'PowerShell says node isn’t recognized · I haven’t run it yet · Something else',
+    );
+  });
+
+  test('goes away once the agent is listening', async () => {
+    jest.useFakeTimers();
+    setUserAgent(WINDOWS);
+    await issue();
+    await copyListen();
+    await pastMissedWindow();
+    expect(screen.getByTestId('byo-listen-stall')).toBeInTheDocument();
+    axios.get.mockResolvedValueOnce({
+      data: {
+        issued: true,
+        connected: true,
+        lastUsedAt: new Date().toISOString(),
+        connectedAgent: { agentName: 'sam-claude', instanceId: 'default', podId: 'p1' },
+      },
+    });
+    await act(async () => { jest.advanceTimersByTime(4000); });
+    expect(screen.getByTestId('byo-listen-ok')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-listen-stall')).toBeNull();
+  });
+
+  test('switching to Mac and back after a report neither asks again nor posts again', async () => {
+    jest.useFakeTimers();
+    setUserAgent(WINDOWS);
+    await issue();
+    await copyListen();
+    await pastMissedWindow();
+    fireEvent.click(screen.getByTestId('byo-listen-stall-not-run'));
+    fireEvent.click(screen.getByTestId('byo-setup-os-mac'));
+    expect(screen.queryByTestId('byo-listen-stall')).toBeNull();
+    fireEvent.click(screen.getByTestId('byo-setup-os-windows'));
+    expect(screen.getByTestId('byo-listen-stall-help')).toBeInTheDocument();
+    expect(screen.queryByTestId('byo-listen-stall-not-run')).toBeNull();
     expect(stalls()).toHaveLength(1);
   });
 });

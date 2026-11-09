@@ -2222,28 +2222,31 @@ const V2AgentBYO: React.FC = () => {
             {/* Same moment as the missed note: the listen line was copied, three minutes passed, no check-in. */}
             {listenerAvailable && setupOs === 'windows' && listenState !== 'listening'
               && copiedKinds.listen && missedWindowOver && (
-              <div className="v2-byo__listen-note" data-testid="byo-listen-stall">
+              <p className="v2-byo__listen-note" data-testid="byo-listen-stall">
                 {stallReason ? (
-                  <p data-testid="byo-listen-stall-help">
+                  <span data-testid="byo-listen-stall-help">
                     {t(`agentByo.listen.stallHelp.${stallReason}`)}
-                  </p>
+                  </span>
                 ) : (
-                  <p>
+                  <>
                     {t('agentByo.listen.stallAsk')}{' '}
-                    {STALL_REASONS.map((reason) => (
-                      <button
-                        key={reason}
-                        type="button"
-                        className="v2-byo__link"
-                        data-testid={`byo-listen-stall-${reason}`}
-                        onClick={() => reportStall(reason)}
-                      >
-                        {t(`agentByo.listen.stallReason.${reason}`)}
-                      </button>
+                    {/* .v2-byo__link is all: unset, so the separator is what keeps the three choices apart. */}
+                    {STALL_REASONS.map((reason, i) => (
+                      <span key={reason}>
+                        {i > 0 && ' · '}
+                        <button
+                          type="button"
+                          className="v2-byo__link"
+                          data-testid={`byo-listen-stall-${reason}`}
+                          onClick={() => reportStall(reason)}
+                        >
+                          {t(`agentByo.listen.stallReason.${reason}`)}
+                        </button>
+                      </span>
                     ))}
-                  </p>
+                  </>
                 )}
-              </div>
+              </p>
             )}
             {listenerAvailable && (
               <>
