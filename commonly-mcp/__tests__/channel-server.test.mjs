@@ -120,4 +120,21 @@ describe('channel mode on', () => {
     await new Promise((r) => { setTimeout(r, 30); });
     expect(api.calls.length).toBe(count);
   });
+
+  it('never polls when the transport closes before the client initializes', async () => {
+    const api = scriptedApi([[{
+      _id: 'e9', type: 'chat.mention', podId: 'p1',
+      payload: { messageId: '12', userId: OWNER, senderIsHuman: true, content: 'ping' },
+    }]]);
+    const handle = createServer(cfg, {
+      channel: true, env: {}, channelOptions: { requestImpl: api.requestImpl, intervalMs: 5, log: () => {} },
+    });
+    const [, serverSide] = InMemoryTransport.createLinkedPair();
+    await handle.connect(serverSide);
+    // Close before any client initialize: the ready gate resolves false, so the
+    // loop ends without a single claim even though an event is waiting.
+    await serverSide.close();
+    if (handle.channel) await handle.channel.done;
+    expect(api.calls).toHaveLength(0);
+  });
 });

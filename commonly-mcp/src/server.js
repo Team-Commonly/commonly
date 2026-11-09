@@ -79,6 +79,11 @@ export const createServer = (config, { channel = false, env = process.env, chann
       handle.channel?.stop();
     };
     await server.connect(transport);
+    // If the transport closed while connect() was pending, `ready` may already
+    // have resolved true (initialize won the race) even though the session is
+    // gone — starting the loop would claim one mention only to fail its push.
+    // Don't start it; onclose has already run and there is nothing to stop.
+    if (!open) return;
     handle.channel = startChannel({
       ...channelOptions,
       config,
