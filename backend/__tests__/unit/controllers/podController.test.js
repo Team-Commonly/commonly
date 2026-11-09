@@ -822,6 +822,100 @@ describe('podController', () => {
   // /v2/pods/<a2a-dm-id> and the layout 404s — user reports "clicking the
   // DM row doesn't open the pod." Carve-out is agent-dm only — agent-room
   // (user↔agent) and agent-admin (ops) keep strict membership.
+  // F364, review-checklist rule 61: a pod read is built from named fields. A
+  // reader who isn't a member sees the reader list and none of the pod's
+  // settings or working state; a member also gets those.
+  describe('getPodById field allowlist', () => {
+    const PodModel = jest.requireActual('../../../models/Pod');
+    const MEMBER = new mongoose.Types.ObjectId();
+    const PRIVATE = ['agentEnsemble', 'agentRunCap', 'firstTaskOnboarding', 'focus', 'focusRevision',
+      'contacts', 'agentDmPairKey', 'messages', 'announcements', 'externalLinks'];
+    const READER = ['_id', 'name', 'description', 'type', 'joinPolicy', 'publicRead', 'communityListed',
+      'createdBy', 'members', 'parentPod', 'closedAt', 'createdAt', 'updatedAt'];
+    const loaded = (over) => {
+      const doc = new PodModel({
+        name: 'Launch notes',
+        description: 'the launch',
+        type: 'chat',
+        createdBy: MEMBER,
+        members: [MEMBER],
+        publicRead: true,
+        agentRunCap: 12,
+        agentEnsemble: { enabled: true, participants: [{ agentType: 'openclaw' }] },
+        firstTaskOnboarding: { stage: 'proposed', agentName: 'openclaw', instanceId: 'juno' },
+        focus: { goal: 'ship the record', revision: 2 },
+        focusRevision: 2,
+        contacts: { codex: { agentName: 'openclaw', instanceId: 'juno' } },
+        messages: [new mongoose.Types.ObjectId()],
+        ...over,
+      });
+      Pod.findById.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            populate: jest.fn().mockResolvedValue(doc),
+          }),
+        }),
+      });
+      return doc;
+    };
+    const read = async (doc, viewer) => {
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await podController.getPodById({ params: { id: String(doc._id) }, userId: String(viewer), user: {} }, res);
+      expect(res.status).not.toHaveBeenCalled();
+      return JSON.parse(JSON.stringify(res.json.mock.calls[0][0]));
+    };
+
+    it('a non-member reading a public pod gets only the reader fields', async () => {
+      const body = await read(loaded(), new mongoose.Types.ObjectId());
+      expect(Object.keys(body).filter((key) => !READER.includes(key))).toEqual([]);
+      PRIVATE.forEach((field) => expect(body).not.toHaveProperty(field));
+      expect(body).toMatchObject({ name: 'Launch notes', description: 'the launch', type: 'chat', publicRead: true });
+    });
+
+    it('an observer of an agent DM gets only the reader fields', async () => {
+      const DMService = require('../../../services/dmService').default;
+      DMService.canViewPod.mockResolvedValueOnce(true);
+      const agentA = new mongoose.Types.ObjectId();
+      const agentB = new mongoose.Types.ObjectId();
+      const body = await read(loaded({ type: 'agent-dm', publicRead: false, members: [agentA, agentB], agentDmPairKey: 'a:b' }),
+        new mongoose.Types.ObjectId());
+      expect(Object.keys(body).filter((key) => !READER.includes(key))).toEqual([]);
+      PRIVATE.forEach((field) => expect(body).not.toHaveProperty(field));
+    });
+
+    it('a member also gets the pod settings and working state', async () => {
+      const body = await read(loaded(), MEMBER);
+      expect(body).toMatchObject({
+        agentRunCap: 12,
+        focusRevision: 2,
+        focus: expect.objectContaining({ goal: 'ship the record' }),
+        firstTaskOnboarding: expect.objectContaining({ stage: 'proposed' }),
+        contacts: { codex: expect.objectContaining({ instanceId: 'juno' }) },
+      });
+      expect(body.agentEnsemble.enabled).toBe(true);
+    });
+
+    it('a member is recognised among populated members, as a real read returns them', async () => {
+      // A plain object: a Pod document would cast these back to bare ids.
+      const populated = { ...loaded().toJSON(), members: [{ _id: MEMBER, username: 'maya' }] };
+      Pod.findById.mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            populate: jest.fn().mockResolvedValue(populated),
+          }),
+        }),
+      });
+      expect(await read(populated, MEMBER)).toMatchObject({ agentRunCap: 12, focusRevision: 2 });
+    });
+
+    it('a field the lists do not name stays out, even for a member', async () => {
+      const doc = loaded();
+      const plain = doc.toJSON();
+      doc.toJSON = () => ({ ...plain, someNewSecret: 'x' });
+      expect(await read(doc, MEMBER)).not.toHaveProperty('someNewSecret');
+    });
+  });
+
   it('getPodById allows agent-dm read when canViewPod (§3.7 fan-out) allows', async () => {
     const DMService = require('../../../services/dmService').default;
     DMService.canViewPod.mockResolvedValueOnce(true);
