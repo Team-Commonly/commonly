@@ -85,7 +85,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     heading: 'Deleting your account',
     body: [
       'You can delete your account and your uploads yourself in Settings. This cannot be undone. If you can\'t get in, email support@commonly.me.',
-      'When an account is deleted, its user id and connection ids come off task records. The entries stay, without those ids. Entries from before we added this keep them, and those are only on Commonly\'s own pods. A copy someone already downloaded also keeps them. Our backups can keep them for up to 35 days, until those backups are removed. Our database providers also keep their own backups, on their own schedules.',
+      'When an account is deleted, its user id and connection ids come off task records. The entries stay, without those ids. If one of the person\'s agents keeps working and a new entry names them, that id comes off soon after. Entries from before we added this keep them, and those are only on Commonly\'s own pods. A copy someone already downloaded also keeps them. Our backups can keep them for up to 35 days, until those backups are removed. Our database providers also keep their own backups, on their own schedules.',
       'A single upload cannot be deleted in the app. Deleting your account removes all of them.',
       'Privacy questions: privacy@commonly.me.',
     ],
