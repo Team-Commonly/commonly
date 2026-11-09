@@ -1104,7 +1104,50 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     expect(k8s.__mock.execCommands.join('\n')).toContain('/state/moltbot.json');
   });
 
-  test("a gateway with its own ConfigMap has the identity removed from that one", async () => {
+  // The edit is a python3 script, as the gateway image runs it. A runner with
+  // no python3 can't run it; every GitHub-hosted runner has one.
+  // eslint-disable-next-line global-require
+  const hasPython = require('child_process').spawnSync('python3', ['--version']).status === 0;
+  (hasPython ? test : test.skip)('the state edit takes the identity out of the state file and keeps every other account', async () => {
+    /* eslint-disable global-require */
+    const { execFileSync } = require('child_process');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    /* eslint-enable global-require */
+    clearGatewayUnreadyHold();
+    k8s.__mock.execCommands.length = 0;
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+    });
+    await removeOpenClawAccount({ agentName: 'OpenClaw', instanceId: 'Scout' });
+    const command = k8s.__mock.execCommands.find((c) => c.includes('removed accounts'));
+    expect(command).toBeDefined();
+    // Run the exact script the gateway pod gets, on a copy of the state file.
+    // The path is spliced into shell and Python text, so it must need no
+    // quoting: a TMPDIR with a space or a quote falls back to /tmp.
+    const base = /^[\w/.-]+$/.test(os.tmpdir()) ? os.tmpdir() : '/tmp';
+    const dir = fs.mkdtempSync(path.join(base, 'state-edit-'));
+    try {
+      const statePath = path.join(dir, 'moltbot.json');
+      fs.writeFileSync(statePath, JSON.stringify(configWith()));
+      const script = command.replace(/^sh -lc /, '').split('/state/moltbot.json').join(statePath);
+      const out = execFileSync('sh', ['-c', script], { encoding: 'utf8' });
+      expect(out).toContain('removed accounts: scout,scout-old');
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      expect(Object.keys(state.channels.commonly.accounts)).toEqual(['cuz']);
+      expect(state.agents.list).toEqual([{ id: 'cuz' }]);
+      expect(state.bindings.map((binding) => binding.match.accountId)).toEqual(['cuz']);
+      // A second run finds nothing and leaves the file as it is.
+      const before = fs.readFileSync(statePath, 'utf8');
+      expect(execFileSync('sh', ['-c', script], { encoding: 'utf8' })).toBe('');
+      expect(fs.readFileSync(statePath, 'utf8')).toBe(before);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a gateway with its own ConfigMap has the identity removed from that one', async () => {
     k8s.__mock.readNamespacedConfigMap.mockClear();
     k8s.__mock.replaceNamespacedConfigMap.mockClear();
     k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
@@ -1189,6 +1232,25 @@ describe('removing a refused identity from the gateway config (F361)', () => {
       agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
     });
     expect(result).toEqual({ removed: [], deploymentMissing: true });
+    expect(k8s.__mock.execCommands).toEqual([]);
+  });
+
+  test('a gateway with no Deployment still has the identity taken out of its ConfigMap', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.replaceNamespacedConfigMap.mockClear();
+    k8s.__mock.execCommands.length = 0;
+    noDeployment();
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods());
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+    });
+    const result = await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'cuz' });
+    // Left in the ConfigMap, the identity would come back with the next gateway.
+    expect(result).toEqual({ removed: ['cuz'], deploymentMissing: true });
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    const written = JSON.parse(calls[calls.length - 1][2].data['moltbot.json']);
+    expect(written.channels.commonly.accounts.cuz).toBeUndefined();
+    expect(Object.keys(written.channels.commonly.accounts).sort()).toEqual(['scout', 'scout-old']);
     expect(k8s.__mock.execCommands).toEqual([]);
   });
 

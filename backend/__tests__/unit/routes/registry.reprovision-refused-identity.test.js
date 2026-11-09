@@ -90,6 +90,8 @@ describe('reprovision of a refused identity', () => {
     expect(result).toEqual(expect.objectContaining({
       removedFromRuntime: true, runtimeGatewayId: 'gw-1', runtimeRemovalError: 'The state file edit failed.',
     }));
+    // Only the id leaves the route, never the gateway record itself.
+    expect(result.runtimeGateway).toBeUndefined();
     spy.mockRestore();
   });
 
