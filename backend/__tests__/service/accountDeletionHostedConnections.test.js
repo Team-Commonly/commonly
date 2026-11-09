@@ -3,8 +3,10 @@
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../utils/testUtils');
 
 jest.mock('../../config/db-pg', () => ({ pool: null }));
-jest.mock('../../repositories/recordChainRepository', () => ({ deleteOpeningsFor: jest.fn().mockResolvedValue(0) }));
-jest.mock('../../services/objectStore', () => ({ getObjectStore: () => ({ deletePrefix: jest.fn().mockResolvedValue(0) }) }));
+const mockDeleteOpenings = jest.fn().mockResolvedValue(0);
+jest.mock('../../repositories/recordChainRepository', () => ({ deleteOpeningsFor: (...args) => mockDeleteOpenings(...args) }));
+const mockDeletePrefix = jest.fn().mockResolvedValue(0);
+jest.mock('../../services/objectStore', () => ({ getObjectStore: () => ({ deletePrefix: (...args) => mockDeletePrefix(...args) }) }));
 const mockRemove = jest.fn();
 jest.mock('../../services/connectionRemovalService', () => ({
   HOSTED_MCP_TYPE: 'hosted-mcp',
@@ -70,5 +72,34 @@ describe('the account deletion sweep and hosted connections (F368)', () => {
     expect(mockRemove).toHaveBeenCalledTimes(2);
     expect(await Integration.exists({ _id: row._id })).toBeNull();
     error.mockRestore();
+  });
+
+  it('tries every connection even when one throws, and the receipt still rotates', async () => {
+    const gone = new mongoose.Types.ObjectId();
+    await AccountDeletion.create({ _id: gone });
+    const first = await hostedRow(gone, 'linear');
+    const second = await hostedRow(gone, 'notion');
+    mockRemove.mockRejectedValueOnce(new Error('vendor exploded'));
+
+    const failure = await sweepAccountDeletions().catch((error) => error);
+    expect(failure.errors.map((e) => e.message).join(' ')).toMatch(/hosted connections not removed yet/);
+    expect(mockRemove).toHaveBeenCalledTimes(2);
+    // One of the two went through despite the other throwing first.
+    expect(await Integration.countDocuments({ _id: { $in: [first._id, second._id] } })).toBe(1);
+    expect((await AccountDeletion.findById(gone).lean()).lastSweptAt).toBeInstanceOf(Date);
+  });
+
+  it('runs the later steps when an earlier one keeps failing', async () => {
+    const gone = new mongoose.Types.ObjectId();
+    await AccountDeletion.create({ _id: gone });
+    const row = await hostedRow(gone, 'linear');
+    // The upload store is down for this round.
+    mockDeletePrefix.mockRejectedValueOnce(new Error('store unavailable'));
+
+    await expect(sweepAccountDeletions()).rejects.toThrow(/Account deletion cleanup failed/);
+    // Record ids and connections still came off.
+    expect(mockDeleteOpenings).toHaveBeenCalledWith(String(gone));
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+    expect(await Integration.exists({ _id: row._id })).toBeNull();
   });
 });
