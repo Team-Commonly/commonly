@@ -128,9 +128,15 @@ const fakeServer = ({
     }
     return {};
   });
-  createClient.mockReturnValue({ get, post });
+  // A claim release: the outcome the wrapper closed it with, or none.
+  const claimReleases = [];
+  const del = jest.fn(async (route, body) => {
+    if (String(route).endsWith('/claim')) claimReleases.push(body?.outcome || null);
+    return {};
+  });
+  createClient.mockReturnValue({ get, post, del });
   return {
-    acks, released, wrapperPosts, comments,
+    acks, released, wrapperPosts, comments, claimReleases,
     // The server's requeue putting an event back on the next poll.
     deliver: (page) => queue.push(page),
     // What a child does through commonly_post_message.
@@ -294,6 +300,59 @@ describe('a batch', () => {
       expect(prompt).toContain('end with NO_REPLY only once every item is handled.');
       expect(prompt).not.toContain('checkpoint it and end with NO_REPLY');
       expect(prompt).not.toContain(EARLIER);
+    } finally { run.handle.stop(); }
+  });
+
+  // CodeRabbit on #3755: the retry ends NO_REPLY because the answer is up, and
+  // a silent human broadcast normally releases as declined, which hands it on.
+  const broadcast = (id) => makeEvent(id, {
+    type: 'message.posted', payload: { messageId: `msg-${id}`, senderIsHuman: true },
+  });
+  const silentRetryReleases = async (page) => {
+    const server = fakeServer({ pages: [page] });
+    const spawn = jest.fn()
+      .mockImplementationOnce(async () => {
+        server.childPosts('part-one', { content: 'The answer.' });
+        throw killed();
+      })
+      .mockResolvedValue({ text: 'NO_REPLY' });
+    const run = startRun({ spawn, sleepImpl: async () => {} });
+    try {
+      await drainMicrotasks();
+      await retryOnce(run);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      return server.claimReleases;
+    } finally { run.handle.stop(); }
+  };
+
+  test('a silent retry of a single broadcast its attempt answered closes the claim as completed', async () => {
+    // The thrown attempt releases with no outcome, for redelivery.
+    expect(await silentRetryReleases([broadcast('evt-solo')])).toEqual([null, 'completed']);
+  });
+
+  test("a silent retry of a batch still declines: the attempt's post may be another item's", async () => {
+    const releases = await silentRetryReleases([broadcast('evt-x'), broadcast('evt-y')]);
+    expect(releases.slice(-2)).toEqual(['declined', 'declined']);
+  });
+
+  test('a private consultation answer that posted and failed is told so on its retry', async () => {
+    const server = fakeServer({ pages: [[makeEvent('evt-ask', {
+      type: 'agent.ask.response',
+      payload: { response: 'Use the staging key.', question: 'Which key?', fromAgent: 'peer' },
+    })]] });
+    const spawn = jest.fn()
+      .mockImplementationOnce(async () => {
+        server.childPosts('update-1', { content: 'Update: switching to the staging key.' });
+        throw killed();
+      })
+      .mockResolvedValueOnce({ text: 'NO_REPLY' });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      expect(spawn.mock.calls[0][0]).not.toContain(EARLIER);
+      await retryOnce(run);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(spawn.mock.calls[1][0]).toContain(`${EARLIER} (message update-1)`);
     } finally { run.handle.stop(); }
   });
 

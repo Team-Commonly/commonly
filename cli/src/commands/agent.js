@@ -2581,12 +2581,17 @@ export const performRun = ({
       }
     }
 
+    // A private item (an agent.ask.response turn may post a pod update) is
+    // retried here, not in a batch, so it hears what its attempt posted here
+    // too. A comment is answered in its thread, so it is not.
+    const earlierPart = isCommentWake(event) ? null : heldRetryParts.get(String(event._id));
+    const earlierLine = earlierPart ? `\n\n${earlierAttemptPosted(earlierPart)}` : '';
     let turnResult;
     try {
       turnResult = await runTurn({
         event,
         eventPodId,
-        prompt: peerFrame ? `${peerFrame}\n\n${prompt}` : prompt,
+        prompt: `${peerFrame ? `${peerFrame}\n\n` : ''}${prompt}${earlierLine}`,
         preSpawnIds,
         snapshotMessages,
         claimKeeper,
@@ -2722,7 +2727,10 @@ export const performRun = ({
     if (!failedTurn?.preSpawnIds || wrapperSpokeInTurn) return;
     const tail = await failedTurn.snapshotMessages(50);
     const ownPost = tail && newestOwnPostSince(tail, failedTurn.preSpawnIds);
-    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), ownPost));
+    // `solo`: the attempt carried only this item, so its post can only be this
+    // item's. A batch's post may answer any item in it.
+    const solo = failedEvents.length === 1;
+    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), { ...ownPost, solo }));
   };
 
   const noticeCutOff = async (lostEvents, { released = [], part = null } = {}) => {
@@ -4204,6 +4212,12 @@ export const performRun = ({
           // An item left without a result (a failure during isolation)
           // releases with no outcome, for redelivery, as a thrown turn does.
           const release = claimReleaseFor(entry.event, entry.result || turnResult);
+          // A retry that stays silent because its single-item attempt already
+          // posted the answer answered the person, so it closes, never handed
+          // to another listener. A batch's post may be another item's: that
+          // silence still declines.
+          if (release.outcome === 'declined' && actionEntries.length === 1
+            && heldRetryParts.get(String(entry.event._id))?.solo) release.outcome = 'completed';
           await entry.claimKeeper.release(release.outcome, {
             reason: release.reason, status: release.status,
           });
@@ -4592,6 +4606,8 @@ export const performRun = ({
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
+              // eslint-disable-next-line no-await-in-loop
+              await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
