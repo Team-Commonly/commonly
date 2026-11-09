@@ -22,6 +22,7 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  realpath,
   rm,
   symlink,
   writeFile,
@@ -1971,5 +1972,72 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
   test('a private seat keeps Codex\'s built-ins', async () => {
     const flags = configFlags(await spawnSeat({ sandbox: null }));
     for (const flag of [...builtinFlags, zeroDepth]) expect(flags).not.toContain(flag);
+  });
+});
+
+// A public seat's shell can't run git on macOS, so it reads history through the
+// read-only workspace_git tool (adapters.codex.workspace-git.test.mjs runs it on
+// the real binary). These check which seats get it, and with what.
+describe('the workspace git tool', () => {
+  const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+  const gitAttachment = (root) => ({
+    server: { name: 'workspace_git', transport: 'stdio', command: ['/node', '/server.js', '--root', root, '--git', '/real/git'] },
+    executable: '/real/git',
+    readDirectories: ['/server-dir'],
+    readPaths: ['/package.json'],
+  });
+
+  const spawnSeat = async ({ sandbox, mcp }) => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const root = await mkdtemp(join(tmpdir(), 'commonly-codex-git-'));
+    const attachRoots = [];
+    try {
+      const realRoot = await realpath(root);
+      await codex.spawn('hi', {
+        cwd: root,
+        environment: { model: 'test-model', ...(sandbox ? { sandbox } : {}), ...(mcp ? { mcp } : {}) },
+        env: { ...process.env, CODEX_HOME: join(root, 'operator') },
+        agentName: 'git-test-agent',
+        _publicCodexHome: join(root, 'public'),
+        _workspaceGitAttachment: (workspace) => {
+          attachRoots.push(workspace);
+          return gitAttachment(workspace);
+        },
+        _spawnImpl: impl,
+      });
+      return { flags: configFlags(calls[0].args), attachRoots, realRoot };
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+
+  test.each(['workspace', 'read-only'])('a public %s seat gets the tool, rooted at its workspace', async (mode) => {
+    const { flags, attachRoots, realRoot } = await spawnSeat({ sandbox: { trust: 'public', mode } });
+    expect(attachRoots).toEqual([realRoot]);
+    expect(flags).toContain('mcp_servers.workspace_git.command="/node"');
+    expect(flags).toContain(`mcp_servers.workspace_git.args=["/server.js","--root",${JSON.stringify(realRoot)},"--git","/real/git"]`);
+    expect(flags).toContain('mcp_servers.workspace_git.default_tools_approval_mode="approve"');
+  });
+
+  test('the profile is not widened to the git binary', async () => {
+    const { flags } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } });
+    const profile = flags.find((flag) => flag.startsWith('permissions.commonly_public.filesystem='));
+    expect(profile).toBeDefined();
+    for (const path of ['/real/git', '/server-dir', '/package.json']) expect(profile).not.toContain(path);
+  });
+
+  test('a declared workspace_git entry is kept as declared', async () => {
+    const declared = { name: 'workspace_git', transport: 'stdio', command: ['/my/node', '/my/server.js'] };
+    const { flags, attachRoots } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, mcp: [declared] });
+    expect(attachRoots).toEqual([]);
+    expect(flags.filter((flag) => flag.startsWith('mcp_servers.workspace_git.command='))).toEqual(
+      ['mcp_servers.workspace_git.command="/my/node"'],
+    );
+  });
+
+  test('a private seat runs git itself and gets no tool', async () => {
+    const { flags, attachRoots } = await spawnSeat({ sandbox: null });
+    expect(attachRoots).toEqual([]);
+    expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
   });
 });
