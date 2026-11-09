@@ -31,9 +31,11 @@ const MAX_FIELD_CHARS = 64_000;
 const MAX_LINKS = 50;
 const DEFAULT_CAPACITY = 500;
 // Bodies still arriving are held too: at most 32 connections x 256 KB, and a
-// request that has not finished within 15 s is dropped.
+// request still unfinished 15 s in is answered 408 and closed. Node checks the
+// deadline on an interval (30 s by default), so the interval is pinned too.
 const MAX_CONNECTIONS = 32;
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_CHECK_INTERVAL_MS = 5_000;
 const LINK = /https?:\/\/[^\s"'<>)]+/g;
 
 export interface SinkMessage {
@@ -50,6 +52,8 @@ export interface SinkMessage {
 export interface SinkConfig {
   readToken: string;
   capacity?: number;
+  maxConnections?: number;
+  requestTimeoutMs?: number;
   now?: () => Date;
 }
 
@@ -99,7 +103,13 @@ const readBody = (req: http.IncomingMessage): Promise<string | null> => new Prom
   req.on('error', reject);
 });
 
-export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () => new Date() }: SinkConfig) => {
+export const createSink = ({
+  readToken,
+  capacity = DEFAULT_CAPACITY,
+  maxConnections = MAX_CONNECTIONS,
+  requestTimeoutMs = REQUEST_TIMEOUT_MS,
+  now = () => new Date(),
+}: SinkConfig) => {
   const messages: SinkMessage[] = [];
 
   const store = (payload: any): SinkMessage => {
@@ -120,7 +130,10 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
     return message;
   };
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer({
+    requestTimeout: requestTimeoutMs,
+    connectionsCheckingInterval: Math.min(MAX_CHECK_INTERVAL_MS, Math.ceil(requestTimeoutMs / 3)),
+  }, (req, res) => {
     const send = (status: number, body: unknown, headers: http.OutgoingHttpHeaders = {}) => {
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
       res.end(JSON.stringify(body));
@@ -150,7 +163,8 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
           return send(400, { data: { error: 'invalid_json' } });
         }
         const to = payload?.to;
-        const isAddress = (entry: unknown) => typeof entry === 'string' && entry.includes('@');
+        // Checked after unwrapping: `x@y <bar>` would otherwise store mail for `bar`.
+        const isAddress = (entry: unknown) => typeof entry === 'string' && recipient(entry).includes('@');
         if (!Array.isArray(to) || to.length === 0 || !to.every(isAddress)) {
           return send(400, { data: { error: 'to_required' } });
         }
@@ -181,9 +195,9 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
 
     send(404, { error: 'not_found' });
   });
-  server.maxConnections = MAX_CONNECTIONS;
-  server.requestTimeout = REQUEST_TIMEOUT_MS;
-  server.headersTimeout = REQUEST_TIMEOUT_MS;
+  server.maxConnections = maxConnections;
+  // Not in @types/node's ServerOptions; the checker reads the property.
+  server.headersTimeout = requestTimeoutMs;
 
   return { server, messages };
 };

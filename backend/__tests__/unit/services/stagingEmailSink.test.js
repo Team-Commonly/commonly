@@ -156,11 +156,50 @@ describe('stagingEmailSink server', () => {
     expect(health).toEqual({ ok: true, stored: 0 });
   });
 
-  test('bounds bodies still arriving: few connections, short deadline', () => {
+  test('refuses a recipient that has no address once unwrapped', async () => {
+    sink = await start();
+    expect((await post(sink.base, { to: ['x@y <bar>'] })).status).toBe(400);
+    expect(sink.messages).toHaveLength(0);
+  });
+
+  test('defaults: 32 connections, a 15 s deadline checked every 5 s', () => {
     const { server } = createSink({ readToken: TOKEN });
     expect(server.maxConnections).toBe(32);
     expect(server.requestTimeout).toBe(15000);
     expect(server.headersTimeout).toBe(15000);
+  });
+
+  const connect = (port) => new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1', () => resolve(socket));
+    socket.on('error', reject);
+  });
+  const closed = (socket) => new Promise((resolve) => {
+    let out = '';
+    socket.on('data', (d) => { out += d; });
+    socket.on('close', () => resolve(out));
+  });
+
+  test('drops a connection past the limit', async () => {
+    sink = await start({ maxConnections: 2 });
+    const { server } = sink;
+    const { port } = server.address();
+    const held = [await connect(port), await connect(port)];
+    // Wait until the server has accepted both, so the third is the one over.
+    const accepted = () => new Promise((r) => { server.getConnections((_e, n) => r(n)); });
+    const settle = async () => { if (await accepted() < 2) await new Promise(setImmediate).then(settle); };
+    await settle();
+    const extra = await connect(port);
+    expect(await closed(extra)).toBe('');
+    held.forEach((s) => s.destroy());
+  });
+
+  test('answers 408 and closes a request left unfinished past its deadline', async () => {
+    sink = await start({ requestTimeoutMs: 300 });
+    const socket = await connect(sink.server.address().port);
+    const reply = closed(socket);
+    socket.write('POST /v3/email/send HTTP/1.1\r\nHost: email-sink\r\nContent-Length: 100\r\n\r\n{"to"');
+    expect((await reply).split('\r\n')[0]).toBe('HTTP/1.1 408 Request Timeout');
+    expect(sink.messages).toHaveLength(0);
   });
 
   describe('the backend send lands in the sink', () => {

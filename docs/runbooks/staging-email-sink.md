@@ -57,7 +57,11 @@ the release namespace by hand.
   links for every staging account, team members' included. Sending accepts any
   `api_key`, so the sink caps what it keeps: a body over 256 KB is refused with
   413, each stored text or HTML part is cut at 64 KB, at most 32 connections
-  are open at once, and a request unfinished after 15 s is dropped.
+  are open at once, and a request still unfinished 15 s in is answered 408
+  and closed (Node checks every 5 s, so within 20 s).
+- **The store key must exist before the sink is enabled.** If it is missing,
+  only the sink pod waits on its Secret; the backend's mail settings are plain
+  values and never reference it.
 - **The chart refuses the sink** when `email.enabled` (real SMTP2GO) is also on,
   and wherever `backend.env.frontendUrl` is `https://commonly.me`, so prod mail
   can never be captured by mistake.
