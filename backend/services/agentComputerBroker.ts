@@ -473,6 +473,11 @@ export class AgentComputerBroker {
     return bytes;
   }
 
+  // The address the tab is on now, so a screenshot can name the page it shows.
+  async currentUrl(userId: string, installationId: string): Promise<string> {
+    return (await this.tab(userId, installationId)).url();
+  }
+
   async requestTakeover(userId: string, installationId: string): Promise<void> {
     const page = await this.tab(userId, installationId);
     await page.bringToFront();

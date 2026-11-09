@@ -214,6 +214,19 @@ const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
 const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
   + 'in this conversation. No more lookups are possible in this turn: answer with what you have, and tell the '
   + 'person which page or search you could not use.';
+// A computer read the guard stops is set aside and the turn carries on.
+// Reading pages is a walk's whole job, so one stopped page must not end it, and
+// the turn keeps every tool. The notice names the read's place in the turn and
+// the page's address (origin and path only; the query and fragment can carry
+// the page's own text), so the agent can report which page it lost. The title
+// came from the page and is not repeated.
+const COMPUTER_SET_ASIDE_NOTICE = 'This page was set aside: a content filter stopped it, and its contents are no '
+  + 'longer in this conversation. Do not read it again. Carry on with the next step, and tell the person which '
+  + 'page you could not use.';
+// How many times one turn sets computer reads aside before a stop ends it.
+const COMPUTER_SET_ASIDE_LIMIT = 5;
+// The tool results that carry what a page showed.
+const COMPUTER_READ_TOOLS = new Set(['computer_navigate', 'computer_snapshot', 'computer_screenshot']);
 const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
 // The refusal for any tool that round does not offer. When the round did not
 // try to post, the model reads it before one further call (F33: it asked for
@@ -225,6 +238,9 @@ const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn.
 // on any agent. Fixed text, so it carries nothing the turn read.
 export const HOSTED_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this, and it didn\'t count against today\'s '
   + 'turns. You can ask again, or ask it a different way.';
+// The same for a native agent that is not hosted: it has no daily turns, so
+// the line makes no claim about them.
+export const NATIVE_RUN_FAILED_LINE = 'I couldn\'t finish a reply to this. You can ask again, or ask it a different way.';
 
 // What an agent posts when a person addressed it and no turns are left: a
 // hosted agent past its daily line, or any agent past the per-user ceiling.
@@ -1489,9 +1505,17 @@ export async function dispatchTool(
           const png = await agentComputerBroker.screenshot(ownerId, installationId);
           ctx.webTainted = true;
           ctx.computerReadSeen = true;
+          // The page the screenshot shows, so a set-aside can name it. A click
+          // may have moved the tab since the last read.
+          let url: string | undefined;
+          try {
+            url = await agentComputerBroker.currentUrl(ownerId, installationId);
+          } catch {
+            url = undefined;
+          }
           return {
             content: { screenshot: 'attached to the next model input' },
-            recorded: { bytes: png.length },
+            recorded: { bytes: png.length, ...(url ? { url } : {}) },
             untrustedSourceTitle: 'a computer screenshot',
             imagePngBase64: png.toString('base64'),
           };
@@ -2838,6 +2862,111 @@ export async function runAgent(
     return { setAside: aside.length, removed: before - kept.length };
   };
 
+  // Computer reads are kept the same way. A screenshot is an image the text
+  // check cannot read, so `image` marks the tool result followed by its image.
+  const computerResults: Array<{ round: number; index: number; image: boolean; page: number; url?: string }> = [];
+  let computerReads = 0;
+  const pageAddress = (raw: unknown): string | undefined => {
+    try {
+      const parsed = new URL(String(raw));
+      return /^https?:$/.test(parsed.protocol) ? `${parsed.origin}${parsed.pathname}`.slice(0, 200) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  let computerSetAsides = 0;
+  // Returns how many computer reads were set aside. The stopped ones go when
+  // the check finds them. Otherwise only the round just before the stopped
+  // call is a suspect, since every earlier read already went through the guard
+  // in an earlier call: its screenshots go when every page text passed, or all
+  // its reads when the check is unavailable. Nothing older is ever dropped.
+  // Every round after the one set aside is dropped, as for a web result.
+  const setAsideStoppedComputerResult = async (): Promise<number> => {
+    const texts = computerResults.filter((result) => !result.image);
+    const stops = texts.length
+      ? await textsTheGuardStops(litellm, texts.map(({ index }) => String(messages[index].content)), runGuardrails)
+      : [];
+    let aside: typeof computerResults;
+    if (stops && stops.includes(true)) {
+      const stoppedRound = texts[stops.indexOf(true)].round;
+      aside = texts.filter((result, i) => result.round === stoppedRound && stops[i]);
+    } else {
+      const lastRound = roundEnds.length - 1;
+      aside = computerResults.filter((result) => result.round === lastRound && (result.image || !stops));
+      if (!aside.length) return 0;
+    }
+    const firstRound = aside[0].round;
+    // Dropping a round that posted or acted (a click, a typed field) would
+    // have the model do it again, so the turn would post twice or repeat a
+    // click. Such rounds stay. The model's own text after the stopped page may
+    // quote it, so that text is cleared, keeping each call for its result
+    // (as when every web result is set aside).
+    const acted = messages.slice(roundEnds[firstRound]).some((message: any) => message?.role === 'assistant'
+      && (message.tool_calls || []).some((tc: any) => !COMPUTER_READ_TOOLS.has(String(tc?.function?.name || ''))));
+    if (acted) {
+      for (let i = aside[0].index + 1; i < messages.length; i += 1) {
+        if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+      }
+      // A refused call did nothing, and its arguments may quote the stopped
+      // page, so it leaves the history with its result. What ran stays. Only
+      // the rounds after the stopped one are touched, so every call and its
+      // result go together (a provider refuses a call with no result), and
+      // an earlier set-aside notice is a note to keep, not a refusal.
+      const laterFrom = roundEnds[firstRound];
+      const refused = new Set<string>();
+      for (let i = laterFrom; i < messages.length; i += 1) {
+        if (messages[i]?.role !== 'tool') continue;
+        let parsed: any = null;
+        try { parsed = JSON.parse(String(messages[i].content)); } catch { parsed = null; }
+        if (parsed && parsed.ok === false
+          && parsed.error !== COMPUTER_SET_ASIDE_NOTICE && parsed.error !== WEB_SET_ASIDE_NOTICE) {
+          refused.add(String(messages[i].tool_call_id));
+        }
+      }
+      if (refused.size) {
+        const kept: any[] = [];
+        const newIndex = new Map<number, number>();
+        messages.forEach((message: any, i: number) => {
+          let next = message;
+          if (i >= laterFrom && message?.role === 'tool' && refused.has(String(message.tool_call_id))) return;
+          if (i >= laterFrom && message?.role === 'assistant' && Array.isArray(message.tool_calls)) {
+            const calls = message.tool_calls.filter((tc: any) => !refused.has(String(tc?.id)));
+            if (!calls.length && !message.content) return;
+            next = { ...message, tool_calls: calls };
+            if (!calls.length) delete next.tool_calls;
+          }
+          newIndex.set(i, kept.length);
+          kept.push(next);
+        });
+        const keptBefore = (end: number) => [...newIndex.keys()].filter((i) => i < end).length;
+        roundEnds.splice(0, roundEnds.length, ...roundEnds.map(keptBefore));
+        // `aside` holds the same objects as computerResults: remap each once.
+        new Set([...computerResults, ...webResults, ...aside]).forEach((result) => {
+          result.index = newIndex.get(result.index) ?? result.index;
+        });
+        messages.splice(0, messages.length, ...kept);
+      }
+    } else {
+      messages.length = roundEnds[firstRound];
+      roundEnds.length = firstRound + 1;
+    }
+    aside.forEach(({ index, image, page, url }) => {
+      messages[index] = {
+        ...messages[index],
+        content: JSON.stringify({ ok: false, page, ...(url ? { url } : {}), error: COMPUTER_SET_ASIDE_NOTICE }),
+      };
+      if (image) {
+        messages[index + 1] = { role: 'user', content: `The screenshot of page ${page} was set aside by a content filter.` };
+      }
+    });
+    const keptComputer = computerResults.filter((result) => !aside.includes(result)
+      && (acted || result.round <= firstRound));
+    computerResults.splice(0, computerResults.length, ...keptComputer);
+    const keptWeb = webResults.filter((result) => acted || result.round <= firstRound);
+    webResults.splice(0, webResults.length, ...keptWeb);
+    return aside.length;
+  };
+
   try {
     // Tool names offered in the most recent model call; a call to anything
     // else is refused at dispatch.
@@ -2971,6 +3100,16 @@ export async function runAgent(
               webResults.splice(0, webResults.length);
               webSetAsideAll = true;
               continue;
+            }
+            // A post earlier in the turn does not end a walk. A round that
+            // posted or acted is never dropped, so nothing is done twice.
+            if (computerResults.length > 0 && computerSetAsides < COMPUTER_SET_ASIDE_LIMIT) {
+              const setAside = await setAsideStoppedComputerResult();
+              if (setAside > 0) {
+                computerSetAsides += 1;
+                run.computerSetAside = Number(run.computerSetAside || 0) + setAside;
+                continue;
+              }
             }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
@@ -3176,6 +3315,18 @@ export async function runAgent(
             });
           }
           if (WEB_LOOKUP_TOOLS.has(toolName) && !result.error) webResults.push({ round, index: messages.length - 1 });
+          if (COMPUTER_READ_TOOLS.has(toolName) && !result.error) {
+            computerReads += 1;
+            const image = Boolean(result.imagePngBase64);
+            // Each read names the page it showed, a screenshot included.
+            computerResults.push({
+              round,
+              index: messages.length - (image ? 2 : 1),
+              image,
+              page: computerReads,
+              url: pageAddress((result.recorded as any)?.url),
+            });
+          }
           }
         }
         roundEnds.push(messages.length);
@@ -3347,13 +3498,14 @@ export async function runAgent(
   // on native turns; other hosted failures keep the fixed line. A turn
   // that declined (NO_REPLY, a silent group-pod turn) ended succeeded and
   // never reaches this. The per-user spend ceiling still counts the run.
-  if ((hostedNative || modelFailureReason) && run.status === 'failed' && !postedViaTool && !finalMessage) {
+  if ((hostedNative || modelFailureReason || personAsked) && run.status === 'failed' && !postedViaTool && !finalMessage) {
     if (hostedNative) run.metered = false;
-    // A native agent's line carries the provider's reason, so a tainted turn
-    // can't post it in a bridged pod. A hosted line is our own fixed text, and
-    // noOutboundRelay keeps it in Commonly (F56).
+    // A native agent's model-failure line carries the provider's reason, so a
+    // tainted turn can't post it in a bridged pod. Every other line is our own
+    // fixed text, and noOutboundRelay keeps it in Commonly (F56).
+    const providerLine = !hostedNative && Boolean(modelFailureReason);
     if (personAsked
-      && !(!hostedNative && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
+      && !(providerLine && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow())) {
       try {
         const AgentMessageService = require('./agentMessageService');
         await AgentMessageService.postMessage({
@@ -3367,7 +3519,7 @@ export async function runAgent(
             ? (hostedNative
               ? `${MODEL_DISPLAY_NAMES[model] || model} could not answer just now. ${HOSTED_RUN_FAILED_LINE}`
               : `Model ${model} could not answer (${modelFailureReason}). Please try again.`)
-            : HOSTED_RUN_FAILED_LINE,
+            : (hostedNative ? HOSTED_RUN_FAILED_LINE : NATIVE_RUN_FAILED_LINE),
           messageType: 'text',
           displayName,
           installationConfig: cfg,

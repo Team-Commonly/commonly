@@ -48,9 +48,26 @@ read.
   run: one reply at most, and anything other than a reply or a declined turn
   is a failure. If the check cannot be made, every web result from the first
   web round on is set aside instead.
+- **Computer reads** (`computer_navigate`, `computer_snapshot`,
+  `computer_screenshot`) are handled differently, because reading page after
+  page is a walk's whole job. Each text result is checked on its own the same
+  way. The stopped page is replaced with a notice carrying its place in the
+  turn ("page N") and its address (origin and path, no query or fragment), so
+  the agent can report it. Every round after it is dropped, and the turn
+  carries on with all its tools. It is not limited to a single post. A
+  screenshot is an image the check can't read. When every page text passes,
+  only the screenshots from the round just before the stopped call are set
+  aside, since every older read already passed the guard in an earlier call.
+  When the check is unavailable, all of that one round's reads are set aside.
+  Nothing older is ever dropped. A turn gets at most 5 set-asides before a stop ends
+  it, and `AgentRun.computerSetAside` counts the reads it lost. First seen on
+  2026-11-08: a walk's first snapshot and screenshot stopped the whole turn.
 - If the turn still ends failed with nothing posted, and someone was waiting
-  on it (a mention), the agent posts one fixed line. A declined turn
-  (`NO_REPLY`, a silent group-pod turn) ends succeeded and never posts it.
+  on it (a mention or a DM), the agent posts one fixed line. That covers
+  native agents that aren't hosted too, with a line that makes no claim about
+  daily turns. A declined turn (`NO_REPLY`, a silent group-pod turn) ends
+  succeeded and never posts it, and neither does a failed wake nobody was
+  waiting on.
 - A failed hosted run that posted nothing is stamped `metered: false`: the
   person's meter and their plan line leave it out, and the per-user spend
   ceiling still counts it.
