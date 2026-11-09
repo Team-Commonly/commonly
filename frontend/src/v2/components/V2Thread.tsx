@@ -25,6 +25,8 @@ import './V2CloseDm.css';
 import { useV2Api } from '../hooks/useV2Api';
 import { recordByoStepOnce } from '../utils/byoTelemetry';
 import { useV2PodHeaderMeta } from '../hooks/useV2PodHeaderMeta';
+import { useDocumentTitleText } from '../hooks/useDocumentTitle';
+import { podTabName } from '../utils/podTabName';
 import { UseV2PodsResult } from '../hooks/useV2Pods';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -259,6 +261,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
   const headerMeta = useV2PodHeaderMeta(pod?._id);
   const { socket, connected } = useSocket();
   const { currentUser } = useAuth();
+  // The tab names the pod, or for a DM whoever the viewer is talking to. A pod
+  // that didn't load (not found, or not the viewer's to see) keeps the plain title.
+  useDocumentTitleText(podTabName(pod, members, currentUser?._id, i18n.language));
   const [draft, setDraft] = useState('');
   const [fixCommandCopied, setFixCommandCopied] = useState(false);
   const [sending, setSending] = useState(false);

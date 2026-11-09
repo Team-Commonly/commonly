@@ -159,3 +159,43 @@ describe('V2Thread — owner-only pod rename (TASK-419)', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });
+
+// The thread names the browser tab after its pod, and a DM after whoever the
+// viewer is talking to. With no pod (not found, or not the viewer's to see)
+// it keeps the plain title.
+describe('V2Thread — the tab title', () => {
+  beforeAll(async () => {
+    await i18nReady;
+    await i18n.changeLanguage('en');
+  });
+  beforeEach(() => { document.title = 'Commonly'; });
+
+  const renderWith = (detailPod, members, viewerId = 'u1') => render(
+    <AuthContext.Provider value={authValue(viewerId)}>
+      <MemoryRouter>
+        <V2Thread detail={{
+          pod: detailPod, members, messages: [], agents: [], sendMessage: jest.fn(), loading: false, error: null, refresh: jest.fn(),
+        }}
+        />
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+
+  test('a pod page names its pod', () => {
+    renderWith(pod('u1'), [{ _id: 'u1', username: 'maya' }]);
+    expect(document.title).toBe('Launch notes · Commonly');
+  });
+
+  test('a DM names the agent, not the stored "DM: …" name', () => {
+    renderWith(
+      { _id: 'pod-2', name: 'DM: scout-default', type: 'agent-room', createdBy: 'u1' },
+      [{ _id: 'u1', username: 'maya' }, { _id: 'b1', username: 'scout-default', isBot: true, botMetadata: { displayName: 'Scout' } }],
+    );
+    expect(document.title).toBe('Scout · Commonly');
+  });
+
+  test('no pod keeps the plain title', () => {
+    renderWith(null, []);
+    expect(document.title).toBe('Commonly');
+  });
+});
