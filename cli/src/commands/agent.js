@@ -2067,6 +2067,9 @@ export const performRun = ({
   // saved on the server before each turn. Off for daemon seats, whose daemon
   // projects the same values into `environment`.
   readSavedControls = false,
+  // A machine-bound record started by hand, without its daemon: nothing
+  // projects Settings into it, so only `agent config` changes its model.
+  standaloneMachineRun = false,
   // F150: a seat with no daemon reads its live grant brokers before each turn.
   // Off for daemon seats, whose daemon merges /assigned's into the record.
   readGrantBrokers = false,
@@ -2649,13 +2652,19 @@ export const performRun = ({
   const postModelUnavailableHint = async (error, hintPodId, configuredModel) => {
     const failure = modelUnavailableFailure(error, { fallbackModel: configuredModel });
     if (!failure || !hintPodId) return;
-    const key = `model-unavailable:${failure.model || 'unknown'}`;
+    // A listener seat with no saved environment ignores Settings (see the
+    // "has no saved environment" notice above), and so does a machine-bound
+    // run with no daemon, so both get the command. Each instruction keeps its
+    // own hour: a seat restarted with an environment hears the Settings line
+    // even if the command line went out just before.
+    const cliAgentName = (readSavedControls && !environment) || standaloneMachineRun ? agentName : null;
+    const key = `model-unavailable:${failure.model || 'unknown'}${cliAgentName ? ':agent-config' : ''}`;
     try {
       if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
       const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
-        text: modelUnavailableHint(failure.model),
+        text: modelUnavailableHint(failure.model, { cliAgentName }),
         limit: chatCharLimit,
         maxChunks: maxChatChunks,
         log,
@@ -5570,6 +5579,7 @@ Docs:
           machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
         reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
         readSavedControls: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
+        standaloneMachineRun: Boolean(record.machineId) && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         readGrantBrokers: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
