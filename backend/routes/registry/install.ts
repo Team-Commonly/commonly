@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const auth = require('../../middleware/auth');
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
+const { resolveUnnamedInstanceId } = require('../../services/installInstanceId');
 const AgentProfile = require('../../models/AgentProfile');
 const { isDefaultWorkspaceName } = require('../../config/defaultWorkspacePod');
 const AgentTemplate = require('../../models/AgentTemplate');
@@ -129,25 +130,6 @@ const hostedCapRefusal = async (userId: unknown, holdsThisAgent: boolean): Promi
     cap: agentsPerUser,
     holders,
   };
-};
-
-/**
- * Derive instanceId from displayName for consistent agent identity across pods.
- * This ensures the same agent (e.g., "Cuz") gets the same instanceId regardless
- * of which pod it's installed in, allowing shared runtime tokens and memory.
- */
-const deriveInstanceId = (displayName: any, agentName: any) => {
-  if (!displayName) return 'default';
-  const slug = String(displayName)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  if (!slug || slug === agentName.toLowerCase()) {
-    return 'default';
-  }
-  return slug;
 };
 
 /**
@@ -281,7 +263,7 @@ const installAgent = async (req: any, res: any, addition?: { alreadyInPod: Recor
       normalizedInstanceId = normalizeInstanceId(instanceId);
       if (normalizedInstanceId === agentName.toLowerCase() && !addition) normalizedInstanceId = 'default';
     } else {
-      normalizedInstanceId = deriveInstanceId(displayName, agentName);
+      normalizedInstanceId = await resolveUnnamedInstanceId(displayName, agentName);
     }
     if (res.locals) res.locals.agentInstallInstanceId = normalizedInstanceId;
 
