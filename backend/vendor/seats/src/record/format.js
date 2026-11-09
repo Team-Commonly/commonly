@@ -127,6 +127,25 @@ const TOOL_NAME = /^[^\s*?]{1,256}$/;
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
 const KIND_SHAPE = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/;
 const isTimestamp = (value) => typeof value === 'string' && RFC3339_UTC.test(value) && !Number.isNaN(Date.parse(value));
+// Section 8: 128 random bits make a line's hash a commitment nobody can guess at.
+const SALT = /^[0-9a-f]{32}$/;
+const isSalt = (value) => typeof value === 'string' && SALT.test(value);
+const LINE_HASH = /^[0-9a-f]{64}$/;
+// Section 9: an id held beside the line. It is a valid id token, so every
+// writer check and every older reader takes it as an opaque id.
+const COMMITMENT = /^c1:[0-9a-f]{64}$/;
+export const isCommitment = (value) => typeof value === 'string' && COMMITMENT.test(value);
+const isOpenings = (value) => isPlainObject(value) && Object.entries(value).every(([token, opening]) => isCommitment(token)
+  && isPlainObject(opening) && isText(opening.id) && isSalt(opening.salt) && Object.keys(opening).length === 2);
+// Every string on a line, at any depth: where a commitment can sit.
+const idTokens = (value, found = new Set()) => {
+  if (typeof value === 'string') found.add(value);
+  else if (Array.isArray(value)) value.forEach((item) => idTokens(item, found));
+  else if (isPlainObject(value)) Object.values(value).forEach((item) => idTokens(item, found));
+  return found;
+};
+const isRedaction = (value) => isPlainObject(value) && Array.isArray(value.fields) && value.fields.every(isText)
+  && (value.hash === null || (typeof value.hash === 'string' && LINE_HASH.test(value.hash)));
 
 /**
  * RFC 8785 (JCS) serialization. For the JSON values a record holds, JCS is
@@ -181,6 +200,15 @@ export const argsDigestOf = (args) => {
   try { return `sha256:${hashLine(canonical(args, true))}`; } catch { return undefined; }
 };
 export const isArgsDigest = (value) => typeof value === 'string' && ARGS_DIGEST.test(value);
+
+/**
+ * What a line holds in place of an id it may later have to forget: nobody can
+ * test a guess at the id without the salt, which is kept beside the record.
+ */
+export const commitId = (id, salt) => {
+  if (!isSalt(salt)) fail('salt must be 32 lowercase hex characters');
+  return `c1:${hashLine(`seats.record/commitment/v1\n${salt}\n${id}`)}`;
+};
 
 /** null when the actor is well formed, else the reason. */
 const actorProblem = (actor) => {
@@ -509,8 +537,8 @@ const parseLine = (line) => {
  * appendEntry(prevLine, fields, { runActor }?) → the next line, canonical,
  * without its newline.
  *
- * fields: { runId, taskId?, podId?, ts, kind, actor?, data, seq? }. seq and
- * prev come from prevLine (null for the first line); a given seq must agree.
+ * fields: { runId, taskId?, podId?, ts, kind, actor?, data, seq?, salt? }. seq
+ * and prev come from prevLine (null for the first line); a given seq must agree.
  * An absent actor takes the kind's default; null records "unknown".
  */
 export const appendEntry = (prevLine, fields = {}, { runActor = null } = {}) => {
@@ -528,6 +556,7 @@ export const appendEntry = (prevLine, fields = {}, { runActor = null } = {}) => 
   if (!RUN_ID.test(String(fields.runId))) fail('runId must be 6-64 characters of [A-Za-z0-9_-]');
   optionalText(fields.taskId, 'taskId');
   optionalText(fields.podId, 'podId');
+  if (fields.salt !== undefined && !isSalt(fields.salt)) fail('salt must be 32 lowercase hex characters');
   if (fields.taskId && !fields.podId) fail('a taskId needs a podId: task ids repeat across pods');
   const ts = fields.ts instanceof Date ? fields.ts.toISOString() : fields.ts;
   if (!isTimestamp(ts)) fail('ts must be an RFC 3339 UTC timestamp');
@@ -540,6 +569,7 @@ export const appendEntry = (prevLine, fields = {}, { runActor = null } = {}) => 
     runId: fields.runId,
     ...(fields.taskId ? { taskId: fields.taskId } : {}),
     ...(fields.podId ? { podId: fields.podId } : {}),
+    ...(fields.salt ? { salt: fields.salt } : {}),
     seq,
     ts,
     kind: fields.kind,
@@ -569,7 +599,10 @@ const envelopeProblem = (entry) => {
   if (typeof entry.kind !== 'string' || !KIND_SHAPE.test(entry.kind)) return 'kind';
   if (actorProblem(entry.actor)) return 'actor';
   if (!isPlainObject(entry.data)) return 'data';
-  if (entry.prev !== null && !(typeof entry.prev === 'string' && /^[0-9a-f]{64}$/.test(entry.prev))) return 'prev';
+  if (entry.prev !== null && !(typeof entry.prev === 'string' && LINE_HASH.test(entry.prev))) return 'prev';
+  if (entry.salt !== undefined && !isSalt(entry.salt)) return 'salt';
+  if (entry.redaction !== undefined && !isRedaction(entry.redaction)) return 'redaction';
+  if (entry.openings !== undefined && !isOpenings(entry.openings)) return 'openings';
   return null;
 };
 
@@ -589,22 +622,38 @@ const envelopeProblem = (entry) => {
  *                  this one's prev, was changed, removed or moved
  *   run_mismatch   runId, taskId or podId differs from the first line
  *   after_settled  a line follows run.settled
+ *   bad_opening    an opening does not match its commitment
+ *   stray_opening  an opening's commitment is not on the line
  * The chain re-syncs after each problem, so one edit is reported once.
+ *
+ * A redacted view (spec section 8) passes this check by what it can show. A
+ * line with a `redaction` marker is not the stored line: its marker names the
+ * stored line's hash, which the next line is checked against, or null when
+ * that hash is withheld and the next line links to nothing. Only a view adds
+ * `partial: true`, `redacted` (the seqs whose content the chain doesn't cover)
+ * and `unlinked` (the subset with no hash to link through); `ok` then says no
+ * tampering was found in what could be checked, not that every line was.
+ *
+ * A line with `openings` (section 9) is checked as the stored line it was
+ * built from: the map comes off, and the bytes left are what `prev` covers. A
+ * commitment nobody opened is not a problem. A deleted id looks exactly so.
  */
 export const verifyRecord = (input) => {
   const { lines, torn } = Array.isArray(input) ? { lines: input.map(String), torn: null } : splitRecord(input);
   const errors = [];
   const report = (seq, reason, detail) => errors.push(detail ? { seq, reason, detail } : { seq, reason });
   let expected = 1;
-  let prevRaw = null;
+  let prevHash = null;
   let first = null;
   let settled = false;
+  const redacted = [];
+  const unlinked = [];
   for (const line of lines) {
     let entry;
     try { entry = JSON.parse(line); } catch { entry = undefined; }
     if (!isPlainObject(entry)) {
       report(expected, 'unparseable');
-      prevRaw = line;
+      prevHash = hashLine(line);
       expected += 1;
       continue;
     }
@@ -616,13 +665,30 @@ export const verifyRecord = (input) => {
     try { canonicalForm = canonicalLine(entry); } catch { /* reported below */ }
     if (canonicalForm !== line) report(seq, 'not_canonical');
     if (seq !== expected) report(seq, 'seq_mismatch', `expected ${expected}`);
-    const expectedPrev = prevRaw === null ? null : hashLine(prevRaw);
-    if (entry.prev !== expectedPrev) report(seq, 'prev_mismatch');
+    if (entry.prev !== prevHash) report(seq, 'prev_mismatch');
     if (first === null) first = entry;
     else if (entry.runId !== first.runId || entry.taskId !== first.taskId || entry.podId !== first.podId) report(seq, 'run_mismatch');
     if (settled) report(seq, 'after_settled');
     if (entry.kind === 'run.settled') settled = true;
-    prevRaw = line;
+    const { openings, ...stored } = entry;
+    if (isOpenings(openings)) {
+      const onLine = idTokens(stored);
+      for (const [token, { id, salt }] of Object.entries(openings)) {
+        if (commitId(id, salt) !== token) report(seq, 'bad_opening');
+        if (!onLine.has(token)) report(seq, 'stray_opening');
+      }
+    }
+    const marker = isRedaction(entry.redaction) ? entry.redaction : null;
+    if (marker) {
+      redacted.push(seq);
+      if (marker.hash === null) unlinked.push(seq);
+    }
+    if (marker) prevHash = marker.hash;
+    else if (openings === undefined) prevHash = hashLine(line);
+    else {
+      // What can't be serialized was reported as not_canonical above.
+      try { prevHash = hashLine(canonicalLine(stored)); } catch { prevHash = hashLine(line); }
+    }
     expected = seq + 1;
   }
   if (torn !== null) report(expected, 'torn');
@@ -630,16 +696,31 @@ export const verifyRecord = (input) => {
     ok: errors.length === 0,
     errors,
     entries: lines.length,
-    head: prevRaw === null ? null : hashLine(prevRaw),
+    head: prevHash,
     settled,
+    ...(redacted.length > 0 ? { partial: true, redacted, unlinked } : {}),
   };
 };
 
-/** Parse a record's text into entries, skipping a torn tail and unparseable lines. */
+/** An entry with each opened commitment replaced by its id, and no `openings`. */
+const openEntry = ({ openings, ...entry }) => {
+  if (!isOpenings(openings)) return entry;
+  const open = (value) => {
+    if (typeof value === 'string') return Object.hasOwn(openings, value) ? openings[value].id : value;
+    if (Array.isArray(value)) return value.map(open);
+    return isPlainObject(value) ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, open(item)])) : value;
+  };
+  return open(entry);
+};
+
+/**
+ * Parse a record's text into entries, skipping a torn tail and unparseable
+ * lines. Opened ids read in place; a commitment nobody opened stays as it is.
+ */
 export const readRecord = (text) => splitRecord(text).lines.flatMap((line) => {
   try {
     const entry = JSON.parse(line);
-    return isPlainObject(entry) ? [entry] : [];
+    return isPlainObject(entry) ? [openEntry(entry)] : [];
   } catch { return []; }
 });
 

@@ -4626,3 +4626,18 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 **Fix:** the 409 now says that `continueAnyway` sends this one anyway, doesn't mark the messages read, and that later sends are held until the agent reads the conversation. The cursor rule is unchanged. A first draft made `continueAnyway` advance the cursor. Review held it for two reasons. It would have marked seen a message posted after the 409, which the agent never saw. It would also have let the CLI wrapper's automatic end-of-turn override skip the next turn's catch-up notice for the model.
 
 **Lesson:** when an override and a read have different effects, the refusal has to say which one clears it. Making an override do the read's job silently widens what it acknowledges.
+
+## 123. "A hash-chained line can't be redacted", `joined_at`, and `joinPolicy: 'open'` (2026-11-06, cto)
+
+*Origin: F265, opening the record to every pod.*
+
+Three surfaces taught a wrong model at once. The route comment said a hash-chained line can't be redacted without breaking verification, which reads as a rule when the real limit was narrower, and it hid the larger problem: an unsalted chain commits to every line before it, so keeping the chain while hiding a field gives the field away to anyone who can guess it. A pod's member list makes that guess short. `pod_members.joined_at` reads as a join time, and a grep for one finds it, but it is the insert time of a best-effort mirror row, and because a row can outlive the membership, it can be earlier than the real join. `joinPolicy: 'open'` reads as "anyone can join", but it is the schema default on nearly every pod, and `joinPod` refuses an unlisted one.
+
+**Repair:** server lines carry a salt, a redacted view reports what it couldn't check (record-v1 §8), `isOpenPod` is the one reading of "open", and ADR-033 D6 records why `joined_at` isn't used.
+
+**Lesson:** before hiding a field under a hash, ask what a reader can already guess. A hash of something guessable is the thing itself, and a chain carries that exposure forward to every later line.
+
+**Later the same day: a salt is not deletion.** A line salt hides a held-back
+line from a guess, but its hash still covers the id, so that id can never leave the line. A reader of
+this entry could take "salted" to mean "deletable". Only a commitment written from the start is
+(ADR-033 D7, record-v1 section 9). Check what the hash covers, not whether a salt is present.

@@ -1,5 +1,7 @@
 // This fixture stubs User and auth; real lock/authorization behavior is tested
 // across Mongo in service/adminRoleConcurrency.test.js.
+jest.mock('../../../repositories/recordChainRepository', () => ({ deleteOpeningsFor: jest.fn().mockResolvedValue(0) }));
+jest.mock('../../../models/AccountDeletion', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../../services/adminUserMutationService', () => ({
   withAdminUserMutation: (_actor, operation) => operation(() => {}),
   AdminUserMutationError: class extends Error {},
@@ -17,6 +19,7 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findOneAndDelete: jest.fn(),
+  updateOne: jest.fn(),
   countDocuments: jest.fn(),
 }));
 
@@ -52,6 +55,8 @@ jest.mock('../../../models/Integration', () => ({
 
 const axios = require('axios');
 const User = require('../../../models/User');
+const AccountDeletion = require('../../../models/AccountDeletion');
+const { deleteOpeningsFor } = require('../../../repositories/recordChainRepository');
 const InvitationCode = require('../../../models/InvitationCode');
 const WaitlistRequest = require('../../../models/WaitlistRequest');
 const router = require('../../../routes/admin/users');
@@ -124,14 +129,76 @@ describe('admin users routes', () => {
       isBot: false,
     };
     User.findById.mockResolvedValue(target);
+    User.updateOne.mockResolvedValue({ matchedCount: 1 });
     User.findOneAndDelete.mockResolvedValue(target);
 
     await handler(req, res);
 
+    const claim = User.updateOne.mock.calls[0];
+    expect(claim[0]).toEqual({ _id: target._id, accountDeletionRequestedAt: { $exists: false } });
     expect(User.findOneAndDelete).toHaveBeenCalledWith({
-      _id: target._id, accountDeletionRequestedAt: { $exists: false },
+      _id: target._id, accountDeletionRequestedAt: claim[1].$set.accountDeletionRequestedAt,
     });
     expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    // The receipt is durable before the row goes; the ids go once the row has.
+    expect(AccountDeletion.updateOne).toHaveBeenCalledWith({ _id: target._id }, expect.anything(), { upsert: true });
+    expect(AccountDeletion.updateOne.mock.invocationCallOrder[0]).toBeLessThan(User.findOneAndDelete.mock.invocationCallOrder[0]);
+    expect(deleteOpeningsFor).toHaveBeenCalledWith(target._id);
+    expect(User.findOneAndDelete.mock.invocationCallOrder[0]).toBeLessThan(deleteOpeningsFor.mock.invocationCallOrder[0]);
+  });
+
+  it('leaves a person it refuses to delete with their ids and no receipt', async () => {
+    const handler = getRouteHandler('/:userId', 'delete');
+    const target = { _id: '000000000000000000000002', role: 'user', isBot: false };
+    User.findById.mockResolvedValue(target);
+    // A self-deletion's billing preflight holds the row.
+    User.updateOne.mockResolvedValue({ matchedCount: 0 });
+    const res = createRes();
+
+    await handler({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCOUNT_CHANGED' }));
+    expect(deleteOpeningsFor).not.toHaveBeenCalled();
+    expect(AccountDeletion.updateOne).not.toHaveBeenCalled();
+    expect(User.findOneAndDelete).not.toHaveBeenCalled();
+  });
+
+  it('hands the person back if the receipt can\'t be written', async () => {
+    const handler = getRouteHandler('/:userId', 'delete');
+    const target = { _id: '000000000000000000000002', role: 'user', isBot: false };
+    User.findById.mockResolvedValue(target);
+    User.updateOne.mockResolvedValue({ matchedCount: 1 });
+    AccountDeletion.updateOne.mockRejectedValueOnce(new Error('store unavailable'));
+    const res = createRes();
+
+    await handler({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    const claimedAt = User.updateOne.mock.calls[0][1].$set.accountDeletionRequestedAt;
+    expect(User.updateOne).toHaveBeenLastCalledWith(
+      { _id: target._id, accountDeletionRequestedAt: claimedAt },
+      { $unset: { accountDeletionRequestedAt: 1 } },
+    );
+    expect(User.findOneAndDelete).not.toHaveBeenCalled();
+    expect(deleteOpeningsFor).not.toHaveBeenCalled();
+  });
+
+  it('answers success when the row went but the ids didn\'t: the receipt lets the sweep finish', async () => {
+    const handler = getRouteHandler('/:userId', 'delete');
+    const target = { _id: '000000000000000000000002', role: 'user', isBot: false };
+    User.findById.mockResolvedValue(target);
+    User.updateOne.mockResolvedValue({ matchedCount: 1 });
+    User.findOneAndDelete.mockResolvedValue(target);
+    deleteOpeningsFor.mockRejectedValueOnce(new Error('store unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = createRes();
+
+    await handler({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+
+    expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    expect(AccountDeletion.updateOne).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('updates a user role', async () => {

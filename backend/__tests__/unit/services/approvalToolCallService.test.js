@@ -210,6 +210,52 @@ test('uses the approver display name in the execution receipt', async () => {
   }));
 });
 
+// The receipt is chat text: a decider with no usable name is named by role,
+// never by id, both when the decide posts it and when the sweep retries it.
+test('a nameless approver is named by role in the live receipt, not by id', async () => {
+  const pending = row();
+  const resolved = row({ status: 'resolved', decision: 'approved' });
+  mockApproval.findById.mockResolvedValue(pending);
+  mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
+  mockUser.findById.mockReturnValue({
+    select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ isBot: false, username: '  ' }) })),
+  });
+  broker.executeApprovedToolCall.mockResolvedValue({ callId: 'tool_call_second', outcome: 'ok', result: { id: 9 } });
+
+  await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
+
+  const { content } = mockPostMessage.mock.calls[0][0];
+  expect(content).toBe("The credential owner approved grant-broker's github.comment_on_issue · ran");
+  expect(content).not.toContain(OWNER);
+  // The agent's wake names the same role as the room.
+  expect(JSON.stringify(mockEnqueue.mock.calls)).toContain('Decided by The credential owner.');
+  expect(JSON.stringify(mockEnqueue.mock.calls)).not.toContain('The workspace owner');
+});
+
+test('a retried receipt whose decider is gone names the role, not the id', async () => {
+  const closed = row({
+    status: 'resolved', decision: 'approved', resolvedBy: OWNER, toolCallEnding: 'ran',
+    toolCallTrailId: 'trail-ok', resolvedAt: new Date(Date.now() - 10 * 60_000), expiryRetryCount: 0,
+  });
+  mockApproval.find.mockImplementation((query) => (
+    query.status === 'flagged'
+      ? Promise.resolve([])
+      : { select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [closed] }) }) }) }));
+  // The sweep's claim, then each side effect's lease.
+  mockApproval.findOneAndUpdate.mockResolvedValue(closed);
+  mockApproval.updateOne.mockResolvedValue({});
+  mockUser.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })) });
+
+  await service.sweepExpiredToolCallApprovals();
+
+  expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+    content: "The credential owner approved grant-broker's github.comment_on_issue · ran",
+  }));
+  expect(JSON.stringify(mockPostMessage.mock.calls)).not.toContain(OWNER);
+  expect(JSON.stringify(mockEnqueue.mock.calls)).toContain('Decided by The credential owner.');
+  expect(JSON.stringify(mockEnqueue.mock.calls)).not.toContain('The workspace owner');
+});
+
 test('an isError result keeps its failed ending and hides vendor content from card and event', async () => {
   const pending = row();
   const resolved = row({ status: 'resolved', decision: 'approved' });

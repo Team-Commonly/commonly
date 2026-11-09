@@ -45,7 +45,7 @@ const { callTool } = require('../../services/toolBrokerService');
 const approvals = require('../../services/approvalActionService');
 const { recordGrantIssued } = require('../../services/brokerRecordService');
 const { flushRecordWrites, humanActor, agentActor } = require('../../services/recordService');
-const { verifyRecord } = require('../../vendor/seats/src/record/format');
+const { verifyRecord, readRecord } = require('../../vendor/seats/src/record/format');
 const { toOtlpJson } = require('../../vendor/seats/src/record/otel');
 const {
   setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb, generateTestToken,
@@ -93,6 +93,7 @@ real('grant and broker lines on real PostgreSQL and MongoDB', () => {
 
   afterEach(async () => {
     await flushAll();
+    await pool.query('DELETE FROM record_openings WHERE chain_id IN (SELECT id FROM record_chains WHERE pod_id = $1)', [String(pod._id)]);
     await pool.query('DELETE FROM record_lines WHERE chain_id IN (SELECT id FROM record_chains WHERE pod_id = $1)', [String(pod._id)]);
     await pool.query('DELETE FROM record_chains WHERE pod_id = $1', [String(pod._id)]);
     delete process.env.RECORD_V1_PODS;
@@ -120,7 +121,7 @@ real('grant and broker lines on real PostgreSQL and MongoDB', () => {
     const res = await request(app).get(`/api/pods/${pod._id}/record`).set('Authorization', `Bearer ${generateTestToken(owner._id)}`);
     expect(res.status).toBe(200);
     expect(verifyRecord(res.text)).toMatchObject({ ok: true });
-    return { text: res.text, lines: res.text ? res.text.trimEnd().split('\n').map((line) => JSON.parse(line)) : [] };
+    return { text: res.text, lines: res.text ? readRecord(res.text) : [] };
   };
   const call = (grant, tool, args) => callTool({ grantId: grant.grantId, agentUserId: String(agent._id), tool, args });
   const kinds = (lines) => lines.map((l) => (l.kind === 'permission.decided' ? `decided:${l.data.approval || l.data.rule.list}` : l.kind));
