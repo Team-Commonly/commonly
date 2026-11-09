@@ -323,13 +323,18 @@ const subpath = (path) => `(subpath "${escapeSbplString(path)}")`;
 // inside a directory of that name: a real project keeps one beside each
 // package, not only at its root (TASK-294). An SBPL regex literal takes no
 // escapes, so a path it cannot hold is refused.
-const envFilesUnder = (workspace) => {
+const regexUnder = (workspace, tail) => {
   if (/["\r\n]/.test(workspace)) {
     throw new Error('Seatbelt workspacePath must not contain a quote or a line break');
   }
   const pattern = workspace.replace(/[\\^$.|?*+()[\]{}]/g, '\\$&');
-  return `(regex #"^${pattern}/(.*/)?\\.env([./].*)?$")`;
+  return `(regex #"^${pattern}/(.*/)?${tail}")`;
 };
+const envFilesUnder = (workspace) => regexUnder(workspace, '\\.env([./].*)?$');
+// Every .npmrc and .yarnrc* (.yarnrc, .yarnrc.yml) under the workspace, at any
+// depth, and everything inside a directory of that name: they hold registry
+// tokens. Opt-in, since a seat that installs packages reads its project's.
+const registryConfigUnder = (workspace) => regexUnder(workspace, '(\\.npmrc|\\.yarnrc[^/]*)(/.*)?$');
 
 const assertAbsolutePath = (path, label) => {
   if (!path || !isAbsolute(path)) {
@@ -459,6 +464,10 @@ export const buildSeatbeltProfile = ({
   // Folders no rule here may let the jail write, however a grant above is
   // shaped: a workspace seat's own record of its folder (F200).
   denyWritePaths = [],
+  // Deny .npmrc and .yarnrc* under the workspace, as .env files are: for a
+  // process that only reads the workspace and installs nothing, such as a
+  // public Codex seat's git tool.
+  denyRegistryConfig = false,
 }) => {
   for (const [path, label] of [
     [workspacePath, 'workspacePath'],
@@ -590,6 +599,7 @@ export const buildSeatbeltProfile = ({
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.commonly'))})`,
     `(deny file-read* file-write* ${subpath(join(resolvedWorkspace, '.codex'))})`,
     `(deny file-read* file-write* ${envFilesUnder(resolvedWorkspace)})`,
+    denyRegistryConfig ? `(deny file-read* file-write* ${registryConfigUnder(resolvedWorkspace)})` : '',
     readOnlyWorkspaceRules,
     // After every allow above, so a workspace that contained one of these
     // folders still could not write it (later rules win).

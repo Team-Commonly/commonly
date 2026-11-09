@@ -86,6 +86,7 @@ describe('the attachment adapters give a seat', () => {
       readOnlyPaths: [WORKSPACE_GIT_PACKAGE_JSON],
       network: 'loopback',
       processInfo: 'self',
+      denyRegistryConfig: true,
     });
   });
 
