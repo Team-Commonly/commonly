@@ -2226,8 +2226,14 @@ describe('claude adapter — a workspace seat\'s git tool', () => {
     fs.symlinkSync(binary, path.join(gitExecDir, 'git'));
     realGit = fs.realpathSync(binary);
     Object.defineProperty(process, 'platform', { value: 'darwin' });
+    // The tool is opt-in; these cases run with it switched on, except where a
+    // case switches it off again.
+    process.env.COMMONLY_WORKSPACE_GIT = '1';
   });
+  const savedGitEnv = process.env.COMMONLY_WORKSPACE_GIT;
   afterEach(() => {
+    if (savedGitEnv === undefined) delete process.env.COMMONLY_WORKSPACE_GIT;
+    else process.env.COMMONLY_WORKSPACE_GIT = savedGitEnv;
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     spawnSync.mockReset();
     jest.restoreAllMocks();
@@ -2297,6 +2303,20 @@ describe('claude adapter — a workspace seat\'s git tool', () => {
     expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
     expect(calls[0].args[1]).not.toContain(fs.realpathSync(path.dirname(serverPath)));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('git was not found'));
+  });
+
+  test.each([undefined, '0', 'true', ''])('switched off (COMMONLY_WORKSPACE_GIT=%p), a workspace seat gets no git tool and hears of none', async (value) => {
+    if (value === undefined) delete process.env.COMMONLY_WORKSPACE_GIT;
+    else process.env.COMMONLY_WORKSPACE_GIT = value;
+    gitOnMachine(gitExecDir);
+    const { impl, calls } = makeSpawnImpl();
+    await seatSpawn(impl, 'workspace');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
+    expect(calls[0].args).not.toContain('mcp__workspace_git__*');
+    expect(calls[0].args[1]).not.toContain(realGit);
+    expect(calls[0].args.join('\n')).not.toContain('read-only git tool');
   });
 });
 

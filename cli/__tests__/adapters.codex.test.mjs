@@ -1985,6 +1985,14 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
 // check which seats get it, and with what.
 describe('the workspace git tool', () => {
   const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+  // The tool is opt-in; these cases run with it switched on, except where a
+  // case switches it off again.
+  const savedGitEnv = process.env.COMMONLY_WORKSPACE_GIT;
+  beforeEach(() => { process.env.COMMONLY_WORKSPACE_GIT = '1'; });
+  afterEach(() => {
+    if (savedGitEnv === undefined) delete process.env.COMMONLY_WORKSPACE_GIT;
+    else process.env.COMMONLY_WORKSPACE_GIT = savedGitEnv;
+  });
 
   const spawnSeat = async ({ sandbox, mcp, server = (root) => ({
     name: 'workspace_git', transport: 'stdio', command: ['/usr/bin/sandbox-exec', '-p', '(profile)', '/node', '/server.js', '--root', root],
@@ -2054,6 +2062,22 @@ describe('the workspace git tool', () => {
 
   test('a private seat runs git itself and gets no tool', async () => {
     const { flags, asked } = await spawnSeat({ sandbox: null });
+    expect(asked).toEqual([]);
+    expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
+  });
+
+  test.each([undefined, '0', 'true', ''])('switched off (COMMONLY_WORKSPACE_GIT=%p), a public seat gets no tool', async (value) => {
+    if (value === undefined) delete process.env.COMMONLY_WORKSPACE_GIT;
+    else process.env.COMMONLY_WORKSPACE_GIT = value;
+    const { flags, asked } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } });
+    expect(asked).toEqual([]);
+    expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
+  });
+
+  test('switched off, a declared workspace_git entry is still dropped, not run bare', async () => {
+    delete process.env.COMMONLY_WORKSPACE_GIT;
+    const declared = { name: 'workspace_git', transport: 'stdio', command: ['/my/node', '/my/server.js'] };
+    const { flags, asked } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, mcp: [declared] });
     expect(asked).toEqual([]);
     expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
   });

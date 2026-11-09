@@ -15,6 +15,12 @@ import { wrapArgvWithSeatbelt } from './sandbox/seatbelt.js';
 // no use for (git-readonly-server.test.mjs checks the two names agree).
 export const WORKSPACE_GIT_SERVER_NAME = 'workspace_git';
 
+// The tool is opt-in: an adapter attaches it only when the environment the
+// daemon itself runs in sets COMMONLY_WORKSPACE_GIT=1. Read from the daemon's
+// own environment, never from a seat's record, so a seat cannot turn it on.
+export const WORKSPACE_GIT_ENV = 'COMMONLY_WORKSPACE_GIT';
+export const workspaceGitEnabled = (env = process.env) => env?.[WORKSPACE_GIT_ENV] === '1';
+
 // The server runs inside the sandbox, so the sandbox must admit its code
 // (cli/src/lib, plus package.json for the module type) and the git binary it runs.
 export const WORKSPACE_GIT_SERVER = fileURLToPath(new URL('./git-readonly-server.js', import.meta.url));
