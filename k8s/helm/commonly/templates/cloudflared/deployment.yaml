@@ -53,6 +53,14 @@ spec:
       tolerations:
         {{- toYaml .Values.cloudflared.tolerations | nindent 8 }}
       {{- end }}
+      # Prefer one tunnel per node, so one drain takes one.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: cloudflared-commonly-k8s
       volumes:
         - name: cloudflared-config
           configMap:
@@ -60,4 +68,19 @@ spec:
         - name: cloudflared-credentials
           secret:
             secretName: {{ .Values.cloudflared.credentialsSecretName }}
+---
+# A drain evicts one tunnel, then waits for its replacement to be Ready before
+# the next, up to GKE's PDB timeout (about 1 h) if no pool=dev node can take it.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloudflared-commonly-k8s
+  namespace: {{ .Values.cloudflared.namespace | default (include "commonly.namespace" .) }}
+  labels:
+    app: cloudflared-commonly-k8s
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: cloudflared-commonly-k8s
 {{- end }}
