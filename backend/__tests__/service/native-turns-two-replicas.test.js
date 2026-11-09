@@ -50,12 +50,17 @@ beforeEach(async () => {
     return success;
   });
 });
-afterEach(() => {
-  // A test that fails part-way must not leave its runners polling into the
-  // next one, renewing a lease that test's runners would then wait out.
-  started.forEach((proc) => proc.stopInProcessQueue());
+afterEach(async () => {
+  // A test that fails part-way must not leave work running into the next one.
+  // A drain closes admission at once (a turn still waiting for its lane goes
+  // back to the queue), waits for running turns, which the interval keeps
+  // releasing, then stops the queue and awaits any renewal in flight. The poll
+  // check covers a pass that had already started. Mocks stay until all of it ends.
+  const release = setInterval(() => turns.forEach((turn) => turn.resolve()), 10);
+  await Promise.allSettled(started.map((proc) => proc.drainInProcess(2000)));
+  await waitFor(() => started.every((proc) => !proc.inProcessQueuePolling));
+  clearInterval(release);
   started = [];
-  turns.forEach((turn) => turn.resolve());
   jest.restoreAllMocks();
 });
 afterAll(closeMongoDb);
@@ -245,6 +250,7 @@ test('a runner that died holding the lease is replaced once it expires', async (
   const dead = runner('dead', short); dead.startInProcessQueue();
   await waitFor(() => holds(dead));
   dead.stopInProcessQueue(); // SIGKILL: no drain, no release
+  await dead.runnerRenewal; // a renewal already sent still lands, and moves the expiry
   const { expiresAt } = await SchedulerHeartbeatLease.findById('native-turn-runner').lean();
   const next = runner('next', short); next.startInProcessQueue();
   const event = await web().enqueue(input);
