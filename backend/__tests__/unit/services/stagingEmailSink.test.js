@@ -36,6 +36,14 @@ describe('stagingEmailSink helpers', () => {
   test('recipient lowercases and unwraps a named address', () => {
     expect(recipient(' Walk1@Seed.Staging.Commonly.me ')).toBe('walk1@seed.staging.commonly.me');
     expect(recipient('Walker <w@x.io>')).toBe('w@x.io');
+    expect(recipient('<>')).toBe('<>');
+  });
+
+  test('recipient stays linear on a long run of < (CodeQL polynomial regex)', () => {
+    const hostile = `${'<'.repeat(200000)}a@b.io`;
+    const started = Date.now();
+    expect(recipient(hostile)).toBe(hostile);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   test('extractLinks finds each link once across text and html', () => {
@@ -146,6 +154,13 @@ describe('stagingEmailSink server', () => {
     expect((await fetch(`${sink.base}/v3/other`)).status).toBe(404);
     const health = await (await fetch(`${sink.base}/healthz`)).json();
     expect(health).toEqual({ ok: true, stored: 0 });
+  });
+
+  test('bounds bodies still arriving: few connections, short deadline', () => {
+    const { server } = createSink({ readToken: TOKEN });
+    expect(server.maxConnections).toBe(32);
+    expect(server.requestTimeout).toBe(15000);
+    expect(server.headersTimeout).toBe(15000);
   });
 
   describe('the backend send lands in the sink', () => {

@@ -11,6 +11,21 @@ in-cluster stand-in for SMTP2GO (`backend/services/stagingEmailSink.ts`). The
 backend and its worker send every mail there: verification, password reset,
 digest and needs-you. Nothing leaves the cluster.
 
+## Turning it on
+
+The read token is synced by its own ExternalSecret from the store key
+`<keyPrefix>email-sink-read-token` (`commonly-staging-email-sink-read-token`
+for staging). Create that key with a random value before enabling the sink,
+or the sink pod waits on a Secret that never arrives:
+
+```bash
+openssl rand -hex 24 | tr -d '\n' | \
+  gcloud secrets create commonly-staging-email-sink-read-token --data-file=- --project="$PROJECT"
+```
+
+Without external secrets, create the `email-sink` Secret (key `read-token`) in
+the release namespace by hand.
+
 ## Walking email sign-up on staging
 
 1. Register at `https://staging.commonly.me` with a fresh address on an allowed
@@ -41,7 +56,8 @@ digest and needs-you. Nothing leaves the cluster.
 - **Reading needs the token**, because the inbox holds verification and reset
   links for every staging account, team members' included. Sending accepts any
   `api_key`, so the sink caps what it keeps: a body over 256 KB is refused with
-  413, and each stored text or HTML part is cut at 64 KB.
+  413, each stored text or HTML part is cut at 64 KB, at most 32 connections
+  are open at once, and a request unfinished after 15 s is dropped.
 - **The chart refuses the sink** when `email.enabled` (real SMTP2GO) is also on,
   and wherever `backend.env.frontendUrl` is `https://commonly.me`, so prod mail
   can never be captured by mistake.

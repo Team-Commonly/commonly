@@ -30,6 +30,10 @@ const MAX_BODY_BYTES = 256_000;
 const MAX_FIELD_CHARS = 64_000;
 const MAX_LINKS = 50;
 const DEFAULT_CAPACITY = 500;
+// Bodies still arriving are held too: at most 32 connections x 256 KB, and a
+// request that has not finished within 15 s is dropped.
+const MAX_CONNECTIONS = 32;
+const REQUEST_TIMEOUT_MS = 15_000;
 const LINK = /https?:\/\/[^\s"'<>)]+/g;
 
 export interface SinkMessage {
@@ -57,10 +61,13 @@ export const tokenMatches = (header: string | undefined, token: string): boolean
 };
 
 // SMTP2GO accepts `Name <a@b>` in `to`; emailService sends bare addresses.
+// indexOf, not a regex: the input is unauthenticated, and `<([^>]+)>` is
+// quadratic on a long run of `<`.
 export const recipient = (entry: unknown): string => {
   const value = String(entry || '').trim().toLowerCase();
-  const named = /<([^>]+)>/.exec(value);
-  return named ? named[1].trim() : value;
+  const open = value.lastIndexOf('<');
+  const close = open < 0 ? -1 : value.indexOf('>', open + 1);
+  return close > open + 1 ? value.slice(open + 1, close).trim() : value;
 };
 
 export const extractLinks = (...bodies: string[]): string[] => [
@@ -174,6 +181,9 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
 
     send(404, { error: 'not_found' });
   });
+  server.maxConnections = MAX_CONNECTIONS;
+  server.requestTimeout = REQUEST_TIMEOUT_MS;
+  server.headersTimeout = REQUEST_TIMEOUT_MS;
 
   return { server, messages };
 };

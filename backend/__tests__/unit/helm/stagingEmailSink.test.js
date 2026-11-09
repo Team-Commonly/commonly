@@ -73,20 +73,34 @@ const smtpEnv = (docs, name) => {
   const stagingValues = ['-f', path.join(chart, 'values-staging.yaml')];
   const devValues = ['-f', path.join(chart, 'values-dev.yaml')];
 
-  test('staging: web and worker mail the sink, which renders with its token Secret', () => {
+  const sinkEnv = {
+    SMTP2GO_API_KEY: 'email-sink',
+    SMTP2GO_FROM_EMAIL: staging.email.sink.fromEmail,
+    SMTP2GO_FROM_NAME: 'Commonly (staging)',
+    SMTP2GO_BASE_URL: 'http://email-sink.commonly-staging.svc.cluster.local/v3',
+  };
+
+  test('staging: web and worker mail the sink; its token comes from the store', () => {
     const docs = docsOf(render(...stagingValues));
     const sink = docs.filter((d) => d.metadata.name === 'email-sink').map((d) => d.kind).sort();
-    expect(sink).toEqual(['Deployment', 'Secret', 'Service']);
-    ['backend', 'backend-worker'].forEach((name) => {
-      expect(smtpEnv(docs, name)).toEqual({
-        SMTP2GO_API_KEY: 'email-sink',
-        SMTP2GO_FROM_EMAIL: staging.email.sink.fromEmail,
-        SMTP2GO_FROM_NAME: 'Commonly (staging)',
-        SMTP2GO_BASE_URL: 'http://email-sink.commonly-staging.svc.cluster.local/v3',
-      });
-    });
-    const secret = docs.find((d) => d.kind === 'Secret' && d.metadata.name === 'email-sink');
-    expect(Buffer.from(secret.data['read-token'], 'base64').length).toBeGreaterThanOrEqual(32);
+    expect(sink).toEqual(['Deployment', 'ExternalSecret', 'Service']);
+    ['backend', 'backend-worker'].forEach((name) => expect(smtpEnv(docs, name)).toEqual(sinkEnv));
+    const es = docs.find((d) => d.kind === 'ExternalSecret' && d.metadata.name === 'email-sink');
+    expect(es.spec.target.name).toBe('email-sink');
+    expect(es.spec.data).toEqual([{
+      secretKey: 'read-token', remoteRef: { key: 'commonly-staging-email-sink-read-token' },
+    }]);
+  });
+
+  // Chart Lint diffs two renders; a token minted in the chart broke that.
+  test('staging renders the same twice', () => {
+    const sinkDocs = () => docsOf(render(...stagingValues)).filter((d) => d.metadata.name === 'email-sink');
+    expect(sinkDocs()).toEqual(sinkDocs());
+  });
+
+  test('ops-runner, where it runs, mails the sink too', () => {
+    const docs = docsOf(render(...stagingValues, '--set', 'opsRunner.enabled=true'));
+    expect(smtpEnv(docs, 'ops-runner')).toEqual(sinkEnv);
   });
 
   test('dev: no sink, SMTP2GO from the secret as before', () => {

@@ -4,7 +4,8 @@ email.sink.enabled the backend, its worker and ops-runner send mail here instead
 of SMTP2GO (backend-deployment.yaml, ops-runner-deployment.yaml), so email
 sign-up works on an instance with no real delivery and nothing leaves the
 cluster. Mail is read back with GET /inbox?to=<address> and the bearer token in
-the email-sink Secret; see docs/runbooks/staging-email-sink.md.
+the email-sink Secret (store key <keyPrefix>email-sink-read-token); see
+docs/runbooks/staging-email-sink.md.
 */ -}}
 {{- if .Values.email.sink.enabled }}
 {{- if .Values.email.enabled }}
@@ -15,21 +16,35 @@ the email-sink Secret; see docs/runbooks/staging-email-sink.md.
 {{- end }}
 {{- $ns := include "commonly.namespace" . -}}
 {{- $sink := .Values.email.sink -}}
-{{- /* Keep the read token across upgrades; mint one on first install. */ -}}
-{{- $token := dig "data" "read-token" "" (lookup "v1" "Secret" $ns "email-sink") -}}
-{{- if not $token }}{{ $token = randAlphaNum 40 | b64enc }}{{ end }}
+{{- if .Values.externalSecrets.enabled }}
+{{- $keyPrefix := .Values.externalSecrets.keyPrefix | default "commonly-dev-" }}
 ---
-apiVersion: v1
-kind: Secret
+# The read token comes from the secret store, like the waker's, so the render
+# stays deterministic and the value never passes through the chart. Its own
+# ExternalSecret, not a key in api-keys: a missing key fails a whole sync. The
+# store key must exist before the sink is enabled. Without external secrets,
+# create the `email-sink` Secret (key `read-token`) by hand.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
 metadata:
   name: email-sink
   namespace: {{ $ns }}
   labels:
     {{- include "commonly.labels" . | nindent 4 }}
     app: email-sink
-type: Opaque
-data:
-  read-token: {{ $token }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.secretStore.name }}
+    kind: SecretStore
+  target:
+    name: email-sink
+    creationPolicy: Owner
+  data:
+    - secretKey: read-token
+      remoteRef:
+        key: {{ $keyPrefix }}email-sink-read-token
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

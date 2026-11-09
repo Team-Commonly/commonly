@@ -542,8 +542,10 @@ email:
   # instance with no real delivery that still has to walk email sign-up
   # (staging). On, the backend and ops-runner send to it instead, nothing leaves
   # the cluster, and mail is read back with GET /inbox?to= plus the bearer token
-  # in the email-sink Secret (docs/runbooks/staging-email-sink.md). The chart
-  # refuses it alongside `enabled`, and where frontendUrl is the public apex.
+  # in the email-sink Secret, synced from the store key
+  # <keyPrefix>email-sink-read-token, which must exist before this is turned on
+  # (docs/runbooks/staging-email-sink.md). The chart refuses it alongside
+  # `enabled`, and where frontendUrl is the public apex.
   sink:
     enabled: false
     # Required when on: the sender address the backend stamps on each mail.
