@@ -3058,6 +3058,15 @@ export const performRun = ({
         throw spawnError;
       }
       spawnDurationMs = Date.now() - spawnStartedAt;
+      // F336: an adapter that saw the turn fail after tool-only output can't
+      // tell whether a tool posted. With no post of its own in the pod, the
+      // failure is thrown here, before the session is kept, exactly as a spawn
+      // failure would be. With one, the turn delivered, and a retry would post twice.
+      if (result?.failure) {
+        const postSpawn = preSpawnIds ? await snapshotMessages() : null;
+        if (!(postSpawn && findOwnPost(postSpawn, preSpawnIds))) throw result.failure;
+        log(`[${event.type}] the turn failed after a post of its own, so it is not retried: ${result.failure.message}`);
+      }
       spawnCompleted = true;
     } finally {
       try {
