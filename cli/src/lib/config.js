@@ -5,7 +5,7 @@
  * Multiple instances supported (default, local, custom).
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -24,9 +24,14 @@ const read = () => {
   }
 };
 
+// The file holds the login's bearer token, so only its owner may read it. The
+// mode on create is subject to the umask, and a file written before this fix is
+// still 0644, so every write ends with chmod. A new directory is made 0700; an
+// existing one is left as it is, because other tools keep files there too.
 const write = (config) => {
-  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+  if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 });
+  chmodSync(CONFIG_FILE, 0o600);
 };
 
 export const getConfig = () => read();

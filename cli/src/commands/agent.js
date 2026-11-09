@@ -18,7 +18,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  */
 
 import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync, chmodSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { fileURLToPath } from 'url';
@@ -169,14 +169,16 @@ const tokensDir = () => join(homedir(), '.commonly', 'tokens');
 const tokenFile = (name) => join(tokensDir(), `${name}.json`);
 
 export const saveAgentToken = (name, record) => {
-  if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true });
-  // mode applies on create only — the record carries a live cm_agent_* secret,
-  // same handling as performInit's .commonly-env.
+  if (!existsSync(tokensDir())) mkdirSync(tokensDir(), { recursive: true, mode: 0o700 });
+  // The record carries a live cm_agent_* secret. The mode applies on create
+  // only and is subject to the umask, so chmod every time: that also tightens
+  // a record an older CLI left 0644.
   writeFileSync(
     tokenFile(name),
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  chmodSync(tokenFile(name), 0o600);
   // After the record is durable, so a failed refresh never loses a freshly minted token.
   try {
     refreshMcpTokenCopy(name, record?.runtimeToken);

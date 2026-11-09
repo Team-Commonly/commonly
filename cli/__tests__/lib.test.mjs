@@ -54,6 +54,15 @@ const { resolveLoginTarget } = await import('../src/commands/login.js');
 // ── config.js tests ───────────────────────────────────────────────────────────
 
 describe('config.js', () => {
+  test('the saved login is readable by its owner only, even when an older file was 0644', () => {
+    if (process.platform === 'win32') return;
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, '{"instances":{},"active":"default"}', { mode: 0o644 });
+    fs.chmodSync(configFile, 0o644);
+    saveInstance({ key: 'default', url: 'https://api.example.test', token: 'cm_secret_value' });
+    expect(fs.statSync(configFile).mode & 0o777).toBe(0o600);
+  });
+
   beforeEach(() => {
     // Remove any leftover config between tests
     if (fs.existsSync(configFile)) fs.unlinkSync(configFile);

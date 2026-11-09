@@ -1031,6 +1031,16 @@ describe('saveAgentToken / loadAgentToken', () => {
     expect(fs.existsSync(file)).toBe(true);
   });
 
+  test('the token record is readable by its owner only, even when an older file was 0644', () => {
+    if (process.platform === 'win32') return;
+    const file = path.join(tokensTmpDir, '.commonly', 'tokens', 'old-seat.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{}', { mode: 0o644 });
+    fs.chmodSync(file, 0o644);
+    saveAgentToken('old-seat', { agentName: 'old-seat', runtimeToken: 'cm_agent_abc' });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+
   test('loadAgentToken returns null when the file does not exist', () => {
     expect(loadAgentToken('never-attached')).toBeNull();
   });
