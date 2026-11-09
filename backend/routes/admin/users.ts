@@ -17,6 +17,8 @@ const Integration = require('../../models/Integration');
 const { HOSTED_MCP_TYPE } = require('../../services/connectionRemovalService');
 const { deleteOpeningsFor } = require('../../repositories/recordChainRepository');
 const AccountDeletion = require('../../models/AccountDeletion');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { cancelSubscriptionForDeletion } = require('../../services/billingService');
 
 const router = express.Router();
 
@@ -407,6 +409,19 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
         { $set: { accountDeletionRequestedAt: claimedAt } },
       );
       if (claimed.matchedCount !== 1) return changed();
+      // Cancel the subscription before the receipt, as self-deletion does. Once the
+      // row is gone nothing links the subscription to anyone, and it keeps
+      // charging. A cancel that fails hands the person back with no receipt.
+      try {
+        await cancelSubscriptionForDeletion(String(target._id), target.billing);
+      } catch (error) {
+        await User.updateOne({ _id: target._id, accountDeletionRequestedAt: claimedAt }, { $unset: { accountDeletionRequestedAt: 1 } });
+        console.warn('[admin] delete refused, subscription not cancelled:', (error as Error).message);
+        return mutationResponse(502, {
+          error: 'Could not cancel this user\'s subscription, so nothing was deleted. Try again shortly.',
+          code: 'BILLING_CANCEL_FAILED',
+        });
+      }
       // The receipt goes before the row, so a crash from here on still reaches the
       // sweep, which also re-clears any id a late line brings back.
       try {

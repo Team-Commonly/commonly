@@ -42,6 +42,12 @@ jest.mock('../../../models/WaitlistRequest', () => ({
 jest.mock('axios', () => ({
   post: jest.fn(),
 }));
+const mockCancel = jest.fn();
+jest.mock('../../../services/billingService', () => {
+  const { cancelSubscriptionForDeletion } = jest.requireActual('../../../services/billingService');
+  const client = () => ({ subscriptions: { cancel: mockCancel } });
+  return { cancelSubscriptionForDeletion: (userId, billing) => cancelSubscriptionForDeletion(userId, billing, client) };
+});
 
 // The delete route reads the person's hosted connections before it removes
 // them (`routes/admin/users.ts`). This suite drives the handlers with every
@@ -199,6 +205,58 @@ describe('admin users routes', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
     expect(AccountDeletion.updateOne).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  describe('a user with a subscription', () => {
+    const target = {
+      _id: '000000000000000000000002', role: 'user', isBot: false,
+      billing: { subscriptionId: 'sub_1', subscriptionStatus: 'active' },
+    };
+    beforeEach(() => {
+      User.findById.mockResolvedValue(target);
+      User.updateOne.mockResolvedValue({ matchedCount: 1 });
+      User.findOneAndDelete.mockResolvedValue(target);
+    });
+
+    it('cancels it after the claim and before the receipt', async () => {
+      mockCancel.mockResolvedValueOnce({ id: 'sub_1', status: 'canceled' });
+      const res = createRes();
+      await getRouteHandler('/:userId', 'delete')({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+
+      expect(mockCancel).toHaveBeenCalledWith('sub_1', {}, expect.objectContaining({
+        idempotencyKey: `account-deletion-${target._id}-sub_1`,
+      }));
+      expect(User.updateOne.mock.invocationCallOrder[0]).toBeLessThan(mockCancel.mock.invocationCallOrder[0]);
+      expect(mockCancel.mock.invocationCallOrder[0]).toBeLessThan(AccountDeletion.updateOne.mock.invocationCallOrder[0]);
+      expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
+
+    it('refuses, writes no receipt and hands the person back when the cancel fails', async () => {
+      mockCancel.mockRejectedValueOnce(new Error('stripe unavailable'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const res = createRes();
+      await getRouteHandler('/:userId', 'delete')({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(502);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'BILLING_CANCEL_FAILED' }));
+      const claimedAt = User.updateOne.mock.calls[0][1].$set.accountDeletionRequestedAt;
+      expect(User.updateOne).toHaveBeenLastCalledWith(
+        { _id: target._id, accountDeletionRequestedAt: claimedAt },
+        { $unset: { accountDeletionRequestedAt: 1 } },
+      );
+      expect(AccountDeletion.updateOne).not.toHaveBeenCalled();
+      expect(User.findOneAndDelete).not.toHaveBeenCalled();
+      expect(deleteOpeningsFor).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('leaves a subscription that is already cancelled alone', async () => {
+      User.findById.mockResolvedValue({ ...target, billing: { subscriptionId: 'sub_1', subscriptionStatus: 'canceled' } });
+      const res = createRes();
+      await getRouteHandler('/:userId', 'delete')({ params: { userId: target._id }, user: { id: 'admin-1' } }, res);
+      expect(mockCancel).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ message: 'User deleted successfully' });
+    });
   });
 
   it('updates a user role', async () => {

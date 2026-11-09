@@ -223,3 +223,26 @@ describe('billingService', () => {
     });
   });
 });
+
+describe('cancelSubscriptionForDeletion', () => {
+  const { cancelSubscriptionForDeletion } = jest.requireActual('../../../services/billingService');
+  const cancel = jest.fn();
+  const client = () => ({ subscriptions: { cancel } });
+  beforeEach(() => cancel.mockReset());
+
+  test('cancels a live subscription with a key tied to the person and the subscription', async () => {
+    await cancelSubscriptionForDeletion('u1', { subscriptionId: 'sub_1', subscriptionStatus: 'active' }, client);
+    expect(cancel).toHaveBeenCalledWith('sub_1', {}, expect.objectContaining({ idempotencyKey: 'account-deletion-u1-sub_1' }));
+  });
+
+  test('does nothing without a live subscription', async () => {
+    await cancelSubscriptionForDeletion('u1', null, client);
+    await cancelSubscriptionForDeletion('u1', { subscriptionId: 'sub_1', subscriptionStatus: 'canceled' }, client);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test('throws when billing is off but a live subscription exists', async () => {
+    await expect(cancelSubscriptionForDeletion('u1', { subscriptionId: 'sub_1', subscriptionStatus: 'active' }, () => null))
+      .rejects.toThrow(/cannot cancel/);
+  });
+});

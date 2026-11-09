@@ -6,7 +6,13 @@ const { setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb, clearPgD
 let mockPg;
 jest.mock('../../config/db-pg', () => ({ pool: { query: (...args) => mockPg.query(...args) } }));
 const mockStripe = { subscriptions: { cancel: jest.fn().mockResolvedValue({ status: 'canceled' }) } };
-jest.mock('../../services/billingService', () => ({ stripe: () => mockStripe }));
+jest.mock('../../services/billingService', () => {
+  const { cancelSubscriptionForDeletion } = jest.requireActual('../../services/billingService');
+  return {
+    stripe: () => mockStripe,
+    cancelSubscriptionForDeletion: (userId, billing) => cancelSubscriptionForDeletion(userId, billing, () => mockStripe),
+  };
+});
 const User = require('../../models/User');
 const File = require('../../models/File');
 const Pod = require('../../models/Pod');
@@ -646,7 +652,10 @@ describe('Self-serve account deletion', () => {
     await deletion(app, issueSessionToken(user)).expect(409);
     expect(adminResult.status).toBe(200);
     expect(await User.findById(user.id)).toBeNull();
-    expect(mockStripe.subscriptions.cancel).not.toHaveBeenCalled();
+    // The admin delete cancels once, before its receipt. The refused
+    // self-deletion never reaches billing.
+    expect(mockStripe.subscriptions.cancel).toHaveBeenCalledTimes(1);
+    expect(mockStripe.subscriptions.cancel).toHaveBeenCalledWith('sub-admin-first', {}, expect.anything());
     // The one receipt is the admin delete's: the refused claim wrote none.
     expect(await AccountDeletion.countDocuments()).toBe(1);
   });

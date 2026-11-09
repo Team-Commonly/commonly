@@ -41,6 +41,28 @@ export const stripe = (): any => {
   return cached;
 };
 
+/**
+ * Cancels a person's subscription before their account is deleted. Both delete
+ * paths call it before writing the receipt, because once the row is gone
+ * nothing on our side links the subscription to anyone and the charges carry
+ * on. Throws when a live subscription can't be cancelled; the caller then
+ * refuses the delete and writes no receipt.
+ */
+export const cancelSubscriptionForDeletion = async (
+  userId: string,
+  billing?: { subscriptionId?: string | null; subscriptionStatus?: string | null } | null,
+  getClient: () => any = stripe,
+): Promise<void> => {
+  if (!billing?.subscriptionId || billing.subscriptionStatus === 'canceled') return;
+  const client = getClient();
+  if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
+  await client.subscriptions.cancel(billing.subscriptionId, {}, {
+    idempotencyKey: `account-deletion-${userId}-${billing.subscriptionId}`,
+    timeout: 30_000,
+    maxNetworkRetries: 0,
+  });
+};
+
 /** Statuses that mean the customer currently has what they paid for. */
 const ENTITLED_STATUSES = new Set(['active', 'trialing']);
 
