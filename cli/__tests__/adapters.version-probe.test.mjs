@@ -158,7 +158,7 @@ describe('goose', () => {
   });
 
   // CodeRabbit on #3430: only the whole version is read. Anything that would admit part of a longer string is unknown.
-  test.each(['rc1', 'x', '.1', '+build', '-'])('a version with %j attached is unknown, not the tested version', async (tail) => {
+  test.each(['rc1', 'x', '.1', '+build', '-', '~rc1'])('a version with %j attached is unknown, not the tested version', async (tail) => {
     const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}${tail}`);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
