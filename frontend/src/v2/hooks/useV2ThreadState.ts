@@ -78,8 +78,14 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   const readPointsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    readPointsRef.current = new Map();
-    setReadPoints(new Map());
+    // Reset without minting a new Map when there is nothing to clear. Every
+    // new identity re-folds the transcript (V2Thread's threadView memo), and a
+    // re-fold in the same commit as a landing reveal makes the landing effect
+    // read the not-yet-opened thread as a history miss and page older history.
+    if (readPointsRef.current.size > 0) {
+      readPointsRef.current = new Map();
+      setReadPoints(new Map());
+    }
     setReady(false);
     if (!podId) {
       setByRoot(new Map());
@@ -97,15 +103,22 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         for (const t of data?.threads || []) next.set(key(t.threadRootId), t);
         setByRoot(next);
         // Server points merge under any this session already moved forward.
+        // Same reason as the reset above: a new Map only when a point moved.
         const points = new Map(readPointsRef.current);
+        let moved = false;
         for (const t of data?.threads || []) {
           const at = t.lastReadAt;
           if (!at || Number.isNaN(Date.parse(at))) continue;
           const known = points.get(key(t.threadRootId));
-          if (!known || Date.parse(at) > Date.parse(known)) points.set(key(t.threadRootId), at);
+          if (!known || Date.parse(at) > Date.parse(known)) {
+            points.set(key(t.threadRootId), at);
+            moved = true;
+          }
         }
-        readPointsRef.current = points;
-        setReadPoints(points);
+        if (moved) {
+          readPointsRef.current = points;
+          setReadPoints(points);
+        }
       })
       .catch(() => {
         // Degrade to "no threads known", which renders every message flat —
