@@ -447,8 +447,13 @@ describe('the public version probe', () => {
     expect(calls).toHaveLength(0);
   });
 
-  test('a version run into letters is unknown, not the tested version', async () => {
-    await writeProbePi({ answer: `${TESTED_PI_VERSIONS[0]}rc1` });
+  // Only the whole version is read: anything that would admit part of a longer string is unknown.
+  test.each([
+    ['letters', (v) => `${v}rc1`], ['a fourth part', (v) => `${v}.1`], ['build metadata', (v) => `${v}+build`],
+    ['a bare hyphen', (v) => `${v}-`], ['a leading v', (v) => `v${v}`], ['a longer version', (v) => `1.${v}`],
+    ['a Debian-style tilde prerelease', (v) => `${v}~rc1`],
+  ])('a version with %s is unknown, not the tested version', async (_label, shape) => {
+    await writeProbePi({ answer: shape(TESTED_PI_VERSIONS[0]) });
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     await expect(pi.spawn('hi', probeCtx({ _spawnImpl: impl }))).rejects.toThrow(/untested pi version unknown/);
     expect(calls).toHaveLength(0);
