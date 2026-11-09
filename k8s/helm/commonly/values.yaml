@@ -530,12 +530,35 @@ discord:
 
 # Email (SMTP2GO) delivery. On (default) the backend reads SMTP2GO_* and the
 # api-keys ExternalSecret references the commonly-dev-SMTP2GO_* keys. Off
-# (staging) renders neither: with SMTP2GO_API_KEY unset the backend auto-verifies
-# new signups (authController hasEmailDeliveryConfig → false) instead of waiting
-# on a verification mail it cannot send. Do NOT substitute placeholder values —
-# a non-empty SMTP2GO_API_KEY flips hasEmailDeliveryConfig true and hangs signup.
+# renders neither, and with SMTP2GO_API_KEY unset (authController
+# hasEmailDeliveryConfig → false) an open instance auto-verifies new signups,
+# while one that limits sign-up (AUTH_ALLOWED_*) refuses email registration with
+# 503 INSTANCE_VERIFICATION_UNAVAILABLE. Do NOT substitute placeholder values:
+# a non-empty SMTP2GO_API_KEY with no provider behind it flips
+# hasEmailDeliveryConfig true and every verification mail fails. Use `sink`.
 email:
   enabled: true
+  # An in-cluster stand-in for SMTP2GO (templates/core/email-sink.yaml) for an
+  # instance with no real delivery that still has to walk email sign-up
+  # (staging). On, the backend and ops-runner send to it instead, nothing leaves
+  # the cluster, and mail is read back with GET /inbox?to= plus the bearer token
+  # in the email-sink Secret, synced from the store key
+  # <keyPrefix>email-sink-read-token, which must exist before this is turned on
+  # (docs/runbooks/staging-email-sink.md). The chart refuses it alongside
+  # `enabled`, and where frontendUrl is the public apex.
+  sink:
+    enabled: false
+    # Required when on: the sender address the backend stamps on each mail.
+    fromEmail: ""
+    port: 8080
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "64Mi"
+      limits:
+        memory: "192Mi"
+    nodeSelector: {}
+    tolerations: []
 
 # Ingress configuration
 ingress:

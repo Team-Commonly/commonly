@@ -40,12 +40,25 @@ externalSecrets:
 discord:
   enabled: false
 
-# No SMTP2GO for staging. api-keys references none of the commonly-staging-SMTP2GO_*
-# keys; with SMTP2GO_API_KEY unset (the backend env refs are optional) the backend
-# auto-verifies new signups rather than waiting on a mail it cannot send. Deliberately
-# NOT placeholder values — a non-empty key would make the backend think email works.
+# No SMTP2GO for staging: api-keys references none of the commonly-staging-SMTP2GO_*
+# keys. Staging limits sign-up to team domains, so with no delivery at all register
+# refused email sign-up (503 INSTANCE_VERIFICATION_UNAVAILABLE) and the email leg of
+# a sign-up walk could not run. The sink takes every mail instead, inside the cluster;
+# read a walker's verification link back per docs/runbooks/staging-email-sink.md.
 email:
   enabled: false
+  sink:
+    enabled: true
+    fromEmail: "noreply@staging.commonly.me"
+    # Same spot lane as the staging backend; a reclamation empties the inbox, which
+    # staging can afford.
+    nodeSelector:
+      workload-tier: spot
+    tolerations:
+      - effect: NoSchedule
+        key: workload-tier
+        operator: Equal
+        value: spot
 
 # Staging renders NO Ingress object. A staging Ingress would be picked up by the
 # single shared ingress-nginx controller and reload prod routing (R1). Staging
