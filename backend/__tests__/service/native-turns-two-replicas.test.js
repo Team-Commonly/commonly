@@ -57,11 +57,14 @@ afterEach(async () => {
   // releasing, then stops the queue and awaits any renewal in flight. The poll
   // check covers a pass that had already started. Mocks stay until all of it ends.
   const release = setInterval(() => turns.forEach((turn) => turn.resolve()), 10);
-  await Promise.allSettled(started.map((proc) => proc.drainInProcess(2000)));
-  await waitFor(() => started.every((proc) => !proc.inProcessQueuePolling));
-  clearInterval(release);
-  started = [];
-  jest.restoreAllMocks();
+  try {
+    await Promise.allSettled(started.map((proc) => proc.drainInProcess(2000)));
+    await waitFor(() => started.every((proc) => !proc.inProcessQueuePolling));
+  } finally {
+    clearInterval(release);
+    started = [];
+    jest.restoreAllMocks();
+  }
 });
 afterAll(closeMongoDb);
 
