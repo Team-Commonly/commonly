@@ -145,3 +145,35 @@ Namespace
 {{- define "commonly.namespace" -}}
 {{- default "commonly" .Values.global.namespace }}
 {{- end }}
+
+{{/*
+The per-component Postgres roles (backend.env.pgAppUser, litellm.pgUser): each
+names a role and the database-credentials key holding its password. Either
+alone points a role at another role's password, and only the ExternalSecret
+can carry a key other than postgres-password. Rendered by
+templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
+*/}}
+{{- define "commonly.pgRoleOverride.checks" -}}
+{{- range list (list .Values.backend.env.pgAppUser .Values.backend.env.pgAppPasswordKey "backend.env.pgAppUser") (list .Values.litellm.pgUser .Values.litellm.pgPasswordKey "litellm.pgUser") }}
+{{- $role := index . 0 }}
+{{- $key := index . 1 }}
+{{- $path := index . 2 }}
+{{- if ne (empty $role) (empty $key) }}
+{{- fail (printf "%s: set the Postgres role and its password key together" $path) }}
+{{- end }}
+{{- /* Postgres truncates a longer name at CREATE ROLE but not at login, so 63 is the limit. */}}
+{{- if and $role (or (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $role)) (hasPrefix "pg_" $role)) }}
+{{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*, at most 63, no pg_ prefix)" $path $role) }}
+{{- end }}
+{{- /* The key is both a Kubernetes Secret key and, with the prefix, a Secret Manager ID: [a-zA-Z0-9_-] and at most 255 together. Templates quote it, so "123" or "true" stays a string. */}}
+{{- if and $key (or (not (regexMatch "^[-_a-zA-Z0-9]+$" (toString $key))) (gt (len (printf "%s%s" ($.Values.externalSecrets.keyPrefix | default "commonly-dev-") (toString $key))) 255)) }}
+{{- fail (printf "%s: %q is not a valid Secret key and Secret Manager ID ([a-zA-Z0-9_-], at most 255 with the store prefix)" $path (toString $key)) }}
+{{- end }}
+{{- if has $key (list "mongo-uri" "mongo-password") }}
+{{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
+{{- end }}
+{{- if and $key (ne $key "postgres-password") (not $.Values.externalSecrets.enabled) }}
+{{- fail (printf "%s: %s needs externalSecrets; the local Secret carries only postgres-password" $path $key) }}
+{{- end }}
+{{- end }}
+{{- end }}

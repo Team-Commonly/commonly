@@ -242,6 +242,14 @@ backend:
     pgPort: "25450"
     pgDatabase: "defaultdb"
     pgUser: "avnadmin"
+    # The Postgres role the backend Deployment connects as, and the
+    # database-credentials key holding its password. Set both or neither; unset,
+    # the backend uses pgUser and postgres-password. ops-runner and the
+    # postgres-backup CronJob always use pgUser. Needs externalSecrets, and the
+    # store key (externalSecrets.keyPrefix + the key) must exist first: one
+    # missing key stops the whole database-credentials sync.
+    pgAppUser: ""
+    pgAppPasswordKey: ""
     pgSslEnabled: "true"
     pgCaCertPath: "/app/certs/ca.pem"
     marketplaceManifestPath: "/app/packages/commonly-marketplace/marketplace.json"
@@ -627,6 +635,12 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # The Postgres role for LiteLLM's own schema, and the database-credentials key
+  # holding its password. Set both or neither; unset, LiteLLM uses
+  # backend.env.pgUser and postgres-password. Same externalSecrets and
+  # store-key-first rule as backend.env.pgAppUser.
+  pgUser: ""
+  pgPasswordKey: ""
   # The LiteLLM model name every agent driver default names (F103): the K8s
   # provisioner's community and dev-agent primaries and its key allowlists (as
   # AGENT_DEFAULT_MODEL on the backend), the global policy's community default,
