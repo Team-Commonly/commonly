@@ -89,6 +89,10 @@ echo -n "your_postgres_password" | gcloud secrets create commonly-dev-mongo-pass
 # admin user: CREATE ROLE commonly_app LOGIN; GRANT CREATE ON SCHEMA public TO
 # commonly_app; CREATE ROLE commonly_litellm LOGIN; CREATE SCHEMA litellm
 # AUTHORIZATION commonly_litellm; then set each password with psql's \password.
+# On a database that already holds Commonly's tables, move their ownership
+# first: each public table and sequence to commonly_app, and the litellm
+# schema and everything in it to commonly_litellm. Boot migrations alter
+# existing tables, which only their owner can do.
 echo -n "your_app_role_password" | gcloud secrets create commonly-dev-postgres-app-password --data-file=-
 echo -n "your_litellm_role_password" | gcloud secrets create commonly-dev-postgres-litellm-password --data-file=-
 # To keep one user instead, set those four values to "" in values-dev.yaml.

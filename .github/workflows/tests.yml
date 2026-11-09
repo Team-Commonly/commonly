@@ -750,14 +750,19 @@ jobs:
           test -n "$(yq -N 'select(.kind == "Deployment" and .metadata.name == "litellm") | .spec.template.metadata.annotations."checksum/config" // ""' /tmp/dev-rendered.yaml)"
           # Nightly DB backups (2026-10-14): both jobs render, run on spot-pool (the only
           # pool with the GKE metadata server, so the only one where backup-sa's
-          # Workload Identity works), and dump the same Postgres the backend uses.
+          # Workload Identity works), and dump the same Postgres database the backend uses.
           test "$(yq -N 'select(.kind == "CronJob" and .metadata.labels.component == "backup") | .metadata.name' /tmp/dev-rendered.yaml | sort | paste -sd, -)" = "mongodb-backup,postgres-backup"
           test "$(yq -N 'select(.kind == "CronJob" and .metadata.labels.component == "backup") | .spec.jobTemplate.spec.template.spec.nodeSelector."workload-tier"' /tmp/dev-rendered.yaml | sort -u)" = "spot"
-          for pair in PG_HOST:PG_HOST PG_PORT:PGPORT PG_USER:PG_USER PG_DATABASE:PG_DATABASE; do
+          for pair in PG_HOST:PG_HOST PG_PORT:PGPORT PG_DATABASE:PG_DATABASE; do
             backend=$(B="${pair%%:*}" yq -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .env[] | select(.name == strenv(B)) | .value' /tmp/dev-rendered.yaml)
             dump=$(D="${pair##*:}" yq -N 'select(.kind == "CronJob" and .metadata.name == "postgres-backup") | .spec.jobTemplate.spec.template.spec.initContainers[0].env[] | select(.name == strenv(D)) | .value' /tmp/dev-rendered.yaml)
             test -n "$backend" && test "$backend" = "$dump"
           done
+          # The dump runs as the admin user ops-runner uses (backend.env.pgUser), which can
+          # read every role's tables, not as the backend's own role.
+          admin=$(yq -N 'select(.kind == "Deployment" and .metadata.name == "ops-runner") | .spec.template.spec.containers[] | select(.name == "ops-runner") | .env[] | select(.name == "PG_USER") | .value' /tmp/dev-rendered.yaml)
+          dump=$(yq -N 'select(.kind == "CronJob" and .metadata.name == "postgres-backup") | .spec.jobTemplate.spec.template.spec.initContainers[0].env[] | select(.name == "PG_USER") | .value' /tmp/dev-rendered.yaml)
+          test -n "$admin" && test "$admin" = "$dump"
           # Stranger journey (2026-10-15): renders, and never retries (a retry would sign
           # up a second account and could hide a flaky step behind a later pass).
           test "$(yq -N 'select(.kind == "CronJob" and .metadata.name == "stranger-journey") | .spec.jobTemplate.spec.backoffLimit' /tmp/dev-rendered.yaml)" = "0"
