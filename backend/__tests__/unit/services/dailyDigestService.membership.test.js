@@ -462,7 +462,7 @@ test('a scheduled run writes nothing until the unique digest index is built', as
   ensure.mockRestore(); spy.mockRestore();
 });
 
-test('a failed index build sends nothing that run, and the next run tries again', async () => {
+test('a failed index build still sends, unkeyed, and the next run builds it again', async () => {
   const member = await person(new Date(Date.now() - 2 * 86400000));
   const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
     board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
@@ -471,9 +471,12 @@ test('a failed index build sends nothing that run, and the next run tries again'
   const at = new Date(digestHourUtc().getTime() + 60000);
   const service = new DailyDigestService();
 
-  await expect(service.generateAllDailyDigests({ at })).rejects.toThrow('mongo unavailable');
-  expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
+  const results = await service.generateAllDailyDigests({ at });
+  expect(results.filter((result) => result.success)).toHaveLength(1);
+  const sent = await Summary.findOne({ type: 'daily-digest', 'metadata.userId': String(member._id) }).lean();
+  expect(sent.metadata.digestKey).toBeUndefined();
   await service.generateAllDailyDigests({ at: new Date(at.getTime() + 60 * 60 * 1000) });
+  expect(ensure).toHaveBeenCalledTimes(2);
   expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
   ensure.mockRestore(); spy.mockRestore();
 });

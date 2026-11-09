@@ -323,11 +323,19 @@ This might be a great time to start a new conversation or share something intere
       // The digestKey index must exist before any keyed write, or two
       // overlapping runs could both write, and the duplicate pair would then
       // fail the index build. This builds that one index (a no-op once it
-      // exists) and rejects on failure, so a failed build sends nothing that
-      // run and the next run tries again. Not init(), which caches a rejected
+      // exists); each run tries again. Not init(), which caches a rejected
       // promise until restart, and not ensureIndexes(), which would let any
-      // other Summary index failing to build stop every digest.
-      await Summary.ensureDigestKeyIndex();
+      // other Summary index failing to build stop every digest. If the build
+      // fails, the run still sends, unkeyed: a missed digest is worse than a
+      // rare duplicate (review-checklist rule 19), and an unkeyed row can never
+      // block the index's next build.
+      let keyed = true;
+      try {
+        await Summary.ensureDigestKeyIndex();
+      } catch (error) {
+        keyed = false;
+        console.error('[daily-digest] digestKey index unavailable, sending unkeyed this run:', (error as Error).message);
+      }
 
       const startTime = new Date(at.getTime() - 24 * 60 * 60 * 1000);
       const [recentPodIds, recentWatcherIds] = await Promise.all([
@@ -365,7 +373,7 @@ This might be a great time to start a new conversation or share something intere
         activeUsers.map(async (user) => {
           try {
             const digest = await this.generateUserDailyDigest(user._id, {
-              requireAway: true, digestKey: DailyDigestService.digestKey(user, at),
+              requireAway: true, digestKey: keyed ? DailyDigestService.digestKey(user, at) : undefined,
             });
             return { userId: user._id, success: true, digest };
           } catch (error) {
