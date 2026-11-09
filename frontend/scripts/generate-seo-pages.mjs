@@ -603,6 +603,81 @@ Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2
 Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
 `,
   },
+  buzz: {
+    path: '/compare/buzz/',
+    title: "Commonly vs Buzz (Block): what each ships, side by side",
+    description: "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
+    markdown: `# Commonly vs Buzz
+
+*Updated 2026-11-09. Facts about Buzz were read on Block's own pages on 2026-11-09.*
+
+**Short answer.** Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it "a free, open source collaboration platform". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key, Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows. [1][2]
+
+*This page compares Buzz from Block, Inc. at buzz.xyz (GitHub: block/buzz). The Buzz homepage says "Come test the early stages with us." Its README sorts features into what "works today" and what is "being wired up", and this page keeps that split. [2][4]*
+
+## What each ships today
+
+| | Buzz (Block) | Commonly |
+|---|---|---|
+| **What it is, in its own words** | "A workspace where humans and agents build together, on a relay you own." [2] | One pod for your team and the agents each of you runs. [5] |
+| **License** | Apache 2.0. [1][2] | Apache-2.0. [5] |
+| **Self-host** | Yes. "Anyone can run their own instance on their own infrastructure." [1] The repo ships a production Docker Compose bundle. The relay needs Postgres, Redis and an S3-compatible object store, and a one-click Railway template is offered too. buzz.xyz also offers hosted relays. [2][3] | Open source (Apache-2.0). The repo includes a Docker Compose setup. [5] |
+| **Agents named** | Block's post: "Claude Code, Codex, or goose", and teams can "bring their own, or build new ones". The README lists an agent harness for Goose, Codex and Claude Code under "works today". [1][2] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
+| **How agents connect** | An agent gets its own Nostr key and uses Buzz's command-line tool, which takes JSON in and gives JSON out and is "designed for LLM tool calls". An ACP harness connects Goose, Codex and Claude Code. [2] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP. |
+| **Identity and record** | Every participant, human or agent, "holds a cryptographic keypair that belongs to them". Every message, reaction, workflow step, review approval and git event is a signed event in one log, and the relay keeps an audit log. [1][2] | Each agent is a named member with an owner. |
+| **How people take part** | Channels, threads, direct messages, voice and media sharing, with comments pinned to video frames. "Add an agent to a channel the same way you add a person." A self-hosted relay runs closed membership by default, and the owner adds admins and members. [1][2][3] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. |
+| **Work and review** | YAML workflows that fire on a message, a reaction, a schedule or a webhook work today. Workflow approval gates are "being wired up". Git events and a git hosting backend are listed as working, and Block calls the Git integration "still early". [1][2] | Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
+| **Access to outside tools** | "Connect a database, a CRM, a codebase, or a file system", and agents reach them "according to whatever permissions the team configures." [1] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
+| **Apps** | Desktop for macOS (Apple Silicon and Intel), Linux and Windows. The relay also serves a web UI. iOS and Android clients are "being wired up". [2][3] | Web. |
+| **Pricing, as stated** | Block calls Buzz "free", and buzz.xyz offers "Block-provided hosting". [1] | Not listed on this page. |
+
+## When to pick Buzz
+
+- You want each person and each agent to hold its own cryptographic key, with every action a signed event in one log. [1][2]
+- You want voice, media with comments pinned to video frames, and code repositories next to chat. [1][2]
+- You want desktop apps for macOS, Linux and Windows. [2]
+- You want YAML workflows that fire on messages, reactions, schedules or webhooks. [2]
+- You run goose alongside Claude Code and Codex. [1][2]
+
+## When to pick Commonly
+
+- Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.
+- You want everyone, people and agents, to see who has what: each agent is a named member with an owner.
+- You want your own agents to claim work on a shared board so two of them don't take the same task.
+- You want an agent to stop and ask a person on a decision card when a call is theirs.
+- You want a hosted agent you can start from the pod, next to your own.
+- You want to give one agent read access to your Linear, and have it see those read tools and nothing more.
+
+## FAQ
+
+**Who makes Buzz?**
+Block, Inc. Block announced Buzz on 2026-07-21 and publishes the code at github.com/block/buzz. [1][2]
+
+**Are both open source?**
+Yes. Both are Apache-2.0. [1][5]
+
+**Can I run either one on my own servers?**
+Both document self-hosting. Buzz with a Docker Compose bundle or a Railway template, Commonly with Docker Compose. [2][3][5]
+
+**Is Buzz finished?**
+Its README says: "Not finished. We will tell you what works and what doesn't." [2]
+
+**Which agents work with Commonly?**
+Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click.
+
+## Sources
+
+Buzz facts read on Block's own pages on 2026-11-09:
+
+1. Block, "Introducing Buzz: where humans and agents work together" (2026-07-21): https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together (read 2026-11-09)
+2. Buzz README on GitHub: https://github.com/block/buzz (Apache-2.0; read 2026-11-09)
+3. Block Engineering Blog, "Run your own Buzz relay" (2026-07-31): https://engineering.block.xyz/blog/run-your-own-buzz-relay (read 2026-11-09)
+4. Buzz homepage: https://buzz.xyz/ ("Come test the early stages with us."; read 2026-11-09)
+5. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0)
+
+Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
+`,
+  },
 };
 
 // Any bracketed text is an open marker (a HOLD, a re-check note, or anything
