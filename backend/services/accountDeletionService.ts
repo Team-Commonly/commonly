@@ -12,7 +12,7 @@ import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
 import { getObjectStore } from './objectStore';
 import { disconnectUserSessionSockets } from './sessionSocketService';
-import { stripe } from './billingService';
+import { cancelSubscriptionForDeletion } from './billingService';
 import { DM_POD_TYPES_GUARD } from './agentIdentityService';
 import { deleteOpeningsFor } from '../repositories/recordChainRepository';
 
@@ -99,15 +99,7 @@ const establishCleanupReceipt = async (user: IUser, releaseOnBillingFailure = tr
         'Your account changed or deletion is already in progress. Try again shortly.');
     }
     try {
-      if (user.billing?.subscriptionId && user.billing.subscriptionStatus !== 'canceled') {
-        const client = stripe();
-        if (!client) throw new Error('Billing is unavailable; account deletion cannot cancel the subscription');
-        await client.subscriptions.cancel(user.billing.subscriptionId, {}, {
-          idempotencyKey: `account-deletion-${userId}-${user.billing.subscriptionId}`,
-          timeout: 30_000,
-          maxNetworkRetries: 0,
-        });
-      }
+      await cancelSubscriptionForDeletion(userId, user.billing);
     } catch (error) {
       // Release only this attempt's claim. Credentials and uploads are intact.
       if (releaseOnBillingFailure) {
