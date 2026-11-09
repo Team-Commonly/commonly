@@ -265,6 +265,36 @@
     ]
   },
   {
+    "displayName": "commonly-dev: the injection-guard would not block",
+    "severity": "CRITICAL",
+    "documentation": {
+      "mimeType": "text/markdown",
+      "content": "LiteLLM's boot check found the injection-guard degraded: a content-filter category did not load, or a known jailbreak line passed. LiteLLM started anyway so model calls keep working, but untrusted pod and page text may now reach models unchecked. The reason is on the litellm log line before the alarm. Runbook: docs/runbooks/alerting.md#injection-guard-degraded"
+    },
+    "combiner": "OR",
+    "conditions": [
+      {
+        "displayName": "the boot check raised injection_guard_degraded",
+        "conditionThreshold": {
+          "filter": "metric.type=\"logging.googleapis.com/user/injection_guard_degraded\" AND resource.type=\"k8s_container\"",
+          "aggregations": [
+            {
+              "alignmentPeriod": "300s",
+              "perSeriesAligner": "ALIGN_SUM",
+              "crossSeriesReducer": "REDUCE_SUM"
+            }
+          ],
+          "comparison": "COMPARISON_GT",
+          "thresholdValue": 0,
+          "duration": "0s",
+          "trigger": {
+            "count": 1
+          }
+        }
+      }
+    ]
+  },
+  {
     "displayName": "commonly-dev: a stranger journey run failed",
     "severity": "WARNING",
     "documentation": {

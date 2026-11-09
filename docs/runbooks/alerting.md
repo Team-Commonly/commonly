@@ -256,6 +256,28 @@ moderation key is real. That guardrail's OpenAI key is still a placeholder,
 so it 401s every call on any model. Production platform calls send
 `injection-guard` only (`LLMSERVICE_GUARDRAILS`).
 
+### Injection guard degraded
+
+The litellm container checks the injection-guard at boot. It builds the guard
+from `/app/config.yaml` with LiteLLM's own loader and needs every
+content-filter category loaded and a known jailbreak line blocked. When that
+fails it logs the reason, then `{"alarm":"injection_guard_degraded",…}`, and
+LiteLLM starts anyway. With one replica and `Recreate` there is no old pod to
+fall back on, so stopping would take every model call down. While this alarm
+holds, untrusted pod and page text can reach models without the jailbreak
+check.
+
+```bash
+kubectl logs -n commonly-dev deploy/litellm -c litellm | grep -B3 injection_guard_degraded
+```
+
+CI runs the same check against the pinned image before merge (chart-lint,
+`scripts/litellm-guard-check.py`), so a count here means the running pod
+differs from what CI checked. That could be a hand-applied ConfigMap, an
+image tag overridden at deploy time, or a mount that failed. Fix the cause and
+roll LiteLLM. If it can't be fixed quickly, the env off-switches in
+`docs/runbooks/litellm-guardrails.md` say which callers send the guard.
+
 ### Stranger journey
 
 `stranger-journey` (CronJob at 02:17 and 14:17 UTC, plus one run after

@@ -12,9 +12,9 @@
  * LITELLM_CONTENT_FILTER_ALLOW_EXTERNAL_PATHS=true, and a refused or missing
  * file only logs a warning and skips the category, so the guard would quietly
  * stop checking jailbreaks. These tests pin all three, the boot check that
- * raises an alarm when the guard would not block, and the CI job that fails a
- * build on the same check (LiteLLM Guard Check). No helm render here, because
- * this jest job has no helm; the CI job renders it.
+ * raises an alarm when the guard would not block, its alert, and the chart-lint
+ * step that fails a build on the same check. No helm render here, because this
+ * jest job has no helm; chart-lint renders it.
  */
 const fs = require('fs');
 const path = require('path');
@@ -110,15 +110,22 @@ describe('LiteLLM jailbreak category override', () => {
     const metrics = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'k8s/monitoring/log-metrics.json'), 'utf8'));
     expect(metrics.find((m) => m.name === 'injection_guard_degraded').filter)
       .toContain('jsonPayload.alarm="injection_guard_degraded"');
+    // An alarm nobody is paged for is the silent failure this replaces.
+    const policies = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'k8s/monitoring/alert-policies.json'), 'utf8'));
+    expect(policies.some((p) => p.conditions.some((c) => (c.conditionThreshold?.filter || '')
+      .includes('logging.googleapis.com/user/injection_guard_degraded')))).toBe(true);
   });
 
-  test('CI runs the same check as a hard stop, against the pinned LiteLLM', () => {
-    const workflow = fs.readFileSync(path.join(REPO_ROOT, '.github/workflows/litellm-guard-check.yml'), 'utf8');
-    expect(workflow).toContain('python3 -I scripts/litellm-guard-check.py');
-    expect(workflow).toContain("['litellm']['image']['tag']");
-    ['k8s/helm/commonly/files/litellm/**', 'k8s/helm/commonly/templates/agents/litellm-deployment.yaml',
-      'k8s/helm/commonly/templates/configmaps/litellm-config.yaml', 'k8s/helm/commonly/values.yaml']
-      .forEach((p) => expect(workflow).toContain(`- '${p}'`));
+  test('the required check runs the same check as a hard stop, against the pinned LiteLLM', () => {
+    // chart-lint is one of the jobs "Test & Coverage" requires, and it runs
+    // on every k8s/ change, so a failure here blocks the merge.
+    const tests = fs.readFileSync(path.join(REPO_ROOT, '.github/workflows/tests.yml'), 'utf8');
+    const rest = tests.slice(tests.indexOf('\n  chart-lint:') + 1);
+    const nextJob = rest.search(/\n {2}[\w-]+:\n/);
+    const lint = nextJob < 0 ? rest : rest.slice(0, nextJob);
+    expect(lint).toContain("tag=$(yq '.litellm.image.tag' k8s/helm/commonly/values.yaml)");
+    expect(lint).toContain('/tmp/litellm-venv/bin/python -I scripts/litellm-guard-check.py');
+    expect(tests).toMatch(/name: Test & Coverage[\s\S]*needs: \[[^\]]*chart-lint/);
     const script = fs.readFileSync(path.join(REPO_ROOT, 'scripts/litellm-guard-check.py'), 'utf8');
     expect(script).toContain('could not find the injection-guard boot check in the litellm args');
   });

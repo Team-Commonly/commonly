@@ -4,7 +4,8 @@
 The litellm container runs the same check at boot, but only logs an alarm when
 it fails, because stopping there would take every model call down with it. This
 runs that exact check, extracted from the rendered Deployment, against the
-LiteLLM version the chart pins, and fails the build instead.
+LiteLLM version the chart pins, and fails the build instead. It runs in the
+chart-lint job, which the required "Test & Coverage" check covers.
 
 It renders the chart, lays out the ConfigMap's files the way the pod mounts
 them, sets the env the litellm container declares with literal values, runs the
@@ -12,6 +13,11 @@ boot check, then sends a few texts through the guard that must pass or block.
 
 Usage: python3 scripts/litellm-guard-check.py   (needs helm and the pinned
 litellm installed in the running interpreter)
+
+Not covered: it builds ContentFilterGuardrail directly, so an error in the
+proxy's own guardrail-config parsing (init_guardrails_v2) is not exercised,
+and it reads the tag in values.yaml, so a deploy that overrides the image tag
+elsewhere is checked against the wrong version.
 """
 import json
 import os
@@ -84,7 +90,8 @@ for text in json.load(sys.stdin):
         guard._filter_single_text(text)
         print(json.dumps([text, 'pass']))
     except Exception as e:
-        print(json.dumps([text, 'block']))
+        detail = str(getattr(e, 'detail', e))
+        print(json.dumps([text, 'block' if 'prompt_injection_jailbreak' in detail else 'error: ' + detail[:200]]))
 '''
     result = subprocess.run([sys.executable, '-I', '-c', probe, app + 'config.yaml'],
                             input=json.dumps(MUST_PASS + MUST_BLOCK), capture_output=True, text=True, env=env)
@@ -93,7 +100,8 @@ for text in json.load(sys.stdin):
         sys.exit('the probe run failed')
     verdicts = dict(json.loads(line) for line in result.stdout.splitlines() if line.startswith('['))
     wrong = [f'{t!r} should pass' for t in MUST_PASS if verdicts.get(t) != 'pass']
-    wrong += [f'{t!r} should block' for t in MUST_BLOCK if verdicts.get(t) != 'block']
+    wrong += [f'{t!r} should be blocked by the jailbreak category, got {verdicts.get(t)!r}'
+              for t in MUST_BLOCK if verdicts.get(t) != 'block']
     if wrong:
         sys.exit('injection-guard probes failed:\n  ' + '\n  '.join(wrong))
     print(f'injection-guard probes: {len(MUST_PASS)} pass, {len(MUST_BLOCK)} block, as expected')
