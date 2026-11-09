@@ -19,9 +19,11 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 
 // One backend process: its own in-process state, as a second pod has its own.
 let replicas = 0;
+let started = [];
 const replica = (overrides = {}) => {
   class Replica extends Service {}
   replicas += 1;
+  started.push(Replica);
   Object.assign(Replica, {
     inProcessDraining: false, inProcessDrain: undefined, inProcessRequeued: 0,
     inProcessWork: new Set(), inProcessRunning: new Map(), inProcessLanes: new Map(), inProcessLaneHolders: new Map(),
@@ -48,7 +50,22 @@ beforeEach(async () => {
     return success;
   });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(async () => {
+  // A test that fails part-way must not leave work running into the next one.
+  // A drain closes admission at once (a turn still waiting for its lane goes
+  // back to the queue), waits for running turns, which the interval keeps
+  // releasing, then stops the queue and awaits any renewal in flight. The poll
+  // check covers a pass that had already started. Mocks stay until all of it ends.
+  const release = setInterval(() => turns.forEach((turn) => turn.resolve()), 10);
+  try {
+    await Promise.allSettled(started.map((proc) => proc.drainInProcess(2000)));
+    await waitFor(() => started.every((proc) => !proc.inProcessQueuePolling));
+  } finally {
+    clearInterval(release);
+    started = [];
+    jest.restoreAllMocks();
+  }
+});
 afterAll(closeMongoDb);
 
 const settle = () => new Promise((done) => { setTimeout(done, 50); });
@@ -236,11 +253,13 @@ test('a runner that died holding the lease is replaced once it expires', async (
   const dead = runner('dead', short); dead.startInProcessQueue();
   await waitFor(() => holds(dead));
   dead.stopInProcessQueue(); // SIGKILL: no drain, no release
+  await dead.runnerRenewal; // a renewal already sent still lands, and moves the expiry
+  const { expiresAt } = await SchedulerHeartbeatLease.findById('native-turn-runner').lean();
   const next = runner('next', short); next.startInProcessQueue();
   const event = await web().enqueue(input);
-  await settle();
-  expect(runAgent).not.toHaveBeenCalled();
   await waitFor(() => runAgent.mock.calls.length === 1, { timeout: 3000 });
+  // Measured against the lease itself, not a fixed wait a slow runner outlasts.
+  expect(startedAt[0]).toBeGreaterThanOrEqual(expiresAt.getTime());
   turns[0].resolve();
   await waitFor(() => next.inProcessWork.size === 0);
   expect((await AgentEvent.findById(event._id)).status).toBe('acked');
