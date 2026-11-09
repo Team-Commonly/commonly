@@ -96,8 +96,11 @@ export const assertSandboxSupported = (environment = {}) => {
   }
 };
 
-// The prerelease suffix is kept, so `1.54.0-rc.1` never reads as the tested 1.54.0.
-const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)?.[1] || null;
+// The version is read whole or not at all. A prerelease is kept (`1.54.0-rc.1` is not the tested 1.54.0), and a
+// version touching a letter, digit, `.`, `+` or `-` on either side (`1.54.0rc1`, `1.54.0.1`, `2.1.54.0`, `v1.54.0`,
+// `1.54.0+build`) reads as unknown, so the public gate never admits part of a longer string.
+const versionOf = (value) => String(value || '').trim()
+  .match(/(?<![\w.+-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)(?![\w.+-])/)?.[1] || null;
 
 /** Goose splits this string itself; reject quotes it cannot represent safely. */
 const gooseWord = (value) => {

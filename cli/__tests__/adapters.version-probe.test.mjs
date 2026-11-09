@@ -137,14 +137,46 @@ describe('goose', () => {
     } finally { warn.mockRestore(); }
   });
 
-  test('a version run into letters is unknown, not the tested version', async () => {
-    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}rc1`);
+  // CodeRabbit on #3430: the public seat refuses a prerelease of its tested version before anything spawns.
+  test('a public seat refuses a prerelease of the tested version and spawns nothing', async () => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    const spawned = jest.fn();
+    const ctx = gooseCtx(binary);
+    const keyFile = join(root, 'goose-provider-key');
+    await writeFile(keyFile, 'upstream-secret', { mode: 0o600 });
+    await expect(goose.spawn('hi', {
+      ...ctx,
+      _spawnImpl: spawned,
+      environment: {
+        model: 'probe-model',
+        provider: { id: 'local', baseURL: 'http://127.0.0.1:9/v1', keyFile },
+        sandbox: { trust: 'public', mode: 'workspace' },
+        mcp: [],
+      },
+    })).rejects.toThrow(`public seats refuse untested version ${TESTED_GOOSE_VERSIONS[0]}-rc.1`);
+    expect(spawned).not.toHaveBeenCalled();
+  });
+
+  // CodeRabbit on #3430: only the whole version is read. Anything that would admit part of a longer string is unknown.
+  test.each(['rc1', 'x', '.1', '+build', '-'])('a version with %j attached is unknown, not the tested version', async (tail) => {
+    const { binary } = await fakeHarness('goose', `goose ${TESTED_GOOSE_VERSIONS[0]}${tail}`);
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('installed unknown differs'));
     } finally { warn.mockRestore(); }
   });
+
+  test.each([['a leading v', (v) => `goose v${v}`], ['a longer version', (v) => `goose 2.${v}`], ['two parts', (v) => `goose ${v.split('.').slice(0, 2).join('.')}`]])(
+    'a version with %s is unknown', async (_label, shape) => {
+      const { binary } = await fakeHarness('goose', shape(TESTED_GOOSE_VERSIONS[0]));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect((await goose.spawn('hi', gooseCtx(binary))).text).toBe('ok');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('installed unknown differs'));
+      } finally { warn.mockRestore(); }
+    },
+  );
 });
 
 describe('a bare binary name', () => {
