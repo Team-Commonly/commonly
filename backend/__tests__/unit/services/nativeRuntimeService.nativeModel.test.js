@@ -301,6 +301,9 @@ describe('a content filter block', () => {
         message: CONTENT_BLOCKED, type: 'invalid_request_error', param: null, code: '400',
       },
     }],
+    // Each alternative on its own, so neither can regress unseen.
+    ['saying only "Content blocked"', { error: { message: 'Content blocked: pii detected (severity: high)' } }],
+    ['saying only "prompt injection"', { error: { message: 'Request refused: possible prompt injection' } }],
   ])('is recorded as a guard block, %s', async (_label, body) => {
     mockAxiosPost.mockResolvedValueOnce({ status: 400, headers: {}, data: body });
     const result = await runAgent(installation(), TRIGGER);
