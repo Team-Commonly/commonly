@@ -74,6 +74,25 @@ describe('reprovision of a refused identity', () => {
     expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
   });
 
+  it('a gateway of its own is the one restarted, and a failed state edit is reported', async () => {
+    cloudRuntimeMayRun.mockResolvedValue(false);
+    const gateway = { _id: 'gw-1', slug: 'team', mode: 'k8s', status: 'active' };
+    // eslint-disable-next-line global-require
+    const Gateway = require('../../../models/Gateway');
+    const spy = jest.spyOn(Gateway, 'findById').mockReturnValue({ lean: async () => gateway });
+    removeOpenClawAccount.mockResolvedValueOnce({ removed: ['scout'], stateError: 'The state file edit failed.' });
+    const installation = { ...install('openclaw'), config: { runtime: { gatewayId: 'gw-1' } } };
+
+    const result = await reprovisionInstallation({ installation });
+
+    expect(removeOpenClawAccount).toHaveBeenCalledWith(expect.objectContaining({ gateway }));
+    expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'scout', { gateway });
+    expect(result).toEqual(expect.objectContaining({
+      removedFromRuntime: true, runtimeGateway: gateway, runtimeRemovalError: 'The state file edit failed.',
+    }));
+    spy.mockRestore();
+  });
+
   it('a bulk run leaves the restart to the end', async () => {
     cloudRuntimeMayRun.mockResolvedValue(false);
     await reprovisionInstallation({ installation: install('openclaw'), skipRuntimeRestart: true });

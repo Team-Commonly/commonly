@@ -105,7 +105,7 @@ const k8s = require('@kubernetes/client-node');
 const {
   restartAgentRuntime, provisionAgentRuntime, buildPvcVirtualKeyReadScript, issueLiteLLMVirtualKey, issueLiteLLMOpenRouterKey,
   readOpenClawIdentityFile, getAgentRuntimeLogs, getAgentSessionSizes,
-  removeIdentityFromOpenClawConfig, removeOpenClawAccount,
+  removeIdentityFromOpenClawConfig, removeOpenClawAccount, clearGatewayUnreadyHold,
 } = require('../../../services/agentProvisionerServiceK8s');
 const { CYCLES_DIRECTIVE_MARKER } = require('../../../routes/registry/presets');
 
@@ -1107,5 +1107,34 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     expect(k8s.__mock.readNamespacedConfigMap.mock.calls[0][0]).toBe('gateway-team-config');
     const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
     expect(calls[calls.length - 1][0]).toBe('gateway-team-config');
+  });
+
+  test('a state edit that did not happen is reported, and a down gateway is waited on once', async () => {
+    clearGatewayUnreadyHold();
+    jest.useFakeTimers();
+    try {
+      k8s.__mock.listNamespacedPod.mockResolvedValue({ body: { items: [] } });
+      k8s.__mock.execCommands.length = 0;
+      const first = removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'cuz' });
+      await jest.advanceTimersByTimeAsync(61000);
+      expect((await first).stateError).toMatch(/not ready/);
+      // The next refused row on the same gateway does not wait again.
+      const listCalls = k8s.__mock.listNamespacedPod.mock.calls.length;
+      expect((await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' })).stateError).toMatch(/not ready/);
+      expect(k8s.__mock.listNamespacedPod.mock.calls.length).toBe(listCalls);
+      expect(k8s.__mock.execCommands).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+      clearGatewayUnreadyHold();
+      k8s.__mock.listNamespacedPod.mockReset();
+      k8s.__mock.listNamespacedPod.mockResolvedValue({
+        body: {
+          items: [{
+            metadata: { name: 'clawdbot-gateway-test-pod' },
+            status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
+          }],
+        },
+      });
+    }
   });
 });

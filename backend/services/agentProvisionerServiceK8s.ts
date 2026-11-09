@@ -2336,6 +2336,13 @@ const removeIdentityFromOpenClawConfig = (config: any, agentName: string, instan
   return removed;
 };
 
+// A gateway whose pod could not be found is not waited on again for a minute.
+// Without this, a bulk run over many refused identities on a gateway that is
+// down would wait the full pod timeout once per row.
+const GATEWAY_UNREADY_HOLD_MS = 60000;
+const gatewayUnreadyUntil = new Map<string, number>();
+const clearGatewayUnreadyHold = () => gatewayUnreadyUntil.clear();
+
 /**
  * Remove an identity from the gateway's config, so the gateway stops running
  * it (its heartbeat included) after the next restart. Both copies are edited:
@@ -2346,17 +2353,31 @@ const removeIdentityFromOpenClawConfig = (config: any, agentName: string, instan
  * to remove: an earlier call may have written the ConfigMap and then failed on
  * the state file, and nothing else would ever take the account out of it. The
  * state edit matches the same identity the ConfigMap removal does.
+ *
+ * A state edit that did not happen is reported as `stateError`, so the caller
+ * can show the identity as not fully removed. The next reprovision retries it.
  */
 const removeOpenClawAccount = async ({
   agentName, instanceId, configMapName, gateway,
-}: any): Promise<{ removed: string[] }> => {
+}: any): Promise<{ removed: string[]; stateError?: string }> => {
   const configKey = 'moltbot.json';
   const resolvedConfigMap = configMapName || resolveGatewayConfigMapName(gateway);
   const config = await readConfigMap(resolvedConfigMap, configKey);
   const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
   if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
+  const gatewayKey = String(gateway?.slug || gateway?._id || 'default');
+  if ((gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
+    return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };
+  }
+  let podName: string;
   try {
-    const podName = await resolveGatewayPodNameWithRetry(gateway);
+    podName = await resolveGatewayPodNameWithRetry(gateway);
+  } catch (error) {
+    gatewayUnreadyUntil.set(gatewayKey, Date.now() + GATEWAY_UNREADY_HOLD_MS);
+    console.warn('[k8s-provisioner] state removal skipped, gateway pod not ready:', (error as Error).message);
+    return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };
+  }
+  try {
     const target = JSON.stringify(JSON.stringify({
       agentName: String(agentName || '').trim().toLowerCase(),
       instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
@@ -2385,6 +2406,7 @@ const removeOpenClawAccount = async ({
     // The ConfigMap write stands. The state file is retried on the next
     // reprovision, since this edit runs on every call for a refused identity.
     console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
+    return { removed, stateError: 'The state file edit failed; it is retried on the next reprovision.' };
   }
   return { removed };
 };
@@ -3681,6 +3703,7 @@ module.exports = {
   buildPvcVirtualKeyReadScript,
   removeIdentityFromOpenClawConfig,
   removeOpenClawAccount,
+  clearGatewayUnreadyHold,
   // Test seams: the dev and community issuers, so a test can assert what each sends to LiteLLM.
   issueLiteLLMVirtualKey,
   issueLiteLLMOpenRouterKey,

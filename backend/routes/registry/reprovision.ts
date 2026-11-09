@@ -95,7 +95,7 @@ const reprovisionInstallation = async ({
     const gatewayEarly = configuredGatewayIdEarly
       ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayIdEarly })
       : null;
-    const { removed } = await removeOpenClawAccount({
+    const { removed, stateError } = await removeOpenClawAccount({
       agentName: name, instanceId: normalizedInstanceId, gateway: gatewayEarly,
     });
     // A bulk run restarts the gateway once at the end; a single one restarts here.
@@ -104,7 +104,14 @@ const reprovisionInstallation = async ({
         console.warn('[reprovision] gateway restart after removal failed:', error.message);
       });
     }
-    return { ...skipped('cloud_agents_not_entitled'), removedFromRuntime: removed.length > 0 };
+    // The gateway goes back to a bulk run so it restarts the right one; the
+    // bulk route keeps it out of its response.
+    return {
+      ...skipped('cloud_agents_not_entitled'),
+      removedFromRuntime: removed.length > 0,
+      runtimeGateway: gatewayEarly,
+      ...(stateError ? { runtimeRemovalError: stateError } : {}),
+    };
   }
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(name, {

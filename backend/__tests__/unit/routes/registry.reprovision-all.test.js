@@ -54,4 +54,42 @@ describe('POST /admin/installations/reprovision-all', () => {
     expect(res.body).toMatchObject({ succeeded: 2, skipped: 0 });
     expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
   });
+
+  it('a run that only removed refused accounts restarts the gateway once', async () => {
+    reprovisionInstallation.mockResolvedValue({
+      installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
+      skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: null,
+    });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(res.body).toMatchObject({ success: true, skipped: 2, failed: 0 });
+    expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'default', {});
+  });
+
+  it('a removal on a gateway of its own restarts that gateway, and a failed state edit reads as failed', async () => {
+    const gateway = { _id: 'gw-1', slug: 'team' };
+    reprovisionInstallation
+      .mockResolvedValueOnce({
+        installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
+        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+        runtimeRemovalError: 'The state file edit failed.',
+      })
+      .mockResolvedValueOnce({
+        installationId: 'b', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
+        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+      });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'default', { gateway });
+    expect(res.body).toMatchObject({
+      success: false, attempted: 2, succeeded: 0, failed: 1, skipped: 1,
+    });
+    expect(res.body.items[0]).toMatchObject({ success: false, error: 'The state file edit failed.' });
+    // The gateway record stays out of the response.
+    expect(res.body.items[0].runtimeGateway).toBeUndefined();
+  });
 });
