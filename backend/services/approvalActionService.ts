@@ -1442,7 +1442,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     const username = approverName || 'The workspace owner';
     await finishToolCallClosureOrLeaveForRetry(transitioned, decision, {
       approver: { userId: String(callerUserId), username },
-      receiptName: approverName || String(callerUserId),
+      receiptName: approverName || RECEIPT_FALLBACK_NAME,
     });
     return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
   }
@@ -1600,6 +1600,12 @@ const sendUnderLease = async (
 type ToolCallClosure = 'expired' | 'approved' | 'declined';
 /** What the deciding request already knows; a retry reads it back from the row. */
 type LiveDecider = { approver: { userId: string; username: string }; receiptName: string };
+/**
+ * Who the room receipt names when the decider has no usable name. Only a
+ * parked call gets a receipt, and only its credential owner can decide one
+ * (resolveApproval). Never the raw id: the receipt is chat text.
+ */
+const RECEIPT_FALLBACK_NAME = 'The credential owner';
 
 /** The person who decided, for a retry that has no request to read them from. */
 export const deciderOf = async (row: Pick<IApprovalAction, 'resolvedBy'>): Promise<LiveDecider> => {
@@ -1608,8 +1614,7 @@ export const deciderOf = async (row: Pick<IApprovalAction, 'resolvedBy'>): Promi
   const name = user?.displayName?.trim() || user?.username?.trim();
   return {
     approver: { userId: String(row.resolvedBy), username: name || 'The workspace owner' },
-    // Never the raw id: this goes into chat text.
-    receiptName: name || 'The workspace owner',
+    receiptName: name || RECEIPT_FALLBACK_NAME,
   };
 };
 
