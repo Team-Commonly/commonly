@@ -1087,7 +1087,25 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
       body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
     });
+    k8s.__mock.execCommands.length = 0;
     expect((await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' })).removed).toEqual([]);
     expect(k8s.__mock.replaceNamespacedConfigMap).not.toHaveBeenCalled();
+    // The state file is still edited: an earlier call may have written the
+    // ConfigMap and failed on the state file, and this is its only retry.
+    expect(k8s.__mock.execCommands.join('\n')).toContain('/state/moltbot.json');
+  });
+
+  test("a gateway with its own ConfigMap has the identity removed from that one", async () => {
+    k8s.__mock.readNamespacedConfigMap.mockClear();
+    k8s.__mock.replaceNamespacedConfigMap.mockClear();
+    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+    });
+    await removeOpenClawAccount({
+      agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
+    });
+    expect(k8s.__mock.readNamespacedConfigMap.mock.calls[0][0]).toBe('gateway-team-config');
+    const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
+    expect(calls[calls.length - 1][0]).toBe('gateway-team-config');
   });
 });

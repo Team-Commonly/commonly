@@ -2338,30 +2338,41 @@ const removeIdentityFromOpenClawConfig = (config: any, agentName: string, instan
 
 /**
  * Remove an identity from the gateway's config, so the gateway stops running
- * it (its heartbeat included) after the next restart. The ConfigMap is the
- * source; the gateway's own state copy is edited too, best effort, the way
- * syncAccountToStateMoltbot writes it.
+ * it (its heartbeat included) after the next restart. Both copies are edited:
+ * the gateway's ConfigMap (the one provisioning writes for this gateway), and
+ * its own state file, which is what the gateway actually reads at start.
+ *
+ * The state edit runs on every call, even when the ConfigMap had nothing left
+ * to remove: an earlier call may have written the ConfigMap and then failed on
+ * the state file, and nothing else would ever take the account out of it. The
+ * state edit matches the same identity the ConfigMap removal does.
  */
 const removeOpenClawAccount = async ({
-  agentName, instanceId, configMapName = 'clawdbot-config', gateway,
+  agentName, instanceId, configMapName, gateway,
 }: any): Promise<{ removed: string[] }> => {
   const configKey = 'moltbot.json';
-  const config = await readConfigMap(configMapName, configKey);
+  const resolvedConfigMap = configMapName || resolveGatewayConfigMapName(gateway);
+  const config = await readConfigMap(resolvedConfigMap, configKey);
   const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
-  if (!removed.length) return { removed };
-  await writeConfigMap(configMapName, configKey, config);
+  if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
   try {
     const podName = await resolveGatewayPodNameWithRetry(gateway);
-    const ids = JSON.stringify(JSON.stringify(removed));
+    const target = JSON.stringify(JSON.stringify({
+      agentName: String(agentName || '').trim().toLowerCase(),
+      instanceId: String(instanceId || 'default').trim().toLowerCase() || 'default',
+    }));
     const script = [
       'set -eu',
       'STATE=/state/moltbot.json',
       'if [ ! -f "$STATE" ]; then exit 0; fi',
       `python3 - <<'PYEOF'`,
-      'import json',
+      'import json, sys',
       'with open("/state/moltbot.json") as f: d = json.load(f)',
-      `ids = set(json.loads(${ids}))`,
+      `t = json.loads(${target})`,
+      'norm = lambda v, f: (str(v).strip().lower() if v is not None else "") or f',
       'accts = d.get("channels", {}).get("commonly", {}).get("accounts", {})',
+      'ids = set(k for k, e in accts.items() if isinstance(e, dict) and norm(e.get("agentName"), "") == t["agentName"] and norm(e.get("instanceId"), "default") == t["instanceId"])',
+      'if not ids: sys.exit(0)',
       'for i in ids: accts.pop(i, None)',
       'if isinstance(d.get("agents", {}).get("list"), list): d["agents"]["list"] = [a for a in d["agents"]["list"] if a.get("id") not in ids]',
       'if isinstance(d.get("bindings"), list): d["bindings"] = [b for b in d["bindings"] if b.get("match", {}).get("accountId") not in ids]',
@@ -2371,7 +2382,8 @@ const removeOpenClawAccount = async ({
     ].join('\n');
     await execInPod({ podName, containerName: 'clawdbot-gateway', command: ['sh', '-lc', script] });
   } catch (error) {
-    // The ConfigMap write stands; the gateway re-seeds state from it on restart.
+    // The ConfigMap write stands. The state file is retried on the next
+    // reprovision, since this edit runs on every call for a refused identity.
     console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
   }
   return { removed };
