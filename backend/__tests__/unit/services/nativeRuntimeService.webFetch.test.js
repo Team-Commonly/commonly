@@ -209,6 +209,29 @@ describe('native turn with commonly_fetch_url', () => {
     expect(offeredIn(1)).toContain('computer_click');
   });
 
+  test('after a computer read, the refusal names the computer read and points at clicking', async () => {
+    const installation = {
+      ...install({ tools: ['computer_snapshot', 'computer_navigate', 'computer_click', 'commonly_run_code'] }),
+      _id: '507f1f77bcf86cd7994390cc',
+      installedBy: SAM_ID,
+    };
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'computer_snapshot', {})))
+      .mockResolvedValueOnce(toolCalls(
+        call('c2', 'computer_navigate', { url: 'https://www.linkedin.com/in/b' }),
+        call('c3', 'commonly_run_code', { code: 'print(1)' }),
+      ))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(installation, mention());
+
+    expect(mockComputerNavigate).not.toHaveBeenCalled();
+    const [navigate, code] = toolMessages(2).slice(-2);
+    expect(navigate.content).toMatch(/computer_navigate is unavailable for the rest of this turn because a page read with the computer is in it\. To go on, click a link/);
+    expect(code.content).toMatch(/commonly_run_code is unavailable for the rest of this turn because a page read with the computer is in it/);
+    expect(`${navigate.content}${code.content}`).not.toMatch(/web results/);
+  });
+
   test('opens a link from the mention, marked untrusted; the run keeps the address and size only', async () => {
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_fetch_url', { url: REPO })))
