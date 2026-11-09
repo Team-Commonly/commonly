@@ -857,6 +857,7 @@ const findOwnPost = (messages, earlierIds) => {
         author: m.username || 'unknown',
         basis: serverKnowsSelf ? 'self' : 'legacy-any-bot',
         threadRootId: m.thread_root_id ?? null,
+        content: typeof m.content === 'string' ? m.content : '',
       };
     }
   }
@@ -1840,6 +1841,28 @@ const FINAL_TEXT_ANSWERS_A_PERSON = 'Your final text is posted to the pod unless
   + 'Use NO_REPLY alone only after you posted your answer through a tool, with no summary. '
   + FAILURE_IN_PLAIN_WORDS;
 
+// F335: a turn that posted through a tool and then failed is retried with the
+// same prompt, often in a fresh session, so nothing tells the retry its answer
+// is already up. It names that post, so the retry adds what's missing or stays
+// silent instead of answering the person a second time. A batch's attempt can't
+// say which item its post answered, so in a batch the line says so.
+const EARLIER_ATTEMPT_EXCERPT = 300;
+export const earlierAttemptPosted = (part, { batch = false } = {}) => {
+  const text = String(part?.content || '').replace(/\s+/g, ' ').trim();
+  const cut = text.length > EARLIER_ATTEMPT_EXCERPT;
+  const excerpt = cut ? `${text.slice(0, EARLIER_ATTEMPT_EXCERPT)}…` : text;
+  return `[An earlier attempt at ${batch ? 'this batch' : 'this item'} failed after it posted in this pod (message ${part.id})`
+    + `${excerpt ? `, beginning ${JSON.stringify(excerpt)}` : ''}. That post is already there: don't post it again. `
+    + (batch ? 'It may answer this item or another one here. ' : '')
+    + (cut ? 'Read that message in full before you decide. ' : '')
+    + 'Add only what this item still lacks, then checkpoint. '
+    + (batch
+      ? 'If it already answers this item, checkpoint this item and go on to the others here; '
+        + 'end with NO_REPLY only once every item is handled.]'
+      : 'If it already answers this item, checkpoint it and end with NO_REPLY. '
+        + 'An acknowledgement such as "on it" does not answer it.]');
+};
+
 export const answersAPerson = (entry) => (
   entry?.trigger === 'human' && ADDRESSED_EVENT_TYPES.has(entry.event?.type) && !entry.peerFrame
   && !entry.event.payload?.adjacentReply && !entry.event.payload?.welcomeWake
@@ -2559,12 +2582,17 @@ export const performRun = ({
       }
     }
 
+    // A private item (an agent.ask.response turn may post a pod update) is
+    // retried here, not in a batch, so it hears what its attempt posted here
+    // too. A comment is answered in its thread, so it is not.
+    const earlierPart = isCommentWake(event) ? null : heldRetryParts.get(String(event._id));
+    const earlierLine = earlierPart ? `\n\n${earlierAttemptPosted(earlierPart)}` : '';
     let turnResult;
     try {
       turnResult = await runTurn({
         event,
         eventPodId,
-        prompt: peerFrame ? `${peerFrame}\n\n${prompt}` : prompt,
+        prompt: `${peerFrame ? `${peerFrame}\n\n` : ''}${prompt}${earlierLine}`,
         preSpawnIds,
         snapshotMessages,
         claimKeeper,
@@ -2700,7 +2728,10 @@ export const performRun = ({
     if (!failedTurn?.preSpawnIds || wrapperSpokeInTurn) return;
     const tail = await failedTurn.snapshotMessages(50);
     const ownPost = tail && newestOwnPostSince(tail, failedTurn.preSpawnIds);
-    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), ownPost));
+    // `solo`: the attempt carried only this item, so its post can only be this
+    // item's. A batch's post may answer any item in it.
+    const solo = failedEvents.length === 1;
+    if (ownPost) failedEvents.forEach((event) => heldRetryParts.set(String(event._id), { ...ownPost, solo }));
   };
 
   const noticeCutOff = async (lostEvents, { released = [], part = null } = {}) => {
@@ -3417,13 +3448,20 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
+      // A peer's item is read-only, and a comment is answered in its thread, not
+      // by a pod post: neither is told to stop at what the attempt posted.
+      const earlierPart = entry.readOnly || isCommentWake(entry.event)
+        ? null : heldRetryParts.get(String(entry.event._id));
+      const earlierLine = earlierPart
+        ? `\n${earlierAttemptPosted(earlierPart, { batch: shownEntries.length > 1 })}`
+        : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
         ? `\n[After ${answersAPerson(entry) ? 'all of your answer is posted through a tool' : 'completed tool-side work or intentional NO_REPLY'} for only this item, call commonly_checkpoint_event(${JSON.stringify({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
-      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${checkpoint}`;
+      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${earlierLine}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestEvents = digestEntries.map((entry) => entry.event);
@@ -4175,6 +4213,15 @@ export const performRun = ({
           // An item left without a result (a failure during isolation)
           // releases with no outcome, for redelivery, as a thrown turn does.
           const release = claimReleaseFor(entry.event, entry.result || turnResult);
+          // A retry that chose NO_REPLY because its single-item attempt already
+          // posted the answer answered the person, so it closes, never handed
+          // to another listener. A retry that printed nothing chose nothing,
+          // and a batch's post may be another item's: both still decline, so a
+          // batch whose post answered every item can be handed on (a known
+          // limit; telling which item a post answered needs a signal we lack).
+          if (release.outcome === 'declined' && actionEntries.length === 1
+            && (entry.result || turnResult)?.reason !== EMPTY_OUTPUT
+            && heldRetryParts.get(String(entry.event._id))?.solo) release.outcome = 'completed';
           await entry.claimKeeper.release(release.outcome, {
             reason: release.reason, status: release.status,
           });
@@ -4563,6 +4610,10 @@ export const performRun = ({
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
+              // Only this event's own turn: a throw before its spawn leaves an
+              // earlier turn's arguments, possibly another pod's, in failedTurn.
+              // eslint-disable-next-line no-await-in-loop
+              if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
