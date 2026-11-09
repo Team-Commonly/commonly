@@ -309,6 +309,44 @@ describe('read-only git keeps .npmrc, .yarnrc, .commonly and .codex out of reach
   });
 });
 
+// A blob has no name of its own: git prints one given by id whatever path it
+// was committed at. Ids show up in diff headers and can be computed from a
+// guessed content, so `show` takes a blob only as <rev>:<path>.
+describe('read-only git shows a blob only through a path it can check', () => {
+  const SECRET = 'BLOB_BY_ID_SECRET';
+  const run = (args) => runReadonlyGit({
+    subcommand: 'show', args, root: repo, git: GIT,
+  });
+  let blob;
+
+  beforeAll(async () => {
+    writeFileSync(join(repo, '.env.blobtest'), `KEY=${SECRET}\n`);
+    await bareGit(['add', '-f', '.env.blobtest']);
+    await bareGit(['commit', '-q', '-m', 'commit a protected file for the blob test']);
+    blob = (await bareGit(['rev-parse', 'HEAD:.env.blobtest'])).stdout.trim();
+    await bareGit(['tag', '-a', '-m', 'points at a blob', 'blob-tag', blob]);
+  });
+
+  test('a blob id, an abbreviated one, a peeled one and a tag pointing at one are refused (control: bare show prints it)', async () => {
+    expect((await bareGit(['show', blob])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', 'blob-tag'])).stdout).toContain(SECRET);
+    for (const args of [[blob], [blob.slice(0, 10)], [`${blob}^{}`], ['blob-tag'], ['HEAD', blob], ['--stat', blob, '--']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+      expect(out.text).not.toContain(SECRET);
+    }
+  });
+
+  test('commits, trees, paths and ranges still show', async () => {
+    for (const args of [['HEAD'], ['HEAD^{tree}'], ['HEAD:tracked.txt'], ['HEAD~1..HEAD', '--stat'], ['--', 'tracked.txt']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+    }
+  });
+});
+
 // A committed .env sits in git's objects, where the sandbox's deny on the file
 // does not reach. Each control reads it with bare git; the guarded call does not.
 describe('read-only git keeps committed .env files out of reach', () => {

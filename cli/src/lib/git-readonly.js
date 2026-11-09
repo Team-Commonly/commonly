@@ -56,8 +56,10 @@
  *    file each one changed. A line range (log and show `-L<range>:<file>`)
  *    takes no pathspec, so it is taken only as the first argument, in one
  *    piece, where git cannot read it as another option's value, and its file
- *    is name-checked. What this cannot stop is `show <blob id>` with an id
- *    learned somewhere else.
+ *    is name-checked. A blob has no name of its own, so `show` refuses any
+ *    revision that names a blob (or a tag that peels to one) other than as
+ *    `<rev>:<path>`, whose path is name-checked: git is asked each one's type
+ *    before the call runs (blobNamedById).
  */
 import { execFile } from 'child_process';
 import { realpathSync } from 'fs';
@@ -320,6 +322,49 @@ export const readonlyGitEnv = ({ root, baseEnv = process.env }) => {
   };
 };
 
+const execGit = (git, argv, { root, baseEnv, timeoutMs }) => new Promise((done) => {
+  execFile(git, argv, {
+    cwd: root,
+    env: readonlyGitEnv({ root, baseEnv }),
+    timeout: timeoutMs,
+    maxBuffer: MAX_BUFFER_BYTES,
+    encoding: 'utf8',
+    windowsHide: true,
+  }, (error, stdout, stderr) => done({ error, stdout: String(stdout || ''), stderr: String(stderr || '') }));
+});
+
+// The arguments `show` would read as revisions: before `--`, not an option.
+// One with a `:` names its path, which readonlyGitArgv has name-checked.
+const unnamedRevisions = (args) => {
+  const revisions = [];
+  for (const arg of args) {
+    if (arg === '--') break;
+    if (!arg.startsWith('-') && !arg.includes(':')) revisions.push(arg);
+  }
+  return revisions;
+};
+
+/**
+ * The first of `show`'s revisions that is a blob, or a tag that peels to one,
+ * or null. git prints a blob given by id whatever path it was committed at, so
+ * a blob is only shown through `<rev>:<path>`. An argument git can't resolve
+ * to one object (a range, a typo) is left to `show` itself, which shows no
+ * blob for it.
+ */
+export const blobNamedById = async ({
+  args, root, git = 'git', baseEnv = process.env, timeoutMs = DEFAULT_TIMEOUT_MS,
+}) => {
+  for (const revision of unnamedRevisions(args)) {
+    const { error, stdout } = await execGit(
+      git,
+      [...TOP_LEVEL, 'cat-file', '-t', '--end-of-options', `${revision}^{}`],
+      { root, baseEnv, timeoutMs },
+    );
+    if (!error && stdout.trim() === 'blob') return revision;
+  }
+  return null;
+};
+
 const truncate = (text) => (text.length <= MAX_OUTPUT_CHARS
   ? text
   : `${text.slice(0, MAX_OUTPUT_CHARS)}\n[output truncated at ${MAX_OUTPUT_CHARS} characters; narrow it with -n, a path, or a revision range]`);
@@ -328,32 +373,29 @@ const truncate = (text) => (text.length <= MAX_OUTPUT_CHARS
  * Run one read-only git call in `root`. Resolves `{ ok, text }`; never rejects.
  * `git` is the binary to run (the adapter resolves it outside the sandbox).
  */
-export const runReadonlyGit = ({
+export const runReadonlyGit = async ({
   subcommand, args, root, git = 'git', baseEnv = process.env, timeoutMs = DEFAULT_TIMEOUT_MS,
-}) => new Promise((done) => {
+}) => {
   const checked = readonlyGitArgv({ subcommand, args, root });
-  if (!checked.ok) {
-    done({ ok: false, text: checked.reason });
-    return;
-  }
-  execFile(git, checked.argv, {
-    cwd: root,
-    env: readonlyGitEnv({ root, baseEnv }),
-    timeout: timeoutMs,
-    maxBuffer: MAX_BUFFER_BYTES,
-    encoding: 'utf8',
-    windowsHide: true,
-  }, (error, stdout, stderr) => {
-    const out = String(stdout || '');
-    if (!error) {
-      done({ ok: true, text: truncate(out || '(no output)') });
-      return;
+  if (!checked.ok) return { ok: false, text: checked.reason };
+  if (subcommand === 'show') {
+    const blob = await blobNamedById({
+      args, root, git, baseEnv, timeoutMs,
+    });
+    if (blob) {
+      return {
+        ok: false,
+        text: `${blob} is refused: it is a blob, and a blob is shown only as <rev>:<path>, so the file it came from can be checked`,
+      };
     }
-    const detail = String(stderr || '').trim() || error.message;
-    done({ ok: false, text: truncate([out.trim(), detail].filter(Boolean).join('\n')) });
-  });
-});
+  }
+  const { error, stdout: out, stderr } = await execGit(git, checked.argv, { root, baseEnv, timeoutMs });
+  if (!error) return { ok: true, text: truncate(out || '(no output)') };
+  const detail = stderr.trim() || error.message;
+  return { ok: false, text: truncate([out.trim(), detail].filter(Boolean).join('\n')) };
+};
 
 export default {
-  READONLY_GIT_SUBCOMMANDS, DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS, readonlyGitArgv, readonlyGitEnv, runReadonlyGit,
+  READONLY_GIT_SUBCOMMANDS, DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS, blobNamedById, readonlyGitArgv, readonlyGitEnv,
+  runReadonlyGit,
 };
