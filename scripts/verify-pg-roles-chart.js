@@ -82,6 +82,10 @@ for (const lane of Object.keys(lanes)) {
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=mongo-password']), `${lane} ${on}: a litellm role on mongo-password renders`);
     expect(refuses(lane, [on, 'litellm.pgUser=svc:prod', 'litellm.pgPasswordKey=postgres-litellm-password']), `${lane} ${on}: a litellm role that isn't a plain name renders`);
     expect(refuses(lane, [on, 'backend.env.pgAppUser=App-Role', 'backend.env.pgAppPasswordKey=postgres-app-password']), `${lane} ${on}: a backend role that isn't a plain name renders`);
+    expect(refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(64)}`, 'backend.env.pgAppPasswordKey=postgres-app-password']), `${lane} ${on}: a 64-byte backend role renders`);
+    expect(!refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(63)}`, 'backend.env.pgAppPasswordKey=postgres-app-password']) || !esKeys(render(lane)), `${lane} ${on}: a 63-byte backend role is refused`);
+    expect(refuses(lane, [on, 'backend.env.pgAppUser=app_role', 'backend.env.pgAppPasswordKey=postgres/app-password']), `${lane} ${on}: a backend key that isn't a valid Secret key renders`);
+    expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=postgres/litellm-password']), `${lane} ${on}: a litellm key that isn't a valid Secret key renders`);
   }
 
   const esBase = esKeys(base);
