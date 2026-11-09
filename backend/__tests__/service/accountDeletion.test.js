@@ -405,7 +405,33 @@ describe('Self-serve account deletion', () => {
     expect(await AccountDeletion.countDocuments()).toBe(1);
     expect(await File.countDocuments({ uploadedBy: user._id })).toBe(0);
     expect(await MediaObject.findOne({ key: 'stranded.png' })).toBeNull();
+    // Recovery took a fresh claim, so the row stays inside its lease and the
+    // person can still finish their own deletion.
     await deletion(app, issueSessionToken(user)).expect(204);
+  });
+
+  it('an admin delete that dies between its receipt and the row is finished by the sweep (F265)', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const user = await makeUser();
+    await opening(String(user._id));
+    jest.spyOn(User, 'findOneAndDelete').mockRejectedValueOnce(new Error('process died here'));
+    await request(app).delete(`/api/admin/users/${user.id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`);
+    expect(await AccountDeletion.exists({ _id: user._id })).toBeTruthy();
+    expect(await User.findById(user.id)).not.toBeNull();
+    // Inside the preflight lease, the sweep cleans up but leaves the row.
+    await sweepAccountDeletions();
+    expect(await User.findById(user.id)).not.toBeNull();
+    expect(await openingsOf(String(user._id))).toBe(0);
+    await User.updateOne({ _id: user._id }, { $set: { accountDeletionRequestedAt: new Date(Date.now() - 301000) } });
+    await sweepAccountDeletions();
+    expect(await User.findById(user.id)).toBeNull();
+  });
+
+  it('the sweep never deletes a row whose receipt has no deletion claim on it', async () => {
+    const user = await makeUser();
+    await AccountDeletion.create({ _id: user._id });
+    await sweepAccountDeletions();
+    expect(await User.findById(user.id)).not.toBeNull();
   });
 
   it('leaves the account and uploads intact if subscription cancellation fails', async () => {

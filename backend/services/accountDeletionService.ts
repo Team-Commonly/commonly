@@ -191,6 +191,17 @@ export const sweepAccountDeletions = async (): Promise<void> => {
         await deleteOpeningsFor(userId);
         // eslint-disable-next-line no-await-in-loop
         await deleteOwnedUploads(userId);
+        // A receipt means the deletion was decided: billing preflight passed,
+        // or an admin chose it. A row still here under a claim past the
+        // preflight lease is a delete that died before its last step. Finish
+        // it, or the person stays half-deleted and their email stays stored.
+        // An admin retry can't, because its claim needs the marker unset.
+        // eslint-disable-next-line no-await-in-loop
+        await User.deleteOne({
+          _id: userId,
+          isBot: { $ne: true },
+          accountDeletionRequestedAt: { $lt: new Date(Date.now() - 300_000) },
+        });
       } catch (error) {
         errors.push(error);
         failedIds.push(userId);

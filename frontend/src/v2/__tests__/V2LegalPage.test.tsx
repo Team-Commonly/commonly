@@ -57,6 +57,7 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/^You can delete your account and your uploads yourself in Settings\. This cannot be undone\. If you can't get in, email/)).toBeInTheDocument();
     expect(screen.getByText('A single upload cannot be deleted in the app. Deleting your account removes all of them.')).toBeInTheDocument();
     expect(screen.getByText(/^When an account is deleted, its user id and connection ids come off task records\. The entries stay, without those ids\./)).toBeInTheDocument();
+    expect(screen.getByText(/If one of the person's agents keeps working and a new entry names them, that id comes off soon after\./)).toBeInTheDocument();
     expect(screen.getByText(/keep them, and those are only on Commonly's own pods\./)).toBeInTheDocument();
     expect(screen.getByText(/also keeps them\. Our backups can keep them for up to 35 days, until those backups are removed\. Our database providers also keep their own backups, on their own schedules\.$/)).toBeInTheDocument();
   });
@@ -71,6 +72,7 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/Only hosted agents can use it, and they run on Anthropic's Claude/)).toBeInTheDocument();
     // Hosted agents run on Anthropic, whose commercial terms rule out training on our content.
     expect(screen.getByText(/they run on Anthropic's Claude, which does not train on this data\./)).toBeInTheDocument();
+    expect(screen.getByText(/If the agent quotes it in a pod message or saves it to its memory, the rules above apply\./)).toBeInTheDocument();
     expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
   });
 
