@@ -27,10 +27,11 @@ describe('background worker start gate', () => {
     expect(discordGateway.start).toHaveBeenCalledTimes(shouldStart ? 1 : 0);
   });
 
-  // F52: web pods hand native turns to the worker's queue. Only the dedicated
-  // worker reads it; a single-process install runs its turns where they arrive.
+  // F52: the native turn queue, and the runner lease with it, runs wherever
+  // the scheduler does: the worker, or a single-process install. Never on a
+  // web pod of a worker split, which hands its turns over.
   test.each([
-    ['unset', undefined, 0],
+    ['unset', undefined, 1],
     ['on', '1', 1],
     ['off', '0', 0],
   ])('the native turn queue with RUN_WORKER %s', (_label, runWorker, starts) => {

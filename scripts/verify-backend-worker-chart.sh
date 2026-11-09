@@ -66,9 +66,18 @@ for lane in default dev staging; do
   # What each lane actually deploys: more than one web replica only with the
   # worker split on, or every web pod runs the scheduler and the Discord gateway,
   # and only with the worker running, or two web pods run one agent's turns in
-  # a pod at once (F52).
+  # a pod at once (F52). An autoscaler that can add a web pod counts as more
+  # than one.
+  # No default inside yq: `//` there yields one per document, not per match.
   shipped_web=$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$shipped")
-  if (( shipped_web > 1 )); then
+  shipped_web=${shipped_web:-1}
+  shipped_hpa=$("$yq_bin" -N 'select(.kind == "HorizontalPodAutoscaler" and .metadata.name == "backend-hpa") | .spec.maxReplicas' "$shipped")
+  shipped_hpa=${shipped_hpa:-0}
+  # Inside an `if`, a malformed (( )) is false, not fatal: refuse anything but
+  # one integer each. A glob, because macOS bash's =~ lets ^ and $ match at a
+  # newline.
+  [[ $shipped_web != *[!0-9]* && $shipped_hpa != *[!0-9]* ]]
+  if (( shipped_web > 1 || shipped_hpa > 1 )); then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$shipped")" = backend-worker
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$shipped")" = 0
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$shipped")" = 1

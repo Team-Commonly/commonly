@@ -384,6 +384,8 @@ describe('AgentEventService', () => {
           agentName: 'inbox',
           instanceId: 'default',
           status: 'pending',
+          // F52: a native turn queued for the runner lease holder.
+          inProcessQueued: { $ne: true },
           podId: { $in: ['pod-a', 'pod-b'] },
         },
         { podId: { $exists: true, $ne: null } },

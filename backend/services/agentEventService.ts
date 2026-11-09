@@ -33,6 +33,8 @@ const AgentIdentityService = require('./agentIdentityService');
 // eslint-disable-next-line global-require
 const User = require('../models/User');
 // eslint-disable-next-line global-require
+const SchedulerHeartbeatLease = require('../models/SchedulerHeartbeatLease');
+// eslint-disable-next-line global-require
 const {
   getAgentSessionSizes,
   clearAgentRuntimeSessions,
@@ -89,6 +91,8 @@ const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
+// F52: the lease a process holds to run native turns where the queue runs.
+const NATIVE_RUNNER_LEASE_ID = 'native-turn-runner';
 // A person's messages retired per pass, one at a time with a line each
 // (TASK-656). 686 retirements of every type took 7 days, so 50 per 10-minute
 // pass keeps up with any realistic backlog.
@@ -587,8 +591,9 @@ class AgentEventService {
   // (F52: a marker wake and the ask posted a second later, two identical
   // replies). Each (agent, instance, pod) key holds the last turn's `over`
   // gate; the next turn starts once it opens, so it reads that turn's reply.
-  // In-process only, so one process runs native turns: with the worker split
-  // on, web replicas hand theirs to the worker (nativeTurnsOnWorker below).
+  // In-process only, so one process at a time runs native turns: the runner
+  // lease holder below. With the worker split on, web replicas hand theirs to
+  // the worker (nativeTurnsOnWorker).
   private static inProcessLanes = new Map<string, { over: Promise<void> }>();
   // The lane slot held by each event's current delivery. A sweep that re-runs
   // an event has declared its earlier delivery dead, so the re-run marks that
@@ -615,8 +620,67 @@ class AgentEventService {
   private static inProcessQueuePollMs = Math.max(Number(process.env.AGENT_EVENT_IN_PROCESS_POLL_MS) || 500, 50);
   private static inProcessQueueTimer: ReturnType<typeof setInterval> | undefined;
   private static inProcessQueuePolling = false;
+  // Where the queue runs (the worker, or a single-process install), a process
+  // runs a native turn only while it holds the runner lease; otherwise the
+  // turn goes to the queue for the holder. A replacement started beside a
+  // process still finishing its turns (an eviction, a node drain, a rolling
+  // deploy) waits for that drain rather than run a second turn in one lane.
+  // A holder that dies, or cannot reach Mongo, is replaced when its lease runs
+  // out, and it starts no turn in the last runnerTurnBoundMs before then, so
+  // nothing it started can still be running.
+  private static runnerEnforced = false;
+  private static runnerId = `${process.pid}:${crypto.randomUUID()}`;
+  private static runnerLeaseMs = 180_000;
+  // The longest a turn runs: drainInProcess's default bound. A turn checks its
+  // 60 s wall clock only between model calls, each up to 45 s.
+  private static runnerTurnBoundMs = 150_000;
+  // Until when this process may start turns: runnerTurnBoundMs short of the
+  // expiry its last write set, measured from before that write.
+  private static runnerLeaseUntil = 0;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
+
+  /** Whether a native turn may start in this process now (F52). */
+  private static runsTurnsHere(): boolean {
+    if (this.nativeTurnsOnWorker) return false;
+    return !this.runnerEnforced || Date.now() < this.runnerLeaseUntil;
+  }
+
+  /**
+   * Take or renew the runner lease, once a third of the start window has
+   * passed. A failed write leaves the last window to close: turns wait in the
+   * queue until a write succeeds.
+   */
+  private static async keepRunnerLease(): Promise<void> {
+    const now = Date.now();
+    const window = this.runnerLeaseMs - this.runnerTurnBoundMs;
+    if (now < this.runnerLeaseUntil - (window * 2) / 3) return;
+    try {
+      const held = await SchedulerHeartbeatLease.findOneAndUpdate(
+        { _id: NATIVE_RUNNER_LEASE_ID, $or: [{ expiresAt: { $lte: new Date(now) } }, { ownerId: this.runnerId }] },
+        { $set: { ownerId: this.runnerId, expiresAt: new Date(now + this.runnerLeaseMs) } },
+        { upsert: true, new: true },
+      );
+      if (held) this.runnerLeaseUntil = now + window;
+    } catch (err) {
+      // 11000: another process holds it, and the upsert met its row.
+      if ((err as { code?: number }).code !== 11000) {
+        console.warn('[native-runtime] runner lease write failed:', (err as Error).message);
+      }
+    }
+  }
+
+  /**
+   * End of a drain. Hand the lease over only when every turn finished; after a
+   * timed-out drain a turn may still be running, so the lease runs out instead.
+   */
+  private static async releaseRunnerLease(everyTurnFinished: boolean): Promise<void> {
+    this.stopInProcessQueue();
+    this.runnerLeaseUntil = 0;
+    if (!this.runnerEnforced || !everyTurnFinished) return;
+    await SchedulerHeartbeatLease.deleteOne({ _id: NATIVE_RUNNER_LEASE_ID, ownerId: this.runnerId })
+      .catch((err: Error) => console.warn('[native-runtime] runner lease release failed:', err.message));
+  }
 
   // Track admission DB work as well as turns: SIGTERM can race a claim whose
   // database reply has not arrived yet. Dispatch will requeue that late claim.
@@ -630,7 +694,16 @@ class AgentEventService {
   private static async requeueInProcess(event: EventDoc): Promise<number> {
     const result = await AgentEvent.updateOne(
       { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
-      { $set: { status: 'pending', deliveredAt: null, deliveryNonce: null } },
+      {
+        $set: {
+          status: 'pending',
+          deliveredAt: null,
+          deliveryNonce: null,
+          // Where the queue runs, the next lease holder picks it up on its
+          // first pass, not on the ten-minute sweep.
+          ...(this.runnerEnforced ? { inProcessQueued: true } : {}),
+        },
+      },
     ) as { modifiedCount?: number };
     if (result.modifiedCount) {
       this.inProcessRequeued += result.modifiedCount;
@@ -646,9 +719,18 @@ class AgentEventService {
    */
   static drainInProcess(timeoutMs = 150_000): Promise<{ timedOut: boolean; requeued: number }> {
     this.inProcessDraining = true;
-    this.stopInProcessQueue();
     if (this.inProcessDrain) return this.inProcessDrain;
-    this.inProcessDrain = (async () => {
+    // The queue stops taking turns now but keeps renewing the runner lease
+    // until the drain ends, so no replacement starts a turn beside these.
+    this.inProcessDrain = this.drainInProcessWork(timeoutMs).then(
+      async (result) => { await this.releaseRunnerLease(!result.timedOut); return result; },
+      async (err) => { await this.releaseRunnerLease(false); throw err; },
+    );
+    return this.inProcessDrain;
+  }
+
+  private static drainInProcessWork(timeoutMs: number): Promise<{ timedOut: boolean; requeued: number }> {
+    return (async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const settled = async () => {
         while (this.inProcessWork.size) {
@@ -672,7 +754,6 @@ class AgentEventService {
       if (failed?.status === 'rejected') throw failed.reason;
       return { timedOut: true, requeued: this.inProcessRequeued };
     })();
-    return this.inProcessDrain;
   }
 
   static getContextOverflowRetryLimit(): number {
@@ -1233,7 +1314,8 @@ class AgentEventService {
    * left 'queued' or 'running', is marked 'interrupted'.
    */
   static redispatchStuckInProcess(threshold: Date, attemptCap: number): Promise<{ redispatched: number; acked: number }> {
-    if (this.inProcessDraining) return Promise.resolve({ redispatched: 0, acked: 0 });
+    // Only the process that may run turns re-runs them (F52); the holder's own sweep does it.
+    if (this.inProcessDraining || !this.runsTurnsHere()) return Promise.resolve({ redispatched: 0, acked: 0 });
     return this.trackInProcessWork(() => this.redispatchStuckInProcessWhileServing(threshold, attemptCap));
   }
 
@@ -1262,7 +1344,7 @@ class AgentEventService {
       const runKey = { podId: stale.podId, agentName, instanceId, triggerEventId: stale._id };
       // eslint-disable-next-line no-await-in-loop
       const finished = await AgentRun.exists({ ...runKey, status: 'succeeded' });
-      if (this.inProcessDraining) break;
+      if (this.inProcessDraining || !this.runsTurnsHere()) break;
       const deliveryNonce = mintDeliveryNonce();
       // Fenced by deliveredAt as well as the nonce: a turn that waited for its
       // pod lane restarts deliveredAt as it starts (dispatchInProcess), and a
@@ -1455,13 +1537,14 @@ class AgentEventService {
   }
 
   /**
-   * Run one pending event in this process, or, on a web pod with the worker
-   * split on, put it in the worker's queue. Either way it is a compare-and-set
-   * from 'pending', so two passes never take one event twice. False when
-   * another pass took it first.
+   * Run one pending event in this process, or, when this process may not run
+   * turns (a web pod with the worker split on, or one without the runner
+   * lease), put it in the queue. Either way it is a compare-and-set from
+   * 'pending', so two passes never take one event twice. False when another
+   * pass took it first.
    */
   private static async takePendingInProcess(event: EventDoc, installation: InstallationDoc): Promise<boolean> {
-    if (this.nativeTurnsOnWorker) {
+    if (!this.runsTurnsHere()) {
       const handed = await AgentEvent.updateOne(
         { _id: event._id, status: 'pending' },
         { $set: { inProcessQueued: true } },
@@ -1486,12 +1569,12 @@ class AgentEventService {
   }
 
   /**
-   * One pass over the turns web pods put in the worker's queue, oldest first.
+   * One pass over the queue, oldest first, by the process that may run turns.
    * A turn whose agent no longer runs in-process leaves the queue, and the
    * sweeps decide it from there; one whose lookup failed waits for the next pass.
    */
   static pollInProcessQueue(): Promise<number> {
-    if (this.nativeTurnsOnWorker || this.inProcessDraining) return Promise.resolve(0);
+    if (this.inProcessDraining || !this.runsTurnsHere()) return Promise.resolve(0);
     return this.trackInProcessWork(async () => {
       const attemptCap = Math.max(Number(process.env.AGENT_EVENT_REQUEUE_MAX_ATTEMPTS || 3), 1);
       const queued = await AgentEvent.find({
@@ -1502,7 +1585,7 @@ class AgentEventService {
       }).sort({ createdAt: 1 }).limit(STUCK_REDISPATCH_BATCH).lean() as EventDoc[];
       let ran = 0;
       for (const event of queued) {
-        if (this.inProcessDraining) break;
+        if (this.inProcessDraining || !this.runsTurnsHere()) break;
         let installation: InstallationDoc | null;
         try {
           // eslint-disable-next-line no-await-in-loop -- one lookup per queued turn
@@ -1530,17 +1613,25 @@ class AgentEventService {
     });
   }
 
-  /** Read the queue every inProcessQueuePollMs. The worker starts it; drain stops it. */
+  /**
+   * From here this process runs native turns only while it holds the runner
+   * lease. Each tick renews or takes the lease, then reads the queue. Started
+   * where the scheduler runs; the end of a drain stops it and releases the lease.
+   */
   static startInProcessQueue(): void {
     if (this.nativeTurnsOnWorker || this.inProcessDraining || this.inProcessQueueTimer) return;
-    this.inProcessQueueTimer = setInterval(() => {
+    this.runnerEnforced = true;
+    const tick = () => {
       if (this.inProcessQueuePolling) return;
       this.inProcessQueuePolling = true;
-      this.pollInProcessQueue()
+      this.keepRunnerLease()
+        .then(() => this.pollInProcessQueue())
         .catch((err: Error) => console.warn('[native-runtime] queue pass failed:', err.message))
         .finally(() => { this.inProcessQueuePolling = false; });
-    }, this.inProcessQueuePollMs);
+    };
+    this.inProcessQueueTimer = setInterval(tick, this.inProcessQueuePollMs);
     this.inProcessQueueTimer.unref?.();
+    tick();
   }
 
   static stopInProcessQueue(): void {
@@ -2401,8 +2492,11 @@ class AgentEventService {
     // A digest is data for a later turn, not a turn on its own. Native
     // installations must leave it pending just like external installations.
     const nativeWake = Boolean(nativeInstallation) && deliveryMode === 'wake';
-    // A web pod with the worker split on runs no turn: the worker claims it.
-    const handedToWorker = nativeWake && this.nativeTurnsOnWorker;
+    // Not this process's turn to run (a web pod with the worker split on, a
+    // process without the runner lease, or a draining holder): it goes to the
+    // queue, and whoever holds the lease claims it.
+    const handedToWorker = nativeWake
+      && (!this.runsTurnsHere() || (this.runnerEnforced && this.inProcessDraining));
     const routedToNative = nativeWake && !handedToWorker && !this.inProcessDraining;
 
     const event = await AgentEvent.create({
@@ -2452,7 +2546,8 @@ class AgentEventService {
     });
 
     const wsService = getWebSocketService();
-    if (wsService && deliveryMode === 'wake') {
+    // A queued native turn is the lease holder's, never an external driver's.
+    if (wsService && deliveryMode === 'wake' && !handedToWorker) {
       wsService.pushEvent({
         _id: event._id,
         agentName: event.agentName,
@@ -2557,6 +2652,9 @@ class AgentEventService {
       agentName: safeAgentName,
       instanceId: safeInstanceId,
       status: 'pending',
+      // A queued native turn waits for the runner lease holder (F52), never a
+      // driver polling under the same identity.
+      inProcessQueued: { $ne: true },
     };
 
     if (podIds && Array.isArray(podIds) && podIds.length > 0) {
@@ -2675,7 +2773,8 @@ class AgentEventService {
       // first claim is 1, a requeued redelivery is 2. `{new: true}` means the
       // value the driver receives in the payload is the post-increment one.
       const updated = await AgentEvent.findOneAndUpdate(
-        { _id: safeId, status: 'pending' },
+        // Queued for the runner lease holder since the read above: not ours.
+        { _id: safeId, status: 'pending', inProcessQueued: { $ne: true } },
         {
           $set: {
             status: 'delivered',

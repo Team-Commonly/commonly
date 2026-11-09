@@ -4,6 +4,7 @@ jest.mock('../../services/agentWebSocketService', () => ({ pushEvent: jest.fn() 
 jest.mock('../../services/agentDigestFoldService', () => ({ readFoldedDigest: jest.fn().mockResolvedValue(null), settleFoldedDigest: jest.fn().mockResolvedValue(undefined), foldExpiredDigests: jest.fn().mockResolvedValue(0) }));
 const mongoose = require('mongoose');
 const AgentEvent = require('../../models/AgentEvent');
+const SchedulerHeartbeatLease = require('../../models/SchedulerHeartbeatLease');
 const Service = require('../../services/agentEventService');
 const { runAgent } = require('../../services/nativeRuntimeService');
 const { setupMongoDb, clearMongoDb, closeMongoDb, waitFor } = require('../utils/testUtils');
@@ -17,27 +18,30 @@ const success = { status: 'succeeded', runId: 'run', totalTurns: 1 };
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
 
 // One backend process: its own in-process state, as a second pod has its own.
+let replicas = 0;
 const replica = (overrides = {}) => {
   class Replica extends Service {}
+  replicas += 1;
   Object.assign(Replica, {
     inProcessDraining: false, inProcessDrain: undefined, inProcessRequeued: 0,
     inProcessWork: new Set(), inProcessRunning: new Map(), inProcessLanes: new Map(), inProcessLaneHolders: new Map(),
     inProcessLaneWaitMs: 180000, inProcessLaneRefreshMs: 30000,
     inProcessQueueTimer: undefined, inProcessQueuePolling: false,
+    runnerId: `replica-${replicas}`, runnerEnforced: false, runnerLeaseUntil: 0,
     ...overrides,
   });
   return Replica;
 };
 const web = () => replica({ nativeTurnsOnWorker: true });
 
-let active; let maxActive; let ran; let turns;
+let active; let maxActive; let ran; let startedAt; let turns;
 beforeAll(setupMongoDb);
 beforeEach(async () => {
-  active = 0; maxActive = 0; ran = []; turns = [];
+  active = 0; maxActive = 0; ran = []; startedAt = []; turns = [];
   jest.clearAllMocks(); await clearMongoDb();
   jest.spyOn(Service, 'resolveInProcessInstallation').mockResolvedValue(install);
   runAgent.mockImplementation(async (_installation, { eventId }) => {
-    active += 1; maxActive = Math.max(maxActive, active); ran.push(String(eventId));
+    active += 1; maxActive = Math.max(maxActive, active); ran.push(String(eventId)); startedAt.push(Date.now());
     const turn = deferred(); turns.push(turn);
     await turn.promise;
     active -= 1;
@@ -182,6 +186,158 @@ test('the queue polls on its interval and stops when the worker drains', async (
   await settle();
   expect(runAgent).toHaveBeenCalledTimes(1);
   expect((await AgentEvent.findById(late._id)).status).toBe('pending');
+});
+
+// The runner lease: where the queue runs, one process at a time runs turns.
+const runner = (id, overrides = {}) => replica({ runnerId: id, inProcessQueuePollMs: 20, ...overrides });
+const holds = (proc) => Date.now() < proc.runnerLeaseUntil;
+const stop = async (...procs) => { for (const proc of procs) await proc.drainInProcess(1000); };
+
+test('a replacement worker waits for a draining one before it runs a lane', async () => {
+  // An eviction, a node drain or a spot reclaim: the ReplicaSet starts the
+  // replacement while the old pod is still finishing its turn.
+  const old = runner('old'); old.startInProcessQueue();
+  await waitFor(() => holds(old));
+  const first = await web().enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  const draining = old.drainInProcess(5000);
+  const next = runner('next'); next.startInProcessQueue();
+  const second = await web().enqueue(input);
+  await settle(); await settle();
+  expect(runAgent).toHaveBeenCalledTimes(1);
+  expect(holds(next)).toBe(false);
+
+  turns[0].resolve();
+  await draining;
+  await waitFor(() => runAgent.mock.calls.length === 2);
+  turns[1].resolve();
+  await waitFor(() => next.inProcessWork.size === 0);
+  expect(maxActive).toBe(1);
+  expect(ran).toEqual([String(first._id), String(second._id)]);
+  await stop(next);
+});
+
+// A short lease: turns may start in the first 150 ms after each write.
+const short = { runnerLeaseMs: 400, runnerTurnBoundMs: 250 };
+
+test('a runner that died holding the lease is replaced once it expires', async () => {
+  const dead = runner('dead', short); dead.startInProcessQueue();
+  await waitFor(() => holds(dead));
+  dead.stopInProcessQueue(); // SIGKILL: no drain, no release
+  const next = runner('next', short); next.startInProcessQueue();
+  const event = await web().enqueue(input);
+  await settle();
+  expect(runAgent).not.toHaveBeenCalled();
+  await waitFor(() => runAgent.mock.calls.length === 1, { timeout: 3000 });
+  turns[0].resolve();
+  await waitFor(() => next.inProcessWork.size === 0);
+  expect((await AgentEvent.findById(event._id)).status).toBe('acked');
+  await stop(next);
+});
+
+test('a single-process rolling deploy never runs one lane in two pods', async () => {
+  const before = runner('before'); before.startInProcessQueue();
+  await waitFor(() => holds(before));
+  const own = await before.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  const after = runner('after'); after.startInProcessQueue();
+  // Routed to the new pod while the old one still holds the lease.
+  const routed = await after.enqueue(input);
+  await settle();
+  expect(runAgent).toHaveBeenCalledTimes(1);
+  expect((await AgentEvent.findById(routed._id).lean()).inProcessQueued).toBe(true);
+  turns[0].resolve();
+  await waitFor(() => runAgent.mock.calls.length === 2);
+  turns[1].resolve();
+  await stop(before);
+  await waitFor(() => holds(after));
+  const later = await after.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 3);
+  turns[2].resolve();
+  await waitFor(() => after.inProcessWork.size === 0);
+  expect(maxActive).toBe(1);
+  expect(ran).toEqual([String(own._id), String(routed._id), String(later._id)]);
+  await stop(after);
+});
+
+test("a drained runner's unfinished turns keep the mark, its own included", async () => {
+  const proc = runner('proc'); proc.startInProcessQueue();
+  await waitFor(() => holds(proc));
+  const own = await proc.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  await expect(proc.drainInProcess(20)).resolves.toEqual({ timedOut: true, requeued: 1 });
+  expect(await AgentEvent.findById(own._id).lean()).toMatchObject({ status: 'pending', inProcessQueued: true });
+  // Its turn may still be running, so it does not hand the lease over.
+  expect(await SchedulerHeartbeatLease.findById('native-turn-runner').lean()).toMatchObject({ ownerId: 'proc' });
+  turns[0].resolve();
+});
+
+test('after a timed-out drain the next runner waits for the lease to run out', async () => {
+  const slow = runner('slow', short); slow.startInProcessQueue();
+  await waitFor(() => holds(slow));
+  const event = await slow.enqueue(input);
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  await slow.drainInProcess(20);
+  const { expiresAt } = await SchedulerHeartbeatLease.findById('native-turn-runner').lean();
+  turns[0].resolve(); // within its bound, as every turn is
+  const next = runner('next', short); next.startInProcessQueue();
+  await waitFor(() => runAgent.mock.calls.length === 2, { timeout: 3000 });
+  expect(startedAt[1]).toBeGreaterThanOrEqual(expiresAt.getTime());
+  expect(ran).toEqual([String(event._id), String(event._id)]);
+  turns[1].resolve();
+  await waitFor(() => next.inProcessWork.size === 0);
+  expect(maxActive).toBe(1);
+  await stop(next);
+});
+
+test('a runner that cannot write its lease stops starting turns until it can', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const cut = runner('cut', short); cut.startInProcessQueue();
+  await waitFor(() => holds(cut));
+  const write = jest.spyOn(SchedulerHeartbeatLease, 'findOneAndUpdate').mockRejectedValue(new Error('no primary'));
+  await waitFor(() => !holds(cut));
+  const event = await cut.enqueue(input);
+  await settle(); await settle();
+  expect(runAgent).not.toHaveBeenCalled();
+  expect((await AgentEvent.findById(event._id).lean()).inProcessQueued).toBe(true);
+  write.mockRestore();
+  await waitFor(() => runAgent.mock.calls.length === 1);
+  turns[0].resolve();
+  await waitFor(() => cut.inProcessWork.size === 0);
+  expect((await AgentEvent.findById(event._id)).status).toBe('acked');
+  await stop(cut);
+});
+
+test('an external poller never sees a handed turn', async () => {
+  const { pushEvent } = require('../../services/agentWebSocketService');
+  const event = await web().enqueue(input);
+  await expect(Service.list({ agentName: 'clerk', instanceId: 'default', podId })).resolves.toEqual([]);
+  expect((await AgentEvent.findById(event._id)).status).toBe('pending');
+  expect(pushEvent).not.toHaveBeenCalled();
+});
+
+test('a handed turn at the attempt cap leaves the queue to the sweep, which closes it with a reason', async () => {
+  const old = new Date(Date.now() - 31 * 60 * 1000);
+  const capped = await AgentEvent.create({ ...input, inProcessQueued: true, attempts: 3, createdAt: old });
+  jest.spyOn(Service, 'inProcessEventTargets').mockResolvedValue([{ agentName: 'clerk', instanceId: 'default', podId }]);
+  const worker = replica();
+  await expect(worker.pollInProcessQueue()).resolves.toBe(0);
+  await expect(worker.rescueStrandedPendingInProcess(new Date(), 3)).resolves.toEqual({ rescued: 0, closed: 1 });
+  const row = await AgentEvent.findById(capped._id).lean();
+  expect(row.status).toBe('failed');
+  expect(row.error).toMatch(/stranded/);
+  expect(runAgent).not.toHaveBeenCalled();
+});
+
+test('the queue and the sweep in one worker never both run one row', async () => {
+  const event = await AgentEvent.create({ ...input, inProcessQueued: true, createdAt: new Date(Date.now() - 2 * 60 * 1000) });
+  jest.spyOn(Service, 'inProcessEventTargets').mockResolvedValue([{ agentName: 'clerk', instanceId: 'default', podId }]);
+  const worker = replica();
+  await Promise.all([worker.pollInProcessQueue(), worker.rescueStrandedPendingInProcess(new Date(), 3)]);
+  await finish(1);
+  await waitFor(() => worker.inProcessWork.size === 0);
+  expect(runAgent).toHaveBeenCalledTimes(1);
+  expect(await AgentEvent.findById(event._id).lean()).toMatchObject({ status: 'acked', attempts: 1 });
 });
 
 test('a web replica runs no queue', async () => {

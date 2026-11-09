@@ -13,9 +13,10 @@ export function startBackgroundServices(
   console.log('Starting summarizer scheduler...');
   services.scheduler.start();
   if (env.DISCORD_BOT_TOKEN) services.discordGateway.start();
-  // Only the dedicated worker reads the queue web pods hand native turns to
-  // (F52). A single-process install runs each turn where it arrives.
-  if (env.RUN_WORKER === '1') services.nativeQueue.start();
+  // F52: where the scheduler runs, native turns run under the runner lease, and
+  // the queue holds the ones this process may not run: those web pods hand
+  // over, and those that arrive while another pod still holds the lease.
+  services.nativeQueue.start();
   return true;
 }
 
