@@ -124,12 +124,14 @@ test('a draining worker hands an unfinished turn to the next one', async () => {
   const next = replica();
   await next.pollInProcessQueue();
   await waitFor(() => runAgent.mock.calls.length === 2);
-  turns[1].resolve();
-  await waitFor(() => next.inProcessWork.size === 0);
-  expect((await AgentEvent.findById(event._id)).status).toBe('acked');
+  const { deliveryNonce } = await AgentEvent.findById(event._id).lean();
+  expect(deliveryNonce).toBeTruthy();
   // The old process's late success cannot settle the replacement's delivery.
   turns[0].resolve();
   await waitFor(() => old.inProcessWork.size === 0);
+  expect(await AgentEvent.findById(event._id).lean()).toMatchObject({ status: 'delivered', deliveryNonce });
+  turns[1].resolve();
+  await waitFor(() => next.inProcessWork.size === 0);
   expect((await AgentEvent.findById(event._id)).status).toBe('acked');
 });
 
@@ -344,13 +346,14 @@ test('the lease keeps renewing while a queue pass is blocked', async () => {
     await gate.promise;
     return install;
   });
-  const writes = jest.spyOn(SchedulerHeartbeatLease, 'findOneAndUpdate');
+  const expiry = async () => (await SchedulerHeartbeatLease.findById('native-turn-runner').lean())?.expiresAt?.getTime();
   const proc = runner('busy', short); proc.startInProcessQueue();
   await waitFor(() => lookups === 1);
-  const blockedAt = writes.mock.calls.length;
-  // Renewals land behind a pass that has not moved.
-  await waitFor(() => writes.mock.calls.length >= blockedAt + 2);
+  const blockedAt = await expiry();
+  // The stored expiry moves forward behind a pass that has not.
+  await waitFor(async () => (await expiry()) > blockedAt);
   expect(lookups).toBe(1);
+  expect(await SchedulerHeartbeatLease.findById('native-turn-runner').lean()).toMatchObject({ ownerId: 'busy' });
   gate.resolve();
   await waitFor(() => runAgent.mock.calls.length === 1);
   turns[0].resolve();
