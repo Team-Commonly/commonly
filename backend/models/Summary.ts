@@ -98,6 +98,8 @@ const summarySchema = new Schema<ISummary>({
     sources: [{ type: String }],
     eventId: { type: String },
     emailedAt: { type: Date },
+    // A scheduled daily digest's person and local day (DailyDigestService.digestKey).
+    digestKey: { type: String },
   },
   analytics: {
     timeline: [
@@ -175,6 +177,12 @@ summarySchema.index({ type: 1, createdAt: -1 });
 summarySchema.index({ type: 1, podId: 1, createdAt: -1 });
 summarySchema.index({ 'timeRange.start': 1, 'timeRange.end': 1 });
 summarySchema.index({ type: 1, 'metadata.userId': 1, createdAt: -1 });
+// One scheduled digest per person per day, even when two scheduler runs of one
+// hour overlap (a roll, or a partitioned worker beside its replacement).
+summarySchema.index(
+  { 'metadata.digestKey': 1 },
+  { unique: true, partialFilterExpression: { 'metadata.digestKey': { $type: 'string' } } },
+);
 
 export default mongoose.model<ISummary>('Summary', summarySchema);
 // CJS compat: let require() return the default export directly

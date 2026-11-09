@@ -21,6 +21,11 @@ const localHour = (zone: string, at: Date): number => {
   return Number(hour?.value);
 };
 
-module.exports = { cleanTimeZone, localHour };
+/** The date (YYYY-MM-DD) it is now in that zone. */
+const localDate = (zone: string, at: Date): string => new Intl.DateTimeFormat('en-CA', {
+  timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(at);
+
+module.exports = { cleanTimeZone, localHour, localDate };
 
 export {};

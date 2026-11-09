@@ -13,7 +13,7 @@ const ActivityService = require('./activityService');
 // eslint-disable-next-line global-require
 const { resolveAgentDisplayLabel } = require('./agentIdentityService');
 // eslint-disable-next-line global-require
-const { cleanTimeZone, localHour } = require('../utils/timeZone');
+const { cleanTimeZone, localHour, localDate } = require('../utils/timeZone');
 
 /**
  * The daily digest is "what your agents did while you were away" (stickiness
@@ -62,6 +62,11 @@ export const DIGEST_AWAY_MS = 20 * 60 * 60 * 1000;
 // there; an unknown or unusable one means 06:00 UTC, the one send time before.
 export const DIGEST_LOCAL_HOUR = 8;
 export const DIGEST_DEFAULT_UTC_HOUR = 6;
+// A person stays due for three hours from their digest hour, so a run the
+// scheduler missed (its worker restarting across the hour) is made up on the
+// next one. Kept under four, so the last catch-up and the next day's first run
+// stay more than the 20-hour repeat guard apart.
+export const DIGEST_DUE_HOURS = 3;
 // Anyone with a digest from the last 20 hours is skipped, so a zone captured
 // mid-day, or a run repeated after a restart, never sends twice in a day.
 const DIGEST_REPEAT_GUARD_MS = 20 * 60 * 60 * 1000;
@@ -86,6 +91,7 @@ interface RecapContext {
 }
 
 const oneLine = (value: unknown): string => String(value || '').replace(/\s+/g, ' ').trim().slice(0, LINE_MAX);
+const isDuplicateDigest = (error: unknown): boolean => (error as { code?: number })?.code === 11000;
 
 export class DailyDigestService {
   /**
@@ -170,7 +176,7 @@ export class DailyDigestService {
    */
   async generateUserDailyDigest(
     userId: unknown,
-    { requireAway = false }: { requireAway?: boolean } = {},
+    { requireAway = false, digestKey }: { requireAway?: boolean; digestKey?: string } = {},
   ): Promise<unknown> {
     try {
       const user = await User.findById(userId).lean() as Record<string, unknown> | null;
@@ -236,6 +242,7 @@ export class DailyDigestService {
             topUsers: [],
             subscribedPods: podCount,
             userId: String(userId),
+            ...(digestKey ? { digestKey } : {}),
           },
           analytics: emptyData.analytics,
         });
@@ -252,11 +259,12 @@ export class DailyDigestService {
           topUsers: [],
           subscribedPods: podCount,
           userId: String(userId),
+          ...(digestKey ? { digestKey } : {}),
         },
         analytics: DailyDigestService.createEmptyDigest(user as { username: string }, startTime, endTime).analytics,
       });
     } catch (error) {
-      console.error(`Error generating daily digest for user ${userId}:`, error);
+      if (!isDuplicateDigest(error)) console.error(`Error generating daily digest for user ${userId}:`, error);
       throw error;
     }
   }
@@ -296,10 +304,17 @@ This might be a great time to start a new conversation or share something intere
     };
   }
 
-  /** Whether it is the digest hour for this person at `at`. */
+  /** Whether `at` falls in this person's digest hour or the DIGEST_DUE_HOURS after it starts. */
   static dueAt(user: { timezone?: unknown }, at: Date): boolean {
     const zone = cleanTimeZone(user.timezone);
-    return zone ? localHour(zone, at) === DIGEST_LOCAL_HOUR : at.getUTCHours() === DIGEST_DEFAULT_UTC_HOUR;
+    const hour = zone ? localHour(zone, at) : at.getUTCHours();
+    const first = zone ? DIGEST_LOCAL_HOUR : DIGEST_DEFAULT_UTC_HOUR;
+    return hour >= first && hour < first + DIGEST_DUE_HOURS;
+  }
+
+  /** The person and their local day: two scheduled runs for one day race on it, and one wins. */
+  static digestKey(user: { _id: unknown; timezone?: unknown }, at: Date): string {
+    return `${String(user._id)}:${localDate(cleanTimeZone(user.timezone) || 'UTC', at)}`;
   }
 
   async generateAllDailyDigests({ at = new Date() }: { at?: Date } = {}): Promise<DigestResult[]> {
@@ -341,9 +356,13 @@ This might be a great time to start a new conversation or share something intere
       const results = await Promise.allSettled(
         activeUsers.map(async (user) => {
           try {
-            const digest = await this.generateUserDailyDigest(user._id, { requireAway: true });
+            const digest = await this.generateUserDailyDigest(user._id, {
+              requireAway: true, digestKey: DailyDigestService.digestKey(user, at),
+            });
             return { userId: user._id, success: true, digest };
           } catch (error) {
+            // Another run of this hour wrote it first, and that run sends the email.
+            if (isDuplicateDigest(error)) return { userId: user._id, success: false, error: 'already-sent' };
             console.error(`Failed to generate digest for user ${user._id}:`, error);
             return { userId: user._id, success: false, error: (error as Error).message };
           }
