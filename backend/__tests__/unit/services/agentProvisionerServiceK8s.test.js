@@ -1124,7 +1124,10 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     const command = k8s.__mock.execCommands.find((c) => c.includes('removed accounts'));
     expect(command).toBeDefined();
     // Run the exact script the gateway pod gets, on a copy of the state file.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'state-edit-'));
+    // The path is spliced into shell and Python text, so it must need no
+    // quoting: a TMPDIR with a space or a quote falls back to /tmp.
+    const base = /^[\w/.-]+$/.test(os.tmpdir()) ? os.tmpdir() : '/tmp';
+    const dir = fs.mkdtempSync(path.join(base, 'state-edit-'));
     try {
       const statePath = path.join(dir, 'moltbot.json');
       fs.writeFileSync(statePath, JSON.stringify(configWith()));
