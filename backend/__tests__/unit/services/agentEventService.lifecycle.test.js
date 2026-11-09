@@ -119,7 +119,8 @@ describe('attempts is a delivery counter with exactly one writer', () => {
     await AgentEventService.list({ agentName: 'pixel', instanceId: 'default' });
 
     const [filter, update, options] = lastCall(AgentEvent.findOneAndUpdate);
-    expect(filter).toEqual({ _id: 'evt-1', status: 'pending' });
+    // F52: never a native turn queued for the runner lease holder.
+    expect(filter).toEqual({ _id: 'evt-1', status: 'pending', inProcessQueued: { $ne: true } });
     // The claim IS the delivery — ADR-004 §Event model.
     expect(update.$inc).toEqual({ attempts: 1 });
     expect(update.$set).toEqual(expect.objectContaining({ status: 'delivered' }));

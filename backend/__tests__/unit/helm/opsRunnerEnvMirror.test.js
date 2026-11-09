@@ -6,8 +6,9 @@
  * backend's byte-for-byte render — the env block has blank lines nindent would
  * re-indent). A "KEEP IN SYNC" banner alone drifts (recorded instances across
  * the chart), so this pins the contract: the two Deployments must declare the
- * SAME env entries except RUN_WORKER, which controls the serving process and
- * is not read by the sleeping ops-runner, and PG_USER/PG_PASSWORD: the backend
+ * SAME env entries except the process-role gates RUN_WORKER and
+ * NATIVE_TURNS_ON_WORKER, which control the serving process and are not read
+ * by the sleeping ops-runner, and PG_USER/PG_PASSWORD: the backend
  * may connect as its own role (backend.env.pgAppUser), while ops-runner keeps
  * backend.env.pgUser for admin writes. Both exceptions are pinned exactly below.
  * Otherwise, the same (name, source) tuples,
@@ -100,7 +101,7 @@ if (typeof describe === 'function') {
     // sorted arrays reports exactly which env entry drifted.
     test('ops-runner declares the same env (name + source) tuples as backend', () => {
       const pgRole = (tuple) => /^PG_(USER|PASSWORD)\t/.test(tuple);
-      const withoutWorkerGate = (tuple) => !tuple.startsWith('RUN_WORKER\t');
+      const withoutWorkerGate = (tuple) => !/^(RUN_WORKER|NATIVE_TURNS_ON_WORKER)\t/.test(tuple);
       const mirrored = (tuple) => withoutWorkerGate(tuple) && !pgRole(tuple);
       expect([...opsTuples].filter(mirrored).sort())
         .toEqual([...backendTuples].filter(mirrored).sort());
@@ -116,6 +117,7 @@ if (typeof describe === 'function') {
       expect(backendTuples.filter((tuple) => !withoutWorkerGate(tuple))).toEqual([
         'RUN_WORKER\tvalue:"1"',
         'RUN_WORKER\tvalue:"0"',
+        'NATIVE_TURNS_ON_WORKER\tvalue:"1"',
       ]);
     });
   });

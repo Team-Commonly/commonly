@@ -76,6 +76,12 @@ spec:
         {{- else if .Values.backend.worker.enabled }}
         - name: RUN_WORKER
           value: "0"
+        {{- if not .Values.backend.worker.startPaused }}
+        # F52: native turns run only on the worker, so web replicas share its
+        # lanes. Paused, there is no worker, so web keeps running them.
+        - name: NATIVE_TURNS_ON_WORKER
+          value: "1"
+        {{- end }}
         {{- end }}
         - name: PORT
           value: {{ .Values.backend.service.port | quote }}
