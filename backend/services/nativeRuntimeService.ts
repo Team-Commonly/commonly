@@ -2908,22 +2908,28 @@ export async function runAgent(
         if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
       }
       // A refused call did nothing, and its arguments may quote the stopped
-      // page, so it leaves the history with its result. What ran stays.
-      const asideAt = new Set(aside.map(({ index }) => index));
+      // page, so it leaves the history with its result. What ran stays. Only
+      // the rounds after the stopped one are touched, so every call and its
+      // result go together (a provider refuses a call with no result), and
+      // an earlier set-aside notice is a note to keep, not a refusal.
+      const laterFrom = roundEnds[firstRound];
       const refused = new Set<string>();
-      for (let i = aside[0].index + 1; i < messages.length; i += 1) {
-        if (messages[i]?.role !== 'tool' || asideAt.has(i)) continue;
+      for (let i = laterFrom; i < messages.length; i += 1) {
+        if (messages[i]?.role !== 'tool') continue;
         let parsed: any = null;
         try { parsed = JSON.parse(String(messages[i].content)); } catch { parsed = null; }
-        if (parsed && parsed.ok === false) refused.add(String(messages[i].tool_call_id));
+        if (parsed && parsed.ok === false
+          && parsed.error !== COMPUTER_SET_ASIDE_NOTICE && parsed.error !== WEB_SET_ASIDE_NOTICE) {
+          refused.add(String(messages[i].tool_call_id));
+        }
       }
       if (refused.size) {
         const kept: any[] = [];
         const newIndex = new Map<number, number>();
         messages.forEach((message: any, i: number) => {
           let next = message;
-          if (i > aside[0].index && message?.role === 'tool' && refused.has(String(message.tool_call_id))) return;
-          if (i > aside[0].index && message?.role === 'assistant' && Array.isArray(message.tool_calls)) {
+          if (i >= laterFrom && message?.role === 'tool' && refused.has(String(message.tool_call_id))) return;
+          if (i >= laterFrom && message?.role === 'assistant' && Array.isArray(message.tool_calls)) {
             const calls = message.tool_calls.filter((tc: any) => !refused.has(String(tc?.id)));
             if (!calls.length && !message.content) return;
             next = { ...message, tool_calls: calls };

@@ -1499,6 +1499,26 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(posted()).toEqual(['Step one is done.']);
     });
 
+    test('a refused call in the stopped page\'s own round keeps its result, so no call is left unanswered', async () => {
+      pages = [STOPPED_TEXT, CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1'), call('x1', 'commonly_web_search', { query: 'q' })),
+        toolCalls(call('p1', 'commonly_post_message', { content: 'Step one is done.' })),
+        toolCalls(snapshotCall('c3')),
+        guardStop,
+        reply('Done.'),
+      ];
+
+      await runAgent(computerInstall(), mention);
+
+      const retry = chatBodies[4];
+      const callIds = retry.messages.filter((m) => m.role === 'assistant')
+        .flatMap((m) => (m.tool_calls || []).map((tc) => tc.id));
+      const resultIds = retry.messages.filter((m) => m.role === 'tool').map((m) => m.tool_call_id);
+      expect(resultIds).toEqual(callIds);
+      expect(callIds).toEqual(['c1', 'x1', 'p1', 'c3']);
+    });
+
     test('when the check is unavailable, the last round\'s reads are set aside and older ones stay', async () => {
       pages = [CLEAN_TEXT, LATER_TEXT];
       checkUnavailable = true;
