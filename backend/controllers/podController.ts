@@ -448,7 +448,9 @@ exports.getPodById = async (req: any, res: any) => {
     // F307: the room's agent is gone by the same rule the list uses (rows
     // exist, every one uninstalled), so the page can offer to close it.
     // A paused or errored install still counts as present.
-    const body = withAgentLabels(typeof pod.toObject === 'function' ? pod.toObject() : pod);
+    // toJSON, as res.json(pod) used: toObject would leave the contacts Map as
+    // a Map, which serializes to {}.
+    const body = withAgentLabels(typeof pod.toJSON === 'function' ? pod.toJSON() : pod);
     if (pod.type === 'agent-room') {
       const agentGone = (await goneAgentRoomIds([pod._id])).has(String(pod._id));
       return res.json({ ...body, agentGone });

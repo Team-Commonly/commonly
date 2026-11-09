@@ -789,6 +789,30 @@ describe('podController', () => {
     expect(body.members.find((m) => m._id === 'me')).toEqual({ _id: 'me', username: 'maya' });
   });
 
+  it('getPodById keeps a group pod\'s contacts when it adds the labels', async () => {
+    const PodModel = jest.requireActual('../../../models/Pod');
+    const doc = new PodModel({
+      name: 'Launch notes',
+      type: 'chat',
+      createdBy: new mongoose.Types.ObjectId(),
+      contacts: { codex: { agentName: 'openclaw', instanceId: 'juno' } },
+    });
+    const viewer = String(doc.createdBy);
+    doc.members = [doc.createdBy];
+    Pod.findById.mockReturnValue({
+      populate: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockResolvedValue(doc),
+        }),
+      }),
+    });
+    const req = { params: { id: String(doc._id) }, userId: viewer, user: {} };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await podController.getPodById(req, res);
+    const sent = JSON.parse(JSON.stringify(res.json.mock.calls[0][0]));
+    expect(sent.contacts).toEqual({ codex: expect.objectContaining({ agentName: 'openclaw', instanceId: 'juno' }) });
+  });
+
   // ── Gap 2 (PR #381): agent-dm §3.7 fan-out carve-out for direct ID lookup ─
   // PR #375 made getPodById 404 non-members of all personal pod types so
   // admins couldn't accidentally land in someone else's DM via the sidebar.
