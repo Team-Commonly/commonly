@@ -245,7 +245,9 @@ backend:
     # The Postgres role the backend Deployment connects as, and the
     # database-credentials key holding its password. Set both or neither; unset,
     # the backend uses pgUser and postgres-password. ops-runner and the
-    # postgres-backup CronJob always use pgUser.
+    # postgres-backup CronJob always use pgUser. Needs externalSecrets, and the
+    # store key (externalSecrets.keyPrefix + the key) must exist first: one
+    # missing key stops the whole database-credentials sync.
     pgAppUser: ""
     pgAppPasswordKey: ""
     pgSslEnabled: "true"
@@ -635,7 +637,8 @@ litellm:
   enabled: false
   # The Postgres role for LiteLLM's own schema, and the database-credentials key
   # holding its password. Set both or neither; unset, LiteLLM uses
-  # backend.env.pgUser and postgres-password.
+  # backend.env.pgUser and postgres-password. Same externalSecrets and
+  # store-key-first rule as backend.env.pgAppUser.
   pgUser: ""
   pgPasswordKey: ""
   # The LiteLLM model name every agent driver default names (F103): the K8s

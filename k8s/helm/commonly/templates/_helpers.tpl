@@ -147,18 +147,25 @@ Namespace
 {{- end }}
 
 {{/*
-A Postgres role override names a role and the database-credentials key holding
-its password, so the two come as a pair. Either alone points a role at another
-role's password. Called as (list <role> <key> "<values path>").
+The per-component Postgres roles (backend.env.pgAppUser, litellm.pgUser): each
+names a role and the database-credentials key holding its password. Either
+alone points a role at another role's password, and only the ExternalSecret
+can carry a key other than postgres-password. Rendered by
+templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
 */}}
-{{- define "commonly.pgRoleOverride.check" -}}
-{{- $role := index . 0 -}}
-{{- $key := index . 1 -}}
-{{- $path := index . 2 -}}
+{{- define "commonly.pgRoleOverride.checks" -}}
+{{- range list (list .Values.backend.env.pgAppUser .Values.backend.env.pgAppPasswordKey "backend.env.pgAppUser") (list .Values.litellm.pgUser .Values.litellm.pgPasswordKey "litellm.pgUser") }}
+{{- $role := index . 0 }}
+{{- $key := index . 1 }}
+{{- $path := index . 2 }}
 {{- if ne (empty $role) (empty $key) }}
 {{- fail (printf "%s: set the Postgres role and its password key together" $path) }}
 {{- end }}
 {{- if has $key (list "mongo-uri" "mongo-password") }}
 {{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
+{{- end }}
+{{- if and $key (ne $key "postgres-password") (not $.Values.externalSecrets.enabled) }}
+{{- fail (printf "%s: %s needs externalSecrets; the local Secret carries only postgres-password" $path $key) }}
+{{- end }}
 {{- end }}
 {{- end }}
