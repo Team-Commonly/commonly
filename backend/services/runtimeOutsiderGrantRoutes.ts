@@ -94,6 +94,9 @@ add('/api/messages', 'read', ['GET /threads/state']);
 add('/api/messages', 'pod_write', [
   'POST /:messageId/reactions', 'DELETE /:messageId/reactions/:emoji',
   'POST /:messageId/follow', 'DELETE /:messageId/follow', 'PUT /:messageId/collapsed',
+  // The read point is per-user thread state keyed by the message's pod, gated
+  // by the same pod-write access as collapse and follow.
+  'PUT /:messageId/read',
 ], messagePod);
 // F141: an agent deleting its own message writes into the message's stored pod.
 add('/api/messages', 'pod_write', ['DELETE /:id'], messageIdPod);
