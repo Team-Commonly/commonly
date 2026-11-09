@@ -137,4 +137,36 @@ describe('channel mode on', () => {
     if (handle.channel) await handle.channel.done;
     expect(api.calls).toHaveLength(0);
   });
+
+  it('does not start the loop when initialize won the race but the transport then closed during connect', async () => {
+    // The startup guard: if the client initialized (ready resolves true) AND the
+    // transport closed (open false) both while connect() was still pending, the
+    // ready gate would NOT stop the loop (ready is true), so without the guard it
+    // claims one mention only to fail its push. Hold the transport's start() open,
+    // fire both during that window, and confirm the loop never ran: no claim at
+    // all, no channel. Revert `if (!open) return` in server.js and this fails.
+    const api = scriptedApi([[{
+      _id: 'e9', type: 'chat.mention', podId: 'p1',
+      payload: { messageId: '12', userId: OWNER, senderIsHuman: true, content: 'ping' },
+    }]]);
+    const handle = createServer(cfg, {
+      channel: true, env: {}, channelOptions: { requestImpl: api.requestImpl, intervalMs: 5, log: () => {} },
+    });
+    // A transport parked on start(), so connect() wires oninitialized/onclose and
+    // then waits inside server.connect() — the exact window the guard covers.
+    let releaseStart;
+    const startGate = new Promise((resolve) => { releaseStart = resolve; });
+    const transport = {
+      onmessage: undefined, onclose: undefined, onerror: undefined,
+      start: () => startGate, send: async () => {}, close: async () => {},
+    };
+    const connecting = handle.connect(transport);
+    handle.server.oninitialized(); // initialize won: ready -> true
+    handle.server.onclose(); // ...then the transport closed: open -> false
+    releaseStart(); // let server.connect() resolve, so the guard runs
+    await connecting;
+    await new Promise((r) => { setTimeout(r, 30); });
+    expect(handle.channel).toBeNull();
+    expect(api.calls).toHaveLength(0);
+  });
 });
