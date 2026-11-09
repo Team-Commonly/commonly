@@ -23,12 +23,15 @@ const ThreadUserState = require('../models/pg/ThreadUserState');
 const PGMessage = require('../models/pg/Message');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
-const { THREADING_BACKFILL_MIGRATION: MIGRATION_NAME } = require('../constants/migrations');
+const {
+  THREADING_BACKFILL_MIGRATION: MIGRATION_NAME,
+  READ_POINT_MIGRATION,
+} = require('../constants/migrations');
 
 interface Req {
   params: { messageId?: string };
   query: { podId?: string };
-  body?: { collapsed?: unknown };
+  body?: { collapsed?: unknown; at?: unknown };
   user?: { _id?: unknown };
   userId?: unknown;
   agentUser?: { _id?: unknown };
@@ -94,6 +97,37 @@ async function readThreadingCutoff(): Promise<{ cutoff: string | null; cutoffUnk
     // Fails toward unknown, i.e. toward expanding. Same reasoning: the
     // recoverable error is the noisy one.
     return { cutoff: null, cutoffUnknown: true };
+  }
+}
+
+/**
+ * The read-tracking epoch (D278): when migration 0011 was applied, as ISO, or
+ * null when that can't be read.
+ *
+ * Before this moment nobody could have stored a read point, so a thread the
+ * viewer posted in long ago has no `lastReadAt` — and the client's fallback,
+ * "my own newest message is a read point", would call every later reply in it
+ * unread on the first load after deploy. The client counts a reply as unread
+ * by that fallback only when it is newer than this epoch.
+ *
+ * Same family as `readThreadingCutoff` above, and the same direction on
+ * failure: unknown resolves to the quiet side. A null epoch makes the client
+ * show no fallback unread mark and auto-open nothing; a stored `lastReadAt`
+ * still counts. Read from `schema_migrations`, the runner's own ledger
+ * (config/run-pg-migrations.ts), keyed by file name.
+ */
+async function readReadTrackingSince(): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(
+      'SELECT applied_at FROM schema_migrations WHERE version = $1',
+      [READ_POINT_MIGRATION],
+    );
+    const raw = rows[0]?.applied_at;
+    if (raw === null || raw === undefined) return null;
+    const at = raw instanceof Date ? raw : new Date(String(raw));
+    return Number.isNaN(at.getTime()) ? null : at.toISOString();
+  } catch {
+    return null;
   }
 }
 
@@ -186,9 +220,12 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       return;
     }
     const { cutoff, cutoffUnknown } = await readThreadingCutoff();
+    const readTrackingSince = await readReadTrackingSince();
     const rows = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
     res.status(200).json({
       podId,
+      // D278 read-tracking epoch; null when unknown. See readReadTrackingSince.
+      readTrackingSince,
       // `following: null` is still a value the client must interpret, so its
       // default stays stated at the wire. `collapsed` no longer appears here
       // because there is no case left in which the client supplies it.
@@ -201,10 +238,16 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       // renamed a public field — caught by threadStateReadContract, which is
       // the reason that suite reads through the controller rather than the
       // model.
-      threads: rows.map((r: { thread_root_id: number; following: boolean | null; collapsed: boolean }) => ({
+      // `lastReadAt` is the caller's read point (D278): ISO, or null when they
+      // have never opened the thread. Null is a value — it renders no unread
+      // mark — so it is sent rather than omitted.
+      threads: rows.map((r: {
+        thread_root_id: number; following: boolean | null; collapsed: boolean; last_read_at: string | null;
+      }) => ({
         threadRootId: r.thread_root_id,
         following: r.following,
         collapsed: r.collapsed,
+        lastReadAt: r.last_read_at ?? null,
       })),
     });
   } catch (err: any) {
@@ -235,5 +278,58 @@ export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
   }
 }
 
-module.exports = { followThread, unfollowThread, listThreadState, setThreadCollapsed };
+/**
+ * A person's read point in a thread (D278) — the only writer of
+ * `last_read_at`. The client calls it while a thread is open, with the time of
+ * the newest reply it rendered.
+ *
+ * Same gate as the collapse gesture, by sharing `authorize`: the pod is the one
+ * that owns the message, never one the client names, so a member of one pod
+ * cannot write a read point against another pod's thread, and any message in a
+ * thread resolves to its root.
+ *
+ * `at` must be an ISO 8601 date-time string that parses. Anything else is a
+ * 400 before the database is touched. The model clamps it to now and only
+ * moves forward, so a stale or replayed write is a 200 that changes nothing;
+ * the response carries the stored point either way.
+ */
+const ISO_TIME = '([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d(\\.\\d{1,6})?)?';
+const ISO_ZONE = '(Z|[+-]([01]\\d|2[0-3]):?[0-5]\\d)';
+const ISO_DATE_TIME = new RegExp(`^(\\d{4})-(\\d{2})-(\\d{2})T${ISO_TIME}${ISO_ZONE}$`);
+
+/**
+ * Parse `at` strictly. The shape check alone lets `2026-02-30` through, and
+ * Date rolls it over to March 2; the calendar day must survive a round trip.
+ */
+const parseReadAt = (raw: unknown): Date | null => {
+  if (typeof raw !== 'string') return null;
+  const shape = ISO_DATE_TIME.exec(raw);
+  if (!shape) return null;
+  const [year, month, day] = [Number(shape[1]), Number(shape[2]), Number(shape[3])];
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1
+    || calendar.getUTCDate() !== day) return null;
+  const at = new Date(raw);
+  return Number.isNaN(at.getTime()) ? null : at;
+};
+
+export async function setThreadRead(req: Req, res: Res): Promise<void> {
+  try {
+    const at = parseReadAt((req.body || {}).at);
+    if (!at) {
+      res.status(400).json({ msg: 'at (ISO 8601 date-time) is required' });
+      return;
+    }
+    const ctx = await authorize(req, res);
+    if (!ctx) return;
+    const lastReadAt = await ThreadUserState.markRead(ctx.rootId, ctx.userId, ctx.podId, at);
+    res.status(200).json({ threadRootId: ctx.rootId, lastReadAt });
+  } catch (err: any) {
+    res.status(500).json({ msg: 'failed to set read point', error: err?.message });
+  }
+}
+
+module.exports = {
+  followThread, unfollowThread, listThreadState, setThreadCollapsed, setThreadRead,
+};
 Object.assign(module.exports, exports);

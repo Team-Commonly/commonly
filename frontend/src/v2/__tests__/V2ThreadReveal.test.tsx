@@ -515,3 +515,163 @@ describe('opening or closing a thread persists (producer)', () => {
     await waitFor(() => { expect(result.current.byRoot.get('7').collapsed).toBe(true); });
   });
 });
+
+describe('the read point (D278)', () => {
+  const wrapper = ({ children }) => <>{children}</>;
+
+  beforeEach(() => { mockPut.mockClear(); });
+  afterEach(() => {
+    mockGet.mockImplementation(() => Promise.resolve({ podId: 'p1', defaults: { following: null }, threads: [THREAD_ROW] }));
+  });
+
+  test('the server point and the read-tracking epoch arrive, and ready flips once the fetch succeeds', async () => {
+    mockGet.mockImplementation(() => Promise.resolve({
+      podId: 'p1',
+      defaults: { following: null },
+      readTrackingSince: '2026-11-09T09:00:00.000Z',
+      threads: [{ ...THREAD_ROW, lastReadAt: '2026-11-09T10:00:00.000Z' }],
+    }));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    expect(result.current.ready).toBe(false);
+    expect(result.current.readTrackingSince).toBeNull();
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:00:00.000Z');
+    expect(result.current.readTrackingSince).toBe('2026-11-09T09:00:00.000Z');
+  });
+
+  test('an older server with no epoch reads as unknown', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    expect(result.current.readTrackingSince).toBeNull();
+  });
+
+  test('a failed fetch never becomes ready, so nothing auto-opens or is marked read', async () => {
+    mockGet.mockImplementation(() => Promise.reject(new Error('offline')));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    expect(result.current.loading).toBe(true);
+    await waitFor(() => { expect(result.current.loading).toBe(false); });
+    expect(result.current.ready).toBe(false);
+    expect(result.current.readTrackingSince).toBeNull();
+  });
+
+  test('markRead is optimistic, writes the read route, and only ever moves forward', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/7/read', { at: '2026-11-09T10:05:00.000Z' }, { timeout: 15000 });
+
+    // The same point again, or an older one: no write, no change.
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:01:00.000Z'); });
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  test('a thread the state fetch never saw can still be marked read', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('new-root', '2026-11-09T10:05:00.000Z'); });
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/new-root/read', { at: '2026-11-09T10:05:00.000Z' }, { timeout: 15000 });
+    expect(result.current.readPoints.get('new-root')).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  test('a failed write keeps the point: the unread mark does not come back', async () => {
+    mockPut.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  test('a failed write is sent again on the next settle; a stored one is not', async () => {
+    mockPut.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    const at = '2026-11-09T10:05:00.000Z';
+    act(() => { result.current.markRead('7', at); });
+    await act(async () => { await Promise.resolve(); });
+    expect(mockPut).toHaveBeenCalledTimes(1);
+
+    act(() => { result.current.markRead('7', at); });
+    expect(mockPut).toHaveBeenCalledTimes(2);
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => { result.current.markRead('7', at); });
+    expect(mockPut).toHaveBeenCalledTimes(2);
+  });
+
+  test('a point the server already holds is not written again', async () => {
+    mockGet.mockImplementation(() => Promise.resolve({
+      podId: 'p1', defaults: { following: null }, threads: [{ ...THREAD_ROW, lastReadAt: '2026-11-09T10:05:00.000Z' }],
+    }));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  test('the stored point in the answer merges forward, never back', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    // Another tab already read further: the server answers with its newer point.
+    mockPut.mockImplementationOnce(() => Promise.resolve({ threadRootId: 7, lastReadAt: '2026-11-09T10:09:00.000Z' }));
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:09:00.000Z');
+
+    // A clamped answer older than what we know leaves the point where it is.
+    mockPut.mockImplementationOnce(() => Promise.resolve({ threadRootId: 7, lastReadAt: '2026-11-09T10:00:00.000Z' }));
+    act(() => { result.current.markRead('7', '2026-11-09T10:12:00.000Z'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:12:00.000Z');
+  });
+
+  test('an answer that lands after the pod changed is dropped', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    mockPut.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const { result, rerender } = renderHook(({ podId }) => useV2ThreadState(podId), {
+      wrapper, initialProps: { podId: 'p1' },
+    });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+
+    rerender({ podId: 'p2' });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    await act(async () => { answer({ threadRootId: 7, lastReadAt: '2026-11-09T10:09:00.000Z' }); await Promise.resolve(); });
+    expect(result.current.readPoints.has('7')).toBe(false);
+  });
+});
+
+describe('an answer that opens the asker\'s thread does not move a reader who is up the list (D278)', () => {
+  afterEach(() => {
+    mockGet.mockImplementation(() => Promise.resolve({ podId: 'p1', defaults: { following: null }, threads: [THREAD_ROW] }));
+  });
+
+  test('the thread opens and the scroll position stays where the reader left it', async () => {
+    mockGet.mockImplementation(() => Promise.resolve({
+      podId: 'p1', defaults: { following: null }, threads: [], readTrackingSince: '2026-11-09T09:00:00.000Z',
+    }));
+    const ask = {
+      id: 'q1', pod_id: 'p1', user_id: 'u1', content: 'can someone look at this', message_type: 'text',
+      created_at: '2026-11-09T10:00:00Z', user: { username: 'solo-user' },
+    };
+    const reply = {
+      id: 'a1', pod_id: 'p1', user_id: 'bot-1', thread_root_id: 'q1', content: 'Here is what I found', message_type: 'text',
+      created_at: '2026-11-09T10:01:00Z', user: { username: 'helper', isBot: true },
+    };
+    const detail = makeDetail({ messages: [...threadMessages(), ask], hasMore: false });
+    const view = renderAt('', detail);
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    const scroller = view.container.querySelector('.v2-chat__messages');
+    readerAt(scroller, 2000, 300);
+
+    view.rerender(threadNode('', { ...detail, messages: [...detail.messages, reply] }));
+    await waitFor(() => expect(view.container.querySelector('#message-a1')).toBeTruthy());
+    expect(view.container.querySelector('#message-q1').closest('.v2-thread-block')).toHaveClass('v2-thread-block--open');
+    expect(scroller.scrollTop).toBe(300);
+  });
+});

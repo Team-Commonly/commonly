@@ -978,9 +978,13 @@
       "muted": "Muted",
       "replyCount_one": "{{count}} reply",
       "replyCount_other": "{{count}} replies",
-      "lastActivity": "· last {{age}}",
       "expandAria": "Expand thread, {{replies}}",
-      "collapseAria": "Collapse thread, {{replies}}"
+      "collapseAria": "Collapse thread, {{replies}}",
+      "latestFrom": "{{replies}}, latest from {{name}}: {{text}}",
+      "latestFromNoText": "{{replies}}, latest from {{name}}",
+      "unreadSummary": "{{summary}}, {{count}} new",
+      "unreadCount": "{{count}} new",
+      "sentCard": "sent a card"
     },
     "leadBadge": "Lead",
     "catchup": {

@@ -2640,6 +2640,45 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(addressed).toContain('var(--v2-accent)');
   });
 
+  test('D278: the thread chip is one line at every width; the preview truncates and the count never wraps', () => {
+    // jsdom has no layout, so a render test passes with the chip wrapping to
+    // two lines at 390 or the count squeezed to "3 rep…". These are the rules
+    // that hold the line: the chip may shrink (min-width: 0, max-width: 100%),
+    // the preview and name ellipsize, and the count and counter never shrink.
+    const chip = ruleBody(v2, '.v2-root .v2-thread button.v2-msg__thread-chip');
+    expect(chip).toContain('min-width: 0');
+    expect(chip).toContain('max-width: 100%');
+    expect(chip).toContain('white-space: nowrap');
+    for (const selector of ['.v2-thread .v2-thread-card__preview', '.v2-thread .v2-thread-card__name']) {
+      const rule = ruleBody(v2, selector);
+      expect(rule).toContain('min-width: 0');
+      expect(rule).toContain('overflow: hidden');
+      expect(rule).toContain('text-overflow: ellipsis');
+      expect(rule).toContain('white-space: nowrap');
+    }
+    // The replier name gives way only after the preview: it may shrink
+    // (flex-shrink 1) but never grows, and the larger-basis preview absorbs the
+    // shrink first, so a long name plus both counts can't push the counter off
+    // the chip at 390. The cap stays an absolute length — a shrinking name with
+    // a percentage cap collapsed to "H…" on staging, since a percentage has no
+    // definite base inside the shrink-to-fit chip.
+    const name = ruleBody(v2, '.v2-thread .v2-thread-card__name');
+    expect(name).toContain('flex: 0 1 auto');
+    expect(name).toMatch(/max-width: \d+(\.\d+)?em/);
+    expect(ruleBody(v2, '.v2-thread .v2-thread-card__preview')).toContain('flex: 1 1 auto');
+    for (const selector of ['.v2-thread .v2-thread-card__count', '.v2-thread .v2-thread-card__unread']) {
+      const rule = ruleBody(v2, selector);
+      expect(rule).toContain('flex: none');
+      expect(rule).toContain('white-space: nowrap');
+    }
+    // The unread counter is the design system's accent mark, never a fill.
+    expect(ruleBody(v2, '.v2-thread .v2-thread-card__unread')).toContain('color: var(--v2-accent-text)');
+    expect(ruleBody(v2, '.v2-thread .v2-thread-card__unread')).not.toContain('background');
+    // The phone rule used to wrap the chip to two lines; D278 holds it to one.
+    const phone = blockContaining(read('../chat/chat-pane.css'), '@media (max-width: 640px)', '.v2-root button.v2-thread-card__main');
+    expect(phone).toMatch(/\.v2-root button\.v2-thread-card__main \{[^}]*flex-wrap: nowrap/);
+  });
+
   test('message actions retain 44px targets and become visible on touch layouts', () => {
     // TASK-052 intent, third mechanism: the hover cluster carries
     // Reply/Thread/React. Desktop reveals it on hover; a 390px touch

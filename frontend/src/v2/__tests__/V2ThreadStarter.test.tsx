@@ -701,9 +701,11 @@ describe('second-person prompt placements', () => {
     const detail = withReply();
     detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
     renderChat(detail);
+    // The state read here carries no read-tracking epoch (D278), so the
+    // viewer's own thread does not open itself: it rests as a chip.
     fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 1 reply' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Expand thread, 1 reply/ }));
     expect(screen.getByRole('button', { name: 'Creating link…' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
     await act(async () => { finish({ data: { token: 'a'.repeat(32) } }); });

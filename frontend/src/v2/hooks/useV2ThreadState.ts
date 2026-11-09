@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useV2Api } from './useV2Api';
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -21,12 +21,19 @@ export interface V2ThreadState {
   threadRootId: number;
   following: boolean | null;
   collapsed: boolean;
+  /**
+   * My read point in this thread (D278): ISO, or null when I have never
+   * opened it. Older servers omit it, which reads the same as null.
+   */
+  lastReadAt?: string | null;
 }
 
 interface ThreadStateResponse {
   podId: string;
   defaults: { following: boolean | null };
   threads: V2ThreadState[];
+  /** D278 read-tracking epoch; null or absent when the server can't say. */
+  readTrackingSince?: string | null;
 }
 
 export interface UseV2ThreadState {
@@ -43,6 +50,31 @@ export interface UseV2ThreadState {
    */
   setCollapsed: (messageId: string, collapsed: boolean) => void;
   toggleFollowing: (messageId: string) => void;
+  /**
+   * My read point per thread root: the server's `lastReadAt`, moved forward
+   * by `markRead` in this session. Keyed by root id. Absent means never read.
+   */
+  readPoints: Map<string, string>;
+  /**
+   * Move my read point in a thread forward to `atIso`. Optimistic, and a
+   * no-op when `atIso` is not newer than the point already known, so an open
+   * thread can call it on every render without writing. Works for a thread
+   * the state fetch never saw (one an answer created after mount): the server
+   * resolves the root from any message id.
+   */
+  markRead: (rootId: string, atIso: string) => void;
+  /**
+   * The state fetch has SUCCEEDED for this pod. A failed fetch leaves it false:
+   * without the server's read points, a thread already read on another device
+   * would look unread, so the transcript auto-opens and marks nothing.
+   */
+  ready: boolean;
+  /**
+   * The read-tracking epoch (D278): before it nobody could store a read
+   * point, so the own-message fallback never reaches behind it. Null when
+   * unknown — an older server, a failed fetch, or not loaded yet.
+   */
+  readTrackingSince: string | null;
 }
 
 const key = (id: number | string) => String(id);
@@ -51,8 +83,34 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   const api = useV2Api();
   const [byRoot, setByRoot] = useState<Map<string, V2ThreadState>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [readTrackingSince, setReadTrackingSince] = useState<string | null>(null);
+  const [readPoints, setReadPoints] = useState<Map<string, string>>(new Map());
+  // The newest point known per root, read synchronously by markRead so two
+  // calls in one tick don't both write. The state above is what renders.
+  const readPointsRef = useRef<Map<string, string>>(new Map());
+  // What the server is known to hold per root (from the state fetch or a PUT
+  // that succeeded), and the write in flight. Kept apart from the optimistic
+  // point so a failed PUT is written again on the next settle.
+  const persistedRef = useRef<Map<string, number>>(new Map());
+  const inFlightRef = useRef<Map<string, number>>(new Map());
+  // Bumped on every pod change; a PUT answered after it is dropped.
+  const podGenerationRef = useRef(0);
 
   useEffect(() => {
+    // Reset without minting a new Map when there is nothing to clear. Every
+    // new identity re-folds the transcript (V2Thread's threadView memo), and a
+    // re-fold in the same commit as a landing reveal makes the landing effect
+    // read the not-yet-opened thread as a history miss and page older history.
+    if (readPointsRef.current.size > 0) {
+      readPointsRef.current = new Map();
+      setReadPoints(new Map());
+    }
+    podGenerationRef.current += 1;
+    persistedRef.current = new Map();
+    inFlightRef.current = new Map();
+    setReady(false);
+    setReadTrackingSince(null);
     if (!podId) {
       setByRoot(new Map());
       return undefined;
@@ -68,6 +126,30 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         const next = new Map<string, V2ThreadState>();
         for (const t of data?.threads || []) next.set(key(t.threadRootId), t);
         setByRoot(next);
+        // Server points merge under any this session already moved forward.
+        // Same reason as the reset above: a new Map only when a point moved.
+        const points = new Map(readPointsRef.current);
+        let moved = false;
+        for (const t of data?.threads || []) {
+          const at = t.lastReadAt;
+          if (!at || Number.isNaN(Date.parse(at))) continue;
+          const stored = persistedRef.current.get(key(t.threadRootId));
+          if (stored === undefined || Date.parse(at) > stored) {
+            persistedRef.current.set(key(t.threadRootId), Date.parse(at));
+          }
+          const known = points.get(key(t.threadRootId));
+          if (!known || Date.parse(at) > Date.parse(known)) {
+            points.set(key(t.threadRootId), at);
+            moved = true;
+          }
+        }
+        if (moved) {
+          readPointsRef.current = points;
+          setReadPoints(points);
+        }
+        const epoch = data?.readTrackingSince;
+        setReadTrackingSince(epoch && !Number.isNaN(Date.parse(epoch)) ? epoch : null);
+        setReady(true);
       })
       .catch(() => {
         // Degrade to "no threads known", which renders every message flat —
@@ -120,13 +202,79 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
     else api.del(`/api/messages/${messageId}/follow`).catch(revert);
   }, [api, byRoot, patch]);
 
+  // Move the rendered point forward, never back.
+  const advancePoint = useCallback((rootId: string, atIso: string) => {
+    const at = Date.parse(atIso);
+    if (Number.isNaN(at)) return;
+    const known = readPointsRef.current.get(key(rootId));
+    if (known && at <= Date.parse(known)) return;
+    const next = new Map(readPointsRef.current);
+    next.set(key(rootId), atIso);
+    readPointsRef.current = next;
+    setReadPoints(next);
+  }, []);
+
+  const markRead = useCallback((rootId: string, atIso: string) => {
+    const at = Date.parse(atIso);
+    if (!rootId || Number.isNaN(at)) return;
+    const root = key(rootId);
+    advancePoint(root, atIso);
+    // The write is skipped only when the server already holds this point or
+    // a write for it is in flight. A failed PUT clears its in-flight entry,
+    // so the next settle writes again.
+    const persisted = persistedRef.current.get(root);
+    const inFlight = inFlightRef.current.get(root);
+    if ((persisted !== undefined && at <= persisted) || (inFlight !== undefined && at <= inFlight)) return;
+    inFlightRef.current.set(root, at);
+    const generation = podGenerationRef.current;
+    const settle = () => {
+      if (inFlightRef.current.get(root) === at) inFlightRef.current.delete(root);
+    };
+    // Not reverted on failure. A read point is a convenience; putting the
+    // unread mark back after the person has seen the replies would be the
+    // worse error.
+    // A finite timeout so a stalled PUT can't pin `inFlightRef` and block every
+    // later read write for this root: a timeout rejects into the catch below,
+    // which clears the in-flight entry so the next settle retries.
+    api.put<{ lastReadAt?: string | null }>(
+      `/api/messages/${encodeURIComponent(rootId)}/read`,
+      { at: atIso },
+      { timeout: REQUEST_TIMEOUT_MS },
+    )
+      .then((data) => {
+        if (generation !== podGenerationRef.current) return; // the pod changed
+        settle();
+        // Record what the server actually holds, not what we asked for. It
+        // clamps to its clock and keeps the newer of two writes; its answer is
+        // the stored point. When it clamps `at` to an earlier time, persisting
+        // `at` would make the next identical settle a no-op and leave the
+        // stored point behind the reply — so persist the returned point, which
+        // lets a later settle retry once the clock has caught up.
+        const stored = data?.lastReadAt;
+        const storedAt = stored ? Date.parse(stored) : Number.NaN;
+        // A missing or unparseable answer keeps the old "assume `at` landed"
+        // fallback: we have nothing better to record.
+        const held = Number.isNaN(storedAt) ? at : storedAt;
+        const previous = persistedRef.current.get(root);
+        if (previous === undefined || held > previous) persistedRef.current.set(root, held);
+        if (stored && !Number.isNaN(storedAt)) advancePoint(root, stored);
+      })
+      .catch(() => {
+        if (generation === podGenerationRef.current) settle();
+      });
+  }, [api, advancePoint]);
+
   const isThreadRoot = useCallback(
     (messageId: string) => byRoot.has(key(messageId)),
     [byRoot],
   );
 
   return useMemo(
-    () => ({ byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing }),
-    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing],
+    () => ({
+      byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready,
+      readTrackingSince,
+    }),
+    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready,
+      readTrackingSince],
   );
 };

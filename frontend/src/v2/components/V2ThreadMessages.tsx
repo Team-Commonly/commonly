@@ -21,11 +21,28 @@ export const ASK_START_ID = 'ask-scout';
 const MAX_EXPANDED_REPLIES = 8;
 // A transcript load shorter than this never shows a spinner.
 const SPINNER_DELAY_MS = 300;
+// D278: at most this many threads open themselves for the asker at once.
+const MAX_AUTO_OPEN = 3;
+// An open thread marks itself read once it has sat rendered this long.
+const MARK_READ_DEBOUNCE_MS = 600;
+
+const timeOfMessage = (message: V2Message): number => {
+  const at = Date.parse(String(message.created_at || message.createdAt || ''));
+  return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
+};
 
 interface V2ThreadMessagesProps {
   messages: V2Message[];
   threadView: ThreadViewItem[];
-  threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'> & Partial<Pick<UseV2ThreadState, 'setCollapsed'>>;
+  threadState: Pick<UseV2ThreadState, 'byRoot' | 'toggleCollapsed' | 'toggleFollowing'>
+    & Partial<Pick<UseV2ThreadState, 'setCollapsed' | 'markRead' | 'ready'>>;
+  /** The person reading. Their own unanswered-then-answered threads open for them (D278). */
+  viewerId?: string | null;
+  /**
+   * A thread opened itself. The caller follows the new height only if the
+   * list was already pinned to the bottom; it never moves a reader who is up.
+   */
+  onThreadOpened?: () => void;
   decisionByMessageId: Map<string, V2DecisionCardData>;
   settledDecisionByMessageId: Map<string, V2DecisionRuling>;
   agentDisplayNames: Map<string, string>;
@@ -172,6 +189,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   onAddAgent,
   messagesContainerRef,
   messagesEndRef,
+  viewerId = null,
+  onThreadOpened,
 }) => {
   const { t } = useTranslation();
   // Loading → content: whatever replaces the spinner fades in once, over
@@ -206,7 +225,9 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // The resting state of a thread is the chip (ux-lead 64476 (4)). Which
   // roots are open is a session gesture held here; the server `collapsed`
   // row is written to match on each open/close (it still drives the wake
-  // path), but a fresh mount always shows chips.
+  // path), but a fresh mount shows chips. The one exception (D278): a thread
+  // whose root I wrote opens for me while it holds an agent reply I haven't
+  // read — see the asker auto-open below.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
   // A run of claim lines folds to one summary row; this is the open ones.
   const [openClaimRuns, setOpenClaimRuns] = useState<Set<string>>(() => new Set());
@@ -218,14 +239,155 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       return next;
     });
   }, []);
+  // D278 asker auto-open. Per root, the newest agent reply (ms) already acted
+  // on: the thread opened for it, was passed over by the cap, or was closed by
+  // hand after it. Only a newer unread agent reply opens that thread again.
+  const settledAgentAtRef = useRef<Map<string, number>>(new Map());
+  const autoOpenedRef = useRef<Set<string>>(new Set());
+  const [autoOpenTick, setAutoOpenTick] = useState(0);
   const setOpen = useCallback((rootId: string, open: boolean) => {
     setOpenRoots((current) => {
       const next = new Set(current);
       if (open) next.add(rootId); else next.delete(rootId);
       return next;
     });
+    if (!open) {
+      // Closed by hand: stays closed until a newer agent reply arrives.
+      autoOpenedRef.current.delete(rootId);
+      const card = threadView.find((item) => item.kind === 'card' && item.rootId === rootId);
+      const newest = card && card.kind === 'card' ? card.newestAgentReplyAt : null;
+      if (typeof newest === 'number') {
+        const settled = settledAgentAtRef.current.get(rootId);
+        if (settled === undefined || newest > settled) settledAgentAtRef.current.set(rootId, newest);
+      }
+    }
     threadState.setCollapsed?.(rootId, !open);
-  }, [threadState]);
+  }, [threadState, threadView]);
+
+  // The asker's view (D278): a thread whose root I wrote and that holds an
+  // agent reply I haven't read opens for me, on mount and as replies land.
+  // Waits for the state fetch, or a thread I already read would open on its
+  // own-message fallback before the server's read point arrives. The open is
+  // local: the server's `collapsed` row is written only by a gesture.
+  const stateReady = threadState.ready !== false;
+  useEffect(() => {
+    if (!stateReady || !viewerId) return;
+    const settled = settledAgentAtRef.current;
+    const eligible = threadView.flatMap((item) => {
+      if (item.kind !== 'card' || !item.viewerIsRootAuthor) return [];
+      if (!item.unreadAgentCount || typeof item.newestUnreadAgentAt !== 'number') return [];
+      if (openRoots.has(item.rootId) || settledDecisionByMessageId.has(item.rootId)) return [];
+      const done = settled.get(item.rootId);
+      if (done !== undefined && item.newestUnreadAgentAt <= done) return [];
+      return [{ rootId: item.rootId, at: item.newestUnreadAgentAt }];
+    });
+    if (eligible.length === 0) return;
+    eligible.sort((a, b) => b.at - a.at);
+    const stillOpen = Array.from(autoOpenedRef.current).filter((rootId) => openRoots.has(rootId)).length;
+    const toOpen = eligible.slice(0, Math.max(0, MAX_AUTO_OPEN - stillOpen));
+    // Passed-over threads settle too, so they rest as chips rather than open
+    // later when a slot frees.
+    eligible.forEach(({ rootId, at }) => settled.set(rootId, at));
+    if (toOpen.length === 0) return;
+    toOpen.forEach(({ rootId }) => autoOpenedRef.current.add(rootId));
+    setOpenRoots((current) => {
+      const next = new Set(current);
+      toOpen.forEach(({ rootId }) => next.add(rootId));
+      return next;
+    });
+    setAutoOpenTick((tick) => tick + 1);
+  }, [stateReady, viewerId, threadView, openRoots, settledDecisionByMessageId]);
+
+  // A thread that opened itself grows the list. Keep a pinned list pinned;
+  // never scroll a reader who is up the transcript.
+  useEffect(() => {
+    if (autoOpenTick > 0) onThreadOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenTick]);
+
+  // Which open bands are on screen, and whether the tab is. A thread is read
+  // only when someone could have seen it: an asker whose answer opened in a
+  // background tab, or below the fold, must still find it unread later.
+  const [pageVisible, setPageVisible] = useState(() => (
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  ));
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onVisibility = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  const [onScreenRoots, setOnScreenRoots] = useState<Set<string>>(() => new Set());
+  const bandObserverRef = useRef<IntersectionObserver | null>(null);
+  const bandElementsRef = useRef<Map<string, Element>>(new Map());
+  const setRootOnScreen = useCallback((rootId: string, onScreen: boolean) => {
+    setOnScreenRoots((current) => {
+      if (current.has(rootId) === onScreen) return current;
+      const next = new Set(current);
+      if (onScreen) next.add(rootId); else next.delete(rootId);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    // No IntersectionObserver, no way to know a band was seen: mark nothing.
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const rootId = entry.target.getAttribute('data-thread-root');
+        if (rootId) setRootOnScreen(rootId, entry.isIntersecting);
+      });
+    });
+    bandObserverRef.current = observer;
+    bandElementsRef.current.forEach((element) => observer.observe(element));
+    return () => {
+      observer.disconnect();
+      bandObserverRef.current = null;
+    };
+  }, [setRootOnScreen]);
+  // One stable ref callback per root, so a re-render doesn't unobserve and
+  // re-observe every open band.
+  const bandRefCallbacksRef = useRef<Map<string, (element: HTMLDivElement | null) => void>>(new Map());
+  const bandRef = (rootId: string) => {
+    let callback = bandRefCallbacksRef.current.get(rootId);
+    if (!callback) {
+      callback = (element: HTMLDivElement | null) => {
+        const previous = bandElementsRef.current.get(rootId);
+        if (previous && previous !== element) {
+          bandObserverRef.current?.unobserve(previous);
+          bandElementsRef.current.delete(rootId);
+          setRootOnScreen(rootId, false);
+        }
+        if (element && previous !== element) {
+          bandElementsRef.current.set(rootId, element);
+          bandObserverRef.current?.observe(element);
+        }
+      };
+      bandRefCallbacksRef.current.set(rootId, callback);
+    }
+    return callback;
+  };
+
+  // An open thread, opened by hand or by itself, marks itself read up to its
+  // newest reply once its band has been on screen, in a visible tab, for the
+  // settle. Leaving the screen or the tab restarts the settle. Nothing is
+  // marked until the thread state has loaded: without the server's points the
+  // view can't tell what was already read. The newest reply is always among
+  // the rendered ones: the band shows the newest eight.
+  const markRead = threadState.markRead;
+  useEffect(() => {
+    if (!markRead || !stateReady || !pageVisible) return undefined;
+    const marks: Array<[string, string]> = [];
+    threadView.forEach((item) => {
+      if (item.kind !== 'card' || !openRoots.has(item.rootId) || !onScreenRoots.has(item.rootId)) return;
+      const newest = item.replies.reduce((acc, reply) => Math.max(acc, timeOfMessage(reply)), Number.NEGATIVE_INFINITY);
+      if (Number.isFinite(newest)) marks.push([item.rootId, new Date(newest).toISOString()]);
+    });
+    if (marks.length === 0) return undefined;
+    const timer = window.setTimeout(() => {
+      marks.forEach(([rootId, at]) => markRead(rootId, at));
+    }, MARK_READ_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [markRead, stateReady, pageVisible, threadView, openRoots, onScreenRoots]);
 
   // Landing on a folded reply: open its thread, drop the `N more replies`
   // fold, then tell the caller so it can land on the now-rendered row.
@@ -511,7 +673,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               <V2ThreadCard
                 replyCount={item.replyCount}
                 participants={item.participants}
-                lastActivityAt={item.lastActivityAt}
+                latestReply={item.latestReply ? {
+                  ...item.latestReply,
+                  // The chip names a replier the way their row does.
+                  name: agentDisplayNames.get(item.latestReply.name) || item.latestReply.name,
+                } : null}
+                unreadCount={item.unreadCount ?? 0}
                 collapsed
                 onToggleCollapsed={() => setOpen(item.rootId, true)}
               />
@@ -519,6 +686,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
             {!collapsed && (
               <div
                 className="v2-thread-replies"
+                ref={bandRef(item.rootId)}
+                data-thread-root={item.rootId}
                 role="group"
                 aria-label={t('podChat.thread.groupLabel', {
                   count: item.replyCount,

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import V2MessageRow, { landOnMessage } from '../components/V2MessageRow';
 import V2MessageActions from '../components/V2MessageActions';
 import V2ThreadMessages from '../components/V2ThreadMessages';
+import { buildThreadView } from '../utils/threadView';
 
 jest.mock('../../context/AuthContext', () => ({
   useAuth: () => ({ currentUser: { username: 'viewer', _id: 'me' } }),
@@ -349,5 +350,251 @@ describe('direction C threading restyle (PR 2b)', () => {
     expect(human).toHaveClass('v2-avatar--flat', 'v2-avatar--flat-human');
     expect(agent.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/svg\+xml/));
     expect(human.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/svg\+xml/));
+  });
+});
+
+// D278: answers land in the mention's thread, so the asker's own thread opens
+// for them and everyone else's chip previews the latest reply.
+describe('D278: threads that hold an answer to me', () => {
+  const at = (min) => `2026-11-09T10:${String(min).padStart(2, '0')}:00.000Z`;
+  // The read-tracking epoch (#3831 D1): before every fixture message here.
+  const EPOCH = '2026-11-09T09:00:00.000Z';
+  const helper = { username: 'helper', isBot: true };
+  const root = (id) => msg(id, { user_id: 'me', created_at: at(0), content: `question ${id}` });
+  const answer = (id, rootId, minute) => msg(id, {
+    thread_root_id: String(rootId), user_id: 'bot', user: helper, created_at: at(minute), content: `answer ${id}`,
+  });
+
+  // jsdom has no IntersectionObserver; this one lets a test say which bands
+  // are on screen.
+  let observers = [];
+  class MockIntersectionObserver {
+    constructor(callback) { this.callback = callback; this.elements = new Set(); observers.push(this); }
+
+    observe(element) { this.elements.add(element); }
+
+    unobserve(element) { this.elements.delete(element); }
+
+    disconnect() { this.elements.clear(); }
+  }
+  const bandsOnScreen = (isIntersecting) => act(() => {
+    observers.forEach((observer) => observer.callback(
+      Array.from(observer.elements).map((target) => ({ target, isIntersecting })),
+    ));
+  });
+  let visibility = 'visible';
+  const setTabVisibility = (value) => act(() => {
+    visibility = value;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const PreviousObserver = global.IntersectionObserver;
+  beforeEach(() => {
+    observers = [];
+    visibility = 'visible';
+    global.IntersectionObserver = MockIntersectionObserver;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+  });
+  afterEach(() => {
+    global.IntersectionObserver = PreviousObserver;
+    delete document.visibilityState;
+  });
+
+  const renderAsker = (messages, extra = {}) => {
+    const markRead = jest.fn();
+    const setCollapsed = jest.fn();
+    const onThreadOpened = jest.fn();
+    const props = (list) => ({
+      messages: list,
+      threadView: buildThreadView(list, new Map(), new Set(), { viewerId: 'me', readTrackingSince: extra.readTrackingSince ?? EPOCH }),
+      threadState: {
+        byRoot: new Map(), toggleCollapsed: jest.fn(), setCollapsed, toggleFollowing: jest.fn(), markRead, ready: true,
+      },
+      viewerId: 'me',
+      onThreadOpened,
+      decisionByMessageId: new Map(),
+      settledDecisionByMessageId: new Map(),
+      agentDisplayNames: new Map(),
+      agentAuthorKeys: new Set(),
+      onAimAtThread: jest.fn(),
+      onReply: jest.fn(),
+      hasMore: false,
+      loadingOlder: false,
+      onLoadOlder: jest.fn(),
+      loading: false,
+      error: null,
+      messagesContainerRef: React.createRef(),
+      messagesEndRef: React.createRef(),
+      ...extra,
+    });
+    const utils = render(<MemoryRouter><V2ThreadMessages {...props(messages)} /></MemoryRouter>);
+    const rerenderWith = (list) => utils.rerender(<MemoryRouter><V2ThreadMessages {...props(list)} /></MemoryRouter>);
+    return { ...utils, rerenderWith, markRead, setCollapsed, onThreadOpened };
+  };
+
+  afterEach(() => { jest.useRealTimers(); });
+
+  test('the asker\'s thread opens on an unread agent reply, the reply shows, and the list is asked to stay pinned', () => {
+    const { container, setCollapsed, onThreadOpened } = renderAsker([root(40), answer(41, 40, 1)]);
+    const block = container.querySelector('.v2-thread-block');
+    expect(block).toHaveClass('v2-thread-block--open');
+    expect(block.querySelector('#message-41')).toBeTruthy();
+    expect(onThreadOpened).toHaveBeenCalledTimes(1);
+    // A local open: the server's collapsed row is written only by a gesture.
+    expect(setCollapsed).not.toHaveBeenCalled();
+  });
+
+  test('an open thread on screen in a visible tab marks itself read up to its newest reply, after the settle', () => {
+    jest.useFakeTimers();
+    const { markRead } = renderAsker([root(40), answer(41, 40, 1), answer(42, 40, 3)]);
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(599); });
+    expect(markRead).not.toHaveBeenCalled();
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(markRead).toHaveBeenCalledWith('40', at(3));
+  });
+
+  test('an open thread that is off screen is not marked read', () => {
+    jest.useFakeTimers();
+    const { container, markRead } = renderAsker([root(40), answer(41, 40, 1)]);
+    expect(container.querySelector('.v2-thread-block--open')).toBeTruthy();
+    // Never reported on screen.
+    act(() => { jest.advanceTimersByTime(2000); });
+    // Reported, then scrolled away before the settle.
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(300); });
+    bandsOnScreen(false);
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  test('a hidden tab marks nothing; the settle starts when the tab is shown', () => {
+    jest.useFakeTimers();
+    visibility = 'hidden';
+    const { markRead } = renderAsker([root(40), answer(41, 40, 1)]);
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(markRead).not.toHaveBeenCalled();
+    setTabVisibility('visible');
+    act(() => { jest.advanceTimersByTime(600); });
+    expect(markRead).toHaveBeenCalledWith('40', at(1));
+  });
+
+  test('nothing is marked read before the thread state has loaded', () => {
+    jest.useFakeTimers();
+    const markRead = jest.fn();
+    renderAsker([msg(50, { created_at: at(0) }), answer(51, 50, 2)], {
+      threadState: {
+        byRoot: new Map(), toggleCollapsed: jest.fn(), setCollapsed: jest.fn(), toggleFollowing: jest.fn(), markRead, ready: false,
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Expand thread, 1 reply/ }));
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  test('a thread opened by hand marks itself read too', () => {
+    jest.useFakeTimers();
+    const { markRead } = renderAsker([msg(50, { created_at: at(0) }), answer(51, 50, 2)]);
+    act(() => { jest.advanceTimersByTime(600); });
+    expect(markRead).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /^Expand thread, 1 reply, latest from helper/ }));
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(600); });
+    expect(markRead).toHaveBeenCalledWith('50', at(2));
+  });
+
+  test('a bystander sees the chip with the latest reply and no unread mark', () => {
+    jest.useFakeTimers();
+    const { container, markRead, onThreadOpened } = renderAsker([msg(50, { created_at: at(0) }), answer(51, 50, 2)]);
+    const block = container.querySelector('.v2-thread-block');
+    expect(block).not.toHaveClass('v2-thread-block--open');
+    const chip = within(block).getByRole('button', { name: 'Expand thread, 1 reply, latest from helper: answer 51' });
+    expect(chip.querySelector('.v2-thread-card__name')).toHaveTextContent('helper');
+    expect(chip.querySelector('.v2-thread-card__preview')).toHaveTextContent('answer 51');
+    expect(chip.querySelector('.v2-thread-card__unread')).toBeNull();
+    bandsOnScreen(true);
+    act(() => { jest.advanceTimersByTime(600); });
+    expect(markRead).not.toHaveBeenCalled();
+    expect(onThreadOpened).not.toHaveBeenCalled();
+  });
+
+  test('the chip names an agent the way its row does', () => {
+    renderAsker([msg(50, { created_at: at(0) }), answer(51, 50, 2)], { agentDisplayNames: new Map([['helper', 'Helper Bot']]) });
+    expect(screen.getByRole('button', { name: 'Expand thread, 1 reply, latest from Helper Bot: answer 51' })).toBeInTheDocument();
+  });
+
+  test('a thread closed by hand stays closed until a newer agent reply arrives', () => {
+    const first = [root(40), answer(41, 40, 1)];
+    const { container, rerenderWith } = renderAsker(first);
+    fireEvent.click(within(container.querySelector('.v2-thread-replies__foot')).getByRole('button', { name: 'Collapse' }));
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    // Same replies, fresh view: still a chip, and it still says what is unread.
+    rerenderWith([...first]);
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    expect(container.querySelector('.v2-thread-card__unread')).toHaveTextContent('1 new');
+    // A newer agent reply opens it again.
+    rerenderWith([...first, answer(42, 40, 5)]);
+    expect(container.querySelector('.v2-thread-block--open')).toBeTruthy();
+  });
+
+  test('a human reply does not open the asker\'s thread; the chip still marks it unread', () => {
+    const { container } = renderAsker([
+      root(40),
+      msg(41, { thread_root_id: '40', user_id: 'pat', user: { username: 'pat', isBot: false }, created_at: at(1) }),
+    ]);
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    expect(container.querySelector('.v2-thread-card__unread')).toHaveTextContent('1 new');
+  });
+
+  test('an answer from before the read-tracking epoch does not open an old thread', () => {
+    const { container } = renderAsker([root(40), answer(41, 40, 1)], { readTrackingSince: at(30) });
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    expect(container.querySelector('.v2-thread-card__unread')).toBeNull();
+  });
+
+  test('with no epoch (older server, failed fetch) nothing opens and nothing is marked unread', () => {
+    const { container } = renderAsker([root(40), answer(41, 40, 1)], { readTrackingSince: '' });
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+    expect(container.querySelector('.v2-thread-card__unread')).toBeNull();
+  });
+
+  test('nothing opens before the thread state has loaded', () => {
+    const { container } = renderAsker([root(40), answer(41, 40, 1)], {
+      threadState: {
+        byRoot: new Map(), toggleCollapsed: jest.fn(), setCollapsed: jest.fn(), toggleFollowing: jest.fn(), markRead: jest.fn(), ready: false,
+      },
+    });
+    expect(container.querySelector('.v2-thread-block--open')).toBeNull();
+  });
+
+  test('at most three threads open themselves: the three with the newest answers', () => {
+    const { container } = renderAsker([
+      root(60), root(70), root(80), root(90),
+      answer(61, 60, 1), answer(71, 70, 2), answer(81, 80, 3), answer(91, 90, 4),
+    ]);
+    const open = Array.from(container.querySelectorAll('.v2-thread-block--open'))
+      .map((block) => block.querySelector('[id^="message-"]').id);
+    expect(open).toEqual(['message-70', 'message-80', 'message-90']);
+    // The oldest rests as a chip with its unread mark.
+    expect(container.querySelectorAll('.v2-thread-card__unread')).toHaveLength(1);
+  });
+
+  test('a thread passed over by the cap stays a chip when a slot frees, until a newer agent reply', () => {
+    const list = [
+      root(60), root(70), root(80), root(90),
+      answer(61, 60, 1), answer(71, 70, 2), answer(81, 80, 3), answer(91, 90, 4),
+    ];
+    const { container, rerenderWith } = renderAsker(list);
+    const blockOf = (id) => container.querySelector(`#message-${id}`).closest('.v2-thread-block');
+    // Close one of the three: a slot frees, and 60 still does not open.
+    fireEvent.click(within(blockOf(90).querySelector('.v2-thread-replies__foot')).getByRole('button', { name: 'Collapse' }));
+    expect(blockOf(60)).not.toHaveClass('v2-thread-block--open');
+    rerenderWith([...list]);
+    expect(blockOf(60)).not.toHaveClass('v2-thread-block--open');
+    expect(blockOf(90)).not.toHaveClass('v2-thread-block--open');
+    // A newer agent reply in 60 opens it.
+    rerenderWith([...list, answer(62, 60, 9)]);
+    expect(blockOf(60)).toHaveClass('v2-thread-block--open');
   });
 });
