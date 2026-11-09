@@ -64,4 +64,29 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # Prefer one replica per node, so one drain or spot reclaim takes one.
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            {{- include "commonly.frontend.selectorLabels" . | nindent 12 }}
+---
+# A drain evicts one replica, then waits for its replacement to be Ready before
+# the next. If no node can take the replacement, the drain holds the last
+# replica up to GKE's PDB timeout (about 1 h) rather than take it down. At one
+# replica, maxUnavailable 1 lets it go at once, where minAvailable 1 would hold.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: {{ include "commonly.namespace" . }}
+  labels:
+    {{- include "commonly.frontend.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.frontend.selectorLabels" . | nindent 6 }}
 {{- end }}
