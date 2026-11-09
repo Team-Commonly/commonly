@@ -241,7 +241,7 @@ spec:
               name: database-credentials
               key: {{ .Values.litellm.pgPasswordKey | default "postgres-password" }}
         - name: DATABASE_URL
-          value: "postgresql://{{ .Values.litellm.pgUser | default .Values.backend.env.pgUser }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require&schema=litellm"
+          value: "postgresql://{{ .Values.litellm.pgUser | default .Values.backend.env.pgUser | default .Values.postgresql.username }}:$(PG_PASSWORD)@{{ .Values.backend.env.pgHost }}:{{ .Values.backend.env.pgPort }}/{{ .Values.backend.env.pgDatabase }}?sslmode=require&schema=litellm"
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:

@@ -7,7 +7,10 @@
  * re-indent). A "KEEP IN SYNC" banner alone drifts (recorded instances across
  * the chart), so this pins the contract: the two Deployments must declare the
  * SAME env entries except RUN_WORKER, which controls the serving process and
- * is not read by the sleeping ops-runner — the same (name, source) tuples,
+ * is not read by the sleeping ops-runner, and PG_USER/PG_PASSWORD: the backend
+ * may connect as its own role (backend.env.pgAppUser), while ops-runner keeps
+ * backend.env.pgUser for admin writes. Both exceptions are pinned exactly below.
+ * Otherwise, the same (name, source) tuples,
  * where source is a
  * secretKeyRef name+key, a configMapKeyRef name+key, or a literal value. If
  * backend gains/loses an env var, or changes a var's source, and ops-runner
@@ -96,9 +99,19 @@ if (typeof describe === 'function') {
     // ops-runner the same number of times, and vice versa. toEqual on the
     // sorted arrays reports exactly which env entry drifted.
     test('ops-runner declares the same env (name + source) tuples as backend', () => {
+      const pgRole = (tuple) => /^PG_(USER|PASSWORD)\t/.test(tuple);
       const withoutWorkerGate = (tuple) => !tuple.startsWith('RUN_WORKER\t');
-      expect([...opsTuples].filter(withoutWorkerGate).sort())
-        .toEqual([...backendTuples].filter(withoutWorkerGate).sort());
+      const mirrored = (tuple) => withoutWorkerGate(tuple) && !pgRole(tuple);
+      expect([...opsTuples].filter(mirrored).sort())
+        .toEqual([...backendTuples].filter(mirrored).sort());
+      expect(backendTuples.filter(pgRole).sort()).toEqual([
+        'PG_PASSWORD\tsecretKeyRef:database-credentials/{{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" }}',
+        'PG_USER\tvalue:{{ .Values.backend.env.pgAppUser | default .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}',
+      ]);
+      expect(opsTuples.filter(pgRole).sort()).toEqual([
+        'PG_PASSWORD\tsecretKeyRef:database-credentials/postgres-password',
+        'PG_USER\tvalue:{{ .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}',
+      ]);
       expect(opsTuples.every(withoutWorkerGate)).toBe(true);
       expect(backendTuples.filter((tuple) => !withoutWorkerGate(tuple))).toEqual([
         'RUN_WORKER\tvalue:"1"',

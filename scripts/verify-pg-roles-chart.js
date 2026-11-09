@@ -80,6 +80,8 @@ for (const lane of Object.keys(lanes)) {
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role']), `${lane} ${on}: a litellm role without its password key renders`);
     expect(refuses(lane, [on, 'backend.env.pgAppUser=app_role', 'backend.env.pgAppPasswordKey=mongo-uri']), `${lane} ${on}: a backend role on mongo-uri renders`);
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=mongo-password']), `${lane} ${on}: a litellm role on mongo-password renders`);
+    expect(refuses(lane, [on, 'litellm.pgUser=svc:prod', 'litellm.pgPasswordKey=postgres-litellm-password']), `${lane} ${on}: a litellm role that isn't a plain name renders`);
+    expect(refuses(lane, [on, 'backend.env.pgAppUser=App-Role', 'backend.env.pgAppPasswordKey=postgres-app-password']), `${lane} ${on}: a backend role that isn't a plain name renders`);
   }
 
   const esBase = esKeys(base);
@@ -107,6 +109,9 @@ for (const lane of Object.keys(lanes)) {
   expect(JSON.stringify(esKeys(set)) === JSON.stringify(want), `${lane}: database-credentials with roles set syncs ${esKeys(set).join(', ')}`);
   // A role on a component that isn't deployed asks the store for nothing.
   const off = esKeys(render(lane, ['litellm.enabled=false', ...LITELLM_ROLE]));
+  // The ExternalSecret follows the Deployment's own truth test: a truthy string deploys LiteLLM, so its key syncs.
+  const truthy = esKeys(render(lane, ['litellm.enabled=yes', ...LITELLM_ROLE]));
+  expect(truthy.includes(synced('postgres-litellm-password')), `${lane}: litellm.enabled=yes deploys LiteLLM but syncs ${truthy.join(', ')}`);
   expect(JSON.stringify(off) === JSON.stringify(esBase), `${lane}: a litellm role with litellm off syncs ${off.join(', ')}`);
   const shared = esKeys(render(lane, [
     'litellm.enabled=true',

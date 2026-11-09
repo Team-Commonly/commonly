@@ -161,6 +161,9 @@ templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
 {{- if ne (empty $role) (empty $key) }}
 {{- fail (printf "%s: set the Postgres role and its password key together" $path) }}
 {{- end }}
+{{- if and $role (not (regexMatch "^[a-z_][a-z0-9_]*$" $role)) }}
+{{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*)" $path $role) }}
+{{- end }}
 {{- if has $key (list "mongo-uri" "mongo-password") }}
 {{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
 {{- end }}
