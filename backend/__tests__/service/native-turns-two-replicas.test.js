@@ -27,7 +27,7 @@ const replica = (overrides = {}) => {
     inProcessWork: new Set(), inProcessRunning: new Map(), inProcessLanes: new Map(), inProcessLaneHolders: new Map(),
     inProcessLaneWaitMs: 180000, inProcessLaneRefreshMs: 30000,
     inProcessQueueTimer: undefined, inProcessQueuePolling: false,
-    runnerId: `replica-${replicas}`, runnerEnforced: false, runnerLeaseUntil: 0,
+    runnerId: `replica-${replicas}`, runnerEnforced: false, runnerLeaseUntil: 0, runnerRenewal: undefined,
     ...overrides,
   });
   return Replica;
@@ -217,8 +217,8 @@ test('a replacement worker waits for a draining one before it runs a lane', asyn
   await stop(next);
 });
 
-// A short lease: turns may start in the first 100 ms after each write.
-const short = { runnerLeaseMs: 400, runnerTurnBoundMs: 250, runnerSkewMs: 50 };
+// A short lease: turns may start in the first 300 ms after each write.
+const short = { runnerLeaseMs: 1000, runnerTurnBoundMs: 600, runnerSkewMs: 100 };
 
 test('a runner that died holding the lease is replaced once it expires', async () => {
   const dead = runner('dead', short); dead.startInProcessQueue();
@@ -323,7 +323,8 @@ test('a turn that waited out its lane past the lease goes back to the queue', as
   await waitFor(async () => (await AgentEvent.findById(second._id)).status === 'pending');
   await settle();
   expect(runAgent).toHaveBeenCalledTimes(1);
-  expect((await AgentEvent.findById(second._id).lean()).inProcessQueued).toBe(true);
+  // Queued again, with the attempt it never used given back.
+  expect(await AgentEvent.findById(second._id).lean()).toMatchObject({ inProcessQueued: true, attempts: 0 });
   write.mockRestore();
   await waitFor(() => runAgent.mock.calls.length === 2);
   turns[1].resolve();
@@ -331,6 +332,25 @@ test('a turn that waited out its lane past the lease goes back to the queue', as
   expect(maxActive).toBe(1);
   expect(ran).toEqual([String(first._id), String(second._id)]);
   await stop(holder);
+});
+
+test('a queue pass longer than the start window does not let the lease lapse', async () => {
+  const pods = [1, 2, 3, 4].map(() => new mongoose.Types.ObjectId());
+  for (const pod of pods) await web().enqueue({ ...input, podId: pod });
+  jest.spyOn(Service, 'resolveInProcessInstallation').mockImplementation(async () => {
+    await new Promise((done) => { setTimeout(done, 200); });
+    return install;
+  });
+  const proc = runner('busy', short); proc.startInProcessQueue();
+  await waitFor(() => holds(proc));
+  let lapsed = false;
+  const sample = setInterval(() => { if (!holds(proc)) lapsed = true; }, 10);
+  await waitFor(() => runAgent.mock.calls.length === 4, { timeout: 4000 });
+  clearInterval(sample);
+  expect(lapsed).toBe(false);
+  turns.forEach((turn) => turn.resolve());
+  await waitFor(() => proc.inProcessWork.size === 0);
+  await stop(proc);
 });
 
 test('a runner that cannot write its lease stops starting turns until it can', async () => {

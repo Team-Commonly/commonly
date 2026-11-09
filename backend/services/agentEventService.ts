@@ -639,7 +639,7 @@ class AgentEventService {
   // Until when this process may start turns: runnerTurnBoundMs + runnerSkewMs
   // short of the expiry its last write set, measured from before that write.
   private static runnerLeaseUntil = 0;
-  private static inProcessQueueTick: Promise<void> | undefined;
+  private static runnerRenewal: Promise<void> | undefined;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
 
@@ -682,7 +682,7 @@ class AgentEventService {
     this.runnerLeaseUntil = 0;
     if (!this.runnerEnforced || !everyTurnFinished) return;
     // A renewal already in flight would otherwise land after the delete.
-    await this.inProcessQueueTick;
+    await this.runnerRenewal;
     await SchedulerHeartbeatLease.deleteOne({ _id: NATIVE_RUNNER_LEASE_ID, ownerId: this.runnerId })
       .catch((err: Error) => console.warn('[native-runtime] runner lease release failed:', err.message));
   }
@@ -696,7 +696,8 @@ class AgentEventService {
     return pending;
   }
 
-  private static async requeueInProcess(event: EventDoc): Promise<number> {
+  /** `neverRan`: the turn was given back before runAgent, so its claim's attempt is returned too. */
+  private static async requeueInProcess(event: EventDoc, { neverRan = false } = {}): Promise<number> {
     const result = await AgentEvent.updateOne(
       { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
       {
@@ -708,6 +709,9 @@ class AgentEventService {
           // first pass, not on the ten-minute sweep.
           ...(this.runnerEnforced ? { inProcessQueued: true } : {}),
         },
+        // Otherwise a turn that keeps waiting out lapsed leases reaches the
+        // attempt cap without ever running, and the sweep closes it unanswered.
+        ...(neverRan && (Number(event.attempts) || 0) > 0 ? { $inc: { attempts: -1 } } : {}),
       },
     ) as { modifiedCount?: number };
     if (result.modifiedCount) {
@@ -1660,11 +1664,15 @@ class AgentEventService {
     if (this.nativeTurnsOnWorker || this.inProcessDraining || this.inProcessQueueTimer) return;
     this.runnerEnforced = true;
     const tick = () => {
+      // Renew on every tick, never behind a queue pass: a pass longer than the
+      // start window would otherwise let the lease lapse under its own turns.
+      if (!this.runnerRenewal) {
+        this.runnerRenewal = this.keepRunnerLease().finally(() => { this.runnerRenewal = undefined; });
+      }
+      const renewed = this.runnerRenewal;
       if (this.inProcessQueuePolling) return;
       this.inProcessQueuePolling = true;
-      this.inProcessQueueTick = this.keepRunnerLease()
-        .then(() => this.pollInProcessQueue())
-        .then(() => undefined)
+      renewed.then(() => this.pollInProcessQueue())
         .catch((err: Error) => console.warn('[native-runtime] queue pass failed:', err.message))
         .finally(() => { this.inProcessQueuePolling = false; });
     };
@@ -2263,7 +2271,7 @@ class AgentEventService {
         // If even the requeue fails it stays delivered for the stuck sweep,
         // which runs only on the lease holder: late, never twice.
         if (this.inProcessDraining || !this.runsTurnsHere()) {
-          await this.requeueInProcess(event).catch((err: Error) => {
+          await this.requeueInProcess(event, { neverRan: true }).catch((err: Error) => {
             console.warn(`[native-runtime] requeue failed for event ${eventIdStr}; the sweep has it:`, err.message);
           });
           return { status: 'drained' };
