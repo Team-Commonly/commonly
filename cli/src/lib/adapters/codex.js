@@ -1104,7 +1104,9 @@ export default {
     // repository set up to run programs is refused before anything starts
     // (sandbox/workspace-git-config.js).
     if (workspacePath) {
-      (ctx._refuseCodeRunningGitSetup || refuseCodeRunningGitSetup)(workspacePath, { seat: 'This public Codex agent' });
+      (ctx._refuseCodeRunningGitSetup || refuseCodeRunningGitSetup)(workspacePath, {
+        seat: 'This public Codex agent', env: ctx.env || process.env,
+      });
     }
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`

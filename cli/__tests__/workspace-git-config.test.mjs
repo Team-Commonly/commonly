@@ -212,6 +212,18 @@ describe('the repository git would open', () => {
       .toEqual(['core.pager']);
   });
 
+  test('a submodule is checked from its own folder when the environment names the top repository', () => {
+    const top = repo('top');
+    const sub = embed(top);
+    git(sub, 'config', 'core.fsmonitor', '/tmp/x');
+    // Seeded the way an operator's shell might have them; git clears these
+    // before it runs inside a submodule, so the check must too.
+    const env = {
+      ...ENV, GIT_DIR: join(top, '.git'), GIT_WORK_TREE: top, GIT_COMMON_DIR: join(top, '.git'), GIT_INDEX_FILE: join(top, '.git', 'index'),
+    };
+    expect(codeRunningGitSetup(top, { env }).map((f) => f.key || f.hook)).toEqual(['core.fsmonitor']);
+  });
+
   test('the check itself runs nothing the repository names', () => {
     const dir = repo();
     const marker = join(root, 'RAN');
