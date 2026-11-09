@@ -8,6 +8,7 @@ import { spawnSync } from 'child_process';
 import { realpathSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { wrapArgvWithSeatbelt } from './sandbox/seatbelt.js';
 
 // The name git-readonly-server.js serves under. Kept here, not imported: the
 // server module pulls in git-readonly.js and its execFile, which an adapter has
@@ -47,4 +48,32 @@ export const workspaceGitAttachment = (root, { git = resolveRealGit() } = {}) =>
     readDirectories: [dirname(WORKSPACE_GIT_SERVER)],
     readPaths: [WORKSPACE_GIT_PACKAGE_JSON],
   };
+};
+
+// For a public Codex seat. Codex starts its MCP servers outside the seat's
+// permission profile, so a bare server would run git as the operator, with the
+// network on and every file the profile denies in reach. This one runs under a
+// Seatbelt of its own: the workspace read-only, no network, its code and git
+// readable, and nothing writable but `stateDir`, an empty folder of its own (not
+// the folder that holds the seat's credential). macOS only: elsewhere there is
+// no wrapper here yet, so the seat gets no tool rather than an unconfined one.
+export const confinedWorkspaceGitServer = (root, {
+  stateDir,
+  platform = process.platform,
+  git = platform === 'darwin' ? resolveRealGit() : null,
+  wrap = wrapArgvWithSeatbelt,
+} = {}) => {
+  if (platform !== 'darwin' || !root || !stateDir || !git) return null;
+  const attachment = workspaceGitAttachment(root, { git });
+  const command = wrap(attachment.server.command, {
+    workspacePath: root,
+    workspaceAccess: 'read',
+    executablePath: git,
+    statePath: stateDir,
+    readOnlyDirectories: attachment.readDirectories,
+    readOnlyPaths: attachment.readPaths,
+    network: 'loopback',
+    processInfo: 'self',
+  });
+  return { ...attachment.server, command };
 };

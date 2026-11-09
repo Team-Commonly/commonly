@@ -75,7 +75,7 @@ import { isOurGrantBroker } from '../grant-broker-guard.js';
 import { BRIDGE_PATH } from './codex-broker-bridge.mjs';
 import { brokerBridgeEntry } from './broker-bridge-entry.js';
 import { supportedGitHooks } from '../commit-attribution.js';
-import { WORKSPACE_GIT_SERVER_NAME, workspaceGitAttachment } from '../workspace-git.js';
+import { WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer } from '../workspace-git.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
@@ -1118,18 +1118,35 @@ export default {
       // A public seat can't run git from its shell on macOS: Homebrew's git is
       // outside the profile and /usr/bin/git is an xcrun shim that fails there.
       // So it reads its workspace's history through the read-only git tool a
-      // Claude workspace seat has. An entry the environment already declares
-      // under that name is kept as declared.
+      // Claude workspace seat has. Codex starts MCP servers outside the seat's
+      // profile, so this one runs under a Seatbelt of its own
+      // (confinedWorkspaceGitServer). An entry the environment declares under
+      // the same name would run unconfined, so on a public seat it is replaced.
       const declaredMcp = ctx.environment?.mcp || [];
-      const declaresGit = declaredMcp.some((server) => server?.name === WORKSPACE_GIT_SERVER_NAME);
-      const workspaceGit = workspacePath && !declaresGit
-        ? (ctx._workspaceGitAttachment || workspaceGitAttachment)(workspacePath)
-        : null;
-      if (workspacePath && !declaresGit && !workspaceGit) {
-        // eslint-disable-next-line no-console
-        console.warn('[codex] git was not found on this machine, so this public seat has no git tool');
+      let seatMcp = declaredMcp;
+      if (workspacePath) {
+        const declaresGit = declaredMcp.some((server) => server?.name === WORKSPACE_GIT_SERVER_NAME);
+        if (declaresGit) {
+          // eslint-disable-next-line no-console
+          console.warn(`[codex] this public seat's environment declares ${WORKSPACE_GIT_SERVER_NAME}; `
+            + 'Codex would run it outside the sandbox, so the confined one replaces it');
+        }
+        const stateDir = join(dir, 'git-tool');
+        await mkdir(stateDir, { mode: 0o700 });
+        const workspaceGit = (ctx._workspaceGitServer || confinedWorkspaceGitServer)(workspacePath, {
+          stateDir,
+          platform: ctx._platform || process.platform,
+        });
+        if (!workspaceGit) {
+          // eslint-disable-next-line no-console
+          console.warn('[codex] the read-only git tool needs macOS and git on this machine, so this public seat has none');
+        }
+        seatMcp = [
+          ...declaredMcp.filter((server) => server?.name !== WORKSPACE_GIT_SERVER_NAME),
+          ...(workspaceGit ? [workspaceGit] : []),
+        ];
       }
-      const mcp = buildMcpOverrideArgs(workspaceGit ? [...declaredMcp, workspaceGit.server] : declaredMcp, {
+      const mcp = buildMcpOverrideArgs(seatMcp, {
         runtimeToken: ctx.runtimeToken,
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
@@ -1201,9 +1218,9 @@ export default {
         prompt: fullPrompt,
         outputFile,
         mcpFlags: mcp.flags,
-        // Nothing is added for the git tool: on Codex 0.162.1 it runs without
-        // these, and admitting the git binary would let the shell run git
-        // directly, around the read-only server.
+        // Nothing is added for the git tool, which has a Seatbelt of its own:
+        // admitting the git binary here would let the shell run git directly,
+        // around the read-only server.
         mcpReadDirectories: mcp.mcpReadDirectories,
         publicSandboxMode,
         model: seatModel,

@@ -1976,21 +1976,18 @@ describe('codex adapter — a public seat runs with Commonly\'s tools only', () 
 });
 
 // A public seat's shell can't run git on macOS, so it reads history through the
-// read-only workspace_git tool (adapters.codex.workspace-git.test.mjs runs it on
-// the real binary). These check which seats get it, and with what.
+// read-only workspace_git tool, under a Seatbelt of its own
+// (adapters.codex.workspace-git.test.mjs runs it on the real binary). These
+// check which seats get it, and with what.
 describe('the workspace git tool', () => {
   const configFlags = (args) => args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
-  const gitAttachment = (root) => ({
-    server: { name: 'workspace_git', transport: 'stdio', command: ['/node', '/server.js', '--root', root, '--git', '/real/git'] },
-    executable: '/real/git',
-    readDirectories: ['/server-dir'],
-    readPaths: ['/package.json'],
-  });
 
-  const spawnSeat = async ({ sandbox, mcp }) => {
+  const spawnSeat = async ({ sandbox, mcp, server = (root) => ({
+    name: 'workspace_git', transport: 'stdio', command: ['/usr/bin/sandbox-exec', '-p', '(profile)', '/node', '/server.js', '--root', root],
+  }) }) => {
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const root = await mkdtemp(join(tmpdir(), 'commonly-codex-git-'));
-    const attachRoots = [];
+    const asked = [];
     try {
       const realRoot = await realpath(root);
       await codex.spawn('hi', {
@@ -1999,45 +1996,61 @@ describe('the workspace git tool', () => {
         env: { ...process.env, CODEX_HOME: join(root, 'operator') },
         agentName: 'git-test-agent',
         _publicCodexHome: join(root, 'public'),
-        _workspaceGitAttachment: (workspace) => {
-          attachRoots.push(workspace);
-          return gitAttachment(workspace);
+        _workspaceGitServer: (workspace, options) => {
+          asked.push({ workspace, options, stateDirExists: existsSync(options.stateDir) });
+          return server(workspace);
         },
         _spawnImpl: impl,
       });
-      return { flags: configFlags(calls[0].args), attachRoots, realRoot };
+      return { flags: configFlags(calls[0].args), asked, realRoot };
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   };
 
-  test.each(['workspace', 'read-only'])('a public %s seat gets the tool, rooted at its workspace', async (mode) => {
-    const { flags, attachRoots, realRoot } = await spawnSeat({ sandbox: { trust: 'public', mode } });
-    expect(attachRoots).toEqual([realRoot]);
-    expect(flags).toContain('mcp_servers.workspace_git.command="/node"');
-    expect(flags).toContain(`mcp_servers.workspace_git.args=["/server.js","--root",${JSON.stringify(realRoot)},"--git","/real/git"]`);
-    expect(flags).toContain('mcp_servers.workspace_git.default_tools_approval_mode="approve"');
+  test.each(['workspace', 'read-only'])('a public %s seat gets the confined tool, rooted at its workspace', async (mode) => {
+    const { flags, asked, realRoot } = await spawnSeat({ sandbox: { trust: 'public', mode } });
+    expect(asked).toHaveLength(1);
+    expect(asked[0].workspace).toBe(realRoot);
+    expect(flags).toContain('mcp_servers.workspace_git.command="/usr/bin/sandbox-exec"');
+    expect(flags).toContain(`mcp_servers.workspace_git.args=["-p","(profile)","/node","/server.js","--root",${JSON.stringify(realRoot)}]`);
   });
 
-  test('the profile is not widened to the git binary', async () => {
+  test('the tool gets an empty state folder of its own, not the one holding the credential', async () => {
+    const { asked } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } });
+    const { stateDir } = asked[0].options;
+    expect(asked[0].stateDirExists).toBe(true);
+    expect(stateDir.split('/').at(-1)).toBe('git-tool');
+    expect(stateDir.startsWith(tmpdir()) || stateDir.startsWith('/private')).toBe(true);
+  });
+
+  test('the profile is not widened for the tool', async () => {
     const { flags } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' } });
     const profile = flags.find((flag) => flag.startsWith('permissions.commonly_public.filesystem='));
     expect(profile).toBeDefined();
-    for (const path of ['/real/git', '/server-dir', '/package.json']) expect(profile).not.toContain(path);
+    expect(profile).not.toContain('server.js');
+    expect(profile).not.toContain('git-tool');
   });
 
-  test('a declared workspace_git entry is kept as declared', async () => {
+  test('a declared workspace_git entry is replaced, since Codex would run it unconfined', async () => {
     const declared = { name: 'workspace_git', transport: 'stdio', command: ['/my/node', '/my/server.js'] };
-    const { flags, attachRoots } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, mcp: [declared] });
-    expect(attachRoots).toEqual([]);
+    const { flags } = await spawnSeat({ sandbox: { trust: 'public', mode: 'workspace' }, mcp: [declared] });
     expect(flags.filter((flag) => flag.startsWith('mcp_servers.workspace_git.command='))).toEqual(
-      ['mcp_servers.workspace_git.command="/my/node"'],
+      ['mcp_servers.workspace_git.command="/usr/bin/sandbox-exec"'],
     );
   });
 
+  test('with no confined tool on this machine, a declared entry is dropped, not run bare', async () => {
+    const declared = { name: 'workspace_git', transport: 'stdio', command: ['/my/node', '/my/server.js'] };
+    const { flags } = await spawnSeat({
+      sandbox: { trust: 'public', mode: 'workspace' }, mcp: [declared], server: () => null,
+    });
+    expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
+  });
+
   test('a private seat runs git itself and gets no tool', async () => {
-    const { flags, attachRoots } = await spawnSeat({ sandbox: null });
-    expect(attachRoots).toEqual([]);
+    const { flags, asked } = await spawnSeat({ sandbox: null });
+    expect(asked).toEqual([]);
     expect(flags.some((flag) => flag.startsWith('mcp_servers.workspace_git.'))).toBe(false);
   });
 });

@@ -122,7 +122,7 @@ describeWithCodex('a public codex seat, on the real binary', () => {
       // These tests read Codex's own tool list. A seat's MCP servers add Codex's
       // MCP tools to it, so the git tool is left out here, and the tests that
       // want MCP pass their own (adapters.codex.workspace-git.test.mjs has git).
-      _workspaceGitAttachment: () => null,
+      _workspaceGitServer: () => null,
     });
     const hosts = new Set(model.requests.map((request) => request.host));
     expect([...hosts]).toEqual([`127.0.0.1:${model.port}`]);

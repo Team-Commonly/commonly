@@ -20,7 +20,8 @@ import {
   GIT_TOOL, SERVER_NAME, TOOL_NAME, createGitServerHandler, parseServerArgs,
 } from '../src/lib/git-readonly-server.js';
 import {
-  WORKSPACE_GIT_PACKAGE_JSON, WORKSPACE_GIT_SERVER, WORKSPACE_GIT_SERVER_NAME, workspaceGitAttachment,
+  WORKSPACE_GIT_PACKAGE_JSON, WORKSPACE_GIT_SERVER, WORKSPACE_GIT_SERVER_NAME, confinedWorkspaceGitServer,
+  workspaceGitAttachment,
 } from '../src/lib/workspace-git.js';
 
 const execFileAsync = promisify(execFile);
@@ -62,6 +63,42 @@ describe('the attachment adapters give a seat', () => {
     });
     expect(workspaceGitAttachment(repo, { git: null })).toBeNull();
     expect(workspaceGitAttachment(null, { git: '/real/git' })).toBeNull();
+  });
+
+  test('the confined server a public Codex seat gets: read-only workspace, no network, only its own folder writable', () => {
+    const calls = [];
+    const wrap = (argv, opts) => {
+      calls.push({ argv, opts });
+      return ['/usr/bin/sandbox-exec', '-p', '(profile)', ...argv];
+    };
+    const server = confinedWorkspaceGitServer(repo, {
+      stateDir: '/state/git-tool', platform: 'darwin', git: '/real/git', wrap,
+    });
+    expect(server.name).toBe('workspace_git');
+    expect(server.command).toEqual(['/usr/bin/sandbox-exec', '-p', '(profile)',
+      process.execPath, SERVER, '--root', repo, '--git', '/real/git']);
+    expect(calls[0].opts).toEqual({
+      workspacePath: repo,
+      workspaceAccess: 'read',
+      executablePath: '/real/git',
+      statePath: '/state/git-tool',
+      readOnlyDirectories: [dirname(SERVER)],
+      readOnlyPaths: [WORKSPACE_GIT_PACKAGE_JSON],
+      network: 'loopback',
+      processInfo: 'self',
+    });
+  });
+
+  test('no confined server off macOS, without git, or without a state folder', () => {
+    const wrap = () => { throw new Error('not wrapped'); };
+    for (const options of [
+      { stateDir: '/s', platform: 'linux', git: '/real/git', wrap },
+      { stateDir: '/s', platform: 'win32', git: '/real/git', wrap },
+      { stateDir: '/s', platform: 'darwin', git: null, wrap },
+      { stateDir: null, platform: 'darwin', git: '/real/git', wrap },
+    ]) {
+      expect(confinedWorkspaceGitServer(repo, options)).toBeNull();
+    }
   });
 });
 

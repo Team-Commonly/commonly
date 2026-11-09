@@ -42,9 +42,12 @@
  *    no transport is allowed, which covers git older than 2.44, where
  *    GIT_NO_LAZY_FETCH does nothing.
  * 5. Outside this module, the seat's sandbox (Seatbelt or bwrap) mounts the
- *    workspace read-only.
+ *    workspace read-only. A public Codex seat starts its MCP servers outside
+ *    its own profile, so the codex adapter runs this server under a Seatbelt
+ *    of its own (workspace-git.js): workspace read-only, no network.
  * 6. A committed `.env` or `.env.*` stays as far out of reach as the file
- *    itself, which the sandbox denies at any depth. An argument naming one
+ *    itself, which the sandbox denies at any depth. So do `.npmrc`,
+ *    `.yarnrc*`, `.commonly` and `.codex`, which a sandbox also denies. An argument naming one
  *    (`.env`, `HEAD:.env`, `:0:sub/.env.local`, `-L1,5:.env`) is refused, and
  *    status, log, diff and show run with pathspecs excluding them, so no patch,
  *    pickaxe match or blob id comes from one whatever path or glob the caller
@@ -154,13 +157,27 @@ const checkFormat = (arg) => {
   return `${arg} is refused: name a built-in format (${BUILTIN_FORMATS.join(', ')}) or give format:<placeholders>`;
 };
 
-// Mirrors the names sandbox/seatbelt.js denies at any depth.
+// The names a seat's sandbox denies at any depth: sandbox/seatbelt.js denies
+// .env files, .commonly and .codex, and a public Codex seat's profile
+// (adapters/codex.js) also denies .npmrc and .yarnrc*. They are kept out of
+// git's results too, since the objects git reads hold them whatever the
+// sandbox says about the file.
 const ENV_FILE_SEGMENT = /^\.env(\..*)?$/;
-const namesEnvFile = (arg) => arg.split(':')
-  .some((part) => part.split('/').some((segment) => ENV_FILE_SEGMENT.test(segment)));
+const OTHER_PROTECTED_SEGMENT = /^(?:\.npmrc|\.yarnrc.*|\.commonly|\.codex)$/;
+const segmentsOf = (arg) => arg.split(':').flatMap((part) => part.split('/'));
+const namesEnvFile = (arg) => segmentsOf(arg).some((segment) => ENV_FILE_SEGMENT.test(segment));
+const namesOtherProtected = (arg) => segmentsOf(arg).some((segment) => OTHER_PROTECTED_SEGMENT.test(segment));
 const NAMES_ENV_FILE = 'it names a .env file, which the workspace keeps out of reach';
+const NAMES_OTHER_PROTECTED = 'it names a file the workspace keeps out of reach (.npmrc, .yarnrc, .commonly or .codex)';
+const protectedNameReason = (arg) => {
+  if (namesEnvFile(arg)) return NAMES_ENV_FILE;
+  if (namesOtherProtected(arg)) return NAMES_OTHER_PROTECTED;
+  return null;
+};
 const ENV_EXCLUDES = Object.freeze([
   ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*', ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
+  ':(exclude,glob)**/.npmrc', ':(exclude,glob)**/.npmrc/**', ':(exclude,glob)**/.yarnrc*', ':(exclude,glob)**/.yarnrc*/**',
+  ':(exclude,glob)**/.commonly', ':(exclude,glob)**/.commonly/**', ':(exclude,glob)**/.codex', ':(exclude,glob)**/.codex/**',
 ]);
 // blame takes one literal file, so the name check above covers it. A
 // blob-to-blob diff (`diff A:f B:f`) takes no pathspec and is refused by git
@@ -254,14 +271,16 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
     if (arg.length > MAX_ARG_LENGTH || arg.includes('\0')) return refuse('an argument is too long or contains NUL');
     if (pathsOnly || arg === '-' || !arg.startsWith('-')) {
       if (escapesRoot(root, arg)) return refuse(`${arg} is refused: it is outside the workspace`);
-      if (namesEnvFile(arg)) return refuse(`${arg} is refused: ${NAMES_ENV_FILE}`);
+      const protectedReason = protectedNameReason(arg);
+      if (protectedReason) return refuse(`${arg} is refused: ${protectedReason}`);
     } else if (arg === '--') {
       pathsOnly = true;
     } else {
       const reason = arg.startsWith('--') ? checkLongOption(arg) || checkFormat(arg) : checkShortOption(arg, subcommand);
       if (reason) return refuse(reason);
       if (arg.startsWith('-L')) {
-        if (namesEnvFile(arg.slice(2))) return refuse(`${arg} is refused: ${NAMES_ENV_FILE}`);
+        const rangeReason = protectedNameReason(arg.slice(2));
+        if (rangeReason) return refuse(`${arg} is refused: ${rangeReason}`);
         if (PATHSPEC_SUBCOMMANDS.has(subcommand)) {
           const lineRangeReason = checkLineRange(arg, index, subcommand);
           if (lineRangeReason) return refuse(lineRangeReason);

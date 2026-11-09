@@ -4,19 +4,27 @@
  * git is outside the profile and /usr/bin/git is an xcrun shim), so this tool is
  * the seat's only way to read a commit.
  *
+ * Codex starts MCP servers outside the seat's permission profile, so the tool
+ * has a Seatbelt of its own. These tests check that it holds: a filter the
+ * repository's config defines can't write outside the workspace, and the files
+ * the seat's profile denies don't come back through git.
+ *
  * The model is a stub on loopback, as in adapters.codex.public-tools.test.mjs.
  * Runs only where `codex` and `git` are on PATH, on macOS.
  */
 
 import { jest } from '@jest/globals';
 import { spawnSync } from 'child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
+import {
+  appendFile, mkdtemp, mkdir, rm, writeFile,
+} from 'fs/promises';
 import http from 'http';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import codex from '../src/lib/adapters/codex.js';
 
-jest.setTimeout(60000);
+jest.setTimeout(90000);
 
 const hasTools = process.platform === 'darwin'
   && spawnSync('codex', ['--version'], { encoding: 'utf8' }).status === 0
@@ -24,12 +32,15 @@ const hasTools = process.platform === 'darwin'
 if (!hasTools) console.warn('adapters.codex.workspace-git: no codex or git on this Mac or platform, real-binary checks skipped');
 const describeWithCodex = hasTools ? describe : describe.skip;
 
+const SUBJECT = 'a subject only git can show';
+const SECRET = 'SECRET-NPM-TOKEN-0f3a';
+
 const startModel = async (reply) => {
   const requests = [];
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => {
+    req.on('end', async () => {
       if (req.method !== 'POST' || !/\/responses$/.test(req.url)) {
         res.writeHead(404);
         res.end();
@@ -37,7 +48,7 @@ const startModel = async (reply) => {
       }
       const body = JSON.parse(Buffer.concat(chunks).toString());
       requests.push(body);
-      const items = reply(requests.length - 1, body) || [{
+      const items = (await reply(requests.length - 1, body)) || [{
         type: 'message', role: 'assistant', id: 'm1', content: [{ type: 'output_text', text: 'done' }],
       }];
       const id = `r${requests.length}`;
@@ -69,22 +80,28 @@ const git = (cwd, ...args) => {
   return result.stdout.trim();
 };
 
+const outputOf = (body, callId) => JSON.stringify(
+  body.input.find((item) => item.call_id === callId && /output/.test(item.type))?.output ?? null,
+);
+
 describeWithCodex('a public codex seat and the workspace git tool, on the real binary', () => {
   let root;
+  let workspace;
   let model;
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'commonly-codex-git-'));
-    await Promise.all(['workspace', 'home', 'operator'].map((dir) => mkdir(join(root, dir))));
+    await Promise.all(['workspace', 'home', 'operator', 'outside'].map((dir) => mkdir(join(root, dir))));
     await writeFile(
       join(root, 'operator', 'auth.json'),
       JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'stub-key' }),
     );
-    const workspace = join(root, 'workspace');
+    workspace = join(root, 'workspace');
     git(workspace, 'init', '-q');
     await writeFile(join(workspace, 'a.txt'), 'one\n');
-    git(workspace, 'add', 'a.txt');
-    git(workspace, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'a subject only git can show');
+    await writeFile(join(workspace, '.npmrc'), 'registry=https://registry.npmjs.org/\n');
+    git(workspace, 'add', 'a.txt', '.npmrc');
+    git(workspace, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', SUBJECT);
   });
 
   afterEach(async () => {
@@ -93,14 +110,14 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
     await rm(root, { recursive: true, force: true });
   });
 
-  const runTurn = async (reply, environment = {}) => {
+  const runTurn = async (reply) => {
     model = await startModel(reply);
     const proxy = `http://127.0.0.1:${model.port}`;
     await codex.spawn('hi', {
-      cwd: join(root, 'workspace'),
+      cwd: workspace,
       agentName: 'workspace-git-test',
-      timeoutMs: 60000,
-      environment: { model: 'gpt-5.5', sandbox: { trust: 'public', mode: 'workspace' }, ...environment },
+      timeoutMs: 80000,
+      environment: { model: 'gpt-5.5', sandbox: { trust: 'public', mode: 'workspace' } },
       env: {
         PATH: process.env.PATH,
         HOME: join(root, 'home'),
@@ -117,35 +134,42 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
     return model.requests;
   };
 
-  const search = {
-    type: 'tool_search_call',
-    call_id: 'search',
-    status: 'completed',
-    execution: 'client',
-    arguments: { query: 'workspace git log', limit: 10 },
+  // Codex starts MCP servers alongside the turn, so the first search can come
+  // before the tool is listed. The stub searches again, a little later, until
+  // it is, then makes the calls in `calls` one per turn.
+  const gitCalls = (calls) => {
+    let namespace = null;
+    let next = 0;
+    let searches = 0;
+    return async (index, body) => {
+      if (!namespace) {
+        const found = body.input.filter((item) => item.type === 'tool_search_output').at(-1);
+        namespace = found?.tools?.find((tool) => /workspace_git/.test(tool.name || ''))?.name || null;
+      }
+      if (!namespace) {
+        if (searches >= 10) return null;
+        if (searches > 0) await new Promise((resolve) => { setTimeout(resolve, 500); });
+        searches += 1;
+        return [{
+          type: 'tool_search_call',
+          call_id: `search-${searches}`,
+          status: 'completed',
+          execution: 'client',
+          arguments: { query: 'workspace git log', limit: 10 },
+        }];
+      }
+      if (next >= calls.length) return null;
+      const [callId, subcommand, args] = calls[next];
+      next += 1;
+      return [{
+        type: 'function_call', namespace, name: 'git', call_id: callId, arguments: JSON.stringify({ subcommand, args }),
+      }];
+    };
   };
 
   test('the seat finds the git tool and reads a commit through it', async () => {
-    const requests = await runTurn((index, body) => {
-      if (index === 0) return [search];
-      if (index === 1) {
-        const found = body.input.find((item) => item.type === 'tool_search_output');
-        const namespace = found?.tools?.find((tool) => /workspace_git/.test(tool.name || ''));
-        if (!namespace) return null;
-        return [{
-          type: 'function_call',
-          namespace: namespace.name,
-          name: 'git',
-          call_id: 'log',
-          arguments: JSON.stringify({ subcommand: 'log', args: ['-n', '1', '--format=%s'] }),
-        }];
-      }
-      return null;
-    });
-    const found = requests[1].input.find((item) => item.type === 'tool_search_output');
-    expect(JSON.stringify(found.tools)).toContain('workspace_git');
-    const output = requests.at(-1).input.find((item) => item.call_id === 'log' && /output/.test(item.type));
-    expect(JSON.stringify(output?.output)).toContain('a subject only git can show');
+    const requests = await runTurn(gitCalls([['log', 'log', ['-n', '1', '--format=%s']]]));
+    expect(outputOf(requests.at(-1), 'log')).toContain(SUBJECT);
   });
 
   test('the shell still cannot run git, so the tool is not a way around it', async () => {
@@ -157,8 +181,35 @@ describeWithCodex('a public codex seat and the workspace git tool, on the real b
         arguments: JSON.stringify({ cmd: 'git log -n 1 --format=%s', yield_time_ms: 5000 }),
       }]
       : null));
-    const output = requests.at(-1).input.find((item) => item.call_id === 'shell' && /output/.test(item.type));
-    expect(output).toBeDefined();
-    expect(JSON.stringify(output.output)).not.toContain('a subject only git can show');
+    const output = outputOf(requests.at(-1), 'shell');
+    expect(output).not.toBe('null');
+    expect(output).not.toContain(SUBJECT);
+  });
+
+  test('a file the seat\'s profile denies does not come back through git', async () => {
+    await appendFile(join(workspace, '.npmrc'), `//registry.npmjs.org/:_authToken=${SECRET}\n`);
+    const requests = await runTurn(gitCalls([
+      ['diff', 'diff', []],
+      ['show', 'show', ['HEAD:.npmrc']],
+      ['blame', 'blame', ['.npmrc']],
+      ['status', 'status', ['--short']],
+    ]));
+    const last = requests.at(-1);
+    expect(outputOf(last, 'diff')).not.toContain(SECRET);
+    expect(outputOf(last, 'show')).toMatch(/refused/);
+    expect(outputOf(last, 'blame')).toMatch(/refused/);
+    expect(outputOf(last, 'status')).not.toContain('.npmrc');
+    expect(JSON.stringify(last.input)).not.toContain(SECRET);
+  });
+
+  test('a filter the repository defines runs inside the tool\'s sandbox', async () => {
+    // Set up on the host, as a repository a seat was given could already carry.
+    const marker = join(root, 'outside', 'filter-ran');
+    git(workspace, 'config', 'filter.probe.clean', `sh -c 'touch ${marker}; cat'`);
+    await writeFile(join(workspace, '.gitattributes'), 'a.txt filter=probe\n');
+    await appendFile(join(workspace, 'a.txt'), 'two\n');
+    const requests = await runTurn(gitCalls([['status', 'status', ['--short']], ['diff', 'diff', []]]));
+    expect(outputOf(requests.at(-1), 'diff')).toContain('two');
+    expect(existsSync(marker)).toBe(false);
   });
 });
