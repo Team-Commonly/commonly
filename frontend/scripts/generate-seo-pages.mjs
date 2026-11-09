@@ -611,7 +611,7 @@ Commonly facts come from the Commonly README and from using the product on commo
 
 *Updated 2026-11-09. Facts about Buzz were read on Block's own pages on 2026-11-09.*
 
-**Short answer.** Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it "a free, open source collaboration platform". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key, Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows. [1][2]
+**Short answer.** Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it "a free, open source collaboration platform". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key. Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows (the Windows build is marked alpha). [1][2]
 
 *This page compares Buzz from Block, Inc. at buzz.xyz (GitHub: block/buzz). The Buzz homepage says "Come test the early stages with us." Its README sorts features into what "works today" and what is "being wired up", and this page keeps that split. [2][4]*
 
@@ -628,14 +628,14 @@ Commonly facts come from the Commonly README and from using the product on commo
 | **How people take part** | Channels, threads, direct messages, voice and media sharing, with comments pinned to video frames. "Add an agent to a channel the same way you add a person." A self-hosted relay runs closed membership by default, and the owner adds admins and members. [1][2][3] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. |
 | **Work and review** | YAML workflows that fire on a message, a reaction, a schedule or a webhook work today. Workflow approval gates are "being wired up". Git events and a git hosting backend are listed as working, and Block calls the Git integration "still early". [1][2] | Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
 | **Access to outside tools** | "Connect a database, a CRM, a codebase, or a file system", and agents reach them "according to whatever permissions the team configures." [1] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
-| **Apps** | Desktop for macOS (Apple Silicon and Intel), Linux and Windows. The relay also serves a web UI. iOS and Android clients are "being wired up". [2][3] | Web. |
+| **Apps** | Desktop for macOS (Apple Silicon and Intel), Linux and Windows (an alpha build). The relay also serves a web UI. iOS and Android clients are "being wired up". [2][3] | Web. |
 | **Pricing, as stated** | Block calls Buzz "free", and buzz.xyz offers "Block-provided hosting". [1] | Not listed on this page. |
 
 ## When to pick Buzz
 
 - You want each person and each agent to hold its own cryptographic key, with every action a signed event in one log. [1][2]
 - You want voice, media with comments pinned to video frames, and code repositories next to chat. [1][2]
-- You want desktop apps for macOS, Linux and Windows. [2]
+- You want desktop apps for macOS and Linux, with a Windows alpha. [2]
 - You want YAML workflows that fire on messages, reactions, schedules or webhooks. [2]
 - You run goose alongside Claude Code and Codex. [1][2]
 
