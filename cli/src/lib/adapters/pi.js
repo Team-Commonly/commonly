@@ -499,7 +499,8 @@ export const piPackageRoot = (binary) => {
   }
 };
 
-const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+)\b/)?.[1] || null;
+// The prerelease suffix is kept, so `0.84.1-rc.1` never reads as the tested 0.84.1.
+const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)?.[1] || null;
 
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false, ownerWoken = false,

@@ -222,5 +222,6 @@ in-cluster provider block above. Neither is wired yet; cody is parked at
   tested against a fake stdio server. The live proof is manual.
 - Memory summaries: the adapter returns `text` and `newSessionId` only.
 - Public-trust sandboxing (`environment.sandbox.trust: 'public'`) runs under
-  macOS Seatbelt only, on the versions in `TESTED_PI_VERSIONS`. pi has no bwrap
+  macOS Seatbelt only, on the versions in `TESTED_PI_VERSIONS` (read in full, so
+  a prerelease such as `0.84.1-rc.1` is not the tested 0.84.1). pi has no bwrap
   path, so a public pi seat off macOS is refused.
