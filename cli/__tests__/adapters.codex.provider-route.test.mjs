@@ -22,6 +22,11 @@ import { lstat, mkdtemp, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+// child_process is mocked below, so the workspace git check would get no
+// answer from git and refuse; it has its own suite with real git.
+await jest.unstable_mockModule('../src/lib/sandbox/workspace-git-config.js', () => ({
+  refuseCodeRunningGitSetup: () => {},
+}));
 await jest.unstable_mockModule('child_process', () => ({
   spawnSync: jest.fn(),
   spawn: jest.fn(),

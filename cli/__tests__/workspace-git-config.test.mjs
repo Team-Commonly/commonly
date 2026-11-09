@@ -6,8 +6,9 @@
  */
 import { jest } from '@jest/globals';
 import { spawnSync } from 'child_process';
+import { existsSync } from 'fs';
 import {
-  chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
+  chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -28,15 +29,24 @@ const git = (cwd, ...args) => {
 };
 
 let root;
+const commit = (dir, message) => git(dir, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', message);
 const repo = (name = 'repo') => {
   const dir = join(root, name);
   mkdirSync(dir, { recursive: true });
   git(dir, 'init', '-q');
   writeFileSync(join(dir, 'a.txt'), 'one\n');
   git(dir, 'add', 'a.txt');
-  git(dir, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'first');
+  commit(dir, 'first');
   return dir;
 };
+// A repository at <top>/<path> recorded in <top>'s index as a submodule.
+const embed = (top, path = 'sub') => {
+  const dir = repo(join(top.slice(root.length + 1), path));
+  git(top, 'add', path);
+  commit(top, `add ${path}`);
+  return dir;
+};
+const keys = (dir) => codeRunningGitSetup(dir, { env: ENV }).map((f) => f.key || f.hook);
 
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'ws-git-config-')); });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -65,6 +75,18 @@ describe('which keys run a program', () => {
     ['remote.origin.url', 'ext::sh -c x'],
     ['submodule.lib.update', '!x'],
     ['uploadpack.packObjectsHook', 'x'],
+    ['hook.probe.command', 'x'],
+    ['gc.recentObjectsHook', 'x'],
+    ['gpg.ssh.defaultKeyCommand', 'x'],
+    ['sendemail.sendmailCmd', 'x'],
+    ['sendemail.headerCmd', 'x'],
+    ['imap.tunnel', 'x'],
+    ['guitool.probe.cmd', 'x'],
+    ['instaweb.httpd', 'x'],
+    ['protocol.allow', 'always'],
+    ['submodule.lib.url', 'ext::sh -c x'],
+    ['lfs.extension.probe.clean', 'x'],
+    ['lfs.customtransfer.probe.path', 'x'],
   ])('%s is refused', (key, value) => {
     const dir = repo();
     git(dir, 'config', key, value);
@@ -109,7 +131,8 @@ describe('the repository git would open', () => {
     const hook = join(dir, '.git', 'hooks', 'post-index-change');
     writeFileSync(hook, '#!/bin/sh\n');
     chmodSync(hook, 0o755);
-    expect(codeRunningGitSetup(dir)).toEqual([{ file: hook, hook: 'post-index-change' }]);
+    const findings = codeRunningGitSetup(dir);
+    expect(findings).toEqual([{ file: expect.stringMatching(/\/\.git\/hooks\/post-index-change$/), hook: 'post-index-change' }]);
   });
 
   test('a workspace below the repository root is checked against that repository', () => {
@@ -126,18 +149,87 @@ describe('the repository git would open', () => {
     expect(codeRunningGitSetup(join(root, 'wt')).map((f) => f.key)).toEqual(['diff.external']);
   });
 
-  test('a submodule\'s config is checked', () => {
+  test('a workspace laid out as a bare repository is read as one', () => {
+    const dir = join(root, 'bare-layout');
+    git(root, 'init', '-q', '--bare', 'bare-layout');
+    git(root, '--git-dir', dir, 'config', 'core.bare', 'false');
+    git(root, '--git-dir', dir, 'config', 'core.worktree', dir);
+    git(root, '--git-dir', dir, 'config', 'core.fsmonitor', '/tmp/x');
+    expect(keys(dir)).toEqual(expect.arrayContaining(['core.worktree', 'core.fsmonitor']));
+  });
+
+  test('a decoy .git git skips does not hide the repository above it', () => {
+    const top = repo('top');
+    git(top, 'config', 'core.fsmonitor', '/tmp/x');
+    mkdirSync(join(top, 'ws', '.git'), { recursive: true });
+    expect(keys(join(top, 'ws'))).toEqual(['core.fsmonitor']);
+  });
+
+  test('a submodule recorded in the index is checked, config and hooks', () => {
+    const top = repo('top');
+    const sub = embed(top);
+    expect(keys(top)).toEqual([]);
+    git(sub, 'config', 'core.fsmonitor', '/tmp/x');
+    const hook = join(sub, '.git', 'hooks', 'post-index-change');
+    writeFileSync(hook, '#!/bin/sh\n', { mode: 0o755 });
+    expect(keys(top)).toEqual(['core.fsmonitor', 'post-index-change']);
+  });
+
+  test('a submodule whose git folder is a symlink is followed', () => {
+    const top = repo('top');
+    const sub = embed(top);
+    const outside = join(root, 'outside-git');
+    renameSync(join(sub, '.git'), outside);
+    mkdirSync(join(top, '.git', 'modules'), { recursive: true });
+    symlinkSync(outside, join(top, '.git', 'modules', 'sub'));
+    writeFileSync(join(sub, '.git'), 'gitdir: ../.git/modules/sub\n');
+    git(sub, 'config', 'core.worktree', sub);
+    git(sub, 'config', 'diff.external', 'x');
+    expect(keys(top)).toEqual(expect.arrayContaining(['diff.external']));
+  });
+
+  test('a submodule whose git folder git cannot open is refused', () => {
+    const top = repo('top');
+    const sub = embed(top);
+    rmSync(join(sub, '.git'), { recursive: true });
+    writeFileSync(join(sub, '.git'), 'gitdir: ../missing\n');
+    expect(keys(top)[0]).toMatch(/^git could not read the repository/);
+  });
+
+  test('config hooks are refused', () => {
     const dir = repo();
-    const modules = join(dir, '.git', 'modules', 'lib');
-    mkdirSync(modules, { recursive: true });
-    writeFileSync(join(modules, 'config'), '[filter "x"]\n\tclean = sh -c y\n');
-    expect(codeRunningGitSetup(dir).map((f) => f.key)).toEqual(['filter.x.clean']);
+    git(dir, 'config', 'hook.probe.event', 'post-index-change');
+    git(dir, 'config', 'hook.probe.command', 'x');
+    expect(keys(dir)).toEqual(['hook.probe.event', 'hook.probe.command']);
+  });
+
+  test('the repository named by GIT_DIR in the seat\'s environment is the one checked', () => {
+    const elsewhere = repo('elsewhere');
+    git(elsewhere, 'config', 'core.pager', 'x');
+    const plain = join(root, 'plain');
+    mkdirSync(plain);
+    expect(codeRunningGitSetup(plain, { env: { ...ENV, GIT_DIR: join(elsewhere, '.git') } }).map((f) => f.key))
+      .toEqual(['core.pager']);
+  });
+
+  test('the check itself runs nothing the repository names', () => {
+    const dir = repo();
+    const marker = join(root, 'RAN');
+    const payload = join(root, 'payload.sh');
+    writeFileSync(payload, `#!/bin/sh\ntouch ${marker}\nexit 1\n`, { mode: 0o755 });
+    git(dir, 'config', 'core.fsmonitor', payload);
+    git(dir, 'config', 'hook.probe.event', 'post-index-change');
+    git(dir, 'config', 'hook.probe.command', payload);
+    writeFileSync(join(dir, '.git', 'hooks', 'post-index-change'), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+    writeFileSync(join(dir, 'a.txt'), 'changed\n');
+    expect(keys(dir).length).toBeGreaterThan(0);
+    expect(existsSync(marker)).toBe(false);
   });
 
   test('a config git cannot parse is refused, not skipped', () => {
     const dir = repo();
     writeFileSync(join(dir, '.git', 'config'), '[core\n\tbroken');
-    expect(codeRunningGitSetup(dir).map((f) => f.key)).toEqual(['unreadable config']);
+    expect(keys(dir)).toEqual([expect.stringMatching(/^git could not read the repository/)]);
   });
 
   test('a folder in no repository has nothing to refuse', () => {
