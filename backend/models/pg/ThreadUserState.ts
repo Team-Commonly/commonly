@@ -42,6 +42,8 @@ export interface ThreadUserStateRow {
   pod_id: string;
   following: boolean | null;
   collapsed: boolean;
+  // D278 read point (0011). NULL until the person first opens the thread.
+  last_read_at?: string | Date | null;
   followed_at: string;
   updated_at: string;
 }
@@ -82,6 +84,13 @@ async function upsertOne(
     [threadRootId, userId, podId, value],
   );
   return rows[0];
+}
+
+/** A timestamptz as the wire carries it: ISO 8601, or null. pg and pg-mem both hand back a Date. */
+function toIso(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 class ThreadUserState {
@@ -149,6 +158,43 @@ class ThreadUserState {
   }
 
   /**
+   * Move this user's read point in a thread forward to `at` (D278).
+   *
+   * Forward only: a write older than the stored point changes nothing, so two
+   * tabs, a slow request or a replayed PUT can never make read replies unread
+   * again. The guard is the WHERE on the conflict update, the same shape
+   * `followByParticipation` uses, rather than GREATEST(): equivalent here, and
+   * this form already runs under pg-mem at the unit tier. `at` is clamped to
+   * now so a client clock running ahead can't mark future replies read.
+   *
+   * Touches only `last_read_at` and `updated_at`. A read is neither a follow
+   * nor an expand, and a new row takes the schema defaults for both.
+   *
+   * Returns the stored point after the write, read back rather than trusted
+   * from RETURNING, because a guarded DO UPDATE that matched nothing returns
+   * no row.
+   */
+  static async markRead(
+    threadRootId: number, userId: string, podId: string, at: Date,
+  ): Promise<string | null> {
+    const clamped = new Date(Math.min(at.getTime(), Date.now()));
+    await (pool as PgPool).query(
+      `INSERT INTO thread_user_state (thread_root_id, user_id, pod_id, last_read_at)
+       VALUES ($1, $2, $3, $4::timestamptz)
+       ON CONFLICT (thread_root_id, user_id)
+       DO UPDATE SET last_read_at = $4::timestamptz, updated_at = CURRENT_TIMESTAMP
+       WHERE thread_user_state.last_read_at IS NULL
+          OR thread_user_state.last_read_at < $4::timestamptz`,
+      [threadRootId, userId, podId, clamped.toISOString()],
+    );
+    const { rows } = await (pool as PgPool).query(
+      'SELECT last_read_at FROM thread_user_state WHERE thread_root_id = $1 AND user_id = $2',
+      [threadRootId, userId],
+    );
+    return toIso(rows[0]?.last_read_at);
+  }
+
+  /**
    * Users who have EXPLICITLY followed. Deliberately does not include
    * participation-default followers — resolving that default needs the thread's
    * participant set, which lives in `messages`, and 3/4 owns that join. A
@@ -209,7 +255,7 @@ class ThreadUserState {
     podId: string,
     cutoff: Date | string | null,
     cutoffUnknown: boolean,
-  ): Promise<Array<{ thread_root_id: number; following: boolean | null; collapsed: boolean }>> {
+  ): Promise<Array<{ thread_root_id: number; following: boolean | null; collapsed: boolean; last_read_at: string | null }>> {
     const { rows } = await (pool as PgPool).query(
       `SELECT root.id AS thread_root_id,
               s.following AS following,
@@ -219,7 +265,8 @@ class ThreadUserState {
                      WHEN $3::timestamptz IS NULL THEN true
                      ELSE root.created_at >= $3::timestamptz
                 END
-              ) AS collapsed
+              ) AS collapsed,
+              s.last_read_at AS last_read_at
          FROM messages root
          LEFT JOIN thread_user_state s
            ON s.thread_root_id = root.id AND s.user_id = $1
@@ -236,6 +283,7 @@ class ThreadUserState {
       thread_root_id: Number(r.thread_root_id),
       following: r.following === null || r.following === undefined ? null : Boolean(r.following),
       collapsed: Boolean(r.collapsed),
+      last_read_at: toIso(r.last_read_at),
     }));
   }
 

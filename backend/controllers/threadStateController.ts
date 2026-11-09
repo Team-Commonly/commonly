@@ -28,7 +28,7 @@ const { THREADING_BACKFILL_MIGRATION: MIGRATION_NAME } = require('../constants/m
 interface Req {
   params: { messageId?: string };
   query: { podId?: string };
-  body?: { collapsed?: unknown };
+  body?: { collapsed?: unknown; at?: unknown };
   user?: { _id?: unknown };
   userId?: unknown;
   agentUser?: { _id?: unknown };
@@ -201,10 +201,16 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       // renamed a public field — caught by threadStateReadContract, which is
       // the reason that suite reads through the controller rather than the
       // model.
-      threads: rows.map((r: { thread_root_id: number; following: boolean | null; collapsed: boolean }) => ({
+      // `lastReadAt` is the caller's read point (D278): ISO, or null when they
+      // have never opened the thread. Null is a value — it renders no unread
+      // mark — so it is sent rather than omitted.
+      threads: rows.map((r: {
+        thread_root_id: number; following: boolean | null; collapsed: boolean; last_read_at: string | null;
+      }) => ({
         threadRootId: r.thread_root_id,
         following: r.following,
         collapsed: r.collapsed,
+        lastReadAt: r.last_read_at ?? null,
       })),
     });
   } catch (err: any) {
@@ -235,5 +241,41 @@ export async function setThreadCollapsed(req: Req, res: Res): Promise<void> {
   }
 }
 
-module.exports = { followThread, unfollowThread, listThreadState, setThreadCollapsed };
+/**
+ * A person's read point in a thread (D278) — the only writer of
+ * `last_read_at`. The client calls it while a thread is open, with the time of
+ * the newest reply it rendered.
+ *
+ * Same gate as the collapse gesture, by sharing `authorize`: the pod is the one
+ * that owns the message, never one the client names, so a member of one pod
+ * cannot write a read point against another pod's thread, and any message in a
+ * thread resolves to its root.
+ *
+ * `at` must be an ISO 8601 date-time string that parses. Anything else is a
+ * 400 before the database is touched. The model clamps it to now and only
+ * moves forward, so a stale or replayed write is a 200 that changes nothing;
+ * the response carries the stored point either way.
+ */
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:?\d{2})$/;
+
+export async function setThreadRead(req: Req, res: Res): Promise<void> {
+  try {
+    const atRaw = (req.body || {}).at;
+    const at = typeof atRaw === 'string' && ISO_DATE_TIME.test(atRaw) ? new Date(atRaw) : null;
+    if (!at || Number.isNaN(at.getTime())) {
+      res.status(400).json({ msg: 'at (ISO 8601 date-time) is required' });
+      return;
+    }
+    const ctx = await authorize(req, res);
+    if (!ctx) return;
+    const lastReadAt = await ThreadUserState.markRead(ctx.rootId, ctx.userId, ctx.podId, at);
+    res.status(200).json({ threadRootId: ctx.rootId, lastReadAt });
+  } catch (err: any) {
+    res.status(500).json({ msg: 'failed to set read point', error: err?.message });
+  }
+}
+
+module.exports = {
+  followThread, unfollowThread, listThreadState, setThreadCollapsed, setThreadRead,
+};
 Object.assign(module.exports, exports);

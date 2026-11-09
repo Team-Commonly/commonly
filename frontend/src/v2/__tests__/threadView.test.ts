@@ -1,4 +1,6 @@
-import { buildThreadView, freezeOrphanReplyIds } from '../utils/threadView';
+import {
+  buildThreadView, freezeOrphanReplyIds, plainPreviewText, threadReadPoint, unreadRepliesOf,
+} from '../utils/threadView';
 import { V2ThreadState } from '../hooks/useV2ThreadState';
 
 const msg = (id: number, opts: Partial<any> = {}) => ({
@@ -132,5 +134,109 @@ describe('card metadata', () => {
     );
     const card = items.find((i) => i.kind === 'card') as any;
     expect(card.participants[0]).toMatchObject({ name: 'Recorder', isBot: true });
+  });
+});
+
+// D278: what the chip says about the newest reply and what the viewer hasn't read.
+describe('read point, unread count and the latest-reply preview', () => {
+  const ME = 'me';
+  const agent = { username: 'helper', isBot: true };
+  const person = { username: 'pat', isBot: false };
+  const at = (min: number) => `2026-11-09T10:${String(min).padStart(2, '0')}:00.000Z`;
+  const cardOf = (items: any[]) => items.find((i) => i.kind === 'card') as any;
+  const view = (messages: any[], readPoints: Map<string, string> = new Map(), viewerId: string | null = ME) => (
+    cardOf(buildThreadView(messages, state([1]), new Set(), { viewerId, readPoints }))
+  );
+
+  test('no read point: a thread I never opened and never posted in shows no unread, but still previews', () => {
+    const root = msg(1, { user_id: 'someone', created_at: at(0) });
+    const reply = msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) });
+    expect(threadReadPoint(root, [reply], ME, null)).toBeNull();
+    const c = view([root, reply]);
+    expect(c.unreadCount).toBe(0);
+    expect(c.unreadAgentCount).toBe(0);
+    expect(c.latestReply).toMatchObject({ userId: 'bot', name: 'helper', isBot: true, text: 'm2' });
+    expect(c.viewerIsRootAuthor).toBe(false);
+  });
+
+  test('my own root is a read point: an agent answer after it is unread', () => {
+    const c = view([
+      msg(1, { user_id: ME, created_at: at(0) }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) }),
+    ]);
+    expect(c.viewerIsRootAuthor).toBe(true);
+    expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(1);
+    expect(c.newestUnreadAgentAt).toBe(Date.parse(at(1)));
+  });
+
+  test('the server marker counts, and replies at or before it are read', () => {
+    const messages = [
+      msg(1, { user_id: 'someone', created_at: at(0) }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) }),
+      msg(3, { thread_root_id: 1, user_id: 'p', user: person, created_at: at(2) }),
+      msg(4, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(3) }),
+    ];
+    const c = view(messages, new Map([['1', at(2)]]));
+    expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(1);
+    // A point read from the state row works the same as one moved this session.
+    const fromRow = cardOf(buildThreadView(messages, new Map([['1', {
+      threadRootId: 1, following: null, collapsed: true, lastReadAt: at(2),
+    }]]), new Set(), { viewerId: ME }));
+    expect(fromRow.unreadCount).toBe(1);
+  });
+
+  test('own-message fallback: my later reply wins over an older server marker', () => {
+    const c = view([
+      msg(1, { user_id: 'someone', created_at: at(0) }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) }),
+      msg(3, { thread_root_id: 1, user_id: ME, created_at: at(4) }),
+      msg(4, { thread_root_id: 1, user_id: 'p', user: person, created_at: at(5) }),
+    ], new Map([['1', at(0)]]));
+    expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(0);
+  });
+
+  test('my own replies are never unread, however new', () => {
+    const replies = [
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) }),
+      msg(3, { thread_root_id: 1, user_id: ME, created_at: at(9) }),
+    ];
+    expect(unreadRepliesOf(replies, ME, Date.parse(at(0))).map((r) => r.id)).toEqual(['2']);
+    // In the view, my newest message also moves the point past the agent's reply.
+    expect(view([msg(1, { user_id: ME, created_at: at(0) }), ...replies]).unreadCount).toBe(0);
+  });
+
+  test('the latest reply is the newest by time, and its text is one plain line', () => {
+    const c = view([
+      msg(1, { user_id: 'someone', created_at: at(0) }),
+      { ...msg(3, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(5) }), content: '## Plan\n\n- **Ship** the [fix](https://x.test)\n- then `test` it' },
+      msg(2, { thread_root_id: 1, user_id: 'p', user: person, created_at: at(2) }),
+    ]);
+    expect(c.latestReply.userId).toBe('bot');
+    expect(c.latestReply.text).toBe('Plan Ship the fix then test it');
+    expect(c.latestReply.isCard).toBe(false);
+  });
+
+  test('a card message previews its summary, or leaves the text empty for the chip to say "sent a card"', () => {
+    const cardReply = (extra: any = {}) => ({
+      ...msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) }),
+      content: '{"elements":[]}',
+      ...extra,
+    });
+    const withSummary = view([msg(1, { created_at: at(0) }), cardReply({ summary: 'Two options to pick from', payload: { kind: 'ui' } })]);
+    expect(withSummary.latestReply).toMatchObject({ isCard: true, text: 'Two options to pick from' });
+    const fromPayload = view([msg(1, { created_at: at(0) }), cardReply({ payload: { kind: 'approval-card', summary: 'Approve the deploy' } })]);
+    expect(fromPayload.latestReply).toMatchObject({ isCard: true, text: 'Approve the deploy' });
+    const bare = view([msg(1, { created_at: at(0) }), cardReply({ payload: { kind: 'ui' } })]);
+    expect(bare.latestReply).toMatchObject({ isCard: true, text: '' });
+  });
+
+  test('plainPreviewText collapses whitespace and strips marks a preview would show literally', () => {
+    expect(plainPreviewText('  one\n\n   two\tthree ')).toBe('one two three');
+    expect(plainPreviewText('> quoted *em* and _em_ ~~gone~~')).toBe('quoted em and em gone');
+    expect(plainPreviewText('![chart](https://x.test/c.png) see above')).toBe('chart see above');
+    expect(plainPreviewText('x'.repeat(500))).toHaveLength(200);
   });
 });

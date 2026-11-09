@@ -20,7 +20,35 @@ export type ThreadViewItem =
     participants: V2ThreadParticipant[];
     lastActivityAt: string | null;
     replies: V2Message[];
+    /** D278: the newest reply, for the chip's one-line preview. */
+    latestReply?: ThreadLatestReply | null;
+    /** Replies the viewer hasn't read. 0 when they have no read point. */
+    unreadCount?: number;
+    /** Of those, the ones an agent wrote, and when the newest of them landed (ms). */
+    unreadAgentCount?: number;
+    newestUnreadAgentAt?: number | null;
+    /** When the newest agent reply landed (ms), read or not. */
+    newestAgentReplyAt?: number | null;
+    /** The viewer wrote the root. */
+    viewerIsRootAuthor?: boolean;
   };
+
+export interface ThreadLatestReply {
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+  isBot?: boolean;
+  /** One line of plain text. Empty for a card with no summary: the chip says "sent a card". */
+  text: string;
+  isCard: boolean;
+}
+
+/** What buildThreadView needs to know about the person reading. */
+export interface ThreadViewer {
+  viewerId?: string | null;
+  /** The viewer's read point per root id (useV2ThreadState.readPoints). */
+  readPoints?: ReadonlyMap<string, string>;
+}
 
 const idOf = (m: V2Message): string => String(m.id);
 const rootOf = (m: V2Message): string | null => (
@@ -87,10 +115,89 @@ const participantOf = (m: V2Message): V2ThreadParticipant => {
   };
 };
 
+const timeOf = (m: V2Message): number => {
+  const at = Date.parse(whenOf(m));
+  return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
+};
+
+// Payload kinds that render as a card rather than as their content
+// (V2MessageRow). Their content is not a sentence a preview can quote.
+const CARD_PAYLOAD_KINDS = new Set(['approval-card', 'byo-handoff', 'ui', 'gig-card']);
+const PREVIEW_MAX_CHARS = 200;
+
+/**
+ * One line of plain text from a message's markdown, for the thread chip.
+ * Not a markdown parser: it removes the marks a preview would otherwise show
+ * literally, keeps the words, and collapses every run of whitespace to one
+ * space. The chip ellipsizes in CSS; the cap here only bounds the DOM.
+ */
+export const plainPreviewText = (content: string): string => String(content || '')
+  .replace(/\[\[[a-z-]+:[^\]]*\]\]/gi, ' ') // [[reactions:…]]-style tokens
+  .replace(/```[^\n]*\n?/g, ' ') // fence lines; the code inside stays
+  .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images → alt text
+  .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → their text
+  .replace(/<[^>\n]+>/g, ' ') // inline html
+  .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '') // headings, quotes, list marks
+  .replace(/(\*\*|__|~~|`)/g, '')
+  .replace(/(^|[\s(])[*_]([^*_\s][^*_]*?)[*_](?=[\s).,!?:;]|$)/g, '$1$2') // *em* / _em_
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, PREVIEW_MAX_CHARS);
+
+/** The chip's preview of one reply: who, and one line of what they said. */
+export const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
+  const who = participantOf(m);
+  const summary = String(m.summary || m.payload?.summary || '').trim();
+  const isCard = CARD_PAYLOAD_KINDS.has(String(m.payload?.kind || ''));
+  const text = isCard
+    ? plainPreviewText(summary)
+    : plainPreviewText(m.content) || plainPreviewText(summary);
+  return { ...who, text, isCard };
+};
+
+/**
+ * The viewer's read point in one thread (D278), in ms, or null for none.
+ *
+ * The later of the server's `lastReadAt` and the viewer's own newest message
+ * in the thread, the root included: writing in a thread means you saw what
+ * came before. A thread they have never opened and never posted in has no
+ * point, so it shows no unread mark — every old thread would otherwise light
+ * up for people who were never in it.
+ */
+export const threadReadPoint = (
+  root: V2Message,
+  replies: V2Message[],
+  viewerId: string | null | undefined,
+  serverLastReadAt: string | null | undefined,
+): number | null => {
+  let point: number | null = null;
+  const server = serverLastReadAt ? Date.parse(serverLastReadAt) : NaN;
+  if (!Number.isNaN(server)) point = server;
+  if (viewerId) {
+    for (const m of [root, ...replies]) {
+      if (String(m.user_id || '') !== String(viewerId)) continue;
+      const at = timeOf(m);
+      if (at !== Number.NEGATIVE_INFINITY && (point === null || at > point)) point = at;
+    }
+  }
+  return point;
+};
+
+/** Replies another user wrote after the read point. None without a point. */
+export const unreadRepliesOf = (
+  replies: V2Message[],
+  viewerId: string | null | undefined,
+  readPoint: number | null,
+): V2Message[] => {
+  if (readPoint === null) return [];
+  return replies.filter((r) => String(r.user_id || '') !== String(viewerId || '') && timeOf(r) > readPoint);
+};
+
 export const buildThreadView = (
   messages: V2Message[],
   byRoot: Map<string, V2ThreadState>,
   flatIds: ReadonlySet<string> = new Set(),
+  viewer: ThreadViewer = {},
 ): ThreadViewItem[] => {
   // Ids up front. This used to be `messages.some(...)` inside the loop below,
   // which is O(n²) on a pod's whole scrollback — fine at 20 messages and not
@@ -137,13 +244,31 @@ export const buildThreadView = (
       whenOf(m),
     ) || null;
 
+    // Newest by time; on a tie the later one in list order.
+    const latest = replies.reduce((acc, r) => (timeOf(r) >= timeOf(acc) ? r : acc), replies[0]);
+    const rootId = idOf(m);
+    const serverPoint = viewer.readPoints?.get(rootId) ?? byRoot.get(rootId)?.lastReadAt ?? null;
+    const readPoint = threadReadPoint(m, replies, viewer.viewerId, serverPoint);
+    const unread = unreadRepliesOf(replies, viewer.viewerId, readPoint);
+    const isAgent = (r: V2Message) => participantOf(r).isBot === true;
+    const unreadAgent = unread.filter(isAgent);
+    const newestOf = (list: V2Message[]) => (list.length
+      ? list.reduce((acc, r) => Math.max(acc, timeOf(r)), Number.NEGATIVE_INFINITY)
+      : null);
+
     out.push({
       kind: 'card',
-      rootId: idOf(m),
+      rootId,
       replyCount: replies.length,
       participants,
       lastActivityAt,
       replies,
+      latestReply: latestReplyPreview(latest),
+      unreadCount: unread.length,
+      unreadAgentCount: unreadAgent.length,
+      newestUnreadAgentAt: newestOf(unreadAgent),
+      newestAgentReplyAt: newestOf(replies.filter(isAgent)),
+      viewerIsRootAuthor: Boolean(viewer.viewerId) && String(m.user_id || '') === String(viewer.viewerId),
     });
   }
   return groupClaimRuns(out);

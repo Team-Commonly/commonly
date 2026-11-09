@@ -384,8 +384,13 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // A reply visible flat before its root arrived must stay flat. Otherwise
     // prepending an older page relocates it into a resting thread chip.
     flatReplyIdsRef.current.ids = freezeOrphanReplyIds(messages, flatReplyIdsRef.current.ids);
-    return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids);
-  }, [messages, pod?._id, threadState.byRoot]);
+    // D278: who is reading, and their read points, so each chip can preview
+    // its latest reply and count what this person hasn't read.
+    return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids, {
+      viewerId: currentUser?._id || null,
+      readPoints: threadState.readPoints,
+    });
+  }, [messages, pod?._id, threadState.byRoot, threadState.readPoints, currentUser?._id]);
 
   // Scout's starts (first session, direction B, ruled 2026-10-15). A message
   // whose payload offers starts shows them as buttons until this person has
@@ -2143,6 +2148,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             messages={messages}
             threadView={threadView}
             threadState={threadState}
+            viewerId={currentUser?._id || null}
+            onThreadOpened={followCardIfAtBottom}
             revealMessageId={revealRequest}
             onRevealed={onRevealed}
             decisionByMessageId={decisionByMessageId}

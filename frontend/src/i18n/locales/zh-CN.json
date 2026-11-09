@@ -976,7 +976,11 @@
       "replyCount_other": "{{count}}条回复",
       "lastActivity": "· {{age}}",
       "expandAria": "展开话题，{{replies}}",
-      "collapseAria": "收起话题，{{replies}}"
+      "collapseAria": "收起话题，{{replies}}",
+      "latestFrom": "{{replies}}，最新回复来自 {{name}}",
+      "unreadSummary": "{{summary}}，{{count}}条未读",
+      "unreadCount": "{{count}}条未读",
+      "sentCard": "[卡片]"
     },
     "leadBadge": "负责人",
     "catchup": {

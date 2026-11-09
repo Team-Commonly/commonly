@@ -701,9 +701,13 @@ describe('second-person prompt placements', () => {
     const detail = withReply();
     detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
     renderChat(detail);
+    // D278: the viewer wrote the root and Scout answered in its thread, so the
+    // thread opens itself. Close it first, so the press below still crosses
+    // an expand and a collapse.
+    fireEvent.click(await screen.findByRole('button', { name: 'Collapse' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Expand thread, 1 reply' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Expand thread, 1 reply/ }));
     expect(screen.getByRole('button', { name: 'Creating link…' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
     await act(async () => { finish({ data: { token: 'a'.repeat(32) } }); });

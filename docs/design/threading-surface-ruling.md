@@ -50,6 +50,15 @@ Reply edges pre-date threading (a drifting population — ~227–245 `reply_to` 
 - **No cutoff gate on wake-scoping (3/4).** Activity on an old chain is new activity: a reply today to a pre-cutoff root is a real thread and the ambient rules apply unchanged.
 - "Orphaned chains stay NULL" is an untested branch with a live population of zero; it stays as written but is not cited as verified until a fixture exercises it.
 
+## Read point and the chip preview (D278, 2026-11-09)
+
+Answers to a top-level @mention move into the mention's thread in shared pods, so the main channel has to show that an answer arrived. This supersedes ux-lead 64476's "the chip is a door, not a preview":
+
+- **The chip previews the latest reply** on one line: the replier's 16px face and name, the reply as plain text ellipsized, `· N replies`, and `N new` in the accent unread treatment. One face, not three. Only the preview (then the name) gives way at 390; the count never wraps. The layout rules are pinned in `v2-layout-invariants.test.ts`.
+- **A third column, `last_read_at`** (migration 0011), on the same `thread_user_state` key, with its own writer: `PUT /api/messages/:id/read { at }`. Same gate as collapse (the pod is the message's, any message resolves to its root); forward only; clamped to now. Like the other two, the read writer touches only its own column: reading never follows and never expands.
+- **Unread is computed on the client.** The read point is the later of `lastReadAt` and the viewer's own newest message in the thread, root included. No point (never opened, never posted) means no unread mark, so old threads don't light up for bystanders. A reply is unread when someone else wrote it after the point.
+- **The asker's thread opens itself** when the viewer wrote the root and an agent reply is unread: on mount once the thread state has loaded, and as replies land. The open is local (the server's `collapsed` row stays a gesture's), capped at the three newest such threads open at once, never scrolls a reader who is up the list, and a thread closed by hand stays closed until a newer agent reply arrives. Every open thread marks itself read up to its newest reply after a 600 ms settle.
+
 ## Provenance of each line
 
 - Constraints 1–3, persisted collapse, and the three reasons: 55852 (above).

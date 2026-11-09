@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useV2Api } from './useV2Api';
 
 const REQUEST_TIMEOUT_MS = 15000;
@@ -21,6 +21,11 @@ export interface V2ThreadState {
   threadRootId: number;
   following: boolean | null;
   collapsed: boolean;
+  /**
+   * My read point in this thread (D278): ISO, or null when I have never
+   * opened it. Older servers omit it, which reads the same as null.
+   */
+  lastReadAt?: string | null;
 }
 
 interface ThreadStateResponse {
@@ -43,6 +48,21 @@ export interface UseV2ThreadState {
    */
   setCollapsed: (messageId: string, collapsed: boolean) => void;
   toggleFollowing: (messageId: string) => void;
+  /**
+   * My read point per thread root: the server's `lastReadAt`, moved forward
+   * by `markRead` in this session. Keyed by root id. Absent means never read.
+   */
+  readPoints: Map<string, string>;
+  /**
+   * Move my read point in a thread forward to `atIso`. Optimistic, and a
+   * no-op when `atIso` is not newer than the point already known, so an open
+   * thread can call it on every render without writing. Works for a thread
+   * the state fetch never saw (one an answer created after mount): the server
+   * resolves the root from any message id.
+   */
+  markRead: (rootId: string, atIso: string) => void;
+  /** The state fetch has settled (loaded or failed) at least once for this pod. */
+  ready: boolean;
 }
 
 const key = (id: number | string) => String(id);
@@ -51,8 +71,16 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   const api = useV2Api();
   const [byRoot, setByRoot] = useState<Map<string, V2ThreadState>>(new Map());
   const [loading, setLoading] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [readPoints, setReadPoints] = useState<Map<string, string>>(new Map());
+  // The newest point known per root, read synchronously by markRead so two
+  // calls in one tick don't both write. The state above is what renders.
+  const readPointsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
+    readPointsRef.current = new Map();
+    setReadPoints(new Map());
+    setReady(false);
     if (!podId) {
       setByRoot(new Map());
       return undefined;
@@ -68,6 +96,16 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         const next = new Map<string, V2ThreadState>();
         for (const t of data?.threads || []) next.set(key(t.threadRootId), t);
         setByRoot(next);
+        // Server points merge under any this session already moved forward.
+        const points = new Map(readPointsRef.current);
+        for (const t of data?.threads || []) {
+          const at = t.lastReadAt;
+          if (!at || Number.isNaN(Date.parse(at))) continue;
+          const known = points.get(key(t.threadRootId));
+          if (!known || Date.parse(at) > Date.parse(known)) points.set(key(t.threadRootId), at);
+        }
+        readPointsRef.current = points;
+        setReadPoints(points);
       })
       .catch(() => {
         // Degrade to "no threads known", which renders every message flat —
@@ -76,7 +114,11 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         // would have no way to tell a fetch failure from an empty pod.
         if (!cancelled) setByRoot(new Map());
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setReady(true);
+      });
     return () => { cancelled = true; };
   }, [api, podId]);
 
@@ -120,13 +162,30 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
     else api.del(`/api/messages/${messageId}/follow`).catch(revert);
   }, [api, byRoot, patch]);
 
+  const markRead = useCallback((rootId: string, atIso: string) => {
+    const at = Date.parse(atIso);
+    if (!rootId || Number.isNaN(at)) return;
+    const known = readPointsRef.current.get(key(rootId));
+    if (known && at <= Date.parse(known)) return;
+    const next = new Map(readPointsRef.current);
+    next.set(key(rootId), atIso);
+    readPointsRef.current = next;
+    setReadPoints(next);
+    // Not reverted on failure. A read point is a convenience; putting the
+    // unread mark back after the person has seen the replies would be the
+    // worse error, and the next open writes again.
+    api.put(`/api/messages/${encodeURIComponent(rootId)}/read`, { at: atIso }).catch(() => undefined);
+  }, [api]);
+
   const isThreadRoot = useCallback(
     (messageId: string) => byRoot.has(key(messageId)),
     [byRoot],
   );
 
   return useMemo(
-    () => ({ byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing }),
-    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing],
+    () => ({
+      byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready,
+    }),
+    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready],
   );
 };

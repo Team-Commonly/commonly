@@ -21,6 +21,7 @@
  *   threadStateController.followThread   POST   /:messageId/follow           (here)
  *   threadStateController.unfollowThread DELETE /:messageId/follow           (here)
  *   threadStateController.setThreadCollapsed PUT /:messageId/collapsed       (here)
+ *   threadStateController.setThreadRead  PUT    /:messageId/read             (here)
  *   threadStateController.listThreadState GET   /threads/state?podId=        (here)
  *   messageController.deleteMessage      DELETE /:id  (agentDeleteOwnMessage.test.js;
  *                                         already gated on the installation by F141)
@@ -59,6 +60,7 @@ jest.mock('../../models/pg/ThreadUserState', () => ({
   follow: jest.fn(async () => ({ followed_at: null })),
   unfollow: jest.fn(async () => undefined),
   setCollapsed: jest.fn(async () => undefined),
+  markRead: jest.fn(async () => null),
   effectiveStateForPod: jest.fn(async () => []),
 }));
 jest.mock('../../services/reactionAttributionService', () => ({
@@ -137,6 +139,8 @@ const ROUTES = [
     .set('Authorization', `Bearer ${bearer}`)],
   ['PUT collapsed', (id, pod, bearer) => request(app).put(`/api/messages/${id}/collapsed`)
     .set('Authorization', `Bearer ${bearer}`).send({ collapsed: true })],
+  ['PUT read', (id, pod, bearer) => request(app).put(`/api/messages/${id}/read`)
+    .set('Authorization', `Bearer ${bearer}`).send({ at: '2026-11-09T10:00:00.000Z' })],
   ['GET thread state', (id, pod, bearer) => request(app).get(`/api/messages/threads/state?podId=${pod._id}`)
     .set('Authorization', `Bearer ${bearer}`)],
 ];

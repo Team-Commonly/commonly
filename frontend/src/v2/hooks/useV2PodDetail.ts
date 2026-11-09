@@ -23,6 +23,8 @@ export interface V2Message {
   user_id: string;
   content: string;
   message_type: string;
+  // D245: an agent's optional one-line summary of its post (null otherwise).
+  summary?: string | null;
   author_kind?: 'kernel' | null;
   created_at: string;
   createdAt?: string;

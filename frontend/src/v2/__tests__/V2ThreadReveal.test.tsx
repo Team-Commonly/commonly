@@ -515,3 +515,54 @@ describe('opening or closing a thread persists (producer)', () => {
     await waitFor(() => { expect(result.current.byRoot.get('7').collapsed).toBe(true); });
   });
 });
+
+describe('the read point (D278)', () => {
+  const wrapper = ({ children }) => <>{children}</>;
+
+  beforeEach(() => { mockPut.mockClear(); });
+  afterEach(() => {
+    mockGet.mockImplementation(() => Promise.resolve({ podId: 'p1', defaults: { following: null }, threads: [THREAD_ROW] }));
+  });
+
+  test('the server point arrives in readPoints, and ready flips once the fetch settles', async () => {
+    mockGet.mockImplementation(() => Promise.resolve({
+      podId: 'p1', defaults: { following: null }, threads: [{ ...THREAD_ROW, lastReadAt: '2026-11-09T10:00:00.000Z' }],
+    }));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    expect(result.current.ready).toBe(false);
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:00:00.000Z');
+  });
+
+  test('markRead is optimistic, writes the read route, and only ever moves forward', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/7/read', { at: '2026-11-09T10:05:00.000Z' });
+
+    // The same point again, or an older one: no write, no change.
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:01:00.000Z'); });
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  test('a thread the state fetch never saw can still be marked read', async () => {
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('new-root', '2026-11-09T10:05:00.000Z'); });
+    expect(mockPut).toHaveBeenCalledWith('/api/messages/new-root/read', { at: '2026-11-09T10:05:00.000Z' });
+    expect(result.current.readPoints.get('new-root')).toBe('2026-11-09T10:05:00.000Z');
+  });
+
+  test('a failed write keeps the point: the unread mark does not come back', async () => {
+    mockPut.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useV2ThreadState('p1'), { wrapper });
+    await waitFor(() => { expect(result.current.ready).toBe(true); });
+    act(() => { result.current.markRead('7', '2026-11-09T10:05:00.000Z'); });
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.readPoints.get('7')).toBe('2026-11-09T10:05:00.000Z');
+  });
+});

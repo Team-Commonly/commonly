@@ -278,8 +278,8 @@
     inset: -6px;
   }
   .v2-root button.v2-thread-card__main {
-    flex: 1 1 100%;
-    flex-wrap: wrap; /* brief: card goes to two lines at 390 */
+    flex: 0 1 auto;
+    flex-wrap: nowrap; /* D278: one line at 390; the preview truncates instead */
   }
 }
 
@@ -737,7 +737,10 @@
 
 .v2-thread__jump-count { color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
 
-/* Thread summary chip: faces · N replies · last age. */
+/* Thread chip (D278, 2026-11-09): one line — the latest replier's face and
+   name, their reply ellipsized, · N replies, and the unread counter. Only the
+   preview (then the name) gives way; the count and counter never shrink or
+   wrap, at 390 included. */
 .v2-thread .v2-thread-card { margin: 4px 0 0; gap: 10px; }
 
 .v2-root .v2-thread button.v2-msg__thread-chip {
@@ -751,6 +754,9 @@
   background: var(--v2-surface);
   color: var(--v2-accent-text);
   font: 600 13px/18px var(--v2-font);
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .v2-root .v2-thread button.v2-msg__thread-chip:hover { background: var(--v2-surface-hover); border-color: var(--v2-border); }
@@ -759,7 +765,18 @@
 
 .v2-thread .v2-thread-card__faces > * + * { margin-left: -4px; }
 
-.v2-thread .v2-thread-card__count { color: var(--v2-accent-text); font-weight: 600; }
+.v2-thread .v2-thread-card__count { flex: none; white-space: nowrap; color: var(--v2-accent-text); font-weight: 600; }
+
+.v2-thread .v2-thread-card__name { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-text-primary); font-weight: 600; }
+
+.v2-thread .v2-thread-card__preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-text-secondary); font-weight: 400; }
+
+.v2-thread .v2-thread-card__sep { flex: none; color: var(--v2-text-muted); font-weight: 400; }
+
+/* The unread counter is one of the accent's named uses (design-system
+   README): the cobalt dot, then "N new" in accent mono, as the jump pill's
+   count is set. */
+.v2-thread .v2-thread-card__unread { flex: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
 
 .v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
 

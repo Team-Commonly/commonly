@@ -41,6 +41,7 @@ jest.mock('../../../controllers/threadStateController', () => ({
   followThread: hit('followThread'),
   unfollowThread: hit('unfollowThread'),
   setThreadCollapsed: hit('setThreadCollapsed'),
+  setThreadRead: hit('setThreadRead'),
 }));
 
 const messagesRouter = require('../../../routes/messages');
@@ -76,6 +77,7 @@ describe('the per-message thread toggles are below the greedy route too', () => 
     ['post', '/api/messages/42/follow', 'followThread'],
     ['delete', '/api/messages/42/follow', 'unfollowThread'],
     ['put', '/api/messages/42/collapsed', 'setThreadCollapsed'],
+    ['put', '/api/messages/42/read', 'setThreadRead'],
   ])('%s %s reaches %s', async (method, path, handler) => {
     // These are two segments as well, and they carry a VERB the greedy route
     // does not register — GET/POST /:podId and DELETE /:id. Two independent
