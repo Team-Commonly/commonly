@@ -499,8 +499,11 @@ export const piPackageRoot = (binary) => {
   }
 };
 
-// The prerelease suffix is kept, so `0.84.1-rc.1` never reads as the tested 0.84.1.
-const versionOf = (value) => String(value || '').trim().match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/)?.[1] || null;
+// The version is read whole or not at all, as goose.js does. A prerelease is kept (`0.84.1-rc.1` is not the tested
+// 0.84.1), and a version touching a letter, digit, `.`, `+` or `-` on either side (`0.84.1rc1`, `0.84.1.1`,
+// `1.0.84.1`, `v0.84.1`, `0.84.1+build`) reads as unknown, so the public gate never admits part of a longer string.
+const versionOf = (value) => String(value || '').trim()
+  .match(/(?<![\w.+-])(\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)(?![\w.+-])/)?.[1] || null;
 
 export const buildArgs = ({
   prompt, provider, model, thinking, sessionId, isResume, sessionDir, bridge, publicSeat = false, ownerWoken = false,
