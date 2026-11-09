@@ -55,6 +55,17 @@ describe('agent send-time freshness', () => {
     });
   });
 
+  // continueAnyway lets one send through without reading. Agents read the
+  // old text as "continue clears the hold" and were refused again and again.
+  it('says continueAnyway sends this one and that a read is what clears the hold', async () => {
+    Message.countDocuments.mockResolvedValue(2);
+    Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
+    const hold = await Freshness.unseenMessages('agent-id', 'pod-id');
+    expect(hold.message).toContain('continueAnyway:true to send this one anyway.');
+    expect(hold.message).toContain("continueAnyway doesn't mark these messages read, so your later sends are held until you read the conversation.");
+    expect(Cursor.advanceReadWatermark).not.toHaveBeenCalled();
+  });
+
   it('uses singular wording for one unseen message', async () => {
     Message.countDocuments.mockResolvedValue(1);
     Message.find.mockReturnValue({ sort: () => ({ limit: () => ({ populate: () => ({ lean: async () => [] }) }) }) });
