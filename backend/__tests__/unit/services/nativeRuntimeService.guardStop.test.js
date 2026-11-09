@@ -1349,7 +1349,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
       pages = [];
       mockComputerSnapshot.mockImplementation(async () => {
         const text = pages.shift();
-        return { url: 'https://site.example/page', title: 'Page', text };
+        return { url: 'https://site.example/page?q=secret#frag', title: 'Page', text };
       });
       mockComputerScreenshot.mockResolvedValue(Buffer.from('png-bytes'));
     });
@@ -1371,7 +1371,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       const retry = chatBodies[2];
       const [notice] = toolContents(retry);
       expect(notice).not.toContain(STOPPED_TEXT);
-      expect(JSON.parse(notice)).toMatchObject({ ok: false, page: 1 });
+      // The page's address, without its query or fragment, so the report can name it.
+      expect(JSON.parse(notice)).toMatchObject({ ok: false, page: 1, url: 'https://site.example/page' });
+      expect(notice).not.toContain('secret');
       expect(offeredIn(retry)).toEqual(expect.arrayContaining(['computer_snapshot', 'computer_click']));
       expect(toolContents(chatBodies[3]).some((c) => c.includes(CLEAN_TEXT))).toBe(true);
       expect(savedRun.computerSetAside).toBe(1);
@@ -1392,9 +1394,25 @@ describe('a hosted turn the guard stops, or that fails', () => {
       const retry = chatBodies[2];
       const tools = toolContents(retry);
       expect(tools[0]).toContain(CLEAN_TEXT);
-      expect(JSON.parse(tools[1])).toMatchObject({ ok: false, page: 2 });
+      expect(JSON.parse(tools[1])).toMatchObject({ ok: false, page: 2, url: 'https://site.example/page' });
       expect(JSON.stringify(retry.messages)).not.toContain('data:image/png');
+      expect(JSON.stringify(retry.messages)).toContain('The screenshot of page 2 (https://site.example/page) was set aside');
       expect(savedRun.computerSetAside).toBe(1);
+    });
+
+    test('a screenshot from an earlier round, already past the guard, is never dropped', async () => {
+      pages = [CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(call('c1', 'computer_screenshot', {})),
+        toolCalls(snapshotCall('c2')),
+        guardStop,
+      ];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('failed');
+      expect(savedRun.computerSetAside).toBeUndefined();
+      expect(posted()).toEqual([NATIVE_RUN_FAILED_LINE]);
     });
 
     test('rounds after the stopped page are dropped from the retry', async () => {

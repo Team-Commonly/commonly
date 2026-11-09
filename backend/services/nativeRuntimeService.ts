@@ -216,8 +216,10 @@ const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stoppe
   + 'person which page or search you could not use.';
 // A computer read the guard stops is set aside and the turn carries on.
 // Reading pages is a walk's whole job, so one stopped page must not end it, and
-// the turn keeps every tool. The page number is the read's place in the turn;
-// the page's own URL and title came from the page, so they are not repeated.
+// the turn keeps every tool. The notice names the read's place in the turn and
+// the page's address (origin and path only; the query and fragment can carry
+// the page's own text), so the agent can report which page it lost. The title
+// came from the page and is not repeated.
 const COMPUTER_SET_ASIDE_NOTICE = 'This page was set aside: a content filter stopped it, and its contents are no '
   + 'longer in this conversation. Do not read it again. Carry on with the next step, and tell the person which '
   + 'page you could not use.';
@@ -2854,12 +2856,24 @@ export async function runAgent(
 
   // Computer reads are kept the same way. A screenshot is an image the text
   // check cannot read, so `image` marks the tool result followed by its image.
-  const computerResults: Array<{ round: number; index: number; image: boolean; page: number }> = [];
+  const computerResults: Array<{ round: number; index: number; image: boolean; page: number; url?: string }> = [];
   let computerReads = 0;
+  // The address of the page the latest read showed; a screenshot has none of its own.
+  let computerUrl: string | undefined;
+  const pageAddress = (raw: unknown): string | undefined => {
+    try {
+      const parsed = new URL(String(raw));
+      return /^https?:$/.test(parsed.protocol) ? `${parsed.origin}${parsed.pathname}`.slice(0, 200) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   let computerSetAsides = 0;
   // Returns how many computer reads were set aside. The stopped ones go when
-  // the check finds them; otherwise the latest round's reads the check could
-  // not clear (its screenshots, or all of them when the check is unavailable).
+  // the check finds them. Otherwise only the round just before the stopped
+  // call is a suspect, since every earlier read already went through the guard
+  // in an earlier call: its screenshots go when every page text passed, or all
+  // its reads when the check is unavailable. Nothing older is ever dropped.
   // Every round after the one set aside is dropped, as for a web result.
   const setAsideStoppedComputerResult = async (): Promise<number> => {
     const texts = computerResults.filter((result) => !result.image);
@@ -2871,17 +2885,24 @@ export async function runAgent(
       const stoppedRound = texts[stops.indexOf(true)].round;
       aside = texts.filter((result, i) => result.round === stoppedRound && stops[i]);
     } else {
-      const uncleared = stops ? computerResults.filter((result) => result.image) : computerResults;
-      if (!uncleared.length) return 0;
-      const lastRound = uncleared[uncleared.length - 1].round;
-      aside = uncleared.filter((result) => result.round === lastRound);
+      const lastRound = roundEnds.length - 1;
+      aside = computerResults.filter((result) => result.round === lastRound && (result.image || !stops));
+      if (!aside.length) return 0;
     }
     const firstRound = aside[0].round;
     messages.length = roundEnds[firstRound];
     roundEnds.length = firstRound + 1;
-    aside.forEach(({ index, image, page }) => {
-      messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, page, error: COMPUTER_SET_ASIDE_NOTICE }) };
-      if (image) messages[index + 1] = { role: 'user', content: `The screenshot of page ${page} was set aside by a content filter.` };
+    aside.forEach(({ index, image, page, url }) => {
+      messages[index] = {
+        ...messages[index],
+        content: JSON.stringify({ ok: false, page, ...(url ? { url } : {}), error: COMPUTER_SET_ASIDE_NOTICE }),
+      };
+      if (image) {
+        messages[index + 1] = {
+          role: 'user',
+          content: `The screenshot of page ${page}${url ? ` (${url})` : ''} was set aside by a content filter.`,
+        };
+      }
     });
     const keptComputer = computerResults.filter((result) => result.round < firstRound
       || (result.round === firstRound && !aside.includes(result)));
@@ -3242,7 +3263,10 @@ export async function runAgent(
           if (COMPUTER_READ_TOOLS.has(toolName) && !result.error) {
             computerReads += 1;
             const image = Boolean(result.imagePngBase64);
-            computerResults.push({ round, index: messages.length - (image ? 2 : 1), image, page: computerReads });
+            if (!image) computerUrl = pageAddress((result.recorded as any)?.url);
+            computerResults.push({
+              round, index: messages.length - (image ? 2 : 1), image, page: computerReads, url: computerUrl,
+            });
           }
           }
         }

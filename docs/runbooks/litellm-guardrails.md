@@ -52,11 +52,14 @@ read.
   `computer_screenshot`) are handled differently, because reading page after
   page is a walk's whole job. Each text result is checked on its own the same
   way. The stopped page is replaced with a notice carrying its place in the
-  turn ("page N"), every round after it is dropped, and the turn carries on
-  with all its tools. It is not limited to a single post. A screenshot is an
-  image the check can't read, so when every page text passes, the latest
-  round's screenshots are set aside. When the check is unavailable, all of
-  that round's reads are. A turn gets at most 5 set-asides before a stop ends
+  turn ("page N") and its address (origin and path, no query or fragment), so
+  the agent can report it. Every round after it is dropped, and the turn
+  carries on with all its tools. It is not limited to a single post. A
+  screenshot is an image the check can't read. When every page text passes,
+  only the screenshots from the round just before the stopped call are set
+  aside, since every older read already passed the guard in an earlier call.
+  When the check is unavailable, all of that one round's reads are set aside.
+  Nothing older is ever dropped. A turn gets at most 5 set-asides before a stop ends
   it, and `AgentRun.computerSetAside` counts the reads it lost. First seen on
   2026-11-08: a walk's first snapshot and screenshot stopped the whole turn.
 - If the turn still ends failed with nothing posted, and someone was waiting
