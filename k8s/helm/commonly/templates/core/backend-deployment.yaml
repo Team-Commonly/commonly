@@ -148,13 +148,14 @@ spec:
           value: {{ .Values.backend.env.pgPort | default "5432" | quote }}
         - name: PG_DATABASE
           value: {{ .Values.backend.env.pgDatabase | default .Values.postgresql.database | quote }}
+        {{- include "commonly.pgRoleOverride.check" (list .Values.backend.env.pgAppUser .Values.backend.env.pgAppPasswordKey "backend.env.pgAppUser") }}
         - name: PG_USER
-          value: {{ .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}
+          value: {{ .Values.backend.env.pgAppUser | default .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}
         - name: PG_PASSWORD
           valueFrom:
             secretKeyRef:
               name: database-credentials
-              key: postgres-password
+              key: {{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" }}
         - name: PG_SSL_ENABLED
           value: {{ .Values.backend.env.pgSslEnabled | default "true" | quote }}
         - name: PG_CA_CERT_PATH

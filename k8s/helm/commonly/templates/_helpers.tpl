@@ -145,3 +145,20 @@ Namespace
 {{- define "commonly.namespace" -}}
 {{- default "commonly" .Values.global.namespace }}
 {{- end }}
+
+{{/*
+A Postgres role override names a role and the database-credentials key holding
+its password, so the two come as a pair. Either alone points a role at another
+role's password. Called as (list <role> <key> "<values path>").
+*/}}
+{{- define "commonly.pgRoleOverride.check" -}}
+{{- $role := index . 0 -}}
+{{- $key := index . 1 -}}
+{{- $path := index . 2 -}}
+{{- if ne (empty $role) (empty $key) }}
+{{- fail (printf "%s: set the Postgres role and its password key together" $path) }}
+{{- end }}
+{{- if has $key (list "mongo-uri" "mongo-password") }}
+{{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}
+{{- end }}
+{{- end }}
