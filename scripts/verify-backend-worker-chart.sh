@@ -7,27 +7,33 @@ tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 
 for lane in default dev staging; do
+  # The files each lane's deploy workflow passes: deploy-dev.yml layers
+  # values-dev.yaml, and deploy-staging.yml layers values-staging.yaml alone.
   values=(-f "$chart/values.yaml")
-  if [[ $lane != default ]]; then
+  if [[ $lane == dev ]]; then
     values+=(-f "$chart/values-dev.yaml")
   fi
   if [[ $lane == staging ]]; then
     values+=(-f "$chart/values-staging.yaml")
   fi
 
-  helm template "commonly-$lane" "$chart" "${values[@]}" > "$tmp_dir/$lane-off.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" > "$tmp_dir/$lane-shipped.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=false > "$tmp_dir/$lane-off.yaml"
   helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=false > "$tmp_dir/$lane-on.yaml"
-  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true > "$tmp_dir/$lane-paused.yaml"
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=true > "$tmp_dir/$lane-paused.yaml"
 
+  shipped="$tmp_dir/$lane-shipped.yaml"
   off="$tmp_dir/$lane-off.yaml"
   on="$tmp_dir/$lane-on.yaml"
   paused="$tmp_dir/$lane-paused.yaml"
+  web_replicas=$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$off")
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$off")" = ""
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$on")" = backend-worker
-  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$on")" = 1
+  # The worker switch never changes how many web replicas a lane runs.
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$on")" = "$web_replicas"
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$on")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.replicas' "$paused")" = 0
-  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$paused")" = 1
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$paused")" = "$web_replicas"
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$paused")" = 0
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$paused")" = 1
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.strategy.type' "$on")" = Recreate
@@ -50,9 +56,25 @@ for lane in default dev staging; do
   "$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].image' "$on" > "$tmp_dir/$lane-worker-image.yaml"
   diff -u "$tmp_dir/$lane-web-image.yaml" "$tmp_dir/$lane-worker-image.yaml"
 
+  # What each lane actually deploys: more than one web replica only with the
+  # worker split on, or every web pod runs the scheduler and the Discord gateway.
+  shipped_web=$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.replicas' "$shipped")
+  if (( shipped_web > 1 )); then
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .metadata.name' "$shipped")" = backend-worker
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "RUN_WORKER") | .value' "$shipped")" = 0
+  fi
+
   if [[ $lane != default ]]; then
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "AGENT_PROVISIONER_K8S") | .value' "$on")" = 1
+  fi
+  # Cron and the Discord gateway must survive spot reclamation in prod. Staging
+  # keeps its worker on spot beside its web pods; a reclaim only pauses its cron.
+  if [[ $lane == dev ]]; then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.nodeSelector.pool' "$on")" = dev
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.tolerations[] | select(.key == "pool" and .value == "dev" and .effect == "NoSchedule") | .key' "$on")" = pool
-    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "AGENT_PROVISIONER_K8S") | .value' "$on")" = 1
+  fi
+  if [[ $lane == staging ]]; then
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.nodeSelector."workload-tier"' "$on")" = spot
+    test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.tolerations[] | select(.key == "workload-tier" and .value == "spot" and .effect == "NoSchedule") | .key' "$on")" = workload-tier
   fi
 done

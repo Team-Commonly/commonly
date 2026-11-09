@@ -4,8 +4,10 @@
 // their evictions together. No pod may sit under two PDBs, which makes the
 // eviction API refuse it outright and blocks every drain of its node. None may
 // use minAvailable, which holds a one-replica drain until GKE's timeout.
-// frontend and cloudflared must each have one, plus a hostname spread that
-// selects their own pods. Renders the chart itself:
+// frontend, cloudflared and the web backend must each have one, plus a hostname
+// spread that selects their own pods. The backend's worker is deliberately
+// unguarded: it is one Recreate replica, so a drain just moves it. Renders the
+// chart itself:
 //   node scripts/verify-pdb-chart.js
 const { execFileSync } = require('child_process');
 const yaml = require('js-yaml');
@@ -17,7 +19,7 @@ const lanes = {
   // What deploy-staging.yml renders: no values-dev.yaml.
   staging: [`${chart}/values.yaml`, `${chart}/values-staging.yaml`],
 };
-const GUARDED = ['frontend', 'cloudflared-commonly-k8s'];
+const GUARDED = ['frontend', 'cloudflared-commonly-k8s', 'backend'];
 
 const render = (lane) => {
   const args = ['template', `commonly-${lane}`, chart];
