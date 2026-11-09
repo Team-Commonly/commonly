@@ -415,10 +415,12 @@ test('a run the scheduler missed is made up the next hour, once', async () => {
   const service = new DailyDigestService();
   const sevenUtc = new Date(digestHourUtc().getTime() + 60 * 60 * 1000 + 60000);
 
-  await service.generateAllDailyDigests({ at: sevenUtc });
-  await service.generateAllDailyDigests({ at: new Date(sevenUtc.getTime() + 60 * 60 * 1000) });
+  const digests = () => Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) });
 
-  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  await service.generateAllDailyDigests({ at: sevenUtc });
+  expect(await digests()).toBe(1);
+  await service.generateAllDailyDigests({ at: new Date(sevenUtc.getTime() + 60 * 60 * 1000) });
+  expect(await digests()).toBe(1);
   spy.mockRestore();
 });
 
