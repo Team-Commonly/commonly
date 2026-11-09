@@ -175,14 +175,21 @@ describe('read-only git refuses what is not read-only', () => {
       expect(refusal({ subcommand: 'diff', args: [name] })).toContain(name);
     }
   });
+
+  test('--end-of-options is refused in every subcommand, and so is a prefix of it', () => {
+    for (const subcommand of ['status', 'log', 'diff', 'show', 'blame']) {
+      expect(refusal({ subcommand, args: ['--end-of-options', 'HEAD'] })).toMatch(/--end-of-options is refused/);
+      expect(refusal({ subcommand, args: ['--end-of-opt', 'HEAD'] })).toMatch(/reads it as --end-of-options/);
+    }
+  });
 });
 
 describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
-    const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
-      ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
-      ':(exclude,glob)**/.npmrc', ':(exclude,glob)**/.npmrc/**', ':(exclude,glob)**/.yarnrc*', ':(exclude,glob)**/.yarnrc*/**',
-      ':(exclude,glob)**/.commonly', ':(exclude,glob)**/.commonly/**', ':(exclude,glob)**/.codex', ':(exclude,glob)**/.codex/**'];
+    const excludes = ['--', ':(exclude,glob,icase)**/.env', ':(exclude,glob,icase)**/.env.*',
+      ':(exclude,glob,icase)**/.env/**', ':(exclude,glob,icase)**/.env.*/**',
+      ':(exclude,glob,icase)**/.npmrc', ':(exclude,glob,icase)**/.npmrc/**', ':(exclude,glob,icase)**/.yarnrc*', ':(exclude,glob,icase)**/.yarnrc*/**',
+      ':(exclude,glob,icase)**/.commonly', ':(exclude,glob,icase)**/.commonly/**', ':(exclude,glob,icase)**/.codex', ':(exclude,glob,icase)**/.codex/**'];
     const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium',
       '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false', '-c', 'log.showSignature=false'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
@@ -305,6 +312,139 @@ describe('read-only git keeps .npmrc, .yarnrc, .commonly and .codex out of reach
       expect(status.text).not.toContain('.npmrc');
     } finally {
       await bareGit(['checkout', '--', '.npmrc']);
+    }
+  });
+});
+
+// A blob has no name of its own: git prints one given by id whatever path it
+// was committed at. Ids show up in diff headers and can be computed from a
+// guessed content, so `show` takes a blob only as <rev>:<path>.
+describe('read-only git shows a blob only through a path it can check', () => {
+  const SECRET = 'BLOB_BY_ID_SECRET';
+  const run = (args) => runReadonlyGit({
+    subcommand: 'show', args, root: repo, git: GIT,
+  });
+  let blob;
+
+  beforeAll(async () => {
+    writeFileSync(join(repo, '.env.blobtest'), `KEY=${SECRET}\n`);
+    await bareGit(['add', '-f', '.env.blobtest']);
+    await bareGit(['commit', '-q', '-m', 'commit a protected file for the blob test']);
+    blob = (await bareGit(['rev-parse', 'HEAD:.env.blobtest'])).stdout.trim();
+    await bareGit(['tag', '-a', '-m', 'points at a blob', 'blob-tag', blob]);
+  });
+
+  test('a blob id, an abbreviated one, a peeled one and a tag pointing at one are refused (control: bare show prints it)', async () => {
+    expect((await bareGit(['show', blob])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', 'blob-tag'])).stdout).toContain(SECRET);
+    for (const args of [[blob], [blob.slice(0, 10)], [`${blob}^{}`], ['blob-tag'], ['HEAD', blob], ['--stat', blob, '--']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+      expect(out.text).not.toContain(SECRET);
+    }
+  });
+
+  test('show refuses the options that make git pick objects itself (control: bare show prints the blob)', async () => {
+    expect((await bareGit(['show', '--indexed-objects'])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', '--tags'])).stdout).toContain(SECRET);
+    for (const args of [['--indexed-objects'], ['--tags'], ['--all'], ['--glob=refs/tags/*'], ['--branches'],
+      ['--remotes'], ['--exclude=x', '--all'], ['--reflog'], ['--alternate-refs'], ['--bisect'], ['--stdin'],
+      ['--indexed-obj'], ['HEAD', '--tags']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is refused for show/);
+      expect(out.text).not.toContain(SECRET);
+    }
+    // log reads the same options but prints only commits, with the excludes.
+    const log = await runReadonlyGit({ subcommand: 'log', args: ['--all', '-p'], root: repo, git: GIT });
+    expect(log.ok).toBe(true);
+    expect(log.text).not.toContain(SECRET);
+  });
+
+  test('a revision whose only colon is inside @{...} is still checked (control: bare show prints the blob)', async () => {
+    // A ref with a reflog that points at the blob. git splits <rev>:<path> at
+    // the first colon outside braces, so this date names no path.
+    await bareGit(['update-ref', '--create-reflog', '-m', 'point a ref at the blob', 'refs/remotes/o/x', blob]);
+    const dated = 'o/x@{2099-01-01 00:00:00}';
+    expect((await bareGit(['show', dated])).stdout).toContain(SECRET);
+    for (const args of [[dated], ['refs/remotes/o/x@{2099-01-01 00:00:00}'], ['HEAD', dated], [`${dated}^{}`]]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+      expect(out.text).not.toContain(SECRET);
+    }
+    await bareGit(['update-ref', '-d', 'refs/remotes/o/x']);
+  });
+
+  test('a ref named like an option is never read as a revision (control: bare show prints the blob)', async () => {
+    await bareGit(['update-ref', 'refs/tags/--dash-blob', blob]);
+    await bareGit(['update-ref', 'refs/tags/--dash-commit', 'HEAD']);
+    expect((await bareGit(['show', '--end-of-options', '--dash-blob'])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', '--end-of-options', '--dash-commit:.env.blobtest'])).stdout).toContain(SECRET);
+    for (const args of [['--end-of-options', '--dash-blob'], ['--end-of-options', '--dash-commit:.env.blobtest'],
+      ['--dash-blob'], ['--dash-commit:.env.blobtest']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).not.toContain(SECRET);
+    }
+    // Through its full name the ref is a revision like any other, and is probed.
+    const full = await run(['refs/tags/--dash-blob']);
+    expect(full.ok).toBe(false);
+    expect(full.text).toMatch(/is a blob, and a blob is shown only as <rev>:<path>/);
+    await bareGit(['update-ref', '-d', 'refs/tags/--dash-blob']);
+    await bareGit(['update-ref', '-d', 'refs/tags/--dash-commit']);
+  });
+
+  test('a revision check that runs out of time refuses the call', async () => {
+    const out = await runReadonlyGit({
+      subcommand: 'show', args: ['HEAD'], root: repo, git: GIT, timeoutMs: 0,
+    });
+    expect(out.ok).toBe(false);
+    expect(out.text).toMatch(/did not say in time whether it is a blob/);
+  });
+
+  test('commits, trees, paths and ranges still show', async () => {
+    for (const args of [['HEAD'], ['HEAD^{tree}'], ['HEAD:tracked.txt'], ['HEAD~1..HEAD', '--stat'], ['--', 'tracked.txt'],
+      ['main@{2099-01-01 00:00:00}'], ['main@{2099-01-01 00:00:00}:tracked.txt']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+    }
+  });
+});
+
+// A case-insensitive filesystem opens .ENV as .env, and the sandbox denies it
+// either way, so git's results leave out every case of each protected name.
+describe('read-only git keeps protected names out of reach in any case', () => {
+  const SECRET = 'CASE_VARIANT_SECRET';
+  const run = (subcommand, args) => runReadonlyGit({
+    subcommand, args, root: repo, git: GIT,
+  });
+
+  beforeAll(async () => {
+    mkdirSync(join(repo, 'casepkg'), { recursive: true });
+    writeFileSync(join(repo, 'casepkg', '.ENV'), `KEY=${SECRET}\n`);
+    writeFileSync(join(repo, 'casepkg', '.NpmRc'), `token=${SECRET}\n`);
+    await bareGit(['add', '-f', 'casepkg/.ENV', 'casepkg/.NpmRc']);
+    await bareGit(['commit', '-q', '-m', 'commit protected names in other cases']);
+  });
+
+  test('an argument naming one is refused (control: bare show reads it)', async () => {
+    expect((await bareGit(['show', 'HEAD:casepkg/.ENV'])).stdout).toContain(SECRET);
+    for (const arg of ['HEAD:casepkg/.ENV', 'HEAD:casepkg/.NpmRc', 'HEAD:casepkg/.Env.Local', 'HEAD:.CODEX/x']) {
+      expect(refusal({ subcommand: 'show', args: [arg] })).toMatch(/out of reach/);
+    }
+  });
+
+  test('log, show and diff leave them out (control: bare git lists them)', async () => {
+    expect((await bareGit(['log', '--stat', '-n1'])).stdout).toContain('.ENV');
+    for (const [subcommand, args] of [['show', ['HEAD']], ['log', ['-p', '--stat', '-n', '1']], ['diff', ['HEAD~1', 'HEAD']]]) {
+      const out = await run(subcommand, args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+      expect(out.text).not.toContain('.ENV');
+      expect(out.text).not.toContain('.NpmRc');
     }
   });
 });

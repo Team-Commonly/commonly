@@ -56,8 +56,12 @@
  *    file each one changed. A line range (log and show `-L<range>:<file>`)
  *    takes no pathspec, so it is taken only as the first argument, in one
  *    piece, where git cannot read it as another option's value, and its file
- *    is name-checked. What this cannot stop is `show <blob id>` with an id
- *    learned somewhere else.
+ *    is name-checked. A blob has no name of its own, so `show` refuses any
+ *    revision that names a blob (or a tag that peels to one) other than as
+ *    `<rev>:<path>`, whose path is name-checked: git is asked each one's type
+ *    before the call runs (blobNamedById). `show` also refuses the options
+ *    that make git pick objects itself (SHOW_DENIED_OPTIONS), since it prints
+ *    every blob they reach whatever the pathspec says.
  */
 import { execFile } from 'child_process';
 import { realpathSync } from 'fs';
@@ -83,7 +87,39 @@ export const DENIED_LONG_OPTIONS = Object.freeze({
   '--show-signature': 'runs gpg to check a signature',
   '--follow': 'needs exactly one path, and every log here also carries the .env excludes',
   '--full-diff': 'shows every file a picked commit changed, .env files included',
+  '--end-of-options': 'makes git read every later argument as a revision, so an option-shaped one skips the checks a revision gets',
 });
+
+// Options refused for `show` only. Each makes git pick objects itself (every
+// ref, every tag, the index), and `show` prints every blob it is handed in
+// full: a pathspec doesn't filter it, so `show --indexed-objects` would print
+// every file in the index, and `show --tags` a tag that points at a blob.
+// log reads the same options, but prints only the commits they reach.
+export const SHOW_DENIED_OPTIONS = Object.freeze({
+  '--all': 'shows every object the refs point at, blobs included',
+  '--branches': 'shows every object the branches point at',
+  '--tags': 'shows every object the tags point at, blobs included',
+  '--remotes': 'shows every object the remote refs point at',
+  '--glob': 'shows every object the matching refs point at, blobs included',
+  '--exclude': 'only qualifies a ref-selecting option, which show refuses',
+  '--exclude-hidden': 'only qualifies a ref-selecting option, which show refuses',
+  '--reflog': 'shows every object a reflog names',
+  '--indexed-objects': 'shows every file in the index, whatever its name',
+  '--alternate-refs': 'shows objects another repository\'s refs point at',
+  '--bisect': 'shows the objects the bisect refs point at',
+  '--stdin': 'reads revisions the name check never sees',
+});
+const checkShowOption = (arg) => {
+  const [name] = arg.split('=', 1);
+  if (Object.prototype.hasOwnProperty.call(SHOW_DENIED_OPTIONS, name)) {
+    return `${name} is refused for show: it ${SHOW_DENIED_OPTIONS[name]}; name the commit, tree or <rev>:<path> to show`;
+  }
+  if (name.length >= 4) {
+    const denied = Object.keys(SHOW_DENIED_OPTIONS).find((option) => option.startsWith(name));
+    if (denied) return `${name} is refused for show: git may read it as ${denied}, which ${SHOW_DENIED_OPTIONS[denied]}`;
+  }
+  return null;
+};
 
 // Real options that are also prefixes of a denied one. Git takes an exact name
 // over an abbreviation, so these never mean the denied option.
@@ -162,8 +198,8 @@ const checkFormat = (arg) => {
 // (adapters/codex.js) also denies .npmrc and .yarnrc*. They are kept out of
 // git's results too, since the objects git reads hold them whatever the
 // sandbox says about the file.
-const ENV_FILE_SEGMENT = /^\.env(\..*)?$/;
-const OTHER_PROTECTED_SEGMENT = /^(?:\.npmrc|\.yarnrc.*|\.commonly|\.codex)$/;
+const ENV_FILE_SEGMENT = /^\.env(\..*)?$/i;
+const OTHER_PROTECTED_SEGMENT = /^(?:\.npmrc|\.yarnrc.*|\.commonly|\.codex)$/i;
 const segmentsOf = (arg) => arg.split(':').flatMap((part) => part.split('/'));
 const namesEnvFile = (arg) => segmentsOf(arg).some((segment) => ENV_FILE_SEGMENT.test(segment));
 const namesOtherProtected = (arg) => segmentsOf(arg).some((segment) => OTHER_PROTECTED_SEGMENT.test(segment));
@@ -175,9 +211,9 @@ const protectedNameReason = (arg) => {
   return null;
 };
 const ENV_EXCLUDES = Object.freeze([
-  ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*', ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
-  ':(exclude,glob)**/.npmrc', ':(exclude,glob)**/.npmrc/**', ':(exclude,glob)**/.yarnrc*', ':(exclude,glob)**/.yarnrc*/**',
-  ':(exclude,glob)**/.commonly', ':(exclude,glob)**/.commonly/**', ':(exclude,glob)**/.codex', ':(exclude,glob)**/.codex/**',
+  ':(exclude,glob,icase)**/.env', ':(exclude,glob,icase)**/.env.*', ':(exclude,glob,icase)**/.env/**', ':(exclude,glob,icase)**/.env.*/**',
+  ':(exclude,glob,icase)**/.npmrc', ':(exclude,glob,icase)**/.npmrc/**', ':(exclude,glob,icase)**/.yarnrc*', ':(exclude,glob,icase)**/.yarnrc*/**',
+  ':(exclude,glob,icase)**/.commonly', ':(exclude,glob,icase)**/.commonly/**', ':(exclude,glob,icase)**/.codex', ':(exclude,glob,icase)**/.codex/**',
 ]);
 // blame takes one literal file, so the name check above covers it. A
 // blob-to-blob diff (`diff A:f B:f`) takes no pathspec and is refused by git
@@ -276,7 +312,9 @@ export const readonlyGitArgv = ({ subcommand, args = [], root }) => {
     } else if (arg === '--') {
       pathsOnly = true;
     } else {
-      const reason = arg.startsWith('--') ? checkLongOption(arg) || checkFormat(arg) : checkShortOption(arg, subcommand);
+      const reason = arg.startsWith('--')
+        ? checkLongOption(arg) || checkFormat(arg) || (subcommand === 'show' ? checkShowOption(arg) : null)
+        : checkShortOption(arg, subcommand);
       if (reason) return refuse(reason);
       if (arg.startsWith('-L')) {
         const rangeReason = protectedNameReason(arg.slice(2));
@@ -320,6 +358,72 @@ export const readonlyGitEnv = ({ root, baseEnv = process.env }) => {
   };
 };
 
+const execGit = (git, argv, { root, baseEnv, timeoutMs }) => new Promise((done) => {
+  execFile(git, argv, {
+    cwd: root,
+    env: readonlyGitEnv({ root, baseEnv }),
+    timeout: timeoutMs,
+    maxBuffer: MAX_BUFFER_BYTES,
+    encoding: 'utf8',
+    windowsHide: true,
+  }, (error, stdout, stderr) => done({ error, stdout: String(stdout || ''), stderr: String(stderr || '') }));
+});
+
+// Whether git reads `arg` as `<rev>:<path>`. git splits at the first `:`
+// outside any `{...}` (get_oid_with_context_1 in object-name.c counts brace
+// depth), so a `:` inside `@{...}` or `^{...}` belongs to the revision: a
+// reflog date such as `ref@{2026-11-09 11:41:50}` names no path at all.
+const namesAPath = (arg) => {
+  let depth = 0;
+  for (const ch of arg) {
+    if (ch === '{') depth += 1;
+    else if (ch === '}' && depth > 0) depth -= 1;
+    else if (ch === ':' && depth === 0) return true;
+  }
+  return false;
+};
+
+// The arguments `show` would read as revisions: before `--`, not an option
+// (`--end-of-options` is refused, so a `-` argument is never a revision). One
+// that names a path does so through `<rev>:<path>`, and readonlyGitArgv has
+// name-checked that path; every other one is probed.
+const unnamedRevisions = (args) => {
+  const revisions = [];
+  for (const arg of args) {
+    if (arg === '--') break;
+    if (!arg.startsWith('-') && !namesAPath(arg)) revisions.push(arg);
+  }
+  return revisions;
+};
+
+/**
+ * The first of `show`'s revisions that is a blob, or a tag that peels to one,
+ * or null. git prints a blob given by id whatever path it was committed at, so
+ * a blob is only shown through `<rev>:<path>`. An argument git can't resolve
+ * to one object (a range, a typo) is left to `show` itself, which shows no
+ * blob for it.
+ */
+export const blobNamedById = async ({
+  args, root, git = 'git', baseEnv = process.env, timeoutMs = DEFAULT_TIMEOUT_MS,
+}) => {
+  // One budget for every check, so many arguments can't stretch the call.
+  const deadline = Date.now() + timeoutMs;
+  for (const revision of unnamedRevisions(args)) {
+    const left = deadline - Date.now();
+    if (left <= 0) return { revision, unchecked: true };
+    // A revision here never starts with `-`, so cat-file can't read it as an option.
+    const { error, stdout } = await execGit(
+      git,
+      [...TOP_LEVEL, 'cat-file', '-t', `${revision}^{}`],
+      { root, baseEnv, timeoutMs: left },
+    );
+    // A check that was stopped proves nothing, so the call is refused.
+    if (error?.killed || error?.signal) return { revision, unchecked: true };
+    if (!error && stdout.trim() === 'blob') return { revision };
+  }
+  return null;
+};
+
 const truncate = (text) => (text.length <= MAX_OUTPUT_CHARS
   ? text
   : `${text.slice(0, MAX_OUTPUT_CHARS)}\n[output truncated at ${MAX_OUTPUT_CHARS} characters; narrow it with -n, a path, or a revision range]`);
@@ -328,32 +432,32 @@ const truncate = (text) => (text.length <= MAX_OUTPUT_CHARS
  * Run one read-only git call in `root`. Resolves `{ ok, text }`; never rejects.
  * `git` is the binary to run (the adapter resolves it outside the sandbox).
  */
-export const runReadonlyGit = ({
+export const runReadonlyGit = async ({
   subcommand, args, root, git = 'git', baseEnv = process.env, timeoutMs = DEFAULT_TIMEOUT_MS,
-}) => new Promise((done) => {
+}) => {
   const checked = readonlyGitArgv({ subcommand, args, root });
-  if (!checked.ok) {
-    done({ ok: false, text: checked.reason });
-    return;
-  }
-  execFile(git, checked.argv, {
-    cwd: root,
-    env: readonlyGitEnv({ root, baseEnv }),
-    timeout: timeoutMs,
-    maxBuffer: MAX_BUFFER_BYTES,
-    encoding: 'utf8',
-    windowsHide: true,
-  }, (error, stdout, stderr) => {
-    const out = String(stdout || '');
-    if (!error) {
-      done({ ok: true, text: truncate(out || '(no output)') });
-      return;
+  if (!checked.ok) return { ok: false, text: checked.reason };
+  if (subcommand === 'show') {
+    const blob = await blobNamedById({
+      args, root, git, baseEnv, timeoutMs,
+    });
+    if (blob?.unchecked) {
+      return { ok: false, text: `${blob.revision} is refused: git did not say in time whether it is a blob` };
     }
-    const detail = String(stderr || '').trim() || error.message;
-    done({ ok: false, text: truncate([out.trim(), detail].filter(Boolean).join('\n')) });
-  });
-});
+    if (blob) {
+      return {
+        ok: false,
+        text: `${blob.revision} is refused: it is a blob, and a blob is shown only as <rev>:<path>, so the file it came from can be checked`,
+      };
+    }
+  }
+  const { error, stdout: out, stderr } = await execGit(git, checked.argv, { root, baseEnv, timeoutMs });
+  if (!error) return { ok: true, text: truncate(out || '(no output)') };
+  const detail = stderr.trim() || error.message;
+  return { ok: false, text: truncate([out.trim(), detail].filter(Boolean).join('\n')) };
+};
 
 export default {
-  READONLY_GIT_SUBCOMMANDS, DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS, readonlyGitArgv, readonlyGitEnv, runReadonlyGit,
+  READONLY_GIT_SUBCOMMANDS, DENIED_LONG_OPTIONS, DENIED_SHORT_OPTIONS, blobNamedById, readonlyGitArgv, readonlyGitEnv,
+  runReadonlyGit,
 };
