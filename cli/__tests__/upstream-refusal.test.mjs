@@ -159,6 +159,22 @@ describe('readUpstreamRefusal', () => {
     expect(readUpstreamRefusal(asLines(budget429, aborted))?.status).toBe(429);
   });
 
+  // F341: the retries ended on a statusless failure, which is the turn's cause.
+  test("retries that end on a failure with no status don't keep an earlier attempt's status", () => {
+    const attempt429 = '{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429: {\\"message\\":\\"rate limited\\"}"}}';
+    const endedFetchFailed = '{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"fetch failed"}';
+    expect(readUpstreamRefusal(asLines(attempt429, endedFetchFailed))).toBeNull();
+    expect(readUpstreamRefusal(asLines(budget429, endedFetchFailed))).toBeNull();
+  });
+
+  test('an end with no error text keeps the status it had', () => {
+    const endedSilently = '{"type":"auto_retry_end","success":false,"attempt":3}';
+    expect(readUpstreamRefusal(asLines(messageEndError, endedSilently))).toEqual({
+      status: 503,
+      detail: 'upstream connect error',
+    });
+  });
+
   test('a refusal after a recovery is read', () => {
     const recovered = '{"type":"auto_retry_end","success":true,"attempt":1}';
     expect(readUpstreamRefusal(asLines(messageEndError, recovered, budget429))).toEqual({
