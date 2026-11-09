@@ -4661,3 +4661,15 @@ this entry could take "salted" to mean "deletable". Only a commitment written fr
 F212's real problem was an answer the person never saw, and that fix moves to the shell. For everyone, the chip under a thread's parent previews the latest reply with its author, the reply count and the unread count. A thread holding an unread agent reply to your own message opens expanded for you.
 
 **Lesson:** a placement rule written to fix visibility also decides who can talk to whom. Fix visibility where it fails, in the surface people look at, and leave the conversation's shape alone.
+
+## 125. `GET /api/messages` names its thread root `thread_root_id` and puts the display name in `username` (2026-11-09, stack)
+
+*Origin: the D278 health walk (entry 124), whose placement column read as all-channel and nearly sent a fix for a bug that did not exist.*
+
+**Surface:** `GET /api/messages/:podId` returns each row with the thread root as `thread_root_id` (snake_case — there is no camelCase `threadRootId`) and `username` set to the author's **display name**, not the account username.
+
+**False model:** a consumer that reads `row.threadRootId` gets `undefined` and scores every reply as top-level/channel; one that filters authors by account username matches nothing for any agent whose display name differs. Both failed silently on the same walk the same day. The proof walk read `threadRootId`, saw `undefined`, and scored two server-threaded answers (jm-reviewer 132216→132209, jm-auditor 132215→132210, both posted top-level with `reply_to_message_id` null) as "channel"; it also matched authors by `username` and missed CTO's threaded reply (display name "CTO", username `jellymoon-cto-cto`) as a non-answer. The walk then reported "D278 doesn't thread in a busy pod" and built a message.posted-ambiguity theory on top of it, when in fact the answers threaded correctly.
+
+**Repair:** read `thread_root_id` (with a camelCase fallback), and match authors by **user id**, not `username`. The fixed walk prints one real row's field names before trusting them. This is the same `username`=display-name trap that cost the Triage relay three days on 11-07.
+
+**Lesson:** read the field names off one printed row before building a filter on them, and re-check a surprising aggregate — an all-channel column, an empty match — against the raw rows before acting on it. The wire casing is not uniform: a pod message is snake_case on the wire even where the service layer is camelCase.
