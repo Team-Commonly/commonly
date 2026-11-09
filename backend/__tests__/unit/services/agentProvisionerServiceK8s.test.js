@@ -1120,37 +1120,41 @@ describe('removing a refused identity from the gateway config (F361)', () => {
 
   test('the state edit runs in the gateway\'s own pod, and is retried after a failed exec', async () => {
     clearGatewayUnreadyHold();
-    k8s.__mock.listNamespacedPod.mockImplementation(async (_ns, _p, _c, _f, _fs, labelSelector) => ({
-      body: {
-        items: [{
-          metadata: { name: String(labelSelector).includes('team') ? 'gateway-team-pod' : 'clawdbot-gateway-test-pod' },
-          status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
-        }],
-      },
-    }));
-    k8s.__mock.readNamespacedDeployment.mockImplementation(async (name) => ({
-      body: { spec: { selector: { matchLabels: { app: name } } } },
-    }));
-    k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
-      body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
-    });
+    // Captured before the overrides, so the finally puts the file's defaults back.
     const defaultDeployment = k8s.__mock.readNamespacedDeployment.getMockImplementation();
     const defaultPods = k8s.__mock.listNamespacedPod.getMockImplementation();
-    const podsExecIn = () => k8s.__mock.execPods;
-    k8s.__mock.execFails = 1;
-    const first = await removeOpenClawAccount({
-      agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
-    });
-    expect(first.removed).toEqual(['cuz']);
-    expect(first.stateError).toMatch(/failed/);
-    // The next call finds the ConfigMap already clean and still edits the state file.
-    const second = await removeOpenClawAccount({
-      agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
-    });
-    expect(second).toEqual({ removed: [] });
-    expect(podsExecIn().slice(-2)).toEqual(['gateway-team-pod', 'gateway-team-pod']);
-    k8s.__mock.readNamespacedDeployment.mockImplementation(defaultDeployment);
-    k8s.__mock.listNamespacedPod.mockImplementation(defaultPods);
+    try {
+      k8s.__mock.listNamespacedPod.mockImplementation(async (_ns, _p, _c, _f, _fs, labelSelector) => ({
+        body: {
+          items: [{
+            metadata: { name: String(labelSelector).includes('team') ? 'gateway-team-pod' : 'clawdbot-gateway-test-pod' },
+            status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
+          }],
+        },
+      }));
+      k8s.__mock.readNamespacedDeployment.mockImplementation(async (name) => ({
+        body: { spec: { selector: { matchLabels: { app: name } } } },
+      }));
+      k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+        body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+      });
+      k8s.__mock.execFails = 1;
+      const first = await removeOpenClawAccount({
+        agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
+      });
+      expect(first.removed).toEqual(['cuz']);
+      expect(first.stateError).toMatch(/failed/);
+      // The next call finds the ConfigMap already clean and still edits the state file.
+      const second = await removeOpenClawAccount({
+        agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
+      });
+      expect(second).toEqual({ removed: [] });
+      expect(k8s.__mock.execPods.slice(-2)).toEqual(['gateway-team-pod', 'gateway-team-pod']);
+    } finally {
+      k8s.__mock.execFails = 0;
+      k8s.__mock.readNamespacedDeployment.mockImplementation(defaultDeployment);
+      k8s.__mock.listNamespacedPod.mockImplementation(defaultPods);
+    }
   });
 
   test('a gateway with no Deployment has nothing left to remove', async () => {
