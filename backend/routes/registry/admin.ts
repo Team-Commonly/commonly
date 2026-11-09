@@ -20,6 +20,7 @@ const {
   normalizeConfigMap,
   sanitizeRuntimeConfig,
   buildAgentProfileId,
+  resolveGatewayForInstallation,
 } = require('./helpers');
 const { reprovisionInstallation } = require('./reprovision');
 const {
@@ -178,7 +179,23 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     const items = [];
     const sharedRuntimesNeedingRestart = new Set();
     // A removal on a gateway with its own deployment restarts that gateway.
-    const namedGatewaysNeedingRestart = new Map<string, any>();
+    const namedGatewaysNeedingRestart = new Set<string>();
+    // The rows each restart finishes. A removed account keeps running until its
+    // gateway restarts, and the next run finds the ConfigMap clean and queues no
+    // restart, so a failed restart turns these rows into failures.
+    const removalRowsByRestart = new Map<string, any[]>();
+    const awaitRestart = (key: string, row: any) => {
+      removalRowsByRestart.set(key, [...(removalRowsByRestart.get(key) || []), row]);
+    };
+    const failRestart = (key: string, message: string) => {
+      const restartError = `The account was removed from the gateway config, but the gateway restart failed (${message}), so it may still be running. Restart the gateway.`;
+      (removalRowsByRestart.get(key) || []).forEach((row) => {
+        Object.assign(row, {
+          error: row.success ? restartError : `${row.error} ${restartError}`,
+          success: false,
+        });
+      });
+    };
     for (const installation of activeInstallations) {
       try {
         const result = await reprovisionInstallation({
@@ -188,20 +205,25 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           userTokenCache,
           skipRuntimeRestart: true,
         });
-        const { runtimeGateway, ...shown } = result;
+        const { runtimeGatewayId, runtimeRestartNeeded, ...shown } = result;
         // Track which shared runtimes need a single deferred restart
         // A removed account also needs the restart, or the gateway keeps running it.
-        if (result.runtimeType === 'moltbot' && result.removedFromRuntime && runtimeGateway) {
-          namedGatewaysNeedingRestart.set(String(runtimeGateway._id || runtimeGateway.slug), runtimeGateway);
-        } else if (result.runtimeType === 'moltbot' && (!result.skipped || result.removedFromRuntime)) {
+        // A removal that found no Deployment owes none: there is nothing to restart.
+        if (result.runtimeType === 'moltbot' && runtimeRestartNeeded && runtimeGatewayId) {
+          namedGatewaysNeedingRestart.add(String(runtimeGatewayId));
+        } else if (result.runtimeType === 'moltbot' && (!result.skipped || runtimeRestartNeeded)) {
           sharedRuntimesNeedingRestart.add('moltbot');
         }
         if (result.skipped) {
           // A refused identity whose state file was not edited is not fully
           // removed, and reads as a failure until a later run finishes it.
-          items.push(result.runtimeRemovalError
+          const row = result.runtimeRemovalError
             ? { ...shown, success: false, error: result.runtimeRemovalError }
-            : { ...shown, success: true });
+            : { ...shown, success: true };
+          items.push(row);
+          if (result.runtimeType === 'moltbot' && runtimeRestartNeeded) {
+            awaitRestart(runtimeGatewayId ? `gateway:${runtimeGatewayId}` : 'moltbot', row);
+          }
           continue;
         }
         items.push({
@@ -228,16 +250,28 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     }
 
     // Single gateway restart after all agents provisioned (instead of one per agent)
+    // restartAgentRuntime reports a failure as restarted: false, not a throw.
+    const restartFailure = (restart: any) => (restart?.restarted === false ? String(restart.reason || 'not restarted') : null);
     if (sharedRuntimesNeedingRestart.has('moltbot')) {
-      await restartAgentRuntime('moltbot', 'default', {}).catch((err: any) => {
-        console.warn('[reprovision-all] Failed to restart gateway:', err.message);
-      });
+      const restart = await restartAgentRuntime('moltbot', 'default', {})
+        .catch((err: any) => ({ restarted: false, reason: err.message }));
+      const failure = restartFailure(restart);
+      if (failure) {
+        console.warn('[reprovision-all] Failed to restart gateway:', failure);
+        failRestart('moltbot', failure);
+      }
     }
-    for (const gateway of namedGatewaysNeedingRestart.values()) {
-      // eslint-disable-next-line no-await-in-loop
-      await restartAgentRuntime('moltbot', 'default', { gateway }).catch((err: any) => {
+    for (const gatewayId of namedGatewaysNeedingRestart) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const gateway = await resolveGatewayForInstallation({ gatewayId });
+        // eslint-disable-next-line no-await-in-loop
+        const failure = restartFailure(await restartAgentRuntime('moltbot', 'default', { gateway }));
+        if (failure) throw new Error(failure);
+      } catch (err: any) {
         console.warn('[reprovision-all] Failed to restart gateway after removal:', err.message);
-      });
+        failRestart(`gateway:${gatewayId}`, err.message);
+      }
     }
 
     // A skipped row that failed counts once, as failed.

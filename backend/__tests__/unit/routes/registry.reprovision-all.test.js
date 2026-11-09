@@ -11,6 +11,11 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: jest.fn() },
 }));
 jest.mock('../../../routes/registry/reprovision', () => ({ reprovisionInstallation: jest.fn() }));
+const mockResolveGateway = jest.fn();
+jest.mock('../../../routes/registry/helpers', () => ({
+  ...jest.requireActual('../../../routes/registry/helpers'),
+  resolveGatewayForInstallation: (...args) => mockResolveGateway(...args),
+}));
 jest.mock('../../../services/agentProvisionerService', () => ({
   ...jest.requireActual('../../../services/agentProvisionerService'),
   restartAgentRuntime: jest.fn().mockResolvedValue({ restarted: true }),
@@ -57,8 +62,14 @@ describe('POST /admin/installations/reprovision-all', () => {
 
   it('a run that only removed refused accounts restarts the gateway once', async () => {
     reprovisionInstallation.mockResolvedValue({
-      installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-      skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: null,
+      installationId: 'a',
+      agentName: 'openclaw',
+      runtimeType: 'moltbot',
+      skipped: true,
+      skipReason: 'cloud_agents_not_entitled',
+      removedFromRuntime: true,
+      runtimeRestartNeeded: true,
+      runtimeGatewayId: null,
     });
 
     const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
@@ -70,26 +81,102 @@ describe('POST /admin/installations/reprovision-all', () => {
 
   it('a removal on a gateway of its own restarts that gateway, and a failed state edit reads as failed', async () => {
     const gateway = { _id: 'gw-1', slug: 'team' };
+    mockResolveGateway.mockResolvedValue(gateway);
     reprovisionInstallation
       .mockResolvedValueOnce({
-        installationId: 'a', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+        installationId: 'a',
+        agentName: 'openclaw',
+        runtimeType: 'moltbot',
+        skipped: true,
+        skipReason: 'cloud_agents_not_entitled',
+        removedFromRuntime: true,
+        runtimeRestartNeeded: true,
+        runtimeGatewayId: 'gw-1',
         runtimeRemovalError: 'The state file edit failed.',
       })
       .mockResolvedValueOnce({
-        installationId: 'b', agentName: 'openclaw', runtimeType: 'moltbot', skipped: true,
-        skipReason: 'cloud_agents_not_entitled', removedFromRuntime: true, runtimeGateway: gateway,
+        installationId: 'b',
+        agentName: 'openclaw',
+        runtimeType: 'moltbot',
+        skipped: true,
+        skipReason: 'cloud_agents_not_entitled',
+        removedFromRuntime: true,
+        runtimeRestartNeeded: true,
+        runtimeGatewayId: 'gw-1',
       });
 
     const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
 
     expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(mockResolveGateway).toHaveBeenCalledWith({ gatewayId: 'gw-1' });
     expect(restartAgentRuntime).toHaveBeenCalledWith('moltbot', 'default', { gateway });
     expect(res.body).toMatchObject({
       success: false, attempted: 2, succeeded: 0, failed: 1, skipped: 1,
     });
     expect(res.body.items[0]).toMatchObject({ success: false, error: 'The state file edit failed.' });
-    // The gateway record stays out of the response.
-    expect(res.body.items[0].runtimeGateway).toBeUndefined();
+    // Not even the gateway's id goes out in the response.
+    expect(res.body.items[0].runtimeGatewayId).toBeUndefined();
+  });
+
+  // The next run finds the ConfigMap clean and queues no restart, so a removal
+  // whose restart failed has to read as failed now.
+  const removedOn = (installationId, runtimeGatewayId) => ({
+    installationId,
+    agentName: 'openclaw',
+    runtimeType: 'moltbot',
+    skipped: true,
+    skipReason: 'cloud_agents_not_entitled',
+    removedFromRuntime: true,
+    runtimeRestartNeeded: true,
+    runtimeGatewayId,
+  });
+
+  it('a removal whose gateway cannot be found again reads as failed, and nothing restarts', async () => {
+    mockResolveGateway.mockRejectedValue(new Error('gateway lookup failed'));
+    reprovisionInstallation.mockResolvedValueOnce(removedOn('a', 'gw-1')).mockResolvedValueOnce(removedOn('b', 'gw-2'));
+    mockResolveGateway.mockResolvedValueOnce({ _id: 'gw-1', slug: 'team' });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(restartAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(res.body).toMatchObject({ success: false, failed: 1, skipped: 1 });
+    expect(res.body.items[0]).toMatchObject({ installationId: 'a', success: true });
+    expect(res.body.items[1]).toMatchObject({ installationId: 'b', success: false });
+    expect(res.body.items[1].error).toMatch(/gateway restart failed \(gateway lookup failed\)/);
+  });
+
+  it('a named gateway whose restart reports a failure reads as failed', async () => {
+    mockResolveGateway.mockResolvedValue({ _id: 'gw-1', slug: 'team' });
+    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'conflict' });
+    reprovisionInstallation.mockResolvedValue(removedOn('a', 'gw-1'));
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(res.body).toMatchObject({ success: false, failed: 2, skipped: 0 });
+    expect(res.body.items[0].error).toMatch(/gateway restart failed \(conflict\)/);
+  });
+
+  it('a removal that found no Deployment owes no restart and reads as removed', async () => {
+    reprovisionInstallation.mockResolvedValue({ ...removedOn('a', 'gw-1'), runtimeRestartNeeded: false });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(restartAgentRuntime).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({ success: true, failed: 0, skipped: 2 });
+    expect(res.body.items[0].runtimeRestartNeeded).toBeUndefined();
+  });
+
+  it('a removal whose shared gateway restart fails reads as failed, keeping any state error', async () => {
+    // The real restartAgentRuntime reports a failure this way; it never throws.
+    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'restart refused' });
+    reprovisionInstallation
+      .mockResolvedValueOnce({ ...removedOn('a', null), runtimeRemovalError: 'The state file edit failed.' })
+      .mockResolvedValueOnce(removedOn('b', null));
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(res.body).toMatchObject({ success: false, failed: 2, skipped: 0 });
+    expect(res.body.items[0].error).toMatch(/^The state file edit failed\. The account was removed/);
+    expect(res.body.items[1].error).toMatch(/gateway restart failed \(restart refused\)/);
   });
 });

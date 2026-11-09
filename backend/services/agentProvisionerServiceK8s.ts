@@ -2359,19 +2359,59 @@ const clearGatewayUnreadyHold = () => gatewayUnreadyUntil.clear();
  */
 const removeOpenClawAccount = async ({
   agentName, instanceId, configMapName, gateway,
-}: any): Promise<{ removed: string[]; stateError?: string }> => {
+}: any): Promise<{ removed: string[]; stateError?: string; deploymentMissing?: boolean }> => {
   const configKey = 'moltbot.json';
   const resolvedConfigMap = configMapName || resolveGatewayConfigMapName(gateway);
   const config = await readConfigMap(resolvedConfigMap, configKey);
   const removed = removeIdentityFromOpenClawConfig(config, agentName, instanceId);
   if (removed.length) await writeConfigMap(resolvedConfigMap, configKey, config);
+  // A gateway with no Deployment usually runs nothing, so there is no state
+  // file to edit and nothing left to remove: the identity is out (as with
+  // F329). A Deployment deleted with --cascade=orphan leaves its pods running,
+  // though, and nothing here can restart them, so a pod still named for the
+  // Deployment gets the state edit and the row reads as not fully removed.
+  // Any other read error goes on to the pod wait, which reports it.
+  const deploymentName = resolveGatewayDeploymentName(gateway);
+  let orphanPod: string | undefined;
+  try {
+    await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
+  } catch (error: any) {
+    if (error?.response?.statusCode === 404) {
+      // A pod is this Deployment's only if a ReplicaSet named
+      // <deployment>-<the pod's pod-template-hash> owns it, which is how a
+      // Deployment names its ReplicaSets. A name alone isn't enough: a pod of
+      // gateway-team-a, or a bare pod, can look like one of gateway-team's.
+      // Not covered: an orphan that isn't ready, which a later reprovision
+      // catches once it is.
+      const ownedByDeployment = (pod: any) => {
+        const hash = pod.metadata?.labels?.['pod-template-hash'];
+        return Boolean(hash) && (pod.metadata?.ownerReferences || []).some(
+          (ref: any) => ref?.kind === 'ReplicaSet' && ref?.name === `${deploymentName}-${hash}`,
+        );
+      };
+      try {
+        const pods = await k8sApi.listNamespacedPod(NAMESPACE);
+        orphanPod = (pods.body.items || [])
+          .filter(ownedByDeployment)
+          .find(isPodReady)?.metadata?.name;
+      } catch (listError) {
+        return {
+          removed,
+          deploymentMissing: true,
+          stateError: `The gateway's Deployment is gone and its pods could not be listed (${(listError as Error).message}); they are checked again on the next reprovision.`,
+        };
+      }
+      // No restart is owed either: there is no Deployment to restart.
+      if (!orphanPod) return { removed, deploymentMissing: true };
+    }
+  }
   const gatewayKey = String(gateway?.slug || gateway?._id || 'default');
-  if ((gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
+  if (!orphanPod && (gatewayUnreadyUntil.get(gatewayKey) || 0) > Date.now()) {
     return { removed, stateError: 'The gateway pod was not ready; the state file is edited on the next reprovision.' };
   }
   let podName: string;
   try {
-    podName = await resolveGatewayPodNameWithRetry(gateway);
+    podName = orphanPod || await resolveGatewayPodNameWithRetry(gateway);
   } catch (error) {
     gatewayUnreadyUntil.set(gatewayKey, Date.now() + GATEWAY_UNREADY_HOLD_MS);
     console.warn('[k8s-provisioner] state removal skipped, gateway pod not ready:', (error as Error).message);
@@ -2406,9 +2446,19 @@ const removeOpenClawAccount = async ({
     // The ConfigMap write stands. The state file is retried on the next
     // reprovision, since this edit runs on every call for a refused identity.
     console.warn('[k8s-provisioner] state removal failed:', (error as Error).message);
-    return { removed, stateError: 'The state file edit failed; it is retried on the next reprovision.' };
+    return {
+      removed,
+      ...(orphanPod ? { deploymentMissing: true } : {}),
+      stateError: 'The state file edit failed; it is retried on the next reprovision.',
+    };
   }
-  return { removed };
+  return orphanPod
+    ? {
+      removed,
+      deploymentMissing: true,
+      stateError: `The gateway's Deployment is gone but its pod ${orphanPod} is still running; delete that pod to stop the identity.`,
+    }
+    : { removed };
 };
 
 const provisionOpenClawAccount = async ({

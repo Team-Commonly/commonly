@@ -35,6 +35,9 @@ const mock = {
     // rather than on the source that composes it.
     readNamespacedPodLog: jest.fn(),
     execCommands: [],
+    // The pod each exec ran in, and how many of the next execs fail.
+    execPods: [],
+    execFails: 0,
     execArgv: [],
     // What the next exec writes to its stdout sink; empty = no output.
     execStdout: '',
@@ -75,6 +78,12 @@ const mock = {
       statusCallback,
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
+      mock.execPods.push(_podName);
+      if (mock.execFails > 0) {
+        mock.execFails -= 1;
+        if (typeof statusCallback === 'function') statusCallback({ status: 'Failure', message: 'exec failed' });
+        return Promise.resolve();
+      }
       mock.execArgv.push(_command);
       // execStdout is a string, or a function of the command (so one test can
       // answer the PVC key read and the profile write differently).
@@ -1107,6 +1116,106 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     expect(k8s.__mock.readNamespacedConfigMap.mock.calls[0][0]).toBe('gateway-team-config');
     const calls = k8s.__mock.replaceNamespacedConfigMap.mock.calls;
     expect(calls[calls.length - 1][0]).toBe('gateway-team-config');
+  });
+
+  test('the state edit runs in the gateway\'s own pod, and is retried after a failed exec', async () => {
+    clearGatewayUnreadyHold();
+    // Captured before the overrides, so the finally puts the file's defaults back.
+    const defaultDeployment = k8s.__mock.readNamespacedDeployment.getMockImplementation();
+    const defaultPods = k8s.__mock.listNamespacedPod.getMockImplementation();
+    try {
+      k8s.__mock.listNamespacedPod.mockImplementation(async (_ns, _p, _c, _f, _fs, labelSelector) => ({
+        body: {
+          items: [{
+            metadata: { name: String(labelSelector).includes('team') ? 'gateway-team-pod' : 'clawdbot-gateway-test-pod' },
+            status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
+          }],
+        },
+      }));
+      k8s.__mock.readNamespacedDeployment.mockImplementation(async (name) => ({
+        body: { spec: { selector: { matchLabels: { app: name } } } },
+      }));
+      k8s.__mock.readNamespacedConfigMap.mockResolvedValueOnce({
+        body: { data: { 'moltbot.json': JSON.stringify(configWith()) } },
+      });
+      k8s.__mock.execFails = 1;
+      const first = await removeOpenClawAccount({
+        agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
+      });
+      expect(first.removed).toEqual(['cuz']);
+      expect(first.stateError).toMatch(/failed/);
+      // The next call finds the ConfigMap already clean and still edits the state file.
+      const second = await removeOpenClawAccount({
+        agentName: 'openclaw', instanceId: 'cuz', gateway: { mode: 'k8s', slug: 'team' },
+      });
+      expect(second).toEqual({ removed: [] });
+      expect(k8s.__mock.execPods.slice(-2)).toEqual(['gateway-team-pod', 'gateway-team-pod']);
+    } finally {
+      k8s.__mock.execFails = 0;
+      k8s.__mock.readNamespacedDeployment.mockImplementation(defaultDeployment);
+      k8s.__mock.listNamespacedPod.mockImplementation(defaultPods);
+    }
+  });
+
+  const noDeployment = () => k8s.__mock.readNamespacedDeployment.mockRejectedValueOnce(
+    Object.assign(new Error('not found'), { response: { statusCode: 404 } }),
+  );
+  // [name, owning ReplicaSet, pod-template-hash]: how a Deployment's pod looks.
+  const readyPods = (...pods) => ({
+    body: {
+      items: pods.map(([name, replicaSet, hash]) => ({
+        metadata: {
+          name,
+          labels: hash ? { 'pod-template-hash': hash } : {},
+          ownerReferences: replicaSet ? [{ kind: 'ReplicaSet', name: replicaSet }] : [],
+        },
+        status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
+      })),
+    },
+  });
+
+  test('a gateway with no Deployment and no pod has nothing left to remove', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.execCommands.length = 0;
+    noDeployment();
+    // None of these is gateway-team's: a sibling gateway's pod, a bare pod
+    // whose name fits the shape, and a pod of a ReplicaSet named like one.
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods(
+      ['gateway-team-b-7d9f8-x2k4q', 'gateway-team-b-7d9f8', '7d9f8'],
+      ['gateway-team-a-x2k4q'],
+      ['gateway-team-a-x2k4q', 'gateway-team-a', 'x2k4q'],
+    ));
+    const result = await removeOpenClawAccount({
+      agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
+    });
+    expect(result).toEqual({ removed: [], deploymentMissing: true });
+    expect(k8s.__mock.execCommands).toEqual([]);
+  });
+
+  test('a pod that outlives its Deployment gets the state edit and reads as not fully removed', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.execPods.length = 0;
+    noDeployment();
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods(
+      ['gateway-team-a-x2k4q', 'gateway-team-a', 'x2k4q'],
+      ['gateway-team-7d9f8-x2k4q', 'gateway-team-7d9f8', '7d9f8'],
+    ));
+    const result = await removeOpenClawAccount({
+      agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
+    });
+    expect(k8s.__mock.execPods).toEqual(['gateway-team-7d9f8-x2k4q']);
+    expect(result.stateError).toMatch(/Deployment is gone but its pod gateway-team-7d9f8-x2k4q is still running/);
+    expect(result.deploymentMissing).toBe(true);
+  });
+
+  test('a missing Deployment whose pods cannot be listed reads as not fully removed', async () => {
+    clearGatewayUnreadyHold();
+    k8s.__mock.execCommands.length = 0;
+    noDeployment();
+    k8s.__mock.listNamespacedPod.mockRejectedValueOnce(new Error('forbidden'));
+    const result = await removeOpenClawAccount({ agentName: 'openclaw', instanceId: 'nova' });
+    expect(result.stateError).toMatch(/pods could not be listed \(forbidden\)/);
+    expect(k8s.__mock.execCommands).toEqual([]);
   });
 
   test('a state edit that did not happen is reported, and a down gateway is waited on once', async () => {

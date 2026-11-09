@@ -95,22 +95,32 @@ const reprovisionInstallation = async ({
     const gatewayEarly = configuredGatewayIdEarly
       ? await resolveGatewayForInstallation({ gatewayId: configuredGatewayIdEarly })
       : null;
-    const { removed, stateError } = await removeOpenClawAccount({
+    const { removed, stateError, deploymentMissing } = await removeOpenClawAccount({
       agentName: name, instanceId: normalizedInstanceId, gateway: gatewayEarly,
     });
+    // The gateway runs a removed account until it restarts. With no
+    // Deployment there is nothing to restart, and the removal says so.
+    const restartNeeded = removed.length > 0 && !deploymentMissing;
     // A bulk run restarts the gateway once at the end; a single one restarts here.
-    if (removed.length && !skipRuntimeRestart) {
-      await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway: gatewayEarly }).catch((error: Error) => {
-        console.warn('[reprovision] gateway restart after removal failed:', error.message);
-      });
+    let restartError: string | null = null;
+    if (restartNeeded && !skipRuntimeRestart) {
+      // restartAgentRuntime reports a failure as restarted: false, not a throw.
+      const restart: any = await restartAgentRuntime(runtimeType, normalizedInstanceId, { gateway: gatewayEarly })
+        .catch((error: Error) => ({ restarted: false, reason: error.message }));
+      if (restart?.restarted === false) {
+        console.warn('[reprovision] gateway restart after removal failed:', restart.reason);
+        restartError = `The account was removed from the gateway config, but the gateway restart failed (${restart.reason}), so it may still be running. Restart the gateway.`;
+      }
     }
-    // The gateway goes back to a bulk run so it restarts the right one; the
-    // bulk route keeps it out of its response.
+    const removalError = [stateError, restartError].filter(Boolean).join(' ');
+    // The gateway's id goes back to a bulk run so it restarts the right one.
+    // Only the id: the record carries the gateway's address and owner.
     return {
       ...skipped('cloud_agents_not_entitled'),
       removedFromRuntime: removed.length > 0,
-      runtimeGateway: gatewayEarly,
-      ...(stateError ? { runtimeRemovalError: stateError } : {}),
+      runtimeRestartNeeded: restartNeeded,
+      runtimeGatewayId: gatewayEarly?._id ? String(gatewayEarly._id) : null,
+      ...(removalError ? { runtimeRemovalError: removalError } : {}),
     };
   }
 
