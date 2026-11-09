@@ -2890,24 +2890,34 @@ export async function runAgent(
       if (!aside.length) return 0;
     }
     const firstRound = aside[0].round;
-    messages.length = roundEnds[firstRound];
-    roundEnds.length = firstRound + 1;
+    // Dropping a round that posted or acted (a click, a typed field) would
+    // have the model do it again, so the turn would post twice or repeat a
+    // click. Such rounds stay. The model's own text after the stopped page may
+    // quote it, so that text is cleared, keeping each call for its result
+    // (as when every web result is set aside).
+    const acted = messages.slice(roundEnds[firstRound]).some((message: any) => message?.role === 'assistant'
+      && (message.tool_calls || []).some((tc: any) => !COMPUTER_READ_TOOLS.has(String(tc?.function?.name || ''))));
+    if (acted) {
+      for (let i = aside[0].index + 1; i < messages.length; i += 1) {
+        if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+      }
+    } else {
+      messages.length = roundEnds[firstRound];
+      roundEnds.length = firstRound + 1;
+    }
     aside.forEach(({ index, image, page, url }) => {
       messages[index] = {
         ...messages[index],
         content: JSON.stringify({ ok: false, page, ...(url ? { url } : {}), error: COMPUTER_SET_ASIDE_NOTICE }),
       };
       if (image) {
-        messages[index + 1] = {
-          role: 'user',
-          content: `The screenshot of page ${page}${url ? ` (${url})` : ''} was set aside by a content filter.`,
-        };
+        messages[index + 1] = { role: 'user', content: `The screenshot of page ${page} was set aside by a content filter.` };
       }
     });
-    const keptComputer = computerResults.filter((result) => result.round < firstRound
-      || (result.round === firstRound && !aside.includes(result)));
+    const keptComputer = computerResults.filter((result) => !aside.includes(result)
+      && (acted || result.round <= firstRound));
     computerResults.splice(0, computerResults.length, ...keptComputer);
-    const keptWeb = webResults.filter((result) => result.round <= firstRound);
+    const keptWeb = webResults.filter((result) => acted || result.round <= firstRound);
     webResults.splice(0, webResults.length, ...keptWeb);
     return aside.length;
   };
@@ -3046,8 +3056,8 @@ export async function runAgent(
               webSetAsideAll = true;
               continue;
             }
-            // A post earlier in the turn does not end a walk: the message
-            // service drops a repeat of words already in the pod.
+            // A post earlier in the turn does not end a walk. A round that
+            // posted or acted is never dropped, so nothing is done twice.
             if (computerResults.length > 0 && computerSetAsides < COMPUTER_SET_ASIDE_LIMIT) {
               const setAside = await setAsideStoppedComputerResult();
               if (setAside > 0) {
@@ -3260,6 +3270,9 @@ export async function runAgent(
             });
           }
           if (WEB_LOOKUP_TOOLS.has(toolName) && !result.error) webResults.push({ round, index: messages.length - 1 });
+          // A click or a typed field can change the page, so a later
+          // screenshot names no address until the next page read.
+          if (toolName === 'computer_click' || toolName === 'computer_type') computerUrl = undefined;
           if (COMPUTER_READ_TOOLS.has(toolName) && !result.error) {
             computerReads += 1;
             const image = Boolean(result.imagePngBase64);

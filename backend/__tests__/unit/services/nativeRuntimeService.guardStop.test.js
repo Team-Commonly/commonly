@@ -1396,7 +1396,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(tools[0]).toContain(CLEAN_TEXT);
       expect(JSON.parse(tools[1])).toMatchObject({ ok: false, page: 2, url: 'https://site.example/page' });
       expect(JSON.stringify(retry.messages)).not.toContain('data:image/png');
-      expect(JSON.stringify(retry.messages)).toContain('The screenshot of page 2 (https://site.example/page) was set aside');
+      expect(JSON.stringify(retry.messages)).toContain('The screenshot of page 2 was set aside');
       expect(savedRun.computerSetAside).toBe(1);
     });
 
@@ -1429,6 +1429,49 @@ describe('a hosted turn the guard stops, or that fails', () => {
       const tools = toolContents(chatBodies[3]);
       expect(tools).toHaveLength(1);
       expect(JSON.parse(tools[0])).toMatchObject({ ok: false, page: 1 });
+    });
+
+    test('a round that posted after the stopped page stays, so the post is not made twice', async () => {
+      pages = [STOPPED_TEXT, CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        { ...toolCalls(call('c2', 'commonly_post_message', { content: 'Step one is done.' })) },
+        toolCalls(snapshotCall('c3')),
+        guardStop,
+        reply('Walk finished.'),
+      ];
+      chatReplies[1].data.choices[0].message.content = `Quoting: ${STOPPED_TEXT}`;
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(posted()).toEqual(['Step one is done.']);
+      const retry = chatBodies[4];
+      const tools = toolContents(retry);
+      expect(JSON.parse(tools[0])).toMatchObject({ ok: false, page: 1 });
+      expect(tools).toHaveLength(3);
+      expect(tools[2]).toContain(CLEAN_TEXT);
+      // The model's text after the stopped page could quote it, so it is cleared.
+      expect(JSON.stringify(retry.messages)).not.toContain(STOPPED_TEXT);
+      expect(savedRun.computerSetAside).toBe(1);
+    });
+
+    test('when the check is unavailable, the last round\'s reads are set aside and older ones stay', async () => {
+      pages = [CLEAN_TEXT, LATER_TEXT];
+      checkUnavailable = true;
+      chatReplies = [
+        toolCalls(snapshotCall('c1')),
+        toolCalls(snapshotCall('c2')),
+        guardStop,
+        reply('Done.'),
+      ];
+
+      await runAgent(computerInstall(), mention);
+
+      const tools = toolContents(chatBodies[3]);
+      expect(tools[0]).toContain(CLEAN_TEXT);
+      expect(JSON.parse(tools[1])).toMatchObject({ ok: false, page: 2 });
+      expect(savedRun.computerSetAside).toBe(1);
     });
 
     test('a turn stopped past the limit fails with the fixed line', async () => {
