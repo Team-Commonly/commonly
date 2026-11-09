@@ -218,6 +218,29 @@ describe('Why isn’t it answering?', () => {
     expect(screen.queryByTestId('byo-listen-stall')).toBeNull();
   });
 
+  test('a new key after Install another asks again, and its report posts', async () => {
+    jest.useFakeTimers();
+    setUserAgent(WINDOWS);
+    await issue();
+    await copyListen();
+    await pastMissedWindow();
+    fireEvent.click(screen.getByTestId('byo-listen-stall-not-run'));
+    expect(screen.getByTestId('byo-listen-stall-help')).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Install another' })[0]);
+    axios.post.mockResolvedValueOnce({ data: { ok: true } }).mockResolvedValueOnce({ data: { token: 'cm_agent_test_token_2' } });
+    await act(async () => { jest.advanceTimersByTime(5); });
+    const install = await screen.findByRole('button', { name: /^Get my connect command/ });
+    await waitFor(() => expect(install).toBeEnabled());
+    fireEvent.click(install);
+    await screen.findByTestId('byo-listen');
+    await copyListen();
+    await pastMissedWindow();
+    expect(screen.queryByTestId('byo-listen-stall-help')).toBeNull();
+    fireEvent.click(screen.getByTestId('byo-listen-stall-node-missing'));
+    expect(stalls()).toHaveLength(2);
+    expect(stalls()[1][2]).toEqual(expect.objectContaining({ reason: 'node-missing' }));
+  });
+
   test('switching to Mac and back after a report neither asks again nor posts again', async () => {
     jest.useFakeTimers();
     setUserAgent(WINDOWS);

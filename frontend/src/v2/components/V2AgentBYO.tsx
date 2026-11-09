@@ -1255,11 +1255,15 @@ const V2AgentBYO: React.FC = () => {
       setupOs, listenerAvailable, ...(copyType ? { copyType } : {}), ...(reason ? { reason } : {}),
     });
   };
-  // One report per page load; the buttons hide after the click (F342).
-  const [stallReason, setStallReason] = useState<ByoStallReason | null>(null);
+  // One report per issued key; the buttons hide after the click (F342). The report belongs to the key it was made for,
+  // so a new key (Install another) asks again. The issued key lives only in this component, so a remount shows no prompt
+  // until a key is issued again.
+  const stallKey = issued ? `${issued.agentName}:${issued.issuedAt}` : null;
+  const [stallReport, setStallReport] = useState<{ key: string; reason: ByoStallReason } | null>(null);
+  const stallReason = stallReport && stallReport.key === stallKey ? stallReport.reason : null;
   const reportStall = (reason: ByoStallReason) => {
-    if (stallReason) return;
-    setStallReason(reason);
+    if (!stallKey || stallReason) return;
+    setStallReport({ key: stallKey, reason });
     byoStep('listen-stall-reported', undefined, reason);
   };
 
