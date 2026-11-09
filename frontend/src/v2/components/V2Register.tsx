@@ -14,6 +14,7 @@ import {
   readInviteFromUrl, searchWithoutInvite, rememberInvite, recallInvite, forgetInvite,
   forgetInviteOAuthStart,
 } from '../utils/pendingInvite';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -39,6 +40,7 @@ const Brand: React.FC = () => (
 const V2Register: React.FC = () => {
   const { login } = useAuth();
   const { t, i18n } = useTranslation();
+  useDocumentTitle('pageTitle.register');
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');

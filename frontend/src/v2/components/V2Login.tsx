@@ -7,6 +7,7 @@ import V2AuthBrand from './V2AuthBrand';
 import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
 import { forgetInviteOAuthStart } from '../utils/pendingInvite';
 import V2AuthNotice from './V2AuthNotice';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -29,6 +30,7 @@ const OAUTH_ERROR_KEYS: Record<string, string> = {
 const V2Login: React.FC = () => {
   const { login, error: authError, loading } = useAuth();
   const { t } = useTranslation();
+  useDocumentTitle('pageTitle.login');
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
