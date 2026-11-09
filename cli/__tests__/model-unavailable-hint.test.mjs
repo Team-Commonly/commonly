@@ -160,7 +160,7 @@ const makeEvent = (id) => ({
 const drain = async () => { for (let i = 0; i < 24; i += 1) await new Promise((r) => setImmediate(r)); };
 const podPosts = (post) => post.mock.calls.filter(([route]) => String(route).endsWith('/pods/pod-abc/messages'));
 
-const runOnce = async (error, { model = 'seat-model', readSavedControls = false, environment = { model } } = {}) => {
+const runOnce = async (error, { model = 'seat-model', readSavedControls = false, standaloneMachineRun = false, environment = { model } } = {}) => {
   const post = jest.fn().mockResolvedValue({});
   const get = jest.fn(async (route) => (route.endsWith('/messages') ? { messages: [] }
     : route === '/api/agents/runtime/events' ? { events: [makeEvent(`evt-${Math.random()}`)] } : {}));
@@ -169,7 +169,7 @@ const runOnce = async (error, { model = 'seat-model', readSavedControls = false,
   const { stop } = performRun({
     instanceUrl: 'http://localhost:5000', token: 'cm_agent_test', agentName: 'hint-seat',
     environment, adapter: { name: 'stub', detect: stubAdapter.detect, spawn },
-    setTimeoutImpl: () => 0, onError: () => {}, log: () => {}, readSavedControls,
+    setTimeoutImpl: () => 0, onError: () => {}, log: () => {}, readSavedControls, standaloneMachineRun,
   });
   await drain();
   stop();
@@ -209,6 +209,15 @@ describe('performRun posts the model hint', () => {
       + 'To change it, run commonly agent config hint-seat --model <model> on the computer it runs on, then restart commonly agent run hint-seat.');
     expect(body.content).not.toMatch(/Settings/);
   });
+
+  // A machine-bound record run by hand, with no daemon, reads no saved controls,
+  // with or without an environment, so Settings would change nothing.
+  test.each([['a saved environment', { model: 'claude-opus-5-5' }], ['no environment', null]])(
+    'a machine-bound run with no daemon and %s is told the command, not Settings', async (_label, environment) => {
+      const [[, body]] = podPosts(await runOnce(CLAUDE_403, { standaloneMachineRun: true, environment }));
+      expect(body.content).toMatch(/run commonly agent config hint-seat --model <model> on the computer it runs on/);
+      expect(body.content).not.toMatch(/Settings/);
+    });
 
   test('a seat restarted with a saved environment hears the Settings line inside the same hour', async () => {
     expect(podPosts(await runOnce(CLAUDE_403, { readSavedControls: true, environment: null }))).toHaveLength(1);
