@@ -1178,7 +1178,7 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     const result = await removeOpenClawAccount({
       agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
     });
-    expect(result).toEqual({ removed: [] });
+    expect(result).toEqual({ removed: [], deploymentMissing: true });
     expect(k8s.__mock.execCommands).toEqual([]);
   });
 
@@ -1192,6 +1192,7 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     });
     expect(k8s.__mock.execPods).toEqual(['gateway-team-7d9f8-x2k4q']);
     expect(result.stateError).toMatch(/Deployment is gone but its pod gateway-team-7d9f8-x2k4q is still running/);
+    expect(result.deploymentMissing).toBe(true);
   });
 
   test('a missing Deployment whose pods cannot be listed reads as not fully removed', async () => {

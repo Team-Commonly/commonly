@@ -205,12 +205,13 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
           userTokenCache,
           skipRuntimeRestart: true,
         });
-        const { runtimeGatewayId, ...shown } = result;
+        const { runtimeGatewayId, runtimeRestartNeeded, ...shown } = result;
         // Track which shared runtimes need a single deferred restart
         // A removed account also needs the restart, or the gateway keeps running it.
-        if (result.runtimeType === 'moltbot' && result.removedFromRuntime && runtimeGatewayId) {
+        // A removal that found no Deployment owes none: there is nothing to restart.
+        if (result.runtimeType === 'moltbot' && runtimeRestartNeeded && runtimeGatewayId) {
           namedGatewaysNeedingRestart.add(String(runtimeGatewayId));
-        } else if (result.runtimeType === 'moltbot' && (!result.skipped || result.removedFromRuntime)) {
+        } else if (result.runtimeType === 'moltbot' && (!result.skipped || runtimeRestartNeeded)) {
           sharedRuntimesNeedingRestart.add('moltbot');
         }
         if (result.skipped) {
@@ -220,7 +221,7 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
             ? { ...shown, success: false, error: result.runtimeRemovalError }
             : { ...shown, success: true };
           items.push(row);
-          if (result.runtimeType === 'moltbot' && result.removedFromRuntime) {
+          if (result.runtimeType === 'moltbot' && runtimeRestartNeeded) {
             awaitRestart(runtimeGatewayId ? `gateway:${runtimeGatewayId}` : 'moltbot', row);
           }
           continue;
@@ -249,18 +250,24 @@ adminRouter.post('/admin/installations/reprovision-all', auth, adminAuth, async 
     }
 
     // Single gateway restart after all agents provisioned (instead of one per agent)
+    // restartAgentRuntime reports a failure as restarted: false, not a throw.
+    const restartFailure = (restart: any) => (restart?.restarted === false ? String(restart.reason || 'not restarted') : null);
     if (sharedRuntimesNeedingRestart.has('moltbot')) {
-      await restartAgentRuntime('moltbot', 'default', {}).catch((err: any) => {
-        console.warn('[reprovision-all] Failed to restart gateway:', err.message);
-        failRestart('moltbot', err.message);
-      });
+      const restart = await restartAgentRuntime('moltbot', 'default', {})
+        .catch((err: any) => ({ restarted: false, reason: err.message }));
+      const failure = restartFailure(restart);
+      if (failure) {
+        console.warn('[reprovision-all] Failed to restart gateway:', failure);
+        failRestart('moltbot', failure);
+      }
     }
     for (const gatewayId of namedGatewaysNeedingRestart) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const gateway = await resolveGatewayForInstallation({ gatewayId });
         // eslint-disable-next-line no-await-in-loop
-        await restartAgentRuntime('moltbot', 'default', { gateway });
+        const failure = restartFailure(await restartAgentRuntime('moltbot', 'default', { gateway }));
+        if (failure) throw new Error(failure);
       } catch (err: any) {
         console.warn('[reprovision-all] Failed to restart gateway after removal:', err.message);
         failRestart(`gateway:${gatewayId}`, err.message);

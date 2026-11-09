@@ -68,6 +68,7 @@ describe('POST /admin/installations/reprovision-all', () => {
       skipped: true,
       skipReason: 'cloud_agents_not_entitled',
       removedFromRuntime: true,
+      runtimeRestartNeeded: true,
       runtimeGatewayId: null,
     });
 
@@ -89,6 +90,7 @@ describe('POST /admin/installations/reprovision-all', () => {
         skipped: true,
         skipReason: 'cloud_agents_not_entitled',
         removedFromRuntime: true,
+        runtimeRestartNeeded: true,
         runtimeGatewayId: 'gw-1',
         runtimeRemovalError: 'The state file edit failed.',
       })
@@ -99,6 +101,7 @@ describe('POST /admin/installations/reprovision-all', () => {
         skipped: true,
         skipReason: 'cloud_agents_not_entitled',
         removedFromRuntime: true,
+        runtimeRestartNeeded: true,
         runtimeGatewayId: 'gw-1',
       });
 
@@ -124,6 +127,7 @@ describe('POST /admin/installations/reprovision-all', () => {
     skipped: true,
     skipReason: 'cloud_agents_not_entitled',
     removedFromRuntime: true,
+    runtimeRestartNeeded: true,
     runtimeGatewayId,
   });
 
@@ -141,8 +145,30 @@ describe('POST /admin/installations/reprovision-all', () => {
     expect(res.body.items[1].error).toMatch(/gateway restart failed \(gateway lookup failed\)/);
   });
 
+  it('a named gateway whose restart reports a failure reads as failed', async () => {
+    mockResolveGateway.mockResolvedValue({ _id: 'gw-1', slug: 'team' });
+    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'conflict' });
+    reprovisionInstallation.mockResolvedValue(removedOn('a', 'gw-1'));
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(res.body).toMatchObject({ success: false, failed: 2, skipped: 0 });
+    expect(res.body.items[0].error).toMatch(/gateway restart failed \(conflict\)/);
+  });
+
+  it('a removal that found no Deployment owes no restart and reads as removed', async () => {
+    reprovisionInstallation.mockResolvedValue({ ...removedOn('a', 'gw-1'), runtimeRestartNeeded: false });
+
+    const res = await request(app).post('/api/registry/admin/installations/reprovision-all').send({});
+
+    expect(restartAgentRuntime).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({ success: true, failed: 0, skipped: 2 });
+    expect(res.body.items[0].runtimeRestartNeeded).toBeUndefined();
+  });
+
   it('a removal whose shared gateway restart fails reads as failed, keeping any state error', async () => {
-    restartAgentRuntime.mockRejectedValueOnce(new Error('restart refused'));
+    // The real restartAgentRuntime reports a failure this way; it never throws.
+    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'restart refused' });
     reprovisionInstallation
       .mockResolvedValueOnce({ ...removedOn('a', null), runtimeRemovalError: 'The state file edit failed.' })
       .mockResolvedValueOnce(removedOn('b', null));

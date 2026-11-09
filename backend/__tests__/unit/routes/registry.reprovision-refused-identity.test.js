@@ -93,6 +93,25 @@ describe('reprovision of a refused identity', () => {
     spy.mockRestore();
   });
 
+  it('a single run reports a restart that failed, which restartAgentRuntime returns rather than throws', async () => {
+    cloudRuntimeMayRun.mockResolvedValue(false);
+    restartAgentRuntime.mockResolvedValueOnce({ restarted: false, reason: 'forbidden' });
+    const result = await reprovisionInstallation({ installation: install('openclaw') });
+    expect(result).toEqual(expect.objectContaining({
+      removedFromRuntime: true, runtimeRestartNeeded: true,
+    }));
+    expect(result.runtimeRemovalError).toMatch(/gateway restart failed \(forbidden\)/);
+  });
+
+  it('a removal that found no Deployment restarts nothing and owes no restart', async () => {
+    cloudRuntimeMayRun.mockResolvedValue(false);
+    removeOpenClawAccount.mockResolvedValueOnce({ removed: ['scout'], deploymentMissing: true });
+    const result = await reprovisionInstallation({ installation: install('openclaw') });
+    expect(restartAgentRuntime).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ removedFromRuntime: true, runtimeRestartNeeded: false }));
+    expect(result.runtimeRemovalError).toBeUndefined();
+  });
+
   it('a bulk run leaves the restart to the end', async () => {
     cloudRuntimeMayRun.mockResolvedValue(false);
     await reprovisionInstallation({ installation: install('openclaw'), skipRuntimeRestart: true });
