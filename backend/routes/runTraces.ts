@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import AgentRun from '../models/AgentRun';
 import ToolCall from '../models/ToolCall';
 import { personIdFor } from '../services/recordRedaction';
+import { isAgentCaller } from '../services/agentFacingRefusal';
 
 const auth = require('../middleware/auth');
 const Pod = require('../models/Pod');
@@ -35,6 +36,8 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     // credential owner's id goes only to that owner and the pod's creator
     // (recordRedaction).
     const isOriginMember = pod.members.some((member: unknown) => String(member) === String(userId));
+    // An agent reads the trail without the grant or the person whose credential ran.
+    const showAttribution = isOriginMember && !isAgentCaller(req);
     // Do not load content-bearing args, results or LLM text even transiently.
     const run = await AgentRun.findOne({ _id: runId, podId })
       .select([
@@ -52,8 +55,8 @@ router.get('/:podId/runs/:runId', traceReadLimit, auth, async (req, res) => {
     const byId = new Map(trail.map((call) => [call.callId, {
       callId: call.callId, tool: call.tool, outcome: call.outcome,
       at: call.at, durationMs: call.durationMs,
-      ...(isOriginMember ? { grantId: call.grantId } : {}),
-      ...(isOriginMember && personIdFor(pod, userId, call.credentialOwnerId) === call.credentialOwnerId
+      ...(showAttribution ? { grantId: call.grantId } : {}),
+      ...(showAttribution && personIdFor(pod, userId, call.credentialOwnerId) === call.credentialOwnerId
         ? { credentialOwnerId: call.credentialOwnerId } : {}),
     }]));
     res.set('Cache-Control', 'no-store');

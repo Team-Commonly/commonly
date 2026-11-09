@@ -2,6 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
+import { agentFacingRefusal } from '../services/agentFacingRefusal';
 import { PENDING_APPROVAL_NOTE, untrustedConnectorMarker } from '../services/brokerResultMarker';
 import { isLimitedUseTool } from '../services/limitedUseConnectors';
 import { reserveBudgetLineage } from '../models/ToolCall';
@@ -51,7 +52,8 @@ export const pushBodyRateLimit = rateLimit({
 });
 
 export const errorPayload = (error: unknown): Record<string, unknown> => {
-  const e = error as { code?: string; message?: string; details?: unknown };
+  // Every caller of these routes is an agent.
+  const e = agentFacingRefusal(error);
   return {
     error: e.code || 'broker_error',
     message: e.message || 'Tool call refused',
@@ -236,7 +238,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
         })),
       };
     } catch (error) {
-      const refusal = error as { code?: string; message?: string };
+      const refusal = agentFacingRefusal(error);
       const code = refusal.code || 'broker_error';
       throw new McpError(
         ErrorCode.InvalidRequest,
