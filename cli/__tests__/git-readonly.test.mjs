@@ -179,10 +179,10 @@ describe('read-only git refuses what is not read-only', () => {
 
 describe('read-only git runs the five subcommands', () => {
   test('forced options are prepended for diff, log and show', () => {
-    const excludes = ['--', ':(exclude,glob)**/.env', ':(exclude,glob)**/.env.*',
-      ':(exclude,glob)**/.env/**', ':(exclude,glob)**/.env.*/**',
-      ':(exclude,glob)**/.npmrc', ':(exclude,glob)**/.npmrc/**', ':(exclude,glob)**/.yarnrc*', ':(exclude,glob)**/.yarnrc*/**',
-      ':(exclude,glob)**/.commonly', ':(exclude,glob)**/.commonly/**', ':(exclude,glob)**/.codex', ':(exclude,glob)**/.codex/**'];
+    const excludes = ['--', ':(exclude,glob,icase)**/.env', ':(exclude,glob,icase)**/.env.*',
+      ':(exclude,glob,icase)**/.env/**', ':(exclude,glob,icase)**/.env.*/**',
+      ':(exclude,glob,icase)**/.npmrc', ':(exclude,glob,icase)**/.npmrc/**', ':(exclude,glob,icase)**/.yarnrc*', ':(exclude,glob,icase)**/.yarnrc*/**',
+      ':(exclude,glob,icase)**/.commonly', ':(exclude,glob,icase)**/.commonly/**', ':(exclude,glob,icase)**/.codex', ':(exclude,glob,icase)**/.codex/**'];
     const top = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'format.pretty=medium',
       '-c', 'diff.submodule=short', '-c', 'status.submoduleSummary=false', '-c', 'log.showSignature=false'];
     expect(readonlyGitArgv({ subcommand: 'diff', args: [], root: repo }).argv)
@@ -338,11 +338,71 @@ describe('read-only git shows a blob only through a path it can check', () => {
     }
   });
 
+  test('show refuses the options that make git pick objects itself (control: bare show prints the blob)', async () => {
+    expect((await bareGit(['show', '--indexed-objects'])).stdout).toContain(SECRET);
+    expect((await bareGit(['show', '--tags'])).stdout).toContain(SECRET);
+    for (const args of [['--indexed-objects'], ['--tags'], ['--all'], ['--glob=refs/tags/*'], ['--branches'],
+      ['--remotes'], ['--exclude=x', '--all'], ['--reflog'], ['--alternate-refs'], ['--bisect'], ['--stdin'],
+      ['--indexed-obj'], ['HEAD', '--tags']]) {
+      const out = await run(args);
+      expect(out.ok).toBe(false);
+      expect(out.text).toMatch(/is refused for show/);
+      expect(out.text).not.toContain(SECRET);
+    }
+    // log reads the same options but prints only commits, with the excludes.
+    const log = await runReadonlyGit({ subcommand: 'log', args: ['--all', '-p'], root: repo, git: GIT });
+    expect(log.ok).toBe(true);
+    expect(log.text).not.toContain(SECRET);
+  });
+
+  test('a revision check that runs out of time refuses the call', async () => {
+    const out = await runReadonlyGit({
+      subcommand: 'show', args: ['HEAD'], root: repo, git: GIT, timeoutMs: 0,
+    });
+    expect(out.ok).toBe(false);
+    expect(out.text).toMatch(/did not say in time whether it is a blob/);
+  });
+
   test('commits, trees, paths and ranges still show', async () => {
     for (const args of [['HEAD'], ['HEAD^{tree}'], ['HEAD:tracked.txt'], ['HEAD~1..HEAD', '--stat'], ['--', 'tracked.txt']]) {
       const out = await run(args);
       expect(out.ok).toBe(true);
       expect(out.text).not.toContain(SECRET);
+    }
+  });
+});
+
+// A case-insensitive filesystem opens .ENV as .env, and the sandbox denies it
+// either way, so git's results leave out every case of each protected name.
+describe('read-only git keeps protected names out of reach in any case', () => {
+  const SECRET = 'CASE_VARIANT_SECRET';
+  const run = (subcommand, args) => runReadonlyGit({
+    subcommand, args, root: repo, git: GIT,
+  });
+
+  beforeAll(async () => {
+    mkdirSync(join(repo, 'casepkg'), { recursive: true });
+    writeFileSync(join(repo, 'casepkg', '.ENV'), `KEY=${SECRET}\n`);
+    writeFileSync(join(repo, 'casepkg', '.NpmRc'), `token=${SECRET}\n`);
+    await bareGit(['add', '-f', 'casepkg/.ENV', 'casepkg/.NpmRc']);
+    await bareGit(['commit', '-q', '-m', 'commit protected names in other cases']);
+  });
+
+  test('an argument naming one is refused (control: bare show reads it)', async () => {
+    expect((await bareGit(['show', 'HEAD:casepkg/.ENV'])).stdout).toContain(SECRET);
+    for (const arg of ['HEAD:casepkg/.ENV', 'HEAD:casepkg/.NpmRc', 'HEAD:casepkg/.Env.Local', 'HEAD:.CODEX/x']) {
+      expect(refusal({ subcommand: 'show', args: [arg] })).toMatch(/out of reach/);
+    }
+  });
+
+  test('log, show and diff leave them out (control: bare git lists them)', async () => {
+    expect((await bareGit(['log', '--stat', '-n1'])).stdout).toContain('.ENV');
+    for (const [subcommand, args] of [['show', ['HEAD']], ['log', ['-p', '--stat', '-n', '1']], ['diff', ['HEAD~1', 'HEAD']]]) {
+      const out = await run(subcommand, args);
+      expect(out.ok).toBe(true);
+      expect(out.text).not.toContain(SECRET);
+      expect(out.text).not.toContain('.ENV');
+      expect(out.text).not.toContain('.NpmRc');
     }
   });
 });
