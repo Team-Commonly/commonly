@@ -402,8 +402,8 @@ router.delete('/:userId', adminWriteLimiter, auth, adminAuth, async (req: any, r
       });
       // Self-deletion's own claim. A refused delete touches nothing. A self-deletion
       // that starts after this receipt exists skips its claim and billing preflight
-      // (establishCleanupReceipt reads a receipt as a passed preflight), so it ends
-      // with billing as this delete leaves it, uncancelled, as before.
+      // (establishCleanupReceipt reads a receipt as a passed preflight). That holds,
+      // because this delete cancels billing below before it writes the receipt.
       const claimedAt = new Date();
       const claimed = await User.updateOne(
         { _id: target._id, accountDeletionRequestedAt: { $exists: false } },
