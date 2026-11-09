@@ -197,7 +197,14 @@ mongosh --quiet mongodb://127.0.0.1:27017/commonly \
 # PostgreSQL, in a postgres:16 container (POSTGRES_PASSWORD set)
 docker-entrypoint.sh postgres &
 until pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done
-psql -h 127.0.0.1 -U postgres -c 'CREATE ROLE avnadmin'   # the dump's object owner
+# Create every role the dump names as an owner or grantee, or ON_ERROR_STOP halts at the
+# first one. Since the 2026-11 role split that is avnadmin, commonly_app and commonly_litellm.
+# The COPY data blocks are skipped, so table contents never become role names.
+for r in $(gunzip -c /work/backup.sql.gz | sed '/^COPY .* FROM stdin;$/,/^\\\.$/d' \
+  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' | sort -u); do
+  psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$r'" | grep -q 1 \
+    || psql -h 127.0.0.1 -U postgres -c "CREATE ROLE $r"
+done
 createdb -h 127.0.0.1 -U postgres restore
 gunzip -c /work/backup.sql.gz | psql -h 127.0.0.1 -U postgres -d restore -v ON_ERROR_STOP=1 -q
 ```
@@ -310,8 +317,8 @@ kubectl exec -n "${DRILL_NS}" mongo-restore -- \
 
 Then restore with the same commands as the pod above (`mongorestore
 --uri=mongodb://127.0.0.1:27017 --archive=/work/backup.archive.gz --gzip`,
-then `CREATE ROLE avnadmin`, `createdb`, and `gunzip -c | psql -v
-ON_ERROR_STOP=1`), run through `kubectl exec -n "${DRILL_NS}"`.
+then the loop that creates every role the dump names, `createdb`, and
+`gunzip -c | psql -v ON_ERROR_STOP=1`), run through `kubectl exec -n "${DRILL_NS}"`.
 
 **Comparing counts.** Production keeps moving after the dump, so a raw count
 taken hours later never matches. Instead, count the production documents
@@ -441,6 +448,18 @@ kubectl cp /tmp/postgresql-backup.sql.gz \
 
 PGPASSWORD="$(kubectl get secret database-credentials \
   -n "${K8S_NAMESPACE}" -o jsonpath='{.data.postgres-password}' | base64 --decode)"
+# Roles are instance-wide, and an older dump can name a role the target no longer has.
+# Create whichever roles the dump names and the target lacks, or the import stops part-way.
+kubectl exec -i postgresql-restore -n "${K8S_NAMESPACE}" -- \
+  env PGPASSWORD="${PGPASSWORD}" PG_HOST="${PG_RESTORE_HOST}" PG_USER="${PG_RESTORE_USER}" \
+  bash -s <<'EOF'
+set -euo pipefail
+for r in $(gunzip -c /tmp/backup.sql.gz | sed '/^COPY .* FROM stdin;$/,/^\\\.$/d' \
+  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' | sort -u); do
+  psql -h "$PG_HOST" -U "$PG_USER" -d template1 -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$r'" | grep -q 1 \
+    || psql -h "$PG_HOST" -U "$PG_USER" -d template1 -c "CREATE ROLE $r"
+done
+EOF
 kubectl exec postgresql-restore -n "${K8S_NAMESPACE}" -- \
   env PGPASSWORD="${PGPASSWORD}" \
   createdb -h "${PG_RESTORE_HOST}" -U "${PG_RESTORE_USER}" \
@@ -453,6 +472,11 @@ kubectl exec postgresql-restore -n "${K8S_NAMESPACE}" -- \
   bash -c \
   'set -euo pipefail; gunzip -c /tmp/backup.sql.gz | psql -v ON_ERROR_STOP=1 -h "$PG_HOST" -U "$PG_USER" -d "$PG_DATABASE"'
 ```
+
+A restore the app will serve from, rather than a drill, also needs the app roles
+to log in with their stored passwords: `ALTER ROLE commonly_app LOGIN`, `ALTER ROLE
+commonly_litellm LOGIN`, then `\password commonly_app` and `\password
+commonly_litellm` with the values held in their two Postgres password secrets.
 
 Inspect the restored schema and representative row counts, then remove the
 client pod:
