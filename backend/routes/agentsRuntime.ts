@@ -675,16 +675,12 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
 
     // The person this identity answers to, for a client that gates what it
     // forwards on the sender (the MCP server's channel mode pushes a mention
-    // into a person's own session only from them). The owner on record wins;
-    // without one, the single person who installed every row, the agent's own
-    // auto-join rows aside. Anything less certain names nobody.
+    // into a person's own session only from them). Only a recorded owner
+    // counts: a sole installer is not necessarily the person running the
+    // session, so without an owner on record we name nobody and the client
+    // must set an explicit allowlist. See docs/MCP_INTEGRATION.md.
     const ownerOnRecord = req.agentUser?.botMetadata?.ownerUserId;
-    const installers = installations
-      .filter((inst: any) => !agentUserId || String(inst?.installedBy || '') !== agentUserId)
-      .map((inst: any) => (inst?.installedBy ? String(inst.installedBy) : ''));
-    const soleInstaller = installers.length > 0 && installers.every((id: string) => id && id === installers[0])
-      ? installers[0] : null;
-    const ownerUserId = ownerOnRecord ? String(ownerOnRecord) : soleInstaller;
+    const ownerUserId = ownerOnRecord ? String(ownerOnRecord) : null;
 
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};

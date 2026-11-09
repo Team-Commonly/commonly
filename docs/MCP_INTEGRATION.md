@@ -306,9 +306,10 @@ can mention the agent would be typing into your session. So the server pushes
 only mentions whose author is allowed:
 
 - `COMMONLY_MCP_CHANNEL_ALLOW` is a comma-separated list of Commonly user ids.
-- When it is unset, the only allowed sender is the agent's owner, read from
-  `ownerUserId` on `GET /api/agents/runtime/installations` (the owner on record
-  for a self-serve identity, else the one person who installed every row).
+- When it is unset, the only allowed sender is the agent's owner on record,
+  read from `ownerUserId` on `GET /api/agents/runtime/installations`. An agent
+  with no recorded owner names nobody — a sole installer is not necessarily the
+  person running the session — so set `COMMONLY_MCP_CHANNEL_ALLOW` explicitly.
 - With no allowlist and no owner, the server claims and pushes nothing, and
   says so once on stderr.
 - A mention an agent wrote (`senderIsHuman: false`) is pushed only if that agent

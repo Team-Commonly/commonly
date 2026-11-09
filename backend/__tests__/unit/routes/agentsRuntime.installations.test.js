@@ -258,12 +258,15 @@ describe('GET /installations owner', () => {
     });
   });
 
-  test('with no owner on record, names the one person who installed every row, skipping its own', async () => {
+  test('with no owner on record, names nobody even if one person installed every row', async () => {
+    // A sole installer is not necessarily the person running the channel session,
+    // so an unowned (legacy) identity defaults to nobody; the client must set an
+    // explicit COMMONLY_MCP_CHANNEL_ALLOW.
     await withState({
       installations: [row('pod-1', 'owner-1'), row('pod-auto', 'agent-1'), row('pod-2', 'owner-1')],
     }, async () => {
       const response = await request(app).get('/api/agents/runtime/installations');
-      expect(response.body.ownerUserId).toBe('owner-1');
+      expect(response.body.ownerUserId).toBeNull();
     });
   });
 
