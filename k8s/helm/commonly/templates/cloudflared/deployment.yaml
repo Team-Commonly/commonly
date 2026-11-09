@@ -53,7 +53,8 @@ spec:
       tolerations:
         {{- toYaml .Values.cloudflared.tolerations | nindent 8 }}
       {{- end }}
-      # Prefer one tunnel per node, so one drain takes one.
+      # Prefer one tunnel per node, so one drain takes one. matchLabelKeys counts
+      # only this ReplicaSet's pods, so a roll can't stack the new ones on one node.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -61,6 +62,8 @@ spec:
           labelSelector:
             matchLabels:
               app: cloudflared-commonly-k8s
+          matchLabelKeys:
+            - pod-template-hash
       volumes:
         - name: cloudflared-config
           configMap:

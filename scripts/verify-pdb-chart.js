@@ -70,6 +70,9 @@ for (const lane of Object.keys(lanes)) {
     const spread = (w.spec.template.spec.topologySpreadConstraints || [])
       .find((t) => t.topologyKey === 'kubernetes.io/hostname' && selects(t.labelSelector, labels));
     expect(spread && spread.whenUnsatisfiable === 'ScheduleAnyway', `${lane}: ${name} has no soft hostname spread over its own pods`);
+    // Without pod-template-hash, the outgoing ReplicaSet's pods count during a
+    // roll and both new replicas can land on one node (backend, staging, 11-09).
+    expect(spread && (spread.matchLabelKeys || []).includes('pod-template-hash'), `${lane}: ${name}'s spread counts old ReplicaSets mid-roll (no matchLabelKeys pod-template-hash)`);
   }
   // The positive control: dev, the lane that deploys, renders both.
   if (lane === 'dev') {
