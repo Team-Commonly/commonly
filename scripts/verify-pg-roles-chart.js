@@ -11,18 +11,29 @@ const chart = 'k8s/helm/commonly';
 const lanes = {
   default: [`${chart}/values.yaml`],
   dev: [`${chart}/values.yaml`, `${chart}/values-dev.yaml`],
-  staging: [`${chart}/values.yaml`, `${chart}/values-dev.yaml`, `${chart}/values-staging.yaml`],
+  // deploy-staging.yml layers values-staging.yaml on values.yaml alone, not on values-dev.yaml.
+  staging: [`${chart}/values.yaml`, `${chart}/values-staging.yaml`],
   local: [`${chart}/values.yaml`, `${chart}/values-local.yaml`],
 };
 const BACKEND_ROLE = ['backend.env.pgAppUser=app_role', 'backend.env.pgAppPasswordKey=postgres-app-password'];
 const LITELLM_ROLE = ['litellm.pgUser=llm_role', 'litellm.pgPasswordKey=postgres-litellm-password'];
 const ROLES = [...BACKEND_ROLE, ...LITELLM_ROLE];
+// The behaviour checks start with all four values cleared, so they test the chart and not
+// whatever a lane file ships. The shipped values are checked on their own, below.
+// Plain --set: helm applies every --set-string after every --set, so a --set-string clear
+// would erase a later --set role and leave a half pair.
+const CLEAR = ['backend.env.pgAppUser', 'backend.env.pgAppPasswordKey', 'litellm.pgUser', 'litellm.pgPasswordKey']
+  .map((k) => `${k}=`);
+// What each lane ships with. Only dev runs the backend and LiteLLM on their own roles.
+const SHIPPED = {
+  dev: { app: ['commonly_app', 'postgres-app-password'], litellm: ['commonly_litellm', 'postgres-litellm-password'] },
+};
 
-const render = (lane, sets = []) => {
+const render = (lane, sets = [], { shipped = false } = {}) => {
   const args = ['template', `commonly-${lane}`, chart];
   for (const f of lanes[lane]) args.push('-f', f);
   // A "string:" prefix sets the value with --set-string, so "123" stays a string.
-  for (const s of sets) args.push(...(s.startsWith('string:') ? ['--set-string', s.slice(7)] : ['--set', s]));
+  for (const s of [...(shipped ? [] : CLEAR), ...sets]) args.push(...(s.startsWith('string:') ? ['--set-string', s.slice(7)] : ['--set', s]));
   return yaml.loadAll(execFileSync('helm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).filter(Boolean);
 };
 const refuses = (lane, sets) => {
@@ -71,6 +82,26 @@ for (const lane of Object.keys(lanes)) {
   }
   const lBase = litellm(base);
   if (lBase) expect(lBase.user === baseUser && lBase.key === 'key:postgres-password', `${lane}: litellm unset is ${JSON.stringify(lBase)}`);
+
+  // The lane as shipped: a configured lane moves exactly its configured consumers, and the
+  // ExternalSecret asks for exactly their keys; every other lane renders as if unset.
+  const shipped = render(lane, ['backend.worker.enabled=true'], { shipped: true });
+  const cfg = SHIPPED[lane];
+  if (!cfg) {
+    expect(JSON.stringify([consumers(shipped), litellm(shipped), esKeys(shipped)]) === JSON.stringify([consumers(base), lBase, esKeys(base)]),
+      `${lane}: ships a Postgres role override that SHIPPED does not list`);
+  } else {
+    for (const [name, e] of Object.entries(consumers(shipped))) {
+      if (!e) continue;
+      const moves = name === 'backend' || name === 'backend-worker';
+      expect(userOf(e) === (moves ? cfg.app[0] : baseUser), `${lane}: ${name} ships PG_USER=${userOf(e)}`);
+      expect(keyOf(e) === `key:${moves ? cfg.app[1] : 'postgres-password'}`, `${lane}: ${name} ships password ${keyOf(e)}`);
+    }
+    const l = litellm(shipped);
+    expect(l && l.user === cfg.litellm[0] && l.key === `key:${cfg.litellm[1]}`, `${lane}: litellm ships ${JSON.stringify(l)}`);
+    const added = esKeys(shipped).filter((k) => !esKeys(base).includes(k)).map((k) => k.split('<-')[0]).sort();
+    expect(JSON.stringify(added) === JSON.stringify([cfg.app[1], cfg.litellm[1]].sort()), `${lane}: ships ExternalSecret keys +${added.join(', +')}`);
+  }
 
   // Bad pairs fail the render in every lane, LiteLLM on or off.
   for (const litellmOn of ['true', 'false']) {

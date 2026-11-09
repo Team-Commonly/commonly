@@ -84,6 +84,15 @@ echo -n "your_mongo_uri_from_env" | gcloud secrets create commonly-dev-mongo-uri
 echo -n "your_postgres_password" | gcloud secrets create commonly-dev-postgres-password --data-file=-
 echo -n "your_postgres_password" | gcloud secrets create commonly-dev-mongo-password --data-file=-
 
+# values-dev.yaml runs the backend and LiteLLM on their own Postgres roles
+# (backend.env.pgAppUser and litellm.pgUser). Create the roles first, as your
+# admin user: CREATE ROLE commonly_app LOGIN; GRANT CREATE ON SCHEMA public TO
+# commonly_app; CREATE ROLE commonly_litellm LOGIN; CREATE SCHEMA litellm
+# AUTHORIZATION commonly_litellm; then set each password with psql's \password.
+echo -n "your_app_role_password" | gcloud secrets create commonly-dev-postgres-app-password --data-file=-
+echo -n "your_litellm_role_password" | gcloud secrets create commonly-dev-postgres-litellm-password --data-file=-
+# To keep one user instead, set those four values to "" in values-dev.yaml.
+
 # JWT and Session
 echo -n "your_jwt_secret_from_env" | gcloud secrets create commonly-dev-jwt-secret --data-file=-
 echo -n "your_session_secret" | gcloud secrets create commonly-dev-session-secret --data-file=-
