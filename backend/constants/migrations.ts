@@ -18,5 +18,12 @@
 /** Written by scripts/backfill-thread-root-id.ts; read by threadStateController. */
 export const THREADING_BACKFILL_MIGRATION = 'threading-thread-root-id-backfill';
 
-module.exports = { THREADING_BACKFILL_MIGRATION };
+/**
+ * The schema migration that added per-thread read points (D278), by the
+ * version the runner records in `schema_migrations`. Its `applied_at` is the
+ * read-tracking epoch: before it, nobody could have stored a read point.
+ */
+export const READ_POINT_MIGRATION = '0011_thread_read_point.sql';
+
+module.exports = { THREADING_BACKFILL_MIGRATION, READ_POINT_MIGRATION };
 Object.assign(module.exports, exports);

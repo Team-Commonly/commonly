@@ -255,7 +255,9 @@ class ThreadUserState {
     podId: string,
     cutoff: Date | string | null,
     cutoffUnknown: boolean,
-  ): Promise<Array<{ thread_root_id: number; following: boolean | null; collapsed: boolean; last_read_at: string | null }>> {
+  ): Promise<Array<{
+    thread_root_id: number; following: boolean | null; collapsed: boolean; last_read_at: string | null;
+  }>> {
     const { rows } = await (pool as PgPool).query(
       `SELECT root.id AS thread_root_id,
               s.following AS following,

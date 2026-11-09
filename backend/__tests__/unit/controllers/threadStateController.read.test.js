@@ -70,12 +70,10 @@ describe('a thread read point', () => {
     podId = String(pod._id);
     const otherPodId = String(other._id);
 
-    for (const [id, name, creator] of [[podId, 'Mine', member], [otherPodId, 'Theirs', outsider]]) {
-      await mockPool.query(
-        "INSERT INTO pods (id, name, type, created_by) VALUES ($1,$2,'chat',$3)",
-        [id, name, String(creator._id)],
-      );
-    }
+    await mockPool.query(
+      "INSERT INTO pods (id, name, type, created_by) VALUES ($1,'Mine','chat',$2), ($3,'Theirs','chat',$4)",
+      [podId, String(member._id), otherPodId, String(outsider._id)],
+    );
     await mockPool.query(
       "INSERT INTO messages (id, pod_id, user_id, content) VALUES ($1,$2,$3,'root')",
       [ROOT_ID, podId, String(member._id)],
@@ -186,5 +184,35 @@ describe('a thread read point', () => {
     const at = '2026-11-09T10:00:00.000Z';
     await call(setThreadRead, { userId: String(member._id), body: { at } });
     expect((await read()).lastReadAt).toBe(at);
+  });
+
+  describe('the read-tracking epoch', () => {
+    const list = async () => (await call(listThreadState, {
+      userId: String(member._id), query: { podId }, params: {},
+    })).body;
+
+    afterEach(async () => {
+      await mockPool.query('DROP TABLE IF EXISTS schema_migrations');
+    });
+
+    it('is null when the runner ledger cannot say, so the client stays quiet', async () => {
+      const body = await list();
+      expect(body).toHaveProperty('readTrackingSince', null);
+      expect(body.threads.length).toBeGreaterThan(0);
+    });
+
+    it('is when migration 0011 was applied, read from the runner\'s schema_migrations', async () => {
+      // The runner's own DDL (config/run-pg-migrations.ts).
+      await mockPool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+        version TEXT PRIMARY KEY,
+        checksum TEXT NOT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`);
+      const ledger = 'INSERT INTO schema_migrations (version, checksum, applied_at) VALUES ($1, $2, $3)';
+      await mockPool.query(ledger, ['0010_record_openings.sql', 'x', '2026-11-01T00:00:00Z']);
+      expect((await list()).readTrackingSince).toBeNull();
+      await mockPool.query(ledger, ['0011_thread_read_point.sql', 'y', '2026-11-10T08:00:00Z']);
+      expect((await list()).readTrackingSince).toBe('2026-11-10T08:00:00.000Z');
+    });
   });
 });

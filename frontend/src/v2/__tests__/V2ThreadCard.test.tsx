@@ -107,9 +107,11 @@ describe('the unread mark', () => {
 });
 
 describe('the chip opens the thread', () => {
-  test('its accessible name carries the state, the replier, the count and the unread count', () => {
+  test('its accessible name carries the state, the replier, the preview, the count and the unread count', () => {
     const { onToggleCollapsed } = setup({ latestReply: latest, unreadCount: 2 });
-    const chip = screen.getByRole('button', { name: 'Expand thread, 3 replies, latest from Recorder, 2 new' });
+    const chip = screen.getByRole('button', {
+      name: 'Expand thread, 3 replies, latest from Recorder: Here is the plan for the launch, 2 new',
+    });
     expect(chip).toHaveAttribute('aria-expanded', 'false');
     expect(chip).toHaveClass('v2-msg__thread-chip');
     fireEvent.click(chip);
@@ -118,6 +120,27 @@ describe('the chip opens the thread', () => {
 
   test('with nothing unread the name leaves the unread part out', () => {
     setup({ latestReply: latest });
+    expect(screen.getByRole('button', {
+      name: 'Expand thread, 3 replies, latest from Recorder: Here is the plan for the launch',
+    })).toBeInTheDocument();
+  });
+
+  test('label in name (WCAG 2.5.3): every visible piece of the line is in the accessible name', () => {
+    const { container } = setup({ latestReply: latest, unreadCount: 2 });
+    const chip = screen.getByRole('button');
+    const name = chip.getAttribute('aria-label') || '';
+    for (const selector of ['.v2-thread-card__name', '.v2-thread-card__preview', '.v2-thread-card__count', '.v2-thread-card__unread']) {
+      expect(name).toContain(container.querySelector(selector)?.textContent);
+    }
+  });
+
+  test('a card with no summary names its "sent a card" text too', () => {
+    setup({ latestReply: { ...latest, text: '', isCard: true } });
+    expect(screen.getByRole('button', { name: 'Expand thread, 3 replies, latest from Recorder: sent a card' })).toBeInTheDocument();
+  });
+
+  test('a reply with no text at all is named without a dangling colon', () => {
+    setup({ latestReply: { ...latest, text: '', isCard: false } });
     expect(screen.getByRole('button', { name: 'Expand thread, 3 replies, latest from Recorder' })).toBeInTheDocument();
   });
 
@@ -140,9 +163,13 @@ describe('zh-CN', () => {
     const { container } = setup({ replyCount: 1, latestReply: latest, unreadCount: 1 });
     expect(screen.getByText('1条回复')).toBeInTheDocument();
     expect(container.querySelector('.v2-thread-card__unread')).toHaveTextContent('1条未读');
-    const chip = screen.getByRole('button', { name: '展开话题，1条回复，最新回复来自 Recorder，1条未读' });
-    // The reply text and the replier's name are content, not chrome: they stay as written.
-    const chrome = `${chip.querySelector('.v2-thread-card__count')?.textContent} ${chip.querySelector('.v2-thread-card__unread')?.textContent} ${chip.getAttribute('aria-label')}`;
+    const chip = screen.getByRole('button', {
+      name: '展开话题，1条回复，最新一条来自Recorder：Here is the plan for the launch，1条未读',
+    });
+    // The reply text and the replier's name are content, not chrome: they stay
+    // as written, so take them out before looking for English chrome.
+    const label = (chip.getAttribute('aria-label') || '').replace(latest.text, '').replace(latest.name, '');
+    const chrome = `${chip.querySelector('.v2-thread-card__count')?.textContent} ${chip.querySelector('.v2-thread-card__unread')?.textContent} ${label}`;
     expect(chrome).not.toMatch(/\b(reply|replies|new|latest|from|Expand|Collapse|thread)\b/i);
   });
 
@@ -150,6 +177,6 @@ describe('zh-CN', () => {
     setup({ replyCount: 3, collapsed: false, latestReply: { ...latest, text: '', isCard: true } });
     expect(screen.getByText('3条回复')).toBeInTheDocument();
     expect(document.querySelector('.v2-thread-card__preview')).toHaveTextContent('[卡片]');
-    expect(screen.getByRole('button', { name: '收起话题，3条回复，最新回复来自 Recorder' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起话题，3条回复，最新一条来自Recorder：[卡片]' })).toBeInTheDocument();
   });
 });

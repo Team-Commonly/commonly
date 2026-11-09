@@ -305,15 +305,80 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenTick]);
 
-  // Any open thread, opened by hand or by itself, marks itself read up to its
-  // newest reply once it has sat rendered for a moment. The newest reply is
-  // always among the rendered ones: the band shows the newest eight.
+  // Which open bands are on screen, and whether the tab is. A thread is read
+  // only when someone could have seen it: an asker whose answer opened in a
+  // background tab, or below the fold, must still find it unread later.
+  const [pageVisible, setPageVisible] = useState(() => (
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  ));
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onVisibility = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+  const [onScreenRoots, setOnScreenRoots] = useState<Set<string>>(() => new Set());
+  const bandObserverRef = useRef<IntersectionObserver | null>(null);
+  const bandElementsRef = useRef<Map<string, Element>>(new Map());
+  const setRootOnScreen = useCallback((rootId: string, onScreen: boolean) => {
+    setOnScreenRoots((current) => {
+      if (current.has(rootId) === onScreen) return current;
+      const next = new Set(current);
+      if (onScreen) next.add(rootId); else next.delete(rootId);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    // No IntersectionObserver, no way to know a band was seen: mark nothing.
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const rootId = entry.target.getAttribute('data-thread-root');
+        if (rootId) setRootOnScreen(rootId, entry.isIntersecting);
+      });
+    });
+    bandObserverRef.current = observer;
+    bandElementsRef.current.forEach((element) => observer.observe(element));
+    return () => {
+      observer.disconnect();
+      bandObserverRef.current = null;
+    };
+  }, [setRootOnScreen]);
+  // One stable ref callback per root, so a re-render doesn't unobserve and
+  // re-observe every open band.
+  const bandRefCallbacksRef = useRef<Map<string, (element: HTMLDivElement | null) => void>>(new Map());
+  const bandRef = (rootId: string) => {
+    let callback = bandRefCallbacksRef.current.get(rootId);
+    if (!callback) {
+      callback = (element: HTMLDivElement | null) => {
+        const previous = bandElementsRef.current.get(rootId);
+        if (previous && previous !== element) {
+          bandObserverRef.current?.unobserve(previous);
+          bandElementsRef.current.delete(rootId);
+          setRootOnScreen(rootId, false);
+        }
+        if (element && previous !== element) {
+          bandElementsRef.current.set(rootId, element);
+          bandObserverRef.current?.observe(element);
+        }
+      };
+      bandRefCallbacksRef.current.set(rootId, callback);
+    }
+    return callback;
+  };
+
+  // An open thread, opened by hand or by itself, marks itself read up to its
+  // newest reply once its band has been on screen, in a visible tab, for the
+  // settle. Leaving the screen or the tab restarts the settle. Nothing is
+  // marked until the thread state has loaded: without the server's points the
+  // view can't tell what was already read. The newest reply is always among
+  // the rendered ones: the band shows the newest eight.
   const markRead = threadState.markRead;
   useEffect(() => {
-    if (!markRead) return undefined;
+    if (!markRead || !stateReady || !pageVisible) return undefined;
     const marks: Array<[string, string]> = [];
     threadView.forEach((item) => {
-      if (item.kind !== 'card' || !openRoots.has(item.rootId)) return;
+      if (item.kind !== 'card' || !openRoots.has(item.rootId) || !onScreenRoots.has(item.rootId)) return;
       const newest = item.replies.reduce((acc, reply) => Math.max(acc, timeOfMessage(reply)), Number.NEGATIVE_INFINITY);
       if (Number.isFinite(newest)) marks.push([item.rootId, new Date(newest).toISOString()]);
     });
@@ -322,7 +387,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
       marks.forEach(([rootId, at]) => markRead(rootId, at));
     }, MARK_READ_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [markRead, threadView, openRoots]);
+  }, [markRead, stateReady, pageVisible, threadView, openRoots, onScreenRoots]);
 
   // Landing on a folded reply: open its thread, drop the `N more replies`
   // fold, then tell the caller so it can land on the now-rendered row.
@@ -621,6 +686,8 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
             {!collapsed && (
               <div
                 className="v2-thread-replies"
+                ref={bandRef(item.rootId)}
+                data-thread-root={item.rootId}
                 role="group"
                 aria-label={t('podChat.thread.groupLabel', {
                   count: item.replyCount,

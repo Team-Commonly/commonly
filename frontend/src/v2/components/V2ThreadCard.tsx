@@ -59,13 +59,18 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
   const face: V2ThreadParticipant | undefined = latestReply || participants[0];
   const countLabel = t('podChat.thread.replyCount', { count: replyCount });
   const unread = Math.max(0, unreadCount);
-  let summary = latestReply
-    ? t('podChat.thread.latestFrom', { replies: countLabel, name: latestReply.name })
-    : countLabel;
-  if (unread > 0) summary = t('podChat.thread.unreadSummary', { summary, count: unread });
   const previewText = latestReply
     ? (latestReply.text || (latestReply.isCard ? t('podChat.thread.sentCard') : ''))
     : '';
+  // Label in name (WCAG 2.5.3): every piece of the visible line — the name,
+  // the preview, the count, the unread mark — is in the accessible name.
+  let summary = countLabel;
+  if (latestReply && previewText) {
+    summary = t('podChat.thread.latestFrom', { replies: countLabel, name: latestReply.name, text: previewText });
+  } else if (latestReply) {
+    summary = t('podChat.thread.latestFromNoText', { replies: countLabel, name: latestReply.name });
+  }
+  if (unread > 0) summary = t('podChat.thread.unreadSummary', { summary, count: unread });
 
   return (
     <div
@@ -77,8 +82,8 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
         className="v2-thread-card__main v2-msg__thread-chip"
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
-        // The accessible name carries the state, the replier, the count and
-        // what's unread; it replaces the visible line in the name.
+        // The accessible name carries the state, then everything the line
+        // shows: replier, preview, count and what's unread.
         aria-label={collapsed
           ? t('podChat.thread.expandAria', { replies: summary })
           : t('podChat.thread.collapseAria', { replies: summary })}

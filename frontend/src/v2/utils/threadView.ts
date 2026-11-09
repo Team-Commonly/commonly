@@ -48,6 +48,11 @@ export interface ThreadViewer {
   viewerId?: string | null;
   /** The viewer's read point per root id (useV2ThreadState.readPoints). */
   readPoints?: ReadonlyMap<string, string>;
+  /**
+   * The read-tracking epoch from the server (useV2ThreadState.readTrackingSince):
+   * nobody had a stored read point before it. Null or absent when unknown.
+   */
+  readTrackingSince?: string | null;
 }
 
 const idOf = (m: V2Message): string => String(m.id);
@@ -155,32 +160,49 @@ export const latestReplyPreview = (m: V2Message): ThreadLatestReply => {
   return { ...who, text, isCard };
 };
 
+const parseMs = (iso: string | null | undefined): number | null => {
+  if (!iso) return null;
+  const at = Date.parse(iso);
+  return Number.isNaN(at) ? null : at;
+};
+
 /**
  * The viewer's read point in one thread (D278), in ms, or null for none.
  *
- * The later of the server's `lastReadAt` and the viewer's own newest message
- * in the thread, the root included: writing in a thread means you saw what
- * came before. A thread they have never opened and never posted in has no
- * point, so it shows no unread mark — every old thread would otherwise light
- * up for people who were never in it.
+ * With a stored `lastReadAt`: the later of it and the viewer's own newest
+ * message in the thread, the root included (writing in a thread means you saw
+ * what came before).
+ *
+ * Without one, the own-message fallback applies, but never earlier than the
+ * read-tracking epoch: before the epoch nobody could store a read point, so a
+ * thread you posted in a month ago must not light up on the first load after
+ * deploy. With no epoch (an older server, a failed fetch) the fallback gives
+ * no point at all.
+ *
+ * A thread the viewer has never opened and never posted in has no point, so
+ * it shows no unread mark — every old thread would otherwise light up for
+ * people who were never in it.
  */
 export const threadReadPoint = (
   root: V2Message,
   replies: V2Message[],
   viewerId: string | null | undefined,
   serverLastReadAt: string | null | undefined,
+  readTrackingSince?: string | null,
 ): number | null => {
-  let point: number | null = null;
-  const server = serverLastReadAt ? Date.parse(serverLastReadAt) : NaN;
-  if (!Number.isNaN(server)) point = server;
+  let own: number | null = null;
   if (viewerId) {
     for (const m of [root, ...replies]) {
       if (String(m.user_id || '') !== String(viewerId)) continue;
       const at = timeOf(m);
-      if (at !== Number.NEGATIVE_INFINITY && (point === null || at > point)) point = at;
+      if (at !== Number.NEGATIVE_INFINITY && (own === null || at > own)) own = at;
     }
   }
-  return point;
+  const server = parseMs(serverLastReadAt);
+  if (server !== null) return own !== null && own > server ? own : server;
+  const epoch = parseMs(readTrackingSince);
+  if (own === null || epoch === null) return null;
+  return Math.max(own, epoch);
 };
 
 /** Replies another user wrote after the read point. None without a point. */
@@ -248,10 +270,13 @@ export const buildThreadView = (
     const latest = replies.reduce((acc, r) => (timeOf(r) >= timeOf(acc) ? r : acc), replies[0]);
     const rootId = idOf(m);
     const serverPoint = viewer.readPoints?.get(rootId) ?? byRoot.get(rootId)?.lastReadAt ?? null;
-    const readPoint = threadReadPoint(m, replies, viewer.viewerId, serverPoint);
+    const readPoint = threadReadPoint(m, replies, viewer.viewerId, serverPoint, viewer.readTrackingSince);
     const unread = unreadRepliesOf(replies, viewer.viewerId, readPoint);
     const isAgent = (r: V2Message) => participantOf(r).isBot === true;
-    const unreadAgent = unread.filter(isAgent);
+    // Auto-open looks only at agent replies after the epoch, and at none when
+    // the epoch is unknown: opening a thread is louder than a mark.
+    const epoch = parseMs(viewer.readTrackingSince);
+    const unreadAgent = epoch === null ? [] : unread.filter((r) => isAgent(r) && timeOf(r) > epoch);
     const newestOf = (list: V2Message[]) => (list.length
       ? list.reduce((acc, r) => Math.max(acc, timeOf(r)), Number.NEGATIVE_INFINITY)
       : null);

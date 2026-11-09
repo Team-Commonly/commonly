@@ -23,7 +23,10 @@ const ThreadUserState = require('../models/pg/ThreadUserState');
 const PGMessage = require('../models/pg/Message');
 const { getCallerId, callerHasPodWriteAccess } = require('../services/podWriteAccessService');
 const { pool } = require('../config/db-pg');
-const { THREADING_BACKFILL_MIGRATION: MIGRATION_NAME } = require('../constants/migrations');
+const {
+  THREADING_BACKFILL_MIGRATION: MIGRATION_NAME,
+  READ_POINT_MIGRATION,
+} = require('../constants/migrations');
 
 interface Req {
   params: { messageId?: string };
@@ -94,6 +97,37 @@ async function readThreadingCutoff(): Promise<{ cutoff: string | null; cutoffUnk
     // Fails toward unknown, i.e. toward expanding. Same reasoning: the
     // recoverable error is the noisy one.
     return { cutoff: null, cutoffUnknown: true };
+  }
+}
+
+/**
+ * The read-tracking epoch (D278): when migration 0011 was applied, as ISO, or
+ * null when that can't be read.
+ *
+ * Before this moment nobody could have stored a read point, so a thread the
+ * viewer posted in long ago has no `lastReadAt` — and the client's fallback,
+ * "my own newest message is a read point", would call every later reply in it
+ * unread on the first load after deploy. The client counts a reply as unread
+ * by that fallback only when it is newer than this epoch.
+ *
+ * Same family as `readThreadingCutoff` above, and the same direction on
+ * failure: unknown resolves to the quiet side. A null epoch makes the client
+ * show no fallback unread mark and auto-open nothing; a stored `lastReadAt`
+ * still counts. Read from `schema_migrations`, the runner's own ledger
+ * (config/run-pg-migrations.ts), keyed by file name.
+ */
+async function readReadTrackingSince(): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(
+      'SELECT applied_at FROM schema_migrations WHERE version = $1',
+      [READ_POINT_MIGRATION],
+    );
+    const raw = rows[0]?.applied_at;
+    if (raw === null || raw === undefined) return null;
+    const at = raw instanceof Date ? raw : new Date(String(raw));
+    return Number.isNaN(at.getTime()) ? null : at.toISOString();
+  } catch {
+    return null;
   }
 }
 
@@ -186,9 +220,12 @@ export async function listThreadState(req: Req, res: Res): Promise<void> {
       return;
     }
     const { cutoff, cutoffUnknown } = await readThreadingCutoff();
+    const readTrackingSince = await readReadTrackingSince();
     const rows = await ThreadUserState.effectiveStateForPod(userId, podId, cutoff, cutoffUnknown);
     res.status(200).json({
       podId,
+      // D278 read-tracking epoch; null when unknown. See readReadTrackingSince.
+      readTrackingSince,
       // `following: null` is still a value the client must interpret, so its
       // default stays stated at the wire. `collapsed` no longer appears here
       // because there is no case left in which the client supplies it.

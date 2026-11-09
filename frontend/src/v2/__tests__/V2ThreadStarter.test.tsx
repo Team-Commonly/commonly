@@ -701,10 +701,8 @@ describe('second-person prompt placements', () => {
     const detail = withReply();
     detail.messages = [messages[0], { ...messages[1], thread_root_id: '10' }];
     renderChat(detail);
-    // D278: the viewer wrote the root and Scout answered in its thread, so the
-    // thread opens itself. Close it first, so the press below still crosses
-    // an expand and a collapse.
-    fireEvent.click(await screen.findByRole('button', { name: 'Collapse' }));
+    // The state read here carries no read-tracking epoch (D278), so the
+    // viewer's own thread does not open itself: it rests as a chip.
     fireEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: /^Expand thread, 1 reply/ }));

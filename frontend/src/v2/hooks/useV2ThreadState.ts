@@ -32,6 +32,8 @@ interface ThreadStateResponse {
   podId: string;
   defaults: { following: boolean | null };
   threads: V2ThreadState[];
+  /** D278 read-tracking epoch; null or absent when the server can't say. */
+  readTrackingSince?: string | null;
 }
 
 export interface UseV2ThreadState {
@@ -61,8 +63,18 @@ export interface UseV2ThreadState {
    * resolves the root from any message id.
    */
   markRead: (rootId: string, atIso: string) => void;
-  /** The state fetch has settled (loaded or failed) at least once for this pod. */
+  /**
+   * The state fetch has SUCCEEDED for this pod. A failed fetch leaves it false:
+   * without the server's read points, a thread already read on another device
+   * would look unread, so the transcript auto-opens and marks nothing.
+   */
   ready: boolean;
+  /**
+   * The read-tracking epoch (D278): before it nobody could store a read
+   * point, so the own-message fallback never reaches behind it. Null when
+   * unknown — an older server, a failed fetch, or not loaded yet.
+   */
+  readTrackingSince: string | null;
 }
 
 const key = (id: number | string) => String(id);
@@ -72,6 +84,7 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   const [byRoot, setByRoot] = useState<Map<string, V2ThreadState>>(new Map());
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [readTrackingSince, setReadTrackingSince] = useState<string | null>(null);
   const [readPoints, setReadPoints] = useState<Map<string, string>>(new Map());
   // The newest point known per root, read synchronously by markRead so two
   // calls in one tick don't both write. The state above is what renders.
@@ -87,6 +100,7 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
       setReadPoints(new Map());
     }
     setReady(false);
+    setReadTrackingSince(null);
     if (!podId) {
       setByRoot(new Map());
       return undefined;
@@ -119,6 +133,9 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
           readPointsRef.current = points;
           setReadPoints(points);
         }
+        const epoch = data?.readTrackingSince;
+        setReadTrackingSince(epoch && !Number.isNaN(Date.parse(epoch)) ? epoch : null);
+        setReady(true);
       })
       .catch(() => {
         // Degrade to "no threads known", which renders every message flat —
@@ -127,11 +144,7 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
         // would have no way to tell a fetch failure from an empty pod.
         if (!cancelled) setByRoot(new Map());
       })
-      .finally(() => {
-        if (cancelled) return;
-        setLoading(false);
-        setReady(true);
-      });
+      .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [api, podId]);
 
@@ -198,7 +211,9 @@ export const useV2ThreadState = (podId: string | undefined): UseV2ThreadState =>
   return useMemo(
     () => ({
       byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready,
+      readTrackingSince,
     }),
-    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready],
+    [byRoot, loading, isThreadRoot, toggleCollapsed, setCollapsed, toggleFollowing, readPoints, markRead, ready,
+      readTrackingSince],
   );
 };

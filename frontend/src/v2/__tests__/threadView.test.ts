@@ -143,9 +143,16 @@ describe('read point, unread count and the latest-reply preview', () => {
   const agent = { username: 'helper', isBot: true };
   const person = { username: 'pat', isBot: false };
   const at = (min: number) => `2026-11-09T10:${String(min).padStart(2, '0')}:00.000Z`;
+  // The read-tracking epoch: before it nobody could store a read point.
+  const EPOCH = '2026-11-09T09:00:00.000Z';
   const cardOf = (items: any[]) => items.find((i) => i.kind === 'card') as any;
-  const view = (messages: any[], readPoints: Map<string, string> = new Map(), viewerId: string | null = ME) => (
-    cardOf(buildThreadView(messages, state([1]), new Set(), { viewerId, readPoints }))
+  const view = (
+    messages: any[],
+    readPoints: Map<string, string> = new Map(),
+    viewerId: string | null = ME,
+    readTrackingSince: string | null = EPOCH,
+  ) => (
+    cardOf(buildThreadView(messages, state([1]), new Set(), { viewerId, readPoints, readTrackingSince }))
   );
 
   test('no read point: a thread I never opened and never posted in shows no unread, but still previews', () => {
@@ -183,8 +190,18 @@ describe('read point, unread count and the latest-reply preview', () => {
     // A point read from the state row works the same as one moved this session.
     const fromRow = cardOf(buildThreadView(messages, new Map([['1', {
       threadRootId: 1, following: null, collapsed: true, lastReadAt: at(2),
-    }]]), new Set(), { viewerId: ME }));
+    }]]), new Set(), { viewerId: ME, readTrackingSince: EPOCH }));
     expect(fromRow.unreadCount).toBe(1);
+  });
+
+  test('a stored point still counts when the epoch is unknown; only auto-open needs the epoch', () => {
+    const c = view([
+      msg(1, { user_id: 'someone', created_at: at(0) }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(3) }),
+    ], new Map([['1', at(1)]]), ME, null);
+    expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(0);
+    expect(c.newestUnreadAgentAt).toBeNull();
   });
 
   test('own-message fallback: my later reply wins over an older server marker', () => {
@@ -195,6 +212,40 @@ describe('read point, unread count and the latest-reply preview', () => {
       msg(4, { thread_root_id: 1, user_id: 'p', user: person, created_at: at(5) }),
     ], new Map([['1', at(0)]]));
     expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(0);
+  });
+
+  // D1 on #3831: on the first load after deploy nobody has a stored point, so
+  // the own-message fallback would light up every old thread I ever posted in.
+  test('an old thread whose agent reply is before the epoch gets no mark and nothing to auto-open', () => {
+    const old = (n: number) => `2026-10-01T10:0${n}:00.000Z`;
+    const c = view([
+      msg(1, { user_id: ME, created_at: old(0) }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: old(1) }),
+    ]);
+    expect(c.viewerIsRootAuthor).toBe(true);
+    expect(c.unreadCount).toBe(0);
+    expect(c.unreadAgentCount).toBe(0);
+    expect(c.newestUnreadAgentAt).toBeNull();
+  });
+
+  test('an old thread whose agent reply is after the epoch gets the mark and is open-worthy', () => {
+    const c = view([
+      msg(1, { user_id: ME, created_at: '2026-10-01T10:00:00.000Z' }),
+      msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(5) }),
+    ]);
+    expect(c.unreadCount).toBe(1);
+    expect(c.unreadAgentCount).toBe(1);
+    expect(c.newestUnreadAgentAt).toBe(Date.parse(at(5)));
+  });
+
+  test('with no epoch the own-message fallback gives no point at all', () => {
+    const root = msg(1, { user_id: ME, created_at: at(0) });
+    const reply = msg(2, { thread_root_id: 1, user_id: 'bot', user: agent, created_at: at(1) });
+    expect(threadReadPoint(root, [reply], ME, null, null)).toBeNull();
+    expect(threadReadPoint(root, [reply], ME, null, EPOCH)).toBe(Date.parse(at(0)));
+    const c = view([root, reply], new Map(), ME, null);
+    expect(c.unreadCount).toBe(0);
     expect(c.unreadAgentCount).toBe(0);
   });
 

@@ -389,8 +389,9 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     return buildThreadView(messages, threadState.byRoot, flatReplyIdsRef.current.ids, {
       viewerId: currentUser?._id || null,
       readPoints: threadState.readPoints,
+      readTrackingSince: threadState.readTrackingSince,
     });
-  }, [messages, pod?._id, threadState.byRoot, threadState.readPoints, currentUser?._id]);
+  }, [messages, pod?._id, threadState.byRoot, threadState.readPoints, threadState.readTrackingSince, currentUser?._id]);
 
   // Scout's starts (first session, direction B, ruled 2026-10-15). A message
   // whose payload offers starts shows them as buttons until this person has
