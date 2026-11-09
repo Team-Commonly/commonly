@@ -24,8 +24,21 @@ const render = (lane) => {
   for (const f of lanes[lane]) args.push('-f', f);
   return yaml.loadAll(execFileSync('helm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).filter(Boolean);
 };
-const selects = (matchLabels, labels) => Object.entries(matchLabels || {}).every(([k, v]) => labels?.[k] === v)
-  && Object.keys(matchLabels || {}).length > 0;
+// A full label selector: matchLabels plus matchExpressions. An empty selector
+// selects nothing here, because a PDB with one would guard every pod.
+const selects = (selector, labels) => {
+  const ml = Object.entries(selector?.matchLabels || {});
+  const me = selector?.matchExpressions || [];
+  if (ml.length + me.length === 0) return false;
+  const has = (k) => Object.prototype.hasOwnProperty.call(labels || {}, k);
+  const exprOk = ({ key, operator, values = [] }) => ({
+    In: () => has(key) && values.includes(labels[key]),
+    NotIn: () => !has(key) || !values.includes(labels[key]),
+    Exists: () => has(key),
+    DoesNotExist: () => !has(key),
+  }[operator] || (() => { throw new Error(`unknown selector operator ${operator}`); }))();
+  return ml.every(([k, v]) => labels?.[k] === v) && me.every(exprOk);
+};
 
 const failures = [];
 const expect = (cond, msg) => { if (!cond) failures.push(msg); };
@@ -37,23 +50,23 @@ for (const lane of Object.keys(lanes)) {
   for (const pdb of pdbs) {
     const ns = pdb.metadata.namespace;
     const hit = workloads.filter((w) => w.metadata.namespace === ns
-      && selects(pdb.spec.selector?.matchLabels, w.spec.template.metadata.labels));
+      && selects(pdb.spec.selector, w.spec.template.metadata.labels));
     expect(hit.length === 1, `${lane}: PDB ${ns}/${pdb.metadata.name} selects ${hit.length} workloads' pods (${hit.map((w) => w.metadata.name).join(', ')}), want 1`);
     expect(pdb.spec.minAvailable === undefined, `${lane}: PDB ${ns}/${pdb.metadata.name} uses minAvailable`);
   }
   for (const w of workloads) {
     const over = pdbs.filter((p) => p.metadata.namespace === w.metadata.namespace
-      && selects(p.spec.selector?.matchLabels, w.spec.template.metadata.labels));
+      && selects(p.spec.selector, w.spec.template.metadata.labels));
     expect(over.length <= 1, `${lane}: ${w.metadata.name}'s pods sit under ${over.length} PDBs (${over.map((p) => p.metadata.name).join(', ')})`);
   }
   for (const name of GUARDED) {
     const w = workloads.find((x) => x.kind === 'Deployment' && x.metadata.name === name);
     if (!w) continue;
     const labels = w.spec.template.metadata.labels;
-    const pdb = pdbs.find((p) => p.metadata.namespace === w.metadata.namespace && selects(p.spec.selector?.matchLabels, labels));
+    const pdb = pdbs.find((p) => p.metadata.namespace === w.metadata.namespace && selects(p.spec.selector, labels));
     expect(pdb && pdb.spec.maxUnavailable === 1, `${lane}: ${name} has no maxUnavailable-1 PDB`);
     const spread = (w.spec.template.spec.topologySpreadConstraints || [])
-      .find((t) => t.topologyKey === 'kubernetes.io/hostname' && selects(t.labelSelector?.matchLabels, labels));
+      .find((t) => t.topologyKey === 'kubernetes.io/hostname' && selects(t.labelSelector, labels));
     expect(spread && spread.whenUnsatisfiable === 'ScheduleAnyway', `${lane}: ${name} has no soft hostname spread over its own pods`);
   }
   // The positive control: dev, the lane that deploys, renders both.
