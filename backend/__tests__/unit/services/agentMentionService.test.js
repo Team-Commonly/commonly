@@ -923,7 +923,9 @@ describe('AgentMentionService', () => {
       // the build while a claim reversal does.
       test('names all three verbs in the live frame', async () => {
         const content = await frame();
-        expect(content).toContain('a plain post defaults to the channel;');
+        // D278: a plain post goes to the channel, except an answer to a mention.
+        expect(content).toContain('a plain post goes to the channel, but an answer to a mention goes in its thread;');
+        expect(content).not.toContain('a plain post defaults to the channel;');
         expect(content).toContain('replyToMessageId quotes a message');
         // F212: a reply edge files the post in a thread on its own, so the
         // verbs are not independent and the frame must not say they are.
@@ -940,7 +942,7 @@ describe('AgentMentionService', () => {
       test('states that an agent\'s reply wakes no one and an @mention is what reaches them', async () => {
         // The implicit reply route is for a person's reply only, and a person
         // is matched on the literal @handle, so an agent relying on the quote
-        // reaches nobody. Executed in answerStaysTopLevel.realPg.test.js.
+        // reaches nobody. Executed in answerInMentionThread.realPg.test.js.
         expect(await frame()).toContain('it wakes no one, so @mention whoever must see it');
       });
 
@@ -961,6 +963,54 @@ describe('AgentMentionService', () => {
           + 'WITHOUT pinging anyone — followers see it, the channel stays uncluttered.';
         expect(mechanicsOnly).not.toContain('if your message answers one person, reply');
         expect(mechanicsOnly).not.toContain('if it starts one, post');
+      });
+    });
+
+    // D278 (2026-11-09): a top-level mention in a shared pod is answered in its
+    // own thread, and the line beside it names that thread by id. Personal
+    // pods, an unreadable pod type, and a mention inside a thread (which gets
+    // F245's line instead) do not get it.
+    describe('the line beside a top-level mention names its thread (D278)', () => {
+      const LINE = '[This message is top-level in the channel. Answer it in its thread: send threadRootId 4242';
+      const mentionIn = async (podDoc, message = { content: 'Hi @nova', id: 4242 }) => {
+        setupForAgent({ agentName: 'openclaw', instanceId: 'nova', displayName: 'Nova' });
+        Pod.findById.mockReturnValue({
+          select: jest.fn().mockReturnThis(),
+          lean: podDoc instanceof Error ? jest.fn().mockRejectedValue(podDoc) : jest.fn().mockResolvedValue(podDoc),
+        });
+        await AgentMentionService.enqueueMentions({
+          podId: 'pod-d278', message, userId: 'user-1', username: 'sam',
+        });
+        return lastPayload().payload.content;
+      };
+
+      test('a shared pod: the line names the message itself', async () => {
+        const content = await mentionIn({ _id: 'pod-d278', type: 'team', members: ['user-1'] });
+        expect(content).toContain(LINE);
+        expect(content).toContain('replyToMessageId 4242 also files it there');
+        expect(content).toContain('mainChannel: true');
+        expect(content).not.toContain('post your answer top-level');
+      });
+
+      test('a mention inside a thread gets the thread line, not this one', async () => {
+        const content = await mentionIn(
+          { _id: 'pod-d278', type: 'team', members: ['user-1'] },
+          { content: 'Hi @nova', id: 4243, thread_root_id: 77 },
+        );
+        expect(content).toContain('[This message is in thread 77, not the main channel.');
+        expect(content).not.toContain('This message is top-level in the channel');
+      });
+
+      test('a pod whose type cannot be read gets no line rather than a guess', async () => {
+        const content = await mentionIn({ _id: 'pod-d278', members: ['user-1'] });
+        expect(content).not.toContain('This message is top-level in the channel');
+      });
+
+      test('a message id that is not a plain number gets no line', async () => {
+        const content = await mentionIn(
+          { _id: 'pod-d278', type: 'team', members: ['user-1'] }, { content: 'Hi @nova', id: 'msg-legacy-1' },
+        );
+        expect(content).not.toContain('This message is top-level in the channel');
       });
     });
 

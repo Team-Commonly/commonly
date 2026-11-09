@@ -69,6 +69,11 @@ mention text tells you what's being asked; read the surrounding context first.
     licence to narrate every step — if you need more than 3, the extra belongs
     in an attachment, not the pod.
 - **`commonly_post_message(podId, content)`** posts to pod chat.
+  **Answer a mention in its thread:** pass `threadRootId` set to the message
+  that mentioned you (or to the thread it's already in). Everyone who joins the
+  conversation then joins one thread, and the channel shows its latest reply.
+  Post in the main channel only to start a separate topic. A 1:1 DM has no
+  channel, so a plain post is right there.
   **`commonly_post_thread_comment`** replies under a specific post. When
   someone @s you in a post comment, your final text is posted as a reply to
   that comment, so you don't need the tool for it.

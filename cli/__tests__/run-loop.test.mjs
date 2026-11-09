@@ -1915,23 +1915,28 @@ describe('performRun', () => {
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
   });
 
-  // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
-  // top-level message, and the seat answered through commonly_post_message with
-  // threadRootId set to that message, so the answer sat in a collapsed thread.
-  // The wrapper names, per item, where a top-level mention's answer goes. The
-  // kernel also sends chat-thread mentions and 1:1 DMs as chat.mention, so the
-  // payload decides, not the type (gate review of this change).
-  const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
-    + "Do not pass this message's id as threadRootId or as replyToMessageId: a reply is filed in the thread of "
-    + 'the message it replies to, so either one hides your answer under it. '
-    + 'A long answer may continue under your own top-level post.]';
-
-  test('a top-level mention is answered top-level, never threaded under it', async () => {
+  // D278 (2026-11-09): an answer to a top-level mention in a shared pod belongs
+  // in that message's thread. The kernel's cue in the item body says so; the
+  // wrapper's old line saying to answer top-level (F212) must not come back
+  // beside it, or the item carries two instructions that disagree.
+  test('a top-level mention gets no wrapper line telling the seat to answer top-level', async () => {
     const prompt = await firstPromptFor([makeEvent({
       _id: 'evt-mention-channel',
       payload: { content: '@seat what folder are you in?', messageId: '129285', senderIsHuman: true },
     })]);
-    expect(prompt).toContain(ANSWER_IN_CHANNEL);
+    expect(prompt).toContain('@seat what folder are you in?');
+    expect(prompt).not.toContain('post your answer top-level');
+    expect(prompt).not.toContain("Do not pass this message's id as threadRootId");
+  });
+
+  test("the kernel's thread cue in the item body reaches the seat as sent", async () => {
+    const cue = '[This message is top-level in the channel. Answer it in its thread: send threadRootId 129287 '
+      + 'with your post if your post tool takes it.]';
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-mention-thread-cue',
+      payload: { content: `${cue}\n\n@seat what folder are you in?`, messageId: '129287', senderIsHuman: true },
+    })]);
+    expect(prompt).toContain(cue);
   });
 
   // Growth's wake-mode walk, 11-06: a person's direct @ ended in NO_REPLY in 5
@@ -2174,61 +2179,6 @@ describe('performRun', () => {
     expect(prompt.indexOf(PERSON_ADDRESSED)).toBeLessThan(prompt.indexOf('Event 2/2'));
     expect(prompt).toContain(PERSON_CLOSING);
     expect(prompt).not.toContain('otherwise return NO_REPLY');
-  });
-
-  // The line sends a plain post, which the kernel cannot thread back, so it is
-  // only for a person. Between agents the reply keeps its thread.
-  test.each([
-    ['a peer agent\'s mention', { senderIsHuman: false }],
-    ['a payload that does not say who sent it', {}],
-  ])('%s gets no top-level line', async (_name, sender) => {
-    const prompt = await firstPromptFor([makeEvent({
-      _id: 'evt-mention-peer', payload: { content: '@seat please check', messageId: '129286', ...sender },
-    })]);
-    expect(prompt).not.toContain(ANSWER_IN_CHANNEL);
-    expect(prompt).not.toContain('post your answer top-level');
-  });
-
-  // CodeRabbit on #3499: a duplicate delivery (already handled here) stays in
-  // the batch prompt beside a new item, and must not be told to post an answer.
-  test('a duplicate delivery beside a new mention gets no top-level line; the new one does', async () => {
-    recordHandledEvent('my-stub', 'evt-already-answered');
-    const prompt = await firstPromptFor([
-      makeEvent({
-        _id: 'evt-already-answered',
-        payload: { content: '@seat old question', messageId: '300', senderIsHuman: true },
-      }),
-      makeEvent({
-        _id: 'evt-new-question',
-        payload: { content: '@seat new question', messageId: '301', senderIsHuman: true },
-      }),
-    ]);
-    const [oldItem, newItem] = prompt.split('Event 2/2');
-    expect(oldItem).toContain('message 300');
-    expect(oldItem).not.toContain(ANSWER_IN_CHANNEL);
-    expect(newItem).toContain('message 301');
-    expect(newItem).toContain(ANSWER_IN_CHANNEL);
-  });
-
-  test.each([
-    ['a mention inside a chat thread', {
-      _id: 'evt-mention-thread', payload: { content: '@seat in here', messageId: '200', threadRootId: '41' },
-    }],
-    ['a 1:1 DM, which the kernel also sends as chat.mention', {
-      _id: 'evt-mention-dm', payload: { content: 'hi', messageId: '201', source: 'dm', dmKind: 'agent-room' },
-    }],
-    ['a chat.mention wake that names no message', {
-      _id: 'evt-mention-nomsg', payload: { content: 'You have open work.' },
-    }],
-    ['an ambient message', {
-      _id: 'evt-ambient-channel', type: 'message.posted', payload: { content: 'chatter', threadRootId: '41' },
-    }],
-    ['a heartbeat', {
-      _id: 'evt-hb-channel', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' },
-    }],
-  ])('%s gets no top-level line', async (_label, overrides) => {
-    const prompt = await firstPromptFor([makeEvent(overrides)]);
-    expect(prompt).not.toContain(ANSWER_IN_CHANNEL);
   });
 
   test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {

@@ -1785,48 +1785,12 @@ const FINAL_TEXT_ANSWERS_ON_COMMENT = 'Your final text is posted as a reply to t
   + 'Use NO_REPLY alone only after you replied with commonly_post_thread_comment, with no summary. '
   + FAILURE_ON_COMMENT;
 
-// Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
-// top-level message, and the seat answered through commonly_post_message with
-// threadRootId set to that message, so the answer sat in a collapsed thread
-// under it. The kernel's mention cue teaches threadRootId as a verb but never
-// says which messages it is for, so each top-level mention says where its
-// answer goes, beside the message it answers. replyToMessageId alone threads
-// too, because the kernel derives the root from the reply edge, so the line
-// names both. This is advice: the guarantee is the kernel's answerStaysTopLevel.
-//
-// Only for a person's message. The line sends a plain post, which the kernel
-// cannot thread back, so on a peer's mention it would put an agent exchange in
-// the channel at every hop. A missing `senderIsHuman` means no line: the kernel
-// still keeps the answer top-level for a person.
-//
-// `chat.mention` alone is not "top-level": the kernel sends a chat-thread
-// mention as chat.mention with `payload.threadRootId`, a 1:1 DM as chat.mention
-// with `source: 'dm'`, and some wakes (open-work reminders) as chat.mention
-// with no message at all. Only a message with no thread, outside a DM, gets it.
-// The line still allows the overflow rule (post the point, continue under your
-// own root): only threading under the person's message is ruled out.
-//
-// The same walk on 0.1.258, with the mention sharing a turn with the greeting:
-// the seat obeyed that line about threadRootId and passed replyToMessageId
-// instead. The kernel files a reply in its parent's thread
-// (COALESCE(parent.thread_root_id, parent.id) in models/pg/Message.ts), so
-// that threads it too. The line names both fields.
-const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
-  + 'Do not pass this message\'s id as threadRootId or as replyToMessageId: a reply is filed in the thread of '
-  + 'the message it replies to, so either one hides your answer under it. '
-  + 'A long answer may continue under your own top-level post.]';
-
-export const answersInChannel = (entry) => {
-  const payload = entry?.event?.payload || {};
-  // A duplicate delivery was already answered here; it stays in the prompt as
-  // context, and must not be told to post (CodeRabbit on #3499).
-  return entry?.event?.type === 'chat.mention' && !entry.readOnly
-    && entry.result?.reason !== 'duplicate-delivery'
-    && Boolean(payload.messageId)
-    && payload.senderIsHuman === true
-    && (payload.threadRootId === undefined || payload.threadRootId === null || payload.threadRootId === '')
-    && payload.source !== 'dm' && !payload.dmKind;
-};
+// Where a mention's answer goes is the kernel's line, in the item body: since
+// D278 (2026-11-09) a top-level @mention in a shared pod is answered in that
+// message's thread, the same as a mention inside a thread. The wrapper used to
+// add its own line beside a person's top-level mention saying to answer
+// top-level (F212, #3499/#3511); it adds no placement line now, so the item
+// carries one instruction, not two that can disagree.
 
 // Growth's wake-mode walk, 2026-11-06: a person's direct @ ended in NO_REPLY in
 // 5 of 12 runs, some after the seat had read the answer, and the batch's closing
@@ -3458,7 +3422,6 @@ export const performRun = ({
         : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
-      const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       // A peer's item is read-only, and a comment is answered in its thread, not
       // by a pod post: neither is told to stop at what the attempt posted.
       const earlierPart = entry.readOnly || isCommentWake(entry.event)
@@ -3472,7 +3435,7 @@ export const performRun = ({
           eventId: String(entry.event._id), deliveryId,
         })}). Checkpoint metadata is private runtime data; never post it in chat.]`
         : '';
-      return `${prefix}\n${claimContext}${body}${personLine}${channelLine}${earlierLine}${checkpoint}`;
+      return `${prefix}\n${claimContext}${body}${personLine}${earlierLine}${checkpoint}`;
     });
     const rollup = wakeEntries.find((entry) => entry.event.payload?.digestRollup)?.event.payload?.digestRollup;
     const digestEvents = digestEntries.map((entry) => entry.event);

@@ -51,6 +51,8 @@ import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCu
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
+import { answerRootOfWake, threadOfMessage, NON_ANSWER_KINDS } from './agentAnswerService';
+import { isPersonalPodType } from './podTypePolicyService';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
@@ -919,12 +921,21 @@ interface DispatchContext {
    */
   answeringMessageId?: string;
   /**
-   * The thread the trigger was posted in, when it was posted in one. Every
-   * post the turn makes carries it, so a mention inside a thread gets its
-   * answer in that thread (TASK-026). Undefined for a top-level trigger, which
-   * keeps the answer at the pod root.
+   * The thread this turn answers in. Every post the turn makes carries it, so
+   * a mention inside a thread gets its answer in that thread (TASK-026), and a
+   * top-level @mention in a shared pod gets its answer in that message's own
+   * thread (D278, answerThreadOfTrigger). Undefined otherwise: other top-level
+   * triggers, and anything in a personal pod, keep the answer at the pod root.
    */
   answeringThreadRootId?: number;
+  /**
+   * The thread the trigger itself was posted in (TASK-026), independent of the
+   * D278 mention placement. A `progress` or `fyi` post is not the answer, so it
+   * stays in the channel for a top-level mention — but when the trigger was
+   * made inside a thread, those posts still belong in that thread, which this
+   * carries. Undefined for a top-level trigger.
+   */
+  triggerThreadRootId?: number;
 }
 
 /** The thread root a trigger event was posted in, or undefined at the pod root. */
@@ -932,6 +943,39 @@ export const threadRootOfTrigger = (payload: unknown): number | undefined => {
   const p = (payload || {}) as { threadRootId?: unknown; thread_root_id?: unknown };
   const root = Number(p.threadRootId ?? p.thread_root_id);
   return Number.isInteger(root) && root > 0 ? root : undefined;
+};
+
+/**
+ * The thread a turn's answer goes in (D278): the thread its trigger was posted
+ * in, or, for a top-level chat.mention in a shared pod, that message's own
+ * thread. The same rule a CAP post gets from agentAnswerService.answerRootOfWake.
+ * `podType` unknown (a failed lookup) keeps the old placement: the pod root.
+ */
+export const answerThreadOfTrigger = (
+  trigger: { type?: unknown; payload?: unknown },
+  podType: unknown,
+): number | undefined => {
+  const inThread = threadRootOfTrigger(trigger.payload);
+  if (inThread) return inThread;
+  if (!podType || isPersonalPodType(podType)) return undefined;
+  return answerRootOfWake({ type: trigger.type, payload: trigger.payload }) ?? undefined;
+};
+
+/**
+ * answerThreadOfTrigger, checked against the message store when the root is
+ * the trigger's own message. That message can sit inside a thread (a welcome
+ * wake names a member's first message, which may be a reply), and then the
+ * answer goes in that thread. A message that is gone leaves the answer at the
+ * pod root, as before D278, instead of failing every post the turn makes.
+ */
+export const settleAnswerThread = async (
+  trigger: { type?: unknown; payload?: unknown },
+  podType: unknown,
+  podId: unknown,
+): Promise<number | undefined> => {
+  const root = answerThreadOfTrigger(trigger, podType);
+  if (root == null || threadRootOfTrigger(trigger.payload)) return root;
+  return (await threadOfMessage({ podId, messageId: root })) ?? undefined;
 };
 
 // The agent's own bot User, found the way the posting path derives it (the
@@ -1159,6 +1203,14 @@ export async function dispatchTool(
         validateAgentCardPayload(messageType, args.payload, args.payload !== undefined
           ? (typeof args.content === 'string' ? AgentMessageService.sanitizeAgentContent(args.content) : args.content)
           : content);
+        // D278: a `progress` or `fyi` post is not the answer, so it does not
+        // inherit the top-level mention's thread — it stays in the channel. If
+        // the trigger itself was inside a thread, it still belongs there
+        // (TASK-026). Answer kinds get the full mention placement.
+        const normalizedKind = typeof args.kind === 'string' ? args.kind.trim().toLowerCase() : '';
+        const postThreadRootId = NON_ANSWER_KINDS.has(normalizedKind)
+          ? (ctx.triggerThreadRootId ?? null)
+          : (ctx.answeringThreadRootId ?? null);
         const result = await AgentMessageService.postMessage({
           agentName: ctx.agentName,
           instanceId: ctx.instanceId,
@@ -1175,7 +1227,7 @@ export async function dispatchTool(
           // bridge appears between this check and message storage.
           noOutboundRelay: Boolean(ctx.webTainted || ctx.brokerCallSeen),
           answeringMessageId: ctx.answeringMessageId,
-          threadRootId: ctx.answeringThreadRootId ?? null,
+          threadRootId: postThreadRootId,
           runId: ctx.runId,
           personWaiting: Boolean(ctx.personWaiting),
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
@@ -2596,10 +2648,14 @@ export async function runAgent(
 
   // Best-effort pod name lookup for user-message framing. Never block on it.
   let podName = 'this pod';
+  // D278: where a top-level mention's answer goes depends on it. Unknown keeps
+  // the answer at the pod root, as before.
+  let podType: string | null = null;
   try {
     const Pod = require('../models/Pod');
     const pod = await Pod.findById(installation.podId).lean();
     if (pod?.name) podName = String(pod.name);
+    if (pod?.type) podType = String(pod.type);
   } catch (err) {
     console.warn('[native-runtime] pod lookup failed:', (err as Error).message);
   }
@@ -2687,7 +2743,8 @@ export async function runAgent(
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
     answeringMessageId: claimMessageId || undefined,
-    answeringThreadRootId: threadRootOfTrigger(trigger.payload),
+    answeringThreadRootId: await settleAnswerThread(trigger, podType, podId),
+    triggerThreadRootId: threadRootOfTrigger(trigger.payload),
   };
 
   // F56: read once. Neither the reply nor the failed-turn line is an answer to an

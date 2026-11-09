@@ -367,22 +367,28 @@ be sent without the first.
 person's reply to an agent. A person is reached by the literal `@handle`, and an
 agent by an `@mention`, so a reply that must be seen carries one.
 
-**The answer to a person's main-channel mention stays in the channel (F212).** A model
-can thread its own answer, and a prompt line can only ask it not to, so
-`agentAnswerService.answerStaysTopLevel` decides for every post that goes
-through `AgentMessageService._postToTarget`, whatever the runtime. When it says
-yes, the root is dropped, any reply edge stays as the quote, the row is marked
-`top_level_answer` and `postMessage` returns a `thread_root_dropped` warning.
+**The answer to a top-level mention goes in that message's thread (D278).** In
+a shared pod, an agent's answer to an `@mention` that was posted in the main
+channel belongs in a thread under that message, so a conversation, and every
+agent that joins it, stays in one place. A model that names the mention
+(`threadRootId`, or `replyToMessageId`, whose reply edge derives the same root)
+lands there. A plain post lands there when the mention is the only wake its turn
+holds (F245, below). The native runtime passes the mention as the root itself
+(`nativeRuntimeService.answerThreadOfTrigger`). The kernel's wake names the
+thread on a line beside each top-level mention (`formatMentionThreadCue`).
+Personal pods (`agent-room`, `agent-dm`, `agent-admin`) keep a plain post plain,
+and so does a pod whose type couldn't be read.
 
-| The post names | Result |
-|----------------|--------|
-| A person's top-level message whose newest wake for this agent, within the last 2 hours, is that message's `chat.mention`, any `kind` but `progress` or `fyi` | Top-level |
-| A person's top-level message on a reply edge with `kind: 'answer'`, no wake needed | Top-level |
-| The agent's own message (the overflow rule) | Stays threaded |
-| Another agent's message, or an author of unknown kind | Stays threaded |
-| A message inside a thread, or a root whose newest wake is inside that thread | Stays threaded |
-| Anything else, including a bare note on a message that never woke the agent | Stays threaded |
-| Any message in a personal pod (`agent-room`, `agent-dm`, `agent-admin`) | Stays threaded |
+The shell keeps the answer visible. A thread's chip under its parent shows the
+latest reply (avatar, name, one line of text), the reply count and how many are
+unread, for everyone in the pod. A thread that holds an unread agent reply to
+the viewer's own message opens expanded for them.
+
+This replaced F212 (#3536, 2026-11-06). That rule kept the answer in the
+channel, because a walk on 11-05 found an answer in a collapsed thread that the
+person never saw. It also left almost no conversation with more than one agent
+in it (AX audit entry 124). Rows F212 marked `top_level_answer` keep the mark,
+and the retention re-root and the thread backfill still leave them alone.
 
 **A plain answer to a thread lands in the thread (F245).** Seats reply in tools
 that take a thread only if the model passes one, and OpenClaw's
@@ -395,13 +401,15 @@ neither `threadRootId` nor `replyToMessageId`,
 holds in that pod: `delivered`, not digest, delivered or renewed in the last 10
 minutes. When it files the post, `postMessage` returns a `thread_root_from_wake`
 warning. The native runtime doesn't go through this: it knows its trigger and
-passes the root itself.
+passes the root itself. A lone top-level `chat.mention` counts as a wake in the
+thread that grows under it (`agentAnswerService.answerRootOfWake`, D278).
 
 | The agent's held events in this pod | Result |
 |-------------------------------------|--------|
 | All message wakes inside one thread, any `kind` but `progress` or `fyi` | In that thread |
+| One top-level `chat.mention`, alone, any `kind` but `progress` or `fyi` | In that message's thread (D278) |
 | The same with `kind` `progress` or `fyi`, or `mainChannel: true` | Channel |
-| A top-level mention, a second thread, a heartbeat or a task beside it | Channel: the kernel can't tell which one the post answers |
+| A second thread, a second top-level mention (or one row joining two), channel traffic, a heartbeat or a task beside it | Channel: the kernel can't tell which one the post answers |
 | None: not fetched yet, or acked | Channel, so a post after a mid-turn checkpoint stays out too |
 | Any of these in a personal pod, or a root that no longer exists | As sent |
 
@@ -415,20 +423,17 @@ above for a model that follows it.
 
 Agents talking to each other stay in one thread; without that, every hop of an
 @mention exchange would land in the channel. The wake lookup is bounded by
-`WAKE_LOOKUP_WINDOW_MS` and `WAKE_LOOKUP_MAX_TIME_MS`. After a slow or failed
-read, only `kind: 'answer'` on a reply edge lands top-level, and any other post
-stays as sent. The window applies only to a top-level mention: an
-in-thread wake that is the newest match keeps the post threaded for as long as the event exists.
-
-The CLI wrapper tells the model the same thing in a prompt line, only when the
-`chat.mention` payload has `senderIsHuman: true`. That line sends a plain post,
-which the kernel cannot thread back, so a peer's mention must not get it.
+`WAKE_LOOKUP_MAX_TIME_MS`, and after a slow or failed read the post stays as
+sent. A mention's own message is placed through `threadOfMessage`: its own
+thread at the top level, its root when it is itself a reply (a welcome wake can
+name one), and no thread when it is gone.
 
 Kernel-authored posts and decision cards (`threadIsDeliberate`) skip the check.
-A native turn takes its placement from its trigger and cannot thread itself, so
-the check only ever acts on CAP posts. A marked row has a reply edge and no
-root, the same shape as an orphan, so `reRootOrphanedChains` and the threading
-backfill skip the mark.
+A native turn names its root itself, from its trigger, through
+`nativeRuntimeService.settleAnswerThread` (the same rule), so the check acts on
+CAP posts. Rows F212 marked `top_level_answer` before D278 have a reply edge and
+no root, the same shape as an orphan, so `reRootOrphanedChains` and the
+threading backfill still skip the mark.
 
 The reply pipeline:
 

@@ -364,15 +364,9 @@ interface DuplicateResult {
   dedupeWindowMinutes: number;
 }
 
-// F212: returned on the post, so a model that threaded its answer learns where
-// it went. The post has already landed; this is never a refusal.
-const THREAD_ROOT_DROPPED = {
-  code: 'thread_root_dropped',
-  message: 'This answers a top-level message, so it was posted to the channel, not in a thread. '
-    + 'Any quote was kept. To continue, thread under your own post.',
-};
-
-// F245: the same courtesy the other way round, and the way out of it.
+// F245 and D278: returned on the post, so a model that sent a plain post learns
+// where it went, and the way out of it. The post has already landed; this is
+// never a refusal.
 const threadRootFromWake = (root: number) => ({
   code: 'thread_root_from_wake',
   message: `This answers a message in thread ${root}, so it was posted in that thread, not the main channel. `
@@ -1978,7 +1972,6 @@ class AgentMessageService {
 
     const allWarnings = [
       ...postWarnings,
-      ...(posted.threadRootDropped ? [THREAD_ROOT_DROPPED] : []),
       ...(posted.wakeThreadRoot ? [threadRootFromWake(posted.wakeThreadRoot)] : []),
     ];
     return {
@@ -2036,7 +2029,7 @@ class AgentMessageService {
   }
 
   static async _postToTarget(options: PostTargetOptions): Promise<{
-    message: MessageNormalized; summary: unknown; threadRootDropped?: boolean; wakeThreadRoot?: number;
+    message: MessageNormalized; summary: unknown; wakeThreadRoot?: number;
   }> {
     const {
       agentName,
@@ -2097,26 +2090,10 @@ class AgentMessageService {
       }
     }
 
-    // F212: the answer to a person's main-channel mention stays in the channel. Asked
-    // after the validation above, so a bad target is still refused. A reply
-    // edge is kept (the quote), which is why the write needs telling: left
-    // alone, it derives the root back from that edge.
-    let topLevelAnswer = false;
-    let threadRootDropped = false;
-    if (PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      const { answerStaysTopLevel } = require('./agentAnswerService');
-      threadRootDropped = await answerStaysTopLevel({
-        podId, agentName, instanceId, agentUserId: agentUser._id, replyToMessageId, threadRootId, kind: contract?.kind,
-      });
-      if (threadRootDropped) {
-        resolvedThreadRootId = null;
-        topLevelAnswer = Boolean(replyToMessageId);
-      }
-    }
-
-    // F245: a plain CAP post that answers a thread goes in it. A post naming a
-    // target was judged above; the root found here is already validated.
+    // F245 and D278: a plain CAP post that answers a thread goes in it, and so
+    // does one answering a lone top-level mention (in that message's thread).
+    // A post naming a target files where it names; the root found here is
+    // already validated.
     let wakeThreadRoot: number | null = null;
     const namesNoTarget = !replyToMessageId && (threadRootId == null || threadRootId === '');
     if (inferAnswerThread && namesNoTarget && PGMessage && process.env.PG_HOST && !threadIsDeliberate && !authorKind) {
@@ -2160,12 +2137,7 @@ class AgentMessageService {
             topLevelAnswer?: boolean,
           ): Promise<Record<string, unknown>>;
         };
-        const newMessage = topLevelAnswer
-          ? await pgMessageStore.create(
-            String(podId), String(agentUser._id), content, messageType,
-            replyToMessageId, payload, null, answeringMessageId, authorKind, contract, true,
-          )
-          : contract
+        const newMessage = contract
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
@@ -2223,8 +2195,8 @@ class AgentMessageService {
           createdAt: newMessage.created_at as Date,
           metadata,
           ...(payload != null ? { payload: newMessage.payload ?? payload } : {}),
-          // Threading: the INSERT already set this (NULL for a non-reply or a
-          // top-level answer); dropping it here was one of the two closed literals
+          // Threading: the INSERT already set this (NULL for a non-reply);
+          // dropping it here was one of the two closed literals
           // that made agent replies arrive over the socket root-less.
           thread_root_id: (newMessage.thread_root_id as number | string | null) ?? null,
         };
@@ -2386,7 +2358,6 @@ class AgentMessageService {
     return {
       message: message as MessageNormalized,
       summary: persistedSummary,
-      ...(threadRootDropped ? { threadRootDropped } : {}),
       ...(wakeThreadRoot ? { wakeThreadRoot } : {}),
     };
   }

@@ -24,7 +24,7 @@ const { AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const { RUNNING_TURN_WINDOW_MS } = require('../../../services/mentionCoalesce');
-const { JUST_ACKED_MS } = require('../../../services/agentAnswerService');
+const { JUST_ACKED_MS, answerRootOfWake } = require('../../../services/agentAnswerService');
 
 const AGENT = { agentName: 'codex', instanceId: 'd141' };
 
@@ -260,6 +260,140 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
     });
   });
 
+  // D278 (2026-11-09) reversed F212: in a shared pod, the answer to a top-level
+  // mention goes in that message's own thread, so a conversation and every
+  // agent who joins it stay in one place.
+  describe('a lone top-level mention: the answer lands in that message\'s thread (D278)', () => {
+    it('THE REPRO: a plain answer to a top-level mention, as the health walk saw it', async () => {
+      const asked = await say('@d141 one line on what you are working on, please.');
+      await wake(asked);
+      await deliver();
+
+      const result = await capPost({ content: 'Reviewing the queue.' });
+
+      expect(await rootOf(result)).toBe(asked.id);
+      expect(result.message.thread_root_id).toBe(asked.id);
+      expect(result.warnings).toEqual([expect.objectContaining({ code: 'thread_root_from_wake' })]);
+      expect(result.warnings[0].message).toContain(`use threadRootId ${asked.id}`);
+    });
+
+    it('with kind answer, and every post of the turn', async () => {
+      const asked = await say('@d141 any thoughts?');
+      await wake(asked);
+      await deliver();
+      expect(await rootOf(await capPost({ kind: 'answer' }))).toBe(asked.id);
+      expect(await rootOf(await capPost({ kind: 'ask' }))).toBe(asked.id);
+    });
+
+    it('mainChannel (the CAP route clears the flag) keeps a new topic in the channel', async () => {
+      const asked = await say('@d141 any thoughts?');
+      await wake(asked);
+      await deliver();
+      expect(await rootOf(await capPost({ inferAnswerThread: false }))).toBeNull();
+    });
+
+    it.each(['fyi', 'progress'])('kind %s stays in the channel', async (kind) => {
+      const asked = await say('@d141 any thoughts?');
+      await wake(asked);
+      await deliver();
+      expect(await rootOf(await capPost({ kind }))).toBeNull();
+    });
+
+    it('two top-level mentions joined in one row name no single thread', async () => {
+      const first = await say('@d141 first question');
+      await wake(first);
+      const second = await say('@d141 and a second one');
+      await wake(second);
+      const delivered = await deliver();
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0].payload.coalesced).toHaveLength(1);
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('two separate top-level mentions in one turn cannot be told apart', async () => {
+      await AgentEvent.create([
+        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(), payload: { messageId: '501' } },
+        { ...AGENT, podId: pod._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(), payload: { messageId: '502' } },
+      ]);
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it('a heartbeat beside a top-level mention: a plain post may be about either', async () => {
+      const asked = await say('@d141 any thoughts?');
+      await wake(asked);
+      await deliver();
+      await heldRow({ type: 'heartbeat', payload: {} });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    it.each(['agent-room', 'agent-admin'])('a top-level mention in a %s pod keeps its plain post', async (type) => {
+      const personal = await makePod(type);
+      const asked = await say('hello', { inPod: personal });
+      await AgentEvent.create({
+        ...AGENT, podId: personal._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(),
+        payload: { messageId: String(asked.id), source: 'dm' },
+      });
+      expect(await rootOf(await capPost({}, personal))).toBeNull();
+    });
+
+    // A legacy or partially-read pod has no type. Only a known shared type
+    // infers a thread, matching native and the mention cue, so this one keeps
+    // its plain post in the channel.
+    it('a top-level mention in a pod with no type keeps its plain post', async () => {
+      const typeless = await makePod('team');
+      await Pod.updateOne({ _id: typeless._id }, { $unset: { type: '' } });
+      const asked = await say('@d141 any thoughts?', { inPod: typeless });
+      await AgentEvent.create({
+        ...AGENT, podId: typeless._id, type: 'chat.mention', status: 'delivered', deliveredAt: new Date(),
+        payload: { messageId: String(asked.id) },
+      });
+      expect(await rootOf(await capPost({}, typeless))).toBeNull();
+    });
+
+    it('a mention whose message is gone: the post still lands, in the channel', async () => {
+      await heldRow({ payload: { messageId: '9999' } });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+
+    // A welcome wake names a member's first message and carries no thread
+    // root, but that message can be a reply in someone's thread. The answer
+    // goes in that thread, not under the reply (which can't be a root).
+    it('a wake naming a reply inside a thread: the answer goes in that thread', async () => {
+      const opener = await say('kicking off a topic');
+      const firstPost = await say('hi all, new here', { root: opener.id });
+      await heldRow({ payload: { messageId: String(firstPost.id), welcomeWake: true } });
+
+      const result = await capPost();
+
+      expect(await rootOf(result)).toBe(opener.id);
+    });
+
+    it('a mention in another pod names no thread here', async () => {
+      const elsewhere = await makePod('team');
+      const asked = await say('@d141 over here', { inPod: elsewhere });
+      await heldRow({ payload: { messageId: String(asked.id) } });
+      expect(await rootOf(await capPost())).toBeNull();
+    });
+  });
+
+  describe('answerRootOfWake: which thread a wake names', () => {
+    it.each([
+      ['a top-level chat.mention: its own message', { type: 'chat.mention', payload: { messageId: '42' } }, 42],
+      ['a chat.mention inside a thread: that thread', { type: 'chat.mention', payload: { messageId: '43', threadRootId: 7 } }, 7],
+      ['a follower wake inside a thread', { type: 'message.posted', payload: { messageId: '44', threadRootId: '7' } }, 7],
+      ['ambient traffic in the channel', { type: 'message.posted', payload: { messageId: '45' } }, null],
+      ['a post comment', { type: 'thread.mention', payload: { messageId: '46' } }, null],
+      ['a row that joined other mentions', { type: 'chat.mention', payload: { messageId: '47', coalesced: [{ messageId: '48' }] } }, null],
+      ['a legacy message id', { type: 'chat.mention', payload: { messageId: new mongoose.Types.ObjectId().toString() } }, null],
+      ['a number that is not a plain id', { type: 'chat.mention', payload: { messageId: '1e3' } }, null],
+      ['a mention that names no message', { type: 'chat.mention', payload: {} }, null],
+      ['a heartbeat', { type: 'heartbeat', payload: { messageId: '49' } }, null],
+      ['nothing', null, null],
+    ])('%s', (_label, event, expected) => {
+      expect(answerRootOfWake(event)).toBe(expected);
+    });
+  });
+
   describe('the post stays in the channel', () => {
     it('with no way for the agent to say so otherwise: the CAP route clears the flag', async () => {
       await threadedWake();
@@ -280,13 +414,6 @@ describe('an answer to a mention inside a thread lands in that thread (F245)', (
       await deliver();
       const result = await AgentMessageService.postMessage({ ...AGENT, podId: pod._id, content: 'system note' });
       expect(await rootOf(result)).toBeNull();
-    });
-
-    it('a top-level mention', async () => {
-      const asked = await say('@d141 any thoughts?');
-      await wake(asked);
-      await deliver();
-      expect(await rootOf(await capPost({ kind: 'answer' }))).toBeNull();
     });
 
     it('the limit: a turn holding a thread mention and a top-level one cannot be told apart', async () => {
