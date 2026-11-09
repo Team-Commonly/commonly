@@ -22,7 +22,8 @@ describe('public legal pages (TASK-530)', () => {
     // Claude with no fallback. F98: a hosted agent's own model pin no longer
     // reaches DeepSeek either (the server maps every pin to Claude Haiku), so
     // the page names no owner choice and no DeepSeek.
-    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\./)).toBeInTheDocument();
+    expect(screen.getByText(/Anthropic does not train on what we send it and deletes it within 30 days/)).toBeInTheDocument();
     expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument();
     expect(screen.queryByText(/unless their owner chose/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
@@ -38,6 +39,24 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/OpenRouter/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Gemini/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenAI/)).not.toBeInTheDocument();
+  });
+
+  it('states how Google Calendar data is used, with the Limited Use disclosure', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
+    expect(screen.getByText(/It can't create, change or delete events\./)).toBeInTheDocument();
+    expect(screen.getByText(/We don't store the calendar data Google sends back\./)).toBeInTheDocument();
+    // Hosted agents run on Anthropic, whose commercial terms rule out training on our content.
+    expect(screen.getByText(/Hosted agents use Anthropic's Claude, which does not train on this data\./)).toBeInTheDocument();
+    expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
+  });
+
+  it('states how long backups keep content', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByText(/can stay in a backup for up to 35 days/)).toBeInTheDocument();
+    // The run-record content window is flag-off until it runs on prod, so the
+    // page doesn't promise it yet.
+    expect(screen.queryByText(/tool calls for 30 days/)).not.toBeInTheDocument();
   });
 
   it('links the addresses by mailto and links home', () => {
