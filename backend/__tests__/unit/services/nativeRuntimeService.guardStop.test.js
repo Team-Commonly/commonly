@@ -1404,6 +1404,51 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.computerSetAside).toBe(1);
     });
 
+    // A provider refuses a request where a call's result isn't right after
+    // the call. With the screenshot's image between the two results, every
+    // screenshot-then-snapshot round failed with HTTP 400.
+    const resultsFollowCalls = (body) => body.messages.forEach((m, i) => {
+      if (m.role !== 'assistant' || !m.tool_calls?.length) return;
+      const next = body.messages.slice(i + 1, i + 1 + m.tool_calls.length);
+      expect(next.map((n) => n.role)).toEqual(m.tool_calls.map(() => 'tool'));
+      expect(next.map((n) => n.tool_call_id)).toEqual(m.tool_calls.map((tc) => tc.id));
+    });
+
+    test('a screenshot taken before a snapshot sends its image after both results', async () => {
+      pages = [CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(call('c1', 'computer_screenshot', {}), snapshotCall('c2')),
+        reply('Looked at the page.'),
+      ];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      const next = chatBodies[1];
+      resultsFollowCalls(next);
+      const roles = next.messages.slice(-3).map((m) => m.role);
+      expect(roles).toEqual(['tool', 'tool', 'user']);
+      expect(JSON.stringify(next.messages[next.messages.length - 1])).toContain('data:image/png');
+    });
+
+    test('a set-aside screenshot taken before a snapshot keeps every result next to its call', async () => {
+      pages = [CLEAN_TEXT];
+      chatReplies = [
+        toolCalls(call('c1', 'computer_screenshot', {}), snapshotCall('c2')),
+        guardStop,
+        reply('Read the page; its screenshot was set aside.'),
+      ];
+
+      const result = await runAgent(computerInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      const retry = chatBodies[2];
+      resultsFollowCalls(retry);
+      expect(JSON.stringify(retry.messages)).not.toContain('data:image/png');
+      expect(JSON.stringify(retry.messages)).toContain('The screenshot of page 1 was set aside');
+      expect(toolContents(retry)[1]).toContain(CLEAN_TEXT);
+    });
+
     test('a screenshot from an earlier round, already past the guard, is never dropped', async () => {
       pages = [CLEAN_TEXT];
       chatReplies = [
