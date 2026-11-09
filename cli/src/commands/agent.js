@@ -1855,7 +1855,11 @@ export const earlierAttemptPosted = (part, { batch = false } = {}) => {
     + `${excerpt ? `, beginning ${JSON.stringify(excerpt)}` : ''}. That post is already there: don't post it again. `
     + (batch ? 'It may answer this item or another one here. ' : '')
     + (cut ? 'Read that message in full before you decide. ' : '')
-    + 'Add only what this item still lacks, then checkpoint. If it already answers this item, checkpoint it and end with NO_REPLY.]';
+    + 'Add only what this item still lacks, then checkpoint. '
+    + (batch
+      ? 'If it already answers this item, checkpoint this item and go on to the others here; '
+        + 'end with NO_REPLY only once every item is handled.]'
+      : 'If it already answers this item, checkpoint it and end with NO_REPLY.]');
 };
 
 export const answersAPerson = (entry) => (
@@ -3435,7 +3439,10 @@ export const performRun = ({
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
       const personLine = answersAPerson(entry) ? `\n${PERSON_ADDRESSED}` : '';
       const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
-      const earlierPart = heldRetryParts.get(String(entry.event._id));
+      // A peer's item is read-only, and a comment is answered in its thread, not
+      // by a pod post: neither is told to stop at what the attempt posted.
+      const earlierPart = entry.readOnly || isCommentWake(entry.event)
+        ? null : heldRetryParts.get(String(entry.event._id));
       const earlierLine = earlierPart
         ? `\n${earlierAttemptPosted(earlierPart, { batch: shownEntries.length > 1 })}`
         : '';

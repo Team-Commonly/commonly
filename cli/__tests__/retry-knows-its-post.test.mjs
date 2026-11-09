@@ -291,7 +291,59 @@ describe('a batch', () => {
       const prompt = spawn.mock.calls[1][0];
       expect(prompt).toContain('An earlier attempt at this batch failed after it posted in this pod (message answer-a)');
       expect(prompt).toContain('It may answer this item or another one here.');
+      expect(prompt).toContain('end with NO_REPLY only once every item is handled.');
+      expect(prompt).not.toContain('checkpoint it and end with NO_REPLY');
       expect(prompt).not.toContain(EARLIER);
+    } finally { run.handle.stop(); }
+  });
+
+  test("a peer's read-only item isn't told to add to the earlier post", async () => {
+    const server = fakeServer({ pages: [[
+      makeEvent('evt-ro', { type: 'message.posted', payload: { messageId: 'msg-ro' } }),
+      makeEvent('evt-b'),
+    ]] });
+    const client = createClient();
+    const serve = client.post.getMockImplementation();
+    let peerWins = false;
+    client.post.mockImplementation(async (route, body) => (String(route).endsWith('/claim') && peerWins
+      ? { claimed: false, holder: { agentName: 'peer', instanceId: 'default' } }
+      : serve(route, body)));
+    const spawn = jest.fn()
+      .mockImplementationOnce(async () => {
+        server.childPosts('answer-b', { content: 'Answer for b.' });
+        peerWins = true;
+        throw killed();
+      })
+      .mockResolvedValue({ text: 'NO_REPLY' });
+    // The yield before a binding claim, skipped so the test doesn't wait it out.
+    const run = startRun({ spawn, sleepImpl: async () => {} });
+    try {
+      await drainMicrotasks();
+      await retryOnce(run);
+      const prompt = spawn.mock.calls[1][0];
+      const [readOnly, writable] = prompt.split(/\n\nEvent \d\/\d: /).slice(1);
+      expect(readOnly).toContain('This item is read-only context');
+      expect(readOnly).not.toContain('An earlier attempt');
+      expect(writable).toContain('An earlier attempt at this batch failed after it posted in this pod (message answer-b)');
+    } finally { run.handle.stop(); }
+  });
+});
+
+describe('a comment wake', () => {
+  test("isn't told a pod post answered the comment", async () => {
+    const server = fakeServer({ pages: [[commentEvent('evt-comment')]] });
+    const spawn = jest.fn()
+      .mockImplementationOnce(async () => {
+        server.childPosts('pod-post', { content: 'Answered in the pod instead.' });
+        throw killed();
+      })
+      .mockResolvedValueOnce({ text: 'Because of the post.' });
+    const run = startRun({ spawn });
+    try {
+      await drainMicrotasks();
+      await retryOnce(run);
+      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(spawn.mock.calls[1][0]).not.toContain('An earlier attempt');
     } finally { run.handle.stop(); }
   });
 });
