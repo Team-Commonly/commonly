@@ -148,6 +148,7 @@ const stderrLine = (line) => { process.stderr.write(`${line}\n`); };
 export const startChannel = ({
   config,
   notify,
+  ready,
   env = process.env,
   log = stderrLine,
   requestImpl = defaultRequest,
@@ -225,6 +226,11 @@ export const startChannel = ({
   let gate = null;
 
   const run = async () => {
+    // Claim nothing until the client has initialized: `ready` resolves true on
+    // initialize. If the transport closes first it resolves false and the loop
+    // ends without a single poll, so no mention is claimed with no session to
+    // push it to. A client that connects but never initializes just waits here.
+    if (ready && !(await ready)) { stop(); return; }
     let failures = 0;
     while (running) {
       try {

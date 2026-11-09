@@ -294,3 +294,32 @@ describe('poll loop', () => {
     expect(api.calls.length).toBe(count);
   });
 });
+
+describe('the ready gate (claim nothing before the client initializes)', () => {
+  it('never polls when ready resolves false (transport closed before init)', async () => {
+    const api = fakeApi({ pages: [[mention()]] });
+    const channel = startChannel({
+      config: cfg, env: {}, ready: Promise.resolve(false),
+      notify: async () => {}, log: () => {}, requestImpl: api.requestImpl, intervalMs: 5,
+    });
+    await channel.done;
+    expect(api.calls).toHaveLength(0);
+  });
+
+  it('waits for ready, then polls once it resolves true', async () => {
+    const api = fakeApi({ pages: [[mention()]] });
+    let markReady;
+    const ready = new Promise((resolve) => { markReady = resolve; });
+    const channel = startChannel({
+      config: cfg, env: {}, ready,
+      notify: async () => {}, log: () => {}, requestImpl: api.requestImpl, intervalMs: 5, busyDelayMs: 1,
+    });
+    await new Promise((r) => { setTimeout(r, 20); });
+    expect(api.calls).toHaveLength(0);
+    markReady(true);
+    await waitFor(() => api.acks().length >= 1);
+    channel.stop();
+    await channel.done;
+    expect(api.acks().length).toBeGreaterThanOrEqual(1);
+  });
+});

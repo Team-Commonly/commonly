@@ -65,12 +65,16 @@ export const createServer = (config, { channel = false, env = process.env, chann
       await server.connect(transport);
       return;
     }
-    // A notification goes out only after the client has initialized, and
-    // never after the transport has closed.
+    // The poll loop claims nothing until the client has initialized, and a
+    // notification goes out only while the transport is open. `ready` resolves
+    // true on initialize and false if the transport closes first; the loop
+    // waits on it before its first claim.
     let markReady;
     const ready = new Promise((resolve) => { markReady = resolve; });
+    let open = true;
     server.oninitialized = () => markReady(true);
     server.onclose = () => {
+      open = false;
       markReady(false);
       handle.channel?.stop();
     };
@@ -79,8 +83,9 @@ export const createServer = (config, { channel = false, env = process.env, chann
       ...channelOptions,
       config,
       env,
+      ready,
       notify: async (params) => {
-        if (!(await ready)) throw new Error('the transport closed');
+        if (!open) throw new Error('the transport closed');
         await server.notification({ method: CHANNEL_NOTIFICATION, params });
       },
     });
