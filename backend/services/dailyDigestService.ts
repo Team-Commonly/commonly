@@ -322,9 +322,11 @@ This might be a great time to start a new conversation or share something intere
       console.log('Starting daily digest generation for all users...');
       // The digestKey index must exist before any keyed write, or two
       // overlapping runs could both write, and the duplicate pair would then
-      // fail the index build. init() resolves once autoIndex has built it and
-      // rejects if the build failed, so a failed build sends nothing.
-      await Summary.init();
+      // fail the index build. ensureIndexes() builds the schema's indexes (a
+      // no-op once they exist) and rejects on failure, so a failed build sends
+      // nothing that run. Not init(): it caches its promise, a rejected one too,
+      // and the worker would skip every later run until it restarted.
+      await Summary.ensureIndexes();
 
       const startTime = new Date(at.getTime() - 24 * 60 * 60 * 1000);
       const [recentPodIds, recentWatcherIds] = await Promise.all([

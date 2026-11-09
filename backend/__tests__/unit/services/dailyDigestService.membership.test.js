@@ -452,14 +452,30 @@ test('a scheduled run writes nothing until the unique digest index is built', as
     board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
   }));
   let built;
-  const init = jest.spyOn(Summary, 'init').mockReturnValue(new Promise((resolve) => { built = resolve; }));
+  const ensure = jest.spyOn(Summary, 'ensureIndexes').mockReturnValue(new Promise((resolve) => { built = resolve; }));
   const run = new DailyDigestService().generateAllDailyDigests({ at: new Date(digestHourUtc().getTime() + 60000) });
   await new Promise((done) => { setTimeout(done, 100); });
   expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
-  built(Summary);
+  built();
   await run;
   expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
-  init.mockRestore(); spy.mockRestore();
+  ensure.mockRestore(); spy.mockRestore();
+});
+
+test('a failed index build sends nothing that run, and the next run tries again', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const ensure = jest.spyOn(Summary, 'ensureIndexes').mockRejectedValueOnce(new Error('mongo unavailable'));
+  const at = new Date(digestHourUtc().getTime() + 60000);
+  const service = new DailyDigestService();
+
+  await expect(service.generateAllDailyDigests({ at })).rejects.toThrow('mongo unavailable');
+  expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
+  await service.generateAllDailyDigests({ at: new Date(at.getTime() + 60 * 60 * 1000) });
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  ensure.mockRestore(); spy.mockRestore();
 });
 
 test('an on-demand digest carries no daily key, so it never blocks the scheduled one', async () => {
