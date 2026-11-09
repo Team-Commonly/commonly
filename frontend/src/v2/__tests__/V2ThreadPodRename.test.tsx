@@ -194,6 +194,15 @@ describe('V2Thread — the tab title', () => {
     expect(document.title).toBe('Scout · Commonly');
   });
 
+  test("a DM names the other person, whichever side is viewing", () => {
+    renderWith(
+      { _id: 'pod-4', name: 'DM: maya', type: 'agent-dm', createdBy: 'u1' },
+      [{ _id: 'u1', username: 'maya' }, { _id: 'u2', username: 'lee' }],
+      'u2',
+    );
+    expect(document.title).toBe('maya · Commonly');
+  });
+
   test('a DM names the agent from the label the pod detail resolved', () => {
     renderWith(
       { _id: 'pod-3', name: 'DM: openclaw-juno', type: 'agent-room', createdBy: 'u1' },

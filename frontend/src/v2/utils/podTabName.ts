@@ -40,9 +40,12 @@ export const podTabName = (
 ): string | null => {
   if (!pod) return null;
   if (!DIRECT_POD_TYPES.has(pod.type || '')) return pod.name?.trim() || null;
+  // Until we know who is viewing, we can't leave them out of their own DM.
+  if (!viewerId) return null;
   const others = (members || []).filter((member) => member && member._id !== viewerId);
-  // In an owner's room with their agent, the agent is the other party.
-  const parties = pod.type === 'agent-admin' && others.some((member) => member.isBot)
+  // In an owner's room with their agent, the agent is the other party. With
+  // no agent left, it names nobody rather than the other humans in it.
+  const parties = pod.type === 'agent-admin'
     ? others.filter((member) => member.isBot)
     : others;
   const labels = [...new Set(parties.map(memberTabLabel).filter(Boolean))];

@@ -38,6 +38,31 @@ describe('podTabName', () => {
     expect(podTabName({ name: 'DM: Scout', type: 'agent-admin' }, [me, lee, scout], ME, 'en')).toBe('Scout');
   });
 
+  test("an owner's room whose agent is gone names nobody, not the other humans", () => {
+    expect(podTabName({ name: 'DM: Scout', type: 'agent-admin' }, [me, lee], ME, 'en')).toBeNull();
+  });
+
+  test('a DM waits for the viewer, so it never names them in their own tab', () => {
+    expect(podTabName({ name: 'DM: scout', type: 'agent-room' }, [me, scout], null, 'en')).toBeNull();
+    expect(podTabName({ name: 'Launch room', type: 'chat' }, [me], null, 'en')).toBe('Launch room');
+  });
+
+  test('a blank display name falls through, and a person never shows an instance id', () => {
+    const blank = { _id: 'b-5', username: 'x-default', isBot: true, botMetadata: { displayName: '  ', instanceId: 'kite' } };
+    expect(podTabName({ name: 'x', type: 'agent-room' }, [me, blank], ME, 'en')).toBe('kite');
+    const person = { _id: 'u-3', username: 'ari', botMetadata: { instanceId: 'kite' } };
+    expect(podTabName({ name: 'x', type: 'agent-dm' }, [me, person], ME, 'en')).toBe('ari');
+  });
+
+  test('two members with the same label are named once', () => {
+    const twin = { ...scout, _id: 'b-6' };
+    expect(podTabName({ name: 'x', type: 'agent-dm' }, [scout, twin], ME, 'en')).toBe('Scout');
+  });
+
+  test('a locale the list formatter rejects falls back to commas', () => {
+    expect(podTabName({ name: 'x', type: 'agent-dm' }, [scout, nova], ME, 'not a locale!')).toBe('Scout, nova');
+  });
+
   test("an observer of two agents' DM sees both, in the reader's language", () => {
     expect(podTabName({ name: 'x', type: 'agent-dm' }, [scout, nova], ME, 'en')).toBe('Scout and nova');
     expect(podTabName({ name: 'x', type: 'agent-dm' }, [scout, nova], ME, 'zh-CN')).toBe('Scout和nova');
