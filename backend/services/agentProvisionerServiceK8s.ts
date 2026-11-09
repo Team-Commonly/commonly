@@ -2377,17 +2377,22 @@ const removeOpenClawAccount = async ({
     await k8sAppsApi.readNamespacedDeployment(deploymentName, NAMESPACE);
   } catch (error: any) {
     if (error?.response?.statusCode === 404) {
-      // A Deployment's pods are named <deployment>-<replicaset hash>-<suffix>,
-      // so gateway-team never matches a pod of gateway-team-b. A Deployment
-      // name is a DNS label (a-z, 0-9, -), so it needs no regex escaping.
-      // Not covered: a name past ~57 characters (Kubernetes truncates pod
-      // names, breaking the shape) and an orphan that isn't ready, which is
-      // caught by a later reprovision once it is.
-      const ownPod = new RegExp(`^${deploymentName}-[a-z0-9]+-[a-z0-9]+$`);
+      // A pod is this Deployment's only if a ReplicaSet named
+      // <deployment>-<the pod's pod-template-hash> owns it, which is how a
+      // Deployment names its ReplicaSets. A name alone isn't enough: a pod of
+      // gateway-team-a, or a bare pod, can look like one of gateway-team's.
+      // Not covered: an orphan that isn't ready, which a later reprovision
+      // catches once it is.
+      const ownedByDeployment = (pod: any) => {
+        const hash = pod.metadata?.labels?.['pod-template-hash'];
+        return Boolean(hash) && (pod.metadata?.ownerReferences || []).some(
+          (ref: any) => ref?.kind === 'ReplicaSet' && ref?.name === `${deploymentName}-${hash}`,
+        );
+      };
       try {
         const pods = await k8sApi.listNamespacedPod(NAMESPACE);
         orphanPod = (pods.body.items || [])
-          .filter((pod: any) => ownPod.test(String(pod.metadata?.name || '')))
+          .filter(ownedByDeployment)
           .find(isPodReady)?.metadata?.name;
       } catch (listError) {
         return {

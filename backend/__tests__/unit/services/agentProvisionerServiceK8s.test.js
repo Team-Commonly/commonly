@@ -1160,10 +1160,15 @@ describe('removing a refused identity from the gateway config (F361)', () => {
   const noDeployment = () => k8s.__mock.readNamespacedDeployment.mockRejectedValueOnce(
     Object.assign(new Error('not found'), { response: { statusCode: 404 } }),
   );
-  const readyPods = (...names) => ({
+  // [name, owning ReplicaSet, pod-template-hash]: how a Deployment's pod looks.
+  const readyPods = (...pods) => ({
     body: {
-      items: names.map((name) => ({
-        metadata: { name },
+      items: pods.map(([name, replicaSet, hash]) => ({
+        metadata: {
+          name,
+          labels: hash ? { 'pod-template-hash': hash } : {},
+          ownerReferences: replicaSet ? [{ kind: 'ReplicaSet', name: replicaSet }] : [],
+        },
         status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] },
       })),
     },
@@ -1173,8 +1178,13 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     clearGatewayUnreadyHold();
     k8s.__mock.execCommands.length = 0;
     noDeployment();
-    // gateway-team-b's pod is not gateway-team's.
-    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods('gateway-team-b-7d9f8-x2k4q'));
+    // None of these is gateway-team's: a sibling gateway's pod, a bare pod
+    // whose name fits the shape, and a pod of a ReplicaSet named like one.
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods(
+      ['gateway-team-b-7d9f8-x2k4q', 'gateway-team-b-7d9f8', '7d9f8'],
+      ['gateway-team-a-x2k4q'],
+      ['gateway-team-a-x2k4q', 'gateway-team-a', 'x2k4q'],
+    ));
     const result = await removeOpenClawAccount({
       agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
     });
@@ -1186,7 +1196,10 @@ describe('removing a refused identity from the gateway config (F361)', () => {
     clearGatewayUnreadyHold();
     k8s.__mock.execPods.length = 0;
     noDeployment();
-    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods('gateway-team-7d9f8-x2k4q'));
+    k8s.__mock.listNamespacedPod.mockResolvedValueOnce(readyPods(
+      ['gateway-team-a-x2k4q', 'gateway-team-a', 'x2k4q'],
+      ['gateway-team-7d9f8-x2k4q', 'gateway-team-7d9f8', '7d9f8'],
+    ));
     const result = await removeOpenClawAccount({
       agentName: 'openclaw', instanceId: 'nova', gateway: { mode: 'k8s', slug: 'team' },
     });
