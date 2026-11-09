@@ -53,8 +53,9 @@ export const workspaceGitAttachment = (root, { git = resolveRealGit() } = {}) =>
 // For a public Codex seat. Codex starts its MCP servers outside the seat's
 // permission profile, so a bare server would run git as the operator, with the
 // network on and every file the profile denies in reach. This one runs under a
-// Seatbelt of its own: the workspace read-only, no network, its code and git
-// readable, and nothing writable but `stateDir`, an empty folder of its own (not
+// Seatbelt of its own: the workspace read-only with its .env, .npmrc and
+// .yarnrc* files unreadable, as the profile has them, no network, its code and
+// git readable, and nothing writable but `stateDir`, an empty folder of its own (not
 // the folder that holds the seat's credential). macOS only: elsewhere there is
 // no wrapper here yet, so the seat gets no tool rather than an unconfined one.
 export const confinedWorkspaceGitServer = (root, {
@@ -74,6 +75,7 @@ export const confinedWorkspaceGitServer = (root, {
     readOnlyPaths: attachment.readPaths,
     network: 'loopback',
     processInfo: 'self',
+    denyRegistryConfig: true,
   });
   return { ...attachment.server, command };
 };
