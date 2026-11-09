@@ -5,7 +5,7 @@ a declared model and provider whose `keyFile` is an absolute, regular 0600 file
 (the sandbox check needs the declaration; the spawn checks the file), and an
 enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations other than the grant broker, untested versions
 (the gate compares the whole version Goose prints: a prerelease such as `1.54.0-rc.1` is not 1.54.0, and a version
-run into other characters, such as `1.54.0rc1`, `1.54.0.1`, `v1.54.0` or `1.54.0+build`, reads as unknown and is refused),
+run into other characters, such as `1.54.0rc1`, `1.54.0.1`, `v1.54.0`, `1.54.0+build` or `1.54.0~rc1`, reads as unknown and is refused),
 disabled sandboxes and restricted-network declarations fail before launch.
 Public filesystem `read-outside` declarations are refused, so operator-supplied
 paths cannot expand the host read grants of the public process.
