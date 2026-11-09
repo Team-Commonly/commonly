@@ -51,6 +51,8 @@ import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCu
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { asksThisAgent, carriesOtherAuthors } from './mentionCoalesce';
+import { answerRootOfWake } from './agentAnswerService';
+import { isPersonalPodType } from './podTypePolicyService';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
@@ -919,10 +921,11 @@ interface DispatchContext {
    */
   answeringMessageId?: string;
   /**
-   * The thread the trigger was posted in, when it was posted in one. Every
-   * post the turn makes carries it, so a mention inside a thread gets its
-   * answer in that thread (TASK-026). Undefined for a top-level trigger, which
-   * keeps the answer at the pod root.
+   * The thread this turn answers in. Every post the turn makes carries it, so
+   * a mention inside a thread gets its answer in that thread (TASK-026), and a
+   * top-level @mention in a shared pod gets its answer in that message's own
+   * thread (D278, answerThreadOfTrigger). Undefined otherwise: other top-level
+   * triggers, and anything in a personal pod, keep the answer at the pod root.
    */
   answeringThreadRootId?: number;
 }
@@ -932,6 +935,22 @@ export const threadRootOfTrigger = (payload: unknown): number | undefined => {
   const p = (payload || {}) as { threadRootId?: unknown; thread_root_id?: unknown };
   const root = Number(p.threadRootId ?? p.thread_root_id);
   return Number.isInteger(root) && root > 0 ? root : undefined;
+};
+
+/**
+ * The thread a turn's answer goes in (D278): the thread its trigger was posted
+ * in, or, for a top-level chat.mention in a shared pod, that message's own
+ * thread. The same rule a CAP post gets from agentAnswerService.answerRootOfWake.
+ * `podType` unknown (a failed lookup) keeps the old placement: the pod root.
+ */
+export const answerThreadOfTrigger = (
+  trigger: { type?: unknown; payload?: unknown },
+  podType: unknown,
+): number | undefined => {
+  const inThread = threadRootOfTrigger(trigger.payload);
+  if (inThread) return inThread;
+  if (!podType || isPersonalPodType(podType)) return undefined;
+  return answerRootOfWake({ type: trigger.type, payload: trigger.payload }) ?? undefined;
 };
 
 // The agent's own bot User, found the way the posting path derives it (the
@@ -2596,10 +2615,14 @@ export async function runAgent(
 
   // Best-effort pod name lookup for user-message framing. Never block on it.
   let podName = 'this pod';
+  // D278: where a top-level mention's answer goes depends on it. Unknown keeps
+  // the answer at the pod root, as before.
+  let podType: string | null = null;
   try {
     const Pod = require('../models/Pod');
     const pod = await Pod.findById(installation.podId).lean();
     if (pod?.name) podName = String(pod.name);
+    if (pod?.type) podType = String(pod.type);
   } catch (err) {
     console.warn('[native-runtime] pod lookup failed:', (err as Error).message);
   }
@@ -2687,7 +2710,7 @@ export async function runAgent(
     ownUserId: null,
     givenAddresses: new GivenAddresses(),
     answeringMessageId: claimMessageId || undefined,
-    answeringThreadRootId: threadRootOfTrigger(trigger.payload),
+    answeringThreadRootId: answerThreadOfTrigger(trigger, podType),
   };
 
   // F56: read once. Neither the reply nor the failed-turn line is an answer to an

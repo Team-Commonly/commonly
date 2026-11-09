@@ -80,12 +80,16 @@ const okResponse = (body) => ({
 afterEach(() => { delete global.fetch; });
 
 describe('commonly_post_message', () => {
-  it('says a reply joins a thread, and where an answer to a top-level mention lands (F212)', () => {
+  // D278 (2026-11-09) reversed F212: the answer to a top-level mention goes in
+  // that message's thread, and nothing tells a model to keep it in the channel.
+  it('says a reply joins a thread, and that an answer to a top-level mention goes in its thread (D278)', () => {
     const { description } = byName.commonly_post_message;
     expect(description).toContain('quotes a specific message and joins its thread, but wakes no one');
-    expect(description).toContain("Answer a person's top-level message that mentions you");
-    expect(description).toContain('thread_root_dropped');
-    expect(description).toContain('In a personal pod (a DM or agent room) a threaded answer stays threaded');
+    expect(description).toContain('Answer a top-level message that mentions you in its thread');
+    expect(description).toContain('or is one top-level message that mentions you, when the kernel files it in that thread');
+    expect(description).toContain('In a personal pod (a DM or agent room) there is no channel to keep clear');
+    expect(description).not.toContain('thread_root_dropped');
+    expect(description).not.toContain('you want answered in the channel');
   });
 
   it('forwards UI card payload and explicit type alongside the text fallback', async () => {

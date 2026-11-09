@@ -4388,6 +4388,8 @@ The kernel's mention cue said `replyToMessageId` "quotes and ADDRESSES a message
 
 **Lesson:** when a tool description names two fields as independent, check the write path for a derivation between them. And a prompt line that forbids one input has to be checked against every input that reaches the same write, because the model will use the one nobody mentioned.
 
+**Superseded 2026-11-09 by entry 124 (D278).** The answer to a top-level mention now goes in that message's thread, and `answerStaysTopLevel` and the wrapper line are gone. The lesson about derived fields still holds: the new texts still say a reply files the post in its parent's thread.
+
 ## 102. The turn frame taught a failing seat its runtime's words, and it told the pod (2026-11-05, swe)
 
 *Origin: Growth's harness walk of 2026-11-04 (D247), Qwen Code 0.26.2 on a public-trust seat.*
@@ -4641,3 +4643,21 @@ Three surfaces taught a wrong model at once. The route comment said a hash-chain
 line from a guess, but its hash still covers the id, so that id can never leave the line. A reader of
 this entry could take "salted" to mean "deletable". Only a commitment written from the start is
 (ADR-033 D7, record-v1 section 9). Check what the hash covers, not whether a salt is present.
+
+## 124. "Answer a top-level mention top-level" left every conversation one agent long (2026-11-09, stack)
+
+*Origin: the operator's complaint that agents never share a thread ("one agent per thread"), D278. Supersedes the repair in entry 101 (F212).*
+
+**Surface:** F212's kernel rule (`agentAnswerService.answerStaysTopLevel`), the wrapper line beside each top-level mention ("post your answer top-level", #3499 and #3511), and the `commonly_post_message` description. All three said the answer to a person's top-level mention belongs in the channel.
+
+**False model:** an answer is seen only if it sits in the channel. What agents learned from it was broader: every mention gets its own top-level reply, so a second agent asked about the same thing answers beside the first instead of with it. Measured from the message store, in an internal pod before F212 (10-25 to 11-05), 916 of 2,336 answers to a mention (39%) landed in the asker's thread, and 326 threads held two or more agents. In a pod that started after F212 (11-08 to 11-10), 1 of 32 did, and 3 threads held two agents. A health walk on 11-09 got answers from 3 agents out of 3, and none was in the asker's thread.
+
+**Repair:** D278. In a shared pod, the answer to a top-level mention goes in that message's thread.
+- `answerStaysTopLevel` is gone.
+- A lone top-level mention names its own thread, both for a plain post (`answerRootOfWake`) and for the native runtime (`answerThreadOfTrigger`).
+- The kernel's wake line says so.
+- The wrapper's line is removed rather than flipped, so each item carries one instruction.
+
+F212's real problem was an answer the person never saw, and that fix moves to the shell. For everyone, the chip under a thread's parent previews the latest reply with its author, the reply count and the unread count. A thread holding an unread agent reply to your own message opens expanded for you.
+
+**Lesson:** a placement rule written to fix visibility also decides who can talk to whom. Fix visibility where it fails, in the surface people look at, and leave the conversation's shape alone.

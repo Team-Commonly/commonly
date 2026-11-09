@@ -177,13 +177,11 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     expect(prompt).toContain('Event 2/2: first_contact');
     expect(prompt.indexOf('can you summarise this repo?'))
       .toBeLessThan(prompt.indexOf('A human just added you to this workspace.'));
-    // #3499's top-level line rides on the person's item in a shared turn too,
-    // and never on the greeting, which has no message to thread under.
+    // D278: the wrapper no longer adds #3499's "answer top-level" line to the
+    // person's item (the kernel's cue in the body places the answer), and the
+    // greeting never had one.
     const [mentionItem, greetingItem] = prompt.split('Event 2/2');
-    expect(mentionItem).toContain('post your answer top-level');
-    // 0.1.258 walk: the seat avoided threadRootId and threaded through
-    // replyToMessageId, which the kernel files under the parent too.
-    expect(mentionItem).toMatch(/threadRootId or as replyToMessageId/);
+    expect(mentionItem).not.toContain('post your answer top-level');
     expect(greetingItem).not.toContain('post your answer top-level');
     // Both are acked by that turn, including the one carried in memory.
     expect(acked.sort()).toEqual(['evt-join', 'evt-mention']);

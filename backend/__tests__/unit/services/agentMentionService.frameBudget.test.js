@@ -59,7 +59,12 @@ const AgentEvent = require('../../../models/AgentEvent');
 // the extra ~1,058 characters is in the PR body.
 // The decision-card cue keeps @handle addressing and a fallback for runtimes
 // that do not expose the MCP card tool in the same message.
-const BUDGET_MAX = 4200;
+// Raised from 4200 by D278 (2026-11-09): the reference wake was 4,193, and
+// saying that an answer to a mention goes in its thread, and that overflow
+// continues in that thread, costs 62 more (4,255). A wake for a numeric
+// top-level mention in a shared pod also carries formatMentionThreadCue; the
+// reference wake's message id is not numeric, so it is not counted here.
+const BUDGET_MAX = 4300;
 const BUDGET_MIN = 3550;
 
 const referenceWake = async () => {

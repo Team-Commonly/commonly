@@ -659,14 +659,17 @@ const formatPodContextFrame = (podId: string): string =>
   // structure in their reads (thread_root_id on every message,
   // ?threadRootId= scoping) — a cue that teaches continuations into threads
   // peers cannot read would hide work from its audience.
-  `This pod has threads; three distinct verbs: a plain post defaults to the channel; ` +
+  // D278: an answer to a mention belongs in that mention's thread; the cue
+  // beside each mention names it (formatThreadAnswerCue, formatMentionThreadCue).
+  `This pod has threads; three distinct verbs: a plain post goes to the channel, but an ` +
+  `answer to a mention goes in its thread; ` +
   `replyToMessageId quotes a message and the post joins its thread; it wakes no one, so @mention ` +
   `whoever must see it; ` +
   `threadRootId (the thread root's message id, in the same post body) continues a thread ` +
   `WITHOUT pinging anyone — followers see it, the channel stays uncluttered. ` +
   `To quote inside a thread, send both fields. ` +
-  `Prose overflow goes in a thread, not an attachment: post the POINT to the channel, ` +
-  `continue the detail under your own root with threadRootId; attachments are for genuine ` +
+  `Prose overflow goes in a thread, not an attachment: post the POINT first, continue the ` +
+  `detail in that thread (or under your own channel post with threadRootId); attachments are for genuine ` +
   `artifacts (files, images, documents), never for the rest of your message. ` +
   // @sprint-review (57706) found the hole in the sentence above as first
   // drafted, and it was the expensive kind: "post your headline, continue
@@ -1159,11 +1162,24 @@ const formatThreadAnswerCue = (threadRootId: number): string => (
   + 'Do not count on a plain post to land there: it does only when this thread is all your turn holds.]'
 );
 
+// D278: a top-level mention in a shared pod is answered in its own thread, so
+// the conversation, and every agent that joins it, stays in one place. It
+// reverses F212's line ("post your answer top-level"); the shell now shows a
+// thread's latest reply on its parent, so the channel still sees the answer.
+const formatMentionThreadCue = (messageId: number): string => (
+  `[This message is top-level in the channel. Answer it in its thread: send threadRootId ${messageId} `
+  + `with your post if your post tool takes it (replyToMessageId ${messageId} also files it there, `
+  + 'and quotes it). Do not count on a plain post to land there: it does only when this mention is all '
+  + 'your turn holds. Post in the main channel (mainChannel: true) only to start a separate topic.]'
+);
+
 interface AuthorFrame {
   username?: string;
   createdAt?: unknown;
   messageId?: string;
   threadRootId?: number | null;
+  /** D278: set for a top-level chat.mention in a shared pod, to its own message id. */
+  answerThreadOf?: number;
   name?: string;
   handle?: string;
   memberList?: string;
@@ -1212,6 +1228,8 @@ const buildContentForTarget = (
   }
   if (author.threadRootId) {
     frames.push(formatThreadAnswerCue(author.threadRootId));
+  } else if (eventType === 'chat.mention' && author.answerThreadOf) {
+    frames.push(formatMentionThreadCue(author.answerThreadOf));
   }
   // Last before the body on purpose: this is the frame that tells the
   // agent why it is awake at all, and proximity to the body is the one
@@ -2128,6 +2146,14 @@ const enqueueMentions = async ({
     console.warn('[mention-context] pod lookup failed:', (error as Error).message);
   }
   const collaborativePod = isCollaborativePod(podType, installations);
+  // D278: a top-level mention in a shared pod is answered in its own thread.
+  // An unknown pod type (failed lookup) gets no cue rather than a guess.
+  if (eventType === 'chat.mention' && !threadRootId && podType && !isPersonalPodType(podType)) {
+    const ownId = Number(authorFrame.messageId);
+    if (/^\d{1,10}$/.test(String(authorFrame.messageId || '')) && Number.isSafeInteger(ownId) && ownId > 0) {
+      authorFrame.answerThreadOf = ownId;
+    }
+  }
   if (sender) authorFrame.handle = mentionHandleForUser(mentionMap, { ...sender, username });
   if (collaborativePod) {
     try {

@@ -3,8 +3,11 @@
  * carry that thread's root, or it lands at the pod root.
  */
 jest.mock('axios', () => ({ __esModule: true, default: { post: jest.fn() } }));
+// The pod the seat runs in. Its type decides where a top-level mention's
+// answer goes (D278); a test sets it, and afterEach puts the default back.
+const mockPod = { doc: { name: 'My Workspace' } };
 jest.mock('../../../models/Pod', () => ({
-  findById: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ name: 'My Workspace' }) })),
+  findById: jest.fn(() => ({ lean: jest.fn().mockImplementation(async () => mockPod.doc) })),
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({
@@ -28,7 +31,7 @@ jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
-const { threadRootOfTrigger, runAgent } = require('../../../services/nativeRuntimeService');
+const { threadRootOfTrigger, answerThreadOfTrigger, runAgent } = require('../../../services/nativeRuntimeService');
 
 describe('threadRootOfTrigger (TASK-026)', () => {
   test('a mention inside a thread takes its root (camelCase, as the mention payload writes it)', () => {
@@ -39,7 +42,7 @@ describe('threadRootOfTrigger (TASK-026)', () => {
     expect(threadRootOfTrigger({ thread_root_id: '7' })).toBe(7);
   });
 
-  test('a top-level mention has no root, so the answer stays at the pod root', () => {
+  test('a top-level mention was posted in no thread', () => {
     expect(threadRootOfTrigger({ messageId: 9 })).toBeUndefined();
     expect(threadRootOfTrigger({ messageId: 9, threadRootId: null })).toBeUndefined();
   });
@@ -49,6 +52,38 @@ describe('threadRootOfTrigger (TASK-026)', () => {
     expect(threadRootOfTrigger(undefined)).toBeUndefined();
     expect(threadRootOfTrigger({ threadRootId: 'abc' })).toBeUndefined();
     expect(threadRootOfTrigger({ threadRootId: 0 })).toBeUndefined();
+  });
+});
+
+// D278 (2026-11-09): in a shared pod the answer to a top-level mention goes in
+// that message's own thread. Personal pods, and a pod whose type is unknown,
+// keep the old placement at the pod root.
+describe('answerThreadOfTrigger (D278)', () => {
+  const mention = (payload) => ({ type: 'chat.mention', payload });
+
+  test('a top-level mention in a shared pod: its own message', () => {
+    expect(answerThreadOfTrigger(mention({ messageId: '10' }), 'team')).toBe(10);
+    expect(answerThreadOfTrigger(mention({ messageId: 10 }), 'chat')).toBe(10);
+  });
+
+  test('a mention inside a thread: that thread, whatever the pod', () => {
+    expect(answerThreadOfTrigger(mention({ messageId: '9', threadRootId: 4 }), 'team')).toBe(4);
+    expect(answerThreadOfTrigger(mention({ messageId: '9', threadRootId: 4 }), null)).toBe(4);
+  });
+
+  test.each(['agent-room', 'agent-dm', 'agent-admin'])('a top-level mention in a %s pod: the pod root', (type) => {
+    expect(answerThreadOfTrigger(mention({ messageId: '10' }), type)).toBeUndefined();
+  });
+
+  test('a pod whose type could not be read: the pod root, as before', () => {
+    expect(answerThreadOfTrigger(mention({ messageId: '10' }), null)).toBeUndefined();
+    expect(answerThreadOfTrigger(mention({ messageId: '10' }), undefined)).toBeUndefined();
+  });
+
+  test('ambient traffic, a joined row and a heartbeat name no thread', () => {
+    expect(answerThreadOfTrigger({ type: 'message.posted', payload: { messageId: '10' } }, 'team')).toBeUndefined();
+    expect(answerThreadOfTrigger(mention({ messageId: '10', coalesced: [{ messageId: '11' }] }), 'team')).toBeUndefined();
+    expect(answerThreadOfTrigger({ type: 'heartbeat', payload: {} }, 'team')).toBeUndefined();
   });
 });
 
@@ -110,7 +145,7 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
     expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(4);
   });
 
-  test('the tool post at top level passes null, so the answer stays at the root', async () => {
+  test('the tool post at top level, in a pod of unknown type, passes null', async () => {
     axios.post
       .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'at the root' }))
       .mockResolvedValueOnce(says('Posted.'));
@@ -119,6 +154,44 @@ describe('runAgent carries the trigger thread root to its post calls (TASK-026)'
 
     expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
     expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
+  });
+
+  describe('a top-level mention (D278)', () => {
+    afterEach(() => { mockPod.doc = { name: 'My Workspace' }; });
+
+    test('in a shared pod the tool post goes in that message\'s thread', async () => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'in its thread' }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBe(10);
+    });
+
+    test('in a shared pod the fallback post goes there too', async () => {
+      mockPod.doc = { name: 'Team', type: 'team' };
+      axios.post.mockResolvedValueOnce(says('Plain reply, no tool.'));
+
+      await runAgent(seat, topLevel);
+
+      const fallback = AgentMessageService.postMessage.mock.calls.find(([arg]) => arg.metadata?.fallback);
+      expect(fallback).toBeDefined();
+      expect(fallback[0].threadRootId).toBe(10);
+    });
+
+    test('in an agent room the tool post stays a plain post', async () => {
+      mockPod.doc = { name: 'Scout', type: 'agent-room' };
+      axios.post
+        .mockResolvedValueOnce(callsTool('commonly_post_message', { content: 'hi' }))
+        .mockResolvedValueOnce(says('Posted.'));
+
+      await runAgent(seat, topLevel);
+
+      expect(AgentMessageService.postMessage.mock.calls[0][0].threadRootId).toBeNull();
+    });
   });
 
   test('the fallback post in a thread passes the thread root when the model never calls a tool', async () => {
