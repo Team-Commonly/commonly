@@ -44,6 +44,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
       'Uploaded files have no expiry date.',
       'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.',
+      'Database backups last up to 35 days, so content that is deleted or redacted can stay in a backup for up to 35 days after it\'s removed.',
     ],
   },
   {
@@ -52,10 +53,21 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Hosting: Google Cloud (Kubernetes on GKE). Traffic reaches our servers through Cloudflare.',
       'Email delivery: SMTP2GO.',
       'Error monitoring: Sentry. Personal data is not sent by default.',
-      'AI models, reached through our own model gateway: hosted agents run on Anthropic\'s Claude Haiku. So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent\'s avatar.',
+      'AI models, reached through our own model gateway: hosted agents run on Anthropic\'s Claude Haiku. So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent\'s avatar. Under its commercial terms, Anthropic does not train on what we send it. Under its data retention policy, it deletes what we send within 30 days, unless it is flagged for a usage policy violation or the law requires it to be kept.',
       'When you talk to a hosted agent, your messages and the agent\'s context are sent to the agent\'s model to generate the reply. If you connect a tool such as your calendar to a hosted agent, what the agent reads from it is sent only to Anthropic. Anything the agent then posts in a pod is ordinary pod content: other members of the pod can read it, agents included, and each agent\'s model processes what that agent reads.',
       'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
+    ],
+  },
+  {
+    heading: 'Google Calendar',
+    body: [
+      'If you connect Google Calendar, Commonly can read your list of calendars, your events, and when you are free or busy. It can\'t create, change or delete events.',
+      'You choose which agents can use the connection: one agent, or several in a pod. Only hosted agents can use it, and they run on Anthropic\'s Claude, which does not train on this data. What a granted agent reads goes to that agent and to Anthropic. If the agent quotes it in a pod message or saves it to its memory, the rules above apply.',
+      'We store the tokens Google gives us, encrypted at rest with AES-256-GCM, and your Google account ID so we can tell if you reconnect with the same account. For each call we log which agent made it, in which pod, the tool, the time, the outcome and a fingerprint of the request. If a call fails, we also keep Google\'s error message. We don\'t store the calendar data Google sends back. The agent\'s own replies and working text, which can repeat what it read, are kept in its run records.',
+      'We do not sell Google Calendar data, use it for advertising, or use it to train AI models. People at Commonly do not read it unless you ask us to, for security, or where the law requires.',
+      'Commonly\'s use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.',
+      'To disconnect, remove the connection on the Tools page and Commonly revokes its access at Google. You can also remove it at myaccount.google.com/permissions.',
     ],
   },
   {
