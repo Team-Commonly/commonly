@@ -130,6 +130,10 @@ backend:
     pgPort: "25450"
     pgDatabase: "defaultdb"
     pgUser: "avnadmin"
+    # The backend connects as its own least-privilege role. ops-runner and the
+    # backup keep pgUser for admin work. The store key must exist first.
+    pgAppUser: "commonly_app"
+    pgAppPasswordKey: "postgres-app-password"
     pgSslEnabled: "true"
     pgCaCertPath: "/app/certs/ca.pem"
     # Purge the stranger journey's eng-smoke-journey-*@ops.commonly.invalid
@@ -354,6 +358,9 @@ cloudflared:
   ingressService: ingress-nginx-controller.ingress-nginx.svc.cluster.local
 
 litellm:
+  # LiteLLM connects as its own role, which owns only the litellm schema.
+  pgUser: "commonly_litellm"
+  pgPasswordKey: "postgres-litellm-password"
   enabled: true
   # F98 (D243, 11-04): no other vendor's name is served by DeepSeek here. None
   # was called in the 7 days to 11-04, so a caller gets an unknown-model error.
