@@ -1081,8 +1081,17 @@ export async function dispatchTool(
     };
   }
   if (ctx.webTainted && !allowedAfterTaint(name, Boolean(ctx.computerReadSeen))) {
+    // Name what tainted the turn, so the agent knows what it can still do:
+    // after a computer read it can click and type on that page, not open a
+    // new address.
+    let reason = 'web results are in it';
+    if (ctx.computerReadSeen) {
+      reason = name === 'computer_navigate'
+        ? 'a page read with the computer is in it. To go on, click a link on the page you have open instead of opening an address'
+        : 'a page read with the computer is in it';
+    }
     return {
-      content: { ok: false, error: `${name} is unavailable for the rest of this turn because web results are in it` },
+      content: { ok: false, error: `${name} is unavailable for the rest of this turn because ${reason}` },
       error: 'web_tainted_tool_denied',
     };
   }
