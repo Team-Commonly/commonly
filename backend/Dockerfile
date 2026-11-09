@@ -57,15 +57,25 @@ WORKDIR /app
 ARG OPENCLAW_OFFICECLI_VERSION=1.0.70
 ARG OFFICECLI_SHA256_X64=654a4a9e651ce992f8352a3c6700feb5210a9cc64baaf093e773e69e858f54a9
 ARG OFFICECLI_SHA256_ARM64=4a4a8d7c1149a9480e2d5057ef04e55f49bc67206f123886dee5ca12c20e0f8e
+# The same release's asset ids, for a second way in. On 2026-11-09 the
+# releases/download redirect answered 504 for two deploys in a row while the
+# API's asset endpoint served the same bytes. The checksum below is checked
+# whichever path answered, so the fallback can't change what gets installed.
+# A version bump updates the ids with the checksums.
+ARG OFFICECLI_ASSET_ID_X64=410715116
+ARG OFFICECLI_ASSET_ID_ARM64=410715117
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates git && \
     ARCH="$(uname -m)" && \
     case "$ARCH" in \
-      x86_64)  ASSET="officecli-linux-x64";   EXPECTED="${OFFICECLI_SHA256_X64}" ;; \
-      aarch64) ASSET="officecli-linux-arm64"; EXPECTED="${OFFICECLI_SHA256_ARM64}" ;; \
+      x86_64)  ASSET="officecli-linux-x64";   EXPECTED="${OFFICECLI_SHA256_X64}";   ASSET_ID="${OFFICECLI_ASSET_ID_X64}" ;; \
+      aarch64) ASSET="officecli-linux-arm64"; EXPECTED="${OFFICECLI_SHA256_ARM64}"; ASSET_ID="${OFFICECLI_ASSET_ID_ARM64}" ;; \
       *) echo "Unsupported architecture for OfficeCLI: $ARCH" >&2; exit 1 ;; \
     esac && \
     REL="https://github.com/iOfficeAI/OfficeCLI/releases/download/v${OPENCLAW_OFFICECLI_VERSION}" && \
-    curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --speed-limit 1024 --speed-time 30 "${REL}/${ASSET}" -o /usr/local/bin/officecli && \
+    FETCH="curl -fsSL --retry 4 --retry-all-errors --connect-timeout 10 --speed-limit 1024 --speed-time 30 -o /usr/local/bin/officecli" && \
+    { $FETCH "${REL}/${ASSET}" || \
+      { echo "releases/download failed; trying the API asset endpoint" >&2 && \
+        $FETCH -H "Accept: application/octet-stream" "https://api.github.com/repos/iOfficeAI/OfficeCLI/releases/assets/${ASSET_ID}"; }; } && \
     ( cd /usr/local/bin && echo "${EXPECTED}  officecli" | sha256sum -c - ) && \
     chmod +x /usr/local/bin/officecli && \
     officecli --version && \
