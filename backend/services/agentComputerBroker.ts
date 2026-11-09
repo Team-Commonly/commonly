@@ -45,6 +45,12 @@ const INSTALLATION_ID = /^[a-f\d]{24}$/i;
 const SESSION_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 15_000;
 const MAX_SNAPSHOT_CHARS = 18_000;
+// A single-page app is still an empty shell at domcontentloaded: its body
+// has no text and its route hasn't set the title. Navigate waits up to this
+// long for the page to show text, and a snapshot up to SNAPSHOT_SETTLE_MS.
+// A page that never shows text costs the wait once and is read as it is.
+const NAVIGATE_SETTLE_MS = 5_000;
+const SNAPSHOT_SETTLE_MS = 2_000;
 const MAX_SCREENSHOT_BYTES = 1_000_000;
 const WRITE_APPROVAL_TIMEOUT_MS = 30_000;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -164,6 +170,24 @@ export const isCommitControl = (control: {
   return /\b(send|submit|post|publish|reply|share|confirm|place order|pay|purchase)\b/i
     .test(caption);
 };
+
+// Waits for load, then for the body to show text, within `budgetMs` in all.
+// It never throws: a page that doesn't settle is read as it is.
+async function settle(page: Page, budgetMs: number): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  try {
+    await page.waitForLoadState('load', { timeout: budgetMs });
+  } catch { /* read what is there */ }
+  const left = deadline - Date.now();
+  if (left <= 0) return;
+  try {
+    await page.waitForFunction(
+      () => Boolean(document.body && document.body.innerText.trim()),
+      undefined,
+      { timeout: left },
+    );
+  } catch { /* read what is there */ }
+}
 
 export class AgentComputerBroker {
   private users = new Map<string, Promise<UserBrowser>>();
@@ -403,6 +427,8 @@ export class AgentComputerBroker {
       if (this.leftTrial.has(page)) throw new Error('That address is outside this computer trial.');
       throw error;
     }
+    await settle(page, NAVIGATE_SETTLE_MS);
+    // Checked after the page has rendered, since a script can move it on.
     let landed: URL | null = null;
     try { landed = new URL(page.url()); } catch { /* closed below */ }
     if (!landed || !this.onList(landed)) {
@@ -414,6 +440,7 @@ export class AgentComputerBroker {
 
   async snapshot(userId: string, installationId: string): Promise<{ url: string; title: string; text: string }> {
     const page = await this.tab(userId, installationId);
+    await settle(page, SNAPSHOT_SETTLE_MS);
     return {
       url: page.url(), title: await page.title(),
       text: (await page.locator('body').ariaSnapshot()).slice(0, MAX_SNAPSHOT_CHARS),
