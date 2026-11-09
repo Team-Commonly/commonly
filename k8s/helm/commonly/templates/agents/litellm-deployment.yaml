@@ -188,9 +188,15 @@ spec:
             # The injection-guard fails open: a category file LiteLLM can't
             # find, read or is not allowed to read only logs a warning and is
             # skipped. Build the guard from this config with LiteLLM's own
-            # loader and refuse to boot unless every category loaded and a
-            # known jailbreak line still blocks. Files: files/litellm/.
-            "$PYBIN" -I - <<'PYEOF' || { echo "FATAL: injection-guard check failed. Refusing to boot with a guard that would not block."; exit 1; }
+            # loader and check that every category loaded and a known
+            # jailbreak line still blocks. Files: files/litellm/.
+            # A failure here logs an alarm line (log metric
+            # injection_guard_degraded) and LiteLLM still starts: with
+            # Recreate there is no old pod to fall back on, and stopping here
+            # would take down every model call, not just the guard. The hard
+            # stop is in CI (scripts/litellm-guard-check.py), which runs this
+            # same check against the pinned image before a change can merge.
+            "$PYBIN" -I - <<'PYEOF' || echo '{"alarm":"injection_guard_degraded","message":"injection-guard check failed (reason on the line above); LiteLLM is starting with a guard that may not block"}'
             import sys, yaml
             from litellm.proxy.guardrails.guardrail_hooks.litellm_content_filter.content_filter import ContentFilterGuardrail
             cfg = yaml.safe_load(open('/app/config.yaml'))
