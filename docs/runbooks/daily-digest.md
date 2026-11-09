@@ -7,6 +7,14 @@ whom it is **08:00 in their own time zone**. The zone is set once from the
 browser (`POST /api/users/me/timezone`, `User.timezone`); with no zone on file,
 it's **06:00 UTC**. Nobody gets a second digest within 20 hours.
 
+A person stays due for **three hours** from that hour, so a run the scheduler
+missed (the worker restarting across minute 1) is made up on the next run. Each
+scheduled digest carries `metadata.digestKey`, which is the person plus their
+local date, under a unique index. Two runs of the same hour (a roll, or a
+partitioned worker still running beside its replacement) therefore write one
+digest, and only the run that wrote it emails it. An on-demand digest has no
+key.
+
 Content comes from the activity recap and is limited to the recipient's own
 private pods. Only digests with at least one line are emailed, and only to
 verified users who haven't turned the digest off.
