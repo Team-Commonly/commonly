@@ -53,7 +53,7 @@ export const pushBodyRateLimit = rateLimit({
 
 export const errorPayload = (error: unknown): Record<string, unknown> => {
   // Every caller of these routes is an agent.
-  const e = agentFacingRefusal({ ...(error as { code?: string; message?: string; details?: unknown }) });
+  const e = agentFacingRefusal(error);
   return {
     error: e.code || 'broker_error',
     message: e.message || 'Tool call refused',
@@ -238,7 +238,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
         })),
       };
     } catch (error) {
-      const refusal = agentFacingRefusal({ ...(error as { code?: string; message?: string }) });
+      const refusal = agentFacingRefusal(error);
       const code = refusal.code || 'broker_error';
       throw new McpError(
         ErrorCode.InvalidRequest,

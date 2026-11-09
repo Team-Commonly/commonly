@@ -11,6 +11,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   if (!req.get('x-user')) return res.sendStatus(401);
   req.user = { id: req.get('x-user') };
+  if (req.get('x-bot')) req.botCaller = { username: 'a-bot' };
   return next();
 });
 const AgentRun = require('../../../models/AgentRun');
@@ -67,6 +68,14 @@ test('returns durable turn + PG attribution after card retention without content
   expect(res.body.run.turns[0].toolCalls[0].trail).toMatchObject({ callId: 'trace-call', grantId: 'grant', credentialOwnerId: 'owner', outcome: 'ok' });
   expect(JSON.stringify(res.body)).not.toMatch(/PRIVATE_|private prompt|argsDigest/);
   expect(res.body.retention).toEqual({ cardDefaultDays: 30, traceExpiresAt: null });
+});
+test('an agent member reads the trail without the grant or the credential owner', async () => {
+  const res = await get().set('x-bot', '1');
+  expect(res.status).toBe(200);
+  const trail = res.body.run.turns[0].toolCalls[0].trail;
+  expect(trail).toMatchObject({ callId: 'trace-call', outcome: 'ok' });
+  expect(trail).not.toHaveProperty('grantId');
+  expect(trail).not.toHaveProperty('credentialOwnerId');
 });
 describe('on a pod anyone can join (F265)', () => {
   const OWNER_MEMBER = new mongoose.Types.ObjectId();

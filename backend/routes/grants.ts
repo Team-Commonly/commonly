@@ -38,7 +38,7 @@ import { recordGrantIssued } from '../services/brokerRecordService';
 import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemovalCueService';
 import { grantHoldsPrWrite, prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
 import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
-import { agentFacingRefusalCode } from '../services/agentFacingRefusal';
+import { agentFacingRefusalCode, isAgentCaller } from '../services/agentFacingRefusal';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 import { personIdFor } from '../services/recordRedaction';
 
@@ -181,15 +181,6 @@ const maskGrantForAgent = <T extends GrantPeople>(row: T): T => {
   const { byoConsent: _consent, ...rest } = row;
   return { ...rest, grantedBy: null, revokedBy: null, installationId: null } as T;
 };
-
-/**
- * Whether the caller is an agent: a runtime token, or a bot account's own cm_
- * token (auth sets req.botCaller from the row it loaded, and refuses a bot's
- * browser session outright).
- */
-const isAgentCaller = (req: AuthenticatedRequest): boolean => (
-  Boolean((req as any).agentUser?._id) || Boolean((req as any).botCaller)
-);
 
 /**
  * What the read can say about the broker reaching a grant's seat.

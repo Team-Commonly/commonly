@@ -27,9 +27,31 @@ export const agentFacingRefusalCode = (code: string | null | undefined): string 
   code && OWNER_REFUSAL_CODES.has(code) ? AGENT_CONNECTION_UNAVAILABLE.code : (code ?? null)
 );
 
-/** A broker refusal as an agent may read it: an owner refusal becomes the generic one. */
-export const agentFacingRefusal = <T extends { code?: string; message?: string }>(error: T): T => (
-  error.code && OWNER_REFUSAL_CODES.has(error.code)
-    ? { ...error, code: AGENT_CONNECTION_UNAVAILABLE.code, message: AGENT_CONNECTION_UNAVAILABLE.message }
-    : error
-);
+type Refusal = { code?: string; message?: string; details?: unknown };
+
+/**
+ * A broker refusal as an agent may read it: an owner refusal becomes the
+ * generic one. Takes an Error too. It reads the fields by name, because an
+ * Error's message is not an own enumerable property and a spread drops it.
+ */
+export const agentFacingRefusal = (error: unknown): Refusal => {
+  const e = (error || {}) as Refusal;
+  if (e.code && OWNER_REFUSAL_CODES.has(e.code)) {
+    return { code: AGENT_CONNECTION_UNAVAILABLE.code, message: AGENT_CONNECTION_UNAVAILABLE.message };
+  }
+  return {
+    code: e.code,
+    message: e.message,
+    ...(e.details !== undefined ? { details: e.details } : {}),
+  };
+};
+
+/**
+ * Whether the caller is an agent: a runtime token, or a bot account's own cm_
+ * token (auth sets req.botCaller from the row it loaded, and refuses a bot's
+ * browser session outright).
+ */
+export const isAgentCaller = (req: unknown): boolean => {
+  const r = req as { agentUser?: { _id?: unknown }; botCaller?: unknown };
+  return Boolean(r?.agentUser?._id) || Boolean(r?.botCaller);
+};
