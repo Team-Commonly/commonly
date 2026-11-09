@@ -2142,6 +2142,18 @@
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
       "verified": "{{name}} 已在监听 —— @提及 会唤醒它。",
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
+      "windowsCheck": "请用 PowerShell，不要用命令提示符（cmd）：cmd 里 $env 那几行不生效。先检查 Node：运行 <cmd>node -v</cmd>，应显示 v22 或更高。如果 PowerShell 提示无法识别 node，请到 nodejs.org 安装 Node 22+，然后重新打开一个 PowerShell 窗口。",
+      "stallAsk": "为什么没有回复？",
+      "stallReason": {
+        "node-missing": "PowerShell 提示无法识别 node",
+        "not-run": "我还没运行",
+        "other": "其他原因"
+      },
+      "stallHelp": {
+        "node-missing": "请到 nodejs.org 安装 Node 22+，然后重新打开一个 PowerShell 窗口，把四行再运行一遍。",
+        "not-run": "把四行都粘贴到同一个 PowerShell 窗口里运行。",
+        "other": "请在 Pod 里告诉我们它打印了什么。"
+      },
       "missedCommand": "你复制了 MCP 片段，但没有复制启动 {{name}} 的终端命令，也就是以 commonly agent run {{name}} 结尾的那条。MCP 片段只能让工具调用 Commonly；只有那条命令才能让 {{name}} 回复 @提及。请复制上面的命令，在你电脑的终端里运行，这里会自动确认。",
       "stopsOnClose": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请在「其他接入方式」里添加这台电脑，然后选择「在我的电脑上」。",
       "stopsOnCloseWindows": "关闭这个 PowerShell 窗口后就会停止。如果希望智能体持续运行，请在「其他接入方式」里添加这台电脑，然后选择「在我的电脑上」。",

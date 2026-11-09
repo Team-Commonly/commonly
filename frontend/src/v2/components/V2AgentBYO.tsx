@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { recordByoStep, type ByoCopyType, type ByoStep } from '../utils/byoTelemetry';
+import { recordByoStep, type ByoCopyType, type ByoStallReason, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
@@ -222,6 +222,7 @@ const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
 // How long a person may wait, MCP snippet copied and listener command not, before
 // the page names the command they missed.
 const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
+const STALL_REASONS: ByoStallReason[] = ['node-missing', 'not-run', 'other'];
 
 // Claude Code and Codex keep the OS rules above. No other harness answers from
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
@@ -1249,8 +1250,17 @@ const V2AgentBYO: React.FC = () => {
   // even copied a command. Fire-and-forget; the flow never waits on it.
   // Every step carries the setup the page is showing (OS and listener
   // eligibility) so the server can tell "listener was possible" from "not".
-  const byoStep = (step: ByoStep, copyType?: ByoCopyType) => {
-    recordByoStep(api, step, { setupOs, listenerAvailable, ...(copyType ? { copyType } : {}) });
+  const byoStep = (step: ByoStep, copyType?: ByoCopyType, reason?: ByoStallReason) => {
+    recordByoStep(api, step, {
+      setupOs, listenerAvailable, ...(copyType ? { copyType } : {}), ...(reason ? { reason } : {}),
+    });
+  };
+  // One report per page load; the buttons hide after the click (F342).
+  const [stallReason, setStallReason] = useState<ByoStallReason | null>(null);
+  const reportStall = (reason: ByoStallReason) => {
+    if (stallReason) return;
+    setStallReason(reason);
+    byoStep('listen-stall-reported', undefined, reason);
   };
 
   useEffect(() => {
@@ -2157,6 +2167,12 @@ const V2AgentBYO: React.FC = () => {
               </p>
             )}
             {/* Both Windows last lines carry --unsandboxed. */}
+            {/* Before the paste: the three ways a Windows visitor stops before the CLI runs (F342). */}
+            {listenerAvailable && setupOs === 'windows' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-windows-check">
+                <Trans i18nKey="agentByo.listen.windowsCheck" components={{ cmd: <code /> }} />
+              </p>
+            )}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 <Trans
@@ -2202,6 +2218,32 @@ const V2AgentBYO: React.FC = () => {
                     ? t('agentByo.listen.stillWaiting', { name: issued.agentName })
                     : t('agentByo.listen.waiting', { name: issued.agentName })}
               </p>
+            )}
+            {/* Same moment as the missed note: the listen line was copied, three minutes passed, no check-in. */}
+            {listenerAvailable && setupOs === 'windows' && listenState !== 'listening'
+              && copiedKinds.listen && missedWindowOver && (
+              <div className="v2-byo__listen-note" data-testid="byo-listen-stall">
+                {stallReason ? (
+                  <p data-testid="byo-listen-stall-help">
+                    {t(`agentByo.listen.stallHelp.${stallReason}`)}
+                  </p>
+                ) : (
+                  <p>
+                    {t('agentByo.listen.stallAsk')}{' '}
+                    {STALL_REASONS.map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        className="v2-byo__link"
+                        data-testid={`byo-listen-stall-${reason}`}
+                        onClick={() => reportStall(reason)}
+                      >
+                        {t(`agentByo.listen.stallReason.${reason}`)}
+                      </button>
+                    ))}
+                  </p>
+                )}
+              </div>
             )}
             {listenerAvailable && (
               <>

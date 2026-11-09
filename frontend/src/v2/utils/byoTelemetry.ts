@@ -3,7 +3,8 @@ import type { V2ApiClient } from '../hooks/useV2Api';
 export type ByoStep = 'page-viewed' | 'seat-created' | 'mcp-command-copied' | 'cli-command-copied'
   | 'daemon-command-copied' | 'token-copied' | 'listen-confirmed' | 'listen-timeout'
   | 'hosted-offer-shown' | 'hosted-offer-clicked'
-  | 'invite-card-shown' | 'invite-card-dismissed' | 'byo-offer-shown' | 'welcome-shown';
+  | 'invite-card-shown' | 'invite-card-dismissed' | 'byo-offer-shown' | 'welcome-shown'
+  | 'listen-stall-reported';
 
 // Which setup command was copied. Fixed names only; the server keeps the first
 // copy of each (TASK-714), so "listen after MCP" stays visible.
@@ -11,10 +12,14 @@ export type ByoCopyType = 'listen' | 'mcp-claude' | 'mcp-cursor' | 'daemon' | 't
 
 // What the result page showed: the OS it set up for and whether the listener
 // could run there. Booleans and fixed names only, never the command or token.
+// Why a Windows visitor says the agent isn't answering. Fixed names only, never typed text.
+export type ByoStallReason = 'node-missing' | 'not-run' | 'other';
+
 export interface ByoSetupContext {
   setupOs: 'mac' | 'linux' | 'windows' | 'other';
   listenerAvailable: boolean;
   copyType?: ByoCopyType;
+  reason?: ByoStallReason;
 }
 
 // Fixed event names only. Commands and credentials must never enter telemetry.
