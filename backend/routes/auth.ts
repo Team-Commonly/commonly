@@ -3,6 +3,8 @@ const express = require('express');
 // eslint-disable-next-line global-require
 const rateLimit = require('express-rate-limit');
 const { cloudflareIpRateLimitKeyGenerator, loginEmailRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+// Counted in Redis, so the budgets below hold across replicas, not per pod.
+const { SharedRateLimitStore } = require('../middleware/sharedRateLimitStore');
 const { platformIpRateLimit } = require('../middleware/platformRateLimit');
 const { refuseDollarKeys } = require('../middleware/refuseDollarKeys');
 const { loginEmailOf } = require('../utils/loginEmail');
@@ -78,6 +80,7 @@ const rateLimitHandler = (message: string) => (_req: unknown, res: Res) =>
 // Account creation is rare — 10/hour/IP blocks signup-spam while leaving room
 // for shared-IP households and the odd retry.
 const registerLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-register' }),
   windowMs: 60 * 60 * 1000,
   max: 10,
   standardHeaders: true,
@@ -90,6 +93,7 @@ const registerLimiter = rateLimit({
 // Credential-stuffing protection — 20/15min/IP is loose enough that a legit
 // user fat-fingering their password a few times isn't locked out.
 const loginLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-login' }),
   windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
@@ -107,6 +111,7 @@ const loginLimiter = rateLimit({
 // The address comes from the helper login uses, so a body this skips is one
 // login refuses.
 const loginAccountLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-login-account' }),
   windowMs: 15 * 60 * 1000,
   max: 10,
   standardHeaders: true,
@@ -121,6 +126,7 @@ const loginAccountLimiter = rateLimit({
 // the documented 5s cadence over a ten-minute lifetime. These are separate
 // buckets so an interrupted CLI cannot starve a fresh login attempt.
 const deviceStartLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-device-start' }),
   windowMs: 60 * 60 * 1000,
   max: 20,
   standardHeaders: true,
@@ -131,6 +137,7 @@ const deviceStartLimiter = rateLimit({
 });
 
 const devicePollLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-device-poll' }),
   windowMs: 15 * 60 * 1000,
   max: 180,
   standardHeaders: true,
@@ -145,6 +152,7 @@ const devicePollLimiter = rateLimit({
 // Keep their bound separate from the public start/poll buckets: a terminal
 // polling normally must never consume the browser approval budget.
 const deviceManageLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-device-manage' }),
   windowMs: 15 * 60 * 1000,
   max: 60,
   standardHeaders: true,
@@ -159,6 +167,7 @@ const deviceManageLimiter = rateLimit({
 // limiter runs first. Generous, not login-tight: every app load fetches
 // /user more than once, and the key is per IP behind shared NATs.
 const sessionLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-session' }),
   windowMs: 15 * 60 * 1000,
   max: 300,
   standardHeaders: true,
@@ -170,6 +179,7 @@ const sessionLimiter = rateLimit({
 
 // Waitlist is a one-shot action per person — 5/hour/IP.
 const waitlistLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-waitlist' }),
   windowMs: 60 * 60 * 1000,
   max: 5,
   standardHeaders: true,
@@ -182,6 +192,7 @@ const waitlistLimiter = rateLimit({
 // Forgot-password sends outbound mail on every plausible hit — keep it as
 // tight as the waitlist (its own bucket so the two don't starve each other).
 const forgotLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-forgot' }),
   windowMs: 60 * 60 * 1000,
   max: 5,
   standardHeaders: true,
@@ -194,6 +205,7 @@ const forgotLimiter = rateLimit({
 // Like password reset, a resend can amplify outbound mail. It has a separate
 // bucket so asking for a verification link never starves password recovery.
 const resendVerificationLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-resend-verification' }),
   windowMs: 60 * 60 * 1000,
   max: 5,
   standardHeaders: true,
@@ -207,6 +219,7 @@ const resendVerificationLimiter = rateLimit({
 // is one provider round-trip, so 30/15min/IP leaves room for retries without
 // letting a bot farm state rows.
 const oauthLimiter = rateLimit({
+  store: new SharedRateLimitStore({ name: 'auth-oauth' }),
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
