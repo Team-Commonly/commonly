@@ -192,8 +192,10 @@ export const guardrailsForRun = (names: string[], limitedUseOffered: boolean): s
 const hasLimitedUseTool = (projection: HostedBrokerProjection): boolean => (
   [...projection.dispatch.values()].some((mapped) => isLimitedUseTool(mapped.tool))
 );
-// How a guardrail rejection reads in a chat call's error body.
-const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
+// How a guardrail rejection reads in a chat call's error body. LiteLLM's
+// content filter says "Content blocked: prompt_injection_jailbreak …"; only
+// its optional guardrail_name field says "guardrail", so match the message too.
+const GUARDRAIL_REJECTION = /guardrail|moderation|prompt[-_ ]injection|content blocked/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
 // The free-name walk is advisory; past this it gives up and the default name posts.
 const BYO_NAME_LOOKUP_TIMEOUT_MS = 3_000;

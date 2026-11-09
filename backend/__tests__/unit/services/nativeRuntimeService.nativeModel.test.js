@@ -272,6 +272,47 @@ describe('a refusal', () => {
   });
 });
 
+// The body LiteLLM's content filter returned for a blocked chat call on dev
+// (11-08). The message alone has to read as a guard block: the
+// provider_specific_fields that name the guardrail are optional.
+const CONTENT_BLOCKED = "Content blocked: prompt_injection_jailbreak conditional match 'enable + without restrictions' detected (severity: high)";
+const FILTER_BODY = {
+  error: {
+    message: CONTENT_BLOCKED,
+    type: 'invalid_request_error',
+    param: null,
+    code: '400',
+    provider_specific_fields: {
+      error: CONTENT_BLOCKED,
+      category: 'prompt_injection_jailbreak',
+      matched_phrase: 'enable + without restrictions',
+      severity: 'high',
+      guardrail_name: 'injection-guard',
+      guardrail_mode: 'pre_call',
+    },
+  },
+};
+
+describe('a content filter block', () => {
+  test.each([
+    ['with the guardrail fields', FILTER_BODY],
+    ['with only its message', {
+      error: {
+        message: CONTENT_BLOCKED, type: 'invalid_request_error', param: null, code: '400',
+      },
+    }],
+    // Each alternative on its own, so neither can regress unseen.
+    ['saying only "Content blocked"', { error: { message: 'Content blocked: pii detected (severity: high)' } }],
+    ['saying only "prompt injection"', { error: { message: 'Request refused: possible prompt injection' } }],
+  ])('is recorded as a guard block, %s', async (_label, body) => {
+    mockAxiosPost.mockResolvedValueOnce({ status: 400, headers: {}, data: body });
+    const result = await runAgent(installation(), TRIGGER);
+    const saved = await AgentRun.create.mock.results[0].value;
+    expect(saved.errorKind).toBe('guardrail_blocked');
+    expect(result.status).toBe('failed');
+  });
+});
+
 // F103 proof for the DeepSeek delete (Cofounder's condition 1): every
 // first-party native agent (Scout, Recorder, pod-welcomer, task-clerk,
 // pod-summarizer) still pins deepseek-v4-flash in its config, and the seed
