@@ -1,4 +1,5 @@
 import { podMemberPopulate } from '../services/podMemberPopulate';
+import { resolveAgentDisplayLabel } from '../utils/agentDisplayLabel';
 import { leaveUnviewablePodRooms } from '../services/sessionSocketService';
 const mongoose = require('mongoose');
 const Pod = require('../models/Pod');
@@ -398,6 +399,18 @@ exports.getPodsByType = async (req: any, res: any) => {
   }
 };
 
+// Each agent member carries the label people know it by (resolveAgentDisplayLabel),
+// so the page can name a DM after its agent. The runtime name the rule reads is
+// dropped again: the list endpoint never sends it either.
+const withAgentLabels = (plain: any) => ({
+  ...plain,
+  members: (plain?.members || []).map((member: any) => {
+    if (!member?.isBot) return member;
+    const { agentName: _runtime, ...botMetadata } = member.botMetadata || {};
+    return { ...member, botMetadata, displayLabel: resolveAgentDisplayLabel(member, member.username) };
+  }),
+});
+
 // Get a specific pod
 exports.getPodById = async (req: any, res: any) => {
   try {
@@ -410,7 +423,7 @@ exports.getPodById = async (req: any, res: any) => {
     // Get the pod with populated data
     const pod = await Pod.findById(id)
       .populate('createdBy', 'username profilePicture')
-      .populate(podMemberPopulate('username profilePicture isBot'))
+      .populate(podMemberPopulate('username profilePicture isBot botMetadata.displayName botMetadata.instanceId botMetadata.agentName'))
       .populate('parentPod', 'name _id');
 
     if (!pod) {
@@ -435,12 +448,14 @@ exports.getPodById = async (req: any, res: any) => {
     // F307: the room's agent is gone by the same rule the list uses (rows
     // exist, every one uninstalled), so the page can offer to close it.
     // A paused or errored install still counts as present.
+    // toJSON, as res.json(pod) used: toObject would leave the contacts Map as
+    // a Map, which serializes to {}.
+    const body = withAgentLabels(typeof pod.toJSON === 'function' ? pod.toJSON() : pod);
     if (pod.type === 'agent-room') {
       const agentGone = (await goneAgentRoomIds([pod._id])).has(String(pod._id));
-      const plain = typeof pod.toObject === 'function' ? pod.toObject() : pod;
-      return res.json({ ...plain, agentGone });
+      return res.json({ ...body, agentGone });
     }
-    return res.json(pod);
+    return res.json(body);
   } catch (err: any) {
     console.error('Error in getPodById:', err.message);
     if (err.kind === 'ObjectId') {

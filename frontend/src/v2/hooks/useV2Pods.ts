@@ -8,6 +8,9 @@ export interface V2PodMember {
   isBot?: boolean;
   // Bot members only: the curated label and identity, projected by the pod list.
   botMetadata?: { displayName?: string; instanceId?: string };
+  // Bot members only: the server's resolved label (pod detail), the same one
+  // the rest of the app shows for this agent.
+  displayLabel?: string;
 }
 
 export interface V2PodLastMessage {
