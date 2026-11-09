@@ -108,6 +108,14 @@ Check the estimate against the measured figure below, and raise
 The script defaults (10000 and 48) predate the one-job routing. Set the
 variables explicitly at the re-enable, below.
 
+**48 per run undercounts.** Measured on 2026-11-09 against Latchkey's own
+dashboard, November's routed runs averaged about 173 small-equivalent minutes
+each, counting medium runners at their 2× weight. That is about 3.6 times the
+default, so a gate fed 48 thought the month's budget had room long after the
+included minutes were gone. `LATCHKEY_EQ_PER_RUN` is now 175. Re-measure it
+from the dashboard's "Minutes by runner size" whenever the routed jobs or
+runner sizes change, and trust the dashboard over the gate's count.
+
 ## Turn it on, and off
 
 `LATCHKEY_HEAVY` is off until the free allowance resets (around 2026-12-01).
