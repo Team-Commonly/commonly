@@ -836,6 +836,7 @@ const buildArgs = ({
   providerProxy = null,
   platform = process.platform,
   workspacePath = null,
+  trustedContainerPerimeter = false,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -852,6 +853,17 @@ const buildArgs = ({
   // versions spawn admits (PUBLIC_CODEX_MIN_VERSION). Do not
   // pass legacy `--sandbox` alongside them: Codex documents that the legacy
   // mode disables permission-profile composition.
+  //
+  // F387 (TASK-280): the flag above belongs to a cloud-codex k8s pod only,
+  // where bwrap cannot run and the pod is the boundary.
+  // `trustedContainerPerimeter` marks that case: it defaults false and only the
+  // cloud-codex deployment sets it (COMMONLY_CODEX_TRUSTED_PERIMETER in
+  // cloud-codex-deployment.yaml). Every other private seat gets the public
+  // path's deny-by-default permission profile: workspace write, host secret
+  // dirs (~/.commonly ~/.claude ~/.ssh ~/.aws ~/.config ...) denied. Unlike the
+  // public path it keeps the seat's own config and route (no
+  // --ignore-user-config), since a private seat relies on its config.toml; the
+  // -c profile still wins over config defaults.
   const executionPolicy = publicSandbox
     ? [
       '--ignore-user-config',
@@ -867,7 +879,16 @@ const buildArgs = ({
       ...providerRouteFlags(providerProxy),
       ...PUBLIC_BUILTIN_TOOL_FLAGS,
     ]
-    : ['--dangerously-bypass-approvals-and-sandbox'];
+    : trustedContainerPerimeter
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : publicPermissionProfileFlags(
+        'workspace',
+        commitAttributionEnv,
+        mcpReadDirectories,
+        codexHelperReadPaths,
+        platform,
+        workspacePath,
+      );
   const common = [
     '--json',
     '--skip-git-repo-check',
@@ -1249,6 +1270,12 @@ export default {
         providerProxy,
         platform: ctx._platform || process.platform,
         workspacePath,
+        // F387: only a cloud-codex pod sets this
+        // (COMMONLY_CODEX_TRUSTED_PERIMETER=1 in cloud-codex-deployment.yaml).
+        // Absent or any other value gives the permission profile, so a missing
+        // or mistyped env lands on the profile.
+        trustedContainerPerimeter:
+          String((ctx.env || process.env).COMMONLY_CODEX_TRUSTED_PERIMETER || '').trim() === '1',
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,

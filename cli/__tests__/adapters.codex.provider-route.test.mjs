@@ -296,7 +296,12 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
       _spawnImpl: impl,
     });
     expect(started).toEqual([]);
-    expect(calls[0].args).toContain('--dangerously-bypass-approvals-and-sandbox');
+    // F387: a private seat on the host (no trusted perimeter) now runs under the
+    // deny-by-default permission profile, not the sandbox bypass. The route is
+    // still untouched: no proxy starts and codex reads its own config.
+    expect(calls[0].args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    const cFlags = calls[0].args.map((a, i) => (a === '-c' ? calls[0].args[i + 1] : null)).filter(Boolean);
+    expect(cFlags).toContain('default_permissions="commonly_public"');
     expect(providerEntry(calls[0].args)).toBeUndefined();
   });
 

@@ -405,7 +405,10 @@ describe('codex adapter — spawn()', () => {
     // argv carried `env_vars=["COMMONLY_AGENT_TOKEN"]`, which is how the value
     // reached codex and from there every MCP child it spawned — measured on a
     // live codex seat, three children carrying a 73-char token.
-    expect(cFlags).toEqual([
+    // F387: scope to the mcp_servers.* flags — a host-private seat also carries
+    // the permission-profile `-c` flags, which this assertion is not about.
+    const mcpFlags = cFlags.filter((f) => f.startsWith('mcp_servers.'));
+    expect(mcpFlags).toEqual([
       'mcp_servers.commonly.command="npx"',
       'mcp_servers.commonly.default_tools_approval_mode="approve"',
       'mcp_servers.commonly.args=["-y","@commonlyai/mcp@latest"]',
@@ -460,6 +463,66 @@ describe('codex adapter — spawn()', () => {
       .filter(Boolean);
     expect(cFlags).toContain('default_permissions="commonly_public"');
     expect(calls[0].opts.env.CODEX_HOME).toBe(publicHome);
+  });
+
+  // F387 (TASK-280): the sandbox bypass is justified ONLY inside a cloud-codex
+  // pod, which declares itself the trusted perimeter. Both tests use a seat with
+  // NO sandbox declared — the private path that currently takes the bypass.
+  test('F387: a cloud-codex pod (COMMONLY_CODEX_TRUSTED_PERIMETER=1) keeps the sandbox bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-pod"}\n'],
+      outputContents: 'ok',
+    });
+
+    await codex.spawn('work in the pod', {
+      sessionId: null,
+      cwd: '/tmp/cloud-codex-workspace',
+      environment: { model: 'test-model' },
+      env: { ...process.env, CODEX_HOME: operatorHome, COMMONLY_CODEX_TRUSTED_PERIMETER: '1' },
+      agentName: 'cloud-codex',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
+    // The pod does NOT also get a permission profile — they don't compose.
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags).not.toContain('default_permissions="commonly_public"');
+  });
+
+  test('F387: a private seat on the host (no perimeter flag) gets the deny-by-default profile, never the bypass', async () => {
+    const operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-operator-home-'));
+    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-host"}\n'],
+      outputContents: 'ok',
+    });
+
+    // Explicitly clear the perimeter flag so a runner that happens to export it
+    // cannot mask the host-private default.
+    const hostEnv = { ...process.env, CODEX_HOME: operatorHome };
+    delete hostEnv.COMMONLY_CODEX_TRUSTED_PERIMETER;
+
+    await codex.spawn('work on the host', {
+      sessionId: null,
+      cwd: '/tmp/host-private-workspace',
+      environment: { model: 'test-model' },
+      env: hostEnv,
+      agentName: 'host-private-agent',
+      _spawnImpl: impl,
+    });
+
+    const args = calls[0].args;
+    expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(args).not.toContain('--sandbox');
+    const cFlags = args.map((a, i) => (a === '-c' ? args[i + 1] : null)).filter(Boolean);
+    expect(cFlags).toContain('default_permissions="commonly_public"');
+    const fsFlag = cFlags.find((f) => f.startsWith('permissions.commonly_public.filesystem='));
+    expect(fsFlag).toBeTruthy();
+    expect(fsFlag).toContain('"~/.ssh"="deny"');
+    expect(fsFlag).toContain('"~/.commonly"="deny"');
   });
 
   // TASK-273: a public seat whose MCP did not start used to run with a notice,
@@ -933,7 +996,11 @@ describe('codex adapter — spawn()', () => {
       outputContents: 'ok',
     });
     await codex.spawn('hi', { environment: { model: 'test-model' }, sessionId: null, _spawnImpl: impl });
-    expect(calls[0].args).not.toContain('-c');
+    // F387: a host-private seat (no sandbox declared, no trusted perimeter) now
+    // carries the permission-profile `-c` flags. This test's point is narrower:
+    // an MCP-less seat adds no mcp_servers.* overrides.
+    const cFlags = calls[0].args.map((a, i) => (a === '-c' ? calls[0].args[i + 1] : null)).filter(Boolean);
+    expect(cFlags.some((f) => f.startsWith('mcp_servers.'))).toBe(false);
   });
 
   test('spawn opts force stdin to ignore — regression for codex blocking on piped stdin', async () => {
