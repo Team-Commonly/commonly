@@ -135,6 +135,16 @@ test('a draining worker hands an unfinished turn to the next one', async () => {
   expect((await AgentEvent.findById(event._id)).status).toBe('acked');
 });
 
+test('a turn a drain gives back before its lane gets its attempt back', async () => {
+  const event = await AgentEvent.create({ ...input, instanceId: 'default', status: 'delivered', deliveryNonce: 'claim', attempts: 1 });
+  const old = replica({ inProcessDraining: true });
+  old.dispatchInProcess(event.toObject(), install, 'clerk', 'default', input.type);
+  await waitFor(() => old.inProcessWork.size === 0);
+  expect(runAgent).not.toHaveBeenCalled();
+  expect(await AgentEvent.findById(event._id).lean())
+    .toMatchObject({ status: 'pending', deliveryNonce: null, attempts: 0 });
+});
+
 test('a handed turn whose agent no longer runs in-process leaves the queue', async () => {
   const event = await web().enqueue(input);
   Service.resolveInProcessInstallation.mockResolvedValue(null);

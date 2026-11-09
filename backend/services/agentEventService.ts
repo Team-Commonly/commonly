@@ -679,10 +679,11 @@ class AgentEventService {
    */
   private static async releaseRunnerLease(everyTurnFinished: boolean): Promise<void> {
     this.stopInProcessQueue();
+    // A renewal already in flight would otherwise extend the lease time after
+    // this, or land after the delete.
+    await this.runnerRenewal;
     this.runnerLeaseUntil = 0;
     if (!this.runnerEnforced || !everyTurnFinished) return;
-    // A renewal already in flight would otherwise land after the delete.
-    await this.runnerRenewal;
     await SchedulerHeartbeatLease.deleteOne({ _id: NATIVE_RUNNER_LEASE_ID, ownerId: this.runnerId })
       .catch((err: Error) => console.warn('[native-runtime] runner lease release failed:', err.message));
   }
@@ -2120,7 +2121,7 @@ class AgentEventService {
     type: string,
   ): void {
     void this.trackInProcessWork(async () => {
-      if (this.inProcessDraining) { await this.requeueInProcess(event); return; }
+      if (this.inProcessDraining) { await this.requeueInProcess(event, { neverRan: true }); return; }
       const deliveryKey = `${String(event._id)}:${event.deliveryNonce || ''}`;
       // Running from here, so a drain deadline requeues a turn still waiting
       // for its lane as well as one in its model call.
