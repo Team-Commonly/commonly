@@ -98,6 +98,24 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step, at: expect.any(Date) });
   });
 
+  it('listen-stall-reported stores a fixed reason and nothing else from the body', async () => {
+    const res = await request(app).post('/api/stats/byo-step')
+      .send({ step: 'listen-stall-reported', reason: 'node-missing', setupOs: 'windows', listenerAvailable: true, text: 'typed words' });
+    expect(res.status).toBe(200);
+    expect(mockMarkByoSetup).toHaveBeenCalledWith('human-1', { setupOs: 'windows', listenerAvailable: true });
+    expect(mockInsertOne).toHaveBeenCalledWith({
+      userId: 'human-1', step: 'listen-stall-reported', reason: 'node-missing', at: expect.any(Date),
+    });
+    expect(JSON.stringify(mockInsertOne.mock.calls[0][0])).not.toContain('typed words');
+  });
+
+  it.each([{ reason: 'my node is broken, here is my path C:/x' }, { reason: 7 }, {}])(
+    'listen-stall-reported with an unknown reason %j records no reason and still answers 200', async (body) => {
+      const res = await request(app).post('/api/stats/byo-step').send({ step: 'listen-stall-reported', ...body });
+      expect(res.status).toBe(200);
+      expect(mockInsertOne).toHaveBeenCalledWith({ userId: 'human-1', step: 'listen-stall-reported', at: expect.any(Date) });
+    });
+
   it('welcome-shown sets only its mark: no funnel row, and nothing else from the body', async () => {
     const res = await request(app).post('/api/stats/byo-step')
       .send({ step: 'welcome-shown', setupOs: 'mac', listenerAvailable: true, podId: 'p1' });
