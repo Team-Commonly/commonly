@@ -402,6 +402,28 @@ exports.getPodsByType = async (req: any, res: any) => {
 // Each agent member carries the label people know it by (resolveAgentDisplayLabel),
 // so the page can name a DM after its agent. The runtime name the rule reads is
 // dropped again: the list endpoint never sends it either.
+/*
+ * What a pod read returns, named field by field (review-checklist rule 61), so
+ * a field added to the schema later stays private until someone lists it.
+ * Anyone callerMayReadPod lets in sees the reader list: a member, a reader of
+ * a publicRead pod, or an observer of an agent DM. Only a member also gets
+ * the pod's settings and working state. The nested createdBy, parentPod and
+ * members are already narrowed by their populate selects.
+ */
+const POD_READER_FIELDS = [
+  '_id', 'name', 'description', 'type', 'joinPolicy', 'publicRead', 'communityListed',
+  'createdBy', 'members', 'parentPod', 'closedAt', 'createdAt', 'updatedAt',
+] as const;
+const POD_MEMBER_FIELDS = [
+  ...POD_READER_FIELDS,
+  'agentEnsemble', 'agentRunCap', 'firstTaskOnboarding', 'focus', 'focusRevision',
+  'contacts', 'agentDmPairKey', 'messages', 'announcements', 'externalLinks',
+] as const;
+
+const pickPodFields = (plain: any, fields: readonly string[]) => Object.fromEntries(
+  fields.filter((field) => plain?.[field] !== undefined).map((field) => [field, plain[field]]),
+);
+
 const withAgentLabels = (plain: any) => ({
   ...plain,
   members: (plain?.members || []).map((member: any) => {
@@ -434,7 +456,8 @@ exports.getPodById = async (req: any, res: any) => {
     // so a direct id lookup does not confirm that the pod exists. This runs
     // before the type check: a type mismatch has its own body, and answering
     // it first would confirm the pod to anyone who guesses a wrong type.
-    if (!await callerMayReadPod(String(req.userId || req.user?.id || ''), pod)) {
+    const viewerId = String(req.userId || req.user?.id || '');
+    if (!await callerMayReadPod(viewerId, pod)) {
       return res.status(404).json({ error: 'Pod not found' });
     }
 
@@ -450,7 +473,9 @@ exports.getPodById = async (req: any, res: any) => {
     // A paused or errored install still counts as present.
     // toJSON, as res.json(pod) used: toObject would leave the contacts Map as
     // a Map, which serializes to {}.
-    const body = withAgentLabels(typeof pod.toJSON === 'function' ? pod.toJSON() : pod);
+    const isMember = (pod.members || []).some((m: any) => String(m?._id || m) === viewerId);
+    const plain = typeof pod.toJSON === 'function' ? pod.toJSON() : pod;
+    const body = withAgentLabels(pickPodFields(plain, isMember ? POD_MEMBER_FIELDS : POD_READER_FIELDS));
     if (pod.type === 'agent-room') {
       const agentGone = (await goneAgentRoomIds([pod._id])).has(String(pod._id));
       return res.json({ ...body, agentGone });
