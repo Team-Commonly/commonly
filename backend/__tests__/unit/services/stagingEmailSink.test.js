@@ -1,3 +1,5 @@
+const http = require('http');
+const net = require('net');
 const {
   createSink, tokenMatches, recipient, extractLinks,
 } = require('../../../services/stagingEmailSink');
@@ -78,15 +80,57 @@ describe('stagingEmailSink server', () => {
     expect(body.messages[0].links).toEqual(['https://x.io/3']);
   });
 
-  test('refuses a send without recipients, bad JSON, or an oversized body', async () => {
+  test('refuses a send without recipients, or with bad JSON', async () => {
     sink = await start();
     expect((await post(sink.base, { subject: 'no to' })).status).toBe(400);
     expect((await post(sink.base, { to: [], subject: 'empty' })).status).toBe(400);
     expect((await post(sink.base, { to: ['not-an-address'] })).status).toBe(400);
     expect((await post(sink.base, '{not json')).status).toBe(400);
-    const big = await post(sink.base, { to: ['a@x.io'], text_body: 'x'.repeat(1100000) }).catch(() => null);
-    expect(big === null || big.status === 413).toBe(true);
     expect(sink.messages).toHaveLength(0);
+  });
+
+  test('answers an oversized body with a 413 the client receives', async () => {
+    sink = await start();
+    // Declared length over the limit.
+    const big = await post(sink.base, { to: ['a@x.io'], text_body: 'x'.repeat(300000) });
+    expect(big.status).toBe(413);
+    // No declared length: chunked, caught while streaming.
+    const { port } = sink.server.address();
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request({
+        host: '127.0.0.1', port, method: 'POST', path: '/v3/email/send', 
+      }, (res) => {
+        res.resume();
+        resolve(res.statusCode);
+      });
+      req.on('error', reject);
+      for (let i = 0; i < 6; i += 1) req.write('x'.repeat(50000));
+      req.end();
+    });
+    expect(status).toBe(413);
+    expect(sink.messages).toHaveLength(0);
+  });
+
+  test('a request target URL cannot parse is a 400, not a crash', async () => {
+    sink = await start();
+    const { port } = sink.server.address();
+    const reply = await new Promise((resolve, reject) => {
+      const socket = net.connect(port, '127.0.0.1', () => {
+        socket.end('GET http://[/ HTTP/1.1\r\nHost: email-sink\r\nConnection: close\r\n\r\n');
+      });
+      let out = '';
+      socket.on('data', (d) => { out += d; });
+      socket.on('end', () => resolve(out));
+      socket.on('error', reject);
+    });
+    expect(reply.split('\r\n')[0]).toBe('HTTP/1.1 400 Bad Request');
+    expect((await fetch(`${sink.base}/healthz`)).status).toBe(200);
+  });
+
+  test('caps each stored part', async () => {
+    sink = await start();
+    await post(sink.base, { to: ['a@x.io'], text_body: 'y'.repeat(100000) });
+    expect(sink.messages[0].text).toHaveLength(64000);
   });
 
   test('keeps only the newest messages past its capacity', async () => {

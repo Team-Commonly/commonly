@@ -39,8 +39,9 @@ digest and needs-you. Nothing leaves the cluster.
   messages kept. A restart or a spot reclamation empties it, so read a link
   soon after you trigger the mail.
 - **Reading needs the token**, because the inbox holds verification and reset
-  links for every staging account, team members' included. Sending needs none,
-  the same as the provider's endpoint.
+  links for every staging account, team members' included. Sending accepts any
+  `api_key`, so the sink caps what it keeps: a body over 256 KB is refused with
+  413, and each stored text or HTML part is cut at 64 KB.
 - **The chart refuses the sink** when `email.enabled` (real SMTP2GO) is also on,
   and wherever `backend.env.frontendUrl` is `https://commonly.me`, so prod mail
   can never be captured by mistake.

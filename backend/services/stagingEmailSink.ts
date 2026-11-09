@@ -14,7 +14,9 @@
  * restart empties every inbox. Reading needs the bearer token from the chart's
  * `email-sink` Secret: the messages carry verification and password-reset
  * links, so other workloads in the namespace must not be able to read them.
- * Sending needs no token, the same as for the real provider's endpoint.
+ * Sending accepts any `api_key`. Since anything in the namespace can send,
+ * no request may crash the process, and stored mail is capped in size, because
+ * either one would empty the inbox a walk is waiting on.
  *
  * Runs from the backend image: `node dist/services/stagingEmailSink.js`.
  */
@@ -22,7 +24,11 @@ import http from 'node:http';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const SEND_PATH = '/v3/email/send';
-const MAX_BODY_BYTES = 1_000_000;
+// Real mail from emailService is a few KB. These bound a full inbox at about
+// 500 x 2 x 64 KB, inside the chart's 192Mi limit.
+const MAX_BODY_BYTES = 256_000;
+const MAX_FIELD_CHARS = 64_000;
+const MAX_LINKS = 50;
 const DEFAULT_CAPACITY = 500;
 const LINK = /https?:\/\/[^\s"'<>)]+/g;
 
@@ -59,21 +65,30 @@ export const recipient = (entry: unknown): string => {
 
 export const extractLinks = (...bodies: string[]): string[] => [
   ...new Set(bodies.flatMap((body) => String(body || '').match(LINK) || [])),
-];
+].slice(0, MAX_LINKS);
 
+// Resolves null for a body over the limit. The rest of it is drained, not
+// destroyed, so the 413 still reaches the client; the reply closes the socket.
 const readBody = (req: http.IncomingMessage): Promise<string | null> => new Promise((resolve, reject) => {
+  if (Number(req.headers['content-length'] || 0) > MAX_BODY_BYTES) {
+    req.resume();
+    resolve(null);
+    return;
+  }
   const chunks: Buffer[] = [];
   let size = 0;
+  let over = false;
   req.on('data', (chunk: Buffer) => {
+    if (over) return;
     size += chunk.length;
     if (size > MAX_BODY_BYTES) {
-      resolve(null);
-      req.destroy();
+      over = true;
+      chunks.length = 0;
       return;
     }
     chunks.push(chunk);
   });
-  req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+  req.on('end', () => resolve(over ? null : Buffer.concat(chunks).toString('utf8')));
   req.on('error', reject);
 });
 
@@ -81,8 +96,8 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
   const messages: SinkMessage[] = [];
 
   const store = (payload: any): SinkMessage => {
-    const text = String(payload.text_body || '');
-    const html = String(payload.html_body || '');
+    const text = String(payload.text_body || '').slice(0, MAX_FIELD_CHARS);
+    const html = String(payload.html_body || '').slice(0, MAX_FIELD_CHARS);
     const message: SinkMessage = {
       id: randomUUID(),
       at: now().toISOString(),
@@ -99,11 +114,19 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
   };
 
   const server = http.createServer((req, res) => {
-    const send = (status: number, body: unknown) => {
-      res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    const send = (status: number, body: unknown, headers: http.OutgoingHttpHeaders = {}) => {
+      res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
       res.end(JSON.stringify(body));
     };
-    const url = new URL(req.url || '/', 'http://email-sink');
+    let url: URL;
+    try {
+      // Node's parser accepts absolute-form targets such as `http://[/`, which
+      // URL rejects by throwing; uncaught, that would take the process down.
+      url = new URL(req.url || '/', 'http://email-sink');
+    } catch {
+      send(400, { error: 'bad_request_target' });
+      return;
+    }
 
     if (req.method === 'GET' && url.pathname === '/healthz') {
       send(200, { ok: true, stored: messages.length });
@@ -112,7 +135,7 @@ export const createSink = ({ readToken, capacity = DEFAULT_CAPACITY, now = () =>
 
     if (req.method === 'POST' && url.pathname === SEND_PATH) {
       readBody(req).then((raw) => {
-        if (raw === null) return send(413, { data: { error: 'payload_too_large' } });
+        if (raw === null) return send(413, { data: { error: 'payload_too_large' } }, { Connection: 'close' });
         let payload: any;
         try {
           payload = JSON.parse(raw);
