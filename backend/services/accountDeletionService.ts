@@ -14,6 +14,7 @@ import { getObjectStore } from './objectStore';
 import { disconnectUserSessionSockets } from './sessionSocketService';
 import { stripe } from './billingService';
 import { DM_POD_TYPES_GUARD } from './agentIdentityService';
+import { deleteOpeningsFor } from '../repositories/recordChainRepository';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
@@ -183,6 +184,11 @@ export const sweepAccountDeletions = async (): Promise<void> => {
         await revokeOwnedAccess(userId);
         // eslint-disable-next-line no-await-in-loop
         await anonymizeChatAuthor(userId);
+        // Receipts stay, so this round also catches a late line: an agent that
+        // outlives its owner keeps botMetadata.ownerUserId, and that must stay,
+        // because without it the next caller is stamped as the agent's owner.
+        // eslint-disable-next-line no-await-in-loop
+        await deleteOpeningsFor(userId);
         // eslint-disable-next-line no-await-in-loop
         await deleteOwnedUploads(userId);
       } catch (error) {
@@ -244,6 +250,8 @@ export const deleteOwnAccount = async (
   await deleteOwnedUploads(userId);
 
   await anonymizeChatAuthor(userId);
+  // Their ids on record lines go; the lines stay, so every chain still verifies.
+  await deleteOpeningsFor(userId);
   await User.deleteOne({ _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' } });
   disconnectUserSessionSockets(userId);
 };

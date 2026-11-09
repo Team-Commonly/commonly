@@ -11,10 +11,14 @@
  * never blocks or undoes that write. Readers get an error, never an empty
  * record, when storage is unavailable.
  */
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import {
-  appendToChain, readChain, RecordStoreUnavailableError, type ChainPage, type ChainRef,
+  appendToChain, MAX_PAGE_LINES, pageAfter, readChain, RecordStoreUnavailableError,
+  type ChainOpening, type ChainPage, type ChainRef,
 } from '../repositories/recordChainRepository';
+import { commitRecordLine } from './recordCommitments';
+import { attachOpenings, buildRecordView } from './recordRedaction';
+import type { RecordView } from './recordRedaction';
 
 type Store = Parameters<typeof readChain>[1];
 
@@ -41,6 +45,8 @@ export type RecordLineInput = {
   /** Omit for the kind's default actor; null records "unknown" (spec §1). */
   actor?: RecordActor | null;
   data?: Record<string, unknown>;
+  /** Whose connection a grant line names. Decides who forgets it; never stored. */
+  connectionOwner?: string | null;
 };
 export { RecordStoreUnavailableError, type ChainPage, type ChainRef };
 
@@ -61,11 +67,42 @@ export const isRecordEnabled = (podId: unknown): boolean => {
   return list.includes('*') || (typeof podId === 'string' && list.includes(podId));
 };
 
+// A view is rebuilt from line 1, and a reader pages through it, so each page of
+// a long chain would otherwise re-read and re-redact the whole chain. The key
+// holds the head and the openings count: a new line or a deleted id misses at
+// once, on every replica. Kept short and bounded, since views hold ids.
+type CachedView = { view: RecordView; chain: { runId: string; headSeq: number; headHash: string | null }; at: number };
+const VIEW_CACHE_MS = 5 * 60 * 1000;
+const VIEW_CACHE_ENTRIES = 64;
+const VIEW_CACHE_LINES = 200000;
+const viewCache = new Map<string, CachedView>();
+
+const cachedView = (key: string): CachedView | undefined => {
+  const hit = viewCache.get(key);
+  if (!hit) return undefined;
+  viewCache.delete(key);
+  if (Date.now() - hit.at > VIEW_CACHE_MS) return undefined;
+  viewCache.set(key, hit); // Most recently used goes last.
+  return hit;
+};
+
+const rememberView = (key: string, entry: Omit<CachedView, 'at'>): void => {
+  viewCache.set(key, { ...entry, at: Date.now() });
+  let lines = 0;
+  viewCache.forEach(({ view }) => { lines += view.lines.length; });
+  for (const [oldest, { view }] of viewCache) {
+    if (viewCache.size <= 1 || (viewCache.size <= VIEW_CACHE_ENTRIES && lines <= VIEW_CACHE_LINES)) break;
+    viewCache.delete(oldest);
+    lines -= view.lines.length;
+  }
+};
+
 /**
  * Who may read a pod's record lines: actual members, agents included. The
- * lines carry approver and credential-owner ids verbatim, so admins and
- * agent-DM observers who pass canViewPod are not readers. `members` is the
- * lean, unpopulated array, so each entry is an ObjectId.
+ * lines carry approver and credential-owner ids, so admins and agent-DM
+ * observers who pass canViewPod are not readers. On an open pod a member reads
+ * readRecordView instead. `members` is the lean, unpopulated array, so each
+ * entry is an ObjectId.
  */
 export const isRecordReader = (members: unknown, userId: unknown): boolean => (
   Boolean(userId) && Array.isArray(members)
@@ -121,6 +158,12 @@ export const requestActor = (req: {
 };
 
 /**
+ * A line's salt (record-v1 §8). Every server line takes one, so a kind held
+ * back later needs no change here, and its hash can't be guessed at.
+ */
+export const newLineSalt = (): string => randomBytes(16).toString('hex');
+
+/**
  * Append one source event's lines now. Throws on a malformed line or an
  * unavailable store; callers that must not fail use emitRecord.
  */
@@ -133,8 +176,11 @@ export async function appendRecord(
   const runId = serverRunId(ref);
   return appendToChain(ref, runId, eventKey, (prevLine, storedRunId) => {
     const lines: string[] = [];
+    const openings: ReturnType<typeof commitRecordLine>['openings'][] = [];
     let prev = prevLine;
-    for (const input of inputs) {
+    for (const raw of inputs) {
+      const { input, openings: lineOpenings } = commitRecordLine(raw);
+      openings.push(lineOpenings);
       prev = format.appendEntry(prev, {
         runId: storedRunId,
         ...(ref.taskId ? { taskId: ref.taskId } : {}),
@@ -143,10 +189,11 @@ export async function appendRecord(
         kind: input.kind,
         ...(input.actor === undefined ? {} : { actor: input.actor }),
         data: input.data || {},
+        salt: newLineSalt(),
       });
       lines.push(prev);
     }
-    return { lines, headHash: prev ? format.hashLine(prev) : '' };
+    return { lines, headHash: prev ? format.hashLine(prev) : '', openings };
   }, db);
 }
 
@@ -206,19 +253,76 @@ export type RecordExport = {
 };
 
 /**
- * One page of a chain as stored, in record-v1's file form: one line per entry,
- * each ending in \n. `entries` and `head` describe the whole chain, not the
- * page, so every page names the same head.
+ * One page of a chain in record-v1's file form: one line per entry, each ending
+ * in \n, with every id still held opened beside its commitment (§9). `entries`
+ * and `head` describe the whole chain, not the page, so every page names the
+ * same head.
  */
 export async function readRecordExport(ref: ChainRef, db?: Store, page: ChainPage = {}): Promise<RecordExport> {
   const chain = await readChain(ref, db, page);
   if (!chain) return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null };
+  const after = pageAfter(page);
   return {
     runId: chain.runId,
     entries: chain.headSeq,
     head: chain.headHash,
-    jsonl: chain.lines.map((line) => `${line}\n`).join(''),
+    jsonl: chain.lines.map((line, index) => {
+      const seq = after + index + 1;
+      return `${attachOpenings(line, (chain.openings || []).filter((row) => row.seq === seq))}\n`;
+    }).join(''),
     nextAfter: chain.nextAfter,
+  };
+}
+
+export type RecordViewExport = RecordExport & { redacted: number; unlinked: number; unopened: number };
+
+/**
+ * A chain as an open pod's reader sees it (recordRedaction), one page of it.
+ * Whether a line may show its hash depends on every line before it, so this
+ * reads from the first line each time, and the same seq always serves the same
+ * bytes. `head`, like `entries`, describes the whole chain, and is null when
+ * the view can't show it. `limit: Infinity` is the whole view, for OTLP.
+ */
+export async function readRecordView(
+  ref: ChainRef,
+  viewerId: string,
+  db?: Store,
+  page: ChainPage = {},
+): Promise<RecordViewExport> {
+  const probe = await readChain(ref, db, { limit: 1 });
+  if (!probe) {
+    return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null, redacted: 0, unlinked: 0, unopened: 0 };
+  }
+  const key = [ref.podId, ref.taskId || '', probe.headSeq, probe.headHash, probe.openingsTotal, viewerId].join('|');
+  const hit = cachedView(key);
+  let chain: CachedView['chain'] = hit?.chain ?? probe;
+  let view = hit?.view;
+  if (!view) {
+    const stored: string[] = [];
+    const openings: ChainOpening[] = [];
+    let next: Awaited<ReturnType<typeof readChain>> = await readChain(ref, db);
+    while (next) {
+      chain = next;
+      stored.push(...next.lines);
+      openings.push(...(next.openings || []));
+      // eslint-disable-next-line no-await-in-loop -- one chain, read in order
+      next = next.nextAfter === null ? null : await readChain(ref, db, { after: next.nextAfter });
+    }
+    view = buildRecordView(stored, String(viewerId), openings);
+    rememberView(key, { view, chain });
+  }
+  const after = pageAfter(page);
+  const lines = view.lines.slice(after, after + (page.limit ?? MAX_PAGE_LINES));
+  const last = after + lines.length;
+  return {
+    runId: chain.runId,
+    entries: chain.headSeq,
+    head: view.headShown ? chain.headHash : null,
+    jsonl: lines.map((line) => `${line}\n`).join(''),
+    nextAfter: lines.length > 0 && last < view.lines.length ? last : null,
+    redacted: view.redacted,
+    unlinked: view.unlinked,
+    unopened: view.unopened,
   };
 }
 

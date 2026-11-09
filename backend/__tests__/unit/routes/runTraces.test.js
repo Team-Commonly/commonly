@@ -68,6 +68,32 @@ test('returns durable turn + PG attribution after card retention without content
   expect(JSON.stringify(res.body)).not.toMatch(/PRIVATE_|private prompt|argsDigest/);
   expect(res.body.retention).toEqual({ cardDefaultDays: 30, traceExpiresAt: null });
 });
+describe('on a pod anyone can join (F265)', () => {
+  const OWNER_MEMBER = new mongoose.Types.ObjectId();
+  beforeEach(async () => {
+    await Pod.updateOne({ _id: POD }, {
+      publicRead: true, communityListed: true, joinPolicy: 'open', createdBy: new mongoose.Types.ObjectId(), $addToSet: { members: OWNER_MEMBER },
+    });
+    await pool.query('UPDATE tool_calls SET credential_owner_id = $1 WHERE call_id = $2', [String(OWNER_MEMBER), 'trace-call']);
+  });
+  test('a member other than the credential owner gets the trail without the owner id', async () => {
+    const res = await get();
+    const { trail } = res.body.run.turns[0].toolCalls[0];
+    expect(trail).toMatchObject({ callId: 'trace-call', grantId: 'grant', outcome: 'ok' });
+    expect(trail).not.toHaveProperty('credentialOwnerId');
+    expect(JSON.stringify(res.body)).not.toContain(String(OWNER_MEMBER));
+  });
+  test('the pod\'s creator sees it too', async () => {
+    const creator = new mongoose.Types.ObjectId();
+    await Pod.updateOne({ _id: POD }, { createdBy: creator, $addToSet: { members: creator } });
+    const res = await get(POD, run.id, creator);
+    expect(res.body.run.turns[0].toolCalls[0].trail.credentialOwnerId).toBe(String(OWNER_MEMBER));
+  });
+  test('the credential owner still sees their own id', async () => {
+    const res = await get(POD, run.id, OWNER_MEMBER);
+    expect(res.body.run.turns[0].toolCalls[0].trail.credentialOwnerId).toBe(String(OWNER_MEMBER));
+  });
+});
 test('a turn keeps the model that answered beside the one requested, through save and read (TASK-028)', async () => {
   run.turns = [
     { turnIndex: 0, model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', servedModel: 'deepseek-v4-flash', fallbacks: 1, elapsedMs: 1 },

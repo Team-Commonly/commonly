@@ -153,6 +153,7 @@ export type GrantShape = {
   audience?: unknown[];
   target?: { kind?: string; id?: unknown } | null;
   expiresAt?: Date | null;
+  ownerId?: string | null;
 };
 
 /**
@@ -170,6 +171,7 @@ export const grantIssuedLine = (grant: GrantShape, issuer: RecordActor | null): 
   return {
     kind: 'grant.issued',
     actor: issuer,
+    connectionOwner: grant.ownerId,
     data: {
       grantId: grant.grantId,
       ...(grant.parentGrantId ? { parentGrantId: grant.parentGrantId } : {}),

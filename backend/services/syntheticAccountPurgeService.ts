@@ -59,6 +59,7 @@ const OnboardingSilenceEpisode = require('../models/OnboardingSilenceEpisode');
 const AgentMemory = require('../models/AgentMemory');
 const Summary = require('../models/Summary');
 const AgentCredential = require('../models/AgentCredential');
+const AccountDeletion = require('../models/AccountDeletion');
 const { AgentRegistry, AgentInstallation } = require('../models/AgentRegistry');
 const { perUserInstanceId } = require('./personaHireService');
 const { deletePodCascade } = require('./podDeletionService');
@@ -145,6 +146,9 @@ const purgeSyntheticAccountsUnlocked = async (
     createdAt: { $lt: new Date(now.getTime() - minAgeMs) },
   }).select('_id username email isBot createdAt').lean();
   report.examined = candidates.length;
+  // The scheduler doesn't wait for migrations, and a failed write keeps the
+  // admin lock for recovery, so a missing table has to stop the purge here.
+  if (pool && candidates.length > 0) await pool.query('SELECT 1 FROM record_openings LIMIT 0');
 
   for (const human of candidates) {
     if (!isSyntheticAccount(human)) continue; // the query and the predicate must both agree
@@ -303,8 +307,14 @@ const purgeSyntheticAccountsUnlocked = async (
     await pgRemove('pg.pod_members',
       `DELETE FROM pod_members WHERE user_id = $1
        AND pod_id NOT IN (SELECT id FROM pods WHERE type IN (${dmParams}))`, [humanId, ...dmTypes]);
+    // Their record lines stay and still verify (ADR-033 D7); the ids go.
+    await pgRemove('pg.record_openings', 'DELETE FROM record_openings WHERE subject = $1', [humanId]);
     await pgRemove('pg.users', 'DELETE FROM users WHERE _id = $1', [humanId]);
     await remove('users', User, { _id: human._id });
+    // As the admin delete: the sweep re-clears an id a late line brings back.
+    if (apply) {
+      await AccountDeletion.updateOne({ _id: human._id }, { $setOnInsert: { createdAt: new Date() } }, { upsert: true });
+    }
   }
   return report;
 };
