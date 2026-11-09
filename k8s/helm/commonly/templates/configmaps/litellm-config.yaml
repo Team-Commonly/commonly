@@ -357,7 +357,9 @@ data:
           severity_threshold: "high"
           skip_system_message_in_guardrail: true
           categories:
-            - { category: "prompt_injection_jailbreak", action: "BLOCK" }
+            # Our copy of the upstream file without the identifier word "enter",
+            # which matched inside "Enterprise" (files/litellm/prompt_injection_jailbreak.yaml).
+            - { category: "prompt_injection_jailbreak", action: "BLOCK", category_file: "/app/prompt_injection_jailbreak.yaml" }
             - { category: "prompt_injection_system_prompt", action: "BLOCK" }
             - { category: "prompt_injection_data_exfiltration", action: "BLOCK" }
 
@@ -394,4 +396,6 @@ data:
     {{- .Files.Get "files/litellm/deepseek_tool_shim_core.py" | nindent 4 }}
   model_fallback_signal.py: |
     {{- .Files.Get "files/litellm/model_fallback_signal.py" | nindent 4 }}
+  prompt_injection_jailbreak.yaml: |
+    {{- .Files.Get "files/litellm/prompt_injection_jailbreak.yaml" | nindent 4 }}
 {{- end }}
