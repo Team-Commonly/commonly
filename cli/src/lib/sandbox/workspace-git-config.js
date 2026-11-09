@@ -82,9 +82,15 @@ export const codeRunningKey = (key, value = '') => {
   return false;
 };
 
-// What git reads from the environment to pick a repository. Passed through, so
-// the check opens the repository Codex's git would.
-const DISCOVERY_ENV = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES', 'GIT_DISCOVERY_ACROSS_FILESYSTEM'];
+// What git reads from the environment to pick a repository and its index.
+// Passed through, so the check opens the repository Codex's git would.
+const DISCOVERY_ENV = [
+  'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_CEILING_DIRECTORIES', 'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+];
+// The ones git clears before it runs inside a submodule (its local_repo_env):
+// they name the top repository, so a submodule is opened from its own folder.
+const TOP_REPOSITORY_ENV = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE'];
+const submoduleEnv = (env) => Object.fromEntries(Object.entries(env).filter(([name]) => !TOP_REPOSITORY_ENV.includes(name)));
 // On the command line, ahead of anything the repository says: nothing these
 // commands do may start fsmonitor or a hook.
 const SAFE_FLAGS = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.untrackedCache=false'];
@@ -202,7 +208,8 @@ const inspect = (dir, context, findings, seen, depth) => {
     findings.push({ file: top, key: 'unreadable index' });
     return;
   }
-  for (const sub of submodules) inspect(sub, context, findings, seen, depth + 1);
+  const subContext = { ...context, env: submoduleEnv(context.env) };
+  for (const sub of submodules) inspect(sub, subContext, findings, seen, depth + 1);
 };
 
 /**
