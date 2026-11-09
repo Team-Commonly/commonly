@@ -308,14 +308,14 @@ describe('a batch', () => {
   const broadcast = (id) => makeEvent(id, {
     type: 'message.posted', payload: { messageId: `msg-${id}`, senderIsHuman: true },
   });
-  const silentRetryReleases = async (page) => {
+  const silentRetryReleases = async (page, retryText = 'NO_REPLY') => {
     const server = fakeServer({ pages: [page] });
     const spawn = jest.fn()
       .mockImplementationOnce(async () => {
         server.childPosts('part-one', { content: 'The answer.' });
         throw killed();
       })
-      .mockResolvedValue({ text: 'NO_REPLY' });
+      .mockResolvedValue({ text: retryText });
     const run = startRun({ spawn, sleepImpl: async () => {} });
     try {
       await drainMicrotasks();
@@ -328,6 +328,10 @@ describe('a batch', () => {
   test('a silent retry of a single broadcast its attempt answered closes the claim as completed', async () => {
     // The thrown attempt releases with no outcome, for redelivery.
     expect(await silentRetryReleases([broadcast('evt-solo')])).toEqual([null, 'completed']);
+  });
+
+  test('a retry that printed nothing still declines: it chose nothing, so a peer gets the message', async () => {
+    expect(await silentRetryReleases([broadcast('evt-empty')], '')).toEqual([null, 'declined']);
   });
 
   test("a silent retry of a batch still declines: the attempt's post may be another item's", async () => {
@@ -421,6 +425,7 @@ describe('what the line says', () => {
     expect(earlierAttemptPosted({ id: 'm2', content: '' }))
       .toBe('[An earlier attempt at this item failed after it posted in this pod (message m2). '
         + "That post is already there: don't post it again. Add only what this item still lacks, then checkpoint. "
-        + 'If it already answers this item, checkpoint it and end with NO_REPLY.]');
+        + 'If it already answers this item, checkpoint it and end with NO_REPLY. '
+        + 'An acknowledgement such as "on it" does not answer it.]');
   });
 });

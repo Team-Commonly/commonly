@@ -1859,7 +1859,8 @@ export const earlierAttemptPosted = (part, { batch = false } = {}) => {
     + (batch
       ? 'If it already answers this item, checkpoint this item and go on to the others here; '
         + 'end with NO_REPLY only once every item is handled.]'
-      : 'If it already answers this item, checkpoint it and end with NO_REPLY.]');
+      : 'If it already answers this item, checkpoint it and end with NO_REPLY. '
+        + 'An acknowledgement such as "on it" does not answer it.]');
 };
 
 export const answersAPerson = (entry) => (
@@ -4212,11 +4213,14 @@ export const performRun = ({
           // An item left without a result (a failure during isolation)
           // releases with no outcome, for redelivery, as a thrown turn does.
           const release = claimReleaseFor(entry.event, entry.result || turnResult);
-          // A retry that stays silent because its single-item attempt already
+          // A retry that chose NO_REPLY because its single-item attempt already
           // posted the answer answered the person, so it closes, never handed
-          // to another listener. A batch's post may be another item's: that
-          // silence still declines.
+          // to another listener. A retry that printed nothing chose nothing,
+          // and a batch's post may be another item's: both still decline, so a
+          // batch whose post answered every item can be handed on (a known
+          // limit; telling which item a post answered needs a signal we lack).
           if (release.outcome === 'declined' && actionEntries.length === 1
+            && (entry.result || turnResult)?.reason !== EMPTY_OUTPUT
             && heldRetryParts.get(String(entry.event._id))?.solo) release.outcome = 'completed';
           await entry.claimKeeper.release(release.outcome, {
             reason: release.reason, status: release.status,
@@ -4606,8 +4610,10 @@ export const performRun = ({
               // Carried to the retry like a failed batch: the event is claimed,
               // so the next poll would not return it.
               tickUnsettled.push(...claimedAfter(groupIndex));
+              // Only this event's own turn: a throw before its spawn leaves an
+              // earlier turn's arguments, possibly another pod's, in failedTurn.
               // eslint-disable-next-line no-await-in-loop
-              await noteFailedTurnPart([event]);
+              if (failedTurn?.event === event) await noteFailedTurnPart([event]);
               // eslint-disable-next-line no-await-in-loop
               const hold = await holdForRetry([event], untriedAfter(groupIndex));
               keepHeldLeases(retry.delayMs);
