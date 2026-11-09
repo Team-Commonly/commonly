@@ -165,9 +165,9 @@ templates/secrets/pg-role-checks.yaml, so it runs whatever else is enabled.
 {{- if and $role (or (not (regexMatch "^[a-z_][a-z0-9_]{0,62}$" $role)) (hasPrefix "pg_" $role)) }}
 {{- fail (printf "%s: %q is not a plain Postgres role name ([a-z_][a-z0-9_]*, at most 63, no pg_ prefix)" $path $role) }}
 {{- end }}
-{{- /* A leading letter keeps the key a YAML string when rendered unquoted. */}}
-{{- if and $key (not (regexMatch "^[a-zA-Z][-._a-zA-Z0-9]{0,252}$" (toString $key))) }}
-{{- fail (printf "%s: %q is not a Secret key name (a letter, then [-._a-zA-Z0-9], at most 253)" $path (toString $key)) }}
+{{- /* Kubernetes Secret key rules; 253 is the ExternalSecret limit. Templates quote the key, so "123" or "true" stays a string. */}}
+{{- if and $key (not (regexMatch "^[-._a-zA-Z0-9]{1,253}$" (toString $key))) }}
+{{- fail (printf "%s: %q is not a Secret key name ([-._a-zA-Z0-9], at most 253)" $path (toString $key)) }}
 {{- end }}
 {{- if has $key (list "mongo-uri" "mongo-password") }}
 {{- fail (printf "%s: %s is not a Postgres password key" $path $key) }}

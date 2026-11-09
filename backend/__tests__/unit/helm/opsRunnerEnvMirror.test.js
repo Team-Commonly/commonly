@@ -105,7 +105,7 @@ if (typeof describe === 'function') {
       expect([...opsTuples].filter(mirrored).sort())
         .toEqual([...backendTuples].filter(mirrored).sort());
       expect(backendTuples.filter(pgRole).sort()).toEqual([
-        'PG_PASSWORD\tsecretKeyRef:database-credentials/{{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" }}',
+        'PG_PASSWORD\tsecretKeyRef:database-credentials/{{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" | quote }}',
         'PG_USER\tvalue:{{ .Values.backend.env.pgAppUser | default .Values.backend.env.pgUser | default .Values.postgresql.username | quote }}',
       ]);
       expect(opsTuples.filter(pgRole).sort()).toEqual([

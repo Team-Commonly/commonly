@@ -154,7 +154,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: database-credentials
-              key: {{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" }}
+              key: {{ .Values.backend.env.pgAppPasswordKey | default "postgres-password" | quote }}
         - name: PG_SSL_ENABLED
           value: {{ .Values.backend.env.pgSslEnabled | default "true" | quote }}
         - name: PG_CA_CERT_PATH

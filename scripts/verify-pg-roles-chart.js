@@ -87,7 +87,6 @@ for (const lane of Object.keys(lanes)) {
     expect(refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(64)}`, 'backend.env.pgAppPasswordKey=postgres-password']), `${lane} ${on}: a 64-byte backend role renders`);
     expect(!refuses(lane, [on, `backend.env.pgAppUser=${'a'.repeat(63)}`, 'backend.env.pgAppPasswordKey=postgres-password']), `${lane} ${on}: a 63-byte backend role is refused`);
     expect(refuses(lane, [on, 'litellm.pgUser=pg_app', 'litellm.pgPasswordKey=postgres-password']), `${lane} ${on}: a reserved pg_ role renders`);
-    expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'string:litellm.pgPasswordKey=123']), `${lane} ${on}: a numeric password key renders`);
     expect(refuses(lane, [on, 'backend.env.pgAppUser=app_role', 'backend.env.pgAppPasswordKey=postgres/app-password']), `${lane} ${on}: a backend key that isn't a valid Secret key renders`);
     expect(refuses(lane, [on, 'litellm.pgUser=llm_role', 'litellm.pgPasswordKey=postgres/litellm-password']), `${lane} ${on}: a litellm key that isn't a valid Secret key renders`);
   }
@@ -113,6 +112,18 @@ for (const lane of Object.keys(lanes)) {
   // Key-length boundaries, where the key reaches the ExternalSecret.
   expect(!refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(252)}`]), `${lane}: a 253-character key is refused`);
   expect(refuses(lane, ['backend.env.pgAppUser=app_role', `backend.env.pgAppPasswordKey=k${'a'.repeat(253)}`]), `${lane}: a 254-character key renders`);
+  // YAML-typed key names stay strings in every field that carries them.
+  for (const k of ['123', 'true']) {
+    const docs = render(lane, ['litellm.enabled=true', 'backend.env.pgAppUser=app_role', `string:backend.env.pgAppPasswordKey=${k}`,
+      'litellm.pgUser=llm_role', `string:litellm.pgPasswordKey=${k}`]);
+    const es = docs.find((x) => x.kind === 'ExternalSecret' && x.metadata?.name === 'database-credentials');
+    const entry = es.spec.data.find((x) => x.secretKey === k);
+    expect(entry && typeof entry.remoteRef.key === 'string' && entry.remoteRef.key.endsWith(k), `${lane}: key ${k} is not a string in the ExternalSecret`);
+    const ref = (name) => docs.find((x) => x.kind === 'Deployment' && x.metadata?.name === name)
+      ?.spec.template.spec.containers.flatMap((c) => c.env || []).find((e) => e.name === 'PG_PASSWORD')?.valueFrom?.secretKeyRef?.key;
+    expect(ref('backend') === k, `${lane}: backend PG_PASSWORD key for ${k} is ${JSON.stringify(ref('backend'))}`);
+    expect(ref('litellm') === k, `${lane}: litellm PG_PASSWORD key for ${k} is ${JSON.stringify(ref('litellm'))}`);
+  }
   const prefix = esBase.find((k) => k.startsWith('postgres-password<-')).slice('postgres-password<-'.length, -'postgres-password'.length);
   const synced = (key) => `${key}<-${prefix}${key}`;
   expect(esBase.length === 3, `${lane}: database-credentials unset syncs ${esBase.join(', ')}`);
