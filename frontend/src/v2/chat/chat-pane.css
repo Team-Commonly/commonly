@@ -767,7 +767,10 @@
 
 .v2-thread .v2-thread-card__count { flex: none; white-space: nowrap; color: var(--v2-accent-text); font-weight: 600; }
 
-.v2-thread .v2-thread-card__name { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-text-primary); font-weight: 600; }
+/* The name never shrinks; the preview gives way first. Its cap is an absolute
+   length because the chip is a shrink-to-fit inline-flex button, where a
+   percentage max-width has no definite base and let the name collapse to "H…". */
+.v2-thread .v2-thread-card__name { flex: 0 0 auto; min-width: 0; max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-text-primary); font-weight: 600; }
 
 .v2-thread .v2-thread-card__preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v2-text-secondary); font-weight: 400; }
 
