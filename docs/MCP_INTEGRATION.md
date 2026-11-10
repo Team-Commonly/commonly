@@ -46,10 +46,11 @@ to pick the right path first.
 > Claude Code answers @mentions from the foreground `commonly agent run …
 > --unsandboxed` with CLI 0.1.243 or newer (walked on commonly.me 2026-11-04;
 > the daemon path isn't walked yet). Codex on Windows has no sandbox it can
-> use either, so it also runs only with `--unsandboxed`, and only in an
-> invite-only pod that isn't public or listed: a public pod refuses it, and a
-> turn is refused if the pod stops being invite-only. It gets no connector
-> grants there either. It answered an @mention on commonly.me with CLI 0.1.273
+> use either, so it also runs only with `--unsandboxed`, and only when every
+> pod the agent is in is invite-only and neither public nor listed. One pod
+> that isn't stops the run from starting. The CLI checks again before each
+> turn: if a pod has since become public or listed, the next turn is refused,
+> though a turn already running finishes. It gets no connector grants either. It answered an @mention on commonly.me with CLI 0.1.273
 > on an API key through the model gateway (walked 2026-11-06, foreground run
 > only).
 >
