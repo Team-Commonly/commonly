@@ -1454,7 +1454,8 @@ const outsideCode = (content: unknown): string => String(content || '')
 export const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
 
 // An @handle outside code, at a word start: "mail me@x.com" names nobody.
-const namesAHandle = (content: unknown): boolean => /(^|[^\w.@])@[a-z0-9][\w.-]*/i.test(outsideCode(content));
+// A profile link (medium.com/@user) names nobody either.
+const namesAHandle = (content: unknown): boolean => /(^|[^\w.@/])@[a-z0-9][\w.-]*/i.test(outsideCode(content));
 
 export const resolveQuestionAnswerTarget = async ({
   podId, message, userId, handle, targets, botUserIds,
@@ -2773,7 +2774,10 @@ const enqueueMentions = async ({
   // connected, offline, stopped). The room says so (the notices below), and the
   // pod's host now gets the ask as addressed to it, once per message. The host
   // then sits out the ambient fan-out, so it hears the message once.
-  if (sender?.isBot === false && deliveredAgentMentionTargets.size > 0) {
+  // A mention held for its owner (F371) will be answered once approved, so it
+  // counts as an agent that can answer.
+  const heldForOwner = skipped.some((entry) => entry.endsWith(':held-for-owner'));
+  if (sender?.isBot === false && deliveredAgentMentionTargets.size > 0 && !heldForOwner) {
     const mentioned = [...deliveredAgentMentionTargets.values()];
     if (!mentioned.some((target) => target.agentName.toLowerCase() === HOST_AGENT_NAME)) {
       try {

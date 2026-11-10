@@ -201,6 +201,12 @@ describe('a person answering the agent\'s question addresses it (F390 B)', () =>
     expect(scoutEvent().payload.answersYourQuestion).toBeUndefined();
   });
 
+  test('a profile link is not an @ of anyone: still an answer', async () => {
+    setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
+    await send('the deck is at medium.com/@priya/deck');
+    expect(scoutEvent().payload.answersYourQuestion).toBe(true);
+  });
+
   test('a greeter the welcome wake just reached is not woken twice', async () => {
     setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
     maybeFireWelcomeWake.mockResolvedValue({ claimed: false, woke: ['scout'] });

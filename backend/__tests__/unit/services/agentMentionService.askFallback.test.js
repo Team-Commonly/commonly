@@ -67,7 +67,7 @@ const { noteNeverConnectedMention, noteOfflineMention, agentReach } = require('.
 const { noteStoppedMention } = require('../../../services/stoppedMentionService');
 const { deriveAgentState } = require('../../../services/agentStateService');
 const { hostedStoppedAt } = require('../../../services/hostedEngine');
-const { handOffToHost, resetHandoffsForTest } = require('../../../services/askFallbackService');
+const { handOffToHost, hostInstallFor, resetHandoffsForTest } = require('../../../services/askFallbackService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const nova = {
@@ -209,6 +209,37 @@ describe('an ask to an agent that can\'t run goes to the host (F390 A)', () => {
     });
     await mention();
     expect(events('scout').filter((e) => e.payload?.handoffFrom)).toHaveLength(0);
+  });
+
+  it('a joined row hands the host all the person\'s words', async () => {
+    setup({ state: 'gone-dark' });
+    await handOffToHost({
+      podId: 'pod-1',
+      from: { agentName: 'nova' },
+      label: 'Nova',
+      reason: 'out-of-turns',
+      sender: human,
+      payload: {
+        messageId: '903',
+        userId: 'user-1',
+        rawContent: '@nova first',
+        coalesced: [{ rawContent: 'and second' }, { rawContent: 'not to nova', notAnAsk: true }],
+      },
+    });
+    const [toScout] = events('scout');
+    expect(toScout.payload.rawContent).toBe('@nova first\n\nand second');
+    expect(toScout.payload.coalesced).toBeUndefined();
+  });
+
+  it('with two people\'s guides in the pod, the asker\'s own gets it', async () => {
+    setup({ state: 'gone-dark' });
+    useInstalls([
+      novaInstall,
+      { ...scoutInstall, instanceId: 'a-0', installedBy: 'someone-else' },
+      { ...scoutInstall, instanceId: 'u-1', installedBy: 'user-1' },
+    ]);
+    expect((await hostInstallFor('pod-1', 'user-1')).instanceId).toBe('u-1');
+    expect((await hostInstallFor('pod-1', 'stranger')).instanceId).toBe('a-0');
   });
 
   it('a Scout already reached or held by this message is not handed it again', async () => {
