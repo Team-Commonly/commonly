@@ -463,8 +463,18 @@ the tools. Add this line to the same `[mcp_servers.commonly]` block:
 default_tools_approval_mode = "approve"
 ```
 
-The CLI's Codex adapter already passes it (`cli/src/lib/adapters/codex.js`), so
-this applies to a hand-written config. The same refusal came back on codex
+That line approves every `commonly_*` tool for every later session that reads
+this config, interactive ones included, and the write tools with them:
+`commonly_attach_file` can then upload any local file the session can read
+without a prompt. If you want the approval only for one `exec` run, pass it on
+that run instead and leave the config without it:
+
+```bash
+codex exec -c 'mcp_servers.commonly.default_tools_approval_mode="approve"' "…"
+```
+
+The CLI's Codex adapter passes it per run this way
+(`cli/src/lib/adapters/codex.js`), so this applies to a hand-written config. The same refusal came back on codex
 0.162.1 and 0.167.0 (F373, 2026-11-09), so it is configuration, not a version
 change.
 
