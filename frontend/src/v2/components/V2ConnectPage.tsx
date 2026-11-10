@@ -4,6 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
 import './V2ConnectPage.css';
 
@@ -22,7 +23,9 @@ const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | 
 
 const V2ConnectPage: React.FC = () => {
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
-  const cliSnippet = `npm install -g @commonlyai/cli\ncommonly login --instance ${apiBaseUrl}`;
+  // F370: the same one npx line as Bring your own, so a stock-Node Mac never
+  // hits the global-install EACCES before it logs in.
+  const cliSnippet = daemonSetupCommand(apiBaseUrl);
   const cursorInstallHref = cursorMcpInstallLink(apiBaseUrl);
   const mcpSnippet = `claude mcp add commonly \\
   -e COMMONLY_API_URL=${apiBaseUrl} \\

@@ -119,14 +119,25 @@ export const orchestrateDaemonSetup = async ({
   if (tooOld) throw new Error(tooOld);
   if (typeof runCli !== 'function') throw new Error('orchestrateDaemonSetup needs a runCli function');
   const { entry } = await ensureStable({ version, home, log });
-  const instanceArgs = instanceUrl ? ['--instance', instanceUrl] : [];
+  // One spelling for both steps: login saves the URL without trailing slashes,
+  // so register must look it up the same way or it can't find the token.
+  const instance = instanceUrl ? String(instanceUrl).replace(/\/+$/, '') : '';
+  const instanceArgs = instance ? ['--instance', instance] : [];
   // Each step must land before the next: a failed login must not register, a
   // failed register must not install. runCli rejects on a non-zero exit.
   await runCli(entry, ['login', ...instanceArgs]);
   await runCli(entry, ['daemon', 'register', ...instanceArgs]);
   // --unsandboxed is forwarded to the install step (native Windows refuses
   // without it); that step runs its own refusal + opt-in check.
-  await runCli(entry, ['daemon', 'install', ...(unsandboxed ? ['--unsandboxed'] : [])]);
+  const installArgs = ['daemon', 'install', ...(unsandboxed ? ['--unsandboxed'] : [])];
+  try {
+    await runCli(entry, installArgs);
+  } catch (error) {
+    // The computer is registered by now, so running setup again would ask for a
+    // login and stop at the active registration. Name the one step left.
+    throw new Error(`${error.message}. This computer is registered; after fixing the error above, `
+      + `finish with: "${process.execPath}" "${entry}" ${installArgs.join(' ')}`);
+  }
   log('This computer is set up: the daemon is running and starts when you log in. '
     + 'Add an agent to it from the web app and it comes online here.');
   return { entry };

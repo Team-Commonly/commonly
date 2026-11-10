@@ -136,6 +136,27 @@ describe('orchestrateDaemonSetup', () => {
     expect(calls).toEqual([['login']]);
   });
 
+  it('drops trailing slashes once, so login and register name the same instance', async () => {
+    const { calls, runCli } = okRun();
+    await orchestrateDaemonSetup({
+      version: '0.1.300', instanceUrl: 'https://x.example////', runCli, nodeVersion: 'v22.0.0', ensureStable, home: HOME,
+    });
+    expect(calls.slice(0, 2)).toEqual([
+      ['login', '--instance', 'https://x.example'],
+      ['daemon', 'register', '--instance', 'https://x.example'],
+    ]);
+  });
+
+  it('a failed install names the one step left, since the computer is already registered', async () => {
+    const runCli = jest.fn((entry, args) => (args[1] === 'install'
+      ? Promise.reject(new Error('launchctl refused')) : Promise.resolve()));
+    const error = await orchestrateDaemonSetup({
+      version: '0.1.300', runCli, unsandboxed: true, nodeVersion: 'v22.0.0', ensureStable, home: HOME,
+    }).catch((e) => e);
+    expect(error.message).toContain('launchctl refused. This computer is registered');
+    expect(error.message.endsWith(`"${stableCliEntry(HOME)}" daemon install --unsandboxed`)).toBe(true);
+  });
+
   it('refuses on a too-old Node before touching the install', async () => {
     const ensure = jest.fn();
     const runCli = jest.fn();
