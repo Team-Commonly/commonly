@@ -11,6 +11,7 @@ import {
   claudeTranscriptPath,
   contextTokensFromTranscript,
   idleMinutesSince,
+  recycleReason,
   recycleThresholds,
   shouldStartFreshSession,
 } from '../src/lib/session-recycle.js';
@@ -33,12 +34,36 @@ describe('shouldStartFreshSession', () => {
     })).toBe(true);
   });
 
-  test('a recent turn resumes even with a large context', () => {
+  test('a recent turn under the ceiling resumes, even past the cold-recycle size', () => {
     expect(shouldStartFreshSession({
       lastTurn: minutesAgo(5),
-      contextTokens: 400000,
+      contextTokens: 200000,
       now: NOW,
     })).toBe(false);
+  });
+
+  // F392: an agent woken every few minutes was never idle 60 min, so its
+  // context grew without bound. Past the ceiling it recycles, idle or not.
+  test('idle 2 min at 300k starts fresh on size alone', () => {
+    expect(recycleReason({ lastTurn: minutesAgo(2), contextTokens: 300000, now: NOW })).toBe('size');
+    expect(shouldStartFreshSession({ lastTurn: minutesAgo(2), contextTokens: 300000, now: NOW })).toBe(true);
+  });
+
+  test('idle 2 min at 100k resumes', () => {
+    expect(recycleReason({ lastTurn: minutesAgo(2), contextTokens: 100000, now: NOW })).toBeNull();
+  });
+
+  test('idle 61 min at 130k still recycles under the old rule, and says so', () => {
+    expect(recycleReason({ lastTurn: minutesAgo(61), contextTokens: 130000, now: NOW })).toBe('cold');
+  });
+
+  test('cold and over the ceiling reports the cold reason', () => {
+    expect(recycleReason({ lastTurn: minutesAgo(90), contextTokens: 400000, now: NOW })).toBe('cold');
+  });
+
+  test('the ceiling is exact: at it recycles, one under resumes', () => {
+    expect(recycleReason({ lastTurn: minutesAgo(1), contextTokens: 256000, now: NOW })).toBe('size');
+    expect(recycleReason({ lastTurn: minutesAgo(1), contextTokens: 255999, now: NOW })).toBeNull();
   });
 
   test('an idle seat with a small context resumes', () => {
@@ -66,7 +91,7 @@ describe('shouldStartFreshSession', () => {
   });
 
   test('thresholds are configurable per install', () => {
-    const thresholds = { idleMinutes: 10, contextTokens: 1000 };
+    const thresholds = { idleMinutes: 10, contextTokens: 1000, maxContextTokens: 5000 };
     expect(shouldStartFreshSession({
       lastTurn: minutesAgo(10),
       contextTokens: 1000,
@@ -79,18 +104,25 @@ describe('shouldStartFreshSession', () => {
 describe('recycleThresholds', () => {
   test('defaults match the ruling', () => {
     expect(recycleThresholds({})).toEqual(RECYCLE_DEFAULTS);
-    expect(RECYCLE_DEFAULTS).toEqual({ idleMinutes: 60, contextTokens: 128000 });
+    expect(RECYCLE_DEFAULTS).toEqual({ idleMinutes: 60, contextTokens: 128000, maxContextTokens: 256000 });
   });
 
   test('environment overrides apply; invalid values fall back to the default', () => {
     expect(recycleThresholds({
       COMMONLY_SESSION_RECYCLE_IDLE_MINUTES: '15',
       COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS: '64000',
-    })).toEqual({ idleMinutes: 15, contextTokens: 64000 });
+      COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS: '180000',
+    })).toEqual({ idleMinutes: 15, contextTokens: 64000, maxContextTokens: 180000 });
     expect(recycleThresholds({
       COMMONLY_SESSION_RECYCLE_IDLE_MINUTES: '-3',
       COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS: 'lots',
+      COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS: '0',
     })).toEqual(RECYCLE_DEFAULTS);
+  });
+
+  test('the env ceiling is honoured by the decision', () => {
+    const thresholds = recycleThresholds({ COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS: '150000' });
+    expect(recycleReason({ lastTurn: minutesAgo(2), contextTokens: 160000, now: NOW, thresholds })).toBe('size');
   });
 });
 
@@ -112,6 +144,16 @@ describe('buildRecycleBriefing', () => {
     expect(text).toContain('=== Session restart ===');
     expect(text).toContain('idle 75 min');
     expect(text).toContain('about 140000 context tokens');
+    expect(text).toContain('Role: nova.');
+  });
+
+  test('a size recycle names the ceiling, not idle time', () => {
+    const text = buildRecycleBriefing({
+      agentName: 'nova', reason: 'size', idleMinutes: 2, contextTokens: 300000, maxContextTokens: 256000,
+    });
+    expect(text).toContain('about 300000 context tokens');
+    expect(text).toContain('256000-token ceiling');
+    expect(text).not.toContain('idle');
     expect(text).toContain('Role: nova.');
   });
 });

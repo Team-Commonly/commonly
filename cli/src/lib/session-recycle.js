@@ -7,8 +7,13 @@
  * enough to matter, start a fresh session instead, seeded with a short
  * restart note. Otherwise resume exactly as before.
  *
- * Thresholds are per-install: COMMONLY_SESSION_RECYCLE_IDLE_MINUTES and
- * COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS override the defaults below.
+ * F392: a seat woken every few minutes is never idle long enough for that
+ * rule, so its context grew without bound. Past a hard ceiling it starts fresh
+ * whatever the idle time.
+ *
+ * Thresholds are per-install: COMMONLY_SESSION_RECYCLE_IDLE_MINUTES,
+ * COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS and
+ * COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS override the defaults below.
  *
  * Context size is read from the transcript the child CLI wrote, under the env
  * the child ran with. Only the claude adapter reports one today; an adapter
@@ -22,6 +27,7 @@ import { homedir } from 'os';
 export const RECYCLE_DEFAULTS = Object.freeze({
   idleMinutes: 60,
   contextTokens: 128000,
+  maxContextTokens: 256000,
 });
 
 // Read this many bytes from the end of a transcript. The last assistant
@@ -37,22 +43,27 @@ const positiveNumber = (raw, fallback) => {
 export const recycleThresholds = (env = process.env) => ({
   idleMinutes: positiveNumber(env.COMMONLY_SESSION_RECYCLE_IDLE_MINUTES, RECYCLE_DEFAULTS.idleMinutes),
   contextTokens: positiveNumber(env.COMMONLY_SESSION_RECYCLE_CONTEXT_TOKENS, RECYCLE_DEFAULTS.contextTokens),
+  maxContextTokens: positiveNumber(env.COMMONLY_SESSION_RECYCLE_MAX_CONTEXT_TOKENS, RECYCLE_DEFAULTS.maxContextTokens),
 });
 
-// Pure decision. No evidence (no last turn, no measured context) means resume.
-export const shouldStartFreshSession = ({
+// Pure decision: 'cold' (idle long enough AND large), 'size' (past the hard
+// ceiling, however recent), or null to resume. No evidence (no last turn, no
+// measured context) means resume.
+export const recycleReason = ({
   lastTurn,
   contextTokens,
   now = Date.now(),
   thresholds = RECYCLE_DEFAULTS,
 }) => {
-  if (!lastTurn || !Number.isFinite(contextTokens)) return false;
+  if (!lastTurn || !Number.isFinite(contextTokens)) return null;
   const last = Date.parse(lastTurn);
-  if (!Number.isFinite(last)) return false;
-  const idleMs = now - last;
-  return idleMs >= thresholds.idleMinutes * 60_000
-    && contextTokens >= thresholds.contextTokens;
+  if (!Number.isFinite(last)) return null;
+  if (now - last >= thresholds.idleMinutes * 60_000 && contextTokens >= thresholds.contextTokens) return 'cold';
+  const ceiling = thresholds.maxContextTokens ?? RECYCLE_DEFAULTS.maxContextTokens;
+  return contextTokens >= ceiling ? 'size' : null;
 };
+
+export const shouldStartFreshSession = (args) => recycleReason(args) !== null;
 
 export const idleMinutesSince = (lastTurn, now = Date.now()) => {
   const last = Date.parse(lastTurn);
@@ -62,10 +73,15 @@ export const idleMinutesSince = (lastTurn, now = Date.now()) => {
 // The restart note. The memory head and the pod focus are NOT repeated here:
 // a fresh claude session already receives the full long_term memory through
 // its preamble, and the pod focus is already in the wake prompt.
-export const buildRecycleBriefing = ({ agentName, idleMinutes, contextTokens }) => [
+export const buildRecycleBriefing = ({
+  agentName, reason = 'cold', idleMinutes, contextTokens, maxContextTokens = RECYCLE_DEFAULTS.maxContextTokens,
+}) => [
   '=== Session restart ===',
-  `This wake starts a fresh session. The previous session was idle ${idleMinutes} min`
-    + ` with about ${contextTokens} context tokens, so it was not resumed.`,
+  reason === 'size'
+    ? `This wake starts a fresh session. The previous session had grown to about ${contextTokens}`
+      + ` context tokens, past the ${maxContextTokens}-token ceiling, so it was not resumed.`
+    : `This wake starts a fresh session. The previous session was idle ${idleMinutes} min`
+      + ` with about ${contextTokens} context tokens, so it was not resumed.`,
   `Role: ${agentName}. Your saved memory and the pod focus follow below.`,
 ].join('\n');
 
