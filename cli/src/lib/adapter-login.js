@@ -14,10 +14,14 @@ export const LOGIN_STATUS_ARGS = {
   codex: ['login', 'status'],
 };
 
-// claude treats ANTHROPIC_API_KEY as a sign-in of its own. codex does not
-// treat OPENAI_API_KEY as one (`codex login status` exits 1 with it set), so
-// codex has no entry here.
-const KEY_ENV = { claude: 'ANTHROPIC_API_KEY' };
+// Credentials a seat runs on without a CLI login, so the probe is skipped.
+// codex's are the ones codexAuthKind and the proxy route accept (adapters/
+// codex.js), even though `codex login status` exits 1 with only a key set.
+const KEY_ENV = {
+  claude: ['ANTHROPIC_API_KEY'],
+  codex: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN'],
+};
+const envSet = (env, name) => typeof env[name] === 'string' && env[name].trim() !== '';
 
 // Both CLIs exit exactly 1 when signed out. Any other non-zero code (2 for an
 // unknown subcommand on an old CLI) is no verdict, not "signed out".
@@ -33,7 +37,7 @@ export const signedOutHint = (name) => `${name} is installed but not signed in; 
 export const signedOutAdapters = async ({ detect, runStatus, env = process.env, names = Object.keys(LOGIN_STATUS_ARGS) }) => {
   const out = [];
   for (const name of names) {
-    if (!LOGIN_STATUS_ARGS[name] || (KEY_ENV[name] && env[KEY_ENV[name]])) continue;
+    if (!LOGIN_STATUS_ARGS[name] || (KEY_ENV[name] || []).some((key) => envSet(env, key))) continue;
     let installed = false;
     try { installed = Boolean(await detect(name)); } catch { /* not installed */ }
     if (!installed) continue;

@@ -31,10 +31,19 @@ describe('which installed adapters are signed out', () => {
     expect(await signedOutAdapters({ detect: installed(['claude']), runStatus: async () => { throw new Error('x'); }, env: {} })).toEqual([]);
   });
 
-  test('ANTHROPIC_API_KEY counts as a claude sign-in; OPENAI_API_KEY is not one for codex', async () => {
+  test.each([
+    ['claude', 'ANTHROPIC_API_KEY'],
+    ['codex', 'OPENAI_API_KEY'],
+    ['codex', 'CODEX_API_KEY'],
+    ['codex', 'CODEX_ACCESS_TOKEN'],
+  ])('%s runs on %s without a login, so it is not asked', async (name, key) => {
     const runStatus = jest.fn(async () => 1);
-    expect(await signedOutAdapters({ detect: installed(['claude', 'codex']), runStatus, env: { ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: 'k' } })).toEqual(['codex']);
-    expect(runStatus).toHaveBeenCalledTimes(1);
+    expect(await signedOutAdapters({ detect: installed([name]), runStatus, env: { [key]: 'k' } })).toEqual([]);
+    expect(runStatus).not.toHaveBeenCalled();
+  });
+
+  test('a blank key is no key', async () => {
+    expect(await signedOutAdapters({ detect: installed(['codex']), runStatus: async () => 1, env: { OPENAI_API_KEY: '  ' } })).toEqual(['codex']);
   });
 
   test('only exit 1 means signed out: an old CLI\'s unknown-subcommand exit is no verdict', async () => {
