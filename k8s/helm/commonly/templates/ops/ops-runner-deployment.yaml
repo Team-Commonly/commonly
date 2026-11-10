@@ -90,6 +90,12 @@ spec:
         - name: USAGE_INTERNAL_USERNAMES
           value: {{ .Values.backend.env.usageInternalUsernames | quote }}
         {{- end }}
+        {{- if .Values.backend.env.usageInternalPrefixes }}
+        # F401: accounts made on the fly (walk and seat accounts) are
+        # flagged by username prefix, a comma list from private values.
+        - name: USAGE_INTERNAL_PREFIXES
+          value: {{ .Values.backend.env.usageInternalPrefixes | quote }}
+        {{- end }}
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}

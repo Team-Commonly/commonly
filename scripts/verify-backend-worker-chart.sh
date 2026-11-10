@@ -90,6 +90,11 @@ for lane in default dev staging; do
   helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=false --set backend.env.usageInternalUsernames=alpha-test > "$tmp_dir/$lane-usage.yaml"
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_USERNAMES") | .value' "$tmp_dir/$lane-usage.yaml")" = alpha-test
   test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_USERNAMES") | .value' "$tmp_dir/$lane-usage.yaml")" = alpha-test
+  # F401: the prefix list follows the same rule.
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_PREFIXES") | .value' "$shipped")" = ""
+  helm template "commonly-$lane" "$chart" "${values[@]}" --set backend.worker.enabled=true --set backend.worker.startPaused=false --set backend.env.usageInternalPrefixes=beta- > "$tmp_dir/$lane-prefix.yaml"
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_PREFIXES") | .value' "$tmp_dir/$lane-prefix.yaml")" = beta-
+  test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "USAGE_INTERNAL_PREFIXES") | .value' "$tmp_dir/$lane-prefix.yaml")" = beta-
 
   if [[ $lane != default ]]; then
     test "$("$yq_bin" -N 'select(.kind == "Deployment" and .metadata.name == "backend-worker") | .spec.template.spec.containers[].env[] | select(.name == "AGENT_PROVISIONER_K8S") | .value' "$on")" = 1
