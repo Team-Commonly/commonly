@@ -783,6 +783,7 @@
       "agentRemoved": "{{name}} was removed, so it can't answer here.",
       "agentOffline": "{{name}} looks offline, so it may not answer for now.",
       "agentPaused": "{{name}} is paused, so it won't answer this.",
+      "runRequestRefused": "{{name}} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.",
       "agentNotConnected": "{{name}} isn't connected yet, so it won't see this until it runs. Its owner can connect it.",
       "agentNotConnectedOwner": "You haven't connected {{name}} yet, so it won't see this until it runs.",
       "mentionUnanswered": "{{name}} didn't answer this and may be offline. Ask again later, or ask someone else in the pod.",

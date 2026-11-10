@@ -9,6 +9,7 @@ import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
+const { ownerOfInstall } = require('../../services/runRequestService');
 const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -249,8 +250,20 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     });
     if (!installation) return res.status(404).json({ error: 'Agent not installed in this pod' });
     const isAdmin = (await User.findById(userId).select('role').lean())?.role === 'admin';
-    if (!canManage(installation, userId, isAdmin)) return res.status(403).json({ error: 'Installer or admin required' });
+    // The agent's owner may manage its row too: a mention auto-join records
+    // whoever mentioned it as installedBy (runRequestService.ownerOfInstall).
+    const owner = await ownerOfInstall(installation).catch(() => null);
+    const isOwner = !!owner && owner === String(userId);
+    if (!canManage(installation, userId, isAdmin) && !isOwner) {
+      return res.status(403).json({ error: 'Installer or admin required' });
+    }
     const config = normalizeConfigMap(installation.config) || {};
+    // Ask-first names the owner as the approver, so only they (or an admin)
+    // change it. Resending the current value is a wake write, and saves.
+    if (askBeforeOthers !== undefined && askBeforeOthers !== (config.askBeforeOthers?.enabled === true)
+      && !isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Only the agent\'s owner can change this', field: 'askBeforeOthers' });
+    }
     installation.config = new Map(Object.entries({
       ...config,
       wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage, humanOnly },

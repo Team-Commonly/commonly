@@ -250,6 +250,27 @@ export async function emitRunRequestDeclinedLine(line: RunRequestDeclinedLine): 
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
+/**
+ * F371. A request to an agent that asks its owner first, which couldn't be put
+ * to the owner, so it won't run. Beside the request, so the asker isn't left
+ * waiting on a card that doesn't exist.
+ */
+export interface RunRequestRefusedLine extends SystemLineActor {
+  agentLabel: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitRunRequestRefusedLine(line: RunRequestRefusedLine): Promise<void> {
+  const content = `${line.agentLabel} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.`;
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'run-request-refused',
+    actorName: line.agentLabel,
+    agentLabel: line.agentLabel,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
 const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {

@@ -46,11 +46,21 @@ owner to decide." The item also lands in the owner's Activity "Needs you".
   from that person to the same agent in the pod fold into it: no new card, no
   new run. They can ask again once the owner answers.
 - **Who counts as "anyone else".** The owner is `installedBy` when that's a
-  human, otherwise the bot's `botMetadata.ownerUserId`. Another agent asks as
-  its own owner, so an owner's agents don't need approval for each other. An
-  asking agent with no owner is always held.
-- **Failing.** If the hold itself throws, the wake is refused, not delivered.
-  So is a request to an agent that asks first but has no owner to ask.
+  human, otherwise the bot's `botMetadata.ownerUserId`. A row a mention pulled
+  in (`config.autoJoinSource: 'mention-resolution'`) records whoever mentioned
+  the agent as `installedBy`, so there the bot's owner is used. Another agent
+  asks as its own owner, so an owner's agents don't need approval for each
+  other. An asking agent with no owner is always held.
+- **Who changes the setting.** The owner or an admin. Whoever installed the row
+  keeps its wake settings, and can resend ask-first unchanged, but can't flip it
+  (`manage-settings` PATCH returns 403 with `field: 'askBeforeOthers'`).
+- **Failing.** The request is refused, never delivered, when: the owner lookup
+  throws, there is no owner to ask, the owner can't read the pod
+  (`DMService.canViewPod`, so an admin owner still can), or the hold throws
+  before its card posts. Each refusal leaves a `run-request-refused` line beside
+  the request, so the person who asked isn't left waiting on a card nobody can
+  see. Once the card has posted, a later failure (the inbox item) is logged and
+  the request stays held: the card is still answerable.
 - **Who answers.** The held event (`heldEvent`) is stored server-side only.
   `approvalActionService.resolveApproval` re-enqueues it on approve
   (`releaseRunRequest`) and posts the decline line on decline. Only the owner

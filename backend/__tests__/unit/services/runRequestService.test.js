@@ -47,7 +47,9 @@ jest.mock('../../../services/attentionItemService', () => ({
 }));
 jest.mock('../../../models/Message', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn() }));
-jest.mock('../../../services/systemActionLineService', () => ({ emitRunRequestDeclinedLine: jest.fn() }));
+jest.mock('../../../services/systemActionLineService', () => ({
+  emitRunRequestDeclinedLine: jest.fn(), emitRunRequestRefusedLine: jest.fn(),
+}));
 
 const mockEnqueue = jest.fn();
 jest.mock('../../../services/agentEventService', () => ({
@@ -58,7 +60,7 @@ const { resolveApproval } = require('../../../services/approvalActionService');
 const runRequests = require('../../../services/runRequestService');
 const { postMessage } = require('../../../services/agentMessageService');
 const { recordActionApproval } = require('../../../services/attentionItemService');
-const { emitRunRequestDeclinedLine } = require('../../../services/systemActionLineService');
+const { emitRunRequestDeclinedLine, emitRunRequestRefusedLine } = require('../../../services/systemActionLineService');
 
 const OWNER = 'aaaaaaaaaaaaaaaaaaaaaaa1';
 const lean = (value) => ({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(value) })), lean: jest.fn().mockResolvedValue(value) });
@@ -101,7 +103,7 @@ beforeEach(() => {
   delete process.env.PG_HOST;
   mockUserFindById.mockReturnValue(lean({ isBot: false, username: 'ana', displayName: 'Ana' }));
   mockInstallFindOne.mockReturnValue(lean({ displayName: 'Nova' }));
-  mockPodFindById.mockReturnValue(lean({ name: 'Launch' }));
+  mockPodFindById.mockReturnValue(lean({ name: 'Launch', members: [OWNER, 'user-b'] }));
   mockEnqueue.mockResolvedValue({});
 });
 
@@ -230,6 +232,28 @@ describe('holding a request', () => {
     });
   });
 
+  // CodeRabbit on #3846: an owner who left the pod can't see the card, so the
+  // request would wait on nobody. A global admin can still read the pod.
+  test('an owner who cannot see the pod gets no card: not held', async () => {
+    mockPodFindById.mockReturnValue(lean({ name: 'Launch', members: ['user-b'] }));
+    expect(await hold()).toBe(false);
+    expect(mockApprovalCreate).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  test('an admin owner outside the pod still gets the card', async () => {
+    mockPodFindById.mockReturnValue(lean({ name: 'Launch', members: ['user-b'] }));
+    mockUserFindById.mockReturnValue(lean({ isBot: false, role: 'admin' }));
+    postMessage.mockResolvedValue({ success: true, message: { _id: 'card-9' } });
+    expect(await hold()).toBe(true);
+  });
+
+  test('a card that posted stays held when the inbox item fails after it', async () => {
+    postMessage.mockResolvedValue({ success: true, message: { _id: 'card-9' } });
+    recordActionApproval.mockRejectedValueOnce(new Error('inbox down'));
+    expect(await hold()).toBe(true);
+  });
+
   test('a card that was not posted leaves the row moot and reports not held', async () => {
     postMessage.mockResolvedValue({ success: false, reason: 'refused' });
     expect(await hold()).toBe(false);
@@ -270,6 +294,16 @@ describe('who has to approve', () => {
     expect(await runRequests.approverFor(install(), { isBot: true, botMetadata: {} }, 'bot-7')).toBe(OWNER);
   });
 
+  // CodeRabbit on #3846: a mention auto-join records the person who mentioned
+  // the agent as installedBy. That person is not its owner.
+  test('a row a mention pulled in answers to the agent\'s owner, not the person who mentioned it', async () => {
+    mockUserFindOne.mockReturnValue(lean({ botMetadata: { ownerUserId: OWNER } }));
+    const joined = { ...install({ askBeforeOthers: { enabled: true }, autoJoinSource: 'mention-resolution' }), installedBy: 'user-b' };
+    expect(await runRequests.ownerOfInstall(joined)).toBe(OWNER);
+    expect(await runRequests.approverFor(joined, { isBot: false }, 'user-b')).toBe(OWNER);
+    expect(await runRequests.approverFor(joined, { isBot: false }, OWNER)).toBeNull();
+  });
+
   test('no owner to ask: refused rather than run, once the setting is on', async () => {
     mockUserFindById.mockReturnValue(lean(null));
     mockUserFindOne.mockReturnValue(lean(null));
@@ -277,5 +311,24 @@ describe('who has to approve', () => {
       .toBe(runRequests.UNOWNED);
     expect(await runRequests.approverFor({ ...install({}), installedBy: undefined }, { isBot: false }, 'user-b'))
       .toBeNull();
+  });
+});
+
+describe('telling the person who asked that it was not held', () => {
+  const install = { agentName: 'nova', instanceId: 'default', displayName: 'Nova' };
+  const event = { agentName: 'nova', instanceId: 'default', podId: 'pod-1', ...heldEvent };
+
+  test('leaves one line beside their request, as the agent', async () => {
+    mockUserFindOne.mockReturnValue(lean({ _id: 'bot-n', username: 'nova', profilePicture: null }));
+    await runRequests.noteRunRequestRefused({ install, event });
+    expect(emitRunRequestRefusedLine).toHaveBeenCalledWith(expect.objectContaining({
+      podId: 'pod-1', actorUserId: 'bot-n', actorIsBot: true, agentLabel: 'Nova', messageId: '900', threadRootId: '812',
+    }));
+  });
+
+  test('is never fatal', async () => {
+    mockUserFindOne.mockReturnValue(lean(null));
+    emitRunRequestRefusedLine.mockRejectedValueOnce(new Error('pg down'));
+    await expect(runRequests.noteRunRequestRefused({ install, event })).resolves.toBeUndefined();
   });
 });

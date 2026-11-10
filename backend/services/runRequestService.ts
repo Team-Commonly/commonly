@@ -10,7 +10,7 @@
  * scope as the other wake settings, and off unless the owner turns it on.
  * Fails closed: once the owner asked, a request that can't be held is not run.
  */
-import { emitRunRequestDeclinedLine } from './systemActionLineService';
+import { emitRunRequestDeclinedLine, emitRunRequestRefusedLine } from './systemActionLineService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ApprovalAction = require('../models/ApprovalAction');
@@ -41,13 +41,18 @@ const configOf = (install: InstallRow): Record<string, any> => {
 
 export const asksBeforeOthers = (install: InstallRow): boolean => configOf(install).askBeforeOthers?.enabled === true;
 
+// A mention auto-join records the person who mentioned the agent as installedBy
+// (agentMentionService.autoJoinAgentToPod). That person isn't its owner.
+export const joinedByMention = (install: InstallRow): boolean => configOf(install).autoJoinSource === 'mention-resolution';
+
 /**
  * The person an install answers to: its installer when that's a human, else
  * the bot's owner. `installedBy` holds the bot itself on some install paths
- * (agentMentionService's note on it), so it is checked, never trusted.
+ * (agentMentionService's note on it), so it is checked, never trusted, and on
+ * a row a mention pulled in it names whoever mentioned the agent, so it is skipped.
  */
 export const ownerOfInstall = async (install: InstallRow): Promise<string | null> => {
-  if (install.installedBy) {
+  if (install.installedBy && !joinedByMention(install)) {
     const installer = await User.findById(install.installedBy).select('isBot').lean() as { isBot?: boolean } | null;
     if (installer && installer.isBot === false) return String(install.installedBy);
   }
@@ -122,7 +127,13 @@ export const holdRunRequest = async ({
     'params.requesterUserId': requesterUserId,
   }).select('_id').lean();
   if (open) return 'pending';
-  const pod = await Pod.findById(event.podId).select('name').lean() as { name?: string } | null;
+  const pod = await Pod.findById(event.podId).select('name type members').lean() as
+    { name?: string; type?: string; members?: unknown[] } | null;
+  // An owner who can't read this pod would never see the card, so the request
+  // would wait on nobody. Global admins can read any pod (DMService.canViewPod).
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const DMService = require('./dmService');
+  if (!(await DMService.canViewPod(ownerUserId, pod))) return false;
   const row = await ApprovalAction.create({
     podId: event.podId,
     ownerUserId,
@@ -169,12 +180,45 @@ export const holdRunRequest = async ({
     await row.save();
     return false;
   }
-  row.messageId = String(posted.message._id || posted.message.id || '');
-  await row.save();
-  // eslint-disable-next-line global-require
-  const { recordActionApproval } = require('./attentionItemService');
-  await recordActionApproval(row, displayName);
+  // The card is in the pod and answerable from there, so it is held whatever
+  // happens next: the caller must not tell the asker it won't run.
+  try {
+    row.messageId = String(posted.message._id || posted.message.id || '');
+    await row.save();
+    // eslint-disable-next-line global-require
+    const { recordActionApproval } = require('./attentionItemService');
+    await recordActionApproval(row, displayName);
+  } catch (error) {
+    console.warn('[run-request] the card posted, but its follow-up failed:', (error as Error).message);
+  }
   return true;
+};
+
+/**
+ * A request that asks first but couldn't be put to the owner (no owner, an
+ * owner who can't see the pod, a failure) doesn't run. This tells the person
+ * who asked, beside their request. Never fatal.
+ */
+export const noteRunRequestRefused = async ({ install, event }: { install: InstallRow; event: HeldEvent }): Promise<void> => {
+  try {
+    const agentName = String(install.agentName || event.agentName).toLowerCase();
+    const instanceId = String(install.instanceId || event.instanceId || 'default');
+    const agent = await User.findOne({
+      isBot: true, 'botMetadata.agentName': agentName, 'botMetadata.instanceId': instanceId,
+    }).select('_id username profilePicture').lean() as { _id?: unknown; username?: string; profilePicture?: string } | null;
+    await emitRunRequestRefusedLine({
+      podId: String(event.podId),
+      actorUserId: String(agent?._id || ''),
+      actorUsername: agent?.username || agentName,
+      actorAvatarUrl: agent?.profilePicture || null,
+      actorIsBot: true,
+      agentLabel: String(install.displayName || agentName),
+      messageId: (event.payload.messageId as string | undefined) ?? null,
+      threadRootId: (event.payload.threadRootId as string | undefined) ?? null,
+    });
+  } catch (error) {
+    console.warn('[run-request] refusal note failed:', (error as Error).message);
+  }
 };
 
 /** The approve executor: deliver the held wake, with the owner's rewrite on top when narrowed. */
@@ -247,7 +291,8 @@ export const noteRunRequestDeclined = async (
 };
 
 export default {
-  asksBeforeOthers, ownerOfInstall, approverFor, reachOf, holdRunRequest, releaseRunRequest, noteRunRequestDeclined,
+  asksBeforeOthers, joinedByMention, ownerOfInstall, approverFor, reachOf, holdRunRequest, releaseRunRequest,
+  noteRunRequestDeclined, noteRunRequestRefused,
 };
 // CJS compat: let require() return the default export directly
 module.exports = exports["default"]; Object.assign(module.exports, exports);

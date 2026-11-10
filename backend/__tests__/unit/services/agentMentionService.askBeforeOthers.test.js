@@ -29,10 +29,15 @@ jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteOfflineMention: jest.fn().mockResolvedValue(false),
   isNeverConnectedAgent: jest.fn().mockResolvedValue(false),
 }));
-jest.mock('../../../services/runRequestService', () => ({
-  ...jest.requireActual('../../../services/runRequestService'),
-  holdRunRequest: jest.fn(),
-}));
+jest.mock('../../../services/runRequestService', () => {
+  const actual = jest.requireActual('../../../services/runRequestService');
+  return {
+    ...actual,
+    approverFor: jest.fn((...args) => actual.approverFor(...args)),
+    holdRunRequest: jest.fn(),
+    noteRunRequestRefused: jest.fn(),
+  };
+});
 
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
@@ -41,7 +46,7 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
-const { holdRunRequest } = require('../../../services/runRequestService');
+const { approverFor, holdRunRequest, noteRunRequestRefused } = require('../../../services/runRequestService');
 const { maybeFireWelcomeWake } = require('../../../services/welcomeWakeService');
 
 const owner = { _id: 'user-a', username: 'ana', displayName: 'Ana', isBot: false };
@@ -158,6 +163,37 @@ describe('F371: a request to an agent whose owner asks first', () => {
     const result = await say(teammate);
     expect(mentionWakes()).toHaveLength(0);
     expect(result.skipped).toContain('nova:hold-failed');
+    // CodeRabbit on #3846: the person who asked is told, beside their request.
+    expect(noteRunRequestRefused).toHaveBeenCalledTimes(1);
+    expect(noteRunRequestRefused.mock.calls[0][0].event).toMatchObject({ agentName: 'nova', type: 'chat.mention' });
+  });
+
+  it('a hold that posted no card tells the asker; a held one does not', async () => {
+    setup();
+    holdRunRequest.mockResolvedValue(false);
+    await say(teammate);
+    expect(noteRunRequestRefused).toHaveBeenCalledTimes(1);
+
+    jest.clearAllMocks();
+    setup();
+    holdRunRequest.mockResolvedValue(true);
+    await say(teammate);
+    expect(noteRunRequestRefused).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the owner lookup itself fails, and tells the asker', async () => {
+    setup();
+    const actual = jest.requireActual('../../../services/runRequestService').approverFor;
+    approverFor.mockRejectedValue(new Error('users down'));
+    try {
+      const result = await say(teammate);
+      expect(holdRunRequest).not.toHaveBeenCalled();
+      expect(mentionWakes()).toHaveLength(0);
+      expect(result.skipped).toContain('nova:hold-failed');
+      expect(noteRunRequestRefused).toHaveBeenCalledTimes(1);
+    } finally {
+      approverFor.mockImplementation((...args) => actual(...args));
+    }
   });
 
   it("holds a teammate's reply to the agent, which addresses it without an @", async () => {
@@ -201,5 +237,6 @@ describe('F371: a request to an agent whose owner asks first', () => {
     expect(holdRunRequest).not.toHaveBeenCalled();
     expect(mentionWakes()).toHaveLength(0);
     expect(result.skipped).toContain('nova:hold-failed');
+    expect(noteRunRequestRefused).toHaveBeenCalledTimes(1);
   });
 });

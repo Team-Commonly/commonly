@@ -32,7 +32,7 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const {
-  approverFor, asksBeforeOthers, holdRunRequest, UNOWNED,
+  approverFor, asksBeforeOthers, holdRunRequest, joinedByMention, noteRunRequestRefused, UNOWNED,
 } = require('./runRequestService') as typeof import('./runRequestService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMentionService') as {
@@ -1681,7 +1681,12 @@ const enqueueWakeOnMessage = async ({
   // anyone else's message at all. Only an addressed request reaches it, as a card.
   if (targets.some(asksBeforeOthers)) {
     const gated = await Promise.all(targets.map((inst) => (
-      asksBeforeOthers(inst) ? approverFor(inst, sender, String(userId)).catch(() => 'unknown') : null
+      asksBeforeOthers(inst) ? approverFor(inst, sender, String(userId)).catch(() => (
+        // A failed lookup keeps gating everyone but the person who installed it
+        // (Rule 19 fails toward delivery for them); a mention's row names no owner.
+        sender?.isBot === false && !joinedByMention(inst) && String(inst.installedBy || '') === String(userId)
+          ? null : 'unknown'
+      )) : null
     )));
     targets = targets.filter((_inst, index) => !gated[index]);
     if (targets.length === 0) return woken;
@@ -1967,15 +1972,26 @@ const enqueueMentions = async ({
     agentName: string; instanceId: string; podId: string; type: string; payload: Record<string, unknown>;
   }): Promise<'queued' | 'held' | 'refused'> => {
     const install = installations.find((inst) => installKey(inst) === installKey(event));
-    const approver = install ? await approverFor(install, sender, String(userId)) : null;
+    // Every refusal below tells the asker beside their request; none posted a card.
+    const refuse = async (why: string): Promise<'refused'> => {
+      console.warn(`[run-request] ${event.agentName}: ${why}; the request was not run`);
+      if (install) await noteRunRequestRefused({ install, event });
+      return 'refused';
+    };
+    let approver: string | null = null;
+    if (install) {
+      try {
+        approver = await approverFor(install, sender, String(userId));
+      } catch (error) {
+        // Fails closed when the setting is on: whether it needs the owner is unknown.
+        if (asksBeforeOthers(install)) return refuse(`owner lookup failed (${(error as Error).message})`);
+      }
+    }
     if (!install || !approver) {
       await AgentEventService.enqueue(event);
       return 'queued';
     }
-    if (approver === UNOWNED) {
-      console.warn(`[run-request] ${event.agentName} asks first but has no owner; the request was not run`);
-      return 'refused';
-    }
+    if (approver === UNOWNED) return refuse('it asks first but has no owner');
     try {
       const held = await holdRunRequest({
         install,
@@ -1986,11 +2002,12 @@ const enqueueMentions = async ({
         request: rawContent,
         threadRootId: event.payload.threadRootId ? String(event.payload.threadRootId) : null,
       });
-      return held ? 'held' : 'refused';  // 'pending' folds into the open card
+      // 'pending' folds into the open card. false: no card was posted.
+      return held ? 'held' : refuse('it could not be put to its owner');
     } catch (error) {
-      // Fails closed: the owner asked that this not run without them.
-      console.warn('[run-request] hold failed; the request was not run:', (error as Error).message);
-      return 'refused';
+      // Fails closed: the owner asked that this not run without them. A throw
+      // comes before the card posts; holdRunRequest keeps what follows it.
+      return refuse(`hold failed (${(error as Error).message})`);
     }
   };
 
