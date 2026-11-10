@@ -2410,6 +2410,8 @@ test('privacy, terms and the use-case index get their own pages, and app routes 
     }
     const privacy = await read('privacy/index.html');
     assert.match(privacy, /<a href="mailto:privacy@commonly\.me">privacy@commonly\.me<\/a>/);
+    const terms = await read('terms/index.html');
+    assert.match(terms, /<a href="mailto:support@commonly\.me">support@commonly\.me<\/a>/);
 
     const index = await read('use-cases/index.html');
     assert.match(index, /<link rel="canonical" href="https:\/\/commonly\.me\/use-cases\/" \/>/);
@@ -2423,6 +2425,9 @@ test('privacy, terms and the use-case index get their own pages, and app routes 
     assert.doesNotMatch(app, /rel="canonical"/);
     assert.doesNotMatch(app, /og:url/);
     assert.match(app, /index-abcd\.js/);
+    // The gate and navigation runtime stay: this is the same app boot.
+    assert.match(app, /SEO_GATE_START/);
+    assert.match(app, /popstate/);
     assert.doesNotMatch(app, /SEO_PAGE_CONTENT|id="seo-page"/);
     assert.doesNotMatch(sitemap, /app\.html/);
   } finally {
