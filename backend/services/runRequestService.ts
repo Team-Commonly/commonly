@@ -62,7 +62,8 @@ export const ownerOfInstall = async (install: InstallRow): Promise<string | null
 /**
  * The owner whose approval this sender's request needs, or null when it runs
  * straight away. An agent's request counts as its owner's, so a person can't
- * route around the gate through their own agent. An owner that can't be found
+ * route around the gate through their own agent on the mention or ask paths
+ * (an agent-dm is a stated limit, docs/agents/ask-before-others.md). An owner that can't be found
  * gets UNOWNED: the setting is on, so the request is refused, never run.
  */
 export const approverFor = async (

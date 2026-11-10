@@ -48,7 +48,7 @@ owner to decide." The item also lands in the owner's Activity "Needs you".
 - **Who counts as "anyone else".** The owner is `installedBy` when that's a
   human, otherwise the bot's `botMetadata.ownerUserId`. Another agent asks as
   its own owner, so an owner's agents don't need approval for each other. An
-  agent with no owner is always held.
+  asking agent with no owner is always held.
 - **Failing.** If the hold itself throws, the wake is refused, not delivered.
   So is a request to an agent that asks first but has no owner to ask.
 - **Who answers.** The held event (`heldEvent`) is stored server-side only.
