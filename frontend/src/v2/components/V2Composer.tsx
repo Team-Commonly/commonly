@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import { ShellGlyph } from '../icons/glyphs';
 import type { V2Message } from '../hooks/useV2PodDetail';
+import { trackUsageOnce } from '../utils/usageEvents';
 
 export interface V2ComposerMention {
   id: string;
@@ -180,6 +181,8 @@ const V2Composer: React.FC<V2ComposerProps> = ({
             placeholder={threadTarget ? t('podChat.thread.replyInThread') : replyTarget ? t('podChat.composer.replyPlaceholder', { author: replyTarget.user?.username || t('podChat.messageFallback') }) : placeholder || t('podChat.composer.placeholder', { podName })}
             value={draft}
             rows={1}
+            // D286 Q2: that the composer was focused, once per screen load; never what's typed.
+            onFocus={() => trackUsageOnce(`composer-focus:${window.location.pathname}`, 'composer-focus')}
             onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}
             onClick={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}
             onKeyUp={(event) => onDraftPointer(event.currentTarget.value, event.currentTarget.selectionStart)}

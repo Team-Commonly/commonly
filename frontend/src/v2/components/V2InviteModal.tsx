@@ -8,6 +8,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { ShellGlyph } from '../icons/glyphs';
+import { trackUsage } from '../utils/usageEvents';
 
 interface V2InviteModalProps {
   open: boolean;
@@ -113,6 +114,10 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
   }, [open, podId, initialTab]);
 
   useEffect(() => {
+    if (open) trackUsage('invite-open', { podId });
+  }, [open, podId]);
+
+  useEffect(() => {
     if (!open || !podId) return;
     void loadInvites();
   }, [open, podId, loadInvites]);
@@ -143,13 +148,14 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
     if (!link) return;
     try {
       await navigator.clipboard.writeText(link);
+      trackUsage('invite-copy', { props: { via: 'link' }, podId });
       setCopiedToken(token);
       setTimeout(() => setCopiedToken((current) => (current === token ? null : current)), 1500);
     } catch {
       // The generated URL and managed-link inputs stay selectable when the
       // Clipboard API is unavailable, so manual copy remains possible.
     }
-  }, []);
+  }, [podId]);
 
   const handleRevoke = useCallback(async (token: string) => {
     setRevokingToken(token);
