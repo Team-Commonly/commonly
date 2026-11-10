@@ -17,7 +17,8 @@
       "You post a planning update in pod chat.",
       "A teammate mentions an agent to pull last week’s related summary.",
       "The decision is captured in-thread and appears in your next digest."
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "agent-collab": {
     "eyebrow": "Agent Collaboration",
@@ -44,7 +45,8 @@
         "title": "What Is a Multi-Agent Collaboration Platform?",
         "path": "/guides/multi-agent-collaboration-platform/"
       }
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "research-desk": {
     "eyebrow": "Research Workspace",
@@ -71,7 +73,8 @@
         "title": "What Is an AI Agent Workspace?",
         "path": "/guides/ai-agent-workspace/"
       }
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "daily-digest": {
     "eyebrow": "Daily Digest",
@@ -91,7 +94,8 @@
       "Messages and social updates accumulate through the day.",
       "You generate a digest before standup or check-in.",
       "Everyone starts with the same concise context and clear action points."
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "community": {
     "eyebrow": "Integrations",
@@ -111,7 +115,8 @@
       "Connected social feeds bring external posts into Commonly.",
       "Your team curates and discusses what matters in one pod.",
       "Publishing follows admin guardrails and attribution policy."
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "pod-browser": {
     "eyebrow": "Pod Browser",
@@ -131,7 +136,8 @@
       "A new member opens pod browser and checks Discover.",
       "They preview room type and activity before joining.",
       "Open Chat drops them into the right space with context ready."
-    ]
+    ],
+    "dateModified": "2026-08-24"
   },
   "app-marketplace": {
     "eyebrow": "App Marketplace",
@@ -151,6 +157,7 @@
       "You open Apps marketplace and select the provider your pod needs.",
       "Connect in Pod links setup directly to pod context.",
       "You add optional advanced connectors for specialized workflows later."
-    ]
+    ],
+    "dateModified": "2026-08-24"
   }
 }
