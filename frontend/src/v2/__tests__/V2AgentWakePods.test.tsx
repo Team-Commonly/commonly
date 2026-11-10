@@ -43,6 +43,26 @@ describe('per-agent Wake and Pods settings', () => {
     ));
   });
 
+  it('F371: turns on "ask me before anyone else\'s request runs" for one pod, and keeps the rest as stored', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 2, podCount: 2, installations: [
+      { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false },
+      { podId: 'dm-1', podName: 'test-agent', podType: 'agent-room', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false },
+    ] } });
+    renderSettings();
+    const toggles = await screen.findAllByLabelText("Ask me before anyone else's request runs");
+    // Your own direct message has nobody else in it to ask.
+    expect(toggles).toHaveLength(1);
+    expect(toggles[0]).not.toBeChecked();
+    fireEvent.click(toggles[0]);
+    await waitFor(() => expect(updatePod).toHaveBeenCalledWith('pod-1', {
+      wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+      askBeforeOthers: true,
+    }));
+    expect(screen.getByLabelText("Ask me before anyone else's request runs")).toBeChecked();
+  });
+
   it('shows all three message-wake choices without first opting in (D173)', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,

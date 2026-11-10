@@ -502,11 +502,18 @@ export const recordActionApproval = async (row: any, displayName?: string | null
     if (!recipients.length) return;
     const pod = await Pod.findById(podId).select('name').lean();
     const label = String(displayName || row?.agentName || '').trim();
+    const runRequest = row?.actionType === 'run_request';
+    const requester = String(row?.params?.requesterName || 'Someone');
     await recordForRecipients(recipients, {
       podId, kind: 'approval' as Kind, sourceType: 'approval_action' as SourceType, sourceId: sourceKey('approval_action', id),
-      title: label ? `${label} requests approval` : 'Approval requested', actorName: label || undefined,
+      // F371: a held request names who asked, and reads as what they asked.
+      title: runRequest
+        ? `${requester} asked ${label || 'your agent'}`
+        : label ? `${label} requests approval` : 'Approval requested',
+      actorName: label || undefined,
       actorUserId: row?.agentUserId ? String(row.agentUserId) : undefined,
-      detail: compact(row?.summary, 180), podName: pod?.name || 'Pod',
+      detail: compact(runRequest ? row?.params?.request : row?.summary, 180),
+      podName: pod?.name || 'Pod',
       ...(row?.actionType === 'tool_call'
         ? { reviewOnCard: true, messageId: row?.messageId ? String(row.messageId) : undefined } : {}),
       emailRecipientId: owner, suppressEmail: options.suppressEmail,

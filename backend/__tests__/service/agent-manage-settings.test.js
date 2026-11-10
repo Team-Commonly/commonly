@@ -399,6 +399,35 @@ describe('per-installation agent settings', () => {
     expect(config(unchanged).heartbeat).toBeUndefined();
   });
 
+  it('F371: the owner turns "ask me before others\' requests run" on and off, and an older client leaves it alone', async () => {
+    const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`;
+    const body = { wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false };
+    const send = (patch, who = owner) => request(app).patch(url).set('Authorization', `Bearer ${token(who)}`)
+      .send({ ...body, ...patch });
+    const read = async () => (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`)).body.installations[0].askBeforeOthers;
+
+    expect(await read()).toBe(false);
+    const on = await send({ askBeforeOthers: true });
+    expect(on.status).toBe(200);
+    expect(on.body.settings.askBeforeOthers).toBe(true);
+    expect(await read()).toBe(true);
+
+    // A client that predates the field sends without it.
+    expect((await send({})).status).toBe(200);
+    expect(await read()).toBe(true);
+
+    const bad = await send({ askBeforeOthers: 'yes' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.field).toBe('askBeforeOthers');
+    expect((await send({ askBeforeOthers: false }, other)).status).toBe(403);
+    expect(await read()).toBe(true);
+
+    expect((await send({ askBeforeOthers: false })).status).toBe(200);
+    const saved = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(saved).askBeforeOthers).toEqual({ enabled: false });
+  });
+
   it('lets an instance admin manage an installation they did not create', async () => {
     const listed = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(admin)}`);

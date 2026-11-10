@@ -43,6 +43,10 @@ const WAKE_FLAGS = ['wakeOnMessage', 'humanOnly', 'boardWake', 'heartbeatEnabled
 const invalidWakeField = (body: Record<string, unknown>) => {
   const flag = WAKE_FLAGS.find((key) => typeof body[key] !== 'boolean');
   if (flag) return { field: flag, error: `Invalid wake settings: ${flag} must be true or false` };
+  // F371: optional, so a client that predates it leaves the stored value alone.
+  if (body.askBeforeOthers !== undefined && typeof body.askBeforeOthers !== 'boolean') {
+    return { field: 'askBeforeOthers', error: 'Invalid wake settings: askBeforeOthers must be true or false' };
+  }
   const minutes = body.heartbeatMinutes;
   if (minutes === undefined && body.heartbeatEnabled === false) return null;
   if (!Number.isInteger(minutes) || (minutes as number) < 1 || (minutes as number) > 1440) {
@@ -74,6 +78,7 @@ const settings = (installation: any, podName: string, podType?: string) => {
     status: installation.status,
     wakeOnMessage,
     humanOnly: config.wakeOnMessage?.humanOnly === true,
+    askBeforeOthers: config.askBeforeOthers?.enabled === true,
     boardWake: typeof config.boardWake?.enabled === 'boolean'
       ? config.boardWake.enabled : wakeOnMessage,
     heartbeatEnabled: config.heartbeat?.enabled === true,
@@ -235,7 +240,7 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const invalid = invalidWakeField(body);
     if (invalid) return res.status(400).json(invalid);
-    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes } = body;
+    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes, askBeforeOthers } = body;
     const installation = await AgentInstallation.findOne({
       agentName: String(req.params.name).toLowerCase(),
       instanceId: normalizeInstanceId(req.query.instanceId),
@@ -252,6 +257,7 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
       boardWake: { ...config.boardWake, enabled: boardWake },
       heartbeat: { ...config.heartbeat, enabled: heartbeatEnabled,
         ...(heartbeatMinutes === undefined ? {} : { everyMinutes: heartbeatMinutes }) },
+      ...(askBeforeOthers === undefined ? {} : { askBeforeOthers: { ...config.askBeforeOthers, enabled: askBeforeOthers } }),
     }));
     await installation.save();
     return res.json({ settings: settings(installation, '') });
