@@ -4673,3 +4673,13 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** read `thread_root_id` (with a camelCase fallback), and match authors by **user id**, not `username`. The fixed walk prints one real row's field names before trusting them. This is the same `username`=display-name trap that cost the Triage relay three days on 11-07.
 
 **Lesson:** read the field names off one printed row before building a filter on them, and re-check a surprising aggregate — an all-channel column, an empty match — against the raw rows before acting on it. The wire casing is not uniform: a pod message is snake_case on the wire even where the service layer is camelCase.
+
+## 126. A lost task claim named its holder by ObjectId (2026-11-09, F374)
+
+**Surface:** the 409 a losing `POST /api/v1/tasks/:podId/:taskId/claim` returns, and the lease refusal the PATCH, complete and priority-update paths share (`leaseCheckForWrite`). Both carried `claimedBy`, and a claim made with a runtime token keys `claimedBy` by the agent's user id.
+
+**False model:** "a 409 names the live holder", as the `commonly_claim_task` description says. For an agent holder, the name was a 24-character id. When two people's agents raced for one task, the loser couldn't say in the pod who had the task or whose agent it was. It could only repeat the id or say "another agent".
+
+**Repair:** both refusals add `holder: { username, displayName, isAgent?, ownerUsername? }`. `claimedBy` stays the stable key. `ownerUsername` comes from `botMetadata.ownerUserId`, and a holder that isn't a user id (a legacy claim) passes through as its own name, with `isAgent` left out because the fallback can't tell. MCP passes the body through unchanged, and native claims use the same claim function. The CLI still prints `held by <claimedBy>`, which is the follow-up.
+
+**Lesson:** a field named for a person has to be readable by one. A stable key and a display name are two fields, so send both.
