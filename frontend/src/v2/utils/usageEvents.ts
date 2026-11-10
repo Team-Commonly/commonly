@@ -75,6 +75,7 @@ const flush = (): void => {
     void fetch(`${getApiBaseUrl()}/api/stats/ui-event`, {
       method: 'POST',
       keepalive: true,
+      credentials: 'omit',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ events }),
     }).catch(() => {});
@@ -133,9 +134,17 @@ export const trackPublic = (name: PublicEventName, value?: string): void => {
   void fetch(`${getApiBaseUrl()}/api/stats/public-hit`, {
     method: 'POST',
     keepalive: true,
+    credentials: 'omit',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, page, ...(ref ? { ref } : {}), ...(value ? { value } : {}) }),
   }).catch(() => {});
+};
+
+// Sign-out or an account switch: nothing queued for one person goes out under another's token.
+export const forgetUsageEvents = (): void => {
+  enabled = null;
+  queue = [];
+  if (timer) { clearTimeout(timer); timer = null; }
 };
 
 /** Test seam: forget queued events, the setting and once-keys. */

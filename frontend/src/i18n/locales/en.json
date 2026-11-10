@@ -356,7 +356,7 @@
     "usage": {
       "label": "Share product usage with Commonly",
       "detail": "Which screens you open and which buttons you press, by a fixed name. Never what you type.",
-      "browserSignal": "Your browser asks sites not to track you, so nothing is recorded.",
+      "browserSignal": "Your browser asks sites not to track you, so no product usage is recorded.",
       "error": "Couldn't save that. Try again.",
       "on": "On",
       "off": "Off"

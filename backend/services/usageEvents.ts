@@ -156,7 +156,9 @@ export async function recordUiEvents(
         const pod = await deps.loadPod(podId);
         if (!pod || !(await deps.canViewPod(user._id, pod))) return { keepId: false };
         const podKind = String(pod.type || 'chat');
-        return { podKind, keepId: TEAM_KINDS.has(podKind) };
+        // canViewPod admits global admins to any pod; the id stays only for a member.
+        const member = (pod.members || []).some((m) => String((m as { _id?: unknown })?._id || m) === String(user._id));
+        return { podKind, keepId: member && TEAM_KINDS.has(podKind) };
       })().catch(() => ({ keepId: false })));
     }
     return pods.get(podId)!;

@@ -137,7 +137,7 @@ describe('V2SettingsPage', () => {
     test('says when the browser asks not to be tracked', async () => {
       (axios.get as jest.Mock).mockImplementation(answer({ usageEvents: true, chosen: true, browserSignal: true }));
       renderSettings();
-      expect(await screen.findByText('Your browser asks sites not to track you, so nothing is recorded.')).toBeInTheDocument();
+      expect(await screen.findByText('Your browser asks sites not to track you, so no product usage is recorded.')).toBeInTheDocument();
     });
   });
 

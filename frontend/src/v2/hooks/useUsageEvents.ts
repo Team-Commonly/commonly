@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
-import { setUsageEventsEnabled, trackUsage } from '../utils/usageEvents';
+import { forgetUsageEvents, setUsageEventsEnabled, trackUsage } from '../utils/usageEvents';
 
 /**
  * Signed-in usage events (D286): reads the person's Settings choice, then sends
@@ -18,21 +18,25 @@ export const useUsageEvents = (): void => {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    if (!isAuthenticated || !userId) return undefined;
+    if (!isAuthenticated || !userId) { forgetUsageEvents(); return undefined; }
     let live = true;
-    axios.get('/api/users/me/usage-events')
-      .then(({ data }) => {
-        if (live) setUsageEventsEnabled(Boolean(data?.usageEvents) && !data?.browserSignal);
-      })
-      .catch(() => { if (live) setUsageEventsEnabled(false); });
     const day = new Date().toISOString().slice(0, 10);
     let sentDay: string | null = null;
     try { sentDay = window.localStorage.getItem(openKey(userId)); } catch { sentDay = null; }
-    if (sentDay !== day) {
-      trackUsage('app-open');
-      try { window.localStorage.setItem(openKey(userId), day); } catch { /* sent again next load */ }
-    }
-    return () => { live = false; };
+    if (sentDay !== day) trackUsage('app-open');
+    axios.get('/api/users/me/usage-events')
+      .then(({ data }) => {
+        if (!live) return;
+        const on = Boolean(data?.usageEvents) && !data?.browserSignal;
+        setUsageEventsEnabled(on);
+        // The day counts as opened only when the event could go out, so turning
+        // usage on later the same day still sends one.
+        if (on && sentDay !== day) {
+          try { window.localStorage.setItem(openKey(userId), day); } catch { /* sent again next load */ }
+        }
+      })
+      .catch(() => { if (live) setUsageEventsEnabled(false); });
+    return () => { live = false; forgetUsageEvents(); };
   }, [isAuthenticated, userId]);
 
   useEffect(() => {

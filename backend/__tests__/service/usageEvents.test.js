@@ -118,6 +118,16 @@ describe('usage events (D286)', () => {
     expect(stored[2].podId).toBeUndefined();
   });
 
+  it('keeps no podId for an admin who can view a pod but is not in it', async () => {
+    const admin = await makeUser({ role: 'admin' });
+    const owner = await makeUser();
+    const pod = await Pod.create({ name: 'Theirs', type: 'team', createdBy: owner._id, members: [owner._id] });
+    await post(admin, { name: 'screen-view', screen: '/pods/:podId', podId: String(pod._id) }).expect(204);
+    const [row] = await rows().find().toArray();
+    expect(row.podKind).toBe('team');
+    expect(row.podId).toBeUndefined();
+  });
+
   it('records nothing for an EU, EEA or UK account until the person turns it on', async () => {
     const user = await makeUser();
     for (const country of ['DE', 'NO', 'GB']) {

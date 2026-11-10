@@ -20,7 +20,8 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/We never record what you type, a command, a key or a token\.$/)).toBeInTheDocument();
     expect(screen.getByText(/^Product usage: when you're signed in, we record which screens you open and which buttons you press/)).toBeInTheDocument();
     expect(screen.getByText(/In the EU, the EEA and the UK it starts off, and nothing is recorded until you turn it on\./)).toBeInTheDocument();
-    expect(screen.getByText(/If your browser sends Do Not Track or Global Privacy Control, nothing is recorded\./)).toBeInTheDocument();
+    expect(screen.getByText(/If your browser sends Do Not Track or Global Privacy Control, no product usage is recorded\./)).toBeInTheDocument();
+    expect(screen.getByText(/beyond the screen's name, the fixed event name and that it was a direct conversation\./)).toBeInTheDocument();
     expect(screen.getByText(/We don't use third-party analytics\.$/)).toBeInTheDocument();
     expect(screen.getByText('Setup-step records have no expiry date.')).toBeInTheDocument();
     expect(screen.getByText('Product usage records are deleted after 90 days.')).toBeInTheDocument();

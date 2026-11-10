@@ -270,21 +270,31 @@ const usageEventsState = (req: any, preference: unknown) => ({
 });
 
 router.get('/me/usage-events', auth, async (req: any, res: any) => {
-  const user = await User.findById(req.userId).select('preferences isBot').lean();
-  if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
-  return res.json(usageEventsState(req, user.preferences?.usageEvents));
+  try {
+    const user = await User.findById(req.userId).select('preferences isBot').lean();
+    if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
+    return res.json(usageEventsState(req, user.preferences?.usageEvents));
+  } catch (error) {
+    console.warn('[users] usage setting read failed:', (error as Error).message);
+    return res.status(500).json({ msg: 'Failed to read the setting' });
+  }
 });
 
 router.put('/me/usage-events', profileWriteIngressLimit, auth, profileWriteUserLimit, async (req: any, res: any) => {
   const value = req.body?.usageEvents;
   if (value !== true && value !== false) return res.status(400).json({ msg: 'usageEvents must be true or false' });
-  const updated = await User.findOneAndUpdate(
-    { _id: req.userId, isBot: { $ne: true } },
-    { $set: { 'preferences.usageEvents': value } },
-    { new: true, projection: { preferences: 1 } },
-  ).lean();
-  if (!updated) return res.status(404).json({ msg: 'Not found' });
-  return res.json(usageEventsState(req, updated.preferences?.usageEvents));
+  try {
+    const updated = await User.findOneAndUpdate(
+      { _id: req.userId, isBot: { $ne: true } },
+      { $set: { 'preferences.usageEvents': value } },
+      { new: true, projection: { preferences: 1 } },
+    ).lean();
+    if (!updated) return res.status(404).json({ msg: 'Not found' });
+    return res.json(usageEventsState(req, updated.preferences?.usageEvents));
+  } catch (error) {
+    console.warn('[users] usage setting write failed:', (error as Error).message);
+    return res.status(500).json({ msg: 'Failed to save the setting' });
+  }
 });
 
 module.exports = router;

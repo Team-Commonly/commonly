@@ -2695,7 +2695,8 @@ test('the backend knows every published page path', async () => {
 test('the public-hit script sends no identifier and keeps the API base inside its tag', () => {
   const script = publicHitScript('https://api.example.test</script><script>alert(1)');
   assert.equal(script.split('</script>').length, 2);
-  assert.doesNotMatch(script, /document\.cookie|localStorage\.setItem|sessionStorage|credentials/);
+  assert.doesNotMatch(script, /document\.cookie|localStorage\.setItem|sessionStorage/);
+  assert.match(script, /credentials:'omit'/);
   assert.match(script, /keepalive:true/);
   assert.match(script, /doNotTrack/);
   assert.match(script, /globalPrivacyControl/);

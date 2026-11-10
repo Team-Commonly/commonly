@@ -1,5 +1,5 @@
 import {
-  resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
+  forgetUsageEvents, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
 } from '../utils/usageEvents';
 
 // D286 (F399): the client sends fixed names and route templates only, waits
@@ -76,6 +76,15 @@ describe('usage events client', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('drops what was queued when the person signs out, so it never goes out under the next token', () => {
+    trackUsage('screen-view');
+    forgetUsageEvents();
+    window.localStorage.setItem('token', 'next-person');
+    setUsageEventsEnabled(true);
+    jest.advanceTimersByTime(5000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('sends a once-event once per page load', () => {
     setUsageEventsEnabled(true);
     trackUsageOnce('k', 'composer-focus');
@@ -91,7 +100,7 @@ describe('usage events client', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toMatch(/\/api\/stats\/public-hit$/);
     expect(init.headers).not.toHaveProperty('Authorization');
-    expect(init.credentials).toBeUndefined();
+    expect(init.credentials).toBe('omit');
     expect(JSON.parse(init.body as string)).toEqual({ name: 'invite-page-view', page: '/invite/:token', ref: 'x' });
   });
 
