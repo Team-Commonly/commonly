@@ -21,6 +21,8 @@ const Pod = require('../models/Pod');
 
 export const RUN_REQUEST_MAX_LENGTH = 1000;
 export const NARROWED_HEADER = '[The owner narrowed this request]';
+/** The gate is on but nobody owns the install: refuse, since there is nobody to ask. */
+export const UNOWNED = 'unowned';
 
 type InstallRow = {
   agentName?: unknown; instanceId?: unknown; displayName?: unknown;
@@ -61,14 +63,14 @@ export const ownerOfInstall = async (install: InstallRow): Promise<string | null
  * The owner whose approval this sender's request needs, or null when it runs
  * straight away. An agent's request counts as its owner's, so a person can't
  * route around the gate through their own agent. An owner that can't be found
- * holds nothing: there would be nobody to ask.
+ * gets UNOWNED: the setting is on, so the request is refused, never run.
  */
 export const approverFor = async (
   install: InstallRow, sender: SenderRow, senderUserId: string,
 ): Promise<string | null> => {
   if (!asksBeforeOthers(install)) return null;
   const owner = await ownerOfInstall(install);
-  if (!owner) return null;
+  if (!owner) return UNOWNED;
   const botOwner = (sender?.botMetadata as { ownerUserId?: unknown } | undefined)?.ownerUserId;
   const asker = sender?.isBot ? String(botOwner || '') : String(senderUserId || '');
   return asker && asker === owner ? null : owner;
@@ -110,10 +112,15 @@ export const holdRunRequest = async ({
   requesterName: string;
   request: string;
   threadRootId?: string | null;
-}): Promise<boolean> => {
+}): Promise<boolean | 'pending'> => {
   const agentName = String(install.agentName || event.agentName).toLowerCase();
   const instanceId = String(install.instanceId || event.instanceId || 'default');
   const displayName = String(install.displayName || agentName);
+  const open = await ApprovalAction.findOne({
+    podId: event.podId, agentName, instanceId, actionType: 'run_request', status: 'flagged',
+    'params.requesterUserId': requesterUserId,
+  }).select('_id').lean();
+  if (open) return 'pending';
   const pod = await Pod.findById(event.podId).select('name').lean() as { name?: string } | null;
   const row = await ApprovalAction.create({
     podId: event.podId,
@@ -146,8 +153,8 @@ export const holdRunRequest = async ({
       messageType: 'card',
       approvalCard: true,
       payload: buildCardPayload(row),
-      // No request text here: it can carry other agents' handles, and the
-      // content is what the mention path reads.
+      // No request text here: the card renders it from params, and the
+      // content line stays a plain label wherever messages are listed.
       content: `[approval needed] ${row.summary}`,
       metadata: { source: 'approval-card', approvalId: String(row._id) },
       ...(threadRootId ? { threadRootId } : {}),
@@ -182,13 +189,23 @@ export const releaseRunRequest = async (
   const payload: Record<string, unknown> = {
     ...row.heldEvent.payload, runRequestId: String(row._id), approvedBy: approver.name,
   };
+  // The asker's own words can't carry the owner's header: only the real one,
+  // written below, reads as the owner's.
+  const unforged = (text: unknown) => String(text ?? '').split(NARROWED_HEADER).join('[header removed]');
+  payload.content = unforged(payload.content);
+  if (typeof payload.rawContent === 'string') payload.rawContent = unforged(payload.rawContent);
   if (narrowed) {
+    const version = String(approver.narrowedTo).trim();
     payload.content = [
       NARROWED_HEADER,
-      `${approver.name} approved only this version, so do only this:\n${String(approver.narrowedTo).trim()}`,
+      `${approver.name} approved only this version, so do only this:\n${version}`,
       '',
       String(payload.content || ''),
     ].join('\n');
+    // F109 programs read rawContent, so it carries the version the owner approved.
+    payload.originalRawContent = payload.rawContent;
+    payload.rawContent = version;
+    payload.narrowedTo = version;
   }
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentEventService = require('./agentEventService');

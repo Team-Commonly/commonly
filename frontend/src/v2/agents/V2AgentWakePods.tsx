@@ -7,6 +7,7 @@ import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import V2AgentAddToPod from './V2AgentAddToPod';
+import { PERSONAL_POD_TYPES } from '../connectors/channelModel';
 
 interface InstallationSettings {
   podId: string;
@@ -377,8 +378,9 @@ const V2AgentWakePods: React.FC<{
                     })()}
                   </td>
                   <td data-label={t('agentSettings.colAskFirst')}>
-                    {/* Your own direct message has nobody else in it to ask. */}
-                    {entry.podType !== 'agent-room' && (
+                    {/* A direct message never runs the gate (its wakes take the DM path),
+                        so the switch would promise something it can't do there. */}
+                    {!PERSONAL_POD_TYPES.has(String(entry.podType || '')) && (
                       <label className="v2-agent-wake-pods__toggle" title={t('agentSettings.askBeforeOthers')}>
                         <input type="checkbox" checked={entry.askBeforeOthers === true} disabled={busyPod === entry.podId}
                           onChange={(event) => { void save(entry, { askBeforeOthers: event.target.checked }); }} />

@@ -31,7 +31,9 @@ const { noteNeverConnectedMention, noteOfflineMention, isNeverConnectedAgent } =
   isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { approverFor, asksBeforeOthers, holdRunRequest } = require('./runRequestService') as typeof import('./runRequestService');
+const {
+  approverFor, asksBeforeOthers, holdRunRequest, UNOWNED,
+} = require('./runRequestService') as typeof import('./runRequestService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMentionService') as {
   noteStoppedMention: (args: {
@@ -1970,6 +1972,10 @@ const enqueueMentions = async ({
       await AgentEventService.enqueue(event);
       return 'queued';
     }
+    if (approver === UNOWNED) {
+      console.warn(`[run-request] ${event.agentName} asks first but has no owner; the request was not run`);
+      return 'refused';
+    }
     try {
       const held = await holdRunRequest({
         install,
@@ -1980,7 +1986,7 @@ const enqueueMentions = async ({
         request: rawContent,
         threadRootId: event.payload.threadRootId ? String(event.payload.threadRootId) : null,
       });
-      return held ? 'held' : 'refused';
+      return held ? 'held' : 'refused';  // 'pending' folds into the open card
     } catch (error) {
       // Fails closed: the owner asked that this not run without them.
       console.warn('[run-request] hold failed; the request was not run:', (error as Error).message);
@@ -1997,6 +2003,16 @@ const enqueueMentions = async ({
   let welcomeWoke: string[] = [];
   if (!onlyExplicitMentions && sender?.isBot === false) {
     try {
+      // F371: a greeter that asks first is not woken by a stranger's opener,
+      // which reaches it inline; that would run their words without approval.
+      const greetable = [];
+      for (const inst of installations || []) {
+        // eslint-disable-next-line no-await-in-loop
+        const gated = asksBeforeOthers(inst)
+          ? await approverFor(inst, sender, String(userId)).catch(() => 'unknown')
+          : null;
+        if (!gated) greetable.push(inst);
+      }
       const welcome = await maybeFireWelcomeWake({
         podId,
         userId,
@@ -2006,7 +2022,7 @@ const enqueueMentions = async ({
           ? String(message?._id || message?.id)
           : undefined,
         isRouted,
-        installations,
+        installations: greetable,
       });
       welcomeWoke = ((welcome as { woke?: string[] } | undefined)?.woke || []).map((name) => String(name).toLowerCase());
     } catch (error) {

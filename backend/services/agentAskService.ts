@@ -28,6 +28,10 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 const AgentAsk = require('../models/AgentAsk');
 // eslint-disable-next-line global-require
 const { isHostedInstallation } = require('./hostedRuntimeService');
+// eslint-disable-next-line global-require
+const User = require('../models/User');
+// eslint-disable-next-line global-require
+const { approverFor, asksBeforeOthers } = require('./runRequestService');
 
 // Per-(fromAgent, podId) cap to prevent runaway loops between agents. Keyed
 // only by agent NAME (not name+instance) so an attacker can't trivially
@@ -145,6 +149,26 @@ export async function askAgent(opts: AskAgentOptions): Promise<AskAgentResult> {
       404,
       'target_not_in_pod',
     );
+  }
+
+  // F371: when the target's owner approves other people's requests, an ask
+  // from another agent counts as a request from that agent's owner. It can't
+  // be held as an ask, so it is refused with what works instead: an @mention,
+  // which the owner can approve.
+  if (asksBeforeOthers(targetInstallation)) {
+    const asker = await User.findOne({
+      isBot: true, 'botMetadata.agentName': fromAgent, 'botMetadata.instanceId': fromInstanceId,
+    }).select('isBot botMetadata').lean();
+    const approver = await approverFor(targetInstallation, asker || { isBot: true }, '')
+      .catch(() => 'unknown');
+    if (approver) {
+      throw new AgentAskError(
+        `${targetAgent}:${targetInstanceId} asks its owner before running anyone else's request. `
+          + '@mention it in this pod instead, and its owner can approve it there.',
+        403,
+        'target_asks_owner_first',
+      );
+    }
   }
 
   // An agent on Commonly's native runtime, or a hosted one on either engine,

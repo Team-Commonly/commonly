@@ -554,3 +554,33 @@ describe('askAgent — requestId validation (DoS surface)', () => {
     })).rejects.toMatchObject({ status: 400, code: 'invalid_request_id' });
   });
 });
+
+describe('askAgent — F371, a target whose owner asks first', () => {
+  const User = require('../../../models/User');
+  const person = (username, extra = {}) => User.create({
+    username, email: `${username}@f371.test`, password: 'not-a-login-1', verified: true, ...extra,
+  });
+
+  it("refuses another owner's agent with what works instead, and lets the owner's own agent through", async () => {
+    const ana = await person('ana-ask');
+    const ben = await person('ben-ask');
+    await person('kit-ask', { isBot: true, botMetadata: { agentName: 'kit', instanceId: 'one', ownerUserId: ana._id } });
+    await person('pip-ask', { isBot: true, botMetadata: { agentName: 'pip', instanceId: 'one', ownerUserId: ben._id } });
+    await AgentInstallation.create({
+      agentName: 'nova', instanceId: 'one', podId: POD, version: '1.0.0', installedBy: ana._id, status: 'active',
+      config: { askBeforeOthers: { enabled: true } },
+    });
+    await installAgent('kit', 'one');
+    await installAgent('pip', 'one');
+    const ask = (fromAgent) => askAgent({
+      fromAgent, fromInstanceId: 'one', podId: POD.toString(), targetAgent: 'nova', targetInstanceId: 'one', question: 'drop the table',
+    });
+
+    await expect(ask('pip')).rejects.toMatchObject({ status: 403, code: 'target_asks_owner_first' });
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(await AgentAsk.countDocuments({ targetAgent: 'nova' })).toBe(0);
+
+    await expect(ask('kit')).resolves.toHaveProperty('requestId');
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
+});

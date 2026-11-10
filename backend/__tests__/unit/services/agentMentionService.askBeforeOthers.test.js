@@ -42,6 +42,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const { holdRunRequest } = require('../../../services/runRequestService');
+const { maybeFireWelcomeWake } = require('../../../services/welcomeWakeService');
 
 const owner = { _id: 'user-a', username: 'ana', displayName: 'Ana', isBot: false };
 const teammate = { _id: 'user-b', username: 'ben', displayName: 'Ben', isBot: false };
@@ -63,12 +64,12 @@ const chain = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const setup = ({ askBeforeOthers = true, wakeOnMessage = false } = {}) => {
+const setup = ({ askBeforeOthers = true, wakeOnMessage = false, installedBy = owner._id } = {}) => {
   const install = {
     agentName: 'nova',
     instanceId: 'default',
     displayName: 'Nova',
-    installedBy: owner._id,
+    installedBy,
     scopes: ['messages:read', 'messages:write'],
     config: {
       ...(askBeforeOthers ? { askBeforeOthers: { enabled: true } } : {}),
@@ -180,5 +181,25 @@ describe('F371: a request to an agent whose owner asks first', () => {
     setup({ wakeOnMessage: true });
     await say(owner, 'morning all');
     expect(mentionWakes()).toHaveLength(1);
+  });
+  it("doesn't hand a stranger's first message to a greeter that asks first", async () => {
+    setup();
+    await say(teammate, 'please delete the staging branch');
+    expect(maybeFireWelcomeWake).toHaveBeenCalledTimes(1);
+    expect(maybeFireWelcomeWake.mock.calls[0][0].installations.map((i) => i.agentName)).not.toContain('nova');
+
+    jest.clearAllMocks();
+    setup();
+    await say(owner, 'hello everyone');
+    expect(maybeFireWelcomeWake.mock.calls[0][0].installations.map((i) => i.agentName)).toContain('nova');
+  });
+
+  it('refuses, never runs, a request to an agent that asks first but has no owner to ask', async () => {
+    // installedBy is the bot itself, and the bot has no ownerUserId.
+    setup({ installedBy: nova._id });
+    const result = await say(teammate);
+    expect(holdRunRequest).not.toHaveBeenCalled();
+    expect(mentionWakes()).toHaveLength(0);
+    expect(result.skipped).toContain('nova:hold-failed');
   });
 });
