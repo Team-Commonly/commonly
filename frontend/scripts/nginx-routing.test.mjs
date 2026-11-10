@@ -115,7 +115,7 @@ test('a policy that limits scripts names the inline public-hit script by hash (F
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
   const bases = await builtApiBases();
   // Both deployed builds: prod and staging bake different API bases.
-  assert.ok(bases.includes('https://api.commonly.me') && bases.length >= 2, bases.join(', '));
+  assert.ok(new Set(bases).has('https://api.commonly.me') && bases.length >= 2, bases.join(', '));
   assertPoliciesAllowPublicHit(config, bases);
   // The guard trips on a policy that would block the script, and only on one that limits scripts.
   assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "default-src 'self'" always;`, bases), /public-hit/);
