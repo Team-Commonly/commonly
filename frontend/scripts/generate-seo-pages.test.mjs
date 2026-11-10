@@ -2600,3 +2600,33 @@ test('the build writes an llms.txt that lists every indexable page and an llms-f
     await rm(outputDir, { recursive: true, force: true });
   }
 });
+
+test('the sitemap gives each dated page its real lastmod and invents none for the rest (F369)', async () => {
+  const guides = JSON.parse(await readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'));
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-lastmod-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    const pages = await generateSeoPages({ outputDir });
+    const sitemap = await readFile(resolve(outputDir, 'sitemap.xml'), 'utf8');
+    const entries = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((match) => match[1]);
+    assert.equal(entries.length, pages.filter((page) => !page.noindex).length);
+
+    for (const page of pages.filter((item) => !item.noindex)) {
+      const entry = entries.find((text) => text.includes(`<loc>https://commonly.me${page.path}</loc>`));
+      assert.ok(entry, page.path);
+      if (page.dateModified) {
+        assert.ok(entry.includes(`<lastmod>${page.dateModified}</lastmod>`), page.path);
+      } else {
+        assert.doesNotMatch(entry, /<lastmod>/, page.path);
+      }
+    }
+    const dated = pages.filter((page) => page.dateModified);
+    // Every guide is dated; F396 also dates the use-case index and the legal pages.
+    for (const slug of Object.keys(guides)) assert.ok(dated.some((page) => page.path === `/guides/${slug}/`), slug);
+    assert.equal(dated.length, Object.keys(guides).length + 3);
+    for (const page of dated) assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}$/, page.path);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});

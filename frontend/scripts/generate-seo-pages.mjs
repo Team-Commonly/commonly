@@ -1156,7 +1156,10 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
     await writeFile(outputPath, renderStaticPage(template, page));
   }));
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  // lastmod only where a page carries a real dateModified (the guides). A build-time date on
+  // every URL would tell Google everything changed on each deploy, and it learns to ignore that (F369).
+  const sitemapEntry = (page) => `  <url><loc>${pageUrl(page.path)}</loc>${page.dateModified ? `<lastmod>${page.dateModified}</lastmod>` : ''}</url>`;
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map(sitemapEntry).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
 
   const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
