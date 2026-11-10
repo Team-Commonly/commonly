@@ -17,7 +17,7 @@ export type PublicEventName =
   | 'page-view' | 'cta-click' | 'register-view' | 'auth-choice' | 'register-error' | 'invite-page-view';
 
 // The V2App route table, without the /v2 mount, most specific first.
-const SCREENS = [
+export const SCREENS = [
   '/pods/:podId/tasks/:taskId/record', '/pods/:podId/board', '/pods/:podId',
   '/agents/byo', '/agents/manage', '/agents', '/agent/:agentName',
   '/settings/devices', '/settings', '/activity', '/connect', '/connectors',

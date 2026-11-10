@@ -10,6 +10,9 @@ import { forgetUsageEvents, setUsageEventsEnabled, trackUsage } from '../utils/u
  * known, events wait in memory; if it's off (or the request fails) they're
  * dropped. The server applies the same rules on its side.
  */
+// Holds only the last UTC date an app-open went out, keyed by the signed-in
+// user's own id so a shared browser doesn't skip someone else's. It never
+// leaves the browser and is no visitor or device id.
 const openKey = (userId: string) => `commonly.usageAppOpen:${userId}`;
 
 export const useUsageEvents = (): void => {

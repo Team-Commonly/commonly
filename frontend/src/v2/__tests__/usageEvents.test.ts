@@ -1,5 +1,5 @@
 import {
-  forgetUsageEvents, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
+  SCREENS, forgetUsageEvents, resetUsageEventsForTest, screenPodId, screenTemplate, setUsageEventsEnabled, trackPublic, trackUsage, trackUsageOnce,
 } from '../utils/usageEvents';
 
 // D286 (F399): the client sends fixed names and route templates only, waits
@@ -23,6 +23,20 @@ describe('usage events client', () => {
   afterEach(() => {
     jest.useRealTimers();
     window.localStorage.clear();
+  });
+
+  // F400: the server strips an agent-room pod only when the event carries its
+  // id, so a pod screen that yielded no screenPodId would slip through.
+  it('gives every pod-scoped screen its pod id, with or without the /v2 mount', () => {
+    const podScreens = SCREENS.filter((pattern) => pattern.includes(':podId'));
+    expect(podScreens.length).toBeGreaterThan(0);
+    for (const pattern of podScreens) {
+      const path = pattern.replace(':podId', podId).replace(/:[A-Za-z]+/g, 'x1');
+      expect(screenTemplate(`/v2${path}`)).toBe(pattern);
+      expect(screenTemplate(path)).toBe(pattern);
+      expect(screenPodId(`/v2${path}`)).toBe(podId);
+      expect(screenPodId(path)).toBe(podId);
+    }
   });
 
   it('maps a path to its route template and pod, never the id itself', () => {
