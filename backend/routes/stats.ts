@@ -166,9 +166,11 @@ const limited = (max: number, keyGenerator: (req: any) => string) => rateLimit({
 
 router.post(
   '/ui-event',
-  limited(120, (req: any) => cloudflareIpRateLimitKeyGenerator(req)),
+  limited(120, cloudflareIpRateLimitKeyGenerator),
   auth,
-  limited(60, (req: any) => authenticatedUserRateLimitKeyGenerator(req)),
+  // The shared key functions, unwrapped: TASK-126's walk reads a limiter's
+  // policy by function identity.
+  limited(60, authenticatedUserRateLimitKeyGenerator),
   async (req: any, res: any) => {
     const body = req.body || {};
     const events = Array.isArray(body.events) ? body.events : [body];
@@ -193,7 +195,7 @@ router.post(
 
 router.post(
   '/public-hit',
-  limited(60, (req: any) => cloudflareIpRateLimitKeyGenerator(req)),
+  limited(60, cloudflareIpRateLimitKeyGenerator),
   async (req: any, res: any) => {
     if (privacySignal(req)) return res.status(204).end();
     try {
