@@ -2434,3 +2434,63 @@ test('privacy, terms and the use-case index get their own pages, and app routes 
     await rm(outputDir, { recursive: true, force: true });
   }
 });
+
+// F395: answer engines read llms.txt as the site's map. It listed 1 of the 91
+// guides, and llms-full.txt was a 404.
+test('the build writes an llms.txt that lists every indexable page and an llms-full.txt with their text (F395)', async () => {
+  const [guideText, useCaseText, baseLlms] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8'),
+  ]);
+  const guides = JSON.parse(guideText);
+  const useCases = JSON.parse(useCaseText);
+  const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
+  const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-llms-'));
+  try {
+    await writeFile(resolve(outputDir, 'index.html'), template);
+    const pages = await generateSeoPages({ outputDir });
+    const [llms, full, sitemap] = await Promise.all([
+      readFile(resolve(outputDir, 'llms.txt'), 'utf8'),
+      readFile(resolve(outputDir, 'llms-full.txt'), 'utf8'),
+      readFile(resolve(outputDir, 'sitemap.xml'), 'utf8'),
+    ]);
+
+    // The hand-written head is kept word for word, up to its Guides section.
+    const head = baseLlms.slice(0, baseLlms.indexOf('## Guides'));
+    assert.ok(head.length > 100);
+    assert.ok(llms.startsWith(head));
+
+    // Every URL in the sitemap is a link in llms.txt, and nothing else on commonly.me is.
+    const sitemapUrls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]).sort();
+    const linked = [...llms.matchAll(/\]\((https:\/\/commonly\.me\/[^)]*)\)/g)].map((m) => m[1]);
+    const pageLinks = linked.filter((url) => !url.endsWith('.txt'));
+    assert.deepEqual([...new Set(pageLinks)].sort(), sitemapUrls);
+    assert.equal(pageLinks.length, new Set(pageLinks).size);
+    assert.ok(pageLinks.length >= 100);
+    assert.ok(linked.includes('https://commonly.me/llms-full.txt'));
+    assert.doesNotMatch(llms, /\(https:\/\/commonly\.me\/compare\/\)/);
+    for (const [id, guide] of Object.entries(guides)) {
+      assert.ok(llms.includes(`- [${guide.title}](https://commonly.me/guides/${id}/): ${guide.description}`), id);
+    }
+
+    // The full text carries each guide's sections and FAQ, each use case and each comparison.
+    for (const [id, guide] of Object.entries(guides)) {
+      assert.ok(full.includes(`URL: https://commonly.me/guides/${id}/`), id);
+      assert.ok(full.includes(guide.sections[0].paragraphs?.[0] || guide.sections[0].title), id);
+      if (guide.faq?.length) assert.ok(full.includes(guide.faq[0].answer), id);
+    }
+    for (const [id, useCase] of Object.entries(useCases)) {
+      assert.ok(full.includes(`URL: https://commonly.me/use-cases/${id}/`), id);
+      assert.ok(full.includes(useCase.outcomes[0]), id);
+    }
+    assert.ok(full.includes('URL: https://commonly.me/compare/openagents/'));
+    assert.ok(full.includes('# Commonly vs OpenAgents'));
+    assert.doesNotMatch(full, /<\/?(p|div|a|span|strong|em|ul|ol|li|h[1-6]|table|code|pre)\b[^>]*>/i);
+    // "undefined" is also plain English in the guides, so only a whole rendered field counts.
+    assert.doesNotMatch(full, /(^|\n)(### |- |\d+\. |Q: |A: |URL: \S*)?undefined(\n|$)/);
+    assert.equal(pages.filter((page) => !page.noindex).length, sitemapUrls.length);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});

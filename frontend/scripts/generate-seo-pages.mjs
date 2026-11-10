@@ -972,6 +972,84 @@ export const renderStaticPage = (template, page) => {
   return withMetadata.replace(pageContentMarker, () => page.content);
 };
 
+// llms.txt and llms-full.txt (F395). public/llms.txt is the hand-written head; the
+// build keeps it word for word up to its "## Guides" section and lists every
+// indexable page from the same content the pages are built from, so the map
+// can't fall behind the site. llms-full.txt carries those pages' text.
+const oneLine = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+const llmsLink = (title, path, description) => `- [${oneLine(title)}](${pageUrl(path)}): ${oneLine(description)}`;
+
+export const renderLlmsTxt = ({ base, guides = {}, useCases = {}, compareSources = {} }) => {
+  const cut = base.indexOf('## Guides');
+  const head = (cut === -1 ? base : base.slice(0, cut)).replace(/\s*$/, '\n\n');
+  const guideLines = Object.entries(guides).map(([id, guide]) => llmsLink(guide.title, `/guides/${id}/`, guide.description));
+  const compareLines = Object.values(compareSources).map((source) => llmsLink(source.title, source.path, source.description));
+  const useCaseLines = Object.entries(useCases).map(([id, useCase]) => llmsLink(useCase.title, `/use-cases/${id}/`, useCase.summary));
+  return `${head}## Guides
+
+${llmsLink('Guides', '/guides/', 'guides for teams working with AI agents')}
+${guideLines.join('\n')}
+
+## Compare
+
+${compareLines.join('\n')}
+
+## Use cases
+
+${useCaseLines.join('\n')}
+
+## Optional
+
+${llmsLink('commonly.me home', '/', 'what Commonly is, in one page')}
+- [Full text](${pageUrl('/llms-full.txt')}): every guide, comparison and use case above in one file
+`;
+};
+
+const guideFullText = (guide) => {
+  const parts = [oneLine(guide.summary), ...(guide.intro || []).map(oneLine)];
+  (guide.sections || []).forEach((section) => {
+    parts.push(`### ${oneLine(section.title)}`);
+    (section.paragraphs || []).forEach((paragraph) => parts.push(oneLine(paragraph)));
+    if (section.bullets?.length) parts.push(section.bullets.map((item) => `- ${oneLine(item)}`).join('\n'));
+    if (section.orderedItems?.length) parts.push(section.orderedItems.map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'));
+    (section.tables || []).forEach((table) => {
+      const row = (cells) => `| ${cells.map(oneLine).join(' | ')} |`;
+      parts.push([row(table.headers), row(table.headers.map(() => '---')), ...table.rows.map(row)].join('\n'));
+    });
+    (section.codeBlocks || []).forEach((block) => parts.push(`\`\`\`${block.language || ''}\n${block.code}\n\`\`\``));
+    if (section.links?.length) {
+      parts.push(section.links.map((link) => `- ${oneLine(link.label)}: ${link.external ? link.path : pageUrl(link.path)}`).join('\n'));
+    }
+  });
+  if (guide.faq?.length) {
+    parts.push('### FAQ');
+    guide.faq.forEach((item) => parts.push(`Q: ${oneLine(item.question)}\nA: ${oneLine(item.answer)}`));
+  }
+  if (guide.cta?.title) parts.push(`### ${oneLine(guide.cta.title)}`, oneLine(guide.cta.body));
+  return parts.filter(Boolean).join('\n\n');
+};
+
+const useCaseFullText = (useCase) => [
+  oneLine(useCase.summary),
+  '### Problems',
+  (useCase.problems || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Outcomes',
+  (useCase.outcomes || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Example flow',
+  (useCase.exampleFlow || []).map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'),
+].filter(Boolean).join('\n\n');
+
+export const renderLlmsFullTxt = ({ guides = {}, useCases = {}, compareSources = {} }) => {
+  const entry = (title, path, body) => `## ${oneLine(title)}\n\nURL: ${pageUrl(path)}\n\n${body.trim()}\n`;
+  return [
+    '# Commonly: full text of the guides, comparisons and use cases on commonly.me\n\n'
+      + `> The pages listed in ${pageUrl('/llms.txt')}, as plain text.\n`,
+    ...Object.entries(guides).map(([id, guide]) => entry(guide.title, `/guides/${id}/`, guideFullText(guide))),
+    ...Object.values(compareSources).map((source) => entry(source.title, source.path, source.markdown)),
+    ...Object.entries(useCases).map(([id, useCase]) => entry(useCase.title, `/use-cases/${id}/`, useCaseFullText(useCase))),
+  ].join('\n---\n\n');
+};
+
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
   const [template, translationText, useCaseText, guideText, faqText, legalText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
@@ -999,6 +1077,10 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
 
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
+
+  const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
+  await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources }));
+  await writeFile(resolve(outputDir, 'llms-full.txt'), renderLlmsFullTxt({ guides, useCases, compareSources: comparePageSources }));
   return pages;
 };
 
