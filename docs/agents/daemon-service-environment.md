@@ -26,8 +26,8 @@ live service came from (`launchctl print`, `systemctl --user show -p
 FragmentPath`, `schtasks /Query /XML`). If that file belongs to another `HOME`,
 install stops and names it rather than unloading another account's daemon.
 On macOS and Windows, `--replace` takes it over on purpose. On Linux the user
-manager reads units only from its own account's folder, so the refusal says to
-run `commonly daemon uninstall` as that account first. Re-running from the same
+manager reads units only from its own account's home folder, so one computer
+account runs one Commonly daemon; another needs its own computer user. Re-running from the same
 `HOME` (a symlinked spelling of it included) updates in place.
 
 A login service starts at login. On Linux the install also runs `loginctl

@@ -312,9 +312,11 @@ export const foreignServiceRefusal = ({ target, loadedFile, platform = process.p
   const head = `This computer already runs a Commonly daemon for another account (its service file is ${loadedFile}), `
     + 'and installing here would stop it. To see it, run `commonly daemon status` as that account. ';
   // The systemd user manager reads units only from its own account's folder,
-  // so a unit written under another HOME is never loaded: --replace can't help.
+  // so a unit written under another HOME is never loaded: --replace can't help,
+  // and neither would uninstalling the other one first.
   if (target.kind === 'systemd') {
-    return `${head}To use this one instead, run \`commonly daemon uninstall\` as that account first, then run this again.`;
+    return `${head}On Linux one computer account runs one Commonly daemon, from its own home folder. `
+      + 'To run another, sign in to this computer as a different user and set it up there.';
   }
   return `${head}To replace it with this one on purpose, run this command again with --replace.`;
 };

@@ -116,12 +116,12 @@ describe('which file the live service came from', () => {
     }
   });
 
-  test('Linux names uninstall as the fix, since --replace can\'t load a unit from another HOME', () => {
+  test('Linux says one daemon per computer account, since --replace can\'t load a unit from another HOME', () => {
     const refusal = foreignServiceRefusal({
       target: servicePaths('linux', '/home/second'),
       loadedFile: '/home/first/.config/systemd/user/commonly-daemon.service',
     });
-    expect(refusal).toContain('commonly daemon uninstall');
+    expect(refusal).toContain('one computer account runs one Commonly daemon');
     expect(refusal).not.toContain('--replace');
   });
 
