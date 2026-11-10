@@ -174,11 +174,11 @@ describe('V2PodBoard', () => {
       renderBoard();
       await act(async () => { await Promise.resolve(); });
       expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
-      // The card line is the timer and the claimant's avatar (named by its title); no holder text.
+      // The card line is the timer, the claimant's avatar and their name (F402).
       expect(screen.getByTitle('TASK-269')).toHaveTextContent('1m');
-      expect(screen.getByTitle('TASK-269')).not.toHaveTextContent('Forge');
+      expect(screen.getByTitle('TASK-269').querySelector('.v2-board__card-holder')).toHaveTextContent('Forge');
       expect(screen.getByTitle('TASK-270')).toHaveTextContent('1m');
-      expect(screen.getByTitle('Forge')).toBeInTheDocument();
+      expect(screen.getAllByTitle('Forge').length).toBeGreaterThan(0);
       // An assigned task nobody has claimed shows no owner line at all.
       expect(screen.getByTitle('TASK-271')).not.toHaveTextContent(/lily-shen|not claimed/);
 
@@ -632,6 +632,38 @@ test('an agent claimant keyed by its instance id still shows its face, on the ca
   const owner = within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling;
   expect(owner).toHaveTextContent('Fay');
   expect(owner.querySelector('.v2-board__member-avatar img')).not.toBeNull();
+});
+
+// F402: a person looking at the board sees who holds each task, and for an
+// agent whose it is, without opening the card.
+test('a claimed card names its holder, and the drawer says whose agent it is', async () => {
+  const lease = new Date(Date.now() + 10 * 60000).toISOString();
+  const tasks = [
+    { taskId: 'TASK-6', title: 'Agent work', status: 'claimed', claimedBy: 'priya-claude', claimedByUserId: 'agent-id', claimExpiresAt: lease, watchers: [], updates: [] },
+    { taskId: 'TASK-7', title: 'Person work', status: 'claimed', claimedBy: 'person-id', claimExpiresAt: lease, watchers: [], updates: [] },
+  ];
+  axios.get.mockImplementation((url) => {
+    if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks, permissions: { canWrite: true } } });
+    if (url.startsWith('/api/pods/')) {
+      return Promise.resolve({ data: { name: 'My Workspace', members: [
+        { _id: 'agent-id', username: 'priya-claude', isBot: true, displayLabel: 'Priya Claude', botMetadata: { displayName: 'Priya Claude' }, ownerName: 'Priya Rao' },
+        { _id: 'person-id', username: 'jonah', displayName: 'Jonah Park', isBot: false },
+      ] } });
+    }
+    return Promise.resolve({ data: {} });
+  });
+  renderBoard();
+  const agentCard = await screen.findByTitle('TASK-6');
+  await waitFor(() => expect(agentCard.querySelector('.v2-board__card-holder')).toHaveTextContent('Priya Claude'));
+  const personCard = await screen.findByTitle('TASK-7');
+  expect(personCard.querySelector('.v2-board__card-holder')).toHaveTextContent('Jonah Park');
+  // The card hides its owner line on hover, so whose agent it is shows in the drawer.
+  fireEvent.click(agentCard);
+  expect(within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling).toHaveTextContent('Priya Claude, for Priya Rao');
+  fireEvent.click(personCard);
+  const personOwner = within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling;
+  expect(personOwner).toHaveTextContent('Jonah Park');
+  expect(personOwner).not.toHaveTextContent(', for');
 });
 
 test('the pr row links the pull request by its number', async () => {

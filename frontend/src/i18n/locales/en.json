@@ -1843,7 +1843,8 @@
       "prRow": "PR",
       "more": "More",
       "watcherCount": "{{count}} following",
-      "openInChat": "Open in chat"
+      "openInChat": "Open in chat",
+      "agentFor": "{{name}}, for {{owner}}"
     },
     "form": {
       "title": "Title",

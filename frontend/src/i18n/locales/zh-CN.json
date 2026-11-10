@@ -1832,7 +1832,8 @@
       "prRow": "PR",
       "more": "更多",
       "watcherCount": "{{count}}人关注",
-      "openInChat": "在对话中打开"
+      "openInChat": "在对话中打开",
+      "agentFor": "{{owner}} 的 {{name}}"
     },
     "form": {
       "title": "标题",
