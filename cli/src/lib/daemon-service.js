@@ -353,11 +353,12 @@ export const installDaemonService = async ({
   // Absent, the owner check is skipped (callers that only test the writers).
   readCmd,
   uid = process.getuid?.(),
-  // Take over a daemon another HOME installed, on purpose.
+  // Take over a daemon another HOME installed, on purpose. Not on Linux: the
+  // user manager loads units only from its own home, so the check still runs.
   replace = false,
 }) => {
   const target = servicePaths(platform, home);
-  if (readCmd && !replace) {
+  if (readCmd && (!replace || target.kind === 'systemd')) {
     const loadedFile = loadedServiceFile(target.kind, await readCmd(serviceOwnerQuery(platform, uid)).catch(() => ''));
     const refusal = foreignServiceRefusal({ target, loadedFile, platform });
     if (refusal) throw new Error(refusal);

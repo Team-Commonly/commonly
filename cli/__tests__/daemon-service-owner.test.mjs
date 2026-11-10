@@ -170,6 +170,14 @@ describe('install refuses to take over another account\'s daemon', () => {
     expect(deps.execCmd).not.toHaveBeenCalled();
   });
 
+  test('linux: --replace still refuses, without writing or calling execCmd', async () => {
+    const deps = makeDeps('/home/first/.config/systemd/user/commonly-daemon.service\n');
+    await expect(installDaemonService({ platform: 'linux', home: '/home/second', nodePath, cliPath, replace: true, ...deps }))
+      .rejects.toThrow(/one computer account runs one Commonly daemon/);
+    expect(deps.writeFile).not.toHaveBeenCalled();
+    expect(deps.execCmd).not.toHaveBeenCalled();
+  });
+
   test('win32: another HOME\'s task is refused too', async () => {
     const xml = `<Arguments>-File "${servicePaths('win32', 'C:\\Users\\first').launcher}"</Arguments>`;
     const deps = makeDeps(xml);

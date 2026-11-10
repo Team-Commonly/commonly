@@ -137,7 +137,9 @@ export const orchestrateDaemonSetup = async ({
   const tooOld = nodeTooOld(nodeVersion);
   if (tooOld) throw new Error(tooOld);
   if (typeof runCli !== 'function') throw new Error('orchestrateDaemonSetup needs a runCli function');
-  if (!replace) {
+  // --replace can't take over a Linux daemon (daemon-service.js), so the
+  // check runs there either way.
+  if (!replace || platform === 'linux') {
     const refusal = await foreignDaemon();
     if (refusal) throw new Error(refusal);
   }
