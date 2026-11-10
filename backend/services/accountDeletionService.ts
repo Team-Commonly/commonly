@@ -15,6 +15,8 @@ import { disconnectUserSessionSockets } from './sessionSocketService';
 import { cancelSubscriptionForDeletion } from './billingService';
 import { DM_POD_TYPES_GUARD } from './agentIdentityService';
 import { deleteOpeningsFor } from '../repositories/recordChainRepository';
+import { deleteByoEventsFor } from './byoTelemetry';
+import { deleteUiEventsFor } from './usageEvents';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { pool } = require('../config/db-pg');
@@ -213,6 +215,9 @@ export const sweepAccountDeletions = async (): Promise<void> => {
         // because without it the next caller is stamped as the agent's owner.
         () => deleteOpeningsFor(userId),
         () => deleteOwnedUploads(userId),
+        // An admin delete leaves these to this round.
+        () => deleteByoEventsFor(userId),
+        () => deleteUiEventsFor(userId),
         // A receipt means the deletion was decided: billing preflight passed,
         // or an admin chose it. A row still here under a claim past the
         // preflight lease is a delete that died before its last step. Finish
@@ -295,6 +300,9 @@ export const deleteOwnAccount = async (
   await anonymizeChatAuthor(userId);
   // Their ids on record lines go; the lines stay, so every chain still verifies.
   await deleteOpeningsFor(userId);
+  // The privacy policy says deleting the account deletes these.
+  await deleteByoEventsFor(userId);
+  await deleteUiEventsFor(userId);
   await User.deleteOne({ _id: userId, isBot: { $ne: true }, role: { $ne: 'admin' } });
   disconnectUserSessionSockets(userId);
 };

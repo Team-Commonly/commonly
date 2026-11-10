@@ -249,11 +249,12 @@ describe('TASK-126 ip key separation', () => {
   });
 
   it('pins the explicit credential, user and address policies without exempting them from counting', () => {
-    for (const key of [presentedCredentialRateLimitKeyGenerator, authenticatedUserRateLimitKeyGenerator]) {
-      expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
-        .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort())
-        .toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
-    }
+    const routesOn = (key) => walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === key)
+      .map((w) => `${w.method.toUpperCase()} ${w.path}`).sort();
+    expect(routesOn(presentedCredentialRateLimitKeyGenerator)).toEqual(['DELETE /api/users/me', 'POST /api/uploads/']);
+    // F399: usage events are capped per account after auth, beside the per-IP cap ahead of it.
+    expect(routesOn(authenticatedUserRateLimitKeyGenerator))
+      .toEqual(['DELETE /api/users/me', 'POST /api/stats/ui-event', 'POST /api/uploads/']);
     expect(walked.filter((w) => mockLimiterKeys.get(w.instance.getKey) === loginEmailRateLimitKeyGenerator)
       .map((w) => `${w.method.toUpperCase()} ${w.path}`))
       .toEqual(['POST /api/auth/login']);

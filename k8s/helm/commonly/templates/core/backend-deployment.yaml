@@ -123,6 +123,19 @@ spec:
         - name: SEARCH_PROVIDER
           value: {{ .Values.webSearch.provider | default "exa" | quote }}
         {{- end }}
+        {{- if .Values.backend.env.usageInternalUsernames }}
+        # D286: our own accounts' usage events are flagged isInternal so reads
+        # can leave them out (services/usageEvents.ts). A comma list, set only
+        # in the private values file: usernames never go in this repo.
+        - name: USAGE_INTERNAL_USERNAMES
+          value: {{ .Values.backend.env.usageInternalUsernames | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.usageInternalPrefixes }}
+        # F401: accounts made on the fly (walk and seat accounts) are
+        # flagged by username prefix, a comma list from private values.
+        - name: USAGE_INTERNAL_PREFIXES
+          value: {{ .Values.backend.env.usageInternalPrefixes | quote }}
+        {{- end }}
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
@@ -257,6 +270,19 @@ spec:
         {{- end }}
 
         # Email Configuration (SMTP2GO)
+        {{- if .Values.email.sink.enabled }}
+        # The in-cluster sink stands in for SMTP2GO (templates/core/email-sink.yaml):
+        # every mail stays in the cluster. The key is not a secret; the sink takes
+        # any, and it only makes hasEmailDeliveryConfig true.
+        - name: SMTP2GO_API_KEY
+          value: "email-sink"
+        - name: SMTP2GO_FROM_EMAIL
+          value: {{ required "email.sink.fromEmail is required when email.sink.enabled" .Values.email.sink.fromEmail | quote }}
+        - name: SMTP2GO_FROM_NAME
+          value: "Commonly (staging)"
+        - name: SMTP2GO_BASE_URL
+          value: {{ printf "http://email-sink.%s.svc.cluster.local/v3" (include "commonly.namespace" .) | quote }}
+        {{- else }}
         - name: SMTP2GO_API_KEY
           valueFrom:
             secretKeyRef:
@@ -281,6 +307,7 @@ spec:
               name: api-keys
               key: SMTP2GO_BASE_URL
               optional: true
+        {{- end }}
 
         # Onboarding silence alerts — recipient of the detector's email (onboardingAlertService).
         # Unset = LOG-ONLY: episodes are recorded but nobody is paged.

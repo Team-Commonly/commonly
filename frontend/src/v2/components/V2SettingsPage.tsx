@@ -21,6 +21,7 @@ import { V2_THEMES, V2ThemePref, setV2Theme } from '../utils/theme';
 import { useV2Confirm } from '../hooks/useV2Confirm';
 import { appDateLocale } from '../utils/appLocale';
 import useV2ThemePref from '../hooks/useV2ThemePref';
+import { setUsageEventsEnabled } from '../utils/usageEvents';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -88,6 +89,7 @@ const Globe = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c
 const Moon = () => <Svg><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z" /></Svg>;
 const Next = () => <Svg><path d="m9 6 6 6-6 6" /></Svg>;
 const Book = () => <Svg><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4zM5 17a3 3 0 0 1 3-3h11" /></Svg>;
+const Bars = () => <Svg><path d="M5 20V11M12 20V5M19 20v-6" /></Svg>;
 const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 
 const V2AccountSection: React.FC = () => {
@@ -612,6 +614,51 @@ const V2AdminSection: React.FC = () => {
   );
 };
 
+// D286: the switch for first-party usage events. The server holds the default
+// (off in the EU, EEA and UK until turned on, on elsewhere) and says when the
+// browser's Do Not Track or Global Privacy Control keeps recording off anyway.
+type UsageSetting = { usageEvents: boolean; chosen: boolean; browserSignal: boolean };
+const V2UsageSection: React.FC = () => {
+  const { t } = useTranslation();
+  const [setting, setSetting] = useState<UsageSetting | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let live = true;
+    axios.get<UsageSetting>('/api/users/me/usage-events')
+      .then(({ data }) => { if (live) setSetting(data); })
+      .catch(() => { if (live) setError(true); });
+    return () => { live = false; };
+  }, []);
+  const choose = (value: 'on' | 'off') => {
+    const next = value === 'on';
+    setError(false);
+    axios.put<UsageSetting>('/api/users/me/usage-events', { usageEvents: next })
+      .then(({ data }) => {
+        setSetting(data);
+        setUsageEventsEnabled(data.usageEvents && !data.browserSignal);
+      })
+      .catch(() => setError(true));
+  };
+  return (
+    <>
+      <div className="v2p-lrow">
+        <span className="lb"><Bars />{t('settings.usage.label')}</span>
+        <span className="vl" />
+        <span className="ac">{setting && <V2Segmented
+          size="sm"
+          ariaLabel={t('settings.usage.label')}
+          value={setting.usageEvents ? 'on' : 'off'}
+          onChange={choose}
+          options={[{ value: 'on', label: t('settings.usage.on') }, { value: 'off', label: t('settings.usage.off') }]}
+        />}</span>
+      </div>
+      <p className="v2-settings__message">{t('settings.usage.detail')}</p>
+      {setting?.browserSignal && <p className="v2-settings__message" role="status">{t('settings.usage.browserSignal')}</p>}
+      {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{t('settings.usage.error')}</p>}
+    </>
+  );
+};
+
 const V2SettingsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
@@ -643,6 +690,7 @@ const V2SettingsPage: React.FC = () => {
             )}
           </SettingsSection>
           <SettingsSection id="look" title={t('settings.sections.look')}><V2LanguageSection /></SettingsSection>
+          <SettingsSection id="privacy" title={t('settings.sections.privacy')}><V2UsageSection /></SettingsSection>
           <div className="v2p-list v2-settings__actions-list">
             {/* Phones have no rail, so Feedback's Guide entry isn't reachable there. */}
             <button

@@ -612,6 +612,43 @@ const claimantLabel = async (claimedBy: string): Promise<string> => {
   }
 };
 
+// Who a refused claimant is up against, in words it can repeat in the pod (F374).
+// `claimedBy` stays the stable key; an agent also names the person it belongs to,
+// so two people's agents racing for one task can tell whose won.
+// `isAgent` is left out when the holder can't be looked up: a legacy claim keyed
+// by instance id was an agent, so `false` there would be a guess.
+type ClaimHolder = { username: string; displayName: string; isAgent?: boolean; ownerUsername?: string };
+const claimHolder = async (claimedBy: string): Promise<ClaimHolder> => {
+  const fallback: ClaimHolder = { username: claimedBy, displayName: claimedBy };
+  if (!/^[a-f\d]{24}$/i.test(claimedBy)) return fallback;
+  let user: {
+    username?: string; displayName?: string; isBot?: boolean; botMetadata?: { displayName?: string; ownerUserId?: string };
+  } | null;
+  try {
+    user = await User.findById(claimedBy).select('username displayName isBot botMetadata').lean() as typeof user;
+  } catch {
+    // Cosmetic, like claimantLabel: a refusal still goes out without it.
+    return fallback;
+  }
+  if (!user?.username) return fallback;
+  const holder: ClaimHolder = {
+    username: user.username,
+    // An agent's shown name lives in botMetadata; a person's is User.displayName.
+    displayName: (user.isBot ? user.botMetadata?.displayName : user.displayName) || user.username,
+    isAgent: Boolean(user.isBot),
+  };
+  const ownerId = user.isBot ? user.botMetadata?.ownerUserId : undefined;
+  if (ownerId && mongoose.isValidObjectId(ownerId)) {
+    try {
+      const owner = await User.findById(ownerId).select('username').lean() as { username?: string } | null;
+      if (owner?.username) holder.ownerUsername = owner.username;
+    } catch {
+      // The holder's own name still goes out.
+    }
+  }
+  return holder;
+};
+
 // The refusal every conflicting write path shares, so the two cannot drift into
 // disagreeing about what a live lease is, and so the body has one shape: the fields
 // `claim` already returns on a lost race, which is what tells a refused writer who
@@ -646,6 +683,7 @@ const leaseCheckForWrite = async (
       status: current?.status || 'claimed',
       claimedBy: holder.claimedBy,
       claimExpiresAt: holder.claimExpiresAt,
+      holder: await claimHolder(String(holder.claimedBy)),
     },
     overridesHolder: null,
   };
@@ -771,6 +809,7 @@ const claimTaskAs = async (podId: string, taskId: string, claimant: TaskClaimant
           claimedBy: existing.claimedBy,
           status: existing.status,
           claimExpiresAt: existing.claimExpiresAt || null,
+          ...(existing.claimedBy ? { holder: await claimHolder(existing.claimedBy) } : {}),
         },
       };
     }

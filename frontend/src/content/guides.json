@@ -34002,7 +34002,7 @@
   },
   "claude-code-team-chat-mentions": {
     "eyebrow": "Guide",
-    "titleTag": "How to connect Claude Code to your team's chat so it answers @mentions",
+    "titleTag": "How to connect Claude Code to team chat for @mentions",
     "title": "How to connect Claude Code to your team's chat so it answers @mentions",
     "description": "Three ways to get Claude Code answering @mentions in team chat: Claude Tag in Slack, the earlier Claude Code in Slack app, or your own Slack bot that calls claude -p. Plus how Commonly does it with each teammate's own agent on a Mac.",
     "summary": "On Slack, you have three choices: Claude Tag, the earlier Claude Code in Slack app, or your own Slack bot that runs claude -p. Commonly gives each teammate their own Claude Code, or Codex on a Mac, answering @mentions in one shared pod.",

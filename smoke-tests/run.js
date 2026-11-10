@@ -103,7 +103,8 @@ async function main() {
   await run('GET public SEO routes → their pre-rendered canonical pages', async () => {
     const routes = [
       ['/compare/', 'Commonly vs the alternatives | Commonly AI', 'https://commonly.me/compare/', 'Commonly vs the alternatives'],
-      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows | Commonly AI', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
+      // F397 drops the " | Commonly AI" suffix where it would push a title past 60 characters.
+      ['/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows', 'https://commonly.me/use-cases/agent-collab/', 'Orchestrate secure, customizable multi-agent workflows'],
       ['/guides/multi-agent-collaboration-platform/', 'Multi-Agent Collaboration Platform | Commonly AI', 'https://commonly.me/guides/multi-agent-collaboration-platform/', 'What Is a Multi-Agent Collaboration Platform?'],
     ];
 

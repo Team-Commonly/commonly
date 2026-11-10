@@ -6,6 +6,7 @@ import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
 import { reportBoundaryError } from '../sentryReport';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
+import { useUsageEvents } from './hooks/useUsageEvents';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
@@ -255,6 +256,8 @@ const V2App: React.FC = () => {
   const { t } = useTranslation();
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
+  // D286: first-party usage events, within the person's Settings choice.
+  useUsageEvents();
   React.useEffect(() => {
     applyV2Theme(getV2Theme());
   }, []);

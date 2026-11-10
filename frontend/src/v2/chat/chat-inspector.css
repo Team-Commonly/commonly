@@ -369,6 +369,8 @@
 
 .v2-workspace-inspector__attention-title { flex: 1; }
 
+.v2-workspace-inspector__attention-detail { color: var(--v2-text-muted); }
+
 .v2-workspace-inspector__empty {
   margin: 0;
   padding: 4px;

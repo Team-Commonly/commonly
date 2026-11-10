@@ -23,6 +23,7 @@ import { nextFreeByoName } from './byoNameAllocator';
 import { prWriteApprovalSummary } from './prWriteScope';
 import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 import { PLACEHOLDER_AGENT_DESCRIPTION } from './agentInstallationIdentity';
+import { releaseRunRequest, noteRunRequestDeclined } from './runRequestService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -953,6 +954,8 @@ interface ResolveOptions {
    * is bound to the call they read. Only a server-side caller omits it.
    */
   reviewedArgsDigest?: string | null;
+  /** run_request approvals only (F371): the owner's narrower version of the request. */
+  narrowedTo?: string | null;
 }
 
 export interface ResolveResult {
@@ -1253,8 +1256,21 @@ const postToolCallRoomReceipt = async (row: IApprovalAction, approverName: strin
   }
 };
 
+// What the room calls the agent on a decline note: its name in this pod.
+const agentLabelFor = async (row: IApprovalAction): Promise<string> => {
+  try {
+    const install = await AgentInstallation.findOne({
+      podId: row.podId, agentName: row.agentName, instanceId: row.instanceId || 'default',
+    }).select('displayName').lean() as { displayName?: string } | null;
+    return install?.displayName?.trim() || row.agentName;
+  } catch {
+    return row.agentName;
+  }
+};
+
 export const resolveApproval = async (options: ResolveOptions): Promise<ResolveResult> => {
   const { approvalId, callerUserId, decision } = options;
+  const narrowedTo = typeof options.narrowedTo === 'string' ? options.narrowedTo.trim() : '';
 
   const row = await ApprovalAction.findById(approvalId);
   if (!row) return { status: 404, body: { error: 'Approval not found' } };
@@ -1273,6 +1289,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     .lean() as { isBot?: boolean; username?: string; displayName?: string } | null;
   if (!caller || caller.isBot) {
     return { status: 403, body: { error: 'Only a human can decide an approval' } };
+  }
+
+  if (narrowedTo && (row.actionType !== 'run_request' || decision !== 'approved')) {
+    return { status: 400, body: { error: 'Only an approved run request can be narrowed' } };
   }
 
   if (row.status !== 'flagged') {
@@ -1388,8 +1408,14 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
           agentName: row.agentName ? String(row.agentName) : undefined,
           instanceId: row.instanceId ? String(row.instanceId) : undefined,
         })
-        : await executeAction(transitioned);
+        : transitioned.actionType === 'run_request'
+          ? await releaseRunRequest(transitioned, { name: approverName || 'The owner', narrowedTo })
+          : await executeAction(transitioned);
       transitioned.executedAt = new Date();
+      if (transitioned.actionType === 'run_request' && narrowedTo) {
+        transitioned.params = { ...(transitioned.params || {}), narrowedTo };
+        transitioned.markModified?.('params');
+      }
       if (parkedCall) {
         const call = result as Awaited<ReturnType<typeof executeApprovedToolCall>>;
         transitioned.toolCallEnding = call.outcome === 'ok' ? 'ran' : 'failed';
@@ -1448,6 +1474,15 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
   }
 
   await updateCardEverywhere(transitioned);
+  if (transitioned.actionType === 'run_request') {
+    // The held wake is the agent's turn, so there is no proposer to tell.
+    if (decision === 'declined') {
+      await noteRunRequestDeclined(transitioned, {
+        name: approverName || 'The owner', username: caller.username,
+      }, await agentLabelFor(transitioned));
+    }
+    return { status: 200, body: { ok: true, approval: buildCardPayload(transitioned) } };
+  }
   if (decision === 'approved') {
     await enqueueApprovalResolvedEvent(transitioned, {
       userId: String(callerUserId),

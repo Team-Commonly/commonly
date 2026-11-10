@@ -205,6 +205,11 @@ export interface IUser extends Document {
     dailyDigest: boolean;
     needsYou: boolean;
   };
+  // Settings > "Share product usage with Commonly". Unset means the person
+  // never chose, and the region default applies (services/usageEvents.ts).
+  preferences?: {
+    usageEvents?: boolean;
+  };
   digestUnsubscribeToken?: string;
   lastActive: Date;
   lastDigestSent?: Date;
@@ -251,6 +256,10 @@ export interface IUser extends Document {
     byoOfferShownAt?: Date;
     /** First render of Scout's welcome, with a start open, in a pod they created. */
     welcomeShownAt?: Date;
+    /** First click on the welcome's "Run an agent here" to reach the server (F394). */
+    welcomeHostedClickAt?: Date;
+    /** Fixed code for why the first refused click did not start (F394). */
+    welcomeHostedRefusal?: string;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -492,6 +501,10 @@ const userSchema = new Schema<IUser>({
     dailyDigest: { type: Boolean, default: true },
     needsYou: { type: Boolean, default: true },
   },
+  // No default on purpose: unset is "never chose", which is not the same as on.
+  preferences: {
+    usageEvents: { type: Boolean },
+  },
   // Capability token: it can only disable digest mail. Hidden from normal
   // User projections and generated lazily when the first email is sent.
   digestUnsubscribeToken: { type: String, select: false },
@@ -520,6 +533,8 @@ const userSchema = new Schema<IUser>({
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
     welcomeShownAt: { type: Date },
+    welcomeHostedClickAt: { type: Date },
+    welcomeHostedRefusal: { type: String },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },

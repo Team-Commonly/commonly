@@ -40,6 +40,7 @@ const SYSTEM_NOTICE_KEYS: Record<string, string> = {
   'agent-paused': 'agentPaused',
   'agent-not-connected': 'agentNotConnected',
   'mention-unanswered': 'mentionUnanswered',
+  'run-request-refused': 'runRequestRefused',
 };
 
 const MENTION_RE = /(?<![a-zA-Z0-9_.+-])(@[a-zA-Z0-9][a-zA-Z0-9_-]*)(?![a-zA-Z0-9_-]|\/[a-zA-Z0-9])/g;

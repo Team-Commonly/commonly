@@ -188,6 +188,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
 
+  test('a fold never grows past its panel, so an ellipsized row truncates (F372)', () => {
+    expect(ruleBody(readV2Css(), '.v2-fold > .v2-fold__inner')).toContain('min-width: 0');
+  });
+
   test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
     const invite = read('../components/V2InviteRedeem.css');
     expect(ruleBody(readV2Css(), '.v2-login__card--stack')).toContain('grid-template-columns: minmax(0, 1fr)');

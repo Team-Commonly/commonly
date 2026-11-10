@@ -315,6 +315,7 @@ describe('V2MessageRow', () => {
     ['agent-paused', "Forge is paused, so it won't answer this."],
     ['agent-not-connected', "Forge isn't connected yet, so it won't see this until it runs. Its owner can connect it."],
     ['mention-unanswered', "Forge didn't answer this and may be offline. Ask again later, or ask someone else in the pod."],
+    ['run-request-refused', "Forge asks its owner before running other people's requests, and this one couldn't reach them, so it won't run."],
   ])('renders %s as a quiet line from the action, not the stored text', (action, text) => {
     render(
       <MemoryRouter>

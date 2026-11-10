@@ -8,6 +8,7 @@ import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
 import { forgetInviteOAuthStart } from '../utils/pendingInvite';
 import V2AuthNotice from './V2AuthNotice';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { trackPublic } from '../utils/usageEvents';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -67,6 +68,13 @@ const V2Login: React.FC = () => {
   const oauthError = oauthErrorCode
     ? t(OAUTH_ERROR_KEYS[oauthErrorCode] || OAUTH_ERROR_KEYS.provider_error)
     : null;
+
+  // D286 Q1: why a provider sign-in bounced, as a fixed reason.
+  useEffect(() => {
+    if (!oauthErrorCode) return;
+    trackPublic('register-error', oauthErrorCode === 'provider_denied' ? 'oauth-denied'
+      : (oauthErrorCode.startsWith('invitation_') ? 'invite-required' : 'other'));
+  }, [oauthErrorCode]);
 
   useEffect(() => {
     // Provider-side failures redirect here without reaching V2OAuthComplete.

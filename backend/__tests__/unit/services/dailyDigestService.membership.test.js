@@ -325,7 +325,13 @@ describe('the digest hour', () => {
     ['another hour there', 'America/Los_Angeles', '2026-10-17T06:01:00Z', false],
     ['a half-hour zone at 08:31', 'Asia/Kolkata', '2026-10-17T03:01:00Z', true],
     ['06:00 UTC with no zone', undefined, '2026-10-17T06:01:00Z', true],
-    ['another hour with no zone', undefined, '2026-10-17T07:01:00Z', false],
+    ['an hour before, with no zone', undefined, '2026-10-17T05:01:00Z', false],
+    // A run the scheduler missed is made up within the next two hours.
+    ['an hour after, with no zone', undefined, '2026-10-17T07:01:00Z', true],
+    ['two hours after, with no zone', undefined, '2026-10-17T08:01:00Z', true],
+    ['three hours after, with no zone', undefined, '2026-10-17T09:01:00Z', false],
+    ['two hours after in a known zone (10:01 PDT)', 'America/Los_Angeles', '2026-10-17T17:01:00Z', true],
+    ['three hours after in a known zone (11:01 PDT)', 'America/Los_Angeles', '2026-10-17T18:01:00Z', false],
     ['an unusable zone falls back to 06:00 UTC', 'Mars/Phobos', '2026-10-17T06:01:00Z', true],
   ])('%s', (_label, timezone, at, due) => {
     expect(DailyDigestService.dueAt({ timezone }, new Date(at))).toBe(due);
@@ -398,6 +404,105 @@ test('two scheduled runs within 20 hours never digest the same person twice', as
   spy.mockRestore();
 });
 
+// TASK-355: the scheduler moved to one worker pod. A restart across 06:01 must
+// not cost anyone that day's digest, and two runs of one hour (a roll, or a
+// partitioned pod still running beside its replacement) must not send two.
+test('a run the scheduler missed is made up the next hour, once', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const service = new DailyDigestService();
+  const sevenUtc = new Date(digestHourUtc().getTime() + 60 * 60 * 1000 + 60000);
+
+  const digests = () => Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) });
+
+  await service.generateAllDailyDigests({ at: sevenUtc });
+  expect(await digests()).toBe(1);
+  await service.generateAllDailyDigests({ at: new Date(sevenUtc.getTime() + 60 * 60 * 1000) });
+  expect(await digests()).toBe(1);
+  spy.mockRestore();
+});
+
+test('two runs of the same hour at once create one digest per person', async () => {
+  await Summary.init();
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const at = new Date(digestHourUtc().getTime() + 60000);
+
+  const runs = await Promise.all([
+    new DailyDigestService().generateAllDailyDigests({ at }),
+    new DailyDigestService().generateAllDailyDigests({ at }),
+  ]);
+
+  const digests = await Summary.find({ type: 'daily-digest', 'metadata.userId': String(member._id) }).lean();
+  expect(digests).toHaveLength(1);
+  expect(digests[0].metadata.digestKey).toBe(`${member._id}:${at.toISOString().slice(0, 10)}`);
+  // Only the run that wrote it hands it to the email step.
+  const handed = runs.flat().filter((result) => String(result.userId) === String(member._id) && result.success);
+  expect(handed).toHaveLength(1);
+  spy.mockRestore();
+});
+
+test('a scheduled run writes nothing until the unique digest index is built', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  let built;
+  const ensure = jest.spyOn(Summary, 'ensureDigestKeyIndex').mockReturnValue(new Promise((resolve) => { built = resolve; }));
+  const run = new DailyDigestService().generateAllDailyDigests({ at: new Date(digestHourUtc().getTime() + 60000) });
+  await new Promise((done) => { setTimeout(done, 100); });
+  expect(await Summary.countDocuments({ type: 'daily-digest' })).toBe(0);
+  built();
+  await run;
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  ensure.mockRestore(); spy.mockRestore();
+});
+
+test('a failed index build still sends, unkeyed, and the next run builds it again', async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const ensure = jest.spyOn(Summary, 'ensureDigestKeyIndex').mockRejectedValueOnce(new Error('mongo unavailable'));
+  const at = new Date(digestHourUtc().getTime() + 60000);
+  const service = new DailyDigestService();
+
+  const results = await service.generateAllDailyDigests({ at });
+  expect(results.filter((result) => result.success)).toHaveLength(1);
+  const sent = await Summary.findOne({ type: 'daily-digest', 'metadata.userId': String(member._id) }).lean();
+  expect(sent.metadata.digestKey).toBeUndefined();
+  await service.generateAllDailyDigests({ at: new Date(at.getTime() + 60 * 60 * 1000) });
+  expect(ensure).toHaveBeenCalledTimes(2);
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  ensure.mockRestore(); spy.mockRestore();
+});
+
+test("another Summary index failing to build doesn't stop the digest", async () => {
+  const member = await person(new Date(Date.now() - 2 * 86400000));
+  const spy = jest.spyOn(ActivityService, 'getRecap').mockResolvedValue(recap({
+    board: [{ taskId: 'TASK-9', title: 'Ship it', status: 'done', podId: 'p1', podName: 'Payments API' }],
+  }));
+  const others = jest.spyOn(Summary, 'ensureIndexes').mockRejectedValue(new Error('conflicting index'));
+
+  await new DailyDigestService().generateAllDailyDigests({ at: new Date(digestHourUtc().getTime() + 60000) });
+
+  expect(await Summary.countDocuments({ type: 'daily-digest', 'metadata.userId': String(member._id) })).toBe(1);
+  expect((await Summary.collection.indexes()).some((index) => index.unique && index.key['metadata.digestKey'] === 1))
+    .toBe(true);
+  others.mockRestore(); spy.mockRestore();
+});
+
+test('an on-demand digest carries no daily key, so it never blocks the scheduled one', async () => {
+  const member = await person();
+  await new DailyDigestService().generateUserDailyDigest(member._id);
+  const [digest] = await Summary.find({ type: 'daily-digest', 'metadata.userId': String(member._id) }).lean();
+  expect(digest.metadata.digestKey).toBeUndefined();
+});
+
 test('scheduler includes a member with recent pod work even after seven days away', async () => {
   const member = await person(new Date(Date.now() - 10 * 86400000));
   const creator = await person(new Date(Date.now() - 10 * 86400000));
@@ -407,7 +512,7 @@ test('scheduler includes a member with recent pod work even after seven days awa
 
   const results = await service.generateAllDailyDigests({ at: digestHourUtc() });
 
-  expect(generate).toHaveBeenCalledWith(member._id, { requireAway: true });
+  expect(generate).toHaveBeenCalledWith(member._id, expect.objectContaining({ requireAway: true }));
   expect(results).toHaveLength(2);
 });
 

@@ -52,9 +52,16 @@ aiProviders:
     enabled: false
 
 backend:
-  replicaCount: 1
+  # TASK-355 prod step 2: the worker runs the scheduler, the Discord gateway
+  # and native turns, and the two web replicas hand native wakes to it (F52,
+  # #3833). Step 1 enabled the worker paused at zero until the pre-split web
+  # pod was gone. Deploy the steps as two Deploy Dev runs, never one: a single
+  # roll would overlap the old scheduler-running web pod with the new worker.
+  # Staging took both steps first (#3821, #3829).
+  replicaCount: 2
   worker:
-    enabled: false
+    enabled: true
+    startPaused: false
     # Cron and the Discord gateway must survive spot reclamation.
     nodeSelector:
       pool: dev

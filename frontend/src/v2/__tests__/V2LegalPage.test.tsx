@@ -11,6 +11,26 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.queryByText(/Draft for review/)).not.toBeInTheDocument();
   });
 
+  // F398/F399 (D286): the setup records, the product usage events with the
+  // Cofounder's EU/UK ruling, and how long each is kept.
+  it('says which setup steps and usage events are recorded, that typed text never is, and how they go', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByText(/^Setup steps: when you're signed in, we record which setup screens you open/)).toBeInTheDocument();
+    expect(screen.getByText(/which suggested start you picked first/)).toBeInTheDocument();
+    expect(screen.getByText(/We never record what you type, a command, a key or a token\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Product usage: when you're signed in, we record which screens you open and which buttons you press/)).toBeInTheDocument();
+    expect(screen.getByText(/In the EU, the EEA and the UK it starts off, and nothing is recorded until you turn it on\./)).toBeInTheDocument();
+    expect(screen.getByText(/If your browser sends Do Not Track or Global Privacy Control, no product usage is recorded\./)).toBeInTheDocument();
+    expect(screen.getByText(/beyond the screen's name, the fixed event name and that it was a direct conversation\./)).toBeInTheDocument();
+    expect(screen.getByText(/We don't use third-party analytics\.$/)).toBeInTheDocument();
+    expect(screen.getByText('Setup-step records have no expiry date.')).toBeInTheDocument();
+    expect(screen.getByText('Product usage records are deleted after 90 days.')).toBeInTheDocument();
+    expect(screen.getByText("Page counts for visitors who aren't signed in, which hold no identifier, are kept for 13 months.")).toBeInTheDocument();
+    expect(screen.getByText('Deleting your account also deletes your setup-step and product usage records.')).toBeInTheDocument();
+    // The GroupMe bot ID is the one connector credential kept outside the encrypted envelope.
+    expect(screen.getByText(/A GroupMe bot ID, which lets its bot post to that group, is stored on the integration without that encryption\./)).toBeInTheDocument();
+  });
+
   it('names the providers that process hosted-agent data', () => {
     render(<V2PrivacyPage />);
     // F91: hosted agents on Claude Haiku by default; a connected tool's data is

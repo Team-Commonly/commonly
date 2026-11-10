@@ -32,7 +32,7 @@ const {
   hostedEngineOf,
   readHostedConfig,
 } = require('../services/hostedEngine');
-const { markByoOpened, markWelcomeHostedStart } = require('../services/onboardingMarks');
+const { markByoOpened, markWelcomeHostedStart, markWelcomeHostedClick } = require('../services/onboardingMarks');
 const { resolveWelcomeHostedStart } = require('../services/welcomeHostedStart');
 const { logInstallRefusal } = require('../services/installRefusalLog');
 const {
@@ -255,15 +255,24 @@ router.get('/pod-start-availability', hostedRateLimit, auth, (_req: any, res: an
  * creator. Install and provision stay with their own routes.
  */
 router.post('/welcome-start', hostedRateLimit, auth, async (req: any, res: any) => {
+  const userId = getUserId(req);
+  // Every click leaves a mark, and a refused one says why (F394).
+  markWelcomeHostedClick(userId);
   try {
-    if (!requireConfigured(res, engineForNewHostedInstall())) return undefined;
-    const userId = getUserId(req);
+    if (!requireConfigured(res, engineForNewHostedInstall())) {
+      markWelcomeHostedClick(userId, 'hosted_runtime_unconfigured');
+      return undefined;
+    }
     const result = await resolveWelcomeHostedStart({ messageId: req.body?.messageId, userId });
-    if ('error' in result) return res.status(result.error.status).json(result.error.body);
+    if ('error' in result) {
+      markWelcomeHostedClick(userId, String(result.error.body?.code || 'other'));
+      return res.status(result.error.status).json(result.error.body);
+    }
     markWelcomeHostedStart(userId);
     return res.json(result);
   } catch (error: any) {
     console.error('[hosted] welcome start failed:', error?.message || error);
+    markWelcomeHostedClick(userId, 'error');
     return res.status(500).json({ message: 'Hosted start failed' });
   }
 });

@@ -14,6 +14,7 @@ import V2AuthNotice from './V2AuthNotice';
 import './V2InviteRedeem.css';
 import { isDefaultWorkspaceDescription } from '../utils/defaultWorkspacePod';
 import { Trans, useTranslation } from 'react-i18next';
+import { trackPublic, trackUsage } from '../utils/usageEvents';
 
 interface InvitePodInfo {
   _id: string;
@@ -56,6 +57,8 @@ const V2InviteRedeem: React.FC = () => {
   // can show what they were invited to before asking them to sign up.
   useEffect(() => {
     if (authLoading || isAuthenticated || !token) return;
+    // A logged-out count against the template, never the token (D286).
+    trackPublic('invite-page-view');
     let cancelled = false;
     (async () => {
       try {
@@ -101,14 +104,18 @@ const V2InviteRedeem: React.FC = () => {
     if (!token) return;
     setRedeeming(true);
     setError(null);
+    trackUsage('invite-accept-click');
     try {
       const data = await api.post<{ ok: boolean; pod: { _id: string } }>(
         `/api/invites/${encodeURIComponent(token)}/redeem`,
         {},
       );
+      trackUsage('invite-accept-result', { props: { result: 'joined' }, podId: data?.pod?._id });
       if (data?.pod?._id) navigate(`/v2/pods/${data.pod._id}`, { replace: true });
     } catch (err) {
-      const e = err as { response?: { data?: { code?: string; msg?: string } }; message?: string };
+      const e = err as { response?: { status?: number; data?: { code?: string; msg?: string } }; message?: string };
+      const status = e.response?.status;
+      trackUsage('invite-accept-result', { props: { result: status === 404 || status === 410 ? 'expired' : 'error' } });
       setError(
         e.response?.data?.code === 'dm_membership_refused'
           ? t('inviteRedeem.errors.dmRefused')

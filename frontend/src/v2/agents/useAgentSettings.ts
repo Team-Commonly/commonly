@@ -36,6 +36,8 @@ export interface AgentPodWakePatch {
   boardWake: boolean;
   heartbeatEnabled: boolean;
   heartbeatMinutes: number;
+  /** F371: anyone else's request waits for the owner. Left out, the stored value stays. */
+  askBeforeOthers?: boolean;
 }
 
 interface AgentAccess {

@@ -81,9 +81,11 @@ jest.mock('../../../services/nativeRuntimeService', () => ({
 }));
 const mockMarkByoOpened = jest.fn();
 const mockMarkWelcomeHostedStart = jest.fn();
+const mockMarkWelcomeHostedClick = jest.fn();
 jest.mock('../../../services/onboardingMarks', () => ({
   markByoOpened: (...args) => mockMarkByoOpened(...args),
   markWelcomeHostedStart: (...args) => mockMarkWelcomeHostedStart(...args),
+  markWelcomeHostedClick: (...args) => mockMarkWelcomeHostedClick(...args),
 }));
 // The welcome start's own checks are pinned in services/welcomeHostedStart.test.js;
 // here only the route's wiring: who asks, and what comes back.
@@ -264,6 +266,35 @@ describe('/api/hosted', () => {
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('hosted_runtime_unconfigured');
     expect(mockResolveWelcomeStart).not.toHaveBeenCalled();
+  });
+
+  // F394: a click that is refused used to leave no mark at all, so "never
+  // clicked" and "clicked and it failed" read the same in the funnel.
+  it('welcome-start marks every click, and the refusal of one that does not start', async () => {
+    mockResolveWelcomeStart.mockResolvedValueOnce({ podId: 'pod-1', existing: null, agentName: 'ada-agent' });
+    const ok = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(ok.status).toBe(200);
+    expect(mockMarkWelcomeHostedClick.mock.calls).toEqual([['owner-1']]);
+    mockMarkWelcomeHostedClick.mockClear();
+
+    mockResolveWelcomeStart.mockResolvedValueOnce({
+      error: { status: 403, body: { code: 'not_welcome_start', message: 'no' } },
+    });
+    const refused = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(refused.status).toBe(403);
+    expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1', 'not_welcome_start');
+    mockMarkWelcomeHostedClick.mockClear();
+
+    mockResolveWelcomeStart.mockRejectedValueOnce(new Error('db down'));
+    const failed = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(failed.status).toBe(500);
+    expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1', 'error');
+    mockMarkWelcomeHostedClick.mockClear();
+
+    mockHosted.isConfigured.mockReturnValue(false);
+    const off = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(off.status).toBe(503);
+    expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1', 'hosted_runtime_unconfigured');
   });
 
   it('400s on a malformed agent name', async () => {

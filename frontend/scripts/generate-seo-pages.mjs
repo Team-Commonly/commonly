@@ -113,6 +113,60 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
+const ogImage = `${siteUrl}/og-card.png?v=6`;
+
+// Search results cut a title near 60 characters and a description near 160
+// (F397). Fitted once here, so a long guide title can't ship.
+const TITLE_LIMIT = 60;
+const DESCRIPTION_LIMIT = 160;
+const siteSuffix = ' | Commonly AI';
+const charCount = (text) => [...text].length;
+
+// A head shorter than this is a name ("Commonly: …"), not a title on its own.
+const MIN_TITLE_HEAD = 12;
+
+export const fitTitle = (title) => {
+  if (!String(title || '').trim()) throw new Error('A page has an empty title.');
+  const hasSuffix = title.endsWith(siteSuffix);
+  const base = hasSuffix ? title.slice(0, -siteSuffix.length) : title;
+  const withSuffix = (text) => (hasSuffix && charCount(text + siteSuffix) <= TITLE_LIMIT ? text + siteSuffix : text);
+  if (charCount(base) <= TITLE_LIMIT) return withSuffix(base);
+  // "Head: subtitle" keeps its head, the part people search for, and
+  // "Question? Subtitle" keeps the question.
+  const split = base.match(/^(.+?)([:?])\s/);
+  const head = split ? `${split[1]}${split[2] === '?' ? '?' : ''}` : base;
+  if (head !== base && charCount(head) >= MIN_TITLE_HEAD && charCount(head) <= TITLE_LIMIT) return withSuffix(head);
+  throw new Error(`Title over ${TITLE_LIMIT} characters with no subtitle to drop: "${title}". Give the page a shorter titleTag.`);
+};
+
+// A cut never ends on one of these: "…the context packet that makes…" reads broken.
+const DANGLING = new Set(['a', 'an', 'and', 'or', 'nor', 'but', 'the', 'to', 'of', 'for', 'in', 'on', 'at', 'by', 'with',
+  'without', 'from', 'into', 'as', 'that', 'which', 'who', 'whom', 'whose', 'where', 'when', 'while', 'so', 'than',
+  'is', 'are', 'can', 'its', 'their', 'your', 'our', 'what', 'how', 'why', 'whether', 'before', 'after', 'instead',
+  'between', 'each', 'every', 'one', 'keep', 'makes', 'make', 'let', 'lets']);
+const ABBREVIATION = /\b(?:vs|e\.g|i\.e|etc|approx|incl)$/i;
+
+export const fitDescription = (description) => {
+  const text = String(description || '').replace(/\s+/g, ' ').trim();
+  if (charCount(text) <= DESCRIPTION_LIMIT) return text;
+  const room = [...text].slice(0, DESCRIPTION_LIMIT).join('');
+  // The last whole sentence, unless the stop belongs to "vs." or "e.g.".
+  for (let at = room.length - 2; at >= 80; at -= 1) {
+    if (/[.?!]/.test(room[at]) && room[at + 1] === ' ' && !ABBREVIATION.test(room.slice(0, at))) return room.slice(0, at + 1);
+  }
+  // Else the last clause that still says most of it, else the last word, and
+  // never a dangling one.
+  const words = [...text].slice(0, DESCRIPTION_LIMIT - 1).join('');
+  const clause = Math.max(words.lastIndexOf(', '), words.lastIndexOf(': '), words.lastIndexOf('; '), words.lastIndexOf('—'));
+  let cut = clause >= 110 ? words.slice(0, clause) : words.slice(0, words.lastIndexOf(' '));
+  for (;;) {
+    cut = cut.replace(/[\s,;:—–-]+$/, '');
+    const last = cut.slice(cut.lastIndexOf(' ') + 1).toLowerCase();
+    if (!DANGLING.has(last) || cut.lastIndexOf(' ') < 0) break;
+    cut = cut.slice(0, cut.lastIndexOf(' '));
+  }
+  return `${cut}…`;
+};
 
 const formatDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -130,12 +184,31 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+// The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
+// (landing-faq.json). Change it when either changes (F395).
+export const LANDING_DATE_MODIFIED = '2026-11-07';
+
+const recordedDate = (where, value) => {
+  if (value === undefined) return undefined;
+  if (!isIsoDate(value)) throw new Error(`${where} has a dateModified that is not YYYY-MM-DD.`);
+  return value;
+};
+
 const guideProvenance = (guide) => {
   const provenance = guide.provenance;
   const required = ['author', 'reviewer', 'datePublished', 'dateModified'];
 
   if (!provenance || required.some((field) => !provenance[field])) {
     throw new Error(`Guide ${guide.title} is missing required provenance.`);
+  }
+
+  // The dates go raw into the sitemap's lastmod and the Article JSON-LD, and the
+  // string comparison below only orders full YYYY-MM-DD dates correctly.
+  const badDate = ['datePublished', 'dateModified'].find((field) => !isIsoDate(provenance[field]));
+  if (badDate) {
+    throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
   }
 
   if (provenance.dateModified < provenance.datePublished) {
@@ -376,6 +449,49 @@ const renderGuide = (guide, siteLinks = '') => {
   </div>`;
 };
 
+// The legal pages, from the same words V2LegalPage renders (content/legal.json).
+// Each commonly.me address becomes a mailto link, as on the page.
+const linkLegalEmails = (text) => escapeHtml(text).replace(/([a-z]+@commonly\.me)/g, '<a href="mailto:$1">$1</a>');
+
+const renderLegal = (title, sections, siteLinks = '') => `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
+      <main class="seo-article">
+        <h1>${escapeHtml(title)}</h1>
+        ${sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2>${section.body.map((paragraph) => `<p>${linkLegalEmails(paragraph)}</p>`).join('')}</section>`).join('\n        ')}
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+
+const USE_CASES_INDEX = {
+  title: 'Use cases',
+  lede: 'How teams use Commonly: pods where people and their agents share the same conversations, tasks and context.',
+};
+
+const renderUseCasesIndex = (useCases, siteLinks = '') => {
+  const cards = Object.entries(useCases).map(([id, useCase]) => `
+    <article class="seo-card">
+      <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
+      <h2><a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a></h2>
+      <p>${escapeHtml(useCase.summary)}</p>
+    </article>`).join('');
+  return `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a></nav></header>
+      <main>
+        <section class="seo-hero">
+          <p class="seo-kicker">Use cases</p>
+          <h1>${escapeHtml(USE_CASES_INDEX.title)}</h1>
+          <p class="seo-lede">${escapeHtml(USE_CASES_INDEX.lede)}</p>
+        </section>
+        <section>
+          <div class="seo-grid">${cards}</div>
+        </section>
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+};
+
 const renderGuidesIndex = (guides, siteLinks = '') => {
   const guideCards = Object.entries(guides).map(([id, guide]) => `
     <article class="seo-card">
@@ -433,7 +549,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta property="og:image" content="${ogImage}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -441,7 +557,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta name="twitter:image" content="${ogImage}" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -452,6 +568,8 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
 const comparePageSources = {
   openagents: {
     path: '/compare/openagents/',
+    // The sitemap's lastmod. Change it with the text below (F395).
+    dateModified: '2026-10-31',
     title: "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
     description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs OpenAgents
@@ -526,6 +644,7 @@ Commonly facts come from the Commonly README and from using the product on commo
   },
   githubAgentHq: {
     path: '/compare/github-agent-hq/',
+    dateModified: '2026-10-31',
     title: "Commonly vs GitHub Agent HQ: where each one fits",
     description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
     markdown: `# Commonly vs GitHub Agent HQ
@@ -599,6 +718,83 @@ Competitor facts checked on each vendor's site on 2026-10-25 and re-checked on 2
 10. Linear changelog, "GitHub Copilot for Linear" (2026-07-30 entry; it links a GitHub post whose URL says "generally available", the entry text does not): https://linear.app/changelog
 11. Commonly README: https://github.com/Team-Commonly/commonly
 12. GitHub Docs, MCP and Copilot: https://docs.github.com/en/copilot/concepts/customizations/mcp
+
+Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
+`,
+  },
+  buzz: {
+    path: '/compare/buzz/',
+    // The sitemap's lastmod. Change it with the text below (F395).
+    dateModified: '2026-11-09',
+    title: "Commonly vs Buzz (Block): what each ships, side by side",
+    description: "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
+    markdown: `# Commonly vs Buzz
+
+*Updated 2026-11-09. Facts about Buzz were read on Block's own pages on 2026-11-09.*
+
+**Short answer.** Buzz is a workspace for people and AI agents from Block, released on 2026-07-21. Block calls it "a free, open source collaboration platform". [1] Commonly and Buzz are both Apache-2.0. Commonly is built around a team where each person brings their own agent. Teammates join one pod by invite link, each agent is a named member with an owner, and people and agents share the same conversations and one task board, so everyone can see who has what. Buzz is built on the Nostr protocol. Each person and each agent holds its own cryptographic key. Buzz also has voice, media, code repositories and YAML workflows, with desktop apps for macOS, Linux and Windows (the Windows build is marked alpha). [1][2]
+
+*This page compares Buzz from Block, Inc. at buzz.xyz (GitHub: block/buzz). The Buzz homepage says "Come test the early stages with us." Its README sorts features into what "works today" and what is "being wired up", and this page keeps that split. [2][4]*
+
+## What each ships today
+
+| | Buzz (Block) | Commonly |
+|---|---|---|
+| **What it is, in its own words** | "A workspace where humans and agents build together, on a relay you own." [2] | One pod for your team and the agents each of you runs. [5] |
+| **License** | Apache 2.0. [1][2] | Apache-2.0. [5] |
+| **Self-host** | Yes. "Anyone can run their own instance on their own infrastructure." [1] The repo ships a production Docker Compose bundle. The relay needs Postgres, Redis and an S3-compatible object store, and a one-click Railway template is offered too. buzz.xyz also offers hosted relays. [2][3] | Open source (Apache-2.0). The repo includes a Docker Compose setup. [5] |
+| **Agents named** | Block's post: "Claude Code, Codex, or goose", and teams can "bring their own, or build new ones". The README lists an agent harness for Goose, Codex and Claude Code under "works today". [1][2] | Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click. |
+| **How agents connect** | An agent gets its own Nostr key and uses Buzz's command-line tool, which takes JSON in and gives JSON out and is "designed for LLM tool calls". An ACP harness connects Goose, Codex and Claude Code. [2] | A command from the pod's "Bring your own agent" page starts a listener for your own Claude Code or Codex on a Mac. By default it wakes on what people post in the pod, @mentions included. Claude Code can also join over MCP. |
+| **Identity and record** | Every participant, human or agent, "holds a cryptographic keypair that belongs to them". Every message, reaction, workflow step, review approval and git event is a signed event in one log, and the relay keeps an audit log. [1][2] | Each agent is a named member with an owner. |
+| **How people take part** | Channels, threads, direct messages, voice and media sharing, with comments pinned to video frames. "Add an agent to a channel the same way you add a person." A self-hosted relay runs closed membership by default, and the owner adds admins and members. [1][2][3] | Teammates join a pod by invite link, and each brings their own agent. Each agent is a named member with an owner. People and agents share the pod's conversations, with @mentions. |
+| **Work and review** | YAML workflows that fire on a message, a reaction, a schedule or a webhook work today. Workflow approval gates are "being wired up". Git events and a git hosting backend are listed as working, and Block calls the Git integration "still early". [1][2] | Your own connected agent claims tasks on the pod's board (the claim holds a lease), posts what it tried, and asks a person on a decision card when a call is theirs. |
+| **Access to outside tools** | "Connect a database, a CRM, a codebase, or a file system", and agents reach them "according to whatever permissions the team configures." [1] | The owner of a Linear connection grants one agent read access. The agent sees the read tools and no write tools. Calls made through a grant are logged. |
+| **Apps** | Desktop for macOS (Apple Silicon and Intel), Linux and Windows (an alpha build). The relay also serves a web UI. iOS and Android clients are "being wired up". [2][3] | Web. |
+| **Pricing, as stated** | Block calls Buzz "free", and buzz.xyz offers "Block-provided hosting". [1] | Not listed on this page. |
+
+## When to pick Buzz
+
+- You want each person and each agent to hold its own cryptographic key, with messages, reactions, workflow steps, review approvals and git events signed in one log. [1][2]
+- You want voice, media with comments pinned to video frames, and code repositories next to chat. [1][2]
+- You want desktop apps for macOS and Linux, with a Windows alpha. [2]
+- You want YAML workflows that fire on messages, reactions, schedules or webhooks. [2]
+- You run goose alongside Claude Code and Codex. [1][2]
+
+## When to pick Commonly
+
+- Several people on your team each run their own agent, and you want those agents in one pod with the people who own them.
+- You want everyone, people and agents, to see who has what: each agent is a named member with an owner.
+- You want your own agents to claim work on a shared board so two of them don't take the same task.
+- You want an agent to stop and ask a person on a decision card when a call is theirs.
+- You want a hosted agent you can start from the pod, next to your own.
+- You want to give one agent read access to your Linear, and have it see those read tools and nothing more.
+
+## FAQ
+
+**Who makes Buzz?**
+Block, Inc. Block announced Buzz on 2026-07-21 and publishes the code at github.com/block/buzz. [1][2]
+
+**Are both open source?**
+Yes. Both are Apache-2.0. [1][5]
+
+**Can I run either one on my own servers?**
+Both document self-hosting. Buzz with a Docker Compose bundle or a Railway template, Commonly with Docker Compose. [2][3][5]
+
+**Is Buzz finished?**
+Its README says: "Not finished. We will tell you what works and what doesn't." [2]
+
+**Which agents work with Commonly?**
+Your own Claude Code or Codex, connected from your Mac, plus a hosted agent you start from the pod with one click.
+
+## Sources
+
+Buzz facts read on Block's own pages on 2026-11-09:
+
+1. Block, "Introducing Buzz: where humans and agents work together" (2026-07-21): https://block.xyz/inside/introducing-buzz-where-humans-and-agents-work-together (read 2026-11-09)
+2. Buzz README on GitHub: https://github.com/block/buzz (Apache-2.0; read 2026-11-09)
+3. Block Engineering Blog, "Run your own Buzz relay" (2026-07-31): https://engineering.block.xyz/blog/run-your-own-buzz-relay (read 2026-11-09)
+4. Buzz homepage: https://buzz.xyz/ ("Come test the early stages with us."; read 2026-11-09)
+5. Commonly README: https://github.com/Team-Commonly/commonly (Apache-2.0)
 
 Commonly facts come from the Commonly README and from using the product on commonly.me, as of 2026-10-27.
 `,
@@ -713,7 +909,7 @@ export const renderMarkdown = (markdown) => {
   return html.join('\n');
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources, legal = null }) => {
   const siteLinks = renderSiteLinks({ useCases, compareSources });
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
@@ -766,9 +962,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
     description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
+    dateModified: LANDING_DATE_MODIFIED,
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {
@@ -783,6 +980,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       outputPath: `${source.path.slice(1)}index.html`,
       // No app route serves /compare/*, so the page must stay static or React blanks it.
       staticOnly: true,
+      dateModified: recordedDate(source.path, source.dateModified),
       title: source.title,
       description: source.description,
       content: `
@@ -816,6 +1014,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides, siteLinks),
     staticOnly: true,
+    // The index lists the guides, so it changes when the newest of them does.
+    dateModified: Object.values(guides).map((guide) => guideProvenance(guide).dateModified).sort().pop(),
     schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
   };
 
@@ -824,9 +1024,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
-      title: `${useCase.title} | Commonly AI`,
+      title: `${useCase.titleTag || useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase, siteLinks),
+      dateModified: recordedDate(path, useCase.dateModified),
       schema: webPage(useCase.title, useCase.summary, path),
     };
   });
@@ -857,6 +1058,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
           author,
           datePublished: provenance.datePublished,
           dateModified: provenance.dateModified,
+          image: ogImage,
           publisher: { '@id': organizationId },
         }, {
           '@type': 'WebPage',
@@ -871,7 +1073,97 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     };
   });
 
-  return pages.concat(comparePages, useCasePages, [guidesIndexPage], guidePages);
+  // /use-cases/ was a 403: a directory of pages with no index (F396).
+  const useCasesIndexPage = {
+    path: '/use-cases/',
+    outputPath: 'use-cases/index.html',
+    title: `${USE_CASES_INDEX.title} | Commonly AI`,
+    description: USE_CASES_INDEX.lede,
+    content: renderUseCasesIndex(useCases, siteLinks),
+    // No app route serves /use-cases/, so the page stays static.
+    staticOnly: true,
+    // use-cases.json's last change; the sitemap's lastmod once it reads one.
+    dateModified: '2026-08-24',
+    schema: webPage(USE_CASES_INDEX.title, USE_CASES_INDEX.lede, '/use-cases/'),
+  };
+
+  // /privacy and /terms are app routes, so they were served the prerendered
+  // homepage and its canonical. Their own page keeps the app and gives
+  // crawlers (and Google's OAuth review) the same words (F396).
+  const legalPages = legal ? [
+    ['/privacy/', 'Privacy', 'How Commonly Software LLC stores, uses and deletes your data on commonly.me.', legal.privacy],
+    ['/terms/', 'Terms', 'The terms for using commonly.me, run by Commonly Software LLC.', legal.terms],
+  ].map(([path, title, description, sections]) => ({
+    path,
+    outputPath: `${path.slice(1)}index.html`,
+    title: `${title} | Commonly AI`,
+    description,
+    content: renderLegal(title, sections, siteLinks),
+    // V2LegalPage.tsx's last change on main when this was written.
+    dateModified: '2026-11-09',
+    schema: webPage(title, description, path),
+  })) : [];
+
+  // Home > (Guides >) page, for every page but home (F397). Only /guides/ is
+  // a section index every page under it can point to.
+  const crumb = (name, path, position) => ({ '@type': 'ListItem', position, name, item: pageUrl(path) });
+  const withBreadcrumbs = (page) => {
+    if (page.path === '/') return page;
+    const trail = [['Home', '/']];
+    if (page.path.startsWith(guidesIndexPath) && page.path !== guidesIndexPath) trail.push(['Guides', guidesIndexPath]);
+    trail.push([page.title.replace(siteSuffix, ''), page.path]);
+    const breadcrumbs = {
+      '@type': 'BreadcrumbList',
+      '@id': `${pageUrl(page.path)}#breadcrumb`,
+      itemListElement: trail.map(([name, path], index) => crumb(name, path, index + 1)),
+    };
+    return { ...page, schema: { ...page.schema, '@graph': [...page.schema['@graph'], breadcrumbs] } };
+  };
+
+  return pages.concat(comparePages, useCasePages, [useCasesIndexPage], [guidesIndexPage], guidePages, legalPages)
+    .map((page) => withBreadcrumbs({ ...page, title: fitTitle(page.title), description: fitDescription(page.description) }));
+};
+
+// The SPA fallback (nginx.conf). It used to be index.html, which the build
+// overwrites with the prerendered homepage, so every app-only path (/v2/…,
+// /login, an unknown /v2/x) claimed the homepage's title and canonical. The
+// shell has no canonical, says noindex, and carries no page content (F396).
+export const renderAppShell = (template) => {
+  const shell = replaceMarkedSection(template, metadataStart, metadataEnd, `
+    <title>Commonly</title>
+    <meta name="robots" content="noindex" />`);
+  if (!shell.includes(pageContentMarker)) {
+    throw new Error('Missing SEO page-content marker in the Vite output.');
+  }
+  return shell.replace(pageContentMarker, '');
+};
+
+// Logged-out page counts (D286). One count per page load and per signup or
+// pricing click, sent to our own API with no cookie, no stored key and no
+// identifier. It does nothing for a signed-in visitor (the app sends their
+// events), or when Do Not Track or Global Privacy Control is on. The server
+// keeps a day's total per page and campaign code, and nothing else.
+const publicHitBody = `
+var n=navigator;if(n.doNotTrack==='1'||window.doNotTrack==='1'||n.globalPrivacyControl)return;
+try{if(localStorage.getItem('token'))return}catch(e){}
+var api=__API__,h=location.hostname;
+if(!api){if(h==='localhost'||h==='127.0.0.1')api='http://localhost:5000';else return}
+var ps=location.search.replace(/^\\?/,'').split('&'),ref='';
+for(var k=0;k<ps.length;k++){if(ps[k].indexOf('ref=')===0){try{ref=decodeURIComponent(ps[k].slice(4))}catch(e){ref=''}break}}
+var page=location.pathname;
+var send=function(name,value){var b={name:name,page:page};if(ref)b.ref=ref;if(value)b.value=value;
+fetch(api+'/api/stats/public-hit',{method:'POST',keepalive:true,credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(function(){})};
+send('page-view');
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;
+var href=a.getAttribute('href')||'',cta;
+if(href.indexOf('pricing')>=0)cta='pricing';else if(href.indexOf('register')<0)return;
+else if(a.closest('header,nav'))cta='nav-signup';
+else cta=page.indexOf('/guides/')===0?'guide-inline':page.indexOf('/compare/')===0?'compare-inline':'hero-start';
+send('cta-click',cta)},true);
+`;
+export const publicHitScript = (apiBase = process.env.REACT_APP_API_URL || '') => {
+  const api = JSON.stringify(apiBase).replace(/</g, '\\u003c');
+  return `<script data-usage="public-hit">(function(){try{${publicHitBody.replace('__API__', () => api)}}catch(e){}})();</script>`;
 };
 
 export const renderStaticPage = (template, page) => {
@@ -881,23 +1173,117 @@ export const renderStaticPage = (template, page) => {
     throw new Error('Missing SEO page-content marker in the Vite output.');
   }
   // A function replacement, so "$&" or "$'" in pasted markdown stays literal.
-  return withMetadata.replace(pageContentMarker, () => page.content);
+  const html = withMetadata.replace(pageContentMarker, () => page.content);
+  const bodyEnd = html.lastIndexOf('</body>');
+  if (bodyEnd < 0) throw new Error('Missing closing body tag in the SEO page template.');
+  return `${html.slice(0, bodyEnd)}${publicHitScript()}\n${html.slice(bodyEnd)}`;
+};
+
+// llms.txt and llms-full.txt (F395). public/llms.txt is the hand-written head; the
+// build keeps it word for word up to its "## Guides" section and lists every
+// indexable page from the same content the pages are built from, so the map
+// can't fall behind the site. llms-full.txt carries those pages' text.
+const oneLine = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+// A guide paragraph is a string or { strong } (renderGuide draws the latter bold).
+const paragraphText = (paragraph) => oneLine(typeof paragraph === 'object' && paragraph ? paragraph.strong : paragraph);
+const llmsLink = (title, path, description) => `- [${oneLine(title)}](${pageUrl(path)}): ${oneLine(description)}`;
+
+export const renderLlmsTxt = ({ base, guides = {}, useCases = {}, compareSources = {}, pages = [] }) => {
+  const cut = base.indexOf('## Guides');
+  if (cut === -1) throw new Error('public/llms.txt needs a "## Guides" section for the build to list the pages under.');
+  const head = base.slice(0, cut).replace(/\s*$/, '\n\n');
+  const guideLines = Object.entries(guides).map(([id, guide]) => llmsLink(guide.title, `/guides/${id}/`, guide.description));
+  const compareLines = Object.values(compareSources).map((source) => llmsLink(source.title, source.path, source.description));
+  const useCaseLines = Object.entries(useCases).map(([id, useCase]) => llmsLink(useCase.title, `/use-cases/${id}/`, useCase.summary));
+  // Any other indexable page (a new index or a legal page) is listed too, so the
+  // map always matches the sitemap.
+  const listed = new Set(['/', '/guides/', ...Object.keys(guides).map((id) => `/guides/${id}/`),
+    ...Object.values(compareSources).map((source) => source.path), ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)]);
+  const otherLines = pages.filter((page) => !page.noindex && !listed.has(page.path))
+    .map((page) => llmsLink(page.title.replace(/\s*\|\s*Commonly AI$/, ''), page.path, page.description));
+  return `${head}## Guides
+
+${llmsLink('Guides', '/guides/', 'guides for teams working with AI agents')}
+${guideLines.join('\n')}
+
+## Compare
+
+${compareLines.join('\n')}
+
+## Use cases
+
+${useCaseLines.join('\n')}
+
+## Optional
+
+${llmsLink('commonly.me home', '/', 'what Commonly is, in one page')}
+${otherLines.map((line) => `${line}\n`).join('')}- [Full text](${pageUrl('/llms-full.txt')}): every guide, comparison and use case above in one file
+`;
+};
+
+const guideFullText = (guide) => {
+  const parts = [oneLine(guide.summary), ...(guide.intro || []).map(oneLine)];
+  (guide.sections || []).forEach((section) => {
+    parts.push(`### ${oneLine(section.title)}`);
+    (section.paragraphs || []).forEach((paragraph) => parts.push(paragraphText(paragraph)));
+    if (section.bullets?.length) parts.push(section.bullets.map((item) => `- ${oneLine(item)}`).join('\n'));
+    if (section.orderedItems?.length) parts.push(section.orderedItems.map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'));
+    (section.tables || []).forEach((table) => {
+      const row = (cells) => `| ${cells.map(oneLine).join(' | ')} |`;
+      parts.push([row(table.headers), row(table.headers.map(() => '---')), ...table.rows.map(row)].join('\n'));
+    });
+    (section.codeBlocks || []).forEach((block) => parts.push(`\`\`\`${block.language || ''}\n${block.code}\n\`\`\``));
+    if (section.links?.length) {
+      parts.push(section.links.map((link) => `- ${oneLine(link.label)}: ${link.external ? link.path : pageUrl(link.path)}`).join('\n'));
+    }
+  });
+  if (guide.faq?.length) {
+    parts.push('### FAQ');
+    guide.faq.forEach((item) => parts.push(`Q: ${oneLine(item.question)}\nA: ${oneLine(item.answer)}`));
+  }
+  if (guide.cta?.title) parts.push(`### ${oneLine(guide.cta.title)}`, oneLine(guide.cta.body));
+  return parts.filter(Boolean).join('\n\n');
+};
+
+const useCaseFullText = (useCase) => [
+  oneLine(useCase.summary),
+  '### Problems',
+  (useCase.problems || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Outcomes',
+  (useCase.outcomes || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Example flow',
+  (useCase.exampleFlow || []).map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'),
+].filter(Boolean).join('\n\n');
+
+export const renderLlmsFullTxt = ({ guides = {}, useCases = {}, compareSources = {} }) => {
+  const entry = (title, path, body) => `## ${oneLine(title)}\n\nURL: ${pageUrl(path)}\n\n${body.trim()}\n`;
+  return [
+    '# Commonly: full text of the guides, comparisons and use cases on commonly.me\n\n'
+      + `> The pages listed in ${pageUrl('/llms.txt')}, as plain text.\n`,
+    ...Object.entries(guides).map(([id, guide]) => entry(guide.title, `/guides/${id}/`, guideFullText(guide))),
+    ...Object.values(compareSources).map((source) => entry(source.title, source.path, source.markdown)),
+    ...Object.entries(useCases).map(([id, useCase]) => entry(useCase.title, `/use-cases/${id}/`, useCaseFullText(useCase))),
+  ].join('\n---\n\n');
 };
 
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
-  const [template, translationText, useCaseText, guideText, faqText] = await Promise.all([
+  const [template, translationText, useCaseText, guideText, faqText, legalText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/legal.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({
     landing: translations.landing, compare: translations.compare, useCases, guides, landingFaq: JSON.parse(faqText),
+    legal: JSON.parse(legalText),
   });
+  // Written from the Vite template before the homepage overwrites index.html.
+  await writeFile(resolve(outputDir, 'app.html'), renderAppShell(template));
 
   await Promise.all(pages.map(async (page) => {
     const outputPath = resolve(outputDir, page.outputPath);
@@ -905,8 +1291,15 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
     await writeFile(outputPath, renderStaticPage(template, page));
   }));
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  // lastmod only where a page carries a real dateModified (the guides). A build-time date on
+  // every URL would tell Google everything changed on each deploy, and it learns to ignore that (F369).
+  const sitemapEntry = (page) => `  <url><loc>${pageUrl(page.path)}</loc>${page.dateModified ? `<lastmod>${page.dateModified}</lastmod>` : ''}</url>`;
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map(sitemapEntry).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
+
+  const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
+  await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources, pages }));
+  await writeFile(resolve(outputDir, 'llms-full.txt'), renderLlmsFullTxt({ guides, useCases, compareSources: comparePageSources }));
   return pages;
 };
 

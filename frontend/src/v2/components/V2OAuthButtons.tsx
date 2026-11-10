@@ -4,6 +4,7 @@ import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useTranslation } from 'react-i18next';
 import { readFirstTouchRef, readFirstTouchSource } from '../utils/firstTouch';
 import { rememberInviteOAuthStart } from '../utils/pendingInvite';
+import { trackPublic } from '../utils/usageEvents';
 
 // Social sign-in buttons shared by V2Login and V2Register. Renders nothing
 // until /api/auth/oauth/providers confirms a provider is configured, so
@@ -141,7 +142,7 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next, separator
               key={p.id}
               type="button"
               className="v2-login__oauth-btn"
-              onClick={() => submitOAuth(startPath(p.id), inviteParams(), Boolean(invite))}
+              onClick={() => { trackPublic('auth-choice', p.id); submitOAuth(startPath(p.id), inviteParams(), Boolean(invite)); }}
             >
               {PROVIDER_ICONS[p.id]}
               {t('auth.oauth.continueWith', { provider: p.label })}
@@ -151,6 +152,7 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next, separator
               key={p.id}
               className="v2-login__oauth-btn"
               href={startUrl(p.id)}
+              onClick={() => trackPublic('auth-choice', p.id)}
             >
               {PROVIDER_ICONS[p.id]}
               {t('auth.oauth.continueWith', { provider: p.label })}
