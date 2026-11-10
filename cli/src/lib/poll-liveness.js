@@ -58,3 +58,44 @@ export const createPollLiveness = ({ limitMs, onStall, checkEveryMs }) => {
     stop: () => { clearInterval(timer); },
   };
 };
+
+export const IDLE_LINE_DEFAULT_MS = 10 * 60 * 1000;
+
+/**
+ * A healthy idle seat and a wedged one used to look the same in a log: both
+ * printed nothing. On 11-10 six seats sat silent for 4.6 hours after a
+ * `fetch failed` and were restarted as wedged, though nothing showed they had
+ * stopped polling. So a seat that keeps polling and finds nothing says so on a
+ * slow cadence, `polling ok (N empty polls since HH:MMZ)`, and a log with no
+ * line for two cadences means the loop has stopped.
+ *
+ * `empty()` after each poll that settled with nothing to do; `busy()` after one
+ * that brought work, which starts the next count. The first line comes one
+ * cadence after the seat goes quiet, never on start.
+ */
+export const createIdleHeartbeat = ({ everyMs = IDLE_LINE_DEFAULT_MS, log, now = Date.now }) => {
+  let since = null;
+  let count = 0;
+  const hhmm = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+  return {
+    empty: () => {
+      const at = now();
+      if (since === null) since = at;
+      count += 1;
+      if (at - since < everyMs) return;
+      log(`polling ok (${count} empty poll${count === 1 ? '' : 's'} since ${hhmm(since)})`);
+      since = at;
+      count = 0;
+    },
+    busy: () => {
+      since = null;
+      count = 0;
+    },
+  };
+};
+
+export const resolveIdleLineMs = (value, env = process.env) => {
+  const candidate = [value, Number(env.COMMONLY_IDLE_LINE_MS)]
+    .find((ms) => Number.isFinite(ms) && ms > 0);
+  return candidate ?? IDLE_LINE_DEFAULT_MS;
+};
