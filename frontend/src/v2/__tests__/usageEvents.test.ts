@@ -33,6 +33,7 @@ describe('usage events client', () => {
     for (const pattern of podScreens) {
       const path = pattern.replace(':podId', podId).replace(/:[A-Za-z]+/g, 'x1');
       expect(screenTemplate(`/v2${path}`)).toBe(pattern);
+      expect(screenTemplate(path)).toBe(pattern);
       expect(screenPodId(`/v2${path}`)).toBe(podId);
       expect(screenPodId(path)).toBe(podId);
     }

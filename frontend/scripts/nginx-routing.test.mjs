@@ -89,22 +89,43 @@ const scriptLimitingPolicies = (config) => [...config.matchAll(/Content-Security
   .map(([, policy]) => policy)
   // Directive names are case-insensitive; script-src-attr governs only inline handlers.
   .filter((policy) => /(^|;)\s*(script-src|script-src-elem|default-src)(?=\s|;|$)/i.test(policy));
-const assertPoliciesAllowPublicHit = (config) => {
-  const script = publicHitScript('https://api.commonly.me');
-  const body = script.slice(script.indexOf('>') + 1, script.lastIndexOf('</script>'));
-  const hash = `'sha256-${createHash('sha256').update(body).digest('base64')}'`;
+// Each deployed build bakes its own API base into the script, so each needs
+// its own hash. The bases are read from the workflows that build the images
+// nginx serves; a local dev server never sits behind this policy.
+const builtApiBases = async () => {
+  const workflows = await Promise.all(['deploy-dev.yml', 'deploy-staging.yml'].map((name) => (
+    readFile(resolve(frontendDir, '../.github/workflows', name), 'utf8'))));
+  const bases = workflows.flatMap((text) => [...text.matchAll(/--build-arg REACT_APP_API_URL=(https:\/\/[^\s\\]+)/g)].map((m) => m[1]));
+  return [...new Set(bases)];
+};
+const assertPoliciesAllowPublicHit = (config, bases) => {
+  const hashes = bases.map((base) => {
+    const script = publicHitScript(base);
+    const body = script.slice(script.indexOf('>') + 1, script.lastIndexOf('</script>'));
+    return `'sha256-${createHash('sha256').update(body).digest('base64')}'`;
+  });
   for (const policy of scriptLimitingPolicies(config)) {
-    assert.ok(policy.includes(hash), `a script-limiting Content-Security-Policy must allow the public-hit script with ${hash}`);
+    for (const hash of hashes) {
+      assert.ok(policy.includes(hash), `a script-limiting Content-Security-Policy must allow the public-hit script with ${hash}`);
+    }
   }
 };
 
 test('a policy that limits scripts names the inline public-hit script by hash (F400)', async () => {
   const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
-  assertPoliciesAllowPublicHit(config);
+  const bases = await builtApiBases();
+  // Both deployed builds: prod and staging bake different API bases.
+  assert.ok(bases.includes('https://api.commonly.me') && bases.length >= 2, bases.join(', '));
+  assertPoliciesAllowPublicHit(config, bases);
   // The guard trips on a policy that would block the script, and only on one that limits scripts.
-  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "default-src 'self'" always;`), /public-hit/);
-  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self'; script-src 'self'" always;`), /public-hit/);
-  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "Script-Src 'self'" always;`), /public-hit/);
-  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self' data:" always;`));
-  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "script-src-attr 'none'" always;`));
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "default-src 'self'" always;`, bases), /public-hit/);
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self'; script-src 'self'" always;`, bases), /public-hit/);
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "Script-Src 'self'" always;`, bases), /public-hit/);
+  const prodOnly = (() => {
+    const script = publicHitScript('https://api.commonly.me');
+    return createHash('sha256').update(script.slice(script.indexOf('>') + 1, script.lastIndexOf('</script>'))).digest('base64');
+  })();
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "script-src 'self' 'sha256-${prodOnly}'" always;`, bases), /public-hit/);
+  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self' data:" always;`, bases));
+  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "script-src-attr 'none'" always;`, bases));
 });
