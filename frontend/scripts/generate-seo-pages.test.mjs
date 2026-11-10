@@ -2437,6 +2437,9 @@ test('a long title drops the site suffix, then its subtitle; one with neither to
   );
   assert.equal(fitTitle('A plain title with no suffix'), 'A plain title with no suffix');
   assert.throws(() => fitTitle('A title with no colon that runs well past the sixty character limit'), /60/);
+  // A colon after a name is not a head to keep: "Commonly" alone says nothing.
+  assert.throws(() => fitTitle('Commonly: a subtitle that runs well past the sixty character limit here'), /60/);
+  assert.throws(() => fitTitle(''), /empty/);
 });
 
 test('a long description ends at its last whole sentence, or else at a word with an ellipsis (F397)', () => {
@@ -2448,6 +2451,28 @@ test('a long description ends at its last whole sentence, or else at a word with
   const run = `${'word '.repeat(60)}end`;
   const cut = fitDescription(run);
   assert.ok(chars(cut) <= 160 && cut.endsWith('…') && !cut.includes(' …'), cut);
+  // "vs." is not the end of a sentence.
+  const versus = `Compare two tools that teams run side by side for the same kind of work and the same kind of review, Commonly vs. Others. ${'More words follow here. '.repeat(3)}`;
+  assert.ok(!fitDescription(versus).endsWith('vs.'), fitDescription(versus));
+});
+
+test('a cut description never ends on a dangling word (F397)', async () => {
+  for (const page of await realPages()) {
+    const last = page.description.replace(/…$/, '').split(' ').at(-1).toLowerCase();
+    assert.ok(!['a', 'an', 'and', 'or', 'the', 'to', 'of', 'for', 'with', 'that', 'which', 'where', 'without'].includes(last),
+      `${page.path}: ${page.description}`);
+  }
+});
+
+test('fitting keeps every title and description unique across pages (F397)', async () => {
+  const pages = await realPages();
+  for (const field of ['title', 'description']) {
+    const seen = new Map();
+    for (const page of pages) {
+      assert.ok(!seen.has(page[field]), `${field} shared by ${seen.get(page[field])} and ${page.path}: ${page[field]}`);
+      seen.set(page[field], page.path);
+    }
+  }
 });
 
 // F396: every SPA-only path (/privacy, /terms, /v2/…) was served the

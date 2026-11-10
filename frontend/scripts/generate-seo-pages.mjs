@@ -122,7 +122,11 @@ const DESCRIPTION_LIMIT = 160;
 const siteSuffix = ' | Commonly AI';
 const charCount = (text) => [...text].length;
 
+// A head shorter than this is a name ("Commonly: …"), not a title on its own.
+const MIN_TITLE_HEAD = 12;
+
 export const fitTitle = (title) => {
+  if (!String(title || '').trim()) throw new Error('A page has an empty title.');
   const hasSuffix = title.endsWith(siteSuffix);
   const base = hasSuffix ? title.slice(0, -siteSuffix.length) : title;
   const withSuffix = (text) => (hasSuffix && charCount(text + siteSuffix) <= TITLE_LIMIT ? text + siteSuffix : text);
@@ -131,18 +135,37 @@ export const fitTitle = (title) => {
   // "Question? Subtitle" keeps the question.
   const split = base.match(/^(.+?)([:?])\s/);
   const head = split ? `${split[1]}${split[2] === '?' ? '?' : ''}` : base;
-  if (head !== base && charCount(head) <= TITLE_LIMIT) return withSuffix(head);
+  if (head !== base && charCount(head) >= MIN_TITLE_HEAD && charCount(head) <= TITLE_LIMIT) return withSuffix(head);
   throw new Error(`Title over ${TITLE_LIMIT} characters with no subtitle to drop: "${title}". Give the page a shorter titleTag.`);
 };
+
+// A cut never ends on one of these: "…the context packet that makes…" reads broken.
+const DANGLING = new Set(['a', 'an', 'and', 'or', 'nor', 'but', 'the', 'to', 'of', 'for', 'in', 'on', 'at', 'by', 'with',
+  'without', 'from', 'into', 'as', 'that', 'which', 'who', 'whom', 'whose', 'where', 'when', 'while', 'so', 'than',
+  'is', 'are', 'can', 'its', 'their', 'your', 'our', 'what', 'how', 'why', 'whether', 'before', 'after', 'instead',
+  'between', 'each', 'every', 'one', 'keep', 'makes', 'make', 'let', 'lets']);
+const ABBREVIATION = /\b(?:vs|e\.g|i\.e|etc|approx|incl)$/i;
 
 export const fitDescription = (description) => {
   const text = String(description || '').replace(/\s+/g, ' ').trim();
   if (charCount(text) <= DESCRIPTION_LIMIT) return text;
   const room = [...text].slice(0, DESCRIPTION_LIMIT).join('');
-  const sentenceEnd = Math.max(room.lastIndexOf('. '), room.lastIndexOf('? '), room.lastIndexOf('! '));
-  if (sentenceEnd >= 80) return room.slice(0, sentenceEnd + 1);
+  // The last whole sentence, unless the stop belongs to "vs." or "e.g.".
+  for (let at = room.length - 2; at >= 80; at -= 1) {
+    if (/[.?!]/.test(room[at]) && room[at + 1] === ' ' && !ABBREVIATION.test(room.slice(0, at))) return room.slice(0, at + 1);
+  }
+  // Else the last clause that still says most of it, else the last word, and
+  // never a dangling one.
   const words = [...text].slice(0, DESCRIPTION_LIMIT - 1).join('');
-  return `${words.slice(0, words.lastIndexOf(' ')).replace(/[\s,;:]+$/, '')}…`;
+  const clause = Math.max(words.lastIndexOf(', '), words.lastIndexOf(': '), words.lastIndexOf('; '), words.lastIndexOf('—'));
+  let cut = clause >= 110 ? words.slice(0, clause) : words.slice(0, words.lastIndexOf(' '));
+  for (;;) {
+    cut = cut.replace(/[\s,;:—–-]+$/, '');
+    const last = cut.slice(cut.lastIndexOf(' ') + 1).toLowerCase();
+    if (!DANGLING.has(last) || cut.lastIndexOf(' ') < 0) break;
+    cut = cut.slice(0, cut.lastIndexOf(' '));
+  }
+  return `${cut}…`;
 };
 
 const formatDate = (value) => {
@@ -840,7 +863,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly: Claude Code, Codex and your team in one pod',
+    title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
     description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
   };
