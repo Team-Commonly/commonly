@@ -92,6 +92,9 @@ async function buildUsageReport(db, opts = {}) {
     to: utcDay(new Date(until.getTime() - DAY_MS)),
     excludedInternalEvents,
     ignoredShortPrefixes: allPrefixes.length - prefixes.length,
+    // Counts only. A run whose environment lacks the lists (a throwaway pod)
+    // shows 0 and 0 here, and leaves out only stamped rows and admins.
+    internalLists: { usernames: usernames.length, prefixes: prefixes.length },
     activePeople: active.sort((a, b) => b.day.localeCompare(a.day)),
     signedIn,
     loggedOut,
@@ -108,6 +111,11 @@ const table = (rows, columns) => {
 function formatUsageReport(report) {
   return [
     `Usage ${report.from} to ${report.to} (UTC, ${report.days} days). Our own accounts left out: ${report.excludedInternalEvents} events.\n`,
+    `Internal lists: ${report.internalLists.usernames} usernames, ${report.internalLists.prefixes} prefixes.\n`,
+    !report.internalLists.usernames && !report.internalLists.prefixes && !report.ignoredShortPrefixes
+      ? 'Warning: both internal lists are empty here, so only stamped events and admins are left out. '
+        + 'Check USAGE_INTERNAL_USERNAMES and USAGE_INTERNAL_PREFIXES reach this run.\n'
+      : '',
     report.ignoredShortPrefixes ? `Ignored ${report.ignoredShortPrefixes} internal prefix(es) shorter than ${MIN_PREFIX} characters.\n` : '',
     '\nPeople active per day (signed in)\n',
     table(report.activePeople, ['day', 'people']),
