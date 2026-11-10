@@ -229,7 +229,18 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     });
     const res = await claim(rivalToken);
     expect(res.status).toBe(409);
-    expect(res.body.holder).toEqual({ username: 'ghost-agent', displayName: 'ghost-agent', isAgent: false });
+    // Unknown whether a person or an agent, so the refusal doesn't say.
+    expect(res.body.holder).toEqual({ username: 'ghost-agent', displayName: 'ghost-agent' });
+  });
+
+  test('an owner who no longer exists is left out, and the agent is still named (F374)', async () => {
+    await seedRivalAgent();
+    await User.updateOne({ _id: agent._id }, { $set: { 'botMetadata.ownerUserId': '0123456789abcdef01234567' } });
+    await seedTask();
+    await claim(AGENT_TOKEN);
+    const res = await claim(RIVAL_AGENT_TOKEN);
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual({ username: 'claim-audit-agent', displayName: 'Audit Agent', isAgent: true });
   });
 
   test("an edit from another person's agent is refused with the same named holder (F374)", async () => {
