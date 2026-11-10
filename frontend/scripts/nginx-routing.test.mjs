@@ -87,7 +87,8 @@ test('the app shell, like index.html, is never browser-cached (F396)', async () 
 // of the production build, whose API base is api.commonly.me.
 const scriptLimitingPolicies = (config) => [...config.matchAll(/Content-Security-Policy "([^"\n]+)"/g)]
   .map(([, policy]) => policy)
-  .filter((policy) => /(^|;)\s*(script-src|script-src-elem|default-src)\b/.test(policy));
+  // Directive names are case-insensitive; script-src-attr governs only inline handlers.
+  .filter((policy) => /(^|;)\s*(script-src|script-src-elem|default-src)(?=\s|;|$)/i.test(policy));
 const assertPoliciesAllowPublicHit = (config) => {
   const script = publicHitScript('https://api.commonly.me');
   const body = script.slice(script.indexOf('>') + 1, script.lastIndexOf('</script>'));
@@ -103,5 +104,7 @@ test('a policy that limits scripts names the inline public-hit script by hash (F
   // The guard trips on a policy that would block the script, and only on one that limits scripts.
   assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "default-src 'self'" always;`), /public-hit/);
   assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self'; script-src 'self'" always;`), /public-hit/);
+  assert.throws(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "Script-Src 'self'" always;`), /public-hit/);
   assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "img-src 'self' data:" always;`));
+  assert.doesNotThrow(() => assertPoliciesAllowPublicHit(`add_header Content-Security-Policy "script-src-attr 'none'" always;`));
 });
