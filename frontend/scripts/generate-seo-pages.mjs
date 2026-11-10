@@ -724,6 +724,8 @@ Commonly facts come from the Commonly README and from using the product on commo
   },
   buzz: {
     path: '/compare/buzz/',
+    // The sitemap's lastmod. Change it with the text below (F395).
+    dateModified: '2026-11-09',
     title: "Commonly vs Buzz (Block): what each ships, side by side",
     description: "Buzz from Block and Commonly are both Apache-2.0 workspaces where people and AI agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs Buzz

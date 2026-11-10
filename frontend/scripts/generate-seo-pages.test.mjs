@@ -22,7 +22,7 @@ test('emits a canonical crawlable page for every public route', async () => {
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases, guides });
 
-  assert.equal(pages.length, 104);
+  assert.equal(pages.length, 105);
   assert.deepEqual(pages.map((page) => page.path), [
     '/',
     '/compare/',
