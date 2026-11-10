@@ -376,6 +376,49 @@ const renderGuide = (guide, siteLinks = '') => {
   </div>`;
 };
 
+// The legal pages, from the same words V2LegalPage renders (content/legal.json).
+// Each commonly.me address becomes a mailto link, as on the page.
+const linkLegalEmails = (text) => escapeHtml(text).replace(/([a-z]+@commonly\.me)/g, '<a href="mailto:$1">$1</a>');
+
+const renderLegal = (title, sections, siteLinks = '') => `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
+      <main class="seo-article">
+        <h1>${escapeHtml(title)}</h1>
+        ${sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2>${section.body.map((paragraph) => `<p>${linkLegalEmails(paragraph)}</p>`).join('')}</section>`).join('\n        ')}
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+
+const USE_CASES_INDEX = {
+  title: 'Use cases',
+  lede: 'How teams use Commonly: pods where people and their agents share the same conversations, tasks and context.',
+};
+
+const renderUseCasesIndex = (useCases, siteLinks = '') => {
+  const cards = Object.entries(useCases).map(([id, useCase]) => `
+    <article class="seo-card">
+      <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
+      <h2><a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a></h2>
+      <p>${escapeHtml(useCase.summary)}</p>
+    </article>`).join('');
+  return `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a></nav></header>
+      <main>
+        <section class="seo-hero">
+          <p class="seo-kicker">Use cases</p>
+          <h1>${escapeHtml(USE_CASES_INDEX.title)}</h1>
+          <p class="seo-lede">${escapeHtml(USE_CASES_INDEX.lede)}</p>
+        </section>
+        <section>
+          <div class="seo-grid">${cards}</div>
+        </section>
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+};
+
 const renderGuidesIndex = (guides, siteLinks = '') => {
   const guideCards = Object.entries(guides).map(([id, guide]) => `
     <article class="seo-card">
@@ -713,7 +756,7 @@ export const renderMarkdown = (markdown) => {
   return html.join('\n');
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources, legal = null }) => {
   const siteLinks = renderSiteLinks({ useCases, compareSources });
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
@@ -871,7 +914,52 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     };
   });
 
-  return pages.concat(comparePages, useCasePages, [guidesIndexPage], guidePages);
+  // /use-cases/ was a 403: a directory of pages with no index (F396).
+  const useCasesIndexPage = {
+    path: '/use-cases/',
+    outputPath: 'use-cases/index.html',
+    title: `${USE_CASES_INDEX.title} | Commonly AI`,
+    description: USE_CASES_INDEX.lede,
+    content: renderUseCasesIndex(useCases, siteLinks),
+    // No app route serves /use-cases/, so the page stays static.
+    staticOnly: true,
+    // use-cases.json's last change; the sitemap's lastmod once it reads one.
+    dateModified: '2026-08-24',
+    schema: webPage(USE_CASES_INDEX.title, USE_CASES_INDEX.lede, '/use-cases/'),
+  };
+
+  // /privacy and /terms are app routes, so they were served the prerendered
+  // homepage and its canonical. Their own page keeps the app and gives
+  // crawlers (and Google's OAuth review) the same words (F396).
+  const legalPages = legal ? [
+    ['/privacy/', 'Privacy', 'How Commonly Software LLC stores, uses and deletes your data on commonly.me.', legal.privacy],
+    ['/terms/', 'Terms', 'The terms for using commonly.me, run by Commonly Software LLC.', legal.terms],
+  ].map(([path, title, description, sections]) => ({
+    path,
+    outputPath: `${path.slice(1)}index.html`,
+    title: `${title} | Commonly AI`,
+    description,
+    content: renderLegal(title, sections, siteLinks),
+    // V2LegalPage.tsx's last change on main when this was written.
+    dateModified: '2026-11-09',
+    schema: webPage(title, description, path),
+  })) : [];
+
+  return pages.concat(comparePages, useCasePages, [useCasesIndexPage], [guidesIndexPage], guidePages, legalPages);
+};
+
+// The SPA fallback (nginx.conf). It used to be index.html, which the build
+// overwrites with the prerendered homepage, so every app-only path (/v2/…,
+// /login, an unknown /v2/x) claimed the homepage's title and canonical. The
+// shell has no canonical, says noindex, and carries no page content (F396).
+export const renderAppShell = (template) => {
+  const shell = replaceMarkedSection(template, metadataStart, metadataEnd, `
+    <title>Commonly</title>
+    <meta name="robots" content="noindex" />`);
+  if (!shell.includes(pageContentMarker)) {
+    throw new Error('Missing SEO page-content marker in the Vite output.');
+  }
+  return shell.replace(pageContentMarker, '');
 };
 
 export const renderStaticPage = (template, page) => {
@@ -885,19 +973,23 @@ export const renderStaticPage = (template, page) => {
 };
 
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
-  const [template, translationText, useCaseText, guideText, faqText] = await Promise.all([
+  const [template, translationText, useCaseText, guideText, faqText, legalText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/legal.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({
     landing: translations.landing, compare: translations.compare, useCases, guides, landingFaq: JSON.parse(faqText),
+    legal: JSON.parse(legalText),
   });
+  // Written from the Vite template before the homepage overwrites index.html.
+  await writeFile(resolve(outputDir, 'app.html'), renderAppShell(template));
 
   await Promise.all(pages.map(async (page) => {
     const outputPath = resolve(outputDir, page.outputPath);
