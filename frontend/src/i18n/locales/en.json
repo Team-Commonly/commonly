@@ -1759,8 +1759,7 @@
     "newTask": "New task",
     "addTo": "Add to {{column}}",
     "card": {
-      "needs": "Needs {{dep}}",
-      "agentFor": "{{name}}, for {{owner}}"
+      "needs": "Needs {{dep}}"
     },
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
@@ -1844,7 +1843,8 @@
       "prRow": "PR",
       "more": "More",
       "watcherCount": "{{count}} following",
-      "openInChat": "Open in chat"
+      "openInChat": "Open in chat",
+      "agentFor": "{{name}}, for {{owner}}"
     },
     "form": {
       "title": "Title",

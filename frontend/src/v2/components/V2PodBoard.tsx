@@ -354,8 +354,9 @@ const V2PodBoard: React.FC = () => {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(expiry));
   // The frame's card line is the lease timer, the claimant's avatar and name (F402:
-  // who holds a task is the multiplayer point); an agent's name says whose it is
-  // on hover. An assigned-but-unclaimed task shows no owner text.
+  // who holds a task is the multiplayer point). Whose agent it is shows in the
+  // drawer's owner row: the card hides this line on hover for its action bar.
+  // An assigned-but-unclaimed task shows no owner text.
   const ownerLine = (task: BoardTask) => {
     if (['done', 'completed', 'complete'].includes(task.status)) return null;
     // The frame marks a blocked card with what it waits on, and an open one with a hollow ring.
@@ -379,7 +380,7 @@ const V2PodBoard: React.FC = () => {
         </span>
         <V2Avatar name={holder} src={member?.profilePicture} kind={member?.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={member ? memberId(member) : holder} size="sm" className="v2-board__card-avatar" />
         {holder && (
-          <span className="v2-board__card-holder" title={member?.isBot && member.ownerName ? t('board.card.agentFor', { name: holder, owner: member.ownerName }) : holder}>{holder}</span>
+          <span className="v2-board__card-holder">{holder}</span>
         )}
       </span>
     );
@@ -1273,11 +1274,13 @@ const V2PodBoard: React.FC = () => {
                   const lease = leaseFor(drawerTask);
                   if (lease.claimed) {
                     const name = claimHolderName(drawerTask);
+                    const holderMember = claimantMember(drawerTask);
                     const state = lease.expired ? 'expired' : 'live';
                     return (
                       <>
-                        {memberAvatar(claimantMember(drawerTask) || {}, name)}
-                        <span className="v2-board__owner-name">{name}</span>
+                        {memberAvatar(holderMember || {}, name)}
+                        <span className="v2-board__owner-name">{holderMember?.isBot && holderMember.ownerName
+                          ? t('board.detail.agentFor', { name, owner: holderMember.ownerName }) : name}</span>
                         <span className={`v2-board__lease-value v2-board__lease-value--${state}`}>
                           <span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${state}`} />
                           {lease.knownExpiry

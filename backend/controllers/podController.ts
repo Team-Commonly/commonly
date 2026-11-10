@@ -430,8 +430,8 @@ const pickPodFields = (plain: any, fields: readonly string[]) => Object.fromEntr
 const withAgentLabels = (plain: any) => ({
   ...plain,
   members: (plain?.members || []).map((member: any) => {
-    if (!member?.isBot) return member;
-    const { agentName: _runtime, ownerUserId: _owner, ...botMetadata } = member.botMetadata || {};
+    const { agentName: _runtime, ownerUserId: _owner, ...botMetadata } = member?.botMetadata || {};
+    if (!member?.isBot) return member?.botMetadata ? { ...member, botMetadata } : member;
     return { ...member, botMetadata, displayLabel: resolveAgentDisplayLabel(member, member.username) };
   }),
 });
@@ -442,7 +442,7 @@ const withAgentLabels = (plain: any) => ({
 const agentOwnerNames = async (members: any[]): Promise<Map<string, string>> => {
   const ownerIds = [...new Set(members
     .map((member: any) => (member?.isBot ? String(member.botMetadata?.ownerUserId || '') : ''))
-    .filter((id: string) => mongoose.isValidObjectId(id)))];
+    .filter((id: string) => /^[0-9a-f]{24}$/i.test(id)))];
   if (!ownerIds.length) return new Map();
   const owners = await User.find({ _id: { $in: ownerIds } }).select('username displayName').lean() as Array<{
     _id: unknown; username?: string; displayName?: string;

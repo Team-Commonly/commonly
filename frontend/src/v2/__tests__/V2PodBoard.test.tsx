@@ -636,7 +636,7 @@ test('an agent claimant keyed by its instance id still shows its face, on the ca
 
 // F402: a person looking at the board sees who holds each task, and for an
 // agent whose it is, without opening the card.
-test('a claimed card names its holder, and an agent holder says whose it is', async () => {
+test('a claimed card names its holder, and the drawer says whose agent it is', async () => {
   const lease = new Date(Date.now() + 10 * 60000).toISOString();
   const tasks = [
     { taskId: 'TASK-6', title: 'Agent work', status: 'claimed', claimedBy: 'priya-claude', claimedByUserId: 'agent-id', claimExpiresAt: lease, watchers: [], updates: [] },
@@ -655,11 +655,15 @@ test('a claimed card names its holder, and an agent holder says whose it is', as
   renderBoard();
   const agentCard = await screen.findByTitle('TASK-6');
   await waitFor(() => expect(agentCard.querySelector('.v2-board__card-holder')).toHaveTextContent('Priya Claude'));
-  const agentHolder = agentCard.querySelector('.v2-board__card-holder');
-  expect(agentHolder).toHaveAttribute('title', 'Priya Claude, for Priya Rao');
-  const personHolder = (await screen.findByTitle('TASK-7')).querySelector('.v2-board__card-holder');
-  expect(personHolder).toHaveTextContent('Jonah Park');
-  expect(personHolder).toHaveAttribute('title', 'Jonah Park');
+  const personCard = await screen.findByTitle('TASK-7');
+  expect(personCard.querySelector('.v2-board__card-holder')).toHaveTextContent('Jonah Park');
+  // The card hides its owner line on hover, so whose agent it is shows in the drawer.
+  fireEvent.click(agentCard);
+  expect(within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling).toHaveTextContent('Priya Claude, for Priya Rao');
+  fireEvent.click(personCard);
+  const personOwner = within(screen.getByRole('dialog')).getByText('Owner').nextElementSibling;
+  expect(personOwner).toHaveTextContent('Jonah Park');
+  expect(personOwner).not.toHaveTextContent(', for');
 });
 
 test('the pr row links the pull request by its number', async () => {

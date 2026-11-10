@@ -96,6 +96,13 @@ describe('pod read: member names and agent owners', () => {
     expect(JSON.stringify(res.body)).not.toContain('ownerUserId');
   });
 
+  it('sends no owner id for a member row that is not flagged a bot', async () => {
+    await User.updateOne({ _id: teammate._id }, { $set: { 'botMetadata.ownerUserId': String(owner._id) } });
+    const res = await get(`/api/pods/${pod._id}`, teammate);
+    expect(JSON.stringify(res.body)).not.toContain('ownerUserId');
+    expect(memberById(res, teammate).ownerName).toBeUndefined();
+  });
+
   it('leaves the owner out when that account is gone', async () => {
     await User.deleteOne({ _id: owner._id });
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: owner._id } });
