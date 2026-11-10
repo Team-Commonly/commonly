@@ -4680,6 +4680,6 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 
 **False model:** "a 409 names the live holder", as the `commonly_claim_task` description says. For an agent holder, the name was a 24-character id. When two people's agents raced for one task, the loser couldn't say in the pod who had the task or whose agent it was. It could only repeat the id or say "another agent".
 
-**Repair:** both refusals add `holder: { username, displayName, isAgent, ownerUsername? }`. `claimedBy` stays the stable key. `ownerUsername` comes from `botMetadata.ownerUserId`, and a holder that isn't a user id (a legacy claim) passes through as its own name, with `isAgent` left out because the fallback can't tell. MCP passes the body through unchanged, and native claims use the same claim function. The CLI still prints `held by <claimedBy>`, which is the follow-up.
+**Repair:** both refusals add `holder: { username, displayName, isAgent?, ownerUsername? }`. `claimedBy` stays the stable key. `ownerUsername` comes from `botMetadata.ownerUserId`, and a holder that isn't a user id (a legacy claim) passes through as its own name, with `isAgent` left out because the fallback can't tell. MCP passes the body through unchanged, and native claims use the same claim function. The CLI still prints `held by <claimedBy>`, which is the follow-up.
 
 **Lesson:** a field named for a person has to be readable by one. A stable key and a display name are two fields, so send both.
