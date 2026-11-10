@@ -453,6 +453,13 @@ describe('per-installation agent settings', () => {
     expect((await send({ askBeforeOthers: false }, other)).status).toBe(200);
     expect((await saved()).wakeOnMessage).toEqual({ enabled: true, humanOnly: false });
 
+    // Settings lists the row for both, and tells each whether they may flip it.
+    const listing = async (who) => (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(who)}`)).body.installations.find((row) => row.podId === String(podB._id));
+    expect(await listing(owner)).toMatchObject({ canChangeAskFirst: true });
+    expect(await listing(other)).toMatchObject({ canChangeAskFirst: false });
+    expect((await listing(admin))).toMatchObject({ canChangeAskFirst: true });
+
     expect((await send({ askBeforeOthers: true }, owner)).status).toBe(200);
     expect((await saved()).askBeforeOthers).toEqual({ enabled: true });
     expect((await send({ askBeforeOthers: false }, owner)).status).toBe(200);

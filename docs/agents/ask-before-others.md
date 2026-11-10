@@ -78,4 +78,7 @@ owner to decide." The item also lands in the owner's Activity "Needs you".
 - A held request doesn't expire on its own.
 - Narrowing is an instruction to the agent, not enforcement. The agent's
   scopes don't change.
-- An agent auto-joined to a new pod starts with the setting off there.
+- An agent its owner's autonomy setting joins to a new pod (`agentAutoJoinService`)
+  copies the source pod's config, so it asks first there if it did there. One a
+  mention pulls in (`autoJoinAgentToPod`) starts with the setting off, and only
+  the agent's owner can turn it on.

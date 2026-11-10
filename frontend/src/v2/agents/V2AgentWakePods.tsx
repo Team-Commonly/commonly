@@ -21,6 +21,8 @@ interface InstallationSettings {
   heartbeatMinutes: number;
   /** F371: anyone else's request to the agent here waits for its owner. */
   askBeforeOthers?: boolean;
+  // false when the viewer installed the row but isn't the agent's owner (F371).
+  canChangeAskFirst?: boolean;
   /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
   hostedHeartbeat?: HostedHeartbeat | null;
 }
@@ -382,7 +384,8 @@ const V2AgentWakePods: React.FC<{
                         so the switch would promise something it can't do there. */}
                     {!PERSONAL_POD_TYPES.has(String(entry.podType || '')) && (
                       <label className="v2-agent-wake-pods__toggle" title={t('agentSettings.askBeforeOthers')}>
-                        <input type="checkbox" checked={entry.askBeforeOthers === true} disabled={busyPod === entry.podId}
+                        <input type="checkbox" checked={entry.askBeforeOthers === true}
+                          disabled={busyPod === entry.podId || entry.canChangeAskFirst === false}
                           onChange={(event) => { void save(entry, { askBeforeOthers: event.target.checked }); }} />
                         <span className={`tg${entry.askBeforeOthers ? ' on' : ''}`} aria-hidden="true" />
                         <span className="v2-agent-wake-pods__sr">{t('agentSettings.askBeforeOthers')}</span>

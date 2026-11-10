@@ -65,6 +65,15 @@ describe('per-agent Wake and Pods settings', () => {
     expect(screen.getByLabelText("Ask me before anyone else's request runs")).toBeChecked();
   });
 
+  it("F371: the installer of a row a mention pulled in can't flip ask-first; only the agent's owner can", async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [
+      { podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: true, humanOnly: true,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60, askBeforeOthers: false, canChangeAskFirst: false },
+    ] } });
+    renderSettings();
+    expect(await screen.findByLabelText("Ask me before anyone else's request runs")).toBeDisabled();
+  });
+
   it('shows all three message-wake choices without first opting in (D173)', async () => {
     client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,

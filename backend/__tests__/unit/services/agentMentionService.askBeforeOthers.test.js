@@ -69,7 +69,7 @@ const chain = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const setup = ({ askBeforeOthers = true, wakeOnMessage = false, installedBy = owner._id } = {}) => {
+const setup = ({ askBeforeOthers = true, wakeOnMessage = false, installedBy = owner._id, autoJoinSource } = {}) => {
   const install = {
     agentName: 'nova',
     instanceId: 'default',
@@ -79,6 +79,7 @@ const setup = ({ askBeforeOthers = true, wakeOnMessage = false, installedBy = ow
     config: {
       ...(askBeforeOthers ? { askBeforeOthers: { enabled: true } } : {}),
       ...(wakeOnMessage ? { wakeOnMessage: { enabled: true } } : {}),
+      ...(autoJoinSource ? { autoJoinSource } : {}),
     },
   };
   AgentInstallation.find.mockReturnValue(chain([install]));
@@ -211,6 +212,32 @@ describe('F371: a request to an agent whose owner asks first', () => {
     await say(teammate, 'morning all');
     expect(mentionWakes()).toHaveLength(0);
     expect(holdRunRequest).not.toHaveBeenCalled();
+  });
+
+  // CodeRabbit on #3846 (Rule 19): a failed owner lookup on the ambient path
+  // keeps the installer's own message, and nobody else's.
+  describe('when the owner lookup fails on an unaddressed message', () => {
+    const actual = jest.requireActual('../../../services/runRequestService').approverFor;
+    beforeEach(() => { approverFor.mockRejectedValue(new Error('users down')); });
+    afterEach(() => { approverFor.mockImplementation((...args) => actual(...args)); });
+
+    it("still wakes it for the person who installed it", async () => {
+      setup({ wakeOnMessage: true });
+      await say(owner, 'morning all');
+      expect(mentionWakes()).toHaveLength(1);
+    });
+
+    it("keeps a teammate's message gated", async () => {
+      setup({ wakeOnMessage: true });
+      await say(teammate, 'morning all');
+      expect(mentionWakes()).toHaveLength(0);
+    });
+
+    it('keeps a row a mention pulled in gated, even for whoever mentioned it in', async () => {
+      setup({ wakeOnMessage: true, installedBy: teammate._id, autoJoinSource: 'mention-resolution' });
+      await say(teammate, 'morning all');
+      expect(mentionWakes()).toHaveLength(0);
+    });
   });
 
   it("still wakes it on the owner's unaddressed message with wake-on-message on", async () => {

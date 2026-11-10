@@ -9,7 +9,7 @@ import { invalidScheduleField, isBareStop, takesSchedule } from '../../services/
 import { ownsRuntimeIdentity } from '../../services/runtimeIdentityOwnership';
 import { runtimeNarrowingStatus } from '../../services/outsiderGrantNarrowingPreview';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
-const { ownerOfInstall } = require('../../services/runRequestService');
+const { botOwnerOf, joinedByMention, ownerOfInstall } = require('../../services/runRequestService');
 const { installationIdentityFilter } = require('../../services/agentInstallationIdentity');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -69,7 +69,7 @@ const hostedHeartbeatFor = (installation: any) => (isHostedInstallation(installa
   runsPerDay: hostedRunsNative(installation) ? hostedHeartbeatRunsPerDay() : 0,
 } : null);
 
-const settings = (installation: any, podName: string, podType?: string) => {
+const settings = (installation: any, podName: string, podType?: string, canChangeAskFirst?: boolean) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
   return {
@@ -80,6 +80,8 @@ const settings = (installation: any, podName: string, podType?: string) => {
     wakeOnMessage,
     humanOnly: config.wakeOnMessage?.humanOnly === true,
     askBeforeOthers: config.askBeforeOthers?.enabled === true,
+    // Only the owner or an admin may flip it (the PATCH below); absent on a write's echo.
+    ...(canChangeAskFirst === undefined ? {} : { canChangeAskFirst }),
     boardWake: typeof config.boardWake?.enabled === 'boolean'
       ? config.boardWake.enabled : wakeOnMessage,
     heartbeatEnabled: config.heartbeat?.enabled === true,
@@ -113,9 +115,20 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       instanceId: normalizeInstanceId(req.query.instanceId),
       status: { $ne: 'uninstalled' },
     }).sort({ createdAt: 1, _id: 1 }).lean();
-    const manageable = installations.filter((entry: any) => canManage(entry, userId, isAdmin));
-    const pods = await Pod.find({ _id: { $in: manageable.map((entry: any) => entry.podId) } })
+    // A row a mention pulled in lists for the agent's owner too, in a pod they
+    // belong to: its installedBy is whoever mentioned the agent (F371).
+    const agentOwner = installations.some(joinedByMention)
+      ? await botOwnerOf(req.params.name, normalizeInstanceId(req.query.instanceId)).catch(() => null) : null;
+    const ownsAgent = !!agentOwner && agentOwner === String(userId);
+    const candidates = installations.filter((entry: any) => canManage(entry, userId, isAdmin)
+      || (ownsAgent && joinedByMention(entry)));
+    const pods = await Pod.find({ _id: { $in: candidates.map((entry: any) => entry.podId) } })
       .select('name type members').lean();
+    const memberOf = new Set<string>(pods
+      .filter((pod: any) => (pod.members || []).some((member: unknown) => String(member) === String(userId)))
+      .map((pod: any) => String(pod._id)));
+    const manageable = candidates.filter((entry: any) => canManage(entry, userId, isAdmin)
+      || memberOf.has(String(entry.podId)));
     const names = new Map<string, string>(pods.map((pod: any) => [String(pod._id), String(pod.name)]));
     const types = new Map<string, string | undefined>(pods.map((pod: any) => [String(pod._id), pod.type]));
     // Someone else's 1:1 room with this agent (ADR-001 §3.10). Its installer
@@ -226,8 +239,10 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeEditable: !hosted && Boolean(writable) && (!seat?.sourcePodId || Boolean(source)),
       harnessCatalog: HARNESS_CATALOG,
       otherDirectRoomCount,
-      installations: listed
-      .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)))) });
+      installations: await Promise.all(listed.map(async (entry: any) => settings(
+        entry, names.get(String(entry.podId)) || 'Pod', types.get(String(entry.podId)),
+        isAdmin || (await ownerOfInstall(entry).catch(() => null)) === String(userId),
+      ))) });
   } catch (error) {
     console.error('Error loading agent settings:', error);
     return res.status(500).json({ error: 'Failed to load agent settings' });

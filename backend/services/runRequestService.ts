@@ -51,17 +51,22 @@ export const joinedByMention = (install: InstallRow): boolean => configOf(instal
  * (agentMentionService's note on it), so it is checked, never trusted, and on
  * a row a mention pulled in it names whoever mentioned the agent, so it is skipped.
  */
+/** The person who owns the agent itself: its bot row's `ownerUserId`. */
+export const botOwnerOf = async (agentName: unknown, instanceId: unknown): Promise<string | null> => {
+  const agent = await User.findOne({
+    isBot: true,
+    'botMetadata.agentName': String(agentName || '').toLowerCase(),
+    'botMetadata.instanceId': String(instanceId || 'default'),
+  }).select('botMetadata').lean() as { botMetadata?: { ownerUserId?: unknown } } | null;
+  return agent?.botMetadata?.ownerUserId ? String(agent.botMetadata.ownerUserId) : null;
+};
+
 export const ownerOfInstall = async (install: InstallRow): Promise<string | null> => {
   if (install.installedBy && !joinedByMention(install)) {
     const installer = await User.findById(install.installedBy).select('isBot').lean() as { isBot?: boolean } | null;
     if (installer && installer.isBot === false) return String(install.installedBy);
   }
-  const agent = await User.findOne({
-    isBot: true,
-    'botMetadata.agentName': String(install.agentName || '').toLowerCase(),
-    'botMetadata.instanceId': String(install.instanceId || 'default'),
-  }).select('botMetadata').lean() as { botMetadata?: { ownerUserId?: unknown } } | null;
-  return agent?.botMetadata?.ownerUserId ? String(agent.botMetadata.ownerUserId) : null;
+  return botOwnerOf(install.agentName, install.instanceId);
 };
 
 /**
@@ -291,7 +296,7 @@ export const noteRunRequestDeclined = async (
 };
 
 export default {
-  asksBeforeOthers, joinedByMention, ownerOfInstall, approverFor, reachOf, holdRunRequest, releaseRunRequest,
+  asksBeforeOthers, joinedByMention, botOwnerOf, ownerOfInstall, approverFor, reachOf, holdRunRequest, releaseRunRequest,
   noteRunRequestDeclined, noteRunRequestRefused,
 };
 // CJS compat: let require() return the default export directly
