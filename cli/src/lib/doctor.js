@@ -15,6 +15,7 @@
 import { delimiter, join } from 'node:path';
 import { DAEMON_SETUP_LINE, runsFromStableInstall } from './stable-install.js';
 import { parseVersion, versionOlderThan } from './mcp-server-version.js';
+import { signedOutHint } from './adapter-login.js';
 
 export const PASS = 'pass';
 export const FAIL = 'fail';
@@ -234,6 +235,20 @@ export const checkMacClaude = ({
   return result('macos-claude', PASS, 'Seatbelt runs, the login keychain and /usr/bin/security are present');
 };
 
+// (g) Each installed CLI adapter's own sign-in (adapter-login.js). A fail only
+// when an agent here uses the signed-out one; otherwise the line still says it,
+// since the next agent added may pick that adapter.
+export const checkAdapterLogin = async ({ agents = [], probe }) => {
+  if (!probe) return result('adapter-login', SKIP, 'no login probe on this host');
+  const signedOut = await probe();
+  if (!signedOut.length) return result('adapter-login', PASS, 'every installed claude or codex is signed in');
+  const detail = signedOut.map(signedOutHint).join('; ');
+  const used = signedOut.filter((name) => agents.some((agent) => agent?.adapter === name));
+  return used.length
+    ? result('adapter-login', FAIL, detail, `run ${used.map((name) => `\`${name}\``).join(' and ')} once to log in`)
+    : result('adapter-login', PASS, detail);
+};
+
 /** Every check, in the order the lines print. */
 export const runDoctor = async (deps) => {
   // An unreadable tokens dir is one fail line, not a doctor that prints nothing.
@@ -259,6 +274,7 @@ export const runDoctor = async (deps) => {
       : [
         ...(await checkAdapters({ agents, getAdapter: deps.getAdapter, unreadable })),
         checkMacClaude({ ...deps.macos, agents }),
+        await checkAdapterLogin({ agents, probe: deps.adapterLogin }),
       ]),
   ];
 };

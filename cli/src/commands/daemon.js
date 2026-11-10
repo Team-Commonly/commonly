@@ -25,7 +25,8 @@ import {
 } from '../lib/daemon-supervisor.js';
 import { loadAgentToken, saveAgentToken } from './agent.js';
 import { getLastTurn } from '../lib/session-store.js';
-import { getAdapter, providerKeyEnvNames } from '../lib/adapters/index.js';
+import { getAdapter, providerKeyEnvNames, seatProviderKeyEnv } from '../lib/adapters/index.js';
+import { runLoginStatus, signedOutAdapters, signedOutHint } from '../lib/adapter-login.js';
 import {
   installDaemonService,
   installSummary,
@@ -34,7 +35,6 @@ import {
   stopDaemonService,
   restartDaemonService,
   daemonLogPath,
-  missingProviderKeys,
   servicePaths,
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
@@ -397,6 +397,13 @@ Examples:
               : reject(new Error(`\`commonly ${args.join(' ')}\` exited with code ${code}`))));
           }),
         });
+        // Growth's F370 walk: setup said all was well, and the first @mention
+        // then failed with "claude exited 1: Not logged in".
+        const signedOut = await signedOutAdapters({
+          detect: (name) => getAdapter(name)?.detect(),
+          runStatus: runLoginStatus,
+        });
+        for (const name of signedOut) console.log(`Note: ${signedOutHint(name)}.`);
       } catch (error) {
         console.error(`Daemon setup failed: ${error.message}`);
         process.exitCode = 1;
@@ -652,19 +659,25 @@ Examples:
         chmodSync(logsDir, 0o700);
         const stampLog = (line) => console.log(`${new Date().toISOString()} ${line}`);
 
-        // TASK-049: fail loudly at BIND, once, naming the variable.
+        // TASK-049: fail loudly, once, naming the variable.
         //
         // A service-started daemon inherits a clean environment, so a provider
-        // key that lives only in the operator's shell is absent here; every pi
-        // seat then dies at adapter start with `COMMONLY_LITELLM_KEY is not set`
-        // and the operator sees crash loops with no cause at daemon level. One
-        // line at startup answers the question the log would otherwise take a
-        // seat autopsy to answer. Not fatal: the daemon's other seats are
-        // unaffected, and refusing to start would turn one missing key into a
-        // whole-machine outage.
-        for (const name of missingProviderKeys({ names: providerKeyEnvNames() })) {
-          stampLog(`WARNING: ${name} is not set in this environment — a seat that relies on it will fail to start (one with its own provider.keyFile won't). Export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
-        }
+        // key that lives only in the operator's shell is absent here; a pi seat
+        // then dies at adapter start with `COMMONLY_LITELLM_KEY is not set` and
+        // the operator sees crash loops with no cause at daemon level. The
+        // warning names the seat that needs the key, when that seat starts:
+        // at daemon start it went to every BYO user, who needs none of them
+        // (Growth's F370 walk). Not fatal: the daemon's other seats are
+        // unaffected.
+        const warnedKeys = new Set();
+        const warnMissingSeatKey = (agentName) => {
+          let saved = null;
+          try { saved = loadAgentToken(agentName); } catch { return; }
+          const name = seatProviderKeyEnv({ adapter: saved?.adapter, environment: saved?.environment });
+          if (!name || process.env[name] || warnedKeys.has(`${agentName}:${name}`)) return;
+          warnedKeys.add(`${agentName}:${name}`);
+          stampLog(`WARNING: [${agentName}] needs ${name}, which is not set in this environment, so it will fail to start (a provider.keyFile avoids this); export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
+        };
         // TASK-660: the daemon outlives many publishes, so say once at start-up
         // when it is stale. Not awaited: supervision never waits on the registry.
         startUpdateNotice({ installedVersion: installedCliVersion(), log: stampLog });
@@ -703,6 +716,7 @@ Examples:
           // ordinary `commonly agent run <name>` — the daemon is its
           // supervisor, never its replacement (D6).
           spawnChild: (agentName) => {
+            warnMissingSeatKey(agentName);
             const seatLog = daemonSeatLogPath(agentName);
             const out = openSync(seatLog, 'a', 0o600);
             chmodSync(seatLog, 0o600);

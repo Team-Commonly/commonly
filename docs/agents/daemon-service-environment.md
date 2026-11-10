@@ -55,8 +55,11 @@ Three surfaces now say so, in this order:
    named on stdout, and is *not* written into the file (absent is stated, never
    invented):
    `COMMONLY_LITELLM_KEY is not set in this shell, so it is NOT in the service file…`
-2. **At bind** — `commonly daemon run` logs one line naming the variable before
-   it starts supervising. Not fatal: one missing key must not become a
+2. **At seat start** — when `commonly daemon run` starts a seat whose adapter
+   reads a provider key from the environment (pi, goose) and whose provider has
+   no `keyFile`, it logs one line naming the seat and the variable, once per
+   run. A computer that runs only claude or codex seats, which sign in through
+   their own CLI, never sees it. Not fatal: one missing key must not become a
    whole-machine outage, and the daemon's other seats are unaffected.
 3. **At the adapter** — if it still reaches a spawn, the adapter throws
    (`pi adapter: COMMONLY_LITELLM_KEY is not set — the seat's environment must
