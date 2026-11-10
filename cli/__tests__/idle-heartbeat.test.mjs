@@ -25,6 +25,9 @@ describe('createIdleHeartbeat', () => {
     now += 5000;
     beat.empty();
     expect(log).toHaveBeenCalledTimes(1);
+    // The next window starts at the next poll.
+    for (let i = 0; i < 120; i += 1) { now += 5000; beat.empty(); }
+    expect(log).toHaveBeenLastCalledWith('polling ok (121 empty polls since 04:02Z)');
   });
 
   test('work restarts the count, so a busy seat prints nothing extra', () => {

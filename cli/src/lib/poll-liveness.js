@@ -66,11 +66,13 @@ export const IDLE_LINE_DEFAULT_MS = 10 * 60 * 1000;
  * printed nothing. On 11-10 six seats sat silent for 4.6 hours after a
  * `fetch failed` and were restarted as wedged, though nothing showed they had
  * stopped polling. So a seat that keeps polling and finds nothing says so on a
- * slow cadence, `polling ok (N empty polls since HH:MMZ)`, and a log with no
- * line for two cadences means the loop has stopped.
+ * slow cadence, `polling ok (N empty polls since HH:MMZ)`. While a seat is idle
+ * (no turn running, no retry wait), no line for two cadences means the loop has
+ * stopped.
  *
  * `empty()` after each poll that settled with nothing to do; `busy()` after one
- * that brought work, which starts the next count. The first line comes one
+ * that brought work or failed, which starts the next count, so a window never
+ * spans an outage. The first line comes one
  * cadence after the seat goes quiet, never on start.
  */
 export const createIdleHeartbeat = ({ everyMs = IDLE_LINE_DEFAULT_MS, log, now = Date.now }) => {
@@ -84,7 +86,7 @@ export const createIdleHeartbeat = ({ everyMs = IDLE_LINE_DEFAULT_MS, log, now =
       count += 1;
       if (at - since < everyMs) return;
       log(`polling ok (${count} empty poll${count === 1 ? '' : 's'} since ${hhmm(since)})`);
-      since = at;
+      since = null;
       count = 0;
     },
     busy: () => {

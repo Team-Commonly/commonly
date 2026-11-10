@@ -4339,7 +4339,7 @@ export const performRun = ({
       const pageEvents = carriedFresh.length ? [...carriedFresh, ...events] : events;
       const pageInboxCount = (Number.isFinite(inboxCount) ? inboxCount : events.length)
         + carriedFresh.length;
-      if (pageEvents.length) idleHeartbeat.busy(); else idleHeartbeat.empty();
+      if (pageEvents.length) idleHeartbeat.busy(); else if (running) idleHeartbeat.empty();
 
       const eventGroups = new Map();
       for (const event of pageEvents) {
@@ -4702,6 +4702,7 @@ export const performRun = ({
         // token cannot heal itself; a network failure usually can, and a seat
         // that stops on one is dead until a human notices.
         consecutivePollFailures += 1;
+        idleHeartbeat.busy();
         const retry = pollRetryPolicy({
           consecutiveFailures: consecutivePollFailures,
           intervalMs,

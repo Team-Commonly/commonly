@@ -361,11 +361,13 @@ describe('agent run: a fetch that throws never ends the polling', () => {
     expect(onPollStalled).not.toHaveBeenCalled();
   }, 15000);
 
-  test('every other call dropped while a turn runs: the loop polls again', async () => {
+  test('calls dropped around a turn: the loop polls again', async () => {
     process.env.COMMONLY_CAP_TIMEOUT_MS = '1000';
-    let down = true;
+    // The first three non-poll calls are dropped, so the turn's own calls are the
+    // ones that fail, however slow the runner.
+    let dropped = 0;
     stub = await startStub((n) => (n === 1 ? { events: [mentionFor('evt-reset-turn')], inboxCount: 1 } : EMPTY), {
-      other: () => (down ? 'reset' : null),
+      other: () => (dropped < 3 ? (dropped += 1, 'reset') : null),
     });
     const spawn = jest.fn(async () => ({ text: '' }));
     const { onPollStalled } = run({
@@ -374,9 +376,9 @@ describe('agent run: a fetch that throws never ends the polling', () => {
       pollLivenessCheckMs: 20,
     });
 
-    await waitFor(() => stub.polls.length >= 1);
-    await new Promise((resolve) => { setTimeout(resolve, 500); });
-    down = false;
+    // Whether the drops land before the spawn (the turn fails and is retried) or
+    // after it (the ack), the loop must poll again.
+    await waitFor(() => dropped >= 3, 10000);
     const before = stub.answered.length;
     await waitFor(() => stub.answered.length >= before + 2, 15000);
     expect(onPollStalled).not.toHaveBeenCalled();
@@ -384,7 +386,7 @@ describe('agent run: a fetch that throws never ends the polling', () => {
 });
 
 describe('agent run: an idle seat says it is polling', () => {
-  test('empty polls print `polling ok` once a cadence, and work prints none', async () => {
+  test('empty polls print `polling ok` once a cadence', async () => {
     stub = await startStub((n) => (n === 3 ? { events: [mentionFor('evt-idle-line')], inboxCount: 1 } : EMPTY));
     const lines = [];
     run({ idleLineMs: 150, log: (line) => lines.push(line) });
