@@ -35,6 +35,24 @@ Commonly records which screens signed-in people open and which buttons they pres
 - **Internal accounts are recorded and flagged with `isInternal`**, so reads can leave them out. These are admins plus the `USAGE_INTERNAL_USERNAMES` deploy setting, a comma list. The chart sets it from `backend.env.usageInternalUsernames`, on web and worker. In prod that value comes from its own GitHub Actions secret, `DEV_HELM_USAGE_INTERNAL`, a values file that Deploy Dev layers on; it isn't kept in `DEV_HELM_VALUES_PRIVATE`, because that whole-file secret can't be read back to edit one line. Set it as YAML, not `--set`, which splits on commas. `USAGE_INTERNAL_PREFIXES` (`backend.env.usageInternalPrefixes`, F401) is a second comma list, of username prefixes, for accounts made on the fly such as walk and seat accounts. It matches the start of a username, case-insensitively, and goes in the same secret. Both lists reach web, worker and ops-runner, where the aggregate reads run. Usernames and prefixes never go in this repo. Until they're set, only admins are flagged, and our other accounts count as users.
 - **Reads are aggregate-only, through ops-runner or admin.** No endpoint returns rows.
 
+## Reading it: the daily usage report (F403)
+
+`backend/scripts/usage-report.js` is the read Growth runs every day, on ops-runner through the prod-read wrapper:
+
+```
+growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
+```
+
+- **Window:** `DAYS` is 1–90 UTC days ending today (default 7). `FORMAT=json` prints JSON instead of the tables.
+- **What it prints:**
+  - people active per day;
+  - signed-in events per day by event, screen and step (`start=byo`), each with event and people counts;
+  - logged-out hits per day by page, ref and value from `ui_daily_counts`.
+- **Our own accounts are left out at read time:** the stored `isInternal` stamp, admins, `USAGE_INTERNAL_USERNAMES` and `USAGE_INTERNAL_PREFIXES`, read from ops-runner's env. A row recorded before a name was listed still drops. The header says how many events were left out.
+- **A prefix shorter than 4 characters is ignored**, and the header says so, because a slip like `a` would drop real people from every read.
+- **Counts only:** nothing it returns or prints carries an id, a username, an email or typed text. A test checks this.
+- **It finds our own accounts in `users` directly**: admins, plus the listed names and prefixes, matched case-insensitively. The read is bounded by how many accounts are ours, not by how many people used the product. Their ids are left out in both forms, ObjectId and string.
+
 ## The client
 
 - **Events wait in memory** until `GET /api/users/me/usage-events` answers. If the switch is off, or the browser sends DNT or GPC, they're dropped.
