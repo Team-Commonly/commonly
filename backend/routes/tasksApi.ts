@@ -621,9 +621,11 @@ type ClaimHolder = { username: string; displayName: string; isAgent?: boolean; o
 const claimHolder = async (claimedBy: string): Promise<ClaimHolder> => {
   const fallback: ClaimHolder = { username: claimedBy, displayName: claimedBy };
   if (!/^[a-f\d]{24}$/i.test(claimedBy)) return fallback;
-  let user: { username?: string; isBot?: boolean; botMetadata?: { displayName?: string; ownerUserId?: string } } | null;
+  let user: {
+    username?: string; displayName?: string; isBot?: boolean; botMetadata?: { displayName?: string; ownerUserId?: string };
+  } | null;
   try {
-    user = await User.findById(claimedBy).select('username isBot botMetadata').lean() as typeof user;
+    user = await User.findById(claimedBy).select('username displayName isBot botMetadata').lean() as typeof user;
   } catch {
     // Cosmetic, like claimantLabel: a refusal still goes out without it.
     return fallback;
@@ -631,7 +633,8 @@ const claimHolder = async (claimedBy: string): Promise<ClaimHolder> => {
   if (!user?.username) return fallback;
   const holder: ClaimHolder = {
     username: user.username,
-    displayName: (user.isBot && user.botMetadata?.displayName) || user.username,
+    // An agent's shown name lives in botMetadata; a person's is User.displayName.
+    displayName: (user.isBot ? user.botMetadata?.displayName : user.displayName) || user.username,
     isAgent: Boolean(user.isBot),
   };
   const ownerId = user.isBot ? user.botMetadata?.ownerUserId : undefined;

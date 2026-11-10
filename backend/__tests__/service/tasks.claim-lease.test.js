@@ -223,6 +223,15 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect(res.body.holder).toEqual({ username: owner.username, displayName: owner.username, isAgent: false });
   });
 
+  test("a person holding the task is shown by their display name, not their username (F374)", async () => {
+    await User.updateOne({ _id: owner._id }, { $set: { displayName: 'Lease Owner' } });
+    await seedTask();
+    await claim(ownerToken);
+    const res = await claim(rivalToken);
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual({ username: owner.username, displayName: 'Lease Owner', isAgent: false });
+  });
+
   test('a holder that is not a user id is passed through as its own name (F374)', async () => {
     await seedTask({
       status: 'claimed', claimedBy: 'ghost-agent', claimedAt: new Date(), claimExpiresAt: new Date(Date.now() + LEASE_MS),
