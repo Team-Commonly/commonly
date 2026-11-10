@@ -68,6 +68,8 @@ export const isCoalescibleMention = (type: unknown, payload: Payload | undefined
   && !payload?.welcomeWake
   && !payload?.assignedTaskWake
   && !payload?.boardWake
+  // A hand-off's frame is its point; joined, only its words would survive.
+  && !payload?.handoffFrom
   && payload?._contextOverflowRetryCount === undefined
   && payload?.coalesced === undefined
 );
@@ -86,6 +88,7 @@ export const samePlaceFilter = (payload: Payload): Record<string, unknown> => {
     'payload.welcomeWake': null,
     'payload.assignedTaskWake': null,
     'payload.boardWake': null,
+    'payload.handoffFrom': null,
     'payload.threadRootId': typeof root === 'string' || typeof root === 'number' ? root : null,
   };
 };

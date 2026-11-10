@@ -21,7 +21,7 @@ type NeverConnectedAgent = {
  * this pod, the one derivation the notices below and the wake fan-out
  * (agentMentionService) all read. Null when either row is missing.
  */
-async function agentReach({
+export async function agentReach({
   podId, agentName, instanceId, now = new Date(),
 }: {
   podId: string; agentName: string; instanceId: string; now?: Date;

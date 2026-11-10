@@ -182,8 +182,9 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(calls('chat.mention')).toHaveLength(0);
     expect(calls('message.posted').map((c) => c.agentName)).toEqual(['seat-a']);
     expect(res.woken).toEqual(['seat-a']);
-    // With nothing adjacency could reach, it reads nothing.
-    expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
+    // Adjacency reads nothing here; the one read is F390's answered-question
+    // check, and the previous message asked nothing.
+    expect(PGMessage.findPreviousTopLevel).toHaveBeenCalledTimes(1);
   });
 
   // D8.1 (#2375) gives every agent a person brings in this shape by default, so
@@ -196,7 +197,7 @@ describe('adjacency is addressing in a one-person room (ADR-018 D6.4)', () => {
     expect(calls('chat.mention')).toHaveLength(0);
     expect(calls('message.posted').map((c) => c.agentName)).toEqual(['seat-a']);
     expect(res.woken).toEqual(['seat-a']);
-    expect(PGMessage.findPreviousTopLevel).not.toHaveBeenCalled();
+    expect(PGMessage.findPreviousTopLevel).toHaveBeenCalledTimes(1);
   });
 
   test.each([

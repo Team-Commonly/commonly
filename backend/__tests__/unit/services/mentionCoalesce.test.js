@@ -67,6 +67,11 @@ describe('isCoalescibleMention', () => {
     expect(isCoalescibleMention('chat.mention', mention({ threadRootId: null }))).toBe(true);
   });
 
+  // F390: a hand-off's frame is its point, and a joined row keeps only words.
+  test('a host hand-off never coalesces', () => {
+    expect(isCoalescibleMention('chat.mention', mention({ handoffFrom: 'nova:default' }))).toBe(false);
+  });
+
   // The DM path and agent posts hand over the id as it came off the session.
   test('an ObjectId userId is one id, not an operator object', () => {
     const userId = new (require('mongoose').Types.ObjectId)(HUMAN);

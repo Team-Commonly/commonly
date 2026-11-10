@@ -819,6 +819,42 @@ describe('a hosted turn the guard stops, or that fails', () => {
       });
     });
 
+    describe('F390: the person still gets an answer, from the pod\'s host', () => {
+      const askFallback = require('../../../services/askFallbackService');
+      let handOff;
+      beforeEach(() => { handOff = jest.spyOn(askFallback, 'handOffToHost').mockResolvedValue('scout:u-1'); });
+      afterEach(() => { handOff.mockRestore(); });
+
+      test('a person\'s ask past the agent\'s daily line is handed off as out of turns', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(100000);
+        await runAgent(nativeInstall(), inThread);
+        expect(handOff).toHaveBeenCalledTimes(1);
+        expect(handOff.mock.calls[0][0]).toMatchObject({
+          podId: POD, from: { agentName: 'guide', instanceId: 'default' }, reason: 'out-of-turns', label: 'Guide',
+        });
+        expect(handOff.mock.calls[0][0].payload.threadRootId).toBe(4242);
+      });
+
+      test('an ambient message that answers the agent\'s question counts as addressed', () => {
+        const { wasDirectlyAddressed } = require('../../../services/nativeRuntimeService');
+        expect(wasDirectlyAddressed({ type: 'message.posted', payload: { answersYourQuestion: true } })).toBe(true);
+        expect(wasDirectlyAddressed({ type: 'message.posted', payload: {} })).toBe(false);
+      });
+
+      test('an agent\'s @ past the line is not handed off', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(100000);
+        agentsAsk();
+        await runAgent(nativeInstall(), mention);
+        expect(handOff).not.toHaveBeenCalled();
+      });
+
+      test('the owner\'s ceiling is not handed off: it stops the host too', async () => {
+        AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
+        await runAgent(nativeInstall(), mention);
+        expect(handOff).not.toHaveBeenCalled();
+      });
+    });
+
     test('its owner\'s day being used up reads as no turns left, with no name in it', async () => {
       AgentRun.countDocuments.mockResolvedValueOnce(0).mockResolvedValueOnce(100000);
       const result = await runAgent(nativeInstall(), mention);

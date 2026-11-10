@@ -46,6 +46,8 @@ const { noteStoppedMention, noteUnreachableAgentDm } = require('./stoppedMention
   }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const { cannotRunReason, handOffToHost, HOST_AGENT_NAME } = require('./askFallbackService') as typeof import('./askFallbackService');
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
   maybeFireWelcomeWake: (opts: Record<string, unknown>) => Promise<unknown>;
 };
@@ -1429,6 +1431,76 @@ const resolveAdjacentReplyTarget = async ({
   };
 };
 
+// F390 part B: a person answering the question an agent just asked them
+// addresses that agent, even an agent opted into wake-on-message, which the
+// adjacency rule above leaves to its ambient frame. Measured 11-09: Scout said
+// "paste the slide text and I'll re-score it", the person pasted it unaddressed,
+// and Scout read the ambient frame and returned NO_REPLY.
+//
+// Narrower than adjacency, so it holds in a room with several people: the
+// previous top-level message must be the agent's, ask a question, and have been
+// said TO this person, meaning the top-level message before it is this person's
+// or it names their @handle. A different person's message, or one after a later
+// message from anyone, is not an answer. A reply in the agent's thread is
+// already addressed (thread authors, messageDeliveryModeService).
+const ANSWERS_YOUR_QUESTION_FRAME = '[This message answers the question YOU just asked this person — '
+  + 'you are addressed even though nobody typed your @name. Answer it; return NO_REPLY as your ENTIRE '
+  + 'reply only if it plainly needs nothing from you.]';
+
+const outsideCode = (content: unknown): string => String(content || '')
+  .replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
+
+// A question mark outside code is a question; one inside backticks is not.
+export const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
+
+// An @handle outside code, at a word start: "mail me@x.com" names nobody.
+// A profile link (medium.com/@user) names nobody either.
+const namesAHandle = (content: unknown): boolean => /(^|[^\w.@/])@[a-z0-9][\w.-]*/i.test(outsideCode(content));
+
+export const resolveQuestionAnswerTarget = async ({
+  podId, message, userId, handle, targets, botUserIds,
+}: {
+  podId: string;
+  message: EnqueueMentionsOptions['message'];
+  userId: string;
+  handle: string | null;
+  targets: Array<Record<string, unknown>>;
+  // Lazy: the bot ids are read only once the previous message is a question.
+  botUserIds: () => Promise<Map<string, string>>;
+}): Promise<string | null> => {
+  const messageId = message?._id || message?.id;
+  if (!messageId || targets.length === 0) return null;
+  const threaded = (message as { thread_root_id?: unknown })?.thread_root_id
+    || (message as { threadRootId?: unknown })?.threadRootId
+    || message?.source === 'thread';
+  if (threaded) return null;
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const PGMessage = require('../models/pg/Message') as {
+    findPreviousTopLevel: (podId: string, beforeId: string, since: Date) => Promise<{
+      id?: unknown; user_id?: unknown; created_at?: unknown; message_type?: unknown; content?: unknown;
+    } | null>;
+  };
+  const sentAt = new Date((message?.createdAt || message?.created_at || Date.now()) as string | number | Date).getTime();
+  const question = await PGMessage.findPreviousTopLevel(
+    String(podId), String(messageId), new Date(sentAt - ADJACENT_REPLY_WINDOW_MS),
+  );
+  if (!question || question.message_type === 'system') return null;
+  const askerId = normalizeUserId(question.user_id);
+  if (!askerId || askerId === String(userId) || !asksAQuestion(question.content)) return null;
+  const ids = await botUserIds();
+  const target = targets.find((inst) => ids.get(installKey(inst)) === askerId);
+  if (!target) return null;
+  const named = handle ? new RegExp(`@${escapeRegExp(handle)}(?![\\w.-])`, 'i').test(String(question.content || '')) : false;
+  if (!named) {
+    const askedAt = new Date(question.created_at as string | number | Date).getTime();
+    const before = await PGMessage.findPreviousTopLevel(
+      String(podId), String(question.id), new Date(askedAt - ADJACENT_REPLY_WINDOW_MS),
+    );
+    if (!before || normalizeUserId(before.user_id) !== String(userId)) return null;
+  }
+  return installKey(target);
+};
+
 // ADR-018 D8.1 (2026-10-21): an install whose ambient wake was turned on by default (an
 // agent a person brings into a pod, services/wakeDefaultService.ts) wakes
 // only on a HUMAN's message. Agent-authored messages never wake it, so
@@ -1649,7 +1721,7 @@ const followMentionedThreadUsers = async (
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
-  replyToMessageId = null, addressedElsewhere = false,
+  replyToMessageId = null, addressedElsewhere = false, answerExcludeNames,
 }: {
   podId: string;
   message: EnqueueMentionsOptions['message'];
@@ -1667,6 +1739,8 @@ const enqueueWakeOnMessage = async ({
   // the mention; for everyone else the message was addressed elsewhere, so it
   // is a digest, not an ambient turn.
   addressedElsewhere?: boolean;
+  // F390: agents part B leaves out (the greeter a welcome wake just reached).
+  answerExcludeNames?: string[];
 }): Promise<string[]> => {
   const woken: string[] = [];
   const senderKey = sender?.isBot
@@ -1742,6 +1816,29 @@ const enqueueWakeOnMessage = async ({
     // installed seat; explicit mentions have already taken their own path.
     addressedTargets = new Set();
     cachedBotUserIds = cachedBotUserIds ?? new Map<string, string>();
+  }
+  // F390 part B, for a person's unaddressed message only: an @ of anyone,
+  // person or agent, or a reply edge already says who it is for.
+  let answersQuestionKey: string | null = null;
+  if (sender?.isBot === false && !threadRootId && !addressedElsewhere && !replyToMessageId
+    && !namesAHandle(rawContent)) {
+    try {
+      answersQuestionKey = await resolveQuestionAnswerTarget({
+        podId,
+        message,
+        userId: String(userId),
+        handle: username || null,
+        // A greeter the welcome wake just reached is answering this already.
+        targets: targets.filter((inst) => !answerExcludeNames?.includes(String(inst.agentName || '').toLowerCase())),
+        botUserIds: async () => {
+          if (!cachedBotUserIds?.size) cachedBotUserIds = await resolveBotUserIds(targets);
+          return cachedBotUserIds ?? new Map<string, string>();
+        },
+      });
+      if (answersQuestionKey) addressedTargets.add(answersQuestionKey);
+    } catch (error) {
+      console.warn('[message-delivery] question-answer lookup failed:', (error as Error).message);
+    }
   }
   if (threadRootId) {
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -1854,7 +1951,8 @@ const enqueueWakeOnMessage = async ({
           ...(threadRootId ? { threadRootId } : {}),
           // Inline cue, not only metadata — the flag below is for the
           // wrapper's claim decision; the model reads the content.
-          content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}` : built,
+          content: repliesToYou ? `${REPLIES_TO_YOU_FRAME}\n${built}`
+            : (answersQuestionKey === key ? `${ANSWERS_YOUR_QUESTION_FRAME}\n${built}` : built),
           // F109: the author's words with no frames (digest content is a
           // whitespace-collapsed 500-char preview; this is the full text).
           rawContent,
@@ -1870,6 +1968,7 @@ const enqueueWakeOnMessage = async ({
           // non-human/unknown for old events rather than widening a bot loop.
           ...senderHumanStamp(sender),
           ...(repliesToYou ? { repliesToYourMessage: true } : {}),
+          ...(answersQuestionKey === key ? { answersYourQuestion: true } : {}),
         },
       });
       if (deliveryMode === 'wake') woken.push(agentName);
@@ -2125,6 +2224,7 @@ const enqueueMentions = async ({
     try {
       woken = await enqueueWakeOnMessage({
         podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: adjacentKeys, authorFrame, replyToMessageId,
+        answerExcludeNames: welcomeWoke,
       });
     } catch (error) {
       // The message is already persisted — a wake failure must never turn a
@@ -2670,6 +2770,53 @@ const enqueueMentions = async ({
   // rather than incidental: an addressed message must always deliver its
   // chat.mention, while the ambient companion has at most the claim it has on
   // an unrouted message, and none when a person @mentioned someone else.
+  // F390 part A: a person addressed an agent that can't take the turn (never
+  // connected, offline, stopped). The room says so (the notices below), and the
+  // pod's host now gets the ask as addressed to it, once per message. The host
+  // then sits out the ambient fan-out, so it hears the message once.
+  // A mention held for its owner (F371) will be answered once approved, so it
+  // counts as an agent that can answer.
+  const heldForOwner = skipped.some((entry) => entry.endsWith(':held-for-owner'));
+  if (sender?.isBot === false && deliveredAgentMentionTargets.size > 0 && !heldForOwner) {
+    const mentioned = [...deliveredAgentMentionTargets.values()];
+    if (!mentioned.some((target) => target.agentName.toLowerCase() === HOST_AGENT_NAME)) {
+      try {
+        // Only when nobody the person named can answer: one live agent is an answer.
+        const verdicts = await Promise.all(mentioned.map((target) => cannotRunReason({
+          podId: String(podId), agentName: target.agentName, instanceId: target.instanceId || 'default',
+        })));
+        const first = verdicts[0];
+        if (first && verdicts.every(Boolean)) {
+          const target = mentioned[0];
+          const hostKey = await handOffToHost({
+            podId: String(podId),
+            from: target,
+            label: first.label,
+            reason: first.reason,
+            sender,
+            excludeKeys: enqueuedIdentityKeys,
+            payload: {
+              messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
+              rawContent,
+              userId,
+              username,
+              ...senderStamp,
+              source,
+              messageType: message?.messageType || message?.message_type || 'text',
+              createdAt: message?.createdAt || message?.created_at || new Date(),
+              thread: message?.thread || null,
+              ...(threadRootId ? { threadRootId } : {}),
+            },
+          });
+          if (hostKey) enqueuedIdentityKeys.add(hostKey);
+        }
+      } catch (error) {
+        // The mention itself is already queued; a failed hand-off leaves today's delivery.
+        console.warn('[ask-fallback] hand-off failed:', (error as Error).message);
+      }
+    }
+  }
+
   let woken: string[] = [];
   if (!onlyExplicitMentions) {
     try {
