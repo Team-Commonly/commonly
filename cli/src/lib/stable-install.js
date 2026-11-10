@@ -123,6 +123,11 @@ export const orchestrateDaemonSetup = async ({
   // the instance. Setup then skips login and register, so re-running it is the
   // way to update the CLI and restart the daemon.
   alreadyRegistered = async () => false,
+  // Resolves a refusal when this computer account already runs another HOME's
+  // daemon (daemon-service.js foreignServiceRefusal). Checked before login, so
+  // a refused setup registers nothing. --replace skips it and is forwarded.
+  foreignDaemon = async () => null,
+  replace = false,
   platform = process.platform,
   nodeVersion = process.version,
   ensureStable = ensureStableCliInstall,
@@ -132,6 +137,12 @@ export const orchestrateDaemonSetup = async ({
   const tooOld = nodeTooOld(nodeVersion);
   if (tooOld) throw new Error(tooOld);
   if (typeof runCli !== 'function') throw new Error('orchestrateDaemonSetup needs a runCli function');
+  // --replace can't take over a Linux daemon (daemon-service.js), so the
+  // check runs there either way.
+  if (!replace || platform === 'linux') {
+    const refusal = await foreignDaemon();
+    if (refusal) throw new Error(refusal);
+  }
   const { entry } = await ensureStable({ version, home, log });
   // One spelling for both steps: login saves the URL without trailing slashes,
   // so register must look it up the same way or it can't find the token.
@@ -148,7 +159,7 @@ export const orchestrateDaemonSetup = async ({
   }
   // --unsandboxed is forwarded to the install step. Without it, native Windows
   // clears the opt-in and the daemon's seats are refused at run time.
-  const installArgs = ['daemon', 'install', ...(unsandboxed ? ['--unsandboxed'] : [])];
+  const installArgs = ['daemon', 'install', ...(unsandboxed ? ['--unsandboxed'] : []), ...(replace ? ['--replace'] : [])];
   try {
     await runCli(entry, installArgs);
   } catch (error) {

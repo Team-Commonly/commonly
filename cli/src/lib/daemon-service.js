@@ -12,11 +12,11 @@
  */
 
 import { randomBytes } from 'crypto';
-import { existsSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir, userInfo } from 'os';
-import { join, dirname, resolve } from 'path';
+import { basename, join, dirname, resolve } from 'path';
 import {
-  installWindowsService, uninstallWindowsService, windowsServiceAction, windowsServicePaths,
+  WINDOWS_TASK_NAME, installWindowsService, uninstallWindowsService, windowsServiceAction, windowsServicePaths,
 } from './daemon-service-windows.js';
 
 export const LAUNCHD_LABEL = 'me.commonly.daemon';
@@ -249,6 +249,78 @@ const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
 // The line the install command ends with. "Survives reboots" is said only when
 // the service starts at boot: a LaunchAgent, like a systemd user unit without
 // lingering, starts at login.
+// A launchd label, a systemd user unit and a scheduled-task name are one per OS
+// user, not one per HOME. Without this check a second Commonly account's
+// install on the same computer account unloaded the first account's running
+// daemon and loaded its own under the same name, and nothing said so (Growth's
+// F370 walk). So install first asks the service manager which file the live
+// service came from, and goes ahead only when it is this HOME's own file.
+export const serviceOwnerQuery = (platform = process.platform, uid = process.getuid?.()) => {
+  if (platform === 'darwin') return ['launchctl', 'print', `gui/${uid}/${LAUNCHD_LABEL}`];
+  if (platform === 'win32') return ['schtasks', '/Query', '/TN', WINDOWS_TASK_NAME, '/XML'];
+  return ['systemctl', '--user', 'show', SYSTEMD_UNIT, '-p', 'FragmentPath', '--value'];
+};
+
+// schtasks may answer in UTF-16 (BOM or NUL bytes) or in the console's code
+// page; anything that did not decode cleanly is treated as no answer, so a
+// non-ASCII user name never turns into a false "another account".
+export const decodeCmdOutput = (buffer) => {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(String(buffer ?? ''));
+  const utf16 = (bytes[0] === 0xff && bytes[1] === 0xfe) || bytes.subarray(0, 64).includes(0);
+  return bytes.toString(utf16 ? 'utf16le' : 'utf8').replace(/^\uFEFF/, '');
+};
+
+const xmlUnescape = (value) => value
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&');
+
+// The path in the query's answer, or null when the answer names none.
+export const loadedServiceFile = (kind, stdout = '') => {
+  const text = String(stdout).replace(/\0/g, '');
+  let found;
+  if (kind === 'launchd') found = /^\s*path = (.+)$/m.exec(text)?.[1].trim();
+  // schtasks prints the definition it holds, whose action runs this HOME's launcher.
+  else if (kind === 'schtasks') found = /-File (?:"|&quot;)(.+?)(?:"|&quot;)/.exec(text)?.[1];
+  else found = text.trim();
+  if (!found) return null;
+  if (kind === 'schtasks') found = xmlUnescape(found);
+  return found.includes('\uFFFD') ? null : found;
+};
+
+// The same file under another spelling (a symlinked HOME) is not foreign.
+// The file itself may not exist yet, so the nearest folder that does is resolved.
+const canonicalPath = (p, platform) => {
+  let dir = resolve(p);
+  let rest = '';
+  let out = null;
+  while (out === null) {
+    try {
+      out = join(realpathSync(dir), rest);
+    } catch {
+      const up = dirname(dir);
+      if (up === dir) out = resolve(p);
+      else { rest = rest ? join(basename(dir), rest) : basename(dir); dir = up; }
+    }
+  }
+  return platform === 'win32' ? out.toLowerCase() : out;
+};
+
+export const foreignServiceRefusal = ({ target, loadedFile, platform = process.platform }) => {
+  if (!loadedFile) return null;
+  const own = target.kind === 'schtasks' ? target.launcher : target.file;
+  if (canonicalPath(loadedFile, platform) === canonicalPath(own, platform)) return null;
+  const head = `This computer already runs a Commonly daemon for another account (its service file is ${loadedFile}), `
+    + 'and installing here would stop it. To see it, run `commonly daemon status` as that account. ';
+  // The systemd user manager reads units only from its own account's folder,
+  // so a unit written under another HOME is never loaded: --replace can't help,
+  // and neither would uninstalling the other one first.
+  if (target.kind === 'systemd') {
+    return `${head}On Linux one computer account runs one Commonly daemon, from its own home folder. `
+      + 'To run another, sign in to this computer as a different user and set it up there.';
+  }
+  return `${head}To replace it with this one on purpose, run this command again with --replace.`;
+};
+
 export const installSummary = ({ startsAtBoot }) => (startsAtBoot
   ? 'The daemon now starts at boot and is kept alive, so it survives reboots. Uninstall with: commonly daemon uninstall'
   : 'The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
@@ -277,8 +349,20 @@ export const installDaemonService = async ({
   lookupUsername = () => userInfo().username,
   log = () => {},
   warn = log,
+  // argv => stdout; rejects when the service manager has no such service.
+  // Absent, the owner check is skipped (callers that only test the writers).
+  readCmd,
+  uid = process.getuid?.(),
+  // Take over a daemon another HOME installed, on purpose. Not on Linux: the
+  // user manager loads units only from its own home, so the check still runs.
+  replace = false,
 }) => {
   const target = servicePaths(platform, home);
+  if (readCmd && (!replace || target.kind === 'systemd')) {
+    const loadedFile = loadedServiceFile(target.kind, await readCmd(serviceOwnerQuery(platform, uid)).catch(() => ''));
+    const refusal = foreignServiceRefusal({ target, loadedFile, platform });
+    if (refusal) throw new Error(refusal);
+  }
   mkdirp(dirname(target.file));
   mkdirp(dirname(daemonLogPath(home)));
   chmod(dirname(daemonLogPath(home)), 0o700);
