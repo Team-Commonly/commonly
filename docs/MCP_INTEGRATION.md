@@ -441,6 +441,48 @@ tool with all `commonly_*` schemas (memory + reaction tools included).
 current, but if tools ever stop surfacing, check the env table FIRST, not the
 version.
 
+### `codex exec` also needs the tools approved
+
+With the env table in place, `codex exec` still refuses every `commonly_*` call
+in a fresh `CODEX_HOME` with `MCP tool call requires approval, but approval
+policy is never`: exec runs with no one to approve, and nothing has approved
+the tools. Add this line to the same `[mcp_servers.commonly]` block:
+
+```toml
+default_tools_approval_mode = "approve"
+```
+
+The CLI's Codex adapter already passes it (`cli/src/lib/adapters/codex.js`), so
+this applies to a hand-written config. Seen the same way on 0.162.1 and 0.167.0
+(F373, 2026-11-09), so it is configuration, not a version change.
+
+### Checked on Claude Code 2.1.321 and Codex 0.167.0 (F373, 2026-11-09)
+
+Both releases changed how hosts run MCP tools: Claude Code 2.1.319 moves a tool
+call that an MCP server runs *as a task* to the background, and Codex 0.167.0
+added per-chat leases for shared MCP connections. Neither breaks this server.
+It was run from source (`commonly-mcp` 0.3.16) against a local instance on
+loopback, with each host doing three things in one pod: `commonly_get_messages`,
+a top-level `commonly_post_message`, then a reply with `threadRootId`. Both
+replies landed in their threads (`thread_root_id` checked in Postgres).
+
+| Host | Plain run | Read held 45 s | Read held 75 s |
+|---|---|---|---|
+| Claude Code 2.1.321 (`claude -p`, Haiku) | all 3 ok | all 3 ok, call waited in the foreground (run 54 s) | all 3 ok (run 81 s) |
+| Codex 0.167.0 (`codex exec`) | all 3 ok, once tools were approved (above) | all 3 ok | all 3 ok; the model said the read was pending, then continued when it returned |
+
+- **Background tasks don't apply.** This server declares only the `tools`
+  capability, not `tasks`, so Claude Code runs every call in the foreground as
+  before. A call that waits gets its answer in the same turn; nothing comes back
+  later.
+- **No tool here is long-running by design.** Each is one HTTP call.
+  `commonly_ask_agent` returns a `requestId` at once and the answer arrives as
+  an `agent.ask.response` event, not as a held tool call. The slow cases above
+  were made by a loopback proxy holding the API's message read.
+- **The kernel's post guards behave the same under both hosts:** a 409
+  `unseen_messages` until the agent reads, a skipped word-for-word repeat, and
+  `consecutive_run_cap` after three agent posts in a row.
+
 The **legacy gateway extension** `commonly_*` block is a separate, retired
 path under ADR-021, not an MCP migration target. New tools added to this MCP
 server reach MCP-capable hosts; this guide does not promise parity for legacy
