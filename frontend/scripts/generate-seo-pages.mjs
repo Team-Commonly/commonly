@@ -113,6 +113,37 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
+const ogImage = `${siteUrl}/og-card.png?v=6`;
+
+// Search results cut a title near 60 characters and a description near 160
+// (F397). Fitted once here, so a long guide title can't ship.
+const TITLE_LIMIT = 60;
+const DESCRIPTION_LIMIT = 160;
+const siteSuffix = ' | Commonly AI';
+const charCount = (text) => [...text].length;
+
+export const fitTitle = (title) => {
+  const hasSuffix = title.endsWith(siteSuffix);
+  const base = hasSuffix ? title.slice(0, -siteSuffix.length) : title;
+  const withSuffix = (text) => (hasSuffix && charCount(text + siteSuffix) <= TITLE_LIMIT ? text + siteSuffix : text);
+  if (charCount(base) <= TITLE_LIMIT) return withSuffix(base);
+  // "Head: subtitle" keeps its head, the part people search for, and
+  // "Question? Subtitle" keeps the question.
+  const split = base.match(/^(.+?)([:?])\s/);
+  const head = split ? `${split[1]}${split[2] === '?' ? '?' : ''}` : base;
+  if (head !== base && charCount(head) <= TITLE_LIMIT) return withSuffix(head);
+  throw new Error(`Title over ${TITLE_LIMIT} characters with no subtitle to drop: "${title}". Give the page a shorter titleTag.`);
+};
+
+export const fitDescription = (description) => {
+  const text = String(description || '').replace(/\s+/g, ' ').trim();
+  if (charCount(text) <= DESCRIPTION_LIMIT) return text;
+  const room = [...text].slice(0, DESCRIPTION_LIMIT).join('');
+  const sentenceEnd = Math.max(room.lastIndexOf('. '), room.lastIndexOf('? '), room.lastIndexOf('! '));
+  if (sentenceEnd >= 80) return room.slice(0, sentenceEnd + 1);
+  const words = [...text].slice(0, DESCRIPTION_LIMIT - 1).join('');
+  return `${words.slice(0, words.lastIndexOf(' ')).replace(/[\s,;:]+$/, '')}…`;
+};
 
 const formatDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -476,7 +507,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta property="og:image" content="${ogImage}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -484,7 +515,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta name="twitter:image" content="${ogImage}" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -809,7 +840,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    title: 'Commonly: Claude Code, Codex and your team in one pod',
     description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
   };
@@ -867,7 +898,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
-      title: `${useCase.title} | Commonly AI`,
+      title: `${useCase.titleTag || useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase, siteLinks),
       schema: webPage(useCase.title, useCase.summary, path),
@@ -900,6 +931,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
           author,
           datePublished: provenance.datePublished,
           dateModified: provenance.dateModified,
+          image: ogImage,
           publisher: { '@id': organizationId },
         }, {
           '@type': 'WebPage',
@@ -945,7 +977,24 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     schema: webPage(title, description, path),
   })) : [];
 
-  return pages.concat(comparePages, useCasePages, [useCasesIndexPage], [guidesIndexPage], guidePages, legalPages);
+  // Home > (Guides >) page, for every page but home (F397). Only /guides/ is
+  // a section index every page under it can point to.
+  const crumb = (name, path, position) => ({ '@type': 'ListItem', position, name, item: pageUrl(path) });
+  const withBreadcrumbs = (page) => {
+    if (page.path === '/') return page;
+    const trail = [['Home', '/']];
+    if (page.path.startsWith(guidesIndexPath) && page.path !== guidesIndexPath) trail.push(['Guides', guidesIndexPath]);
+    trail.push([page.title.replace(siteSuffix, ''), page.path]);
+    const breadcrumbs = {
+      '@type': 'BreadcrumbList',
+      '@id': `${pageUrl(page.path)}#breadcrumb`,
+      itemListElement: trail.map(([name, path], index) => crumb(name, path, index + 1)),
+    };
+    return { ...page, schema: { ...page.schema, '@graph': [...page.schema['@graph'], breadcrumbs] } };
+  };
+
+  return pages.concat(comparePages, useCasePages, [useCasesIndexPage], [guidesIndexPage], guidePages, legalPages)
+    .map((page) => withBreadcrumbs({ ...page, title: fitTitle(page.title), description: fitDescription(page.description) }));
 };
 
 // The SPA fallback (nginx.conf). It used to be index.html, which the build
