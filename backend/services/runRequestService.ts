@@ -45,12 +45,6 @@ export const asksBeforeOthers = (install: InstallRow): boolean => configOf(insta
 // (agentMentionService.autoJoinAgentToPod). That person isn't its owner.
 export const joinedByMention = (install: InstallRow): boolean => configOf(install).autoJoinSource === 'mention-resolution';
 
-/**
- * The person an install answers to: its installer when that's a human, else
- * the bot's owner. `installedBy` holds the bot itself on some install paths
- * (agentMentionService's note on it), so it is checked, never trusted, and on
- * a row a mention pulled in it names whoever mentioned the agent, so it is skipped.
- */
 /** The person who owns the agent itself: its bot row's `ownerUserId`. */
 export const botOwnerOf = async (agentName: unknown, instanceId: unknown): Promise<string | null> => {
   const agent = await User.findOne({
@@ -61,6 +55,12 @@ export const botOwnerOf = async (agentName: unknown, instanceId: unknown): Promi
   return agent?.botMetadata?.ownerUserId ? String(agent.botMetadata.ownerUserId) : null;
 };
 
+/**
+ * The person an install answers to: its installer when that's a human, else
+ * the bot's owner. `installedBy` holds the bot itself on some install paths
+ * (agentMentionService's note on it), so it is checked, never trusted, and on
+ * a row a mention pulled in it names whoever mentioned the agent, so it is skipped.
+ */
 export const ownerOfInstall = async (install: InstallRow): Promise<string | null> => {
   if (install.installedBy && !joinedByMention(install)) {
     const installer = await User.findById(install.installedBy).select('isBot').lean() as { isBot?: boolean } | null;

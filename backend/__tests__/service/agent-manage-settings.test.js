@@ -464,6 +464,31 @@ describe('per-installation agent settings', () => {
     expect((await saved()).askBeforeOthers).toEqual({ enabled: true });
     expect((await send({ askBeforeOthers: false }, owner)).status).toBe(200);
     expect((await saved()).askBeforeOthers).toEqual({ enabled: false });
+
+    // Outside the pod, the owner neither sees the row nor changes it.
+    await Pod.updateOne({ _id: podB._id }, { $pull: { members: owner._id } });
+    try {
+      expect(await listing(owner)).toBeUndefined();
+      expect((await send({ askBeforeOthers: true }, owner)).status).toBe(403);
+    } finally {
+      await Pod.updateOne({ _id: podB._id }, { $addToSet: { members: owner._id } });
+    }
+  });
+
+  it("F371: a mention row never supplies the owner's agent-level controls", async () => {
+    await User.create({
+      username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', ownerUserId: String(owner._id) },
+    });
+    // The owner's own row is gone; what's left is the one a mention pulled in.
+    await AgentInstallation.deleteOne({ podId: podA._id, agentName: 'settings-agent' });
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'settings-agent' }, {
+      $set: { 'config.autoJoinSource': 'mention-resolution' },
+    });
+    const body = (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`)).body;
+    expect(body.installations.map((row) => row.podId)).toEqual([String(podB._id)]);
+    expect(body.writablePodId ?? null).toBeNull();
   });
 
   it('lets an instance admin manage an installation they did not create', async () => {

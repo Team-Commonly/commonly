@@ -141,8 +141,11 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     const visible = manageable.filter((entry: any) => names.has(String(entry.podId)));
     const listed = visible.filter((entry: any) => !othersRooms.has(String(entry.podId)));
     const otherDirectRoomCount = visible.length - listed.length;
-    const fallback = listed.find((entry: any) => entry.status === 'active') || listed[0]
-      || visible.find((entry: any) => entry.status === 'active') || visible[0];
+    // The agent-level controls (quota, seat, machine) read the row's installer,
+    // so a mention row, whose installer is someone else, never supplies them.
+    const ownRows = (rows: any[]) => rows.filter((entry: any) => canManage(entry, userId, isAdmin));
+    const fallback = ownRows(listed).find((entry: any) => entry.status === 'active') || ownRows(listed)[0]
+      || ownRows(visible).find((entry: any) => entry.status === 'active') || ownRows(visible)[0];
     const quotaOwner = fallback?.installedBy || userId;
     // The daemon runs the oldest active declaration, not whichever pod this
     // page happened to load first. Use its projection for both the displayed
@@ -268,7 +271,12 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
     // The agent's owner may manage its row too: a mention auto-join records
     // whoever mentioned it as installedBy (runRequestService.ownerOfInstall).
     const owner = await ownerOfInstall(installation).catch(() => null);
-    const isOwner = !!owner && owner === String(userId);
+    let isOwner = !!owner && owner === String(userId);
+    // As in the listing: the owner manages a row they didn't install only in a pod they belong to.
+    if (isOwner && !canManage(installation, userId, isAdmin)) {
+      const pod = await Pod.findById(installation.podId).select('members').lean() as { members?: unknown[] } | null;
+      isOwner = (pod?.members || []).some((member) => String(member) === String(userId));
+    }
     if (!canManage(installation, userId, isAdmin) && !isOwner) {
       return res.status(403).json({ error: 'Installer or admin required' });
     }
