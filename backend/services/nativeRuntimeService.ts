@@ -1807,6 +1807,8 @@ const ADDRESSED_RAW_TYPES: ReadonlySet<string> = new Set(['chat.mention', 'threa
 export const wasDirectlyAddressed = (trigger: NativeRunTrigger): boolean => (
   ADDRESSED_RAW_TYPES.has(String(trigger.type))
   || (trigger.payload as { repliesToYourMessage?: unknown } | null)?.repliesToYourMessage === true
+  // F390: the person answered the question this agent just asked them.
+  || (trigger.payload as { answersYourQuestion?: unknown } | null)?.answersYourQuestion === true
 );
 
 /**
@@ -2535,6 +2537,8 @@ export async function runAgent(
               from: { agentName, instanceId },
               label: displayName || agentName,
               reason: 'out-of-turns',
+              // personAddressedThisTurn above: the asker is a person.
+              sender: { isBot: false },
               payload: (trigger.payload || {}) as Record<string, unknown>,
             });
           } catch (err) {

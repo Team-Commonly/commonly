@@ -1447,10 +1447,14 @@ const ANSWERS_YOUR_QUESTION_FRAME = '[This message answers the question YOU just
   + 'you are addressed even though nobody typed your @name. Answer it; return NO_REPLY as your ENTIRE '
   + 'reply only if it plainly needs nothing from you.]';
 
+const outsideCode = (content: unknown): string => String(content || '')
+  .replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' ');
+
 // A question mark outside code is a question; one inside backticks is not.
-export const asksAQuestion = (content: unknown): boolean => (
-  /\?/.test(String(content || '').replace(/```[\s\S]*?```/g, ' ').replace(/`[^`]*`/g, ' '))
-);
+export const asksAQuestion = (content: unknown): boolean => /\?/.test(outsideCode(content));
+
+// An @handle outside code, at a word start: "mail me@x.com" names nobody.
+const namesAHandle = (content: unknown): boolean => /(^|[^\w.@])@[a-z0-9][\w.-]*/i.test(outsideCode(content));
 
 export const resolveQuestionAnswerTarget = async ({
   podId, message, userId, handle, targets, botUserIds,
@@ -1716,7 +1720,7 @@ const followMentionedThreadUsers = async (
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
-  replyToMessageId = null, addressedElsewhere = false,
+  replyToMessageId = null, addressedElsewhere = false, answerExcludeNames,
 }: {
   podId: string;
   message: EnqueueMentionsOptions['message'];
@@ -1734,6 +1738,8 @@ const enqueueWakeOnMessage = async ({
   // the mention; for everyone else the message was addressed elsewhere, so it
   // is a digest, not an ambient turn.
   addressedElsewhere?: boolean;
+  // F390: agents part B leaves out (the greeter a welcome wake just reached).
+  answerExcludeNames?: string[];
 }): Promise<string[]> => {
   const woken: string[] = [];
   const senderKey = sender?.isBot
@@ -1810,17 +1816,19 @@ const enqueueWakeOnMessage = async ({
     addressedTargets = new Set();
     cachedBotUserIds = cachedBotUserIds ?? new Map<string, string>();
   }
-  // F390 part B, for a person's unaddressed message only: an @mention or a
-  // reply edge already says who it is for.
+  // F390 part B, for a person's unaddressed message only: an @ of anyone,
+  // person or agent, or a reply edge already says who it is for.
   let answersQuestionKey: string | null = null;
-  if (sender?.isBot === false && !threadRootId && !addressedElsewhere && !replyToMessageId) {
+  if (sender?.isBot === false && !threadRootId && !addressedElsewhere && !replyToMessageId
+    && !namesAHandle(rawContent)) {
     try {
       answersQuestionKey = await resolveQuestionAnswerTarget({
         podId,
         message,
         userId: String(userId),
         handle: username || null,
-        targets,
+        // A greeter the welcome wake just reached is answering this already.
+        targets: targets.filter((inst) => !answerExcludeNames?.includes(String(inst.agentName || '').toLowerCase())),
         botUserIds: async () => {
           if (!cachedBotUserIds?.size) cachedBotUserIds = await resolveBotUserIds(targets);
           return cachedBotUserIds ?? new Map<string, string>();
@@ -2215,6 +2223,7 @@ const enqueueMentions = async ({
     try {
       woken = await enqueueWakeOnMessage({
         podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: adjacentKeys, authorFrame, replyToMessageId,
+        answerExcludeNames: welcomeWoke,
       });
     } catch (error) {
       // The message is already persisted — a wake failure must never turn a
@@ -2768,16 +2777,20 @@ const enqueueMentions = async ({
     const mentioned = [...deliveredAgentMentionTargets.values()];
     if (!mentioned.some((target) => target.agentName.toLowerCase() === HOST_AGENT_NAME)) {
       try {
-        for (const target of mentioned) {
-          const verdict = await cannotRunReason({
-            podId: String(podId), agentName: target.agentName, instanceId: target.instanceId || 'default',
-          });
-          if (!verdict) continue;
+        // Only when nobody the person named can answer: one live agent is an answer.
+        const verdicts = await Promise.all(mentioned.map((target) => cannotRunReason({
+          podId: String(podId), agentName: target.agentName, instanceId: target.instanceId || 'default',
+        })));
+        const first = verdicts[0];
+        if (first && verdicts.every(Boolean)) {
+          const target = mentioned[0];
           const hostKey = await handOffToHost({
             podId: String(podId),
             from: target,
-            label: verdict.label,
-            reason: verdict.reason,
+            label: first.label,
+            reason: first.reason,
+            sender,
+            excludeKeys: enqueuedIdentityKeys,
             payload: {
               messageId: message?._id || message?.id ? String(message?._id || message?.id) : undefined,
               rawContent,
@@ -2792,7 +2805,6 @@ const enqueueMentions = async ({
             },
           });
           if (hostKey) enqueuedIdentityKeys.add(hostKey);
-          break;
         }
       } catch (error) {
         // The mention itself is already queued; a failed hand-off leaves today's delivery.

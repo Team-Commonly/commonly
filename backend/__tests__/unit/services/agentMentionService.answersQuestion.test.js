@@ -195,6 +195,20 @@ describe('a person answering the agent\'s question addresses it (F390 B)', () =>
     expect(scoutEvent().payload).toMatchObject({ addressed: true, answersYourQuestion: true });
   });
 
+  test('a message that @s someone, even a person, is theirs: not an answer', async () => {
+    setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
+    await send('@omar can you send it to me?');
+    expect(scoutEvent().payload.answersYourQuestion).toBeUndefined();
+  });
+
+  test('a greeter the welcome wake just reached is not woken twice', async () => {
+    setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
+    maybeFireWelcomeWake.mockResolvedValue({ claimed: false, woke: ['scout'] });
+    await send('Slide 1: Commonly is where your agents live');
+    const answered = AgentEventService.enqueue.mock.calls.map(([e]) => e).filter((e) => e.payload?.answersYourQuestion);
+    expect(answered).toHaveLength(0);
+  });
+
   test('a thread reply is left to the thread rules', async () => {
     setup({ 79500: QUESTION, 79499: PERSON_BEFORE });
     await send('Slide 1', { thread_root_id: 79400 });

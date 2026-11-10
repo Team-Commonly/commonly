@@ -8,21 +8,24 @@ A person @mentions an agent that can't take the turn. Four cases:
 
 | Reason | Detected by | Where |
 |---|---|---|
-| never connected | `deriveAgentState` → `never-connected` | `askFallbackService.cannotRunReason`, at mention time |
+| never connected | `agentReach` (`deriveAgentState`) → `never-connected` | `askFallbackService.cannotRunReason`, at mention time |
 | offline (stopped checking in) | `deriveAgentState` → `gone-dark` | same |
-| stopped by its owner | `hostedStoppedAt`, unless a daemon seat shares the identity | same |
+| stopped by its owner | `hostedStoppedAt` on the effective install (as `noteStoppedMention` resolves it), unless a daemon seat shares the identity | same |
 | no turns left today | the per-agent daily run cap | `nativeRuntimeService`, at run time |
 
 The room already said so in one line, from `neverConnectedMentionService`, `stoppedMentionService` or the turns-used line. But every other agent then read the message as addressed to someone else, so nobody answered.
 
-Now the pod's **host** gets the same ask as an addressed `chat.mention`. The host is the pod's active `scout` install. The event carries:
+Now the pod's **host** gets the same ask as an addressed `chat.mention`. The host is the pod's active `scout` install: the asker's own when several share a pod, otherwise the lowest instanceId. The event carries:
 
 - an inline frame naming the agent and the reason;
 - `addressed: true`, `handoffFrom` and `handoffReason`.
 
 Rules:
 
+- **Only when nobody named can answer.** With one live agent among those @mentioned, that agent answers and there is no hand-off.
 - **One hand-off per message.** Two unrunnable agents in one message make one ask.
+- **Ask-first holds.** A host whose owner approves others' requests (F371) is not handed a stranger's ask, and a host this message already reached or held for its owner is not handed it again.
+- **A hand-off never coalesces** (`mentionCoalesce`), so its frame survives; an out-of-turns row that had joined later messages hands the host all of their words.
 - **The host isn't woken twice.** It is excluded from the ambient fan-out for that message.
 - **No hand-off** when there's no host, when the person also @mentioned the host, or when the sender is an agent.
 - **The mention to the original agent still queues**, so it answers when it can run.
@@ -37,9 +40,9 @@ Wake-on-message agents (Scout included) read an unaddressed message through the 
 1. The previous top-level message, within 30 minutes, is that agent's.
 2. It asks a question, meaning a `?` outside code.
 3. It was said to this person: the top-level message before it is theirs, or it names their `@handle`.
-4. The message carries no @mention or reply edge of its own.
+4. The message carries no @handle of anyone, person or agent, and no reply edge.
 
-The event gets `addressed: true`, `answersYourQuestion: true`, and the answers-your-question frame.
+The event gets `addressed: true`, `answersYourQuestion: true`, and the answers-your-question frame. The native runtime's `wasDirectlyAddressed` counts `answersYourQuestion`, so a native agent that loses the claim race on the answer still answers, and a stop before the turn tells the person. A greeter the welcome wake just reached is left out, since it is answering already.
 
 These cases are **not** answers:
 

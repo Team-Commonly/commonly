@@ -14,7 +14,10 @@
  *  - a runnable agent: no hand-off, and Scout's turn is what it was;
  *  - no Scout in the pod, a mention of Scout itself, or an agent sender: nothing.
  */
-jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
+jest.mock('../../../services/agentEventService', () => ({
+  enqueue: jest.fn(),
+  resolveEffectiveInstallation: jest.fn(),
+}));
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: jest.fn(), findOne: jest.fn() },
 }));
@@ -42,6 +45,7 @@ jest.mock('../../../services/neverConnectedMentionService', () => ({
   noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
   noteOfflineMention: jest.fn().mockResolvedValue(false),
   isNeverConnectedAgent: jest.fn().mockResolvedValue(false),
+  agentReach: jest.fn(),
 }));
 jest.mock('../../../services/agentStateService', () => ({
   ...jest.requireActual('../../../services/agentStateService'),
@@ -59,11 +63,11 @@ const AgentProfile = require('../../../models/AgentProfile');
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
-const { noteNeverConnectedMention, noteOfflineMention } = require('../../../services/neverConnectedMentionService');
+const { noteNeverConnectedMention, noteOfflineMention, agentReach } = require('../../../services/neverConnectedMentionService');
 const { noteStoppedMention } = require('../../../services/stoppedMentionService');
 const { deriveAgentState } = require('../../../services/agentStateService');
 const { hostedStoppedAt } = require('../../../services/hostedEngine');
-const { resetHandoffsForTest } = require('../../../services/askFallbackService');
+const { handOffToHost, resetHandoffsForTest } = require('../../../services/askFallbackService');
 
 const human = { _id: 'user-1', username: 'priya', isBot: false };
 const nova = {
@@ -86,9 +90,18 @@ const chain = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const setup = ({ state = 'listening', withScout = true } = {}) => {
-  const installs = withScout ? [novaInstall, scoutInstall] : [novaInstall];
-  AgentInstallation.find.mockReturnValue(chain(installs));
+let installs = [];
+const useInstalls = (rows) => {
+  installs = rows;
+  // The mention fan-out reads every install; the host lookup asks for scout only.
+  AgentInstallation.find.mockImplementation((q) => chain(q?.agentName ? rows.filter((i) => i.agentName === q.agentName) : rows));
+  AgentEventService.resolveEffectiveInstallation.mockImplementation(
+    async (agentName) => rows.find((i) => i.agentName === agentName) || null,
+  );
+};
+
+const setup = ({ state = 'listening', withScout = true, scoutRow = scoutInstall } = {}) => {
+  useInstalls(withScout ? [novaInstall, scoutRow] : [novaInstall]);
   AgentInstallation.findOne.mockImplementation((q) => chain(installs.find((i) => i.agentName === q?.agentName) || null));
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   Pod.find.mockReturnValue(chain([]));
@@ -104,6 +117,12 @@ const setup = ({ state = 'listening', withScout = true } = {}) => {
   AgentEvent.countDocuments.mockResolvedValue(0);
   AgentEventService.enqueue.mockResolvedValue({});
   deriveAgentState.mockReturnValue({ state });
+  // agentReach's own suite covers the verdict; here it reads the faked state.
+  agentReach.mockImplementation(async ({ agentName }) => {
+    const install = installs.find((i) => i.agentName === agentName);
+    const agent = members.find((m) => m.botMetadata?.agentName === agentName) || { username: agentName };
+    return install ? { agent, state: deriveAgentState(install).state } : null;
+  });
 };
 
 const mention = ({ sender = human, content = '@nova can you check my deck?', id = '900' } = {}) => (
@@ -170,9 +189,38 @@ describe('an ask to an agent that can\'t run goes to the host (F390 A)', () => {
 
   it('two agents that can\'t run in one message: one hand-off', async () => {
     setup({ state: 'gone-dark' });
-    AgentInstallation.find.mockReturnValue(chain([novaInstall, { ...novaInstall, agentName: 'milo', displayName: 'Milo' }, scoutInstall]));
+    useInstalls([novaInstall, { ...novaInstall, agentName: 'milo', displayName: 'Milo' }, scoutInstall]);
     await mention({ content: '@nova @milo anyone?' });
     expect(events('scout')).toHaveLength(1);
+  });
+
+  it('one named agent can run: it answers, and Scout is not told to', async () => {
+    setup();
+    useInstalls([novaInstall, { ...novaInstall, agentName: 'sage', displayName: 'Sage' }, scoutInstall]);
+    deriveAgentState.mockImplementation((install) => ({ state: install.agentName === 'sage' ? 'listening' : 'gone-dark' }));
+    await mention({ content: '@nova @sage anyone?' });
+    expect(events('scout').filter((e) => e.payload?.handoffFrom)).toHaveLength(0);
+  });
+
+  it('a Scout whose owner asks first is not handed a stranger\'s ask', async () => {
+    setup({
+      state: 'gone-dark',
+      scoutRow: { ...scoutInstall, installedBy: 'owner-2', config: { ...scoutInstall.config, askBeforeOthers: { enabled: true } } },
+    });
+    await mention();
+    expect(events('scout').filter((e) => e.payload?.handoffFrom)).toHaveLength(0);
+  });
+
+  it('a Scout already reached or held by this message is not handed it again', async () => {
+    setup({ state: 'gone-dark' });
+    const args = {
+      podId: 'pod-1', from: { agentName: 'nova' }, label: 'Nova', reason: 'offline', sender: human,
+    };
+    expect(await handOffToHost({
+      ...args, payload: { messageId: '901', userId: 'user-1' }, excludeKeys: new Set(['scout:u-1']),
+    })).toBeNull();
+    expect(await handOffToHost({ ...args, payload: { messageId: '902', userId: 'user-1' }, excludeKeys: new Set() }))
+      .toBe('scout:u-1');
   });
 
   it('an agent sender: no hand-off, the notices are for people', async () => {

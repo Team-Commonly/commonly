@@ -835,6 +835,12 @@ describe('a hosted turn the guard stops, or that fails', () => {
         expect(handOff.mock.calls[0][0].payload.threadRootId).toBe(4242);
       });
 
+      test('an ambient message that answers the agent\'s question counts as addressed', () => {
+        const { wasDirectlyAddressed } = require('../../../services/nativeRuntimeService');
+        expect(wasDirectlyAddressed({ type: 'message.posted', payload: { answersYourQuestion: true } })).toBe(true);
+        expect(wasDirectlyAddressed({ type: 'message.posted', payload: {} })).toBe(false);
+      });
+
       test('an agent\'s @ past the line is not handed off', async () => {
         AgentRun.countDocuments.mockResolvedValueOnce(100000);
         agentsAsk();
