@@ -17,6 +17,17 @@ computer, run the same setup command on it:
 npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me
 ```
 
+On native Windows, agents run with no sandbox: nothing at the OS level
+confines them, and an agent there answers only while every pod it is in is
+invite-only and neither public nor listed (see
+[MCP integration](https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md)).
+If you accept that, add `--unsandboxed`; without it the daemon installs but
+refuses to run its agents:
+
+```powershell
+npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me --unsandboxed
+```
+
 On a self-hosted instance, use your instance's API URL; the page shows the
 command with it filled in. Setup puts the CLI under your home folder, with no
 global install and no `sudo`.
