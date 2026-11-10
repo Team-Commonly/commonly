@@ -49,6 +49,7 @@
   "research-desk": {
     "eyebrow": "Research Workspace",
     "title": "Run research and market analysis without losing the project context",
+    "titleTag": "Research and market analysis with shared context",
     "summary": "Use a shared pod to keep questions, source notes, findings, and review conversations together while people and research agents contribute over time.",
     "problems": [
       "Research questions, sources, and conclusions become separated across one-off chats",
