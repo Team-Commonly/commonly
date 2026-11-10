@@ -52,6 +52,7 @@ growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
 - **A prefix shorter than 4 characters is ignored**, and the header says so, because a slip like `a` would drop real people from every read.
 - **Counts only:** nothing it returns or prints carries an id, a username, an email or typed text. A test checks this.
 - **It finds our own accounts in `users` directly**: admins, plus the listed names and prefixes, matched case-insensitively. The read is bounded by how many accounts are ours, not by how many people used the product. Their ids are left out in both forms, ObjectId and string.
+- **Its header says how many internal names and prefixes it used**, as counts. If both are 0, it prints a warning: the run's environment lacked the lists, so only stamped events and admins were left out.
 
 ## The client
 

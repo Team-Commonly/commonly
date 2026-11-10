@@ -103,6 +103,24 @@ describe('usage report', () => {
     expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 4, people: 2 });
   });
 
+  it('says how many internal names and prefixes it used, and warns when it has none', async () => {
+    const report = await build();
+    expect(report.internalLists).toEqual({ usernames: 1, prefixes: 2 });
+    expect(formatUsageReport(report)).toContain('Internal lists: 1 usernames, 2 prefixes.');
+    expect(formatUsageReport(report)).not.toContain('Warning: both internal lists are empty');
+
+    const bare = await build({ usernames: '', prefixes: '' });
+    expect(bare.internalLists).toEqual({ usernames: 0, prefixes: 0 });
+    expect(formatUsageReport(bare)).toContain('Warning: both internal lists are empty');
+
+    // Counted after the 4-character floor; a list of only short prefixes is not
+    // an empty environment, so it gets the ignored line, not the warning.
+    expect((await build({ prefixes: 'a, walk-, seat-' })).internalLists.prefixes).toBe(2);
+    const short = await build({ usernames: '', prefixes: 'a' });
+    expect(formatUsageReport(short)).toContain('Ignored 1 internal prefix(es)');
+    expect(formatUsageReport(short)).not.toContain('Warning: both internal lists are empty');
+  });
+
   it('reads a prefix literally, not as a pattern', async () => {
     // 'wal.' as a pattern would match 'walk-1107'; as text it matches nothing.
     const report = await build({ prefixes: 'wal., seat-' });
