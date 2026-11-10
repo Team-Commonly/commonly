@@ -415,9 +415,20 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               </button>
             )}
             {attention.map((item) => (
-              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention v2-workspace-inspector__attention--item" onClick={() => openAttention(item)}>
+              <button
+                key={`${item.kind}:${item.id}`}
+                type="button"
+                className="v2-workspace-inspector__attention v2-workspace-inspector__attention--item"
+                title={item.detail ? `${item.title}: ${item.detail}` : undefined}
+                onClick={() => openAttention(item)}
+              >
                 <ShellGlyph name="inbox" size={16} />
-                <span className="v2-workspace-inspector__attention-title">{item.title}</span>
+                {/* Two requests from one person share a title; the detail, on the
+                    same 32px line, is what tells them apart (F372). */}
+                <span className="v2-workspace-inspector__attention-title">
+                  {item.title}
+                  {item.detail && <span className="v2-workspace-inspector__attention-detail"> · {item.detail}</span>}
+                </span>
                 {item.actorName && (
                   <span className="v2-workspace-inspector__actor">
                     {labelForAttentionActor(agents, item.actorName, t('common.agent'))}
