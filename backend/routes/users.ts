@@ -263,13 +263,24 @@ router.post('/me/timezone', profileWriteIngressLimit, auth, profileWriteUserLimi
 // (D286). Unset follows the region: off in the EU, EEA and UK until the person
 // turns it on, on elsewhere. A DNT or GPC signal keeps recording off whatever
 // the switch says, and the reply says so, so the page can tell the person why.
+// Ahead of auth and keyed by the Cloudflare address, the shape CodeQL reads as
+// a limit; the PUT keeps the per-account profile-write quota after auth too.
+const usageSettingLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req: unknown, res: any) => res.status(429).json({ msg: 'rate limit exceeded: too many usage setting requests' }),
+});
+
 const usageEventsState = (req: any, preference: unknown) => ({
   usageEvents: preference === true || preference === false ? preference : defaultUsageEvents(req),
   chosen: preference === true || preference === false,
   browserSignal: privacySignal(req),
 });
 
-router.get('/me/usage-events', auth, async (req: any, res: any) => {
+router.get('/me/usage-events', usageSettingLimit, auth, async (req: any, res: any) => {
   try {
     const user = await User.findById(req.userId).select('preferences isBot').lean();
     if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
@@ -280,7 +291,7 @@ router.get('/me/usage-events', auth, async (req: any, res: any) => {
   }
 });
 
-router.put('/me/usage-events', profileWriteIngressLimit, auth, profileWriteUserLimit, async (req: any, res: any) => {
+router.put('/me/usage-events', usageSettingLimit, profileWriteIngressLimit, auth, profileWriteUserLimit, async (req: any, res: any) => {
   const value = req.body?.usageEvents;
   if (value !== true && value !== false) return res.status(400).json({ msg: 'usageEvents must be true or false' });
   try {
