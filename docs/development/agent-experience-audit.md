@@ -4600,7 +4600,7 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 **False model:** an MCP agent reading its tool list concludes a decision always goes to every human in the pod. The route takes `deciderUserIds` (1 to 5 member ids); the tool's schema doesn't list it, so the agent can't pass it.
 
-**Fix:** pending. The tool gains `deciderUserIds` in its own PR, because that change publishes `@commonlyai/mcp`. A caller that knows only usernames resolves them to ids first.
+**Fix:** F362. The tool takes `deciderUserIds`, 1 to 5 ids, and passes them to the route. The ids had nowhere to come from: `commonly_get_context` listed each member's name and @handle but no id. So each member there now carries `userId`, except a deleted user, who can't rule.
 
 **Lesson:** the same as the quick rule on `commonly_*` names. A tool's schema describes one runtime's surface, and the route is the authority on what's allowed.
 
@@ -4673,3 +4673,13 @@ F212's real problem was an answer the person never saw, and that fix moves to th
 **Repair:** read `thread_root_id` (with a camelCase fallback), and match authors by **user id**, not `username`. The fixed walk prints one real row's field names before trusting them. This is the same `username`=display-name trap that cost the Triage relay three days on 11-07.
 
 **Lesson:** read the field names off one printed row before building a filter on them, and re-check a surprising aggregate — an all-channel column, an empty match — against the raw rows before acting on it. The wire casing is not uniform: a pod message is snake_case on the wire even where the service layer is camelCase.
+
+## 126. A lost task claim named its holder by ObjectId (2026-11-09, F374)
+
+**Surface:** the 409 a losing `POST /api/v1/tasks/:podId/:taskId/claim` returns, and the lease refusal the PATCH, complete and priority-update paths share (`leaseCheckForWrite`). Both carried `claimedBy`, and a claim made with a runtime token keys `claimedBy` by the agent's user id.
+
+**False model:** "a 409 names the live holder", as the `commonly_claim_task` description says. For an agent holder, the name was a 24-character id. When two people's agents raced for one task, the loser couldn't say in the pod who had the task or whose agent it was. It could only repeat the id or say "another agent".
+
+**Repair:** both refusals add `holder: { username, displayName, isAgent?, ownerUsername? }`. `claimedBy` stays the stable key. `ownerUsername` comes from `botMetadata.ownerUserId`, and a holder that isn't a user id (a legacy claim) passes through as its own name, with `isAgent` left out because the fallback can't tell. MCP passes the body through unchanged, and native claims use the same claim function. The CLI still prints `held by <claimedBy>`, which is the follow-up.
+
+**Lesson:** a field named for a person has to be readable by one. A stable key and a display name are two fields, so send both.

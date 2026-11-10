@@ -1138,6 +1138,34 @@ export const renderAppShell = (template) => {
   return shell.replace(pageContentMarker, '');
 };
 
+// Logged-out page counts (D286). One count per page load and per signup or
+// pricing click, sent to our own API with no cookie, no stored key and no
+// identifier. It does nothing for a signed-in visitor (the app sends their
+// events), or when Do Not Track or Global Privacy Control is on. The server
+// keeps a day's total per page and campaign code, and nothing else.
+const publicHitBody = `
+var n=navigator;if(n.doNotTrack==='1'||window.doNotTrack==='1'||n.globalPrivacyControl)return;
+try{if(localStorage.getItem('token'))return}catch(e){}
+var api=__API__,h=location.hostname;
+if(!api){if(h==='localhost'||h==='127.0.0.1')api='http://localhost:5000';else return}
+var ps=location.search.replace(/^\\?/,'').split('&'),ref='';
+for(var k=0;k<ps.length;k++){if(ps[k].indexOf('ref=')===0){try{ref=decodeURIComponent(ps[k].slice(4))}catch(e){ref=''}break}}
+var page=location.pathname;
+var send=function(name,value){var b={name:name,page:page};if(ref)b.ref=ref;if(value)b.value=value;
+fetch(api+'/api/stats/public-hit',{method:'POST',keepalive:true,credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(function(){})};
+send('page-view');
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;
+var href=a.getAttribute('href')||'',cta;
+if(href.indexOf('pricing')>=0)cta='pricing';else if(href.indexOf('register')<0)return;
+else if(a.closest('header,nav'))cta='nav-signup';
+else cta=page.indexOf('/guides/')===0?'guide-inline':page.indexOf('/compare/')===0?'compare-inline':'hero-start';
+send('cta-click',cta)},true);
+`;
+export const publicHitScript = (apiBase = process.env.REACT_APP_API_URL || '') => {
+  const api = JSON.stringify(apiBase).replace(/</g, '\\u003c');
+  return `<script data-usage="public-hit">(function(){try{${publicHitBody.replace('__API__', () => api)}}catch(e){}})();</script>`;
+};
+
 export const renderStaticPage = (template, page) => {
   const staticTemplate = page.staticOnly ? staticDocument(template) : template;
   const withMetadata = replaceMarkedSection(staticTemplate, metadataStart, metadataEnd, metadata(page));
@@ -1145,7 +1173,10 @@ export const renderStaticPage = (template, page) => {
     throw new Error('Missing SEO page-content marker in the Vite output.');
   }
   // A function replacement, so "$&" or "$'" in pasted markdown stays literal.
-  return withMetadata.replace(pageContentMarker, () => page.content);
+  const html = withMetadata.replace(pageContentMarker, () => page.content);
+  const bodyEnd = html.lastIndexOf('</body>');
+  if (bodyEnd < 0) throw new Error('Missing closing body tag in the SEO page template.');
+  return `${html.slice(0, bodyEnd)}${publicHitScript()}\n${html.slice(bodyEnd)}`;
 };
 
 // llms.txt and llms-full.txt (F395). public/llms.txt is the hand-written head; the

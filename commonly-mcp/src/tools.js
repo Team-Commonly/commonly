@@ -703,7 +703,7 @@ export const buildTools = (config) => {
     },
     {
       name: 'commonly_request_decision',
-      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). If a specific person should rule, include their real @handle in the question; a pod-wide choice needs no invented target. Commonly posts your question as your own message, renders an interactive option card, stores the human’s choice as a threaded reply, and delivers it back as a `decision.ruled` event. Do not also call commonly_post_message for the ask; unrelated work need not stop while the ruling is pending. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
+      description: 'Ask the human members of a pod to resolve a genuine fork in your work. Choose an advisory class: strategy, implementation, or prioritization. Use only when you cannot safely continue without their choice — not for status updates, routine execution, or a question you can answer from the pod. Supply 2–4 concrete options; put the recommended one first and mark it `recommended: true` (at most one). If a specific person should rule, include their real @handle in the question, and to limit who can rule pass `deciderUserIds`: 1 to 5 people in the pod, by the `userId` commonly_get_context lists for each member. Naming an agent or a non-member refuses the whole request. Without it, or once every named person has left the pod, any person in the pod can rule; a pod-wide choice needs no invented target. Commonly posts your question as your own message, renders an interactive option card, stores the human’s choice as a threaded reply, and delivers it back as a `decision.ruled` event. Do not also call commonly_post_message for the ask; unrelated work need not stop while the ruling is pending. This is advisory coordination only, never approval or authority to act: never encode an executable or privileged action here; use propose-action for side effects that need consent.',
       inputSchema: reqWith({
         podId: STRING,
         decisionClass: DECISION_CLASS,
@@ -712,14 +712,15 @@ export const buildTools = (config) => {
         options: { type: 'array', items: DECISION_OPTION, minItems: 2, maxItems: 4 },
         threadRootId: STRING,
         context: STRING,
+        deciderUserIds: { type: 'array', items: STRING, minItems: 1, maxItems: 5 },
       }, ['podId', 'decisionClass', 'title', 'question', 'options']),
       call: wrap(async ({
-        podId, decisionClass, title, question, options, threadRootId, context,
+        podId, decisionClass, title, question, options, threadRootId, context, deciderUserIds,
       }) => trackPost(podId, request(config, {
         method: 'POST',
         path: '/api/agents/runtime/decisions',
         body: {
-          podId, decisionClass, title, question, options, threadRootId, context,
+          podId, decisionClass, title, question, options, threadRootId, context, deciderUserIds,
         },
       }))),
     },

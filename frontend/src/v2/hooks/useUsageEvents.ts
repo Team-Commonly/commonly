@@ -1,0 +1,46 @@
+import { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import axios from '../../utils/axiosConfig';
+import { useAuth } from '../../context/AuthContext';
+import { forgetUsageEvents, setUsageEventsEnabled, trackUsage } from '../utils/usageEvents';
+
+/**
+ * Signed-in usage events (D286): reads the person's Settings choice, then sends
+ * one app-open per UTC day and a screen-view per route. Until the choice is
+ * known, events wait in memory; if it's off (or the request fails) they're
+ * dropped. The server applies the same rules on its side.
+ */
+const openKey = (userId: string) => `commonly.usageAppOpen:${userId}`;
+
+export const useUsageEvents = (): void => {
+  const { isAuthenticated, currentUser } = useAuth();
+  const userId = currentUser?._id;
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated || !userId) { forgetUsageEvents(); return undefined; }
+    let live = true;
+    const day = new Date().toISOString().slice(0, 10);
+    let sentDay: string | null = null;
+    try { sentDay = window.localStorage.getItem(openKey(userId)); } catch { sentDay = null; }
+    if (sentDay !== day) trackUsage('app-open');
+    axios.get('/api/users/me/usage-events')
+      .then(({ data }) => {
+        if (!live) return;
+        const on = Boolean(data?.usageEvents) && !data?.browserSignal;
+        setUsageEventsEnabled(on);
+        // The day counts as opened only when the event could go out, so turning
+        // usage on later the same day still sends one.
+        if (on && sentDay !== day) {
+          try { window.localStorage.setItem(openKey(userId), day); } catch { /* sent again next load */ }
+        }
+      })
+      .catch(() => { if (live) setUsageEventsEnabled(false); });
+    return () => { live = false; forgetUsageEvents(); };
+  }, [isAuthenticated, userId]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !userId) return;
+    trackUsage('screen-view', { pathname });
+  }, [isAuthenticated, userId, pathname]);
+};

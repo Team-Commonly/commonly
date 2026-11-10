@@ -94,6 +94,18 @@ describe('pod context members', () => {
     expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
   });
 
+  // F362: commonly_request_decision names its deciders by user id, and this
+  // roster is where an agent reads who is in the pod.
+  it("gives each member the user id a decision's deciderUserIds takes", async () => {
+    const context = await PodContextService.getPodContext({
+      podId: 'pod-1', userId: HUMAN_ID, skillMode: 'none',
+    });
+
+    const [bot, human] = context.members;
+    expect(bot.userId).toBe(BOT_ID);
+    expect(human).toMatchObject({ userId: HUMAN_ID, isAgent: false, self: true });
+  });
+
   it('still lists members when the pod map cannot be read', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('db down')) });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  assertNoOpenHolds, buildPageDefinitions, fitDescription, fitTitle, generateSeoPages, renderMarkdown, renderStaticPage,
+  assertNoOpenHolds, buildPageDefinitions, fitDescription, fitTitle, generateSeoPages, publicHitScript, renderMarkdown, renderStaticPage,
 } from './generate-seo-pages.mjs';
 
 const frontendDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -2530,6 +2530,14 @@ test('privacy, terms and the use-case index get their own pages, and app routes 
     assert.match(app, /popstate/);
     assert.doesNotMatch(app, /SEO_PAGE_CONTENT|id="seo-page"/);
     assert.doesNotMatch(sitemap, /app\.html/);
+    // D286: every generated page counts logged-out views once; the app shell
+    // doesn't, because signed-in visitors send their own events.
+    assert.doesNotMatch(app, /data-usage="public-hit"/);
+    for (const page of ['index.html', 'privacy/index.html', 'use-cases/index.html']) {
+      const html = await read(page);
+      assert.equal(html.match(/data-usage="public-hit"/g)?.length, 1, page);
+      assert.ok(html.indexOf('data-usage="public-hit"') > html.indexOf('id="seo-page"'), page);
+    }
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
@@ -2664,4 +2672,34 @@ test('a compare or use-case page with a malformed date stops the build (F395)', 
     () => buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: broken, guides }),
     /dateModified that is not YYYY-MM-DD/,
   );
+});
+
+// D286: the backend counts a logged-out hit against a published page only when
+// it knows the page. backend/config/publicPages.json is that list; regenerate
+// it from buildPageDefinitions when pages are added or removed.
+test('the backend knows every published page path', async () => {
+  const [translationText, useCaseText, guideText, faqText, legalText, backendText] = await Promise.all([
+    readFile(join(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(join(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(join(frontendDir, 'src/content/guides.json'), 'utf8'),
+    readFile(join(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+    readFile(join(frontendDir, 'src/content/legal.json'), 'utf8'),
+    readFile(join(frontendDir, '../backend/config/publicPages.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({
+    landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText),
+    guides: JSON.parse(guideText), landingFaq: JSON.parse(faqText), legal: JSON.parse(legalText),
+  });
+  assert.deepEqual(JSON.parse(backendText), [...new Set(pages.map((page) => page.path))].sort());
+});
+
+test('the public-hit script sends no identifier and keeps the API base inside its tag', () => {
+  const script = publicHitScript('https://api.example.test</script><script>alert(1)');
+  assert.equal(script.split('</script>').length, 2);
+  assert.doesNotMatch(script, /document\.cookie|localStorage\.setItem|sessionStorage/);
+  assert.match(script, /credentials:'omit'/);
+  assert.match(script, /keepalive:true/);
+  assert.match(script, /doNotTrack/);
+  assert.match(script, /globalPrivacyControl/);
 });

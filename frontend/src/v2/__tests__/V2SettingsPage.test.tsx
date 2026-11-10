@@ -111,6 +111,36 @@ describe('V2SettingsPage', () => {
     });
   });
 
+  // D286 (F399): the switch shows the server's value, saves a choice, and says
+  // when the browser's DNT/GPC keeps recording off anyway.
+  describe('Share product usage', () => {
+    const answer = (usage: Record<string, unknown>) => (url: string) => Promise.resolve({
+      data: url === '/api/users/me/usage-events' ? usage : { hasToken: false },
+    });
+    beforeEach(async () => {
+      await i18nReady;
+      await act(async () => { await i18n.changeLanguage('en'); });
+    });
+
+    test('shows the region default and saves the choice', async () => {
+      (axios.get as jest.Mock).mockImplementation(answer({ usageEvents: false, chosen: false, browserSignal: false }));
+      (axios.put as jest.Mock).mockResolvedValue({ data: { usageEvents: true, chosen: true, browserSignal: false } });
+      renderSettings();
+      const group = await screen.findByRole('radiogroup', { name: 'Share product usage with Commonly' });
+      expect(within(group).getByRole('radio', { name: 'Off' })).toHaveAttribute('aria-checked', 'true');
+      expect(screen.getByText(/Never what you type\./)).toBeInTheDocument();
+      fireEvent.click(within(group).getByRole('radio', { name: 'On' }));
+      await waitFor(() => expect(axios.put).toHaveBeenCalledWith('/api/users/me/usage-events', { usageEvents: true }));
+      await waitFor(() => expect(within(group).getByRole('radio', { name: 'On' })).toHaveAttribute('aria-checked', 'true'));
+    });
+
+    test('says when the browser asks not to be tracked', async () => {
+      (axios.get as jest.Mock).mockImplementation(answer({ usageEvents: true, chosen: true, browserSignal: true }));
+      renderSettings();
+      expect(await screen.findByText('Your browser asks sites not to track you, so no product usage is recorded.')).toBeInTheDocument();
+    });
+  });
+
   test('names the language choices in the active language', async () => {
     await i18nReady;
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });

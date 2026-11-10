@@ -176,6 +176,94 @@ describe('POST /api/v1/tasks/:podId/:taskId/claim — lease semantics (ADR-018 D
     expect(res.body.claimExpiresAt).toBeTruthy();
   });
 
+  // F374: two people's agents race for one task. The loser was told only an
+  // ObjectId, so it could not say in the pod who had the task or whose agent
+  // that was. The refusal now names both.
+  const RIVAL_AGENT_TOKEN = 'cm_agent_task_claim_rival';
+  const seedRivalAgent = async () => {
+    const rivalAgent = await User.create({
+      username: 'rival-agent',
+      email: `rival-agent-${Date.now()}@agents.commonly.local`,
+      password: 'Password123!',
+      verified: true,
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'rival-agent', instanceId: 'default', displayName: 'Rival Agent', ownerUserId: rival._id.toString() },
+      agentRuntimeTokens: [{ tokenHash: hash(RIVAL_AGENT_TOKEN), label: 'rival', createdAt: new Date() }],
+    });
+    await Pod.updateOne({ _id: pod._id }, { $addToSet: { members: rivalAgent._id } });
+    await AgentInstallation.create({
+      agentName: 'rival-agent', instanceId: 'default', podId: pod._id,
+      version: '1.0.0', installedBy: rival._id,
+    });
+    await User.updateOne({ _id: agent._id }, { $set: { 'botMetadata.ownerUserId': owner._id.toString() } });
+    return rivalAgent;
+  };
+
+  test("a second person's agent is told which agent holds the task and whose it is (F374)", async () => {
+    await seedRivalAgent();
+    await seedTask();
+    expect((await claim(AGENT_TOKEN)).status).toBe(200);
+    const res = await claim(RIVAL_AGENT_TOKEN);
+    expect(res.status).toBe(409);
+    expect(res.body.claimedBy).toBe(agent._id.toString());
+    expect(res.body.holder).toEqual({
+      username: 'claim-audit-agent',
+      displayName: 'Audit Agent',
+      isAgent: true,
+      ownerUsername: owner.username,
+    });
+  });
+
+  test('a person holding the task is named as a person (F374)', async () => {
+    await seedTask();
+    await claim(ownerToken);
+    const res = await claim(rivalToken);
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual({ username: owner.username, displayName: owner.username, isAgent: false });
+  });
+
+  test("a person holding the task is shown by their display name, not their username (F374)", async () => {
+    await User.updateOne({ _id: owner._id }, { $set: { displayName: 'Lease Owner' } });
+    await seedTask();
+    await claim(ownerToken);
+    const res = await claim(rivalToken);
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual({ username: owner.username, displayName: 'Lease Owner', isAgent: false });
+  });
+
+  test('a holder that is not a user id is passed through as its own name (F374)', async () => {
+    await seedTask({
+      status: 'claimed', claimedBy: 'ghost-agent', claimedAt: new Date(), claimExpiresAt: new Date(Date.now() + LEASE_MS),
+    });
+    const res = await claim(rivalToken);
+    expect(res.status).toBe(409);
+    // Unknown whether a person or an agent, so the refusal doesn't say.
+    expect(res.body.holder).toEqual({ username: 'ghost-agent', displayName: 'ghost-agent' });
+  });
+
+  test('an owner who no longer exists is left out, and the agent is still named (F374)', async () => {
+    await seedRivalAgent();
+    await User.updateOne({ _id: agent._id }, { $set: { 'botMetadata.ownerUserId': '0123456789abcdef01234567' } });
+    await seedTask();
+    await claim(AGENT_TOKEN);
+    const res = await claim(RIVAL_AGENT_TOKEN);
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual({ username: 'claim-audit-agent', displayName: 'Audit Agent', isAgent: true });
+  });
+
+  test("an edit from another person's agent is refused with the same named holder (F374)", async () => {
+    await seedRivalAgent();
+    await seedTask();
+    await claim(AGENT_TOKEN);
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${pod._id}/T-1`)
+      .set('Authorization', `Bearer ${RIVAL_AGENT_TOKEN}`)
+      .send({ status: 'pending', continueAnyway: true });
+    expect(res.status).toBe(409);
+    expect(res.body.holder).toEqual(expect.objectContaining({ username: 'claim-audit-agent', ownerUsername: owner.username }));
+  });
+
   test('the holder re-claiming wins against itself and gets a fresh lease (renewal)', async () => {
     await seedTask();
     const first = await claim(ownerToken);
