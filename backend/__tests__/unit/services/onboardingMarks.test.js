@@ -427,10 +427,10 @@ describe('markWelcomeHostedClick', () => {
   });
 
   test('a refusal writes its code once, and only a fixed code', () => {
-    markWelcomeHostedClick('u1', 'hosted_cap_reached');
+    markWelcomeHostedClick('u1', 'agent_name_unavailable');
     const [filter, update] = mockUpdateOne.mock.calls[mockUpdateOne.mock.calls.length - 1];
     expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.welcomeHostedRefusal': { $exists: false } });
-    expect(update.$set['onboarding.welcomeHostedRefusal']).toBe('hosted_cap_reached');
+    expect(update.$set['onboarding.welcomeHostedRefusal']).toBe('agent_name_unavailable');
 
     resetOnboardingMarksForTest();
     mockUpdateOne.mockClear();
@@ -439,9 +439,18 @@ describe('markWelcomeHostedClick', () => {
     expect(last[1].$set['onboarding.welcomeHostedRefusal']).toBe('other');
   });
 
-  test('a failed write never throws into the request', async () => {
-    mockUpdateOne.mockRejectedValue(new Error('down'));
+  test('a failed write never throws into the request, and the next click retries it', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('down'));
     expect(() => markWelcomeHostedClick('u1', 'error')).not.toThrow();
     await flush();
+    markWelcomeHostedClick('u1', 'error');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('the click and the refusal are independent marks', () => {
+    markWelcomeHostedClick('u1');
+    markWelcomeHostedClick('u1', 'not_welcome_start');
+    const fields = mockUpdateOne.mock.calls.map(([, update]) => Object.keys(update.$set)[0]);
+    expect(fields).toEqual(['onboarding.welcomeHostedClickAt', 'onboarding.welcomeHostedRefusal']);
   });
 });

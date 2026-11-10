@@ -50,7 +50,7 @@ const byoOpenedMarked = new Set<string>();
 const byoCommandCopiedMarked = new Set<string>();
 const byoCommandKindMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
-// Keyed `${id}:click` and `${id}:refusal`, so one process writes each at most once.
+// Keyed `${id}:welcomeHostedClickAt` and `${id}:welcomeHostedRefusal`, so one process writes each at most once.
 const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 

@@ -272,14 +272,16 @@ describe('/api/hosted', () => {
   // clicked" and "clicked and it failed" read the same in the funnel.
   it('welcome-start marks every click, and the refusal of one that does not start', async () => {
     mockResolveWelcomeStart.mockResolvedValueOnce({ podId: 'pod-1', existing: null, agentName: 'ada-agent' });
-    await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
-    expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1');
+    const ok = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(ok.status).toBe(200);
+    expect(mockMarkWelcomeHostedClick.mock.calls).toEqual([['owner-1']]);
     mockMarkWelcomeHostedClick.mockClear();
 
     mockResolveWelcomeStart.mockResolvedValueOnce({
       error: { status: 403, body: { code: 'not_welcome_start', message: 'no' } },
     });
-    await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    const refused = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(refused.status).toBe(403);
     expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1', 'not_welcome_start');
     mockMarkWelcomeHostedClick.mockClear();
 
@@ -290,7 +292,8 @@ describe('/api/hosted', () => {
     mockMarkWelcomeHostedClick.mockClear();
 
     mockHosted.isConfigured.mockReturnValue(false);
-    await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    const off = await request(app).post('/api/hosted/welcome-start').send({ messageId: '41' });
+    expect(off.status).toBe(503);
     expect(mockMarkWelcomeHostedClick).toHaveBeenCalledWith('owner-1', 'hosted_runtime_unconfigured');
   });
 
