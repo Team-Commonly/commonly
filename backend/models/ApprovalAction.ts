@@ -36,7 +36,11 @@ export type ToolCallDecidedByRole = 'credential-owner' | 'policy';
 // executor in services/approvalExecutors.ts — the enum here only widens in
 // the same PR as an executor, so a card can never exist for an action the
 // kernel cannot run.
-export type ApprovalActionType = 'create_pod' | 'connect_local_agent' | 'tool_call';
+//
+// `run_request` (F371) is never proposed by an agent: the mention path holds a
+// person's request to an agent whose owner asked to approve others' requests,
+// and its executor delivers the held wake (runRequestService).
+export type ApprovalActionType = 'create_pod' | 'connect_local_agent' | 'tool_call' | 'run_request';
 
 /** Server-only envelope for a parked broker call. canonicalArgs is present
  * only while the action is flagged and is scrubbed on every terminal write. */
@@ -78,6 +82,11 @@ export interface IApprovalAction extends Document {
   actionType: ApprovalActionType;
   params: Record<string, unknown>;
   toolCall?: ApprovalToolCall;
+  /**
+   * run_request only (F371): the wake the mention path would have queued.
+   * Server-only, like a tool call's arguments: the card shows `params`.
+   */
+  heldEvent?: { type: string; payload: Record<string, unknown> };
   /**
    * tool_call only (F184): which of the seat's open-card slots in this pod the
    * row holds, 0..MAX_OPEN_TOOL_CALL_APPROVALS-1. Two partial unique indexes
@@ -189,11 +198,12 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     agentName: { type: String, required: true, lowercase: true, trim: true },
     agentUserId: { type: String },
     instanceId: { type: String, default: 'default' },
-    actionType: { type: String, enum: ['create_pod', 'connect_local_agent', 'tool_call'], required: true },
+    actionType: { type: String, enum: ['create_pod', 'connect_local_agent', 'tool_call', 'run_request'], required: true },
     params: { type: Schema.Types.Mixed, default: {} },
     // Mixed keeps this optional for legacy action rows. The service validates
     // the required envelope fields before a tool_call row is created.
     toolCall: { type: Schema.Types.Mixed },
+    heldEvent: { type: Schema.Types.Mixed },
     toolCallSlot: { type: Number },
     waitingRuns: {
       type: [{

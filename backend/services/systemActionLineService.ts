@@ -227,6 +227,50 @@ export async function emitPausedLine(line: RemovedLine): Promise<void> {
   }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
 }
 
+/**
+ * F371. The owner declined someone's request to their agent. Placed beside the
+ * request, so the person who asked sees the answer where they asked.
+ */
+export interface RunRequestDeclinedLine extends SystemLineActor {
+  ownerName: string;
+  requesterName: string;
+  agentLabel: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitRunRequestDeclinedLine(line: RunRequestDeclinedLine): Promise<void> {
+  const content = `${line.ownerName} declined ${line.requesterName}'s request, so ${line.agentLabel} won't run it.`;
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'run-request-declined',
+    actorName: line.ownerName,
+    requesterName: line.requesterName,
+    agentLabel: line.agentLabel,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
+/**
+ * F371. A request to an agent that asks its owner first, which couldn't be put
+ * to the owner, so it won't run. Beside the request, so the asker isn't left
+ * waiting on a card that doesn't exist.
+ */
+export interface RunRequestRefusedLine extends SystemLineActor {
+  agentLabel: string;
+  messageId: string | number | null;
+  threadRootId?: string | number | null;
+}
+
+export async function emitRunRequestRefusedLine(line: RunRequestRefusedLine): Promise<void> {
+  const content = `${line.agentLabel} asks its owner before running other people's requests, and this one couldn't reach them, so it won't run.`;
+  await insertSystemLine(line, content, {
+    kind: 'system-action',
+    action: 'run-request-refused',
+    actorName: line.agentLabel,
+    agentLabel: line.agentLabel,
+  }, { threadRootId: line.threadRootId ?? null, replyToMessageId: line.messageId });
+}
+
 const hasAgentLineSince = async (action: string, podId: string, agentKey: string, since: Date): Promise<boolean> => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { pool } = require('../config/db-pg') as {

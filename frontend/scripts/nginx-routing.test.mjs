@@ -15,7 +15,9 @@ test('unknown public routes are real 404s while documented app routes retain SPA
   assert.match(config, /error_page\s+404\s+\/404\.html;/);
   assert.match(config, /location = \/404\.html\s*\{\s*internal;/s);
   assert.doesNotMatch(config, /error_page\s+404\s+\/index\.html/);
-  assert.match(config, /location ~ \^\/\(\?:v2\(\?:\/\|\$\).*try_files \$uri \$uri\/ \/index\.html;/s);
+  // The fallback is the noindex app shell, not the prerendered homepage (F396).
+  assert.match(config, /location ~ \^\/\(\?:v2\(\?:\/\|\$\).*try_files \$uri \$uri\/ \/app\.html;/s);
+  assert.doesNotMatch(config, /try_files[^;]*\/index\.html;/);
   assert.match(config, /privacy\/\?\$\|terms\/\?\$/);
   assert.match(config, /login\/\?\$/);
   assert.match(config, /pods\(\?:\/\|\$\)/);
@@ -46,12 +48,12 @@ test('HTML and inherited NGINX locations enforce the same image source policy', 
     'default "https://api.$host http://api.$host";',
   ]);
   const policy = /add_header Content-Security-Policy "img-src 'self' \$upload_image_origins data: blob:" always;/g;
-  // Server, index.html, signup-source.js and the hashed asset location need
-  // their own copy where Cache-Control overrides inherited headers.
-  assert.equal([...config.matchAll(policy)].length, 4);
+  // Server, index.html, app.html, signup-source.js and the hashed asset location
+  // need their own copy where Cache-Control overrides inherited headers.
+  assert.equal([...config.matchAll(policy)].length, 5);
   assert.doesNotMatch(config, /img-src[^"\n]*\*/);
   const imagePolicies = [...config.matchAll(/Content-Security-Policy "img-src ([^"\n]+)"/g)];
-  assert.equal(imagePolicies.length, 4);
+  assert.equal(imagePolicies.length, 5);
   for (const [, sources] of imagePolicies) {
     assert.deepEqual(sources.split(/\s+/), ["'self'", '$upload_image_origins', 'data:', 'blob:']);
   }
@@ -67,4 +69,12 @@ test('unhashed signup capture script revalidates instead of inheriting six-month
   assert.match(block, /Cache-Control "no-cache, must-revalidate"/);
   assert.match(block, /expires -1;/);
   assert.match(block, /try_files \$uri =404;/);
+});
+
+test('the app shell, like index.html, is never browser-cached (F396)', async () => {
+  const config = await readFile(resolve(frontendDir, 'nginx.conf'), 'utf8');
+  const block = config.match(/location = \/app\.html \{([^}]+)\}/)?.[1];
+  assert.ok(block);
+  assert.match(block, /Cache-Control "no-cache, no-store, must-revalidate" always/);
+  assert.match(block, /expires -1;/);
 });

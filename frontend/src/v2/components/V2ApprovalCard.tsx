@@ -93,6 +93,10 @@ const describeAction = (
   };
 };
 
+// F371: what the agent can reach in the pod, as reach codes the server sends.
+// A code with no wording shows as itself, so a new grant is never hidden.
+const reachKey = (code: string) => `approvalCard.runRequest.reach_${code.replace(/[^a-z]/gi, '_')}`;
+
 const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, time }) => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
@@ -105,6 +109,14 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
   const isToolCall = payload.actionType === 'tool_call';
+  // F371: someone else's request to this agent, held for its owner.
+  const isRunRequest = payload.actionType === 'run_request';
+  const runParams = (isRunRequest ? payload.params || {} : {}) as {
+    requesterName?: string; request?: string; reach?: unknown; narrowedTo?: string;
+  };
+  const reach = Array.isArray(runParams.reach) ? runParams.reach.map(String) : [];
+  const [narrowing, setNarrowing] = useState(false);
+  const [narrowText, setNarrowText] = useState('');
   // The card re-renders itself at the expiry moment. Its row is memoized, so
   // nothing else is guaranteed to render it again while the pod stays open.
   const expiresMs = status === 'flagged' && payload.expiresAt ? new Date(payload.expiresAt).getTime() : NaN;
@@ -206,7 +218,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
     : hasArgs ? toolCallView(pendingToolCall.tool, pendingToolCall.canonicalArgs as Record<string, unknown>)
       : prWriteView(pendingToolCall.tool, pendingToolCall.summary as Record<string, unknown>);
 
-  const decide = async (decision: 'approved' | 'declined') => {
+  const decide = async (decision: 'approved' | 'declined', narrowedTo?: string) => {
     if (
       deciding
       || !payload.approvalId
@@ -221,12 +233,13 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
         // refuses a parked call's approval that doesn't name the ones it holds.
         decision === 'approved' && pendingToolCall?.argsDigest
           ? { decision, argsDigest: pendingToolCall.argsDigest }
-          : { decision },
+          : decision === 'approved' && narrowedTo ? { decision, narrowedTo } : { decision },
       );
       // The card's own state lands via messageCardUpdated. The attention counts
       // (nav rail, pod inspector) refresh only on this event or window focus; a
       // resolved approval kept reading "1 waiting on you" until then (2026-10-14).
       notifyAttentionChanged();
+      setNarrowing(false);
       const resolved = response.approval;
       const path = resolved?.executionResult?.connectPath;
       if (
@@ -323,6 +336,23 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
               </div>
             )}
           </>
+        ) : isRunRequest ? (
+          <>
+            <div className="v2-approval__action" data-testid="approval-action">
+              {t('approvalCard.runRequest.asked', { requester: runParams.requesterName || t('approvalCard.runRequest.someone'), agent: authorLabel })}
+            </div>
+            {runParams.request && (
+              <blockquote className="v2-approval__request" data-testid="approval-request">{runParams.request}</blockquote>
+            )}
+            {reach.length > 0 && (
+              <div className="v2-approval__reach" data-testid="approval-reach">
+                <span className="v2-approval__reach-label">{t('approvalCard.runRequest.reach', { agent: authorLabel })}</span>
+                <ul>
+                  {reach.map((code) => <li key={code}>{t(reachKey(code), { defaultValue: code })}</li>)}
+                </ul>
+              </div>
+            )}
+          </>
         ) : action ? (
           <>
             <div className="v2-approval__action" data-testid="approval-action">
@@ -344,7 +374,36 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 {isToolCall ? t('approvalCard.toolCall.expiredPending') : t('approvalCard.aged')}
               </div>
             )}
-            {isOwner ? (
+            {isOwner && isRunRequest && narrowing ? (
+              <form
+                className="v2-approval__narrow"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (narrowText.trim()) void decide('approved', narrowText.trim());
+                }}
+              >
+                <label className="v2-approval__narrow-label" htmlFor={`narrow-${payload.approvalId}`}>
+                  {t('approvalCard.runRequest.narrowLabel', { agent: authorLabel })}
+                </label>
+                <textarea
+                  id={`narrow-${payload.approvalId}`}
+                  className="v2-approval__narrow-text"
+                  value={narrowText}
+                  maxLength={1000}
+                  rows={3}
+                  onChange={(event) => setNarrowText(event.target.value)}
+                />
+                <div className="v2-approval__actions">
+                  <button type="submit" className="v2-approval__btn v2-approval__btn--approve" disabled={deciding || !narrowText.trim()}>
+                    {deciding ? t('approvalCard.deciding') : t('approvalCard.runRequest.narrowApprove')}
+                  </button>
+                  <button type="button" className="v2-approval__btn v2-approval__btn--decline" disabled={deciding}
+                    onClick={() => setNarrowing(false)}>
+                    {t('approvalCard.runRequest.narrowCancel')}
+                  </button>
+                </div>
+              </form>
+            ) : isOwner ? (
               <div className="v2-approval__actions">
                 <button
                   type="button"
@@ -354,6 +413,16 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 >
                   {deciding ? t('approvalCard.deciding') : t('approvalCard.approve')}
                 </button>
+                {isRunRequest && (
+                  <button
+                    type="button"
+                    className="v2-approval__btn v2-approval__btn--narrow"
+                    disabled={deciding}
+                    onClick={() => { setNarrowText(runParams.request || ''); setNarrowing(true); }}
+                  >
+                    {t('approvalCard.runRequest.narrow')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="v2-approval__btn v2-approval__btn--decline"
@@ -364,14 +433,22 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
                 </button>
               </div>
             ) : (
-              <div className="v2-approval__state">{t('approvalCard.waitingForOwner')}</div>
+              <div className="v2-approval__state">
+                {isRunRequest ? t('approvalCard.runRequest.waiting', { agent: authorLabel }) : t('approvalCard.waitingForOwner')}
+              </div>
             )}
           </>
         )}
 
         {status === 'resolved' && payload.decision === 'approved' && (
           <div className={`v2-approval__state ${payload.executionError || agentJoinFailed || (isToolCall && toolCallEnding && toolCallEnding !== 'ran') ? 'v2-approval__state--attention' : 'v2-approval__state--approved'}`}>
-            {isToolCall && toolCallEnding
+            {isRunRequest
+              ? payload.executionError
+                ? t('approvalCard.approvedButFailed', { error: payload.executionError })
+                : runParams.narrowedTo
+                ? t('approvalCard.runRequest.approvedNarrowed', { text: runParams.narrowedTo })
+                : t('approvalCard.runRequest.approved', { agent: authorLabel })
+              : isToolCall && toolCallEnding
               ? toolCallEnding === 'ran'
                 ? t('approvalCard.toolCall.ran')
                 : toolCallCode === 'approval_outcome_unknown'
@@ -413,7 +490,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
 
         {status === 'resolved' && payload.decision === 'declined' && (
           <div className="v2-approval__state v2-approval__state--declined">
-            {t('approvalCard.declined')}
+            {isRunRequest ? t('approvalCard.runRequest.declined', { agent: authorLabel }) : t('approvalCard.declined')}
           </div>
         )}
 

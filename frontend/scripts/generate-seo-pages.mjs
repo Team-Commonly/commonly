@@ -113,6 +113,60 @@ const staticDocument = (template) => {
 };
 
 const pageUrl = (path) => `${siteUrl}${path}`;
+const ogImage = `${siteUrl}/og-card.png?v=6`;
+
+// Search results cut a title near 60 characters and a description near 160
+// (F397). Fitted once here, so a long guide title can't ship.
+const TITLE_LIMIT = 60;
+const DESCRIPTION_LIMIT = 160;
+const siteSuffix = ' | Commonly AI';
+const charCount = (text) => [...text].length;
+
+// A head shorter than this is a name ("Commonly: …"), not a title on its own.
+const MIN_TITLE_HEAD = 12;
+
+export const fitTitle = (title) => {
+  if (!String(title || '').trim()) throw new Error('A page has an empty title.');
+  const hasSuffix = title.endsWith(siteSuffix);
+  const base = hasSuffix ? title.slice(0, -siteSuffix.length) : title;
+  const withSuffix = (text) => (hasSuffix && charCount(text + siteSuffix) <= TITLE_LIMIT ? text + siteSuffix : text);
+  if (charCount(base) <= TITLE_LIMIT) return withSuffix(base);
+  // "Head: subtitle" keeps its head, the part people search for, and
+  // "Question? Subtitle" keeps the question.
+  const split = base.match(/^(.+?)([:?])\s/);
+  const head = split ? `${split[1]}${split[2] === '?' ? '?' : ''}` : base;
+  if (head !== base && charCount(head) >= MIN_TITLE_HEAD && charCount(head) <= TITLE_LIMIT) return withSuffix(head);
+  throw new Error(`Title over ${TITLE_LIMIT} characters with no subtitle to drop: "${title}". Give the page a shorter titleTag.`);
+};
+
+// A cut never ends on one of these: "…the context packet that makes…" reads broken.
+const DANGLING = new Set(['a', 'an', 'and', 'or', 'nor', 'but', 'the', 'to', 'of', 'for', 'in', 'on', 'at', 'by', 'with',
+  'without', 'from', 'into', 'as', 'that', 'which', 'who', 'whom', 'whose', 'where', 'when', 'while', 'so', 'than',
+  'is', 'are', 'can', 'its', 'their', 'your', 'our', 'what', 'how', 'why', 'whether', 'before', 'after', 'instead',
+  'between', 'each', 'every', 'one', 'keep', 'makes', 'make', 'let', 'lets']);
+const ABBREVIATION = /\b(?:vs|e\.g|i\.e|etc|approx|incl)$/i;
+
+export const fitDescription = (description) => {
+  const text = String(description || '').replace(/\s+/g, ' ').trim();
+  if (charCount(text) <= DESCRIPTION_LIMIT) return text;
+  const room = [...text].slice(0, DESCRIPTION_LIMIT).join('');
+  // The last whole sentence, unless the stop belongs to "vs." or "e.g.".
+  for (let at = room.length - 2; at >= 80; at -= 1) {
+    if (/[.?!]/.test(room[at]) && room[at + 1] === ' ' && !ABBREVIATION.test(room.slice(0, at))) return room.slice(0, at + 1);
+  }
+  // Else the last clause that still says most of it, else the last word, and
+  // never a dangling one.
+  const words = [...text].slice(0, DESCRIPTION_LIMIT - 1).join('');
+  const clause = Math.max(words.lastIndexOf(', '), words.lastIndexOf(': '), words.lastIndexOf('; '), words.lastIndexOf('—'));
+  let cut = clause >= 110 ? words.slice(0, clause) : words.slice(0, words.lastIndexOf(' '));
+  for (;;) {
+    cut = cut.replace(/[\s,;:—–-]+$/, '');
+    const last = cut.slice(cut.lastIndexOf(' ') + 1).toLowerCase();
+    if (!DANGLING.has(last) || cut.lastIndexOf(' ') < 0) break;
+    cut = cut.slice(0, cut.lastIndexOf(' '));
+  }
+  return `${cut}…`;
+};
 
 const formatDate = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -130,12 +184,31 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+// The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
+// (landing-faq.json). Change it when either changes (F395).
+export const LANDING_DATE_MODIFIED = '2026-11-07';
+
+const recordedDate = (where, value) => {
+  if (value === undefined) return undefined;
+  if (!isIsoDate(value)) throw new Error(`${where} has a dateModified that is not YYYY-MM-DD.`);
+  return value;
+};
+
 const guideProvenance = (guide) => {
   const provenance = guide.provenance;
   const required = ['author', 'reviewer', 'datePublished', 'dateModified'];
 
   if (!provenance || required.some((field) => !provenance[field])) {
     throw new Error(`Guide ${guide.title} is missing required provenance.`);
+  }
+
+  // The dates go raw into the sitemap's lastmod and the Article JSON-LD, and the
+  // string comparison below only orders full YYYY-MM-DD dates correctly.
+  const badDate = ['datePublished', 'dateModified'].find((field) => !isIsoDate(provenance[field]));
+  if (badDate) {
+    throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
   }
 
   if (provenance.dateModified < provenance.datePublished) {
@@ -376,6 +449,49 @@ const renderGuide = (guide, siteLinks = '') => {
   </div>`;
 };
 
+// The legal pages, from the same words V2LegalPage renders (content/legal.json).
+// Each commonly.me address becomes a mailto link, as on the page.
+const linkLegalEmails = (text) => escapeHtml(text).replace(/([a-z]+@commonly\.me)/g, '<a href="mailto:$1">$1</a>');
+
+const renderLegal = (title, sections, siteLinks = '') => `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a></nav></header>
+      <main class="seo-article">
+        <h1>${escapeHtml(title)}</h1>
+        ${sections.map((section) => `<section><h2>${escapeHtml(section.heading)}</h2>${section.body.map((paragraph) => `<p>${linkLegalEmails(paragraph)}</p>`).join('')}</section>`).join('\n        ')}
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+
+const USE_CASES_INDEX = {
+  title: 'Use cases',
+  lede: 'How teams use Commonly: pods where people and their agents share the same conversations, tasks and context.',
+};
+
+const renderUseCasesIndex = (useCases, siteLinks = '') => {
+  const cards = Object.entries(useCases).map(([id, useCase]) => `
+    <article class="seo-card">
+      <p class="seo-kicker">${escapeHtml(useCase.eyebrow)}</p>
+      <h2><a href="/use-cases/${encodeURIComponent(id)}/">${escapeHtml(useCase.title)}</a></h2>
+      <p>${escapeHtml(useCase.summary)}</p>
+    </article>`).join('');
+  return `
+    <div id="seo-page">
+      <header class="seo-header"><a class="seo-brand" href="/">Commonly</a><nav aria-label="Primary navigation"><a href="/">Home</a><a href="/guides/">Guides</a></nav></header>
+      <main>
+        <section class="seo-hero">
+          <p class="seo-kicker">Use cases</p>
+          <h1>${escapeHtml(USE_CASES_INDEX.title)}</h1>
+          <p class="seo-lede">${escapeHtml(USE_CASES_INDEX.lede)}</p>
+        </section>
+        <section>
+          <div class="seo-grid">${cards}</div>
+        </section>
+      </main>
+      <footer class="seo-footer"><a href="/">Back to Commonly</a>${siteLinks}</footer>
+    </div>`;
+};
+
 const renderGuidesIndex = (guides, siteLinks = '') => {
   const guideCards = Object.entries(guides).map(([id, guide]) => `
     <article class="seo-card">
@@ -433,7 +549,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta property="og:url" content="${url}" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
-    <meta property="og:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta property="og:image" content="${ogImage}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     ${articleDates}
@@ -441,7 +557,7 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
     <meta name="twitter:site" content="@sam_commonly" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
     <meta name="twitter:description" content="${escapeHtml(description)}" />
-    <meta name="twitter:image" content="${siteUrl}/og-card.png?v=6" />
+    <meta name="twitter:image" content="${ogImage}" />
     <script type="application/ld+json">${structuredData}</script>${faqSchema ? `
     <script type="application/ld+json" id="${faqJsonLdId}">${jsonLd(faqSchema)}</script>` : ''}`;
 };
@@ -452,6 +568,8 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
 const comparePageSources = {
   openagents: {
     path: '/compare/openagents/',
+    // The sitemap's lastmod. Change it with the text below (F395).
+    dateModified: '2026-10-31',
     title: "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
     description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs OpenAgents
@@ -526,6 +644,7 @@ Commonly facts come from the Commonly README and from using the product on commo
   },
   githubAgentHq: {
     path: '/compare/github-agent-hq/',
+    dateModified: '2026-10-31',
     title: "Commonly vs GitHub Agent HQ: where each one fits",
     description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
     markdown: `# Commonly vs GitHub Agent HQ
@@ -788,7 +907,7 @@ export const renderMarkdown = (markdown) => {
   return html.join('\n');
 };
 
-export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources }) => {
+export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, landingFaq = [], compareSources = comparePageSources, legal = null }) => {
   const siteLinks = renderSiteLinks({ useCases, compareSources });
   const organizationId = `${siteUrl}/#organization`;
   const websiteId = `${siteUrl}/#website`;
@@ -841,9 +960,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
   const landingPage = {
     path: '/',
     outputPath: 'index.html',
-    title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
+    title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
     description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
+    dateModified: LANDING_DATE_MODIFIED,
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {
@@ -858,6 +978,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       outputPath: `${source.path.slice(1)}index.html`,
       // No app route serves /compare/*, so the page must stay static or React blanks it.
       staticOnly: true,
+      dateModified: recordedDate(source.path, source.dateModified),
       title: source.title,
       description: source.description,
       content: `
@@ -891,6 +1012,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides, siteLinks),
     staticOnly: true,
+    // The index lists the guides, so it changes when the newest of them does.
+    dateModified: Object.values(guides).map((guide) => guideProvenance(guide).dateModified).sort().pop(),
     schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
   };
 
@@ -899,9 +1022,10 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     return {
       path,
       outputPath: `use-cases/${id}/index.html`,
-      title: `${useCase.title} | Commonly AI`,
+      title: `${useCase.titleTag || useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase, siteLinks),
+      dateModified: recordedDate(path, useCase.dateModified),
       schema: webPage(useCase.title, useCase.summary, path),
     };
   });
@@ -932,6 +1056,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
           author,
           datePublished: provenance.datePublished,
           dateModified: provenance.dateModified,
+          image: ogImage,
           publisher: { '@id': organizationId },
         }, {
           '@type': 'WebPage',
@@ -946,7 +1071,69 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     };
   });
 
-  return pages.concat(comparePages, useCasePages, [guidesIndexPage], guidePages);
+  // /use-cases/ was a 403: a directory of pages with no index (F396).
+  const useCasesIndexPage = {
+    path: '/use-cases/',
+    outputPath: 'use-cases/index.html',
+    title: `${USE_CASES_INDEX.title} | Commonly AI`,
+    description: USE_CASES_INDEX.lede,
+    content: renderUseCasesIndex(useCases, siteLinks),
+    // No app route serves /use-cases/, so the page stays static.
+    staticOnly: true,
+    // use-cases.json's last change; the sitemap's lastmod once it reads one.
+    dateModified: '2026-08-24',
+    schema: webPage(USE_CASES_INDEX.title, USE_CASES_INDEX.lede, '/use-cases/'),
+  };
+
+  // /privacy and /terms are app routes, so they were served the prerendered
+  // homepage and its canonical. Their own page keeps the app and gives
+  // crawlers (and Google's OAuth review) the same words (F396).
+  const legalPages = legal ? [
+    ['/privacy/', 'Privacy', 'How Commonly Software LLC stores, uses and deletes your data on commonly.me.', legal.privacy],
+    ['/terms/', 'Terms', 'The terms for using commonly.me, run by Commonly Software LLC.', legal.terms],
+  ].map(([path, title, description, sections]) => ({
+    path,
+    outputPath: `${path.slice(1)}index.html`,
+    title: `${title} | Commonly AI`,
+    description,
+    content: renderLegal(title, sections, siteLinks),
+    // V2LegalPage.tsx's last change on main when this was written.
+    dateModified: '2026-11-09',
+    schema: webPage(title, description, path),
+  })) : [];
+
+  // Home > (Guides >) page, for every page but home (F397). Only /guides/ is
+  // a section index every page under it can point to.
+  const crumb = (name, path, position) => ({ '@type': 'ListItem', position, name, item: pageUrl(path) });
+  const withBreadcrumbs = (page) => {
+    if (page.path === '/') return page;
+    const trail = [['Home', '/']];
+    if (page.path.startsWith(guidesIndexPath) && page.path !== guidesIndexPath) trail.push(['Guides', guidesIndexPath]);
+    trail.push([page.title.replace(siteSuffix, ''), page.path]);
+    const breadcrumbs = {
+      '@type': 'BreadcrumbList',
+      '@id': `${pageUrl(page.path)}#breadcrumb`,
+      itemListElement: trail.map(([name, path], index) => crumb(name, path, index + 1)),
+    };
+    return { ...page, schema: { ...page.schema, '@graph': [...page.schema['@graph'], breadcrumbs] } };
+  };
+
+  return pages.concat(comparePages, useCasePages, [useCasesIndexPage], [guidesIndexPage], guidePages, legalPages)
+    .map((page) => withBreadcrumbs({ ...page, title: fitTitle(page.title), description: fitDescription(page.description) }));
+};
+
+// The SPA fallback (nginx.conf). It used to be index.html, which the build
+// overwrites with the prerendered homepage, so every app-only path (/v2/…,
+// /login, an unknown /v2/x) claimed the homepage's title and canonical. The
+// shell has no canonical, says noindex, and carries no page content (F396).
+export const renderAppShell = (template) => {
+  const shell = replaceMarkedSection(template, metadataStart, metadataEnd, `
+    <title>Commonly</title>
+    <meta name="robots" content="noindex" />`);
+  if (!shell.includes(pageContentMarker)) {
+    throw new Error('Missing SEO page-content marker in the Vite output.');
+  }
+  return shell.replace(pageContentMarker, '');
 };
 
 export const renderStaticPage = (template, page) => {
@@ -959,20 +1146,111 @@ export const renderStaticPage = (template, page) => {
   return withMetadata.replace(pageContentMarker, () => page.content);
 };
 
+// llms.txt and llms-full.txt (F395). public/llms.txt is the hand-written head; the
+// build keeps it word for word up to its "## Guides" section and lists every
+// indexable page from the same content the pages are built from, so the map
+// can't fall behind the site. llms-full.txt carries those pages' text.
+const oneLine = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+// A guide paragraph is a string or { strong } (renderGuide draws the latter bold).
+const paragraphText = (paragraph) => oneLine(typeof paragraph === 'object' && paragraph ? paragraph.strong : paragraph);
+const llmsLink = (title, path, description) => `- [${oneLine(title)}](${pageUrl(path)}): ${oneLine(description)}`;
+
+export const renderLlmsTxt = ({ base, guides = {}, useCases = {}, compareSources = {}, pages = [] }) => {
+  const cut = base.indexOf('## Guides');
+  if (cut === -1) throw new Error('public/llms.txt needs a "## Guides" section for the build to list the pages under.');
+  const head = base.slice(0, cut).replace(/\s*$/, '\n\n');
+  const guideLines = Object.entries(guides).map(([id, guide]) => llmsLink(guide.title, `/guides/${id}/`, guide.description));
+  const compareLines = Object.values(compareSources).map((source) => llmsLink(source.title, source.path, source.description));
+  const useCaseLines = Object.entries(useCases).map(([id, useCase]) => llmsLink(useCase.title, `/use-cases/${id}/`, useCase.summary));
+  // Any other indexable page (a new index or a legal page) is listed too, so the
+  // map always matches the sitemap.
+  const listed = new Set(['/', '/guides/', ...Object.keys(guides).map((id) => `/guides/${id}/`),
+    ...Object.values(compareSources).map((source) => source.path), ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)]);
+  const otherLines = pages.filter((page) => !page.noindex && !listed.has(page.path))
+    .map((page) => llmsLink(page.title.replace(/\s*\|\s*Commonly AI$/, ''), page.path, page.description));
+  return `${head}## Guides
+
+${llmsLink('Guides', '/guides/', 'guides for teams working with AI agents')}
+${guideLines.join('\n')}
+
+## Compare
+
+${compareLines.join('\n')}
+
+## Use cases
+
+${useCaseLines.join('\n')}
+
+## Optional
+
+${llmsLink('commonly.me home', '/', 'what Commonly is, in one page')}
+${otherLines.map((line) => `${line}\n`).join('')}- [Full text](${pageUrl('/llms-full.txt')}): every guide, comparison and use case above in one file
+`;
+};
+
+const guideFullText = (guide) => {
+  const parts = [oneLine(guide.summary), ...(guide.intro || []).map(oneLine)];
+  (guide.sections || []).forEach((section) => {
+    parts.push(`### ${oneLine(section.title)}`);
+    (section.paragraphs || []).forEach((paragraph) => parts.push(paragraphText(paragraph)));
+    if (section.bullets?.length) parts.push(section.bullets.map((item) => `- ${oneLine(item)}`).join('\n'));
+    if (section.orderedItems?.length) parts.push(section.orderedItems.map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'));
+    (section.tables || []).forEach((table) => {
+      const row = (cells) => `| ${cells.map(oneLine).join(' | ')} |`;
+      parts.push([row(table.headers), row(table.headers.map(() => '---')), ...table.rows.map(row)].join('\n'));
+    });
+    (section.codeBlocks || []).forEach((block) => parts.push(`\`\`\`${block.language || ''}\n${block.code}\n\`\`\``));
+    if (section.links?.length) {
+      parts.push(section.links.map((link) => `- ${oneLine(link.label)}: ${link.external ? link.path : pageUrl(link.path)}`).join('\n'));
+    }
+  });
+  if (guide.faq?.length) {
+    parts.push('### FAQ');
+    guide.faq.forEach((item) => parts.push(`Q: ${oneLine(item.question)}\nA: ${oneLine(item.answer)}`));
+  }
+  if (guide.cta?.title) parts.push(`### ${oneLine(guide.cta.title)}`, oneLine(guide.cta.body));
+  return parts.filter(Boolean).join('\n\n');
+};
+
+const useCaseFullText = (useCase) => [
+  oneLine(useCase.summary),
+  '### Problems',
+  (useCase.problems || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Outcomes',
+  (useCase.outcomes || []).map((item) => `- ${oneLine(item)}`).join('\n'),
+  '### Example flow',
+  (useCase.exampleFlow || []).map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'),
+].filter(Boolean).join('\n\n');
+
+export const renderLlmsFullTxt = ({ guides = {}, useCases = {}, compareSources = {} }) => {
+  const entry = (title, path, body) => `## ${oneLine(title)}\n\nURL: ${pageUrl(path)}\n\n${body.trim()}\n`;
+  return [
+    '# Commonly: full text of the guides, comparisons and use cases on commonly.me\n\n'
+      + `> The pages listed in ${pageUrl('/llms.txt')}, as plain text.\n`,
+    ...Object.entries(guides).map(([id, guide]) => entry(guide.title, `/guides/${id}/`, guideFullText(guide))),
+    ...Object.values(compareSources).map((source) => entry(source.title, source.path, source.markdown)),
+    ...Object.entries(useCases).map(([id, useCase]) => entry(useCase.title, `/use-cases/${id}/`, useCaseFullText(useCase))),
+  ].join('\n---\n\n');
+};
+
 export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
-  const [template, translationText, useCaseText, guideText, faqText] = await Promise.all([
+  const [template, translationText, useCaseText, guideText, faqText, legalText] = await Promise.all([
     readFile(resolve(outputDir, 'index.html'), 'utf8'),
     readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
     readFile(resolve(frontendDir, 'src/content/landing-faq.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/legal.json'), 'utf8'),
   ]);
   const translations = JSON.parse(translationText);
   const useCases = JSON.parse(useCaseText);
   const guides = JSON.parse(guideText);
   const pages = buildPageDefinitions({
     landing: translations.landing, compare: translations.compare, useCases, guides, landingFaq: JSON.parse(faqText),
+    legal: JSON.parse(legalText),
   });
+  // Written from the Vite template before the homepage overwrites index.html.
+  await writeFile(resolve(outputDir, 'app.html'), renderAppShell(template));
 
   await Promise.all(pages.map(async (page) => {
     const outputPath = resolve(outputDir, page.outputPath);
@@ -980,8 +1258,15 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
     await writeFile(outputPath, renderStaticPage(template, page));
   }));
 
-  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map((page) => `  <url><loc>${pageUrl(page.path)}</loc></url>`).join('\n')}\n</urlset>\n`;
+  // lastmod only where a page carries a real dateModified (the guides). A build-time date on
+  // every URL would tell Google everything changed on each deploy, and it learns to ignore that (F369).
+  const sitemapEntry = (page) => `  <url><loc>${pageUrl(page.path)}</loc>${page.dateModified ? `<lastmod>${page.dateModified}</lastmod>` : ''}</url>`;
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.filter((page) => !page.noindex).map(sitemapEntry).join('\n')}\n</urlset>\n`;
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
+
+  const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
+  await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources, pages }));
+  await writeFile(resolve(outputDir, 'llms-full.txt'), renderLlmsFullTxt({ guides, useCases, compareSources: comparePageSources }));
   return pages;
 };
 

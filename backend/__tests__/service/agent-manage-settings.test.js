@@ -399,6 +399,98 @@ describe('per-installation agent settings', () => {
     expect(config(unchanged).heartbeat).toBeUndefined();
   });
 
+  it('F371: the owner turns "ask me before others\' requests run" on and off, and an older client leaves it alone', async () => {
+    const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`;
+    const body = { wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false };
+    const send = (patch, who = owner) => request(app).patch(url).set('Authorization', `Bearer ${token(who)}`)
+      .send({ ...body, ...patch });
+    const read = async () => (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`)).body.installations[0].askBeforeOthers;
+
+    expect(await read()).toBe(false);
+    const on = await send({ askBeforeOthers: true });
+    expect(on.status).toBe(200);
+    expect(on.body.settings.askBeforeOthers).toBe(true);
+    expect(await read()).toBe(true);
+
+    // A client that predates the field sends without it.
+    expect((await send({})).status).toBe(200);
+    expect(await read()).toBe(true);
+
+    const bad = await send({ askBeforeOthers: 'yes' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.field).toBe('askBeforeOthers');
+    expect((await send({ askBeforeOthers: false }, other)).status).toBe(403);
+    expect(await read()).toBe(true);
+
+    expect((await send({ askBeforeOthers: false })).status).toBe(200);
+    const saved = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(saved).askBeforeOthers).toEqual({ enabled: false });
+  });
+
+  // CodeRabbit on #3846: a mention auto-join records whoever mentioned the
+  // agent as installedBy. They keep its wake settings, but the agent's owner
+  // decides whether it asks first, and is the one it asks.
+  it('F371: on a row a mention pulled in, the agent\'s owner decides ask-first, not the person who mentioned it', async () => {
+    await User.create({
+      username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', ownerUserId: String(owner._id) },
+    });
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'settings-agent' }, {
+      $set: { 'config.autoJoinSource': 'mention-resolution' },
+    });
+    const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podB._id}?instanceId=same`;
+    const body = { wakeOnMessage: true, humanOnly: false, boardWake: false, heartbeatEnabled: false };
+    const send = (patch, who) => request(app).patch(url).set('Authorization', `Bearer ${token(who)}`)
+      .send({ ...body, ...patch });
+    const saved = async () => config(await AgentInstallation.findOne({ podId: podB._id, agentName: 'settings-agent' }));
+
+    const flip = await send({ askBeforeOthers: true }, other);
+    expect(flip.status).toBe(403);
+    expect((await saved()).askBeforeOthers).toBeUndefined();
+    // Their wake settings still save, with or without the unchanged field.
+    expect((await send({}, other)).status).toBe(200);
+    expect((await send({ askBeforeOthers: false }, other)).status).toBe(200);
+    expect((await saved()).wakeOnMessage).toEqual({ enabled: true, humanOnly: false });
+
+    // Settings lists the row for both, and tells each whether they may flip it.
+    const listing = async (who) => (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(who)}`)).body.installations.find((row) => row.podId === String(podB._id));
+    expect(await listing(owner)).toMatchObject({ canChangeAskFirst: true });
+    expect(await listing(other)).toMatchObject({ canChangeAskFirst: false });
+    expect((await listing(admin))).toMatchObject({ canChangeAskFirst: true });
+
+    expect((await send({ askBeforeOthers: true }, owner)).status).toBe(200);
+    expect((await saved()).askBeforeOthers).toEqual({ enabled: true });
+    expect((await send({ askBeforeOthers: false }, owner)).status).toBe(200);
+    expect((await saved()).askBeforeOthers).toEqual({ enabled: false });
+
+    // Outside the pod, the owner neither sees the row nor changes it.
+    await Pod.updateOne({ _id: podB._id }, { $pull: { members: owner._id } });
+    try {
+      expect(await listing(owner)).toBeUndefined();
+      expect((await send({ askBeforeOthers: true }, owner)).status).toBe(403);
+    } finally {
+      await Pod.updateOne({ _id: podB._id }, { $addToSet: { members: owner._id } });
+    }
+  });
+
+  it("F371: a mention row never supplies the owner's agent-level controls", async () => {
+    await User.create({
+      username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', ownerUserId: String(owner._id) },
+    });
+    // The owner's own row is gone; what's left is the one a mention pulled in.
+    await AgentInstallation.deleteOne({ podId: podA._id, agentName: 'settings-agent' });
+    await AgentInstallation.updateOne({ podId: podB._id, agentName: 'settings-agent' }, {
+      $set: { 'config.autoJoinSource': 'mention-resolution' },
+    });
+    const body = (await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`)).body;
+    expect(body.installations.map((row) => row.podId)).toEqual([String(podB._id)]);
+    expect(body.writablePodId ?? null).toBeNull();
+  });
+
   it('lets an instance admin manage an installation they did not create', async () => {
     const listed = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(admin)}`);

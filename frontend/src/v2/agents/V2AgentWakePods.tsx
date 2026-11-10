@@ -7,6 +7,7 @@ import { AgentPodWakePatch } from './useAgentSettings';
 import { RuntimeNarrowingStatus, V2RuntimeNarrowingNotice } from '../components/V2OutsiderGrantNarrowing';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import V2AgentAddToPod from './V2AgentAddToPod';
+import { PERSONAL_POD_TYPES } from '../connectors/channelModel';
 
 interface InstallationSettings {
   podId: string;
@@ -18,6 +19,10 @@ interface InstallationSettings {
   boardWake: boolean;
   heartbeatEnabled: boolean;
   heartbeatMinutes: number;
+  /** F371: anyone else's request to the agent here waits for its owner. */
+  askBeforeOthers?: boolean;
+  // false when the viewer installed the row but isn't the agent's owner (F371).
+  canChangeAskFirst?: boolean;
   /** Set on a hosted install: its heartbeat floor and the owner's daily cap. */
   hostedHeartbeat?: HostedHeartbeat | null;
 }
@@ -184,6 +189,7 @@ const V2AgentWakePods: React.FC<{
             humanOnly: target.humanOnly,
             heartbeatEnabled: target.heartbeatEnabled,
             heartbeatMinutes: target.heartbeatMinutes,
+            ...(typeof target.askBeforeOthers === 'boolean' ? { askBeforeOthers: target.askBeforeOthers } : {}),
           });
           committed[podId] = target;
         } catch (requestError) {
@@ -303,6 +309,7 @@ const V2AgentWakePods: React.FC<{
                 <th scope="col">{t('agentSettings.colMessages')}</th>
                 <th scope="col">{t('agentSettings.colBoard')}</th>
                 <th scope="col">{t('agentSettings.colHeartbeat')}</th>
+                <th scope="col">{t('agentSettings.colAskFirst')}</th>
                 <th scope="col"><span className="v2-agent-wake-pods__sr">{t('agentSettings.remove')}</span></th>
               </tr>
             </thead>
@@ -372,6 +379,19 @@ const V2AgentWakePods: React.FC<{
                       );
                     })()}
                   </td>
+                  <td data-label={t('agentSettings.colAskFirst')}>
+                    {/* A direct message never runs the gate (its wakes take the DM path),
+                        so the switch would promise something it can't do there. */}
+                    {!PERSONAL_POD_TYPES.has(String(entry.podType || '')) && (
+                      <label className="v2-agent-wake-pods__toggle" title={t('agentSettings.askBeforeOthers')}>
+                        <input type="checkbox" checked={entry.askBeforeOthers === true}
+                          disabled={busyPod === entry.podId || entry.canChangeAskFirst === false}
+                          onChange={(event) => { void save(entry, { askBeforeOthers: event.target.checked }); }} />
+                        <span className={`tg${entry.askBeforeOthers ? ' on' : ''}`} aria-hidden="true" />
+                        <span className="v2-agent-wake-pods__sr">{t('agentSettings.askBeforeOthers')}</span>
+                      </label>
+                    )}
+                  </td>
                   <td>
                     <button type="button" className="b b-g ib b-sm" title={t('agentSettings.remove')}
                       aria-label={t('agentSettings.remove')} disabled={busyPod === entry.podId}
@@ -383,7 +403,7 @@ const V2AgentWakePods: React.FC<{
               ))}
               {otherDirectMessages > 0 && (
                 <tr className="v2-agent-wake-pods__others">
-                  <td colSpan={5}>{t('agentSettings.otherDirectMessages', { count: otherDirectMessages })}</td>
+                  <td colSpan={6}>{t('agentSettings.otherDirectMessages', { count: otherDirectMessages })}</td>
                 </tr>
               )}
             </tbody>

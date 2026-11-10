@@ -435,6 +435,22 @@ describe('V2Inspector', () => {
     expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue?podId=pod-1&limit=50');
   });
 
+  test('F372: two requests from one person read apart by their detail, on the same row', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/activity/decision-queue?podId=pod-1')
+      ? { items: [
+        { id: 'r1', kind: 'approval', title: 'Ben asked Nova', detail: 'draft a welcome note', podId: 'pod-1' },
+        { id: 'r2', kind: 'approval', title: 'Ben asked Nova', detail: 'list the open questions', podId: 'pod-1' },
+      ] }
+      : { tasks: [] }));
+    renderInspector({ attentionCount: 2, attentionItems: [] });
+    const first = await screen.findByTitle('Ben asked Nova: draft a welcome note');
+    const second = screen.getByTitle('Ben asked Nova: list the open questions');
+    expect(first).toHaveTextContent('Ben asked Nova · draft a welcome note');
+    expect(second).toHaveTextContent('Ben asked Nova · list the open questions');
+    // Oldest first, as the queue returned them.
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test('members see the join policy as read-only text, not a segment', () => {
     renderInspector({
       currentUserId: 'another-user',

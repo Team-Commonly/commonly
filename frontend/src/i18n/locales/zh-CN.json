@@ -781,6 +781,7 @@
       "agentRemoved": "{{name}} 已被移除，无法在这里回复。",
       "agentOffline": "{{name}} 似乎已离线，可能暂时不会回复。",
       "agentPaused": "{{name}} 已暂停，不会回复这条消息。",
+      "runRequestRefused": "{{name}} 处理别人的请求前要先问所有者，这条请求没能送到所有者那里，所以不会运行。",
       "agentNotConnected": "{{name}} 还没有连接，运行起来才能看到这条消息。它的所有者可以将其接入。",
       "agentNotConnectedOwner": "你还没有接入 {{name}}，它运行起来才能看到这条消息。",
       "mentionUnanswered": "{{name}} 没有回复，可能已离线。稍后再问，或者问问 Pod 里的其他人。",
@@ -1938,6 +1939,24 @@
       "expired": "该批准在决定生效前已过期。",
       "needsReview": "这条请求和页面显示的内容对不上，刷新后再决定。",
       "failed": "决定未能保存，请重试。"
+    },
+    "runRequest": {
+      "asked": "{{requester}} 请 {{agent}} 做这件事",
+      "someone": "有人",
+      "reach": "在这里，{{agent}} 可以",
+      "reach_pod_read": "读取这个 Pod",
+      "reach_pod_post": "在这个 Pod 发消息",
+      "reach_memory_read": "读取它的记忆",
+      "reach_memory_write": "写入它的记忆",
+      "reach_github_issues": "创建和编辑 GitHub issue",
+      "narrow": "缩小范围",
+      "narrowLabel": "只批准这些。{{agent}} 会收到你改过的版本。",
+      "narrowApprove": "按这个版本批准",
+      "narrowCancel": "取消",
+      "waiting": "等待 {{agent}} 的所有者决定。",
+      "approved": "已批准，{{agent}} 已收到请求。",
+      "approvedNarrowed": "已按此批准：{{text}}",
+      "declined": "已拒绝，{{agent}} 不会运行它。"
     }
   },
   "byoHandoff": {
@@ -3486,7 +3505,9 @@
     "heartbeatTurns_other": "心跳{{count}}次/天 · 上限{{cap}}轮/天",
     "heartbeatTurnsNoCap_other": "心跳{{count}}次/天 · 上限不可用",
     "specialtyCount_other": "{{count}}项专长",
-    "boundaryCount_other": "{{count}}条行为边界"
+    "boundaryCount_other": "{{count}}条行为边界",
+    "colAskFirst": "先问我",
+    "askBeforeOthers": "别人的请求先问我，再运行"
   },
   "agentPolicy": {
     "title": "策略",

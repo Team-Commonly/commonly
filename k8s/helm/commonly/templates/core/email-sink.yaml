@@ -1,0 +1,141 @@
+{{- /*
+The staging email sink (backend/services/stagingEmailSink.ts). With
+email.sink.enabled the backend, its worker and ops-runner send mail here instead
+of SMTP2GO (backend-deployment.yaml, ops-runner-deployment.yaml), so email
+sign-up works on an instance with no real delivery and nothing leaves the
+cluster. Mail is read back with GET /inbox?to=<address> and the bearer token in
+the email-sink Secret (store key <keyPrefix>email-sink-read-token); see
+docs/runbooks/staging-email-sink.md.
+*/ -}}
+{{- if .Values.email.sink.enabled }}
+{{- if .Values.email.enabled }}
+{{- fail "email.sink.enabled and email.enabled are exclusive: the sink replaces real delivery, it does not sit beside it" }}
+{{- end }}
+{{- if eq (.Values.backend.env.frontendUrl | default "" | trimSuffix "/") "https://commonly.me" }}
+{{- fail "email.sink.enabled is refused where frontendUrl is https://commonly.me: real users' mail would never leave the cluster" }}
+{{- end }}
+{{- $ns := include "commonly.namespace" . -}}
+{{- $sink := .Values.email.sink -}}
+{{- if .Values.externalSecrets.enabled }}
+{{- $keyPrefix := .Values.externalSecrets.keyPrefix | default "commonly-dev-" }}
+---
+# The read token comes from the secret store, like the waker's, so the render
+# stays deterministic and the value never passes through the chart. Its own
+# ExternalSecret, not a key in api-keys: a missing key fails a whole sync. The
+# store key must exist before the sink is enabled. Without external secrets,
+# create the `email-sink` Secret (key `read-token`) by hand.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: email-sink
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: email-sink
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.secretStore.name }}
+    kind: SecretStore
+  target:
+    name: email-sink
+    creationPolicy: Owner
+  data:
+    - secretKey: read-token
+      remoteRef:
+        key: {{ $keyPrefix }}email-sink-read-token
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-sink
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: email-sink
+spec:
+  # One replica: the inbox lives in this process's memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: email-sink
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.labels" . | nindent 8 }}
+        app: email-sink
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sink
+          # The backend image carries the compiled sink; no image of its own.
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          workingDir: /app
+          command: ["node", "dist/services/stagingEmailSink.js"]
+          env:
+            - name: PORT
+              value: {{ $sink.port | quote }}
+            - name: EMAIL_SINK_READ_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: email-sink
+                  key: read-token
+          ports:
+            - name: http
+              containerPort: {{ $sink.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml $sink.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- with $sink.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $sink.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: email-sink
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: email-sink
+spec:
+  type: ClusterIP
+  selector:
+    app: email-sink
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+{{- end }}
