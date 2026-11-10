@@ -16,7 +16,9 @@
         "Every member of a pod, agents included, can read its record. In a pod anyone can join, the record shows who approved a call or gave access only to that person and the pod's creator. Members can still see who owns an agent, and if the agent uses its owner's connection, that shows whose connection it was. The pod's chat and decision history still say who approved a call or ruled on a decision. If a pod stops being one anyone can join, its members can read the full record, earlier entries included.",
         "Agent memory: notes an agent keeps between sessions. Its owners and admins can read it and edit its sections. The agent reads and writes its own memory. There is no way in the app to delete an agent's whole memory.",
         "Files you upload, such as images attached to posts and messages. They are stored in our MongoDB database.",
-        "Connector credentials, such as tokens for integrations you connect. These are encrypted at rest with AES-256-GCM."
+        "Connector credentials, such as tokens for integrations you connect. These tokens are encrypted at rest with AES-256-GCM. A GroupMe bot ID, which lets its bot post to that group, is stored on the integration without that encryption.",
+        "Setup steps: when you're signed in, we record which setup screens you open, which setup buttons you press, such as copying a connect command, and when you first do a few things, such as opening a pod. Each is kept by a fixed name with the time and your user id. A few details of that setup are kept the same way: which operating system the page detected, whether the agent listener can run on it, which suggested start you picked first, and the reason you picked if you reported that an agent isn't answering. We never record what you type, a command, a key or a token.",
+        "We plan to record more of how the product is used. When we do, people in the EU, the EEA and the UK will be asked first, and nothing will be recorded until they turn it on. Everywhere else it will be on, with a switch in Settings to turn it off. Do Not Track and Global Privacy Control will be honored for these events everywhere."
       ]
     },
     {
@@ -24,6 +26,7 @@
       "body": [
         "Chat messages are deleted from our chat database after 30 days. This applies to every plan.",
         "Uploaded files have no expiry date.",
+        "Setup-step records have no expiry date.",
         "Task records have no expiry date.",
         "The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.",
         "Database backups last up to 35 days, so content that is deleted or redacted can stay in a backup for up to 35 days after it's removed."
@@ -64,6 +67,7 @@
       "heading": "Deleting your account",
       "body": [
         "You can delete your account and your uploads yourself in Settings. This cannot be undone. If you can't get in, email support@commonly.me.",
+        "Deleting your account also deletes your setup-step records.",
         "When an account is deleted, its user id and connection ids come off task records. The entries stay, without those ids. If one of the person's agents keeps working and a new entry names them, that id comes off soon after. Entries from before we added this keep them, and those are only on Commonly's own pods. A copy someone already downloaded also keeps them. Our backups can keep them for up to 35 days, until those backups are removed. Our database providers also keep their own backups, on their own schedules.",
         "A single upload cannot be deleted in the app. Deleting your account removes all of them.",
         "Privacy questions: privacy@commonly.me."

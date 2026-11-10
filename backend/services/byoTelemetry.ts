@@ -20,6 +20,14 @@ export function daemonRegisteredKey(userId: unknown): string {
   return `daemon-registered:${String(userId)}`;
 }
 
+// Account deletion removes a person's rows. userId is stored as the caller
+// passed it, a string or an ObjectId, so both forms are matched.
+export async function deleteByoEventsFor(userId: string): Promise<void> {
+  const ids: unknown[] = [userId];
+  if (mongoose.Types.ObjectId.isValid(userId)) ids.push(new mongoose.Types.ObjectId(userId));
+  await mongoose.connection.db.collection('byo_telemetry').deleteMany({ userId: { $in: ids } });
+}
+
 export async function recordByoEvent(
   userId: unknown,
   step: ServerByoStep,
