@@ -36,7 +36,15 @@ import {
   daemonLogPath,
   missingProviderKeys,
   servicePaths,
+  serviceOwnerQuery,
+  loadedServiceFile,
+  foreignServiceRefusal,
 } from '../lib/daemon-service.js';
+
+// launchd, systemd and Task Scheduler hold one Commonly daemon per computer
+// account. Install refuses to stop another HOME's; this flag takes it over.
+const REPLACE_FLAG = '--replace';
+const REPLACE_HELP = 'Replace a Commonly daemon that another account (another HOME) runs on this computer account. Without it, install stops and names that daemon.';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { watchWindowsLauncher } from '../lib/daemon-service-windows.js';
 import {
@@ -377,6 +385,7 @@ Examples:
     .description('From a fresh computer in one step: install the CLI under your home (no sudo, no global install), log in, register this computer, and start the daemon')
     .option('--instance <url-or-key>', 'Target Commonly instance')
     .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox (see `commonly daemon install`). Forwarded to the install step.')
+    .option(REPLACE_FLAG, REPLACE_HELP)
     .action(async (opts) => {
       try {
         const instanceUrl = resolveInstanceUrl(opts.instance);
@@ -385,6 +394,12 @@ Examples:
           instanceUrl,
           unsandboxed: Boolean(opts.unsandboxed),
           alreadyRegistered: (instance) => setupFindsRegistration({ instance }),
+          replace: Boolean(opts.replace),
+          foreignDaemon: async () => {
+            const target = servicePaths(process.platform, homedir());
+            const answer = await readServiceCmd(serviceOwnerQuery(process.platform)).catch(() => '');
+            return foreignServiceRefusal({ target, loadedFile: loadedServiceFile(target.kind, answer) });
+          },
           log: (line) => console.log(line),
           // Run the stable CLI once with the user's terminal attached, so login
           // device-auth and any prompts work; reject on a non-zero exit so a
@@ -492,6 +507,15 @@ Examples:
     });
 
   // ── install / uninstall (ADR-026 D1) ──────────────────────────────────────
+  // The service manager's answer about the live daemon; rejects when it has none.
+  const readServiceCmd = (argv) => new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(argv[0], argv.slice(1), { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.on('error', rejectPromise);
+    child.on('close', (code) => (code === 0 ? resolvePromise(out) : rejectPromise(new Error(`${argv.join(' ')} exited ${code}`))));
+  });
+
   const serviceDeps = () => ({
     // writeFile is deliberately NOT injected here: daemon-service.js's default
     // writer sets the 0600 mode at CREATION, and a bare `writeFileSync(file,
@@ -502,6 +526,7 @@ Examples:
     ensureFile: (path) => { const fd = openSync(path, 'a', 0o600); closeSync(fd); },
     existsFile: (file) => existsSync(file),
     removeFile: (file) => rmSync(file),
+    readCmd: readServiceCmd,
     execCmd: (argv) => new Promise((resolvePromise, rejectPromise) => {
       const child = spawn(argv[0], argv.slice(1), { stdio: 'ignore' });
       child.on('error', rejectPromise);
@@ -526,6 +551,7 @@ Examples:
     .command('install')
     .description('Register the daemon as a login service (launchd, systemd, or a Windows scheduled task); on Linux, also turn on lingering so it starts at boot')
     .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it. Install again without it to turn it off.')
+    .option(REPLACE_FLAG, REPLACE_HELP)
     .action(async (opts) => {
       try {
         if (opts.unsandboxed) {
@@ -555,6 +581,7 @@ Examples:
         try {
           installed = await installDaemonService({
             ...serviceDeps(),
+            replace: Boolean(opts.replace),
             providerKeyEnvNames: providerKeyEnvNames(),
             optionalEnvNames: [UPDATE_CHECK_OPT_OUT_ENV],
           });

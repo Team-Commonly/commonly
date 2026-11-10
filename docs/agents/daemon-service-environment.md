@@ -19,6 +19,15 @@ that installed it, and that has cost a fleet of seats at least once.
 Both run the exact interpreter and CLI entry that performed the install
 (resolved at install time), then `daemon run --foreground`.
 
+The label, unit and task name are fixed, so a computer account holds one
+Commonly daemon, whatever `HOME` an install runs under. Before writing, install
+(and `daemon setup`, before it logs in) asks the service manager which file the
+live service came from (`launchctl print`, `systemctl --user show -p
+FragmentPath`, `schtasks /Query /XML`). If that file belongs to another `HOME`,
+install stops and names it rather than unloading another account's daemon.
+`--replace` takes it over on purpose. Re-running from the same `HOME` updates in
+place.
+
 A login service starts at login. On Linux the install also runs `loginctl
 enable-linger` for you, which starts your systemd user manager, and so the
 daemon, at boot. It reports a boot start only when logind's linger file for your

@@ -125,6 +125,27 @@ describe('orchestrateDaemonSetup', () => {
     expect(calls).toEqual([['login'], ['daemon', 'register'], ['daemon', 'install', '--unsandboxed']]);
   });
 
+  it('refuses before login when another account\'s daemon runs here, so nothing is registered', async () => {
+    const { calls, runCli } = okRun();
+    const stable = jest.fn(ensureStable);
+    await expect(orchestrateDaemonSetup({
+      version: '0.1.300', runCli, nodeVersion: 'v22.0.0', ensureStable: stable, home: HOME,
+      foreignDaemon: async () => 'This computer already runs a Commonly daemon for another account',
+    })).rejects.toThrow(/another account/);
+    expect(calls).toEqual([]);
+    expect(stable).not.toHaveBeenCalled();
+  });
+
+  it('--replace skips that check and is forwarded to install', async () => {
+    const { calls, runCli } = okRun();
+    const foreignDaemon = jest.fn(async () => 'another account');
+    await orchestrateDaemonSetup({
+      version: '0.1.300', runCli, replace: true, foreignDaemon, nodeVersion: 'v22.0.0', ensureStable, home: HOME,
+    });
+    expect(foreignDaemon).not.toHaveBeenCalled();
+    expect(calls).toEqual([['login'], ['daemon', 'register'], ['daemon', 'install', '--replace']]);
+  });
+
   it('stops the chain when login fails: register and install never run', async () => {
     const calls = [];
     const runCli = jest.fn((entry, args) => {
