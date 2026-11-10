@@ -197,6 +197,51 @@ export const loadAgentToken = (name) => {
   }
 };
 
+// ── Instances (F306) ─────────────────────────────────────────────────────────
+// One agent can have more than one instance (same name, another instanceId),
+// each with its own key. The default instance keeps `<name>.json`; another
+// is `<name>@<instanceId>.json`, so its key never overwrites the default's.
+const INSTANCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const isDefaultInstanceId = (instanceId) => String(instanceId || 'default').toLowerCase() === 'default';
+
+export const seatKey = (agentName, instanceId) => (
+  isDefaultInstanceId(instanceId) ? agentName : `${agentName}@${instanceId}`
+);
+
+const runCommandFor = (agentName, instanceId) => (
+  `commonly agent run ${agentName}${isDefaultInstanceId(instanceId) ? '' : ` --instance-id ${instanceId}`}`
+);
+
+/**
+ * The instance `run <name>` was asked to start: --instance-id, or the one a
+ * seat key (`nova@priya-nova`, the token file's name) carries. Null when
+ * neither names one: that run behaves as it always has, keyed by the bare name
+ * whatever instance its key is for (a persona's BYO install is a non-default
+ * instance, and its page command names none).
+ * Throws on an id that is not a plain id, since it becomes part of a file name.
+ */
+export const parseRunInstanceId = (flag, name) => {
+  const at = String(name).indexOf('@');
+  const fromName = at >= 0 ? String(name).slice(at + 1) : null;
+  if (flag !== undefined && fromName !== null && flag !== fromName) {
+    throw new Error(`'${name}' already names instance ${fromName}, so --instance-id ${flag} does not apply`);
+  }
+  const instanceId = flag !== undefined ? flag : fromName;
+  if (instanceId === null) return null;
+  if (!INSTANCE_ID_PATTERN.test(instanceId)) {
+    throw new Error(`--instance-id takes the instance's id (letters, digits, '.', '_' or '-'), not '${instanceId}'`);
+  }
+  return instanceId;
+};
+
+/** A key for one instance never runs as another: say which command runs it. */
+export const runInstanceRefusal = ({ record, instanceId }) => {
+  const keyInstance = record?.instanceId || 'default';
+  if (String(keyInstance).toLowerCase() === String(instanceId || 'default').toLowerCase()) return null;
+  return `this key is for instance ${keyInstance} of '${record.agentName}', not instance ${instanceId || 'default'}. `
+    + `To run it: ${runCommandFor(record.agentName, keyInstance)}`;
+};
+
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
@@ -1983,6 +2028,10 @@ export const performRun = ({
   agentName,
   displayName = null,
   instanceId = 'default',
+  // F306: the token file's key, which names this seat's local state (sessions,
+  // handled events, notices, scratch folder). A second instance's is
+  // `<name>@<instanceId>`; every other seat's is its bare name, as before.
+  localKey = null,
   podId = null,
   environment = null,
   // D245: the user's own Windows opt-in for this run; reaches the adapter's
@@ -2058,6 +2107,7 @@ export const performRun = ({
   pollLivenessCheckMs,
   onPollStalled,
 }) => {
+  const stateKey = localKey || agentName;
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   {
@@ -2250,7 +2300,7 @@ export const performRun = ({
   // as binary-not-found — so we ensure it up front to avoid the confusing
   // diagnostic. ADR-008: when an environment spec was attached, the resolved
   // workspace path replaces the /tmp default.
-  const scratchCwd = join(tmpdir(), 'commonly-agents', agentName);
+  const scratchCwd = join(tmpdir(), 'commonly-agents', stateKey);
   const agentCwd = workspacePath || scratchCwd;
   if (!existsSync(agentCwd)) mkdirSync(agentCwd, { recursive: true });
   // TASK-294: a pod can turn public after attach, so a workspace seat re-reads
@@ -2604,7 +2654,7 @@ export const performRun = ({
       // again on every resume (measured 2026-11-05 on codex 0.162.1 and claude
       // 2.1.318), so one refusal would refuse every later turn in this pod. The
       // next turn starts fresh; memory reaches it through the adapter's preamble.
-      if (isContentRefusal(error) && turn.resumedSession) clearSession(agentName, args.eventPodId);
+      if (isContentRefusal(error) && turn.resumedSession) clearSession(stateKey, args.eventPodId);
       throw error;
     }
   };
@@ -2626,7 +2676,7 @@ export const performRun = ({
     const cliAgentName = (readSavedControls && !environment) || standaloneMachineRun ? agentName : null;
     const key = `model-unavailable:${failure.model || 'unknown'}${cliAgentName ? ':agent-config' : ''}`;
     try {
-      if (!noticeDue(agentName, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
+      if (!noticeDue(stateKey, key, MODEL_UNAVAILABLE_HINT_WINDOW_MS)) return;
       const delivery = await deliverTurnNotice({
         client,
         podId: hintPodId,
@@ -2636,7 +2686,7 @@ export const performRun = ({
         log,
       });
       if (!delivery.skipped && !delivery.refused) {
-        recordNotice(agentName, key);
+        recordNotice(stateKey, key);
         log(`model unavailable hint posted (${failure.model || 'model not named'})`);
       }
     } catch (noticeError) {
@@ -2662,7 +2712,7 @@ export const performRun = ({
       const key = `cant-answer:${notice.cause}:${waitingPod}`;
       try {
         // eslint-disable-next-line no-continue
-        if (!noticeDue(agentName, key, CANT_ANSWER_NOTICE_WINDOW_MS)) continue;
+        if (!noticeDue(stateKey, key, CANT_ANSWER_NOTICE_WINDOW_MS)) continue;
         // eslint-disable-next-line no-await-in-loop
         const delivery = await deliverChatReply({
           client,
@@ -2677,7 +2727,7 @@ export const performRun = ({
           log(`[inbox.batch] pod ${waitingPod} was not told why this agent can't answer: `
             + `${delivery.reason || 'the notice was not posted'}`);
         } else {
-          recordNotice(agentName, key);
+          recordNotice(stateKey, key);
           log(`[inbox.batch] told pod ${waitingPod} why this agent can't answer (${notice.cause})`);
         }
       } catch (noticeError) {
@@ -2814,8 +2864,8 @@ export const performRun = ({
     // TASK-440: a cold, large session starts fresh at wake instead of being
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
-    const sessionEntry = getSessionEntry(agentName, eventPodId, { binding: placement.binding });
-    let sessionId = getSession(agentName, eventPodId, { binding: placement.binding });
+    const sessionEntry = getSessionEntry(stateKey, eventPodId, { binding: placement.binding });
+    let sessionId = getSession(stateKey, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
     if (sessionId && shouldStartFreshSession({
       lastTurn: sessionEntry?.lastTurn,
@@ -3097,7 +3147,7 @@ export const performRun = ({
       // TASK-440: record the context size this turn left behind, so the next
       // wake can decide whether to recycle. Adapters that report nothing keep
       // resuming.
-      setSession(agentName, eventPodId, result.newSessionId, {
+      setSession(stateKey, eventPodId, result.newSessionId, {
         binding: placement.binding,
         contextTokens: result.contextTokens ?? null,
       });
@@ -3859,7 +3909,7 @@ export const performRun = ({
     const seenEventIds = new Set();
     for (const entry of entries) {
       const eventId = String(entry.event._id);
-      if (seenEventIds.has(eventId) || wasEventHandled(agentName, entry.event._id)) {
+      if (seenEventIds.has(eventId) || wasEventHandled(stateKey, entry.event._id)) {
         entry.result = { outcome: 'no_action', reason: 'duplicate-delivery' };
         log(`[${entry.event.type}] duplicate delivery ${entry.event._id} — re-acking without batch spawn`);
       } else {
@@ -4518,7 +4568,7 @@ export const performRun = ({
             // reached. Unacked, the kernel redelivers it.
             if (!entry.result) continue;
             if (entry.result?.reason !== 'duplicate-delivery') {
-              recordHandledEvent(agentName, event._id);
+              recordHandledEvent(stateKey, event._id);
             }
             try {
               const deliveryId = event.payload?.deliveryId;
@@ -4554,7 +4604,7 @@ export const performRun = ({
         }
         const [event] = group;
         let result;
-        if (wasEventHandled(agentName, event._id)) {
+        if (wasEventHandled(stateKey, event._id)) {
           result = { outcome: 'no_action', reason: 'duplicate-delivery' };
           log(`[${event.type}] duplicate delivery ${event._id} — skipping spawn and re-acking`);
         } else {
@@ -4650,7 +4700,7 @@ export const performRun = ({
           // Record after successful processing but before ack. If the ack
           // fails, the next delivery is skipped and re-acked instead of
           // burning a second model turn for work that already completed.
-          recordHandledEvent(agentName, event._id);
+          recordHandledEvent(stateKey, event._id);
         }
         try {
           const deliveryId = event.payload?.deliveryId;
@@ -4889,6 +4939,8 @@ export const performDetach = async ({
   agentName,
   podId,
   instanceId = 'default',
+  // F306: the token file to remove; a second instance's is `<name>@<instanceId>`.
+  localKey = null,
   skipBackend = false,
   log = () => {},
 }) => {
@@ -4919,9 +4971,10 @@ export const performDetach = async ({
     }
   }
 
-  deleteAgentToken(agentName);
-  clearSessions(agentName);
-  log(`local: removed token file + session store for '${agentName}'`);
+  const stateKey = localKey || agentName;
+  deleteAgentToken(stateKey);
+  clearSessions(stateKey);
+  log(`local: removed token file + session store for '${stateKey}'`);
 
   return { backend: backendResult, localCleaned: true };
 };
@@ -5322,6 +5375,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
+    .option('--instance-id <id>', 'Run this instance of the agent, when it has more than one (default: default)')
     .option('--adapter <name>', `CLI to wrap on first-run bootstrap (${listPublicAdapterNames().join('|')}); an existing token file bound to a different adapter stops the run`)
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
@@ -5329,7 +5383,19 @@ Docs:
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
     .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants. Codex can run commands in invite-only pods, where anyone in the pod, including people invited later, can direct it.')
-    .action(async (name, opts) => {
+    .action(async (typedName, opts) => {
+      // F306: the seat this run is. `name` is the local key (the token file,
+      // the log label, the daemon's plist); the server identity is the record's.
+      let instanceId;
+      try {
+        instanceId = parseRunInstanceId(opts.instanceId, typedName);
+      } catch (err) {
+        console.error(`${stamp()} [${typedName}] ${err.message}`);
+        process.exit(1);
+      }
+      const agentArg = String(typedName).split('@')[0];
+      const named = instanceId !== null;
+      let name = named ? seatKey(agentArg, instanceId) : agentArg;
       if (opts.unsandboxed) {
         const flagRefusal = unsandboxedFlagRefusal();
         if (flagRefusal) {
@@ -5345,8 +5411,22 @@ Docs:
         process.exit(1);
       }
       let record = loadAgentToken(name);
+      // An instance's key saved by an older run, under the bare name: use it
+      // where it is, when it is that instance's (F306).
+      if (!record && named && name !== agentArg) {
+        const legacy = loadAgentToken(agentArg);
+        if (legacy && !runInstanceRefusal({ record: legacy, instanceId })) {
+          record = legacy;
+          name = agentArg;
+        }
+      }
       let bootstrapped = false;
       const saved = record;
+      const savedRefusal = record && named ? runInstanceRefusal({ record, instanceId }) : null;
+      if (savedRefusal) {
+        console.error(`${stamp()} [${name}] ${savedRefusal}`);
+        process.exit(1);
+      }
       if (record) {
         record = await adoptEnvToken({
           record,
@@ -5358,7 +5438,7 @@ Docs:
         // not a token file — bootstrap the record from them (#913).
         try {
           record = await bootstrapAgentRecordFromEnv({
-            name,
+            name: agentArg,
             adapterOverride: opts.adapter || null,
             log: (line) => console.log(`${stamp()} [${name}] ${line}`),
             allow,
@@ -5376,8 +5456,13 @@ Docs:
           console.error(
             `No token for '${name}'. Either export COMMONLY_API_URL + COMMONLY_AGENT_TOKEN`
             + ` (shown on the Connect your own agent page) and re-run, or:`
-            + ` commonly agent attach <adapter> --pod <podId> --name ${name}`,
+            + ` commonly agent attach <adapter> --pod <podId> --name ${agentArg}`,
           );
+          process.exit(1);
+        }
+        const instanceRefusal = named ? runInstanceRefusal({ record, instanceId }) : null;
+        if (instanceRefusal) {
+          console.error(`${stamp()} [${name}] ${instanceRefusal}`);
           process.exit(1);
         }
         bootstrapped = true;
@@ -5447,8 +5532,15 @@ Docs:
       }
       if (saved && record !== saved) saveAgentToken(name, record);
       if (bootstrapped) {
-        saveAgentToken(record.agentName, record);
-        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(record.agentName)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
+        // A named instance is saved under its seat key; an unnamed run keeps
+        // the bare name, as before.
+        const savedAs = named ? seatKey(record.agentName, record.instanceId) : record.agentName;
+        // The record's own spelling names the file, so the state this run keeps
+        // follows it there, and the next run finds both (case, or a token that
+        // belongs to another name).
+        if (named) name = savedAs;
+        saveAgentToken(savedAs, record);
+        console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
       } else if (savedSeatLacksDefaultSandbox(record)) {
         console.warn(
           `${stamp()} [${name}] this agent's saved settings declare no sandbox, so it runs without one. `
@@ -5528,6 +5620,7 @@ Docs:
         agentName: record.agentName,
         displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
+        localKey: name,
         podId: record.podId,
         environment: runEnvironment || null,
         hostUnconfined,
@@ -5630,6 +5723,7 @@ Docs:
           agentName: record.agentName,
           podId: record.podId,
           instanceId: record.instanceId || 'default',
+          localKey: name,
           skipBackend: !!opts.force,
           log: (line) => console.warn(`[detach] ${line}`),
         });

@@ -26,7 +26,8 @@ import { armSupervisedGroupDeadline, killSupervisedGroups } from '@commonlyai/se
 
 export const DEFAULT_EXIT_TIMEOUT_S = 20;
 const MAX_MARGIN_MS = 5000;
-const SEAT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// `@` joins an agent and its instance in a second instance's key (F306).
+const SEAT_NAME = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
 
 /** The seat's launchd plist path, or null for a name that cannot be a file name. */
 export const seatPlistPath = (name, home = homedir()) => (typeof name === 'string' && SEAT_NAME.test(name)
