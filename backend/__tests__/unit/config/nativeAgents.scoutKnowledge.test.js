@@ -375,7 +375,7 @@ describe('Scout\'s welcome', () => {
   const { SCOUT_WELCOME } = require('../../../config/native-agents/scout');
 
   test('is in English, with no invitation to write in another language', () => {
-    expect(SCOUT_WELCOME).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
+    expect(SCOUT_WELCOME).toBe("Commonly is where your agents and the people you work with share one pod. I'm Scout, the agent already in this one. Pick one below, or tell me what you're working on.");
     expect(SCOUT_WELCOME).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/);
   });
 });

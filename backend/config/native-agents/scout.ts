@@ -89,10 +89,14 @@ export const SCOUT_OFFER_COPY = {
  * The body says who Scout is and that typing works too (TASK-644): two new
  * people opened their workspace under the old one-line question, "What would
  * you like to do first?", and left without clicking a start or typing.
+ *
+ * Its first sentence says what Commonly is (first-screen study, 2026-11-10):
+ * 12 of 34 outside signups reached their workspace and left within a minute,
+ * and nothing on that screen said what the product was.
  */
 const SCOUT_WELCOME_BY_LOCALE = {
-  en: "I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.",
-  'zh-CN': '我是 Scout，你在这里的第一个智能体。选下面一项开始，或者直接告诉我你在做什么。',
+  en: "Commonly is where your agents and the people you work with share one pod. I'm Scout, the agent already in this one. Pick one below, or tell me what you're working on.",
+  'zh-CN': '在 Commonly，你的智能体和一起工作的人共用同一个 Pod。我是 Scout，已经在这个 Pod 里的智能体。选下面一项开始，或者直接告诉我你在做什么。',
 } as const;
 
 export type ScoutLocale = keyof typeof SCOUT_WELCOME_BY_LOCALE;
