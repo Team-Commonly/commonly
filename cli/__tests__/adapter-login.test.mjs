@@ -31,10 +31,14 @@ describe('which installed adapters are signed out', () => {
     expect(await signedOutAdapters({ detect: installed(['claude']), runStatus: async () => { throw new Error('x'); }, env: {} })).toEqual([]);
   });
 
-  test('a provider key in the environment counts as signed in', async () => {
+  test('ANTHROPIC_API_KEY counts as a claude sign-in; OPENAI_API_KEY is not one for codex', async () => {
     const runStatus = jest.fn(async () => 1);
-    expect(await signedOutAdapters({ detect: installed(['claude', 'codex']), runStatus, env: { ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: 'k' } })).toEqual([]);
-    expect(runStatus).not.toHaveBeenCalled();
+    expect(await signedOutAdapters({ detect: installed(['claude', 'codex']), runStatus, env: { ANTHROPIC_API_KEY: 'k', OPENAI_API_KEY: 'k' } })).toEqual(['codex']);
+    expect(runStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test('only exit 1 means signed out: an old CLI\'s unknown-subcommand exit is no verdict', async () => {
+    expect(await signedOutAdapters({ detect: installed(['codex']), runStatus: async () => 2, env: {} })).toEqual([]);
   });
 
   test('the hint names the fix', () => {
