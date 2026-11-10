@@ -22,6 +22,8 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/Do Not Track and Global Privacy Control will be honored for these events everywhere\./)).toBeInTheDocument();
     expect(screen.getByText('Setup-step records have no expiry date.')).toBeInTheDocument();
     expect(screen.getByText('Deleting your account also deletes your setup-step records.')).toBeInTheDocument();
+    // The GroupMe bot ID is the one connector credential kept outside the encrypted envelope.
+    expect(screen.getByText(/A GroupMe bot ID, which lets its bot post to that group, is stored on the integration without that encryption\./)).toBeInTheDocument();
   });
 
   it('names the providers that process hosted-agent data', () => {
