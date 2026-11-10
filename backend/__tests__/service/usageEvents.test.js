@@ -215,6 +215,22 @@ describe('usage events (D286)', () => {
     }
   });
 
+  it('ignores a prefix shorter than 4 characters, so a slip cannot flag real people', async () => {
+    process.env.USAGE_INTERNAL_PREFIXES = 'a, walk-';
+    try {
+      const { internalPrefixes } = require('../../services/usageEvents');
+      expect(internalPrefixes()).toEqual({ prefixes: ['walk-'], ignored: 1 });
+      const person = await makeUser({ username: 'alice' });
+      const walker = await makeUser({ username: 'walk-1110' });
+      await post(person, { name: 'app-open', screen: '/' }).expect(204);
+      await post(walker, { name: 'app-open', screen: '/' }).expect(204);
+      expect(await rows().countDocuments({ isInternal: true })).toBe(1);
+      expect(await rows().countDocuments({ isInternal: false })).toBe(1);
+    } finally {
+      delete process.env.USAGE_INTERNAL_PREFIXES;
+    }
+  });
+
   it('caps a person at the daily limit', async () => {
     const user = await makeUser();
     await rows().insertMany(Array.from({ length: DAILY_CAP - 1 }, () => ({ userId: user._id, name: 'screen-view', at: new Date() })));
