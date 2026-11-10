@@ -251,6 +251,10 @@ export interface IUser extends Document {
     byoOfferShownAt?: Date;
     /** First render of Scout's welcome, with a start open, in a pod they created. */
     welcomeShownAt?: Date;
+    /** First click on the welcome's "Run an agent here" to reach the server (F394). */
+    welcomeHostedClickAt?: Date;
+    /** Fixed code for why the first refused click did not start (F394). */
+    welcomeHostedRefusal?: string;
     // The first-touch ref code the signup arrived with (?ref=x), set once at
     // account creation (utils/signupRef.ts).
     signupRef?: string;
@@ -520,6 +524,8 @@ const userSchema = new Schema<IUser>({
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
     welcomeShownAt: { type: Date },
+    welcomeHostedClickAt: { type: Date },
+    welcomeHostedRefusal: { type: String },
     signupRef: { type: String },
   },
   lastDigestSent: { type: Date },

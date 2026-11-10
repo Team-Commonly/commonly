@@ -50,6 +50,8 @@ const byoOpenedMarked = new Set<string>();
 const byoCommandCopiedMarked = new Set<string>();
 const byoCommandKindMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
+// Keyed `${id}:click` and `${id}:refusal`, so one process writes each at most once.
+const welcomeHostedClickMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
 export type SurfaceMark = 'inviteCardShownAt' | 'inviteCardDismissedAt' | 'byoOfferShownAt' | 'welcomeShownAt';
@@ -96,6 +98,38 @@ export function markWelcomeHostedStart(userId: unknown): void {
   const id = String(userId || '');
   if (!id) return;
   recordFirstStart(id, 'run-hosted');
+}
+
+/**
+ * Every click on the welcome's "Run an agent here" that reaches the server,
+ * before any check (F394). markWelcomeHostedStart above fires only once the
+ * click resolves, so a refused click used to leave nothing, and "never
+ * clicked" read the same as "clicked and it failed". welcomeHostedClickAt is
+ * the first click; welcomeHostedRefusal is why the first refused one did not
+ * start: the route's own error code, or 'other' for anything that is not a
+ * plain code, so nothing free-form is stored.
+ */
+export function markWelcomeHostedClick(userId: unknown, refusal?: string): void {
+  const id = String(userId || '');
+  if (!id) return;
+  const field = refusal === undefined ? 'welcomeHostedClickAt' : 'welcomeHostedRefusal';
+  const key = `${id}:${field}`;
+  if (welcomeHostedClickMarked.has(key)) return;
+  welcomeHostedClickMarked.add(key);
+  const value = refusal === undefined
+    ? new Date()
+    : (/^[a-z_]{1,40}$/.test(refusal) ? refusal : 'other');
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, [`onboarding.${field}`]: { $exists: false } },
+      { $set: { [`onboarding.${field}`]: value } },
+    ).catch(() => {
+      welcomeHostedClickMarked.delete(key);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the request that triggers it.
+    welcomeHostedClickMarked.delete(key);
+  }
 }
 
 function recordFirstStart(id: string, startId: string): void {
@@ -382,6 +416,7 @@ export function resetOnboardingMarksForTest(): void {
   byoCopyTypeMarked.clear();
   byoSetupMarked.clear();
   byoConnectionAttemptMarked.clear();
+  welcomeHostedClickMarked.clear();
   daemonRegisteredMarked.clear();
   surfaceMarked.clear();
 }

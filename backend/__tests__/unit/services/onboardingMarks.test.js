@@ -10,7 +10,7 @@ jest.mock('../../../models/User', () => ({
 
 const {
   markPodOpened, markStartPicked, markByoOpened, markByoCommandCopied,
-  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, markByoDaemonRegistered,
+  markByoConnectionAttempt, markWelcomeHostedStart, markWelcomeHostedClick, markSurface, markByoDaemonRegistered,
   resetOnboardingMarksForTest,
   markByoCopyType, markByoSetup,
 } = require('../../../services/onboardingMarks');
@@ -409,5 +409,39 @@ describe('the onboarding marks together', () => {
     markByoCommandCopied('u1', 'cli');
     markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo' } } });
     expect(mockUpdateOne).toHaveBeenCalledTimes(12);
+  });
+});
+
+// F394: a hosted-start click that is refused is still a click.
+describe('markWelcomeHostedClick', () => {
+  test('marks the first click, write-once, never for bots', () => {
+    markWelcomeHostedClick('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.welcomeHostedClickAt': { $exists: false } });
+    expect(Object.keys(update.$set)).toEqual(['onboarding.welcomeHostedClickAt']);
+    expect(update.$set['onboarding.welcomeHostedClickAt']).toBeInstanceOf(Date);
+    markWelcomeHostedClick('u1');
+    markWelcomeHostedClick('');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refusal writes its code once, and only a fixed code', () => {
+    markWelcomeHostedClick('u1', 'hosted_cap_reached');
+    const [filter, update] = mockUpdateOne.mock.calls[mockUpdateOne.mock.calls.length - 1];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.welcomeHostedRefusal': { $exists: false } });
+    expect(update.$set['onboarding.welcomeHostedRefusal']).toBe('hosted_cap_reached');
+
+    resetOnboardingMarksForTest();
+    mockUpdateOne.mockClear();
+    markWelcomeHostedClick('u2', 'Some <free> text');
+    const last = mockUpdateOne.mock.calls[mockUpdateOne.mock.calls.length - 1];
+    expect(last[1].$set['onboarding.welcomeHostedRefusal']).toBe('other');
+  });
+
+  test('a failed write never throws into the request', async () => {
+    mockUpdateOne.mockRejectedValue(new Error('down'));
+    expect(() => markWelcomeHostedClick('u1', 'error')).not.toThrow();
+    await flush();
   });
 });
