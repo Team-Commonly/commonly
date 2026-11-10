@@ -199,9 +199,11 @@ docker-entrypoint.sh postgres &
 until pg_isready -h 127.0.0.1 -U postgres -q; do sleep 1; done
 # Create every role the dump names as an owner or grantee, or ON_ERROR_STOP halts at the
 # first one. Since the 2026-11 role split that is avnadmin, commonly_app and commonly_litellm.
-# The COPY data blocks are skipped, so table contents never become role names.
+# The COPY data blocks are skipped, so table contents never become role names, and `public`
+# (the PUBLIC pseudo-role, which a function body may write in lower case) is never created.
 for r in $(gunzip -c /work/backup.sql.gz | sed '/^COPY .* FROM stdin;$/,/^\\\.$/d' \
-  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' | sort -u); do
+  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' \
+  | grep -vx public | sort -u); do
   psql -h 127.0.0.1 -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$r'" | grep -q 1 \
     || psql -h 127.0.0.1 -U postgres -c "CREATE ROLE $r"
 done
@@ -450,12 +452,17 @@ PGPASSWORD="$(kubectl get secret database-credentials \
   -n "${K8S_NAMESPACE}" -o jsonpath='{.data.postgres-password}' | base64 --decode)"
 # Roles are instance-wide, and an older dump can name a role the target no longer has.
 # Create whichever roles the dump names and the target lacks, or the import stops part-way.
+# PG_RESTORE_USER must be a superuser on the restore host, as the in-cluster PostgreSQL's
+# own user (postgresql.username) is. CREATEROLE plus membership in the dump's roles is not
+# enough: on 16.15 such a user's import stopped at the first ALTER ... OWNER TO another role
+# with "permission denied for schema public".
 kubectl exec -i postgresql-restore -n "${K8S_NAMESPACE}" -- \
   env PGPASSWORD="${PGPASSWORD}" PG_HOST="${PG_RESTORE_HOST}" PG_USER="${PG_RESTORE_USER}" \
   bash -s <<'EOF'
 set -euo pipefail
 for r in $(gunzip -c /tmp/backup.sql.gz | sed '/^COPY .* FROM stdin;$/,/^\\\.$/d' \
-  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' | sort -u); do
+  | grep -oE '(OWNER TO|FOR ROLE|GRANT .* TO|REVOKE .* FROM) [a-z_][a-z0-9_]*' | awk '{print $NF}' \
+  | grep -vx public | sort -u); do
   psql -h "$PG_HOST" -U "$PG_USER" -d template1 -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$r'" | grep -q 1 \
     || psql -h "$PG_HOST" -U "$PG_USER" -d template1 -c "CREATE ROLE $r"
 done
@@ -477,6 +484,10 @@ A restore the app will serve from, rather than a drill, also needs the app roles
 to log in with their stored passwords: `ALTER ROLE commonly_app LOGIN`, `ALTER ROLE
 commonly_litellm LOGIN`, then `\password commonly_app` and `\password
 commonly_litellm` with the values held in their two Postgres password secrets.
+A dump from before the 2026-11 role split names only `avnadmin`, so the loop
+creates neither app role and every restored object stays `avnadmin`'s. For
+those, run the "Postgres roles" setup in `k8s/QUICK_START.md` against the
+restored database instead, including its ownership move.
 
 Inspect the restored schema and representative row counts, then remove the
 client pod:

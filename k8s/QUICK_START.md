@@ -85,10 +85,11 @@ echo -n "your_postgres_password" | gcloud secrets create commonly-dev-postgres-p
 echo -n "your_postgres_password" | gcloud secrets create commonly-dev-mongo-password --data-file=-
 
 # values-dev.yaml runs the backend and LiteLLM on their own Postgres roles
-# (backend.env.pgAppUser and litellm.pgUser). Create them first with the SQL
-# under "Postgres roles" below, then store the two passwords you set there:
-echo -n "your_app_role_password" | gcloud secrets create commonly-dev-postgres-app-password --data-file=-
-echo -n "your_litellm_role_password" | gcloud secrets create commonly-dev-postgres-litellm-password --data-file=-
+# (backend.env.pgAppUser + pgAppPasswordKey, litellm.pgUser + pgPasswordKey).
+# Create them first with the SQL under "Postgres roles" below, then store the
+# two passwords you set there. Single quotes keep a $ in a password literal:
+echo -n 'your_app_role_password' | gcloud secrets create commonly-dev-postgres-app-password --data-file=-
+echo -n 'your_litellm_role_password' | gcloud secrets create commonly-dev-postgres-litellm-password --data-file=-
 # To keep one user instead, set those four values to "" in values-dev.yaml.
 
 # JWT and Session
@@ -123,7 +124,10 @@ echo -n "your_litellm_key" | gcloud secrets create commonly-dev-litellm-master-k
 
 #### Postgres roles
 
-Run this as your admin user before the first deploy:
+Before the first deploy, run this in psql as the user in `backend.env.pgUser`,
+connected to the database in `backend.env.pgDatabase` (`avnadmin` and `defaultdb`
+in values-dev.yaml). The backup and ops-runner run as that user, so the check at
+the end proves they can read the new roles' tables:
 
 ```sql
 CREATE ROLE commonly_app LOGIN;
@@ -131,18 +135,22 @@ CREATE ROLE commonly_litellm LOGIN;
 -- Membership comes first: on PostgreSQL 16+ the creator must hold a role to make it
 -- a schema owner. On 16+ write WITH INHERIT TRUE, SET TRUE after the grant.
 GRANT commonly_app, commonly_litellm TO CURRENT_USER;
+GRANT CONNECT ON DATABASE :"DBNAME" TO commonly_app, commonly_litellm;
 GRANT USAGE, CREATE ON SCHEMA public TO commonly_app;
 CREATE SCHEMA IF NOT EXISTS litellm AUTHORIZATION commonly_litellm;
+ALTER SCHEMA litellm OWNER TO commonly_litellm;  -- for a schema that already existed
 \password commonly_app
 \password commonly_litellm
--- Both must be true, or the backup (which runs as this admin user) can't read the roles' tables.
+-- Both must be true, or the backup can't read the roles' tables.
 SELECT pg_has_role(current_user, 'commonly_app', 'USAGE'), pg_has_role(current_user, 'commonly_litellm', 'USAGE');
 ```
 
 ops-runner and the backup stay on the admin user. On a database that already
-holds Commonly's objects, move their ownership before that deploy as well:
-- every table, sequence and function in `public` goes to `commonly_app`, including
-  the trigger function `public.assign_message_freshness_revision()`;
+holds Commonly's objects, move their ownership before that deploy as well. This
+assumes the database is Commonly's alone; if another application shares it,
+move only Commonly's objects and leave the rest with their owners:
+- every Commonly table, sequence and function in `public` goes to `commonly_app`,
+  including the trigger function `public.assign_message_freshness_revision()`;
 - the `litellm` schema and everything in it go to `commonly_litellm`.
 
 Boot migrations alter and replace existing objects, which only their owner can do.
