@@ -185,6 +185,7 @@ describe('orchestrateDaemonSetup', () => {
     expect(runsFromStableInstall(stableCliEntry(HOME), HOME)).toBe(true);
     expect(runsFromStableInstall('/Users/someone/.npm/_npx/abc/node_modules/@commonlyai/cli/src/index.js', HOME)).toBe(false);
     expect(runsFromStableInstall(undefined, HOME)).toBe(false);
+    expect(runsFromStableInstall(`${stableCliDir(HOME)}-old/node_modules/@commonlyai/cli/src/index.js`, HOME)).toBe(false);
   });
 
   it('refuses on a too-old Node before touching the install', async () => {

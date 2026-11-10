@@ -22,7 +22,7 @@
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, sep } from 'path';
 import { resolveLaunch } from './windows-command.js';
 
 export const CLI_PACKAGE = '@commonlyai/cli';
@@ -39,7 +39,8 @@ export const DAEMON_SETUP_LINE = `npx -y ${CLI_PACKAGE}@latest daemon setup`;
 
 /** True when this process runs the copy `daemon setup` installed under $HOME. */
 export const runsFromStableInstall = (entry = process.argv[1], home = homedir()) => (
-  Boolean(entry) && String(entry).startsWith(stableCliDir(home))
+  // The folder plus a separator, so a sibling such as ~/.commonly/cli-old never matches.
+  Boolean(entry) && String(entry).startsWith(`${stableCliDir(home)}${sep}`)
 );
 
 export const stableCliEntry = (home = homedir()) => (
