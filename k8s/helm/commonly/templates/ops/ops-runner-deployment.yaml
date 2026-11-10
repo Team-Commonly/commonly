@@ -84,6 +84,12 @@ spec:
         - name: SEARCH_PROVIDER
           value: {{ .Values.webSearch.provider | default "exa" | quote }}
         {{- end }}
+        {{- if .Values.backend.env.usageInternalUsernames }}
+        # D286: the same internal-accounts list as backend, so an ops script
+        # that records usage flags our accounts the same way.
+        - name: USAGE_INTERNAL_USERNAMES
+          value: {{ .Values.backend.env.usageInternalUsernames | quote }}
+        {{- end }}
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
