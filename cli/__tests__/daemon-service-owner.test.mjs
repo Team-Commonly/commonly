@@ -4,11 +4,15 @@
 // running daemon and loaded its own under the same name (Growth's F370 walk).
 // Install now asks the service manager which file the live service came from
 // and refuses when it is not this HOME's file, unless --replace was given.
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { jest } from '@jest/globals';
 
 import {
   LAUNCHD_LABEL,
   SYSTEMD_UNIT,
+  decodeCmdOutput,
   foreignServiceRefusal,
   installDaemonService,
   loadedServiceFile,
@@ -32,7 +36,27 @@ const makeDeps = (loaded) => ({
   log: jest.fn(),
 });
 
-const launchctlPrint = (path) => `gui/501/${LAUNCHD_LABEL} = {\n\tactive count = 1\n\tpath = ${path}\n\ttype = LaunchAgent\n\tstate = running\n}\n`;
+// The shape of a real `launchctl print` answer (macOS 26): the job's own path
+// comes first, before stdout/stderr paths and nested dicts.
+const launchctlPrint = (path) => `gui/501/${LAUNCHD_LABEL} = {
+\tactive count = 1
+\tpath = ${path}
+\ttype = LaunchAgent
+\tstate = running
+
+\tprogram = /opt/node/bin/node
+\targuments = {
+\t\t/opt/node/bin/node
+\t\tdaemon
+\t}
+
+\tstdout path = /Users/first/.commonly/logs/daemon/daemon.log
+\tstderr path = /Users/first/.commonly/logs/daemon/daemon.log
+\tenvironment = {
+\t\tHOME => /Users/first
+\t}
+}
+`;
 
 describe('which file the live service came from', () => {
   test('asks each service manager for the one service the CLI installs', () => {
@@ -63,6 +87,42 @@ describe('which file the live service came from', () => {
     expect(refusal).toContain(servicePaths('darwin', otherHome).file);
     expect(refusal).toContain('commonly daemon status');
     expect(refusal).toContain('--replace');
+  });
+
+  test('schtasks: entities inside the path are decoded, and an undecodable answer is no answer', () => {
+    expect(loadedServiceFile('schtasks', '<Arguments>-File &quot;C:\\Users\\A&amp;B\\x.ps1&quot;</Arguments>')).toBe('C:\\Users\\A&B\\x.ps1');
+    expect(loadedServiceFile('schtasks', '<Arguments>-File "C:\\Users\\\uFFFD\uFFFD\\x.ps1"</Arguments>')).toBeNull();
+  });
+
+  test('command output decodes UTF-16 (BOM or NUL bytes) and UTF-8 alike', () => {
+    const xml = '<Arguments>-File "C:\\Users\\李雷\\x.ps1"</Arguments>';
+    const bom = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]);
+    expect(decodeCmdOutput(bom)).toBe(xml);
+    expect(decodeCmdOutput(Buffer.from(xml, 'utf16le'))).toBe(xml);
+    expect(decodeCmdOutput(Buffer.from(xml, 'utf8'))).toBe(xml);
+    expect(loadedServiceFile('schtasks', decodeCmdOutput(bom))).toBe('C:\\Users\\李雷\\x.ps1');
+  });
+
+  test('the same file under a symlinked HOME is not foreign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'owner-'));
+    try {
+      const real = join(root, 'real');
+      mkdirSync(join(real, 'Library', 'LaunchAgents'), { recursive: true });
+      symlinkSync(real, join(root, 'link'));
+      const target = servicePaths('darwin', join(root, 'link'));
+      expect(foreignServiceRefusal({ target, loadedFile: servicePaths('darwin', real).file })).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('Linux names uninstall as the fix, since --replace can\'t load a unit from another HOME', () => {
+    const refusal = foreignServiceRefusal({
+      target: servicePaths('linux', '/home/second'),
+      loadedFile: '/home/first/.config/systemd/user/commonly-daemon.service',
+    });
+    expect(refusal).toContain('commonly daemon uninstall');
+    expect(refusal).not.toContain('--replace');
   });
 
   test('Windows compares the launcher, ignoring case', () => {

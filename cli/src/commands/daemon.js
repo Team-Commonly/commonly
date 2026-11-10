@@ -39,12 +39,9 @@ import {
   serviceOwnerQuery,
   loadedServiceFile,
   foreignServiceRefusal,
+  decodeCmdOutput,
 } from '../lib/daemon-service.js';
 
-// launchd, systemd and Task Scheduler hold one Commonly daemon per computer
-// account. Install refuses to stop another HOME's; this flag takes it over.
-const REPLACE_FLAG = '--replace';
-const REPLACE_HELP = 'Replace a Commonly daemon that another account (another HOME) runs on this computer account. Without it, install stops and names that daemon.';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { watchWindowsLauncher } from '../lib/daemon-service-windows.js';
 import {
@@ -60,6 +57,11 @@ import {
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 import { machineHostReport } from '../lib/machine-host.js';
 import { orchestrateDaemonSetup } from '../lib/stable-install.js';
+
+// launchd, systemd and Task Scheduler hold one Commonly daemon per computer
+// account. Install refuses to stop another HOME's; this flag takes it over.
+const REPLACE_FLAG = '--replace';
+const REPLACE_HELP = 'Replace a Commonly daemon that another account (another HOME) runs on this computer account. Without it, install stops and names that daemon.';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
 // fields are worth reading closely: the seat's `instanceId` (the identity the
@@ -510,10 +512,12 @@ Examples:
   // The service manager's answer about the live daemon; rejects when it has none.
   const readServiceCmd = (argv) => new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(argv[0], argv.slice(1), { stdio: ['ignore', 'pipe', 'ignore'] });
-    let out = '';
-    child.stdout.on('data', (chunk) => { out += chunk; });
+    const chunks = [];
+    child.stdout.on('data', (chunk) => { chunks.push(chunk); });
     child.on('error', rejectPromise);
-    child.on('close', (code) => (code === 0 ? resolvePromise(out) : rejectPromise(new Error(`${argv.join(' ')} exited ${code}`))));
+    child.on('close', (code) => (code === 0
+      ? resolvePromise(decodeCmdOutput(Buffer.concat(chunks)))
+      : rejectPromise(new Error(`${argv.join(' ')} exited ${code}`))));
   });
 
   const serviceDeps = () => ({

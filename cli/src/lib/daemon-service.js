@@ -12,9 +12,9 @@
  */
 
 import { randomBytes } from 'crypto';
-import { existsSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir, userInfo } from 'os';
-import { join, dirname, resolve } from 'path';
+import { basename, join, dirname, resolve } from 'path';
 import {
   WINDOWS_TASK_NAME, installWindowsService, uninstallWindowsService, windowsServiceAction, windowsServicePaths,
 } from './daemon-service-windows.js';
@@ -261,23 +261,62 @@ export const serviceOwnerQuery = (platform = process.platform, uid = process.get
   return ['systemctl', '--user', 'show', SYSTEMD_UNIT, '-p', 'FragmentPath', '--value'];
 };
 
+// schtasks may answer in UTF-16 (BOM or NUL bytes) or in the console's code
+// page; anything that did not decode cleanly is treated as no answer, so a
+// non-ASCII user name never turns into a false "another account".
+export const decodeCmdOutput = (buffer) => {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(String(buffer ?? ''));
+  const utf16 = (bytes[0] === 0xff && bytes[1] === 0xfe) || bytes.subarray(0, 64).includes(0);
+  return bytes.toString(utf16 ? 'utf16le' : 'utf8').replace(/^\uFEFF/, '');
+};
+
+const xmlUnescape = (value) => value
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&');
+
 // The path in the query's answer, or null when the answer names none.
 export const loadedServiceFile = (kind, stdout = '') => {
   const text = String(stdout).replace(/\0/g, '');
-  if (kind === 'launchd') return /^\s*path = (.+)$/m.exec(text)?.[1].trim() || null;
+  let found;
+  if (kind === 'launchd') found = /^\s*path = (.+)$/m.exec(text)?.[1].trim();
   // schtasks prints the definition it holds, whose action runs this HOME's launcher.
-  if (kind === 'schtasks') return /-File (?:"|&quot;)(.+?)(?:"|&quot;)/.exec(text)?.[1] || null;
-  return text.trim() || null;
+  else if (kind === 'schtasks') found = /-File (?:"|&quot;)(.+?)(?:"|&quot;)/.exec(text)?.[1];
+  else found = text.trim();
+  if (!found) return null;
+  if (kind === 'schtasks') found = xmlUnescape(found);
+  return found.includes('\uFFFD') ? null : found;
+};
+
+// The same file under another spelling (a symlinked HOME) is not foreign.
+// The file itself may not exist yet, so the nearest folder that does is resolved.
+const canonicalPath = (p, platform) => {
+  let dir = resolve(p);
+  let rest = '';
+  let out = null;
+  while (out === null) {
+    try {
+      out = join(realpathSync(dir), rest);
+    } catch {
+      const up = dirname(dir);
+      if (up === dir) out = resolve(p);
+      else { rest = rest ? join(basename(dir), rest) : basename(dir); dir = up; }
+    }
+  }
+  return platform === 'win32' ? out.toLowerCase() : out;
 };
 
 export const foreignServiceRefusal = ({ target, loadedFile, platform = process.platform }) => {
   if (!loadedFile) return null;
   const own = target.kind === 'schtasks' ? target.launcher : target.file;
-  const norm = (p) => (platform === 'win32' ? resolve(p).toLowerCase() : resolve(p));
-  if (norm(loadedFile) === norm(own)) return null;
-  return `This computer already runs a Commonly daemon for another account (its service file is ${loadedFile}), `
-    + 'and installing here would stop it. To see it, run `commonly daemon status` as that account. '
-    + 'To replace it with this one on purpose, run this command again with --replace.';
+  if (canonicalPath(loadedFile, platform) === canonicalPath(own, platform)) return null;
+  const head = `This computer already runs a Commonly daemon for another account (its service file is ${loadedFile}), `
+    + 'and installing here would stop it. To see it, run `commonly daemon status` as that account. ';
+  // The systemd user manager reads units only from its own account's folder,
+  // so a unit written under another HOME is never loaded: --replace can't help.
+  if (target.kind === 'systemd') {
+    return `${head}To use this one instead, run \`commonly daemon uninstall\` as that account first, then run this again.`;
+  }
+  return `${head}To replace it with this one on purpose, run this command again with --replace.`;
 };
 
 export const installSummary = ({ startsAtBoot }) => (startsAtBoot

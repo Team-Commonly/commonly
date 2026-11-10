@@ -25,8 +25,10 @@ Commonly daemon, whatever `HOME` an install runs under. Before writing, install
 live service came from (`launchctl print`, `systemctl --user show -p
 FragmentPath`, `schtasks /Query /XML`). If that file belongs to another `HOME`,
 install stops and names it rather than unloading another account's daemon.
-`--replace` takes it over on purpose. Re-running from the same `HOME` updates in
-place.
+On macOS and Windows, `--replace` takes it over on purpose. On Linux the user
+manager reads units only from its own account's folder, so the refusal says to
+run `commonly daemon uninstall` as that account first. Re-running from the same
+`HOME` (a symlinked spelling of it included) updates in place.
 
 A login service starts at login. On Linux the install also runs `loginctl
 enable-linger` for you, which starts your systemd user manager, and so the
