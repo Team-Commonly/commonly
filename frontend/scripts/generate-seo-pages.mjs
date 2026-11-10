@@ -977,14 +977,23 @@ export const renderStaticPage = (template, page) => {
 // indexable page from the same content the pages are built from, so the map
 // can't fall behind the site. llms-full.txt carries those pages' text.
 const oneLine = (text) => String(text || '').replace(/\s+/g, ' ').trim();
+// A guide paragraph is a string or { strong } (renderGuide draws the latter bold).
+const paragraphText = (paragraph) => oneLine(typeof paragraph === 'object' && paragraph ? paragraph.strong : paragraph);
 const llmsLink = (title, path, description) => `- [${oneLine(title)}](${pageUrl(path)}): ${oneLine(description)}`;
 
-export const renderLlmsTxt = ({ base, guides = {}, useCases = {}, compareSources = {} }) => {
+export const renderLlmsTxt = ({ base, guides = {}, useCases = {}, compareSources = {}, pages = [] }) => {
   const cut = base.indexOf('## Guides');
-  const head = (cut === -1 ? base : base.slice(0, cut)).replace(/\s*$/, '\n\n');
+  if (cut === -1) throw new Error('public/llms.txt needs a "## Guides" section for the build to list the pages under.');
+  const head = base.slice(0, cut).replace(/\s*$/, '\n\n');
   const guideLines = Object.entries(guides).map(([id, guide]) => llmsLink(guide.title, `/guides/${id}/`, guide.description));
   const compareLines = Object.values(compareSources).map((source) => llmsLink(source.title, source.path, source.description));
   const useCaseLines = Object.entries(useCases).map(([id, useCase]) => llmsLink(useCase.title, `/use-cases/${id}/`, useCase.summary));
+  // Any other indexable page (a new index or a legal page) is listed too, so the
+  // map always matches the sitemap.
+  const listed = new Set(['/', '/guides/', ...Object.keys(guides).map((id) => `/guides/${id}/`),
+    ...Object.values(compareSources).map((source) => source.path), ...Object.keys(useCases).map((id) => `/use-cases/${id}/`)]);
+  const otherLines = pages.filter((page) => !page.noindex && !listed.has(page.path))
+    .map((page) => llmsLink(page.title.replace(/\s*\|\s*Commonly AI$/, ''), page.path, page.description));
   return `${head}## Guides
 
 ${llmsLink('Guides', '/guides/', 'guides for teams working with AI agents')}
@@ -1001,7 +1010,7 @@ ${useCaseLines.join('\n')}
 ## Optional
 
 ${llmsLink('commonly.me home', '/', 'what Commonly is, in one page')}
-- [Full text](${pageUrl('/llms-full.txt')}): every guide, comparison and use case above in one file
+${otherLines.map((line) => `${line}\n`).join('')}- [Full text](${pageUrl('/llms-full.txt')}): every guide, comparison and use case above in one file
 `;
 };
 
@@ -1009,7 +1018,7 @@ const guideFullText = (guide) => {
   const parts = [oneLine(guide.summary), ...(guide.intro || []).map(oneLine)];
   (guide.sections || []).forEach((section) => {
     parts.push(`### ${oneLine(section.title)}`);
-    (section.paragraphs || []).forEach((paragraph) => parts.push(oneLine(paragraph)));
+    (section.paragraphs || []).forEach((paragraph) => parts.push(paragraphText(paragraph)));
     if (section.bullets?.length) parts.push(section.bullets.map((item) => `- ${oneLine(item)}`).join('\n'));
     if (section.orderedItems?.length) parts.push(section.orderedItems.map((item, i) => `${i + 1}. ${oneLine(item)}`).join('\n'));
     (section.tables || []).forEach((table) => {
@@ -1079,7 +1088,7 @@ export const generateSeoPages = async ({ outputDir = buildDir } = {}) => {
   await writeFile(resolve(outputDir, 'sitemap.xml'), sitemap);
 
   const base = await readFile(resolve(frontendDir, 'public/llms.txt'), 'utf8');
-  await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources }));
+  await writeFile(resolve(outputDir, 'llms.txt'), renderLlmsTxt({ base, guides, useCases, compareSources: comparePageSources, pages }));
   await writeFile(resolve(outputDir, 'llms-full.txt'), renderLlmsFullTxt({ guides, useCases, compareSources: comparePageSources }));
   return pages;
 };

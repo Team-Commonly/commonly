@@ -2475,17 +2475,25 @@ test('the build writes an llms.txt that lists every indexable page and an llms-f
     }
 
     // The full text carries each guide's sections and FAQ, each use case and each comparison.
+    const text = (value) => String(typeof value === 'object' && value ? value.strong : value).replace(/\s+/g, ' ').trim();
     for (const [id, guide] of Object.entries(guides)) {
       assert.ok(full.includes(`URL: https://commonly.me/guides/${id}/`), id);
-      assert.ok(full.includes(guide.sections[0].paragraphs?.[0] || guide.sections[0].title), id);
-      if (guide.faq?.length) assert.ok(full.includes(guide.faq[0].answer), id);
+      for (const section of guide.sections) {
+        assert.ok(full.includes(`### ${text(section.title)}`), `${id}: ${section.title}`);
+        for (const paragraph of section.paragraphs || []) assert.ok(full.includes(text(paragraph)), `${id}: ${text(paragraph).slice(0, 60)}`);
+        for (const item of section.bullets || []) assert.ok(full.includes(`- ${text(item)}`), `${id}: bullet`);
+      }
+      for (const item of guide.faq || []) assert.ok(full.includes(`A: ${text(item.answer)}`), `${id}: faq`);
     }
+    // A guide paragraph can be { strong }: it must come out as its words.
+    assert.doesNotMatch(full, /\[object Object\]/);
     for (const [id, useCase] of Object.entries(useCases)) {
       assert.ok(full.includes(`URL: https://commonly.me/use-cases/${id}/`), id);
       assert.ok(full.includes(useCase.outcomes[0]), id);
     }
-    assert.ok(full.includes('URL: https://commonly.me/compare/openagents/'));
-    assert.ok(full.includes('# Commonly vs OpenAgents'));
+    for (const page of pages.filter((item) => item.path.startsWith('/compare/') && !item.noindex)) {
+      assert.ok(full.includes(`URL: https://commonly.me${page.path}`), page.path);
+    }
     assert.doesNotMatch(full, /<\/?(p|div|a|span|strong|em|ul|ol|li|h[1-6]|table|code|pre)\b[^>]*>/i);
     // "undefined" is also plain English in the guides, so only a whole rendered field counts.
     assert.doesNotMatch(full, /(^|\n)(### |- |\d+\. |Q: |A: |URL: \S*)?undefined(\n|$)/);
