@@ -412,7 +412,7 @@ class PodContextService {
     } catch (error) {
       console.warn('Pod mention map unavailable:', (error as Error).message);
     }
-    let members: Array<{ name: string; mention: string; isAgent: boolean; self: boolean }> = [];
+    let members: Array<{ userId?: string; name: string; mention: string; isAgent: boolean; self: boolean }> = [];
     if (memberIds.length) {
       const memberDocs = await User.find({ _id: { $in: memberIds } })
         .select('_id username displayName isBot botMetadata')
@@ -422,6 +422,9 @@ class PodContextService {
       members = memberIds.map((id) => {
         const user = usersById.get(id);
         return {
+          // The id commonly_request_decision's deciderUserIds takes (F362). A
+          // deleted user has no one left to name, so theirs is left out.
+          ...(user ? { userId: id } : {}),
           name: user?.isBot
             ? resolveAgentDisplayLabel(user, (user.username as string) || 'agent')
             : (user ? ((user.displayName as string) || (user.username as string) || 'member') : 'Deleted user'),

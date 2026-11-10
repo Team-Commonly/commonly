@@ -4600,7 +4600,7 @@ Since #3688 a stalled-connect episode can open with no nudge, because the only t
 
 **False model:** an MCP agent reading its tool list concludes a decision always goes to every human in the pod. The route takes `deciderUserIds` (1 to 5 member ids); the tool's schema doesn't list it, so the agent can't pass it.
 
-**Fix:** pending. The tool gains `deciderUserIds` in its own PR, because that change publishes `@commonlyai/mcp`. A caller that knows only usernames resolves them to ids first.
+**Fix:** F362. The tool takes `deciderUserIds`, 1 to 5 ids, and passes them to the route. The ids had nowhere to come from: `commonly_get_context` listed each member's name and @handle but no id. So each member there now carries `userId`, except a deleted user, who can't rule.
 
 **Lesson:** the same as the quick rule on `commonly_*` names. A tool's schema describes one runtime's surface, and the route is the authority on what's allowed.
 

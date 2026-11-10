@@ -386,6 +386,27 @@ describe('commonly_request_decision', () => {
     });
   });
 
+  // F362: the route has taken deciderUserIds since #3786; the tool now does too.
+  it('passes named deciders through to the route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ decisionId: 'd2', status: 'pending' }));
+    const deciderUserIds = ['6a47891ee025ce2e0ca1d305', '6abeec74ffacf322751d7721'];
+    await byName.commonly_request_decision.call({
+      podId: 'POD', decisionClass: 'strategy', title: 'Pick a name', question: 'Which one?',
+      options: [{ label: 'Atlas' }, { label: 'Birch' }], deciderUserIds,
+    });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ deciderUserIds });
+  });
+
+  it('declares deciderUserIds as 1 to 5 member ids read from commonly_get_context', () => {
+    const tool = byName.commonly_request_decision;
+    expect(tool.inputSchema.properties.deciderUserIds).toMatchObject({
+      type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 5,
+    });
+    expect(tool.inputSchema.required).not.toContain('deciderUserIds');
+    expect(tool.description).toContain('deciderUserIds');
+    expect(tool.description).toContain('commonly_get_context');
+  });
+
   it('teaches when this tool is appropriate and keeps executable consent out of it', () => {
     const tool = byName.commonly_request_decision;
     expect(tool.inputSchema.properties.options).toMatchObject({ minItems: 2, maxItems: 4 });
