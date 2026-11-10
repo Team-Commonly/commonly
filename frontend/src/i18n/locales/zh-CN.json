@@ -234,7 +234,8 @@
       "account": "账号",
       "access": "访问权限",
       "look": "外观",
-      "admin": "管理"
+      "admin": "管理",
+      "privacy": "隐私"
     },
     "accountActions": "账号操作",
     "connectorsDetail": "管理已连接的服务",
@@ -349,6 +350,14 @@
       "uploadFailed": "无法上传照片，请重试。",
       "profileSaveFailed": "无法保存头像，请重试。",
       "regenerateFailed": "无法更换头像，请重试。"
+    },
+    "usage": {
+      "label": "与 Commonly 分享产品使用情况",
+      "detail": "只记录你打开了哪些页面、点了哪些按钮，用固定名称记，不记你输入的内容。",
+      "browserSignal": "你的浏览器要求网站不要跟踪你，所以不会记录。",
+      "error": "没能保存，请再试一次。",
+      "on": "开",
+      "off": "关"
     }
   },
   "activity": {

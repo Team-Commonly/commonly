@@ -148,6 +148,64 @@ router.post('/byo-step', rateLimit({
   return res.json({ ok: true });
 });
 
+// D286 usage events. Both endpoints answer 204 for anything they choose not to
+// keep (a switched-off person, DNT/GPC, the daily cap), so a client can't
+// probe which rule applied. A 400 names the rule, never the submitted value.
+const { recordUiEvents, countPublicHit, usageAllowed, privacySignal } = require('../services/usageEvents');
+const { authenticatedUserRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
+
+const limited = (max: number, keyGenerator: (req: any) => string) => rateLimit({
+  windowMs: 60_000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' && !process.env.USAGE_LIMITS_IN_TEST,
+  keyGenerator,
+  handler: (_req: any, res: any) => res.status(429).json({ code: 'rate_limited' }),
+});
+
+router.post(
+  '/ui-event',
+  limited(120, (req: any) => cloudflareIpRateLimitKeyGenerator(req)),
+  auth,
+  limited(60, (req: any) => authenticatedUserRateLimitKeyGenerator(req)),
+  async (req: any, res: any) => {
+    const body = req.body || {};
+    const events = Array.isArray(body.events) ? body.events : [body];
+    try {
+      const user = await User.findById(req.userId).select('_id username role isBot preferences').lean();
+      if (!user || user.isBot) return res.status(204).end();
+      if (!usageAllowed(req, user.preferences?.usageEvents)) return res.status(204).end();
+      const { valid } = await recordUiEvents(user, events, {
+        loadPod: (podId: string) => Pod.findById(podId).select('_id type members').lean(),
+        // eslint-disable-next-line global-require
+        canViewPod: (userId: unknown, pod: unknown) => require('../services/dmService').canViewPod(userId, pod),
+      });
+      if (!valid) return res.status(400).json({ error: 'unknown event' });
+      return res.status(204).end();
+    } catch (err: any) {
+      // Usage events never fail the page that sent them.
+      console.warn('[usage-events] write failed:', err?.message);
+      return res.status(204).end();
+    }
+  },
+);
+
+router.post(
+  '/public-hit',
+  limited(60, (req: any) => cloudflareIpRateLimitKeyGenerator(req)),
+  async (req: any, res: any) => {
+    if (privacySignal(req)) return res.status(204).end();
+    try {
+      const counted = await countPublicHit(req.body || {});
+      if (!counted) return res.status(400).json({ error: 'unknown event' });
+    } catch (err: any) {
+      console.warn('[usage-events] public hit failed:', err?.message);
+    }
+    return res.status(204).end();
+  },
+);
+
 module.exports = router;
 
 export {};

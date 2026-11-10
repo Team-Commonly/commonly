@@ -48,6 +48,7 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 import { agentConnectLink, agentKeyOf } from '../utils/agentConnectLink';
+import { trackUsage, trackUsageOnce } from '../utils/usageEvents';
 
 // The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
@@ -212,6 +213,19 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
 // Scout's welcome is the message offering one of these. Older welcomes carry no
 // ask start, so the connect start identifies them too.
 const isWelcomeStart = (start: V2Start) => start.id === ASK_START_ID || start.id === 'connect-agent';
+// D286 Q2: which welcome start a person picked, as a fixed name. Starts the
+// welcome doesn't offer send nothing.
+const welcomeStartKind = (start: V2Start): string | null => {
+  if (start.action === WELCOME_HOSTED_ACTION) return 'hosted';
+  if (start.id === 'open-byo') return 'byo';
+  if (start.id === ASK_START_ID) return 'ask';
+  if (start.id === 'connect-agent') return 'connect-agent';
+  return null;
+};
+const recordWelcomeStart = (start: V2Start, podId: string): void => {
+  const kind = welcomeStartKind(start);
+  if (kind) trackUsage('welcome-start-click', { props: { start: kind }, podId });
+};
 
 interface V2ThreadProps {
   detail: UseV2PodDetailResult;
@@ -537,7 +551,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
     // Write-once onboarding marks (User.onboarding.byoOfferShownAt, .welcomeShownAt).
     if (byoOfferShown && viewerId) recordByoStepOnce(api, 'byo-offer-shown', viewerId);
     if (welcomeShown && viewerId) recordByoStepOnce(api, 'welcome-shown', viewerId);
-  }, [byoOfferShown, welcomeShown, api, viewerId]);
+    if (welcomeShown && pod?._id) trackUsageOnce(`first-screen-view:${pod._id}`, 'first-screen-view', { podId: pod._id });
+  }, [byoOfferShown, welcomeShown, api, viewerId, pod?._id]);
 
   const [decisions, setDecisions] = useState<ThreadDecision[]>([]);
   const [settledDecisionByMessageId, setSettledDecisionByMessageId] = useState<Map<string, V2DecisionRuling>>(new Map());
@@ -1724,6 +1739,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
       );
       if (created) {
         rememberSentMessage(sendPodId, created);
+        // A fact that a first message went out from the welcome; its words stay in chat.
+        if (welcomeShown) trackUsageOnce(`first-message-sent:${sendPodId}`, 'first-message-sent', { podId: sendPodId });
         // A direct-room post is not evidence that the agent is alive or
         // working. Track the reply separately so the user gets a truthful
         // "waiting" state until the agent speaks or the wait expires.
@@ -2166,6 +2183,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, podsState, firstRunVisible 
             onThread={isReadOnly ? undefined : aimAtMessageThread}
             startsByMessageId={isReadOnly ? undefined : startsByMessageId}
             onStart={isReadOnly ? undefined : (start, messageId) => {
+              recordWelcomeStart(start, pod._id);
               if (start.action === 'add-first-task' && viewerOwnsPod && start.title) {
                 if (addingFirstTaskRef.current.has(messageId) || addedFirstTaskMessages.has(messageId)) return;
                 addingFirstTaskRef.current.add(messageId);

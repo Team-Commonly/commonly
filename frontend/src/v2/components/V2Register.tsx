@@ -15,6 +15,7 @@ import {
   forgetInviteOAuthStart,
 } from '../utils/pendingInvite';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { trackPublic } from '../utils/usageEvents';
 
 // v2-native sign-up. Pairs with V2Login (reuses the .v2-login styles) so the
 // auth surfaces match after v2 became the default. Mirrors the legacy
@@ -67,6 +68,8 @@ const V2Register: React.FC = () => {
   const [teamVerificationPending, setTeamVerificationPending] = useState(false);
   const [policy, setPolicy] = useState<RegistrationPolicy>({ loaded: false, inviteOnly: false });
 
+  useEffect(() => { trackPublic('register-view'); }, []);
+
   useEffect(() => {
     let active = true;
     axios.get('/api/auth/registration-policy')
@@ -95,6 +98,7 @@ const V2Register: React.FC = () => {
     setErrorField(null);
     setTeamVerificationPending(false);
     setSubmitting(true);
+    trackPublic('auth-choice', 'email');
     try {
       // No username: the server derives the handle from the email (TASK-290 A).
       const res = await axios.post('/api/auth/register', {
@@ -140,6 +144,10 @@ const V2Register: React.FC = () => {
     } catch (err) {
       const e1 = err as { response?: { status?: number; data?: { error?: string; msg?: string; code?: string } } };
       const code = e1.response?.data?.code;
+      // A fixed reason only, never the server's message or what was typed.
+      trackPublic('register-error', code === 'INVITATION_INVALID' || code === 'INVITATION_REQUIRED'
+        ? 'invite-required'
+        : (/already exists/i.test(e1.response?.data?.error || '') ? 'email-taken' : 'other'));
       if (code === 'INVITATION_INVALID') {
         // Forget the bad code so a reload doesn't carry it back into the form.
         forgetInvite();

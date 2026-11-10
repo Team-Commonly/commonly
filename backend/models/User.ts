@@ -205,6 +205,11 @@ export interface IUser extends Document {
     dailyDigest: boolean;
     needsYou: boolean;
   };
+  // Settings > "Share product usage with Commonly". Unset means the person
+  // never chose, and the region default applies (services/usageEvents.ts).
+  preferences?: {
+    usageEvents?: boolean;
+  };
   digestUnsubscribeToken?: string;
   lastActive: Date;
   lastDigestSent?: Date;
@@ -495,6 +500,10 @@ const userSchema = new Schema<IUser>({
   emailPreferences: {
     dailyDigest: { type: Boolean, default: true },
     needsYou: { type: Boolean, default: true },
+  },
+  // No default on purpose: unset is "never chose", which is not the same as on.
+  preferences: {
+    usageEvents: { type: Boolean },
   },
   // Capability token: it can only disable digest mail. Hidden from normal
   // User projections and generated lazily when the first email is sent.

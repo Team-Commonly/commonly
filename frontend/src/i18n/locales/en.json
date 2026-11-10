@@ -235,7 +235,8 @@
       "account": "Account",
       "access": "Access",
       "look": "Look",
-      "admin": "Administration"
+      "admin": "Administration",
+      "privacy": "Privacy"
     },
     "accountActions": "Account actions",
     "connectorsDetail": "Manage connected services",
@@ -351,6 +352,14 @@
       "uploadFailed": "Could not upload your photo. Try again.",
       "profileSaveFailed": "Could not save your avatar. Try again.",
       "regenerateFailed": "Could not change your avatar. Try again."
+    },
+    "usage": {
+      "label": "Share product usage with Commonly",
+      "detail": "Which screens you open and which buttons you press, by a fixed name. Never what you type.",
+      "browserSignal": "Your browser asks sites not to track you, so nothing is recorded.",
+      "error": "Couldn't save that. Try again.",
+      "on": "On",
+      "off": "Off"
     }
   },
   "activity": {

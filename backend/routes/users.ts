@@ -31,6 +31,7 @@ const {
   unfollowUser,
 } = require('../controllers/userController');
 
+const { defaultUsageEvents, privacySignal } = require('../services/usageEvents');
 const router: ReturnType<typeof express.Router> = express.Router();
 
 const agentConnectionReadLimit = rateLimit({
@@ -256,6 +257,34 @@ router.post('/me/timezone', profileWriteIngressLimit, auth, profileWriteUserLimi
     }
   }
   return res.status(204).end();
+});
+
+// GET/PUT /me/usage-events: the Settings switch for product usage events
+// (D286). Unset follows the region: off in the EU, EEA and UK until the person
+// turns it on, on elsewhere. A DNT or GPC signal keeps recording off whatever
+// the switch says, and the reply says so, so the page can tell the person why.
+const usageEventsState = (req: any, preference: unknown) => ({
+  usageEvents: preference === true || preference === false ? preference : defaultUsageEvents(req),
+  chosen: preference === true || preference === false,
+  browserSignal: privacySignal(req),
+});
+
+router.get('/me/usage-events', auth, async (req: any, res: any) => {
+  const user = await User.findById(req.userId).select('preferences isBot').lean();
+  if (!user || user.isBot) return res.status(404).json({ msg: 'Not found' });
+  return res.json(usageEventsState(req, user.preferences?.usageEvents));
+});
+
+router.put('/me/usage-events', profileWriteIngressLimit, auth, profileWriteUserLimit, async (req: any, res: any) => {
+  const value = req.body?.usageEvents;
+  if (value !== true && value !== false) return res.status(400).json({ msg: 'usageEvents must be true or false' });
+  const updated = await User.findOneAndUpdate(
+    { _id: req.userId, isBot: { $ne: true } },
+    { $set: { 'preferences.usageEvents': value } },
+    { new: true, projection: { preferences: 1 } },
+  ).lean();
+  if (!updated) return res.status(404).json({ msg: 'Not found' });
+  return res.json(usageEventsState(req, updated.preferences?.usageEvents));
 });
 
 module.exports = router;

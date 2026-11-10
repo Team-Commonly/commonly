@@ -93,7 +93,7 @@ describe('Self-serve account deletion', () => {
   afterAll(async () => { await new Promise((resolve) => app.close(resolve)); await closeMongoDb(); await closePgDb(); });
 
   // F398: the privacy policy says deleting the account deletes the setup-step records.
-  it('deletes the person\'s setup-step records on both delete paths, and nobody else\'s (F398)', async () => {
+  it('deletes the person\'s setup-step and usage records on both delete paths, and nobody else\'s (F398)', async () => {
     const mongoose = require('mongoose');
     const rows = () => mongoose.connection.db.collection('byo_telemetry');
     const count = (person) => rows().countDocuments({ userId: { $in: [String(person._id), person._id] } });
@@ -104,14 +104,20 @@ describe('Self-serve account deletion', () => {
       { userId: user._id, step: 'seat-registered', at: new Date() },
       { userId: String(other._id), step: 'byo-opened', at: new Date() },
     ]);
+    // F399: usage events go the same way.
+    const events = () => mongoose.connection.db.collection('ui_events');
+    await events().insertMany([{ userId: user._id, name: 'app-open', at: new Date() }, { userId: other._id, name: 'app-open', at: new Date() }]);
     await deletion(app, issueSessionToken(user)).expect(204);
     expect(await count(user)).toBe(0);
     expect(await count(other)).toBe(1);
+    expect(await events().countDocuments({ userId: user._id })).toBe(0);
+    expect(await events().countDocuments({ userId: other._id })).toBe(1);
 
     const admin = await makeUser({ role: 'admin' });
     await request(app).delete(`/api/admin/users/${other._id}`).set('Authorization', `Bearer ${issueSessionToken(admin)}`).expect(200);
     await sweepAccountDeletions();
     expect(await count(other)).toBe(0);
+    expect(await events().countDocuments({ userId: other._id })).toBe(0);
   });
 
   it('takes the person\'s ids off record lines on both delete paths, and nobody else\'s (F265)', async () => {
