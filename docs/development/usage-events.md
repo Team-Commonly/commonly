@@ -51,7 +51,7 @@ growth-prod-read.sh backend/scripts/usage-report.js DAYS=14
 - **Our own accounts are left out at read time:** the stored `isInternal` stamp, admins, `USAGE_INTERNAL_USERNAMES` and `USAGE_INTERNAL_PREFIXES`, read from ops-runner's env. A row recorded before a name was listed still drops. The header says how many events were left out.
 - **A prefix shorter than 4 characters is ignored**, and the header says so, because a slip like `a` would drop real people from every read.
 - **Counts only:** nothing it returns or prints carries an id, a username, an email or typed text. A test checks this.
-- **It avoids newer aggregation operators**, deciding who is ours from a narrow `users` read, so it runs on whatever Mongo the instance has.
+- **It decides who is ours from a narrow `users` read**, not in the pipeline, so it runs on Mongo 3.6, or on 4.0 when a row holds a string user id.
 
 ## The client
 

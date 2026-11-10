@@ -35,6 +35,8 @@ describe('usage report', () => {
       listed: user('Ops-Person'),
       walker: user('WALK-1107'),
       stamped: user('stamped'),
+      // Seen in the window only under a string id, so only the $toString match can find them.
+      stringOnly: user('seat-strs'),
     };
     await db.collection('users').insertMany(Object.values(people));
     await db.collection('ui_events').insertMany([
@@ -51,6 +53,7 @@ describe('usage report', () => {
       event(people.stamped, 'app-open', day('2026-11-09'), { isInternal: true }),
       // A string id, which the writer never stores, still resolves to its account.
       event(people.admin, 'app-open', day('2026-11-09'), { userId: String(people.admin._id) }),
+      { userId: String(people.stringOnly._id), name: 'app-open', screen: '/', at: day('2026-11-09'), isInternal: false },
       // A row with no person adds events but no people.
       { name: 'app-open', screen: '/', at: day('2026-11-09'), isInternal: false },
       // Outside the window.
@@ -69,7 +72,7 @@ describe('usage report', () => {
   });
 
   const build = (opts = {}) => buildUsageReport(db, {
-    days: 7, now, usernames: 'ops-person', prefixes: 'walk-', ...opts,
+    days: 7, now, usernames: 'ops-person', prefixes: 'walk-,seat-', ...opts,
   });
 
   it('counts events and people per day, by event and by screen or step, without our own accounts', async () => {
@@ -81,8 +84,8 @@ describe('usage report', () => {
     expect(row('2026-11-09', 'welcome-start-click', { step: 'start=hosted' })).toMatchObject({ events: 1, people: 1 });
     expect(row('2026-11-10', 'screen-view')).toMatchObject({ screen: '/pods/:podId/board', events: 1, people: 1 });
     expect(report.activePeople).toEqual([{ day: '2026-11-10', people: 1 }, { day: '2026-11-09', people: 2 }]);
-    // The admin (twice, once by a string id), the listed name, the prefix and the stamp.
-    expect(report.excludedInternalEvents).toBe(5);
+    // The admin (twice, once by a string id), the listed name, both prefixes and the stamp.
+    expect(report.excludedInternalEvents).toBe(6);
     expect(report.signedIn.some((r) => r.day === '2026-10-01')).toBe(false);
   });
 
@@ -95,7 +98,7 @@ describe('usage report', () => {
   });
 
   it('ignores a prefix shorter than 4 characters, so a slip cannot drop real people', async () => {
-    const report = await build({ prefixes: 'a, walk-' });
+    const report = await build({ prefixes: 'a, walk-, seat-' });
     expect(report.ignoredShortPrefixes).toBe(1);
     expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 4, people: 2 });
   });
@@ -107,7 +110,7 @@ describe('usage report', () => {
       expect(text).not.toContain(String(person._id));
       expect(text.toLowerCase()).not.toContain(`${person.username.toLowerCase()}@`);
     }
-    for (const name of ['ana', 'Ben', 'boss', 'Ops-Person', 'WALK-1107', 'stamped']) {
+    for (const name of ['ana', 'Ben', 'boss', 'Ops-Person', 'WALK-1107', 'stamped', 'seat-strs']) {
       expect(text).not.toMatch(new RegExp(`\\b${name}\\b`));
     }
   });

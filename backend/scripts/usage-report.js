@@ -39,8 +39,8 @@ async function buildUsageReport(db, opts = {}) {
   const allPrefixes = configList(opts.prefixes);
   const prefixes = allPrefixes.filter((prefix) => prefix.length >= MIN_PREFIX);
 
-  // Who is ours, decided here from a narrow read rather than with newer
-  // aggregation operators, so the read runs on whatever Mongo the instance has.
+  // Who is ours, decided here from a narrow read rather than in the pipeline.
+  // Mongo 3.6 is enough, or 4.0 when a row holds a string user id ($toString).
   const inWindow = { at: { $gte: since, $lt: until } };
   // The writer stores ObjectIds; a string id is matched too, as deleteUiEventsFor does,
   // by the account id's string form (no ObjectId built here, so no second bson copy).
