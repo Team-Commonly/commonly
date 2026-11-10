@@ -10,7 +10,7 @@ const path = require('path');
 const HELPER = path.resolve(__dirname, '../../../frontend/src/v2/utils/daemonSetupCommand.ts');
 
 const daemonSetupCommandTemplate = (apiUrl) => {
-  const template = fs.readFileSync(HELPER, 'utf8').match(/`(npm i -g [^`]+)`/)[1];
+  const template = fs.readFileSync(HELPER, 'utf8').match(/`([^`]*daemon setup[^`]*)`/)[1];
   return template.replace(/\$\{apiUrl[^}]*\}/, apiUrl);
 };
 

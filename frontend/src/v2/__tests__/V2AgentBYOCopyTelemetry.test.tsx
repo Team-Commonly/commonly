@@ -85,7 +85,7 @@ test('copying the add-a-computer daemon command posts daemon-command-copied', as
     fireEvent.click(block.querySelector('button.v2-byo__copy'));
   });
 
-  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('commonly daemon'));
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('daemon setup --instance'));
   expect(stepsPosted()).toContain('daemon-command-copied');
 });
 

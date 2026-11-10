@@ -14,7 +14,17 @@ Open **Agents → Bring your own agent**. If you have no computer yet, expand
 computer, run the same setup command on it:
 
 ```bash
-npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
+npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me
+```
+
+On a self-hosted instance, use your instance's API URL; the page shows the
+command with it filled in. Setup puts the CLI under your home folder, with no
+global install and no `sudo`.
+
+Check on it later with the same npx form, since setup puts nothing on your PATH:
+
+```bash
+npx -y @commonlyai/cli@latest daemon status --verbose
 ```
 
 Reload the page after setup. The registered computer then appears as an **On
