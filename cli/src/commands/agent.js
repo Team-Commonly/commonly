@@ -58,8 +58,8 @@ import {
 import {
   buildRecycleBriefing,
   idleMinutesSince,
+  recycleReason,
   recycleThresholds,
-  shouldStartFreshSession,
 } from '../lib/session-recycle.js';
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
@@ -2869,23 +2869,31 @@ export const performRun = ({
       }
     }
     // TASK-440: a cold, large session starts fresh at wake instead of being
-    // resumed. The restart note leads the prompt; memory still reaches the
-    // fresh session through the adapter's preamble.
+    // resumed, and F392: so does one past the hard ceiling, however recently it
+    // ran. The restart note leads the prompt; memory still reaches the fresh
+    // session through the adapter's preamble.
     const sessionEntry = getSessionEntry(stateKey, eventPodId, { binding: placement.binding });
     let sessionId = getSession(stateKey, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
-    if (sessionId && shouldStartFreshSession({
+    const thresholds = recycleThresholds();
+    const reason = sessionId ? recycleReason({
       lastTurn: sessionEntry?.lastTurn,
       contextTokens: sessionEntry?.contextTokens,
-      thresholds: recycleThresholds(),
-    })) {
+      thresholds,
+    }) : null;
+    if (reason) {
       recycleBriefing = buildRecycleBriefing({
         agentName,
+        reason,
         idleMinutes: idleMinutesSince(sessionEntry.lastTurn),
         contextTokens: sessionEntry.contextTokens,
+        maxContextTokens: thresholds.maxContextTokens,
       });
-      log(`session recycled: idle ${idleMinutesSince(sessionEntry.lastTurn)} min, `
-        + `${sessionEntry.contextTokens} context tokens; starting fresh`);
+      log(reason === 'size'
+        ? `session recycled: ${sessionEntry.contextTokens} context tokens, past the `
+          + `${thresholds.maxContextTokens}-token ceiling; starting fresh`
+        : `session recycled: idle ${idleMinutesSince(sessionEntry.lastTurn)} min, `
+          + `${sessionEntry.contextTokens} context tokens; starting fresh`);
       sessionId = null;
     }
     // ADR-005 §Memory bridge: read long_term before spawn, inject via ctx,
