@@ -1378,11 +1378,12 @@ const V2AgentBYO: React.FC = () => {
   };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
-  // Windows PowerShell 5.1, the one every Windows ships, has no `&&`: the same
-  // steps go one per line there, and each runs after the one before. The
-  // install takes --unsandboxed there, as `agent run` does.
+  // One line, run through npx — nothing to install first. It works as is in
+  // PowerShell, so there is no per-line split any more. On Windows it carries
+  // --unsandboxed, forwarded to the install step (agents run without a sandbox
+  // there, as `agent run` does).
   const daemonCommand = setupOs === 'windows'
-    ? `${daemonSetupCommand(apiUrl).split(' && ').join('\n')} --unsandboxed`
+    ? `${daemonSetupCommand(apiUrl)} --unsandboxed`
     : daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
@@ -1456,7 +1457,7 @@ const V2AgentBYO: React.FC = () => {
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
       <div className="v2-byo__add-computer-row">
-        <code className={setupOs === 'windows' ? 'v2-byo__add-computer-lines' : undefined}>{daemonCommand}</code>
+        <code>{daemonCommand}</code>
         <button
           type="button"
           className="v2-byo__copy"

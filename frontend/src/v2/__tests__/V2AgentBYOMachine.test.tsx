@@ -139,7 +139,7 @@ describe('BYO on-my-computer mode', () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
     expect(screen.queryByTestId('byo-mode-machine')).toBeNull();
     expect(screen.getByTestId('byo-add-computer')).toBeInTheDocument();
-    expect(screen.getByTestId('byo-add-computer')).toHaveTextContent('commonly daemon register && commonly daemon install');
+    expect(screen.getByTestId('byo-add-computer')).toHaveTextContent('npx -y @commonlyai/cli@latest daemon setup --instance');
   });
 
   test('with machines the setup panel is gone', async () => {

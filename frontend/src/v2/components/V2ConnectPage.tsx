@@ -22,7 +22,10 @@ const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | 
 
 const V2ConnectPage: React.FC = () => {
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
-  const cliSnippet = `npm install -g @commonlyai/cli\ncommonly login --instance ${apiBaseUrl}`;
+  // F370: log in through npx, so a stock-Node Mac never hits the global-install
+  // EACCES first. This card only logs in; the computer setup (daemon) line
+  // lives on Bring your own, which explains it and adds Windows' opt-in.
+  const cliSnippet = `npx -y @commonlyai/cli@latest login --instance ${apiBaseUrl}`;
   const cursorInstallHref = cursorMcpInstallLink(apiBaseUrl);
   const mcpSnippet = `claude mcp add commonly \\
   -e COMMONLY_API_URL=${apiBaseUrl} \\

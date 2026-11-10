@@ -79,7 +79,10 @@ const issueRun = async () => {
 };
 
 describe('BYO connect paths: run is the quick try, the daemon keeps it running (TASK-645 items 3 and 4)', () => {
-  afterEach(() => setUserAgent(realUserAgent));
+  afterEach(() => {
+    setUserAgent(realUserAgent);
+    delete process.env.REACT_APP_API_URL;
+  });
   beforeEach(() => jest.clearAllMocks());
 
   test('run path on a Mac: the quick-try line names the daemon, and the command says it stops with its Terminal', async () => {
@@ -129,18 +132,26 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
 
   test('daemon path with no computer: marked recommended, and Reload says the computer appears by name, online', async () => {
     setUserAgent(MAC);
+    process.env.REACT_APP_API_URL = 'https://api-dev.example.test/';
     mockPage({ machines: [] });
     renderPage();
     const add = await screen.findByTestId('byo-add-computer');
     expect(screen.getByTestId('byo-add-computer-recommended')).toHaveTextContent(/Recommended for an agent that keeps running/);
     expect(add).toHaveTextContent(/appears in the list by its name, marked online/);
-    expect(add).toHaveTextContent('commonly daemon register && commonly daemon install');
+    // F370: one npx line, no global install — `daemon setup` logs in, registers
+    // and installs the daemon under $HOME.
+    // The page's own instance, never the CLI default (production).
+    expect(add.querySelector('code').textContent).toBe(
+      'npx -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test',
+    );
+    expect(add).not.toHaveTextContent('npm i -g');
   });
 
-  // D245: `commonly daemon install --unsandboxed` registers a logon task on
-  // Windows. PowerShell 5.1 has no `&&`, so the same steps go one per line.
-  test('on Windows: the quick-try line, and the daemon block one step per line, marked recommended', async () => {
+  // F370: one line through npx, so no `&&` chain to split per OS. On Windows it
+  // carries --unsandboxed, forwarded to `daemon setup`'s install step (D245).
+  test('on Windows: the quick-try line, and the daemon block as one npx line with --unsandboxed, marked recommended', async () => {
     setUserAgent(WINDOWS);
+    process.env.REACT_APP_API_URL = 'https://api-dev.example.test/';
     mockPage({ machines: [] });
     renderPage();
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
@@ -148,13 +159,11 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(await screen.findByTestId('byo-quick-try')).toBeInTheDocument();
     expect(screen.getByTestId('byo-add-computer-recommended')).toHaveTextContent(/Recommended for an agent that keeps running/);
     const command = screen.getByTestId('byo-add-computer').querySelector('code');
+    // One line now: npx runs it, so there's no global install and no `&&` chain.
     expect(command.textContent).not.toContain('&&');
-    expect(command.textContent.split('\n')).toEqual([
-      'npm i -g @commonlyai/cli@latest',
-      expect.stringMatching(/^commonly login --instance \S+$/),
-      'commonly daemon register',
-      'commonly daemon install --unsandboxed',
-    ]);
+    expect(command.textContent).not.toContain('\n');
+    expect(command.textContent).not.toContain('npm i -g');
+    expect(command.textContent).toBe('npx -y @commonlyai/cli@latest daemon setup --instance https://api-dev.example.test --unsandboxed');
     // The flag is explained under the block it appears in.
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
       'On Windows there’s no sandbox. With --unsandboxed, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.',

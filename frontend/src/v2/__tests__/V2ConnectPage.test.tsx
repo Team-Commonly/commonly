@@ -48,9 +48,9 @@ describe('V2ConnectPage', () => {
       const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
       Object.assign(navigator, { clipboard });
       renderConnect();
-      const cliSnippet = screen.getByText(/commonly login --instance/).textContent || '';
+      const cliSnippet = screen.getByText(/ login --instance/).textContent || '';
       const mcpSnippet = screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/).textContent || '';
-      expect(cliSnippet).toContain('commonly login --instance https://api.example.test');
+      expect(cliSnippet).toBe('npx -y @commonlyai/cli@latest login --instance https://api.example.test');
       expect(mcpSnippet).toContain('COMMONLY_API_URL=https://api.example.test');
       expect(cliSnippet).not.toContain('api.commonly.me');
       expect(mcpSnippet).not.toContain('api.commonly.me');
@@ -89,7 +89,7 @@ describe('V2ConnectPage', () => {
     renderConnect();
 
     expect(screen.getByRole('heading', { name: 'Connect the CLI or MCP' })).toBeInTheDocument();
-    expect(screen.getByText(/commonly login/)).toBeInTheDocument();
+    expect(screen.getByText(/ login --instance/)).toBeInTheDocument();
     expect(screen.getByText(/COMMONLY_AGENT_TOKEN=cm_agent_…/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manage connected CLI devices' })).toHaveAttribute('href', '/v2/settings');
     expect(document.querySelectorAll('.v2-connect__lane-heading p, .v2-connect__note')).toHaveLength(0);
@@ -98,7 +98,7 @@ describe('V2ConnectPage', () => {
     expect(screen.queryByRole('link', { name: 'Open global integrations' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
-    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(expect.stringMatching(/^npm install -g @commonlyai\/cli\ncommonly login --instance https?:\/\//)));
+    await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(expect.stringMatching(/^npx -y @commonlyai\/cli@latest login --instance https?:\/\/\S+$/)));
   });
 
   test('shows global integrations to admins and no gateway setup to anyone', async () => {

@@ -128,6 +128,11 @@ describe('Scout onboarding knowledge', () => {
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
     expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
     expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
+    // CodeRabbit on #3841: on native Windows the plain setup line dead-ends.
+    // Scout names the trade-off first and sends an opted-in person to the
+    // page's Windows line; it never hands out the opt-in flag itself.
+    expect(prompt).toMatch(/On native Windows that line alone installs a daemon whose agents are then refused\./);
+    expect(prompt).toMatch(/run with no sandbox, so nothing at the OS level confines them, and that they answer only in an invite-only pod that is neither public nor listed\. Only if they accept that, send them to the Bring your own page/);
     expect(prompt).toMatch(/Claude Code on native Windows too, with CLI 0\.1\.243 or newer: the connect page gives PowerShell lines that run it with no sandbox, and it gets no connector grants\./);
     expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) runs in a bubblewrap sandbox\. With an API key \(ANTHROPIC_API_KEY\), in a pod that is not fully private, the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is checked only in CI with a stand-in model, so say which\./);
     expect(prompt).not.toMatch(/native Windows is not verified to answer/);

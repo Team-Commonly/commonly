@@ -419,8 +419,6 @@
   overflow-wrap: anywhere;
   overflow: visible;
 }
-/* Windows: one step per line, since PowerShell 5.1 has no `&&`. */
-.v2-byo__add-computer-row code.v2-byo__add-computer-lines { white-space: pre-wrap; }
 .v2-byo__footnote code {
   font-family: var(--v2-font-mono);
   font-weight: 500;

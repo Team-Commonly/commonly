@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { exactVersion, parseVersion } from './mcp-server-version.js';
+import { DAEMON_SETUP_LINE, runsFromStableInstall } from './stable-install.js';
 
 export const CLI_PACKAGE = '@commonlyai/cli';
 export const REGISTRY_LATEST_URL = 'https://registry.npmjs.org/@commonlyai%2fcli/latest';
@@ -46,14 +47,19 @@ export const versionsBehind = (installed, latest) => {
 };
 
 /** The one line to print, or null when there is nothing worth saying. */
-export const updateNoticeLine = ({ installed, latest, minBehind = UPDATE_NOTICE_MIN_BEHIND }) => {
+export const updateNoticeLine = ({
+  installed, latest, minBehind = UPDATE_NOTICE_MIN_BEHIND, fromSetup = runsFromStableInstall(),
+}) => {
   const behind = versionsBehind(installed, latest);
   if (behind === null || behind < minBehind) return null;
   // Only the parsed triple is printed: the registry's string never reaches the log.
   const from = exactVersion(installed);
   const to = exactVersion(latest);
   const gap = Number.isFinite(behind) ? `${behind} versions behind` : 'behind a newer release line';
-  return `your CLI is ${gap} (installed ${from}, latest ${to}). Update: npm install -g ${CLI_PACKAGE}@latest`
+  // A `daemon setup` copy lives under $HOME and has no global install to update;
+  // running setup again updates it and restarts the daemon.
+  const update = fromSetup ? DAEMON_SETUP_LINE : `npm install -g ${CLI_PACKAGE}@latest`;
+  return `your CLI is ${gap} (installed ${from}, latest ${to}). Update: ${update}`
     + ` (silence with ${UPDATE_CHECK_OPT_OUT_ENV}=1)`;
 };
 

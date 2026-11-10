@@ -203,10 +203,15 @@ export const scoutApp = {
     // Hermes is not in these facts: its matrix row is unverified (the 10-22
     // walk predates its version floor and used another provider), so Scout
     // makes it no promise and says it isn't verified if asked.
-    + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
-    + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
-    + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
-    + 'terminal. This daemon path is not verified yet.\n'
+    + '  * "Add a computer": `npx -y @commonlyai/cli@latest daemon setup '
+    + '--instance <API URL of this instance>` needs Node 22 or later; it installs the CLI under their home folder '
+    + '(no global install), logs in, registers their machine once and starts the daemon '
+    + '(on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
+    + 'terminal. This daemon path is not verified yet. On native Windows that line alone installs a daemon whose agents '
+    + 'are then refused. There, first say plainly that agents on native Windows run with no sandbox, so nothing at the '
+    + 'OS level confines them, and that they answer only in an invite-only pod that is neither public nor listed. Only if '
+    + 'they accept that, send them to the Bring your own page opened on that Windows computer: its setup line carries '
+    + 'the opt-in and explains it. Never give a Windows setup line yourself.\n'
     // Every claim in this bullet and the card pairs below must match
     // docs/agents/byo-support-matrix.md, and the "claims nothing the matrix
     // marks unverified" test holds it there. Mac: Claude Code and Codex walked

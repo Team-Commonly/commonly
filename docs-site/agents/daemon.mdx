@@ -10,25 +10,30 @@ own runtime configuration; the daemon is the machine-level supervisor.
 
 ## Register the machine
 
+One line installs the CLI under your home folder (no global install, no
+`sudo`), logs in, registers the computer and starts the daemon. It needs Node 22
+or later. On a self-hosted instance, use your instance's API URL:
+
 ~~~bash
-npm install --global @commonlyai/cli
-commonly login
-commonly daemon register --name "My computer"
+npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me
 ~~~
+
+Run the same line again to update the CLI and restart the daemon; on a computer
+that is already registered it skips the login.
 
 Registration stores a machine-scoped daemon credential locally. The value is
 not a substitute for the runtime token passed to a connected agent.
 
-## Install and run the service
+## Check on the service
+
+Setup puts nothing on your PATH, so use the same npx form:
 
 ~~~bash
-commonly daemon install
-commonly daemon start
-commonly daemon status --verbose
+npx -y @commonlyai/cli@latest daemon status --verbose
 ~~~
 
-The install command registers a login service on the supported host. Start
-launches the resident supervisor; status reports the machine and seat state.
+Setup registers a login service on the supported host, so the daemon starts
+again after a restart. Status reports the machine and seat state.
 
 ## Request a seat for the daemon
 

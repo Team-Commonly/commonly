@@ -51,6 +51,7 @@ import {
 } from '../lib/daemon-agent-states.js';
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
 import { machineHostReport } from '../lib/machine-host.js';
+import { orchestrateDaemonSetup } from '../lib/stable-install.js';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
 // fields are worth reading closely: the seat's `instanceId` (the identity the
@@ -265,6 +266,20 @@ export const daemonStatusErrorMessage = (error) => (isRevokedDaemonKey(error)
     ? 'This computer is no longer registered. Run: commonly daemon register'
   : `Daemon status failed: ${error.message}`);
 
+// `daemon setup` on a computer that is already registered for this instance
+// skips login and register (it would stop at "already registered"). Only a
+// stored key the server still accepts counts; a revoked or missing one goes
+// through register, which replaces it.
+export const setupFindsRegistration = async ({
+  instance, load = loadDaemonRecord, state = storedDaemonState, clientFor = createClient,
+}) => {
+  const record = load();
+  if (!record || !instance) return false;
+  if (String(record.instanceUrl || '').replace(/\/+$/, '') !== instance) return false;
+  const client = clientFor({ instance: record.instanceUrl, token: record.daemonToken });
+  return (await state(client, record)) === 'active';
+};
+
 // Keep the old record until a new registration is securely persisted. A
 // network failure or a still-live daemon key must never silently mint another.
 export const allowRevokedDaemonReplacement = async ({ existing, client }) => {
@@ -348,6 +363,7 @@ The daemon token is scoped to this machine and stored in a 0600 file under
 ~/.commonly/daemon/. It is never shown again after registration.
 
 Examples:
+  $ commonly daemon setup                             # install, log in, register, and start — one step
   $ commonly daemon register --name "Sam's MacBook"
   $ commonly daemon heartbeat
   $ commonly daemon status --verbose
@@ -355,6 +371,37 @@ Examples:
   $ commonly daemon start|stop|restart
   $ commonly daemon unregister
 `);
+
+  daemon
+    .command('setup')
+    .description('From a fresh computer in one step: install the CLI under your home (no sudo, no global install), log in, register this computer, and start the daemon')
+    .option('--instance <url-or-key>', 'Target Commonly instance')
+    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox (see `commonly daemon install`). Forwarded to the install step.')
+    .action(async (opts) => {
+      try {
+        const instanceUrl = resolveInstanceUrl(opts.instance);
+        await orchestrateDaemonSetup({
+          version: installedCliVersion(),
+          instanceUrl,
+          unsandboxed: Boolean(opts.unsandboxed),
+          alreadyRegistered: (instance) => setupFindsRegistration({ instance }),
+          log: (line) => console.log(line),
+          // Run the stable CLI once with the user's terminal attached, so login
+          // device-auth and any prompts work; reject on a non-zero exit so a
+          // failed step stops the chain before the next one.
+          runCli: (entry, args) => new Promise((resolve, reject) => {
+            const child = spawn(process.execPath, [entry, ...args], { stdio: 'inherit', env: process.env });
+            child.on('error', reject);
+            child.on('close', (code) => (code === 0
+              ? resolve()
+              : reject(new Error(`\`commonly ${args.join(' ')}\` exited with code ${code}`))));
+          }),
+        });
+      } catch (error) {
+        console.error(`Daemon setup failed: ${error.message}`);
+        process.exitCode = 1;
+      }
+    });
 
   daemon
     .command('register')

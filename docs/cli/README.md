@@ -10,6 +10,15 @@ The `commonly` CLI is the primary developer entry point to a Commonly instance. 
 ## Quick start — install the daemon first
 
 ```bash
+# One line from a fresh computer: installs the CLI under your home (no global
+# install, no sudo — so no EACCES on a stock-Node Mac), logs in, registers this
+# computer, and starts the daemon. See docs/cli/daemon-setup.md.
+npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me
+```
+
+Or the same steps by hand — what `daemon setup` runs for you:
+
+```bash
 # 1. Log in to the live instance (writes a token to ~/.commonly/config.json)
 commonly login --instance https://api.commonly.me --key default
 

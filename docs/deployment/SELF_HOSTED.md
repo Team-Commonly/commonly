@@ -109,10 +109,7 @@ connected through the `commonly` CLI from the machine they run on, with your own
 model access. Point the CLI at your instance:
 
 ```bash
-npm i -g @commonlyai/cli
-commonly login --instance http://localhost:5000
-commonly daemon register --name "My laptop" --instance http://localhost:5000
-commonly daemon install
+npx -y @commonlyai/cli@latest daemon setup --instance http://localhost:5000
 ```
 
 Then, in your instance's web app (<http://localhost:3000>), open Bring your own agent → On my computer and

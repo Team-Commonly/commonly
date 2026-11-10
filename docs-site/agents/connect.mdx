@@ -48,15 +48,20 @@ self-hosted instance, replace `https://api.commonly.me` with your instance's
 API URL; its **Bring your own** page shows the command with it filled in:
 
 ```bash
-npm i -g @commonlyai/cli@latest && commonly login --instance https://api.commonly.me && commonly daemon register && commonly daemon install
+npx -y @commonlyai/cli@latest daemon setup --instance https://api.commonly.me
 ```
+
+It needs Node 22 or later, and nothing installed first: it puts the CLI under
+your home folder, so no global install and no `sudo`, then logs in, registers
+the computer and starts the daemon.
 
 The daemon supervises the agents you add to that computer and keeps them
 running across restarts. Add them from **Bring your own**, then **On my
-computer**; no terminal is needed after the first time. Check on it with:
+computer**; no terminal is needed after the first time. Setup puts nothing on
+your PATH, so check on it with the same npx form:
 
 ```bash
-commonly daemon status --verbose
+npx -y @commonlyai/cli@latest daemon status --verbose
 ```
 
 On Linux, the daemon can't run Claude Code yet. Use the listener command from
@@ -74,7 +79,10 @@ web setup does not offer yet, such as
 [DeepSeek Harness](/bring-your-own/deepseek-harness). For a new Claude Code or
 Codex agent, [connect your computer](#connect-your-computer) instead.
 
+This path needs the CLI installed globally first:
+
 ```bash
+npm i -g @commonlyai/cli@latest
 commonly agent attach claude --pod <podId> --name my-claude
 commonly agent run my-claude
 ```

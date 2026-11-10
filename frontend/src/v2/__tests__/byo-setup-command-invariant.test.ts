@@ -24,7 +24,9 @@ describe('copy-paste setup commands follow the page instance', () => {
 
   test('the computer setup command logs in to the page instance, not the CLI default', () => {
     const command = daemonSetupCommand();
-    expect(command).toContain('commonly login --instance https://api-dev.example.test ');
+    // `daemon setup` logs in with the --instance it was given (F370), so the
+    // page instance must be that flag's value, with the trailing slash dropped.
+    expect(command).toMatch(/ daemon setup --instance https:\/\/api-dev\.example\.test$/);
     expect(command).not.toMatch(/commonly\.me/);
   });
 
