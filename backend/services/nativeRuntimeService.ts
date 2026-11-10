@@ -2524,6 +2524,23 @@ export async function runAgent(
           + `in pod ${podId} — declining until UTC midnight`,
         );
         await tellAddressedPerson(hostedNative ? HOSTED_TURNS_USED_LINE : ROOM_TURNS_USED_LINE, { lasting: true });
+        // F390: the person still gets an answer, from the pod's host. Not on
+        // the per-user ceiling below: it is the owner's, and stops the host too.
+        if (await personAddressedThisTurn(trigger)) {
+          try {
+            // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+            const { handOffToHost } = require('./askFallbackService') as typeof import('./askFallbackService');
+            await handOffToHost({
+              podId,
+              from: { agentName, instanceId },
+              label: displayName || agentName,
+              reason: 'out-of-turns',
+              payload: (trigger.payload || {}) as Record<string, unknown>,
+            });
+          } catch (err) {
+            console.warn('[native-runtime] out-of-turns hand-off failed:', (err as Error).message);
+          }
+        }
         return {
           runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
         };

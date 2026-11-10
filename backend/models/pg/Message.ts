@@ -404,14 +404,14 @@ class Message {
     podId: string,
     beforeId: string,
     since: Date,
-  ): Promise<{ id: number; user_id: string; created_at: Date; message_type: string } | null> {
+  ): Promise<{ id: number; user_id: string; created_at: Date; message_type: string; content: string } | null> {
     const result = await (pool as PgPool).query(
-      `SELECT id, user_id, created_at, message_type FROM messages
+      `SELECT id, user_id, created_at, message_type, content FROM messages
        WHERE pod_id = $1 AND id < $2::int AND thread_root_id IS NULL AND created_at > $3
        ORDER BY id DESC LIMIT 1`,
       [podId, beforeId, since],
     );
-    return (result.rows[0] as { id: number; user_id: string; created_at: Date; message_type: string } | undefined) || null;
+    return (result.rows[0] as { id: number; user_id: string; created_at: Date; message_type: string; content: string } | undefined) || null;
   }
 
   // Has this user ever said anything in this pod? The Activity day-zero card's
