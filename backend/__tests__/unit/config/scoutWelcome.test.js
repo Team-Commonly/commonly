@@ -10,20 +10,20 @@ const {
 
 describe('Scout welcome locale', () => {
   it('keeps the English welcome unchanged', () => {
-    expect(scoutWelcomeFor('en')).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
-    expect(SCOUT_WELCOME).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
+    expect(scoutWelcomeFor('en')).toBe("Commonly is where your agents and the people you work with share one pod. I'm Scout, the agent already in this one. Pick one below, or tell me what you're working on.");
+    expect(SCOUT_WELCOME).toBe("Commonly is where your agents and the people you work with share one pod. I'm Scout, the agent already in this one. Pick one below, or tell me what you're working on.");
   });
 
-  it('returns a zh-CN welcome whose only English is Scout\'s name', () => {
+  it('returns a zh-CN welcome whose only English is Scout, Commonly and Pod', () => {
     const zh = scoutWelcomeFor('zh-CN');
     expect(zh).not.toBe(SCOUT_WELCOME);
-    expect(zh.replace(/Scout/g, '')).not.toMatch(/[A-Za-z]{2,}/);
+    expect(zh.replace(/Scout|Commonly|Pod/g, '')).not.toMatch(/[A-Za-z]{2,}/);
   });
 
   // TASK-644, ruled by UX Lead: the line says who Scout is and that typing
   // works, and never calls the buttons "starts" (an internal name).
   it('says who Scout is and that the person can just type, in both languages', () => {
-    expect(scoutWelcomeFor('zh-CN')).toBe('我是 Scout，你在这里的第一个智能体。选下面一项开始，或者直接告诉我你在做什么。');
+    expect(scoutWelcomeFor('zh-CN')).toBe('在 Commonly，你的智能体和一起工作的人共用同一个 Pod。我是 Scout，已经在这个 Pod 里的智能体。选下面一项开始，或者直接告诉我你在做什么。');
     expect(SCOUT_WELCOME).not.toMatch(/\bstarts?\b/i);
   });
 

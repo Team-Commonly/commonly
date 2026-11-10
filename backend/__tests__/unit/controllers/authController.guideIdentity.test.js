@@ -118,7 +118,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
 
     const welcome = mockPostMessage.mock.calls[0][0];
     expect(welcome.content).toBe(SCOUT_WELCOME);
-    expect(welcome.content).toBe("I'm Scout, your first agent here. Pick one below, or just tell me what you're working on.");
+    expect(welcome.content).toBe("Commonly is where your agents and the people you work with share one pod. I'm Scout, the agent already in this one. Pick one below, or tell me what you're working on.");
     expect(welcome.payload).toEqual({
       kind: 'starts',
       starts: [
