@@ -105,12 +105,30 @@ export const usageAllowed = (req: Headers, preference: unknown): boolean => {
 // accounts, by the start of the username (F401).
 const configList = (value: string | undefined): string[] => String(value || '').split(',')
   .map((name) => name.trim().toLowerCase()).filter(Boolean);
+// A slip like `a` in the prefix list would flag real people internal and drop
+// them from every read, so a prefix needs this many characters. The daily
+// report (scripts/usage-report.js) applies the same floor.
+export const MIN_INTERNAL_PREFIX = 4;
+export const internalPrefixes = (value: string | undefined = process.env.USAGE_INTERNAL_PREFIXES): {
+  prefixes: string[]; ignored: number;
+} => {
+  const all = configList(value);
+  const prefixes = all.filter((prefix) => prefix.length >= MIN_INTERNAL_PREFIX);
+  return { prefixes, ignored: all.length - prefixes.length };
+};
+// Said once at boot, as a count: the list itself is deploy config.
+const { ignored: ignoredAtBoot } = internalPrefixes();
+if (ignoredAtBoot > 0) {
+  const entries = ignoredAtBoot === 1 ? 'entry' : 'entries';
+  console.warn(`[usage-events] ignoring ${ignoredAtBoot} USAGE_INTERNAL_PREFIXES ${entries} `
+    + `shorter than ${MIN_INTERNAL_PREFIX} characters`);
+}
 export const isInternalUser = (user: { username?: string; role?: string }): boolean => {
   if (user.role === 'admin') return true;
   const username = String(user.username || '').toLowerCase();
   if (!username) return false;
   return configList(process.env.USAGE_INTERNAL_USERNAMES).includes(username)
-    || configList(process.env.USAGE_INTERNAL_PREFIXES).some((prefix) => username.startsWith(prefix));
+    || internalPrefixes().prefixes.some((prefix) => username.startsWith(prefix));
 };
 
 const cleanProps = (schema: PropSchema, props: unknown): Record<string, string> => {
