@@ -35,7 +35,7 @@ describe('usage report', () => {
       listed: user('Ops-Person'),
       walker: user('WALK-1107'),
       stamped: user('stamped'),
-      // Seen in the window only under a string id, so only the $toString match can find them.
+      // Seen in the window only under a string id, so only the id's string form can find them.
       stringOnly: user('seat-strs'),
     };
     await db.collection('users').insertMany(Object.values(people));
@@ -101,6 +101,12 @@ describe('usage report', () => {
     const report = await build({ prefixes: 'a, walk-, seat-' });
     expect(report.ignoredShortPrefixes).toBe(1);
     expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 4, people: 2 });
+  });
+
+  it('reads a prefix literally, not as a pattern', async () => {
+    // 'wal.' as a pattern would match 'walk-1107'; as text it matches nothing.
+    const report = await build({ prefixes: 'wal., seat-' });
+    expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 5, people: 3 });
   });
 
   it('carries no id, username or email in what it returns or prints', async () => {

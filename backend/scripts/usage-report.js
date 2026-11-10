@@ -39,24 +39,18 @@ async function buildUsageReport(db, opts = {}) {
   const allPrefixes = configList(opts.prefixes);
   const prefixes = allPrefixes.filter((prefix) => prefix.length >= MIN_PREFIX);
 
-  // Who is ours, decided here from a narrow read rather than in the pipeline.
-  // Mongo 3.6 is enough, or 4.0 when a row holds a string user id ($toString).
+  // Who is ours, read from users directly: our accounts are the small set, so
+  // the query is bounded by them, never by how many people used the product.
+  // Names and prefixes match case-insensitively, anchored and escaped. Each id
+  // is excluded in both forms, since a row may hold the string (Mongo 3.6+).
   const inWindow = { at: { $gte: since, $lt: until } };
-  // The writer stores ObjectIds; a string id is matched too, as deleteUiEventsFor does,
-  // by the account id's string form (no ObjectId built here, so no second bson copy).
-  const userIds = await db.collection('ui_events').distinct('userId', inWindow);
-  const stringIds = userIds.filter((id) => typeof id === 'string');
-  const idMatch = stringIds.length
-    ? { $or: [{ _id: { $in: userIds } }, { $expr: { $in: [{ $toString: '$_id' }, stringIds] } }] }
-    : { _id: { $in: userIds } };
-  const accounts = userIds.length
-    ? await db.collection('users').find(idMatch).project({ username: 1, role: 1 }).toArray()
-    : [];
-  const ours = accounts.filter((account) => {
-    const username = String(account.username || '').toLowerCase();
-    return account.role === 'admin' || usernames.includes(username)
-      || (Boolean(username) && prefixes.some((prefix) => username.startsWith(prefix)));
-  }).flatMap((account) => [account._id, String(account._id)]);
+  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const accounts = await db.collection('users').find({ $or: [
+    { role: 'admin' },
+    ...usernames.map((name) => ({ username: new RegExp(`^${escape(name)}$`, 'i') })),
+    ...prefixes.map((prefix) => ({ username: new RegExp(`^${escape(prefix)}`, 'i') })),
+  ] }).project({ _id: 1 }).toArray();
+  const ours = accounts.flatMap((account) => [account._id, String(account._id)]);
   const kept = { ...inWindow, isInternal: { $ne: true }, userId: { $nin: ours } };
   const dayOf = { $dateToString: { format: '%Y-%m-%d', date: '$at' } };
 
