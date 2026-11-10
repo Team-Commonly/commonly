@@ -184,6 +184,18 @@ const formatDate = (value) => {
   }).format(date);
 };
 
+const isIsoDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+// The landing's lastmod: the later of its copy (en.json "landing") and its FAQ
+// (landing-faq.json). Change it when either changes (F395).
+export const LANDING_DATE_MODIFIED = '2026-11-07';
+
+const recordedDate = (where, value) => {
+  if (value === undefined) return undefined;
+  if (!isIsoDate(value)) throw new Error(`${where} has a dateModified that is not YYYY-MM-DD.`);
+  return value;
+};
+
 const guideProvenance = (guide) => {
   const provenance = guide.provenance;
   const required = ['author', 'reviewer', 'datePublished', 'dateModified'];
@@ -194,7 +206,7 @@ const guideProvenance = (guide) => {
 
   // The dates go raw into the sitemap's lastmod and the Article JSON-LD, and the
   // string comparison below only orders full YYYY-MM-DD dates correctly.
-  const badDate = ['datePublished', 'dateModified'].find((field) => !/^\d{4}-\d{2}-\d{2}$/.test(provenance[field]));
+  const badDate = ['datePublished', 'dateModified'].find((field) => !isIsoDate(provenance[field]));
   if (badDate) {
     throw new Error(`Guide ${guide.title} has a ${badDate} that is not YYYY-MM-DD.`);
   }
@@ -556,6 +568,8 @@ const metadata = ({ title, description, path, schema, faqSchema, ogType = 'websi
 const comparePageSources = {
   openagents: {
     path: '/compare/openagents/',
+    // The sitemap's lastmod. Change it with the text below (F395).
+    dateModified: '2026-10-31',
     title: "Commonly vs OpenAgents (openagents.org): what each ships, side by side",
     description: "OpenAgents and Commonly are both Apache-2.0 workspaces where people and coding agents work together. Commonly is one pod for a team where each person brings their own agent. A factual comparison of agents, self-hosting, how people take part and outside tools.",
     markdown: `# Commonly vs OpenAgents
@@ -630,6 +644,7 @@ Commonly facts come from the Commonly README and from using the product on commo
   },
   githubAgentHq: {
     path: '/compare/github-agent-hq/',
+    dateModified: '2026-10-31',
     title: "Commonly vs GitHub Agent HQ: where each one fits",
     description: "GitHub Agent HQ runs Copilot, Claude and Codex agents inside GitHub. Commonly is one pod where each teammate brings their own agent and the team shares the same conversations and one task board. A factual comparison with preview and GA status.",
     markdown: `# Commonly vs GitHub Agent HQ
@@ -873,6 +888,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     title: 'Commonly: bring your Claude Code and your teammate\'s Codex',
     description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
+    dateModified: LANDING_DATE_MODIFIED,
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
   landingPage.schema = {
@@ -887,6 +903,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       outputPath: `${source.path.slice(1)}index.html`,
       // No app route serves /compare/*, so the page must stay static or React blanks it.
       staticOnly: true,
+      dateModified: recordedDate(source.path, source.dateModified),
       title: source.title,
       description: source.description,
       content: `
@@ -920,6 +937,8 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     description: 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.',
     content: renderGuidesIndex(guides, siteLinks),
     staticOnly: true,
+    // The index lists the guides, so it changes when the newest of them does.
+    dateModified: Object.values(guides).map((guide) => guideProvenance(guide).dateModified).sort().pop(),
     schema: webPage('Guides for teams working with AI agents', 'Practical guides for teams that work with AI agents: shared context, task ownership, human review, and durable handoffs.', guidesIndexPath),
   };
 
@@ -931,6 +950,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
       title: `${useCase.titleTag || useCase.title} | Commonly AI`,
       description: useCase.summary,
       content: renderUseCase(useCase, siteLinks),
+      dateModified: recordedDate(path, useCase.dateModified),
       schema: webPage(useCase.title, useCase.summary, path),
     };
   });

@@ -2601,7 +2601,7 @@ test('the build writes an llms.txt that lists every indexable page and an llms-f
   }
 });
 
-test('the sitemap gives each dated page its real lastmod and invents none for the rest (F369)', async () => {
+test('every sitemap URL carries the lastmod its page records (F369, F395)', async () => {
   const guides = JSON.parse(await readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'));
   const template = '<head><!-- SEO_METADATA_START --><!-- SEO_METADATA_END --><!-- SEO_GATE_START --><script>document.documentElement.className += \' js\';</script><!-- SEO_GATE_END --><style>#seo-page { color: #fff; }</style><!-- SEO_NAVIGATION_RUNTIME_START --><script>window.addEventListener(\'popstate\', () => {});</script><!-- SEO_NAVIGATION_RUNTIME_END --><script type="module" crossorigin src="/assets/index-abcd.js"></script></head><body><div id="root"><!-- SEO_PAGE_CONTENT --></div></body>';
   const outputDir = await mkdtemp(resolve(tmpdir(), 'seo-lastmod-'));
@@ -2615,17 +2615,13 @@ test('the sitemap gives each dated page its real lastmod and invents none for th
     for (const page of pages.filter((item) => !item.noindex)) {
       const entry = entries.find((text) => text.includes(`<loc>https://commonly.me${page.path}</loc>`));
       assert.ok(entry, page.path);
-      if (page.dateModified) {
-        assert.ok(entry.includes(`<lastmod>${page.dateModified}</lastmod>`), page.path);
-      } else {
-        assert.doesNotMatch(entry, /<lastmod>/, page.path);
-      }
+      assert.match(page.dateModified || '', /^\d{4}-\d{2}-\d{2}$/, page.path);
+      assert.ok(entry.includes(`<lastmod>${page.dateModified}</lastmod>`), page.path);
     }
-    const dated = pages.filter((page) => page.dateModified);
-    // Every guide is dated; F396 also dates the use-case index and the legal pages.
-    for (const slug of Object.keys(guides)) assert.ok(dated.some((page) => page.path === `/guides/${slug}/`), slug);
-    assert.equal(dated.length, Object.keys(guides).length + 3);
-    for (const page of dated) assert.match(page.dateModified, /^\d{4}-\d{2}-\d{2}$/, page.path);
+    assert.equal((sitemap.match(/<lastmod>/g) || []).length, entries.length);
+    // The guides index changes when its newest guide does.
+    const newest = Object.values(guides).map((guide) => guide.provenance.dateModified).sort().pop();
+    assert.equal(pages.find((page) => page.path === '/guides/').dateModified, newest);
   } finally {
     await rm(outputDir, { recursive: true, force: true });
   }
@@ -2649,4 +2645,21 @@ test('a guide date that is not YYYY-MM-DD stops the build before it reaches the 
       bad,
     );
   }
+});
+
+test('a compare or use-case page with a malformed date stops the build (F395)', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const useCases = JSON.parse(useCaseText);
+  const guides = JSON.parse(guideText);
+  const [id] = Object.keys(useCases);
+  const broken = { ...useCases, [id]: { ...useCases[id], dateModified: '24 Aug 2026' } };
+  assert.throws(
+    () => buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: broken, guides }),
+    /dateModified that is not YYYY-MM-DD/,
+  );
 });
