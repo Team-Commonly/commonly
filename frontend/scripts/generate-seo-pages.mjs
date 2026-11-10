@@ -633,7 +633,7 @@ Commonly facts come from the Commonly README and from using the product on commo
 
 ## When to pick Buzz
 
-- You want each person and each agent to hold its own cryptographic key, with every action a signed event in one log. [1][2]
+- You want each person and each agent to hold its own cryptographic key, with messages, reactions, workflow steps, review approvals and git events signed in one log. [1][2]
 - You want voice, media with comments pinned to video frames, and code repositories next to chat. [1][2]
 - You want desktop apps for macOS and Linux, with a Windows alpha. [2]
 - You want YAML workflows that fire on messages, reactions, schedules or webhooks. [2]
