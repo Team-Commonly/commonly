@@ -60,7 +60,7 @@ describe('parseRunInstanceId', () => {
 
   test('refuses a flag on a name that already names an instance', () => {
     expect(() => parseRunInstanceId('other', 'nova@priya-nova')).toThrow(/already names instance/);
-    // Naming the seat key alone selects that instance: that is how the daemon starts it.
+    // Naming the seat key alone selects that instance: `agent list` shows it that way.
     expect(parseRunInstanceId(undefined, 'nova@priya-nova')).toBe('priya-nova');
     expect(parseRunInstanceId('priya-nova', 'nova@priya-nova')).toBe('priya-nova');
   });

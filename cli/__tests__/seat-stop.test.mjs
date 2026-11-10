@@ -43,6 +43,7 @@ describe('seat-stop — ExitTimeOut', () => {
     expect(seatPlistPath('anvil', home)).toBe(join(home, 'Library', 'LaunchAgents', 'me.commonly.seat-anvil.plist'));
     expect(seatPlistPath('../x', home)).toBeNull();
     expect(seatPlistPath('a/b', home)).toBeNull();
+    expect(seatPlistPath('nova@priya-nova', home)).toBe(join(home, 'Library', 'LaunchAgents', 'me.commonly.seat-nova@priya-nova.plist'));
   });
 
   test('reads ExitTimeOut from an XML plist, and only reads it', () => {

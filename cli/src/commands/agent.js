@@ -214,7 +214,7 @@ const runCommandFor = (agentName, instanceId) => (
 
 /**
  * The instance `run <name>` was asked to start: --instance-id, or the one a
- * seat key (`nova@priya-nova`, as the daemon names it) carries. Null when
+ * seat key (`nova@priya-nova`, the token file's name) carries. Null when
  * neither names one: that run behaves as it always has, keyed by the bare name
  * whatever instance its key is for (a persona's BYO install is a non-default
  * instance, and its page command names none).
@@ -2865,7 +2865,7 @@ export const performRun = ({
     // resumed. The restart note leads the prompt; memory still reaches the
     // fresh session through the adapter's preamble.
     const sessionEntry = getSessionEntry(stateKey, eventPodId, { binding: placement.binding });
-    let sessionId = getSession(agentName, eventPodId, { binding: placement.binding });
+    let sessionId = getSession(stateKey, eventPodId, { binding: placement.binding });
     let recycleBriefing = null;
     if (sessionId && shouldStartFreshSession({
       lastTurn: sessionEntry?.lastTurn,
@@ -5535,6 +5535,10 @@ Docs:
         // A named instance is saved under its seat key; an unnamed run keeps
         // the bare name, as before.
         const savedAs = named ? seatKey(record.agentName, record.instanceId) : record.agentName;
+        // The record's own spelling names the file, so the state this run keeps
+        // follows it there, and the next run finds both (case, or a token that
+        // belongs to another name).
+        if (named) name = savedAs;
         saveAgentToken(savedAs, record);
         console.log(`${stamp()} [${name}] bootstrapped ${tokenFile(savedAs)} from COMMONLY_AGENT_TOKEN (adapter: ${record.adapter})`);
       } else if (savedSeatLacksDefaultSandbox(record)) {
