@@ -90,7 +90,12 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     mockPage({ machines: [] });
     renderPage();
     expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/stops when that window closes/);
-    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/Other ways to connect/);
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/add this computer once with the command above/);
+    // F370: with no computer yet the daemon block leads the form, above the
+    // quick try, and is no longer folded into Other ways to connect.
+    const add = screen.getByTestId('byo-add-computer');
+    expect(screen.getByTestId('byo-more-ways')).not.toContainElement(add);
+    expect(add.compareDocumentPosition(screen.getByTestId('byo-quick-try')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await issueRun();
     const stops = screen.getByTestId('byo-listen-stops-on-close');

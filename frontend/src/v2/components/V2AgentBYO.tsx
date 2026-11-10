@@ -1750,6 +1750,9 @@ const V2AgentBYO: React.FC = () => {
       {!showCompactHosted && !showCompactByo && !issued && !hosted && !placed && !reconnectRequest && (
         <div className="v2-byo__form">
           {hostedHeldLine}
+          {/* F370: with no computer yet, the daemon line leads. It is the path
+              that keeps an agent running; the run command below is the quick try. */}
+          {mode === 'byo' && addComputerBlock}
           {(hostedOffered || machines.length > 0) && (
             <>
             <p className="v2-byo__modes-question" id="byo-modes-question">{t('agentByo.mode.label')}</p>
@@ -1955,7 +1958,7 @@ const V2AgentBYO: React.FC = () => {
               if ((event.target as Element).closest('summary, button, a')) event.preventDefault();
             }}>
             <summary>{t('agentByo.otherWays.title')}</summary>
-            {addComputerBlock}
+            {mode !== 'byo' && addComputerBlock}
           <p className="v2-byo__footnote">
             {listenerAvailable && <>{t('agentByo.footnote.cliRoute', { byo: t('agentByo.mode.byo') })}{' '}</>}
             {t('agentByo.footnote.notSure')}{' '}
