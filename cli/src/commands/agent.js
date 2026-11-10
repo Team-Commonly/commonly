@@ -64,7 +64,9 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
-import { createPollLiveness, formatStall, resolvePollLivenessMs } from '../lib/poll-liveness.js';
+import {
+  createIdleHeartbeat, createPollLiveness, formatStall, resolveIdleLineMs, resolvePollLivenessMs,
+} from '../lib/poll-liveness.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
@@ -2106,6 +2108,9 @@ export const performRun = ({
   pollLivenessMs,
   pollLivenessCheckMs,
   onPollStalled,
+  // How often a seat that keeps polling and finds nothing says so. Undefined
+  // reads COMMONLY_IDLE_LINE_MS, then ten minutes (lib/poll-liveness.js).
+  idleLineMs,
 }) => {
   const stateKey = localKey || agentName;
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
@@ -2267,6 +2272,8 @@ export const performRun = ({
       onPollStalled?.({ stalledMs });
     },
   });
+  // So an idle seat's log tells it apart from a wedged one (11-10).
+  const idleHeartbeat = createIdleHeartbeat({ everyMs: resolveIdleLineMs(idleLineMs), log });
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
@@ -4382,6 +4389,7 @@ export const performRun = ({
       const pageEvents = carriedFresh.length ? [...carriedFresh, ...events] : events;
       const pageInboxCount = (Number.isFinite(inboxCount) ? inboxCount : events.length)
         + carriedFresh.length;
+      if (pageEvents.length) idleHeartbeat.busy(); else if (running) idleHeartbeat.empty();
 
       const eventGroups = new Map();
       for (const event of pageEvents) {
@@ -4744,6 +4752,7 @@ export const performRun = ({
         // token cannot heal itself; a network failure usually can, and a seat
         // that stops on one is dead until a human notices.
         consecutivePollFailures += 1;
+        idleHeartbeat.busy();
         const retry = pollRetryPolicy({
           consecutiveFailures: consecutivePollFailures,
           intervalMs,
