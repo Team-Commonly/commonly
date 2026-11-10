@@ -16,9 +16,10 @@ describe('public legal pages (TASK-530)', () => {
   it('says which setup steps are recorded, that typed text never is, and how they go', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByText(/^Setup steps: when you're signed in, we record which setup screens you open/)).toBeInTheDocument();
+    expect(screen.getByText(/which suggested start you picked first/)).toBeInTheDocument();
     expect(screen.getByText(/We never record what you type, a command, a key or a token\.$/)).toBeInTheDocument();
     expect(screen.getByText(/people in the EU, the EEA and the UK will be asked first, and nothing will be recorded until they turn it on/)).toBeInTheDocument();
-    expect(screen.getByText(/Do Not Track and Global Privacy Control will be honoured everywhere\./)).toBeInTheDocument();
+    expect(screen.getByText(/Do Not Track and Global Privacy Control will be honored for these events everywhere\./)).toBeInTheDocument();
     expect(screen.getByText('Setup-step records have no expiry date.')).toBeInTheDocument();
     expect(screen.getByText('Deleting your account also deletes your setup-step records.')).toBeInTheDocument();
   });
