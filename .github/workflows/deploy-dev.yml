@@ -183,6 +183,16 @@ jobs:
         env:
           DEV_HELM_AGENT_COMPUTER: ${{ secrets.DEV_HELM_AGENT_COMPUTER }}
 
+      - name: Materialize usage-internal overlay (runner-only)
+        # Per-instance backend.env.usageInternalUsernames (docs/development/usage-events.md):
+        # our own accounts, whose usage events are flagged internal. Kept out of
+        # the repo like the overlays above. Unset, it writes an empty overlay and
+        # the chart leaves USAGE_INTERNAL_USERNAMES unset.
+        run: |
+          printf '%s\n' "${DEV_HELM_USAGE_INTERNAL}" > "$RUNNER_TEMP/usage-internal.yaml"
+        env:
+          DEV_HELM_USAGE_INTERNAL: ${{ secrets.DEV_HELM_USAGE_INTERNAL }}
+
       - name: Build + push backend image
         env:
           TAG: ${{ steps.tag.outputs.tag }}
@@ -267,6 +277,7 @@ jobs:
             -f "$RUNNER_TEMP/values-private.yaml" \
             -f "$RUNNER_TEMP/allowlist.yaml" \
             -f "$RUNNER_TEMP/agent-computer.yaml" \
+            -f "$RUNNER_TEMP/usage-internal.yaml" \
             --set backend.image.tag="$TAG" \
             --set frontend.image.tag="$TAG" \
             --set agents.commonlyBot.image.tag="$TAG" \
