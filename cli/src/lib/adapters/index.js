@@ -51,3 +51,18 @@ export const getAdapter = (name) => ADAPTERS[name] || null;
 export const providerKeyEnvNames = (adapters = ADAPTERS) => [...new Set(
   Object.values(adapters).map((adapter) => adapter.providerKeyEnv).filter(Boolean),
 )];
+
+/**
+ * The provider key ONE seat reads from the environment, or null when it reads
+ * none: its adapter signs in through its own CLI (claude, codex), or its
+ * provider block names a keyFile. The daemon warns per seat with this, so a
+ * BYO computer running only claude never hears about keys it has no use for
+ * (Growth's F370 walk).
+ */
+export const seatProviderKeyEnv = ({ adapter, environment, adapters = ADAPTERS } = {}) => {
+  const declared = adapters[adapter]?.providerKeyEnv;
+  if (!declared) return null;
+  const provider = environment?.provider;
+  if (provider?.keyFile) return null;
+  return provider?.apiKeyEnv || declared;
+};

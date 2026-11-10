@@ -11,6 +11,7 @@ import { getToken, resolveInstance, resolveInstanceUrl } from '../lib/config.js'
 import { loadDaemonRecord } from '../lib/daemon-store.js';
 import { servicePaths } from '../lib/daemon-service.js';
 import { getAdapter } from '../lib/adapters/index.js';
+import { runLoginStatus, signedOutAdapters } from '../lib/adapter-login.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { daemonStatusErrorMessage, getDaemonMachineStatus } from './daemon.js';
 import { listLocalAgents, listUnreadableAgentTokens } from './agent.js';
@@ -109,6 +110,10 @@ export const hostDoctorDeps = ({ instance: instanceArg = null } = {}) => ({
     describeError: daemonStatusErrorMessage,
     now: Date.now(),
   },
+  adapterLogin: () => signedOutAdapters({
+    detect: (name) => getAdapter(name)?.detect(),
+    runStatus: runLoginStatus,
+  }),
   macos: {
     platform: process.platform,
     detectSeatbelt,

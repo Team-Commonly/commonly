@@ -326,11 +326,12 @@ describe('runDoctor', () => {
       now: NOW,
     },
     macos: { platform: 'darwin', detectSeatbelt: () => ({ available: true }), isFile: () => true, loginKeychainPath: '/k' },
+    adapterLogin: async () => [],
   });
 
   test('all checks pass: one line each, in order, exit 0', async () => {
     const results = await runDoctor(healthy());
-    expect(results.map((r) => r.id)).toEqual(['node', 'install', 'login', 'daemon', 'adapter:claude', 'macos-claude']);
+    expect(results.map((r) => r.id)).toEqual(['node', 'install', 'login', 'daemon', 'adapter:claude', 'macos-claude', 'adapter-login']);
     expect(results.every((r) => r.status === PASS)).toBe(true);
     expect(doctorExitCode(results)).toBe(0);
   });
@@ -360,7 +361,7 @@ describe('runDoctor', () => {
     const results = await runDoctor(deps);
     expect(results.map((r) => [r.id, r.status])).toEqual([
       ['node', PASS], ['install', PASS], ['login', PASS], ['daemon', PASS],
-      ['adapter:claude', PASS], ['adapters', FAIL], ['macos-claude', PASS],
+      ['adapter:claude', PASS], ['adapters', FAIL], ['macos-claude', PASS], ['adapter-login', PASS],
     ]);
   });
 
