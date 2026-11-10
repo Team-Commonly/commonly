@@ -32,7 +32,7 @@ Commonly records which screens signed-in people open and which buttons they pres
   - `ui_events` expires 90 days after the server-set `at`.
   - `ui_daily_counts` is keyed `{day, name, page, refTag, value}` with a count `n`. It holds nothing per visitor and expires after 13 months on `dayStart`.
   - Account deletion removes a person's `ui_events` on the self-serve path and in the deletion sweep.
-- **Internal accounts are recorded and flagged with `isInternal`**, so reads can leave them out. These are admins plus the `USAGE_INTERNAL_USERNAMES` deploy setting, a comma list. Usernames never go in this repo.
+- **Internal accounts are recorded and flagged with `isInternal`**, so reads can leave them out. These are admins plus the `USAGE_INTERNAL_USERNAMES` deploy setting, a comma list. The chart sets it from `backend.env.usageInternalUsernames`, on web and worker. In prod that value comes from its own GitHub Actions secret, `DEV_HELM_USAGE_INTERNAL`, a values file that Deploy Dev layers on; it isn't kept in `DEV_HELM_VALUES_PRIVATE`, because that whole-file secret can't be read back to edit one line. Set it as YAML, not `--set`, which splits on commas. Usernames never go in this repo. Until it's set, only admins are flagged, and our other accounts count as users.
 - **Reads are aggregate-only, through ops-runner or admin.** No endpoint returns rows.
 
 ## The client
