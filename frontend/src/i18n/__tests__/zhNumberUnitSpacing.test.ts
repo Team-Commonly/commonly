@@ -55,6 +55,8 @@ const OPAQUE_PLACEHOLDERS = [
   'requester',
   // board.card.needs names the task a blocked card waits on (TASK-123), not a count.
   'dep',
+  // board.card.agentFor names the person an agent holding a task belongs to (F402).
+  'owner',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
   // harness.unsupportedInOpenPods names the version that works ("Goose 1.54").

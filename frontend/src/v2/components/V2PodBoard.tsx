@@ -74,8 +74,12 @@ interface PodMember {
   _id?: string;
   username?: string;
   displayName?: string;
+  // An agent's label from the pod read (resolveAgentDisplayLabel).
+  displayLabel?: string;
   isBot?: boolean;
   profilePicture?: string;
+  // An agent's owner by name, sent to pod members only (F402).
+  ownerName?: string;
 }
 
 interface FocusTask {
@@ -102,7 +106,7 @@ interface FocusRead {
 }
 
 const memberId = (member: PodMember): string => member._id || '';
-const memberLabel = (member: PodMember): string => member.displayName || member.username || memberId(member);
+const memberLabel = (member: PodMember): string => member.displayLabel || member.displayName || member.username || memberId(member);
 // "#409" for a GitHub pull URL, as the frame's pr row reads; null otherwise.
 export const prLabel = (url: string): string | null => {
   const match = /\/pull\/(\d+)(?:[/?#]|$)/.exec(url);
@@ -349,8 +353,9 @@ const V2PodBoard: React.FC = () => {
   const timeLabel = (expiry: number) => new Intl.DateTimeFormat(appDateLocale(), {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(expiry));
-  // The frame's card line is the lease timer and the claimant's avatar, nothing else:
-  // an assigned-but-unclaimed task shows no owner text.
+  // The frame's card line is the lease timer, the claimant's avatar and name (F402:
+  // who holds a task is the multiplayer point); an agent's name says whose it is
+  // on hover. An assigned-but-unclaimed task shows no owner text.
   const ownerLine = (task: BoardTask) => {
     if (['done', 'completed', 'complete'].includes(task.status)) return null;
     // The frame marks a blocked card with what it waits on, and an open one with a hollow ring.
@@ -373,6 +378,9 @@ const V2PodBoard: React.FC = () => {
           {lease.expired ? t('board.owner.expiredShort') : lease.knownExpiry ? t('board.owner.leaseShort', { minutes: lease.minutes }) : t('board.owner.claimedShort')}
         </span>
         <V2Avatar name={holder} src={member?.profilePicture} kind={member?.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={member ? memberId(member) : holder} size="sm" className="v2-board__card-avatar" />
+        {holder && (
+          <span className="v2-board__card-holder" title={member?.isBot && member.ownerName ? t('board.card.agentFor', { name: holder, owner: member.ownerName }) : holder}>{holder}</span>
+        )}
       </span>
     );
   };
