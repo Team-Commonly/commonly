@@ -197,6 +197,24 @@ describe('usage events (D286)', () => {
     }
   });
 
+  // F401: test and seat accounts are many and made on the fly, so the deploy
+  // names them by prefix too. A prefix matches the start of a username only.
+  it('flags accounts whose username starts with a configured prefix', async () => {
+    process.env.USAGE_INTERNAL_PREFIXES = ' Walk- , ,seat-';
+    try {
+      const walker = await makeUser({ username: 'walk-1107' });
+      const seat = await makeUser({ username: 'SEAT-nova' });
+      const person = await makeUser({ username: 'sidewalk-fan' });
+      await post(walker, { name: 'app-open', screen: '/' }).expect(204);
+      await post(seat, { name: 'app-open', screen: '/' }).expect(204);
+      await post(person, { name: 'app-open', screen: '/' }).expect(204);
+      expect(await rows().countDocuments({ isInternal: true })).toBe(2);
+      expect(await rows().countDocuments({ isInternal: false })).toBe(1);
+    } finally {
+      delete process.env.USAGE_INTERNAL_PREFIXES;
+    }
+  });
+
   it('caps a person at the daily limit', async () => {
     const user = await makeUser();
     await rows().insertMany(Array.from({ length: DAILY_CAP - 1 }, () => ({ userId: user._id, name: 'screen-view', at: new Date() })));

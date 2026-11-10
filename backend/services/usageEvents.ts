@@ -100,14 +100,18 @@ export const usageAllowed = (req: Headers, preference: unknown): boolean => {
 };
 
 // Our own accounts are recorded and flagged, so reads can leave them out. The
-// list is deploy config (usernames never go in this repo); admins count too.
-const internalUsernames = (): Set<string> => new Set(
-  String(process.env.USAGE_INTERNAL_USERNAMES || '').split(',')
-    .map((name) => name.trim().toLowerCase()).filter(Boolean),
-);
-export const isInternalUser = (user: { username?: string; role?: string }): boolean => (
-  user.role === 'admin' || internalUsernames().has(String(user.username || '').toLowerCase())
-);
+// lists are deploy config (usernames never go in this repo); admins count too.
+// USAGE_INTERNAL_PREFIXES covers accounts made on the fly, like walk and seat
+// accounts, by the start of the username (F401).
+const configList = (value: string | undefined): string[] => String(value || '').split(',')
+  .map((name) => name.trim().toLowerCase()).filter(Boolean);
+export const isInternalUser = (user: { username?: string; role?: string }): boolean => {
+  if (user.role === 'admin') return true;
+  const username = String(user.username || '').toLowerCase();
+  if (!username) return false;
+  return configList(process.env.USAGE_INTERNAL_USERNAMES).includes(username)
+    || configList(process.env.USAGE_INTERNAL_PREFIXES).some((prefix) => username.startsWith(prefix));
+};
 
 const cleanProps = (schema: PropSchema, props: unknown): Record<string, string> => {
   const out: Record<string, string> = {};
