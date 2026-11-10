@@ -49,6 +49,10 @@ describe('usage report', () => {
       event(people.listed, 'app-open', day('2026-11-09')),
       event(people.walker, 'app-open', day('2026-11-09')),
       event(people.stamped, 'app-open', day('2026-11-09'), { isInternal: true }),
+      // A string id, which the writer never stores, still resolves to its account.
+      event(people.admin, 'app-open', day('2026-11-09'), { userId: String(people.admin._id) }),
+      // A row with no person adds events but no people.
+      { name: 'app-open', screen: '/', at: day('2026-11-09'), isInternal: false },
       // Outside the window.
       event(people.ana, 'app-open', day('2026-10-01')),
     ]);
@@ -72,13 +76,13 @@ describe('usage report', () => {
     const report = await build();
     const row = (dayIso, name, extra = {}) => report.signedIn.find((r) => r.day === dayIso && r.name === name
       && Object.entries(extra).every(([k, v]) => r[k] === v));
-    expect(row('2026-11-09', 'app-open')).toMatchObject({ screen: '/', step: '', events: 3, people: 2 });
+    expect(row('2026-11-09', 'app-open')).toMatchObject({ screen: '/', step: '', events: 4, people: 2 });
     expect(row('2026-11-09', 'welcome-start-click', { step: 'start=byo' })).toMatchObject({ events: 1, people: 1 });
     expect(row('2026-11-09', 'welcome-start-click', { step: 'start=hosted' })).toMatchObject({ events: 1, people: 1 });
     expect(row('2026-11-10', 'screen-view')).toMatchObject({ screen: '/pods/:podId/board', events: 1, people: 1 });
     expect(report.activePeople).toEqual([{ day: '2026-11-10', people: 1 }, { day: '2026-11-09', people: 2 }]);
-    // The admin, the listed name, the prefix and the stamp: four events left out.
-    expect(report.excludedInternalEvents).toBe(4);
+    // The admin (twice, once by a string id), the listed name, the prefix and the stamp.
+    expect(report.excludedInternalEvents).toBe(5);
     expect(report.signedIn.some((r) => r.day === '2026-10-01')).toBe(false);
   });
 
@@ -93,7 +97,7 @@ describe('usage report', () => {
   it('ignores a prefix shorter than 4 characters, so a slip cannot drop real people', async () => {
     const report = await build({ prefixes: 'a, walk-' });
     expect(report.ignoredShortPrefixes).toBe(1);
-    expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 3, people: 2 });
+    expect(report.signedIn.find((r) => r.day === '2026-11-09' && r.name === 'app-open')).toMatchObject({ events: 4, people: 2 });
   });
 
   it('carries no id, username or email in what it returns or prints', async () => {

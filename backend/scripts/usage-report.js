@@ -42,15 +42,21 @@ async function buildUsageReport(db, opts = {}) {
   // Who is ours, decided here from a narrow read rather than with newer
   // aggregation operators, so the read runs on whatever Mongo the instance has.
   const inWindow = { at: { $gte: since, $lt: until } };
+  // The writer stores ObjectIds; a string id is matched too, as deleteUiEventsFor does,
+  // by the account id's string form (no ObjectId built here, so no second bson copy).
   const userIds = await db.collection('ui_events').distinct('userId', inWindow);
+  const stringIds = userIds.filter((id) => typeof id === 'string');
+  const idMatch = stringIds.length
+    ? { $or: [{ _id: { $in: userIds } }, { $expr: { $in: [{ $toString: '$_id' }, stringIds] } }] }
+    : { _id: { $in: userIds } };
   const accounts = userIds.length
-    ? await db.collection('users').find({ _id: { $in: userIds } }).project({ username: 1, role: 1 }).toArray()
+    ? await db.collection('users').find(idMatch).project({ username: 1, role: 1 }).toArray()
     : [];
   const ours = accounts.filter((account) => {
     const username = String(account.username || '').toLowerCase();
     return account.role === 'admin' || usernames.includes(username)
       || (Boolean(username) && prefixes.some((prefix) => username.startsWith(prefix)));
-  }).map((account) => account._id);
+  }).flatMap((account) => [account._id, String(account._id)]);
   const kept = { ...inWindow, isInternal: { $ne: true }, userId: { $nin: ours } };
   const dayOf = { $dateToString: { format: '%Y-%m-%d', date: '$at' } };
 
@@ -64,12 +70,12 @@ async function buildUsageReport(db, opts = {}) {
         people: { $addToSet: '$userId' },
       } },
       { $project: { _id: 0, key: '$_id', events: 1, people: { $size: '$people' } } },
-    ]).toArray(),
+    ], { allowDiskUse: true }).toArray(),
     db.collection('ui_events').aggregate([
       { $match: kept },
       { $group: { _id: dayOf, people: { $addToSet: '$userId' } } },
       { $project: { _id: 0, day: '$_id', people: { $size: '$people' } } },
-    ]).toArray(),
+    ], { allowDiskUse: true }).toArray(),
   ]);
 
   const signedIn = rows.map(({ key, events: n, people }) => ({
@@ -138,5 +144,6 @@ module.exports = { buildUsageReport, formatUsageReport, MIN_PREFIX };
 
 // Runs when executed, including as `node -` on stdin (module.id '[stdin]'), the way growth-prod-read.sh sends it.
 if (require.main === module || module.id === '[stdin]') {
-  main().catch((err) => { console.error('usage report failed:', err.message); process.exit(1); });
+  // The error's name and code only: a message can echo the query or name hosts.
+  main().catch((err) => { console.error('usage report failed:', err.name, err.code || ''); process.exit(1); });
 }
